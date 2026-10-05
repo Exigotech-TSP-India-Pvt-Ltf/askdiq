@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # so answer quality safety net is unchanged.
     llm_reasoning_effort: str = "minimal"
     answer_max_words: int = 150
+    # Bound the RAG evidence/history included in each generation prompt.
+    llm_context_max_tokens: int = 2400
+    llm_history_max_tokens: int = 400
 
     # Embeddings — must match the deployed Azure model and the pgvector
     # column width (see alembic f9462f0a85c6).

@@ -212,6 +212,21 @@ python -m pytest -q
 work without extra decorators. `scripts/run_evaluation.py` is the
 complementary *live* check (real DB + real Azure calls, see Evaluation).
 
+## LLM prompt token budget
+
+Generation uses `tiktoken`'s `o200k_base` encoding, matching the configured
+gpt-5-mini model family. The prompt no longer includes the two long
+few-shot examples. Retrieved context is capped at 2,400 tokens, and relevant
+follow-up history is capped at 400 tokens; standalone questions still send
+no history. When context exceeds its budget, higher-ranked chunks are kept
+first and the final chunk is clipped to fit.
+
+Azure's reported prompt and completion token usage remains logged per
+generation. These limits reduce and bound prompt input, but do not prove
+answer quality is unchanged. Compare evaluation quality and token usage
+before and after deployment; the live evaluation requires the database and
+Azure credentials.
+
 ## Continuous integration
 
 GitHub Actions runs the backend pytest suite and the frontend lint and

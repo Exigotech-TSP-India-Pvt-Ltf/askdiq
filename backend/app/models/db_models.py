@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index,Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +40,7 @@ class Document(Base):
     source_name: Mapped[str] = mapped_column(String(512))
     source_type: Mapped[str] = mapped_column(String(64))  # pdf, markdown, html, etc.
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True) 
     doc_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
 
     chunks: Mapped[list["Chunk"]] = relationship(
@@ -49,6 +50,9 @@ class Document(Base):
 
 class Chunk(Base):
     __tablename__ = "chunks"
+    __table_args__ = (                                                           # <-- NEW
+        Index("ix_chunks_document_hash", "document_id", "content_hash"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -63,7 +67,7 @@ class Chunk(Base):
     chunk_metadata: Mapped[dict] = mapped_column(
         JSON, default=dict
     )  # section, page, parent_id, etc.
-
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     document: Mapped["Document"] = relationship(back_populates="chunks")
 
 
