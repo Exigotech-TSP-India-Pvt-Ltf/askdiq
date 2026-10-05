@@ -212,6 +212,26 @@ python -m pytest -q
 work without extra decorators. `scripts/run_evaluation.py` is the
 complementary *live* check (real DB + real Azure calls, see Evaluation).
 
+## Continuous integration
+
+GitHub Actions runs the backend pytest suite and the frontend lint and
+production build checks on all pushes and on pull requests targeting `main`.
+These checks do not require database or Azure credentials. The workflow
+is defined in `.github/workflows/ci.yml`.
+
+Run the same checks locally:
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+python -m pytest -q
+
+cd ../frontend
+npm ci
+npm run lint
+npm run build
+```
+
 ## Evaluation
 
 `app/evaluation/dataset.py` defines a curated set of test queries covering
@@ -288,4 +308,3 @@ root [.gitignore](.gitignore), which covers both `backend/.env` and
 `frontend/.env.local`). Treat any key ever committed/pasted outside your
 local `.env`, or duplicated into `.env.example`, as compromised and rotate
 it.
-
