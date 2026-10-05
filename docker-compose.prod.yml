@@ -1,0 +1,29 @@
+# Production deployment: backend only, fronted by the existing
+# et-platform nginx reverse proxy (external network, not managed here).
+# Postgres is the already-running production instance, reached via
+# DATABASE_URL in backend/.env — no postgres service defined here.
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    image: askdiq-api:latest
+    container_name: askdiq-api
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5500:8000"
+    networks:
+      - askdiq-net
+
+networks:
+  askdiq-net:
+    external: true
+    # Replace NETWORK_NAME with the actual network name of et-platform-nginx-1,
+    # found via: docker inspect et-platform-nginx-1 --format '{{json .NetworkSettings.Networks}}'
+    name: NETWORK_NAME

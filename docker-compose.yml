@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-12345}
+      POSTGRES_DB: ragdb
+    ports:
+      - "5433:5432"
+    volumes:
+      # pg18's image requires the volume at /var/lib/postgresql (not
+      # .../data) — it now lays out data in a versioned subdirectory itself.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Overrides the .env value (which points at localhost:5433 for local,
+      # non-Docker dev) so the backend reaches Postgres over the compose
+      # network instead.
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-12345}@postgres:5432/ragdb
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/data:/app/data:ro
+
+  frontend:
+    build:
+      context: ./frontend
+    env_file:
+      - ./frontend/.env.local
+    environment:
+      # Overrides the .env.local value (which points at localhost:8000 for
+      # local, non-Docker dev) so the server-side proxy reaches the backend
+      # over the compose network instead.
+      API_BASE_URL: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
