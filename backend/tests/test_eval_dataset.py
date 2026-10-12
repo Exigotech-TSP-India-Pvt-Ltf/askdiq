@@ -34,7 +34,7 @@ def test_headings_and_keywords_need_expected_docs_or_a_real_answer():
         if case.expected_headings:
             assert case.expected_docs, f"{case.id}: headings without expected_docs"
         if case.expected_keywords or case.forbidden_keywords:
-            assert case.expect_grounded, (
+            assert case.expect_grounded or case.expect_abstain, (
                 f"{case.id}: keyword checks only run on grounded answers"
             )
 
@@ -60,3 +60,21 @@ def test_dataset_is_bigger_than_the_original_baseline():
         "essential_eight",
         "zero_trust",
     ]
+
+def test_variants_point_at_existing_cases_and_abstentions_are_ungrounded():
+    ids = {c.id for c in EVAL_CASES}
+    for case in EVAL_CASES:
+        if case.variant_of:
+            assert case.variant_of in ids, case.id
+            assert case.perturbation, case.id
+        if case.expect_abstain:
+            assert case.expect_grounded is False, case.id
+
+
+def test_extended_categories_are_covered():
+    cats = {c.abstain_category for c in EVAL_CASES if c.expect_abstain}
+    assert {"not_in_corpus", "partially_answerable", "ambiguous", "contradictory_documents",
+            "out_of_scope", "real_time", "no_permission"} <= cats
+    perts = {c.perturbation for c in EVAL_CASES if c.perturbation}
+    assert {"typo", "short_vague", "very_long", "acronym", "synonym",
+            "repeated_question", "long_conversation_history"} <= perts

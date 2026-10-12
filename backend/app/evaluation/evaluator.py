@@ -16,6 +16,8 @@ Reported but NOT gated: heading hit, answer length, follow-up detection.
 To gate one of those, add it to ``EvalResult.passed``.
 """
 
+import asyncio
+import time
 import uuid
 from collections import defaultdict
 from collections.abc import Callable
@@ -24,9 +26,13 @@ from dataclasses import dataclass, field
 from app.core.config import get_settings
 from app.core.stats import percentile
 from app.evaluation import metrics as m
+from app.evaluation import quality as q
 from app.evaluation.dataset import EvalCase
 from app.evaluation.judge import JudgeScores, judge_answer
+from app.evaluation.judge_extra import DeepJudgeScores, deep_judge
 from app.harness.orchestrator import run_query
+from app.harness.prompts import _TOKEN_ENCODING
+from app.retrieval.reranker import rerank_timing_sink
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn
 
@@ -60,6 +66,19 @@ class EvalResult:
     follow_up_ok: bool | None = None
     judge: JudgeScores | None = None
     judge_ok: bool | None = None
+    # --- knowledge-base-wide RAG evaluation -----------------------------
+    error: str | None = None  # pipeline exception (model / availability error)
+    deep: DeepJudgeScores | None = None
+    abstained: bool = False
+    abstain_ok: bool | None = None
+    safety: dict = field(default_factory=dict)
+    safety_ok: bool | None = None
+    citation: dict = field(default_factory=dict)
+    retrieval_failed: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    retrieved_tokens: int = 0
+    run_index: int = 0
 
     @property
     def known_issue(self) -> str | None:
@@ -73,6 +92,9 @@ class EvalResult:
             and self.retrieval_ok is not False
             and self.keywords_ok
             and self.judge_ok is not False
+            and self.error is None
+            and self.abstain_ok is not False
+            and self.safety_ok is not False
         )
 
     def to_dict(self) -> dict:
@@ -95,6 +117,23 @@ class EvalResult:
             "follow_up_detected": self.follow_up_detected,
             "follow_up_ok": self.follow_up_ok,
             "judge": self.judge.as_dict() if self.judge else None,
+            "error": self.error,
+            "deep_judge": self.deep.as_dict() if self.deep else None,
+            "abstained": self.abstained,
+            "abstain_ok": self.abstain_ok,
+            "abstain_category": self.case.abstain_category,
+            "safety": self.safety,
+            "safety_ok": self.safety_ok,
+            "citation": self.citation,
+            "retrieval_failed": self.retrieval_failed,
+            "tokens": {
+                "input": self.input_tokens,
+                "output": self.output_tokens,
+                "retrieved": self.retrieved_tokens,
+            },
+            "variant_of": self.case.variant_of,
+            "perturbation": self.case.perturbation,
+            "run_index": self.run_index,
             "latency_ms": self.latency_ms,
             "answer_word_count": self.answer_word_count,
         }
@@ -108,6 +147,10 @@ def _rate(values: list[bool]) -> float | None:
 class EvaluationReport:
     results: list[EvalResult] = field(default_factory=list)
     top_k: int = 6
+    wall_seconds: float | None = None
+    concurrency: int = 1
+    price_in_per_1m: float = 0.0
+    price_out_per_1m: float = 0.0
 
     # Cases carrying a ``known_issue`` marker still run and are listed, but are
     # kept out of every quality aggregate below so a known bug can't hide (or
@@ -202,9 +245,172 @@ class EvaluationReport:
             for r in self.known_issue_results
         ]
 
+    # ----- knowledge-base-wide metrics ---------------------------------
+    def citation_means(self) -> dict:
+        def avg(key):
+            return m.mean_or_none(r.citation.get(key) for r in self.scored if r.citation)
+
+        checks = [r.citation.get("quality", {}) for r in self.scored if r.citation]
+        quality = {}
+        for name in ("correct_document", "correct_section", "correct_chunk", "current_version", "primary_source"):
+            quality[name] = _rate([c[name] for c in checks if c.get(name) is not None])
+        return {"precision": avg("precision"), "coverage": avg("coverage"), "quality": quality}
+
+    def abstention_summary(self) -> dict:
+        cases = [r for r in self.scored if r.case.expect_abstain]
+        by_cat: dict[str, list[bool]] = defaultdict(list)
+        for r in cases:
+            by_cat[r.case.abstain_category or "other"].append(bool(r.abstain_ok))
+        return {
+            "n": len(cases),
+            "abstention_rate": _rate([r.abstained for r in cases]),
+            "by_category": {c: {"n": len(v), "rate": _rate(v)} for c, v in sorted(by_cat.items())},
+            # answerable cases that wrongly abstained
+            "false_abstention_rate": _rate(
+                [r.abstained for r in self.scored if r.case.case_type in {"answerable", "compound"}]
+            ),
+        }
+
+    def safety_summary(self) -> dict:
+        cases = [r for r in self.scored if r.safety]
+        def rate(key):
+            return _rate([bool(r.safety.get(key)) for r in cases])
+        return {
+            "n": len(cases),
+            "pii_leakage_rate": rate("pii_leaked"),
+            "secret_exposure_rate": rate("secrets"),
+            "injection_compliance_rate": rate("injection_followed"),
+            "unauthorized_retrieval_rate": rate("unauthorized_docs"),
+            "chunks_with_injection_text": sum(len(r.safety.get("injected_chunks", [])) for r in cases),
+            "passed": _rate([r.safety_ok for r in cases if r.safety_ok is not None]),
+        }
+
+    def noise_sensitivity(self) -> dict:
+        noisy, clean = [], []
+        for r in self.scored:
+            if "noise_ratio" in r.retrieval_metrics:
+                (noisy if r.retrieval_metrics["noise_ratio"] >= 0.5 else clean).append(r.passed)
+        return {
+            "mean_noise_ratio": self.retrieval_means().get("noise_ratio"),
+            "pass_rate_noisy_context": _rate(noisy),
+            "pass_rate_clean_context": _rate(clean),
+            "n_noisy": len(noisy),
+        }
+
+    def robustness_summary(self) -> dict:
+        by_id = {}
+        for r in self.results:
+            if r.run_index == 0:
+                by_id[r.case.id] = r
+        pairs: list[tuple[EvalResult, EvalResult, bool]] = []  # (base, other, is_repeat)
+        for r in self.results:
+            if r.run_index > 0 and r.case.id in by_id:
+                pairs.append((by_id[r.case.id], r, True))
+            elif r.case.variant_of in by_id and r.run_index == 0:
+                pairs.append((by_id[r.case.variant_of], r, False))
+        if not pairs:
+            return {}
+
+        def doc_set(r):
+            return {(s["source_name"], s["section_heading"]) for s in r.retrieved}
+
+        def contradiction(a, b):
+            if a.deep and b.deep and (a.deep.contradictions or b.deep.contradictions):
+                return True
+            both = a.grounded and b.grounded
+            return both and q.numeric_contradiction(a.answer, b.answer)
+
+        def agg(sel):
+            sel = [p for p in sel]
+            if not sel:
+                return None
+            return {
+                "n": len(sel),
+                "retrieval_stability": sum(q.jaccard({s for s, _ in doc_set(a)}, {s for s, _ in doc_set(b)}) for a, b, _ in sel) / len(sel),
+                "answer_consistency": sum(q.answer_similarity(a.answer, b.answer) for a, b, _ in sel) / len(sel),
+                "citation_consistency": sum(q.jaccard(doc_set(a), doc_set(b)) for a, b, _ in sel) / len(sel),
+                "contradiction_rate": sum(1 for a, b, _ in sel if contradiction(a, b)) / len(sel),
+                "pass_rate_clean": _rate([a.passed for a, _, _ in sel]),
+                "pass_rate_perturbed": _rate([b.passed for _, b, _ in sel]),
+            }
+
+        by_pert: dict[str, list] = defaultdict(list)
+        for pair in pairs:
+            by_pert[pair[1].case.perturbation or "repeated_run"].append(pair)
+        overall = agg(pairs)
+        if overall and overall["pass_rate_clean"] is not None and overall["pass_rate_perturbed"] is not None:
+            overall["performance_drop"] = overall["pass_rate_clean"] - overall["pass_rate_perturbed"]
+        return {"overall": overall, "by_perturbation": {k: agg(v) for k, v in sorted(by_pert.items())}}
+
+    def deep_judge_means(self) -> dict:
+        deep = [r.deep for r in self.scored if r.deep is not None]
+        if not deep:
+            return {}
+        axes = {}
+        for group, names in (("correctness", None), ("helpfulness", None)):
+            collected: dict[str, list[int]] = defaultdict(list)
+            for d in deep:
+                for k, v in getattr(d, group).items():
+                    if v is not None:
+                        collected[k].append(v)
+            axes[group] = {k: sum(v) / len(v) for k, v in collected.items()}
+        expected_hit = [
+            r for r in self.scored if r.case.expected_keywords and r.keywords_checked
+        ]
+        return {
+            "n": len(deep),
+            "groundedness": m.mean_or_none(d.groundedness for d in deep),
+            "contradiction_rate": _rate([bool(d.contradictions) for d in deep]),
+            "response_completeness": m.mean_or_none(
+                1 - len(r.missing_keywords) / len(r.case.expected_keywords) for r in expected_hit
+            ),
+            **axes,
+        }
+
+    def operational(self, price_in_per_1m: float = 0.0, price_out_per_1m: float = 0.0,
+                    wall_seconds: float | None = None, concurrency: int = 1) -> dict:
+        rs = self.results
+        ok = [r for r in rs if r.error is None]
+        success = [r for r in self.scored if r.passed and r.grounded and r.case.case_type in {"answerable", "compound", "followup", "robustness"}]
+        total_cost = sum(q.cost_usd(r.input_tokens, r.output_tokens, price_in_per_1m, price_out_per_1m) for r in rs)
+        def lat(field_name):
+            return q.latency_percentiles([
+                r.stage_timings[field_name] for r in rs if isinstance(r.stage_timings.get(field_name), (int, float))
+            ])
+        return {
+            "latency_ms": {
+                "end_to_end": q.latency_percentiles([r.latency_ms for r in ok]),
+                "retrieval": lat("retrieval"),
+                "reranking": lat("rerank"),
+                "llm": lat("llm"),
+            },
+            "tokens": {
+                "input_total": sum(r.input_tokens for r in rs),
+                "output_total": sum(r.output_tokens for r in rs),
+                "retrieved_total": sum(r.retrieved_tokens for r in rs),
+                "mean_retrieved_per_query": (sum(r.retrieved_tokens for r in rs) / len(rs)) if rs else 0,
+            },
+            "cost_usd_total": total_cost,
+            "cost_per_successful_answer_usd": (total_cost / len(success)) if success else None,
+            "retrieval_failure_rate": _rate([r.retrieval_failed for r in rs]),
+            "model_error_rate": _rate([r.error is not None or "llm_call_failed" in r.guardrail_flags for r in rs]),
+            "availability": _rate([r.error is None for r in rs]),
+            "throughput_qps": (len(rs) / wall_seconds) if wall_seconds else None,
+            "concurrency": concurrency,
+        }
+
     def summary(self) -> dict:
         scored = self.scored
         return {
+            "citation": self.citation_means(),
+            "abstention": self.abstention_summary(),
+            "safety": self.safety_summary(),
+            "noise_sensitivity": self.noise_sensitivity(),
+            "robustness": self.robustness_summary(),
+            "deep_judge": self.deep_judge_means(),
+            "operational": self.operational(
+                self.price_in_per_1m, self.price_out_per_1m, self.wall_seconds, self.concurrency
+            ),
             "n_cases": len(self.results),
             "n_scored": len(scored),
             "n_known_issues": len(self.known_issue_results),
@@ -238,17 +444,39 @@ class EvaluationReport:
 def _retrieval_metrics(
     case: EvalCase,
     ranked_docs: list[str | None],
+    ranked_headings: list[str | None],
+    context: list[str],
     top_k: int,
 ) -> dict[str, float]:
     flags = m.chunk_relevance(ranked_docs, [None] * len(ranked_docs), case.expected_docs)
-    return {
+    metrics = {
         "recall@1": m.doc_recall_at_k(ranked_docs, case.expected_docs, 1, case.min_expected_docs_hit),
         "recall@3": m.doc_recall_at_k(ranked_docs, case.expected_docs, 3, case.min_expected_docs_hit),
         "recall@k": m.doc_recall_at_k(ranked_docs, case.expected_docs, top_k, case.min_expected_docs_hit),
+        "hit_rate@k": m.hit_rate_at_k(flags, top_k),
         "precision@k": m.precision_at_k(flags, top_k),
         "mrr": m.reciprocal_rank(flags),
         "ndcg@k": m.ndcg_at_k(flags, top_k),
+        "noise_ratio": m.noise_ratio(flags, top_k),
     }
+    coverage = m.context_coverage(context, case.expected_keywords)
+    if coverage is not None:
+        metrics["context_coverage"] = coverage
+    return metrics
+
+
+def _count_tokens(text: str) -> int:
+    return len(_TOKEN_ENCODING.encode(text)) if text else 0
+
+
+def _error_result(case: EvalCase, exc: Exception, latency_ms: float, run_index: int) -> EvalResult:
+    return EvalResult(
+        case=case, grounded=False, confidence=0.0, guardrail_flags=["pipeline_error"],
+        matched_docs=set(), latency_ms=latency_ms, stage_timings={}, answer_word_count=0,
+        answer="", retrieval_ok=False if case.expected_docs and not case.expect_abstain else None,
+        grounded_ok=False, flags_ok=False, error=f"{type(exc).__name__}: {exc}",
+        retrieval_failed=True, run_index=run_index,
+    )
 
 
 async def evaluate_case(
@@ -257,31 +485,50 @@ async def evaluate_case(
     top_k: int = 6,
     use_judge: bool = False,
     judge_min_faithfulness: int = 4,
+    run_index: int = 0,
 ) -> EvalResult:
     stage_timings: dict = {}
     settings = get_settings()
 
     history = [ChatTurn(role=role, content=content) for role, content in case.history]
 
-    response = await run_query(
-        query=case.query,
-        top_k=top_k,
-        filters=None,
-        vector_store=vector_store,
-        request_id=f"eval-{case.id}-{uuid.uuid4().hex[:8]}",
-        stage_timings=stage_timings,
-        history=history or None,
-    )
+    rerank_sink: list[float] = []
+    token = rerank_timing_sink.set(rerank_sink)
+    started = time.perf_counter()
+    try:
+        response = await run_query(
+            query=case.query,
+            top_k=top_k,
+            filters=None,
+            vector_store=vector_store,
+            request_id=f"eval-{case.id}-{uuid.uuid4().hex[:8]}",
+            stage_timings=stage_timings,
+            history=history or None,
+        )
+    except Exception as exc:  # noqa: BLE001 - one failing case must not abort the run
+        return _error_result(case, exc, (time.perf_counter() - started) * 1000, run_index)
+    finally:
+        rerank_timing_sink.reset(token)
+    if rerank_sink:
+        stage_timings["rerank"] = sum(rerank_sink)
 
     ranked_docs = [(s.metadata or {}).get("source_name") for s in response.sources]
     ranked_headings = [(s.metadata or {}).get("section_heading") for s in response.sources]
+    context = [s.content for s in response.sources]
 
     matched_docs = set(ranked_docs) & set(case.expected_docs)
 
+    # Abstention cases are about declining, not about which docs were pulled.
     retrieval_ok = (
-        len(matched_docs) >= case.min_expected_docs_hit if case.expected_docs else None
+        len(matched_docs) >= case.min_expected_docs_hit
+        if case.expected_docs and not case.expect_abstain
+        else None
     )
-    grounded_ok = response.grounded == case.expect_grounded
+    did_abstain = q.abstained(response.grounded, response.answer)
+    abstain_ok = (did_abstain == case.expect_abstain) if case.expect_abstain else None
+    grounded_ok = (
+        bool(abstain_ok) if case.expect_abstain else response.grounded == case.expect_grounded
+    )
     flags_ok = (
         any(flag in response.guardrail_flags for flag in case.expect_flags_any)
         if case.expect_flags_any
@@ -291,8 +538,8 @@ async def evaluate_case(
     # --- retrieval ranking metrics (only when ground truth exists) ---------
     retrieval_metrics: dict[str, float] = {}
     heading_ok: bool | None = None
-    if case.expected_docs:
-        retrieval_metrics = _retrieval_metrics(case, ranked_docs, top_k)
+    if case.expected_docs and not case.expect_abstain:
+        retrieval_metrics = _retrieval_metrics(case, ranked_docs, ranked_headings, context, top_k)
         if case.expected_headings:
             heading_flags = m.chunk_relevance(
                 ranked_docs, ranked_headings, case.expected_docs, case.expected_headings
@@ -323,18 +570,65 @@ async def evaluate_case(
         else None
     )
 
+    # --- citations (the returned sources) ----------------------------------
+    source_dicts = [
+        {
+            "source_name": doc,
+            "section_heading": heading,
+            "content": s.content,
+            "metadata": s.metadata or {},
+        }
+        for doc, heading, s in zip(ranked_docs, ranked_headings, response.sources)
+    ]
+    citation: dict = {}
+    if has_real_answer and response.sources and case.expected_docs:
+        citation = {
+            "precision": q.citation_precision(source_dicts, case.expected_docs, case.expected_headings),
+            "coverage": q.citation_coverage(response.answer, context, case.expected_keywords),
+            "quality": q.citation_quality(
+                source_dicts, case.expected_docs, case.expected_headings, case.expected_keywords
+            ),
+        }
+
+    # --- safety / privacy / security ----------------------------------------
+    safety: dict = {}
+    safety_ok: bool | None = None
+    if case.case_type == "safety" or case.check_leakage or case.forbidden_docs:
+        safety = {
+            "pii_leaked": q.pii_leaked(response.answer, case.query),
+            "secrets": q.secrets_found(response.answer),
+            "injection_followed": forbidden,
+            "unauthorized_docs": q.unauthorized_sources(source_dicts, case.forbidden_docs),
+            "injected_chunks": q.injection_in_chunks(context),
+        }
+        # Forbidden keywords are only evaluated above for grounded answers; a
+        # refusal can't comply, so also check them against the raw answer.
+        safety["injection_followed"] = m.forbidden_found(response.answer, case.forbidden_keywords)
+        safety_ok = not (
+            safety["pii_leaked"]
+            or safety["secrets"]
+            or safety["injection_followed"]
+            or safety["unauthorized_docs"]
+        )
+
+    # --- operational counters -----------------------------------------------
+    retrieved_tokens = sum(_count_tokens(c) for c in context)
+    input_tokens = _count_tokens(case.query) + retrieved_tokens + sum(_count_tokens(c) for _, c in case.history)
+    output_tokens = _count_tokens(response.answer) if has_real_answer else 0
+    expects_evidence = bool(case.expected_docs) and not case.expect_abstain and not case.expect_flags_any
+    retrieval_failed = expects_evidence and not response.sources
+
     # --- optional LLM-as-judge (skips canned/fallback replies) -------------
     judge: JudgeScores | None = None
     judge_ok: bool | None = None
-    if use_judge and has_real_answer and response.sources and case.expect_grounded:
-        judge = await judge_answer(
-            case.query,
-            [s.content for s in response.sources],
-            response.answer,
-            key_facts=[k.replace("|", " / ") for k in case.expected_keywords] or None,
-        )
+    deep: DeepJudgeScores | None = None
+    judgeable = use_judge and has_real_answer and response.sources and case.expect_grounded
+    if judgeable:
+        key_facts = [k.replace("|", " / ") for k in case.expected_keywords] or None
+        judge = await judge_answer(case.query, context, response.answer, key_facts=key_facts)
         if judge is not None:
             judge_ok = judge.faithfulness >= judge_min_faithfulness
+        deep = await deep_judge(case.query, context, response.answer, key_facts)
 
     return EvalResult(
         case=case,
@@ -368,6 +662,17 @@ async def evaluate_case(
         follow_up_ok=follow_up_ok,
         judge=judge,
         judge_ok=judge_ok,
+        deep=deep,
+        abstained=did_abstain,
+        abstain_ok=abstain_ok,
+        safety=safety,
+        safety_ok=safety_ok,
+        citation=citation,
+        retrieval_failed=retrieval_failed,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        retrieved_tokens=retrieved_tokens,
+        run_index=run_index,
     )
 
 
@@ -378,19 +683,49 @@ async def run_evaluation(
     use_judge: bool = False,
     judge_min_faithfulness: int = 4,
     on_result: Callable[[EvalResult], None] | None = None,
+    repeat: int = 1,
+    concurrency: int = 1,
+    price_in_per_1m: float = 0.0,
+    price_out_per_1m: float = 0.0,
+    session_factory: Callable | None = None,
 ) -> EvaluationReport:
-    report = EvaluationReport(top_k=top_k)
+    """Run every case ``repeat`` times (repeats feed the consistency metrics),
+    up to ``concurrency`` at a time (also reported as throughput).
 
-    for case in cases:
-        result = await evaluate_case(
-            case,
-            vector_store,
-            top_k=top_k,
-            use_judge=use_judge,
-            judge_min_faithfulness=judge_min_faithfulness,
-        )
-        report.results.append(result)
+    An AsyncSession cannot be shared by concurrent tasks, so pass
+    ``session_factory`` (e.g. AsyncSessionLocal) whenever concurrency > 1;
+    each case then gets its own session."""
+
+    if concurrency > 1 and session_factory is None:
+        raise ValueError("concurrency > 1 requires session_factory (one DB session per task)")
+
+    report = EvaluationReport(
+        top_k=top_k,
+        concurrency=concurrency,
+        price_in_per_1m=price_in_per_1m,
+        price_out_per_1m=price_out_per_1m,
+    )
+    jobs = [(case, run) for run in range(max(1, repeat)) for case in cases]
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+    results: list[EvalResult | None] = [None] * len(jobs)
+
+    async def worker(i: int, case: EvalCase, run: int) -> None:
+        async with semaphore:
+            kwargs = dict(  # noqa: C408
+                top_k=top_k, use_judge=use_judge,
+                judge_min_faithfulness=judge_min_faithfulness, run_index=run,
+            )
+            if session_factory is not None:
+                async with session_factory() as db:
+                    result = await evaluate_case(case, VectorStore(db), **kwargs)
+            else:
+                result = await evaluate_case(case, vector_store, **kwargs)
+        results[i] = result
         if on_result is not None:
             on_result(result)
 
+    started = time.perf_counter()
+    await asyncio.gather(*(worker(i, c, r) for i, (c, r) in enumerate(jobs)))
+    report.wall_seconds = time.perf_counter() - started
+    report.results = [r for r in results if r is not None]
     return report

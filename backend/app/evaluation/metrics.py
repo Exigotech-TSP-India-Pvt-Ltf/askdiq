@@ -106,6 +106,35 @@ def ndcg_at_k(flags: Sequence[bool], k: int) -> float:
     return dcg / ideal
 
 
+def hit_rate_at_k(flags: Sequence[bool], k: int) -> float:
+    """1.0 if at least one relevant chunk is in the top-k, else 0.0."""
+
+    return 1.0 if any(flags[:k]) else 0.0
+
+
+def context_coverage(context_chunks: Iterable[str], key_facts: Iterable[str]) -> float | None:
+    """Share of expected key facts present anywhere in the retrieved context.
+
+    None when the case lists no key facts. Facts use the same ``a|b``
+    alternative syntax as ``expected_keywords``.
+    """
+
+    facts = list(key_facts)
+    if not facts:
+        return None
+    context = "\n".join(context_chunks)
+    return sum(1 for fact in facts if _matches(context, fact)) / len(facts)
+
+
+def noise_ratio(flags: Sequence[bool], k: int) -> float:
+    """Share of the top-k retrieved chunks that are irrelevant (1 - precision)."""
+
+    top = list(flags[:k])
+    if not top:
+        return 0.0
+    return 1.0 - sum(top) / len(top)
+
+
 # ---------------------------------------------------------------------------
 # Answer-text checks
 # ---------------------------------------------------------------------------

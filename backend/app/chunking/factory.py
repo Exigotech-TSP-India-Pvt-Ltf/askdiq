@@ -23,7 +23,7 @@ _semantic_embed_fn = embed_texts_sync
 
 def get_strategy(name: str, source_type: str = "text") -> ChunkingStrategy:
     if name == "auto":
-        name = "structure_aware" if source_type in STRUCTURE_TYPES else "semantic"
+        name = "structure_aware"
 
     base: ChunkingStrategy
     if name == "fixed_size":

@@ -3,7 +3,17 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index,Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -86,6 +96,7 @@ class LatencyRecord(Base):
     guardrail_pre_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     llm_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     guardrail_post_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reranker_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class AuditLog(Base):
@@ -155,5 +166,14 @@ class ChatMessageRecord(Base):
     guardrail_flags: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # IP address that sent this turn (governance/audit trail).
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Actual token usage from the Azure OpenAI response for this exchange's
+    # LLM call (see app.harness.prompts.call_llm) — populated on the
+    # assistant row only, straight from the API's own `usage` field, never
+    # estimated. NULL for user rows, for exchanges with no real LLM call
+    # (guardrail-blocked/fallback/conversational replies), and for rows
+    # recorded before this column existed.
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     session: Mapped["ChatSession"] = relationship(back_populates="messages")

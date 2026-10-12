@@ -291,6 +291,39 @@ closer to **llm ~4.2-4.9s, guardrail_post ~1.3-1.4s, total ~9.7-10s** per
 yet — re-run `scripts/run_evaluation.py` before quoting fresh official
 numbers.
 
+### Knowledge-base-wide RAG evaluation
+
+The harness also covers the full RAG evaluation checklist:
+
+- **Ingestion** (`app/evaluation/kb_eval.py`, `--kb` / `--kb-only` / `--kb-db`):
+  parsing accuracy, heading/table/list preservation, duplicate and
+  near-duplicate chunks, missing documents, chunk size/overlap, metadata
+  correctness, facts split across chunks, access-control metadata,
+  version/freshness, indexing and freshness delay. Needs no LLM calls.
+- **Retrieval**: Recall@K, Precision@K, Hit Rate@K, MRR, NDCG@K, context
+  coverage, noise ratio and noise sensitivity (pass rate with noisy vs clean
+  context).
+- **Answer** (`--judge`, `judge_extra.py`): claim-level groundedness,
+  correctness sub-scores, completeness, helpfulness/clarity, contradictions.
+- **Citations** (`quality.py`): precision, coverage, and quality (document,
+  section, chunk, current version, primary source). Returned sources are the
+  citations.
+- **Abstention** and **safety** case types (`dataset_extra.py`): not-in-corpus,
+  partial, ambiguous, contradictory, out-of-scope, real-time, no-permission;
+  prompt/indirect injection, PII, secrets, unauthorized documents.
+- **Robustness**: typo/short/long/acronym/synonym variants (`variant_of`),
+  `--repeat N` repeated questions, long conversation history; reports retrieval
+  stability, answer/citation consistency, contradiction rate, performance drop.
+- **Operational**: P50/P95/P99 for end-to-end, retrieval, reranking and LLM;
+  token volumes (tiktoken estimates); cost (`--price-in/--price-out`);
+  retrieval-failure, model-error and availability rates; throughput under
+  `--concurrency N`.
+
+Notes: the answer contradiction check without `--judge` is a numeric
+heuristic; "sensitivity to irrelevant context" is measured from naturally
+noisy retrievals rather than injected noise; access-control and version checks
+currently report the real gap (the ingested chunks carry no such metadata).
+
 ## Latency & metrics
 
 `LatencyMiddleware` (`backend/app/core/middleware.py`) times every

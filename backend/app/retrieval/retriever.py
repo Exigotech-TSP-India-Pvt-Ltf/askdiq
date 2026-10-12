@@ -6,11 +6,12 @@ instead of being averaged into one vector that matches neither topic well.
 """
 
 import asyncio
+import time
 import re
 import uuid
 
 from app.core.config import get_settings
-from app.retrieval.embeddings import embed_text_sync
+from app.retrieval.embeddings import embed_text_sync, embedding_timing_sink
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, SourceChunk
 
@@ -161,20 +162,24 @@ async def retrieve(
     )
     per_query_k = min(final_top_k, max(top_k, 6))
 
-    async def _embed_and_search(sub_query: str) -> list[tuple]:
-        embedding = await embed_query(sub_query)
-        return await vector_store.similarity_search(
-            embedding,
-            top_k=per_query_k,
-            filters=filters,
-            query_text=sub_query,
+    # Embeddings are independent API calls, so they run concurrently. The DB
+    # searches share one AsyncSession, which cannot run two operations at
+    # once (SQLAlchemy raises IllegalStateChangeError), so they run in order.
+    embed_started = time.perf_counter()
+    embeddings = await asyncio.gather(*(embed_query(sq) for sq in sub_queries))
+    embed_sink = embedding_timing_sink.get()
+    if embed_sink is not None:
+        embed_sink.append((time.perf_counter() - embed_started) * 1000)
+    per_query_results: list[list[tuple]] = []
+    for sub_query, embedding in zip(sub_queries, embeddings):
+        per_query_results.append(
+            await vector_store.similarity_search(
+                embedding,
+                top_k=per_query_k,
+                filters=filters,
+                query_text=sub_query,
+            )
         )
-
-    # Independent per sub-query — run concurrently instead of sequentially
-    # so a compound question doesn't pay 2x the embed+search latency.
-    per_query_results: list[list[tuple]] = await asyncio.gather(
-        *(_embed_and_search(sub_query) for sub_query in sub_queries)
-    )
 
     merged: dict[uuid.UUID, tuple] = {}
     for results in per_query_results:

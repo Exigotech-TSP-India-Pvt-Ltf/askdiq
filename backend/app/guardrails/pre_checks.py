@@ -1,14 +1,15 @@
-"""Guardrail checks that run before retrieval/generation."""
+﻿"""Guardrail checks that run before retrieval/generation."""
 
 import re
 
 
 UNSAFE_PATTERNS = [
-    r"\bignore (all|previous) instructions\b",
+    r"\b(ignore|disregard|forget|override)\b.{0,30}\b(instructions|rules|guidelines|prompt)\b",
+    r"\b(print|reveal|show|repeat|output)\b.{0,30}\b(hidden|secret|system|initial)\b.{0,20}\b(instructions|prompt|rules)\b",
     r"\bsystem prompt\b",
 ]
 
-# Links have no place in a genuine question to this assistant — real users
+# Links have no place in a genuine question to this assistant â€” real users
 # ask about DeployIQ, they don't paste URLs. A strong, low-false-positive
 # spam signal on its own.
 _URL_RE = re.compile(
@@ -16,10 +17,10 @@ _URL_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Common promotional/scam phrasing — deliberately narrow (not generic words
+# Common promotional/scam phrasing â€” deliberately narrow (not generic words
 # like "subscribe"/"pricing" that a real DeployIQ question could contain).
 _PROMO_PHRASES_RE = re.compile(
-    r"\b(buy now|click here|limited time offer|act now|100%\s*free|"
+    r"\b(buy now|click here|limited time offer|act now|"
     r"make money fast|work from home|subscribe to my channel|follow me|"
     r"dm me|whatsapp me|claim your prize|you'?ve won|free gift|"
     r"guaranteed income|check out my channel)\b",
@@ -65,6 +66,8 @@ def check_unsafe_input(
 def _looks_like_gibberish(word: str) -> bool:
     if len(word) < _GIBBERISH_MIN_LEN or not word.isalpha():
         return False
+    if any(word.lower() in row for row in ("qwertyuiop", "asdfghjkl", "zxcvbnm")) or any(row in word.lower() for row in ("asdfghjkl", "qwertyuiop", "zxcvbnm")):
+        return True
     vowel_ratio = len(_VOWEL_RE.findall(word)) / len(word)
     return vowel_ratio < _GIBBERISH_MAX_VOWEL_RATIO
 
@@ -73,7 +76,7 @@ def check_spam(
     query: str,
 ) -> tuple[bool, str | None]:
     """Detect junk input that isn't a genuine question: gibberish,
-    keyboard-mash repetition, or promotional/scam content — none of which
+    keyboard-mash repetition, or promotional/scam content â€” none of which
     is worth spending a retrieval + LLM call on, or worth answering at all.
     """
 

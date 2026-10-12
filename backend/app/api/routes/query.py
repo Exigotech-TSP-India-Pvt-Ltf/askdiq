@@ -53,6 +53,9 @@ async def query(
         grounded=response.grounded,
         guardrail_flags=response.guardrail_flags,
         client_ip=client_ip,
+        prompt_tokens=response.prompt_tokens,
+        completion_tokens=response.completion_tokens,
+        total_tokens=response.total_tokens,
     )
 
     await record_audit_event(

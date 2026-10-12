@@ -170,8 +170,16 @@ def call_llm(
     query: str,
     context_chunks: list[str],
     history: list[ChatTurn] | None = None,
-) -> str:
-    """Generate a grounded RAG answer with the configured Azure deployment."""
+) -> tuple[str, dict[str, int] | None]:
+    """Generate a grounded RAG answer with the configured Azure deployment.
+
+    Returns ``(answer_text, usage)`` where ``usage`` is the *actual*
+    token accounting reported by Azure OpenAI in the response
+    (``prompt_tokens``/``completion_tokens``/``total_tokens``) — not an
+    estimate — so callers can persist/bill on real numbers. ``usage`` is
+    ``None`` if the API response didn't include one (shouldn't normally
+    happen, but defensive).
+    """
 
     prompt = build_prompt(query, context_chunks, history)
     response = _client.chat.completions.create(
@@ -192,16 +200,26 @@ def call_llm(
         reasoning_effort=settings.llm_reasoning_effort,
     )
 
-    usage = getattr(response, "usage", None)
+    usage_obj = getattr(response, "usage", None)
     content = response.choices[0].message.content if response.choices else None
+
+    usage = (
+        {
+            "prompt_tokens": getattr(usage_obj, "prompt_tokens", None),
+            "completion_tokens": getattr(usage_obj, "completion_tokens", None),
+            "total_tokens": getattr(usage_obj, "total_tokens", None),
+        }
+        if usage_obj is not None
+        else None
+    )
 
     logger.info(
         "llm_call model=%s non_empty=%s prompt_tokens=%s completion_tokens=%s context_tokens=%d",
         settings.azure_deployment_name,
         bool(content and content.strip()),
-        getattr(usage, "prompt_tokens", None),
-        getattr(usage, "completion_tokens", None),
+        getattr(usage_obj, "prompt_tokens", None),
+        getattr(usage_obj, "completion_tokens", None),
         len(_TOKEN_ENCODING.encode(_format_context(context_chunks))),
     )
 
-    return content or ""
+    return content or "", usage

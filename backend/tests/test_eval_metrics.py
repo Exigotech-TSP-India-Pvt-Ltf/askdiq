@@ -3,10 +3,8 @@
 import math
 
 import pytest
-
 from app.evaluation import metrics as m
 from app.evaluation.judge import build_judge_prompt, parse_judge_output
-
 
 # ---- chunk relevance -------------------------------------------------------
 

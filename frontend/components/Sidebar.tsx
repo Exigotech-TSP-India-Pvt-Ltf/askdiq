@@ -5,37 +5,34 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import {
+  ChevronLeft,
+  ChevronDown,
+  LayoutDashboard,
+  LogOut,
+  MessageSquare,
+  FileText,
+  Users,
+  MessagesSquare,
+  ThumbsUp,
+  ClipboardCheck,
+  ShieldCheck,
+  CircleDollarSign,
+} from "lucide-react";
 
 const COLLAPSED_STORAGE_KEY = "deployiq.sidebar.collapsed";
+const ADMIN_EXPANDED_STORAGE_KEY = "deployiq.sidebar.adminExpanded";
 
-const NAV_ITEMS = [
-  {
-    href: "/chat",
-    label: "Chat",
-    icon: (
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    ),
-  },
-  {
-    href: "/documents",
-    label: "Documents",
-    icon: (
-      <>
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-      </>
-    ),
-  },
-  {
-    href: "/metrics",
-    label: "Latency",
-    icon: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />,
-  },
-  {
-    href: "/governance",
-    label: "Governance",
-    icon: <path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z" />,
-  },
+const ADMIN_ITEMS = [
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/documents", label: "Documents", icon: FileText },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/usage", label: "Usage & Cost", icon: CircleDollarSign },
+  { href: "/admin/conversations", label: "Conversation Logs", icon: MessagesSquare },
+  { href: "/admin/feedback", label: "Feedback", icon: ThumbsUp },
+  { href: "/admin/evaluation", label: "Evaluation", icon: ClipboardCheck },
+  { href: "/admin/governance", label: "Admin Governance", icon: ShieldCheck },
 ];
 
 function initials(name: string) {
@@ -47,22 +44,6 @@ function initials(name: string) {
     .join("");
 }
 
-function CollapseIcon({ collapsed }: { collapsed: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      className={`transition-transform ${collapsed ? "rotate-180" : ""}`}
-    >
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
@@ -71,10 +52,14 @@ export function Sidebar() {
   // and first client render both start expanded, avoiding a hydration
   // mismatch — the stored preference is then applied right after mount.
   const [collapsed, setCollapsed] = useState(false);
+  // Controls whether the Admin section's items are expanded (shown) or
+  // collapsed (hidden) when its header is clicked.
+  const [adminExpanded, setAdminExpanded] = useState(true);
 
   useEffect(() => {
     try {
       setCollapsed(window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === "1");
+      setAdminExpanded(window.localStorage.getItem(ADMIN_EXPANDED_STORAGE_KEY) !== "0");
     } catch {
       // Ignore localStorage errors (e.g. disabled in this browser).
     }
@@ -92,15 +77,54 @@ export function Sidebar() {
     });
   }
 
+  function toggleAdminExpanded() {
+    setAdminExpanded((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(ADMIN_EXPANDED_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        // Ignore localStorage errors.
+      }
+      return next;
+    });
+  }
+
+  function renderLink(item: { href: string; label: string; icon: React.ElementType }, isAdminRoot: boolean) {
+    const active = isAdminRoot
+      ? pathname === item.href || (item.href !== "/admin" && pathname?.startsWith(item.href))
+      : pathname?.startsWith(item.href);
+    const Icon = item.icon;
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        title={collapsed ? item.label : undefined}
+        className={`group relative flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-colors ${
+          collapsed ? "justify-center px-0" : "px-3"
+        } ${
+          active
+            ? "bg-brand-50 text-brand-700"
+            : "text-ink/60 hover:bg-ink/[0.04] hover:text-ink"
+        }`}
+      >
+        {active && !collapsed && (
+          <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-brand-600" />
+        )}
+        <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? "text-brand-600" : "text-ink/40 group-hover:text-ink/70"}`} strokeWidth={2} />
+        {!collapsed && <span className="truncate">{item.label}</span>}
+      </Link>
+    );
+  }
+
   return (
     <aside
       className={`flex h-screen shrink-0 flex-col border-r border-ink/10 bg-white transition-[width] duration-200 ${
-        collapsed ? "w-16" : "w-60"
+        collapsed ? "w-16" : "w-64"
       }`}
     >
-      <div className="flex h-16 items-center justify-between border-b border-ink/10 px-3">
+      <div className="flex h-16 items-center justify-between border-b border-ink/10 px-4">
         {!collapsed && (
-          <Image src="/exigotech-logo.png" alt="Exigo Tech" width={128} height={31} />
+          <Image src="/exigotech-logo.png" alt="Exigo Tech" width={120} height={29} />
         )}
         <button
           onClick={toggleCollapsed}
@@ -109,49 +133,27 @@ export function Sidebar() {
             collapsed ? "mx-auto" : ""
           }`}
         >
-          <CollapseIcon collapsed={collapsed} />
+          <ChevronLeft className={`h-4 w-4 transition-transform ${collapsed ? "rotate-180" : ""}`} />
         </button>
       </div>
 
-      {!collapsed && (
-        <div className="px-5 pt-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-ink/40">
-            DeployIQ
-          </p>
-        </div>
-      )}
-
-      <nav className={`flex-1 space-y-1 pt-3 ${collapsed ? "px-2" : "px-3"}`}>
-        {NAV_ITEMS.map((item) => {
-          const active = pathname?.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={collapsed ? item.label : undefined}
-              className={`flex items-center gap-2.5 rounded-lg py-2 text-sm font-medium transition ${
-                collapsed ? "justify-center px-0" : "px-3"
-              } ${
-                active
-                  ? "bg-brand-50 text-brand-700"
-                  : "text-ink/60 hover:bg-ink/5 hover:text-ink"
-              }`}
+      <nav className={`flex-1 space-y-0.5 overflow-y-auto py-4 ${collapsed ? "px-2" : "px-3"}`}>
+        {collapsed ? (
+          ADMIN_ITEMS.map((item) => renderLink(item, true))
+        ) : (
+          <>
+            <button
+              onClick={toggleAdminExpanded}
+              className="flex w-full items-center justify-between rounded-md px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-ink/35 hover:text-ink/60"
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="shrink-0"
-              >
-                {item.icon}
-              </svg>
-              {!collapsed && <span>{item.label}</span>}
-            </Link>
-          );
-        })}
+              <span>Admin</span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${adminExpanded ? "" : "-rotate-90"}`}
+              />
+            </button>
+            {adminExpanded && ADMIN_ITEMS.map((item) => renderLink(item, true))}
+          </>
+        )}
       </nav>
 
       <div className="border-t border-ink/10 p-3">
@@ -180,18 +182,7 @@ export function Sidebar() {
               title="Sign out"
               className="rounded-md p-1.5 text-ink/40 hover:bg-ink/5 hover:text-ink"
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
+              <LogOut className="h-4 w-4" />
             </button>
           )}
         </div>
@@ -199,3 +190,4 @@ export function Sidebar() {
     </aside>
   );
 }
+
