@@ -12,6 +12,13 @@ permissions:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:5432/ci
+      AZURE_OPENAI_API_KEY: ci-test-key
+      AZURE_OPENAI_ENDPOINT: https://ci-test-resource.openai.azure.com/
+      AZURE_OPENAI_API_VERSION: 2024-12-01-preview
+      AZURE_DEPLOYMENT_NAME: ci-test-deployment
+      API_JWT_SECRET: ci-only-test-secret-not-for-production
     defaults:
       run:
         working-directory: backend

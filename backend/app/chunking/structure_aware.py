@@ -17,6 +17,14 @@ HEADER_RE = re.compile(
 # A heading's visible text fully wrapped in bold, e.g. "## **Platform Overview**".
 BOLD_WRAP_RE = re.compile(r"^\*\*(.+)\*\*$")
 
+# A line that is ENTIRELY a bold run and nothing else, e.g. "**What Is Zero
+# Trust?**" on its own line. Used only as a fallback (see
+# `_split_by_bold_headings`) for the handful of source documents that have no
+# real ATX heading structure at all and would otherwise collapse into one
+# oversized section that gets cut blindly at the character limit, splitting
+# mid-sentence/mid-list.
+BOLD_HEADING_RE = re.compile(r"^\*\*(.+)\*\*[ \t]*$", re.MULTILINE)
+
 CODE_FENCE_RE = re.compile(
     r"```.*?```",
     re.DOTALL,
@@ -58,6 +66,7 @@ class StructureAwareChunker(ChunkingStrategy):
         )
 
         sections = self._split_by_structure(protected_text)
+        sections = self._expand_unstructured_sections(sections)
 
         results: list[ChunkResult] = []
         idx = 0
@@ -197,6 +206,91 @@ class StructureAwareChunker(ChunkingStrategy):
 
         return sections
 
+    def _expand_unstructured_sections(
+        self,
+        sections: list[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
+        """Fallback for a section with no real ATX sub-structure that is too
+        large to keep as one chunk: a few source documents use standalone
+        bold lines (e.g. "**What Is Zero Trust?**") as their only section
+        markers instead of real Markdown headings. Without this, such a
+        section would be cut blindly at the character limit, splitting
+        mid-sentence/mid-list. Only applied when the section already
+        exceeds the size limit, so normally-sized sections (including ones
+        that use bold text purely as UI field labels) are never touched.
+        """
+        expanded: list[tuple[str, str]] = []
+        for heading, body in sections:
+            if len(body) > self.max_chunk_chars:
+                bold_sections = self._split_by_bold_headings(body)
+                if len(bold_sections) >= 2:
+                    expanded.extend(bold_sections)
+                    continue
+            expanded.append((heading, body))
+        return expanded
+
+    @staticmethod
+    def _is_pure_bold_line(line: str) -> bool:
+        """True if `line` is made of one or more bold (**...**) runs with no
+        plain text in between — covers both a normal "**Heading**" line and
+        the "**Governance ****&**** Safety**" doubled-marker artifact some
+        exports produce, while rejecting a line that mixes bold and plain
+        text, e.g. "**A** some text **B**"."""
+        segments = line.split("**")
+        return len(segments) >= 3 and all(seg.strip() == "" for seg in segments[::2])
+
+    @classmethod
+    def _split_by_bold_headings(cls, text: str) -> list[tuple[str, str]]:
+        """Split `text` at standalone bold-only lines, treating each as a
+        pseudo section heading. Returns [] if fewer than two such lines are
+        found (not enough structure to justify splitting)."""
+        matches = [
+            m for m in BOLD_HEADING_RE.finditer(text) if cls._is_pure_bold_line(m.group(0).strip())
+        ]
+        if len(matches) < 2:
+            return []
+
+        sections: list[tuple[str, str]] = []
+        if matches[0].start() > 0:
+            preamble = text[: matches[0].start()].strip()
+            if preamble:
+                sections.append(("", preamble))
+
+        for index, match in enumerate(matches):
+            heading = _clean_heading_text(match.group(1))
+            body_start = match.end()
+            body_end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            sections.append((heading, text[body_start:body_end]))
+
+        return sections
+
+    def _split_oversized(self, block: str) -> list[str]:
+        """Break a single over-long paragraph (e.g. plain text with single
+        newlines) at line boundaries, then words, so no piece exceeds the cap."""
+
+        if len(block) <= self.max_chunk_chars:
+            return [block]
+        pieces: list[str] = []
+        current = ""
+        for line in block.split("\n"):
+            while len(line) > self.max_chunk_chars:
+                cut = line.rfind(" ", 0, self.max_chunk_chars)
+                cut = cut if cut > 0 else self.max_chunk_chars
+                if current:
+                    pieces.append(current)
+                    current = ""
+                pieces.append(line[:cut])
+                line = line[cut:].lstrip()
+            candidate = f"{current}\n{line}" if current else line
+            if current and len(candidate) > self.max_chunk_chars:
+                pieces.append(current)
+                current = line
+            else:
+                current = candidate
+        if current:
+            pieces.append(current)
+        return pieces
+
     def _split_to_max_len(
         self,
         body: str,
@@ -210,7 +304,9 @@ class StructureAwareChunker(ChunkingStrategy):
         if len(body) <= self.max_chunk_chars:
             return [body]
 
-        paragraphs = body.split("\n\n")
+        paragraphs = []
+        for block in body.split("\n\n"):
+            paragraphs.extend(self._split_oversized(block))
 
         pieces: list[str] = []
         current = ""

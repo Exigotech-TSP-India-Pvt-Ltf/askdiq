@@ -34,7 +34,7 @@ async def _run(
             item = next(calls)
             if isinstance(item, Exception):
                 raise item
-            return item
+            return item, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
 
         monkeypatch.setattr(orchestrator, "call_llm", fake_call_llm)
 

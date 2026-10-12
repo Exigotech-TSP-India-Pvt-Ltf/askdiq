@@ -114,8 +114,29 @@ export const api = {
   listDocuments: (token: string) =>
     request<DocumentSummary[]>("/documents", { token }),
 
+  documentChunks: (token: string, id: string) =>
+    request<
+      {
+        id: string;
+        chunk_index: number;
+        content: string;
+        strategy: string;
+        section_heading: string | null;
+        char_count: number;
+      }[]
+    >(`/documents/${id}/chunks`, { token }),
+
+  deleteDocument: (token: string, id: string) =>
+    request<void>(`/documents/${id}`, { method: "DELETE", token }),
+
   latencyReport: (token: string) =>
     request<LatencyReport>("/metrics/latency", { token }),
+
+  adminGet: <T = any>(token: string, path: string) =>
+    request<T>(`/admin${path}`, { token }),
+
+  evaluationReport: (token: string) =>
+    request<Record<string, any>>("/metrics/evaluation", { token }),
 
   ingest: (
     token: string,
@@ -127,7 +148,16 @@ export const api = {
       metadata?: Record<string, unknown>;
     }
   ) =>
-    request("/ingest", {
+    request<{
+      document_id: string;
+      chunk_count: number;
+      strategy_used: string;
+      status: string;
+      chunks_added: number;
+      chunks_kept: number;
+      chunks_removed: number;
+      quality?: Record<string, any> | null;
+    }>("/ingest", {
       method: "POST",
       token,
       body: JSON.stringify({ chunking_strategy: "auto", metadata: {}, ...body }),

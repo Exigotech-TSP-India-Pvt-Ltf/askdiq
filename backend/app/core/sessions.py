@@ -67,7 +67,7 @@ async def resolve_session_for_query(
       different IP (e.g. a different network/location) always gets its own
       session instead of silently continuing one created elsewhere.
     """
-    now = datetime.utcnow()
+    now = datetime.utcnow()  # noqa: DTZ003
     session: ChatSession | None = None
 
     if session_id:
@@ -139,10 +139,13 @@ async def record_exchange(
     grounded: bool,
     guardrail_flags: list[str],
     client_ip: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
 ) -> tuple[str, str]:
     """Persist the user question + assistant answer, refresh session TTL,
     and return (user_message_id, assistant_message_id) for the new pair."""
-    now = datetime.utcnow()
+    now = datetime.utcnow()  # noqa: DTZ003
     turn_index = await _next_turn_index(db, session.id)
 
     user_message = ChatMessageRecord(
@@ -165,6 +168,11 @@ async def record_exchange(
         request_id=request_id,
         grounded=grounded,
         guardrail_flags=guardrail_flags,
+        # Actual Azure OpenAI usage for this exchange's LLM call (None when
+        # there wasn't one — guardrail-blocked/fallback/conversational).
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
     )
     db.add_all([user_message, assistant_message])
 
@@ -194,7 +202,7 @@ def _to_summary(
 
 
 async def list_sessions(db: AsyncSession, user_email: str) -> list[ChatSessionSummary]:
-    now = datetime.utcnow()
+    now = datetime.utcnow()  # noqa: DTZ003
     result = await db.execute(
         select(ChatSession, func.count(ChatMessageRecord.id))
         .outerjoin(ChatMessageRecord, ChatMessageRecord.session_id == ChatSession.id)
@@ -208,7 +216,7 @@ async def list_sessions(db: AsyncSession, user_email: str) -> list[ChatSessionSu
 async def create_session(
     db: AsyncSession, user_email: str, title: str | None, client_ip: str | None = None
 ) -> ChatSessionSummary:
-    now = datetime.utcnow()
+    now = datetime.utcnow()  # noqa: DTZ003
     session = ChatSession(
         user_email=user_email,
         title=(title or "New chat").strip()[:256] or "New chat",
@@ -234,7 +242,7 @@ async def get_session_detail(
         .order_by(ChatMessageRecord.created_at)
     )
     messages = result.scalars().all()
-    now = datetime.utcnow()
+    now = datetime.utcnow()  # noqa: DTZ003
     summary = _to_summary(session, len(messages), now)
 
     return ChatSessionDetail(
@@ -266,7 +274,7 @@ async def rename_session(
             ChatMessageRecord.session_id == session.id
         )
     )
-    return _to_summary(session, count_result.scalar_one(), datetime.utcnow())
+    return _to_summary(session, count_result.scalar_one(), datetime.utcnow())  # noqa: DTZ003
 
 
 async def delete_session(db: AsyncSession, session_id: str, user_email: str) -> None:

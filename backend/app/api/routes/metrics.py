@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends
+import json
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,3 +92,47 @@ async def latency_report(
         llm=llm,
         by_stage=by_stage,
     )
+
+
+EVAL_REPORT_DIR = Path(__file__).resolve().parents[3]
+
+
+@router.get("/metrics/evaluation")
+async def evaluation_report(actor: str = Depends(get_current_actor)) -> dict:
+    """Latest RAG evaluation report written by scripts/run_evaluation.py --json."""
+    files = sorted(
+        EVAL_REPORT_DIR.glob("eval*report*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not files:
+        raise HTTPException(status_code=404, detail="No evaluation report found. Run scripts/run_evaluation.py --json eval_report.json")
+    data = json.loads(files[0].read_text(encoding="utf-8"))
+    cases = data.pop("cases", [])
+    data["cases"] = [
+        {
+            "id": c.get("id"),
+            "type": c.get("type"),
+            "query": c.get("query"),
+            "passed": c.get("passed"),
+            "known_issue": c.get("known_issue"),
+            "grounded": c.get("grounded"),
+            "confidence": c.get("confidence"),
+            "abstained": c.get("abstained"),
+            "flags": c.get("guardrail_flags"),
+            "latency_ms": c.get("latency_ms"),
+            "faithfulness": (c.get("judge") or {}).get("faithfulness"),
+            "citation_precision": (c.get("citation") or {}).get("precision"),
+            "recall": (c.get("retrieval_metrics") or {}).get("recall@k"),
+            "missing_keywords": c.get("missing_keywords"),
+            "error": c.get("error"),
+        }
+        for c in cases
+    ]
+    data["failed_cases"] = [
+        {"id": c["id"], "type": c["type"], "query": c["query"]}
+        for c in data["cases"]
+        if not c["passed"] and not c["known_issue"]
+    ]
+    data["report_file"] = files[0].name
+    return data

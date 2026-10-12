@@ -1,9 +1,8 @@
 import asyncio
 
-from sqlalchemy import select
-
 from app.core.database import AsyncSessionLocal
-from app.models.db_models import Document, Chunk
+from app.models.db_models import Chunk, Document
+from sqlalchemy import select
 
 
 async def show_one_document():
@@ -12,7 +11,7 @@ async def show_one_document():
         # Select one real document
         result = await db.execute(
             select(Document)
-            .where(Document.source_name == "responsible-ai.md")
+            .where(Document.source_name == "e8-learn-more.md")
         )
 
         document = result.scalar_one()

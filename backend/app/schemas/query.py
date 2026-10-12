@@ -68,3 +68,10 @@ class QueryResponse(BaseModel):
     # it's visible per-request without needing server logs.
     follow_up_detected: bool = False
     history_turns_sent: int = 0
+    # Actual token usage reported by the Azure OpenAI response for this
+    # generation call (app.harness.prompts.call_llm) — not an estimate.
+    # None when no LLM call happened (guardrail block, fallback answer,
+    # conversational small talk) or the API didn't report usage.
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None

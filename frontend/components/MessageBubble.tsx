@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import type { ChatMessage } from "@/lib/types";
+import { renderFormattedText } from "@/lib/format-text";
 
 function CopyIcon() {
   return (
@@ -75,62 +76,6 @@ function BubbleActions({
   );
 }
 
-// Lightweight formatter (no markdown dependency): renders **bold** spans and
-// "- "/"• " bullet lines, since answers come back in that style.
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  return text
-    .split(/(\*\*[^*]+\*\*)/g)
-    .filter((part) => part.length > 0)
-    .map((part, i) =>
-      part.startsWith("**") && part.endsWith("**") ? (
-        <strong key={`${keyPrefix}-${i}`}>{part.slice(2, -2)}</strong>
-      ) : (
-        <span key={`${keyPrefix}-${i}`}>{part}</span>
-      )
-    );
-}
-
-function renderFormattedAnswer(content: string): ReactNode {
-  const blocks: ReactNode[] = [];
-  let currentList: string[] = [];
-
-  const flushList = (key: string) => {
-    if (currentList.length === 0) return;
-    blocks.push(
-      <ul key={key} className="list-disc space-y-1 pl-4">
-        {currentList.map((item, i) => (
-          <li key={i}>{renderInline(item, `${key}-li-${i}`)}</li>
-        ))}
-      </ul>
-    );
-    currentList = [];
-  };
-
-  content.split("\n").forEach((line, idx) => {
-    const trimmed = line.trim();
-    const bulletMatch = trimmed.match(/^[-•]\s+(.*)/);
-
-    if (bulletMatch) {
-      currentList.push(bulletMatch[1]);
-      return;
-    }
-
-    flushList(`list-${idx}`);
-
-    if (trimmed === "") return;
-
-    blocks.push(
-      <p key={`p-${idx}`} className="leading-relaxed">
-        {renderInline(trimmed, `p-${idx}`)}
-      </p>
-    );
-  });
-
-  flushList("list-end");
-
-  return <div className="space-y-2">{blocks}</div>;
-}
-
 export function MessageBubble({
   message,
   onDelete,
@@ -172,7 +117,7 @@ export function MessageBubble({
           ) : message.error ? (
             <span className="text-red-600">{message.error}</span>
           ) : (
-            renderFormattedAnswer(message.content)
+            renderFormattedText(message.content)
           )}
         </div>
 

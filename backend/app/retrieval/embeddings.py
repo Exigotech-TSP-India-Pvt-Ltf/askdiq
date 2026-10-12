@@ -1,5 +1,7 @@
 """Azure OpenAI text embedding wrapper."""
 
+from contextvars import ContextVar
+
 from openai import AzureOpenAI
 
 from app.core.config import get_settings
@@ -11,6 +13,12 @@ _embedding_client = AzureOpenAI(
     api_key=settings.azure_openai_api_key,
     azure_endpoint=settings.azure_openai_endpoint,
     api_version=settings.azure_openai_api_version,
+)
+
+
+# Per-request sink for query-embedding time, read by the latency middleware.
+embedding_timing_sink: ContextVar[list[float] | None] = ContextVar(
+    "embedding_timing_sink", default=None
 )
 
 

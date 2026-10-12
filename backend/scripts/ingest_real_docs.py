@@ -19,11 +19,11 @@ from sqlalchemy import delete, select, update
 # on sys.path[0], so `app` isn't importable without this.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.chunking.cleaning import strip_boilerplate_lines
 from app.chunking.factory import get_strategy
 from app.core.database import AsyncSessionLocal, engine
 from app.models.db_models import Chunk, Document
 from app.retrieval.embeddings import embed_texts_sync
-
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 SOURCE_DIR = BASE_DIR / "data" / "real_docs"
@@ -31,7 +31,7 @@ SOURCE_DIR = BASE_DIR / "data" / "real_docs"
 # Bump this whenever the chunker output format or the embedding model
 # changes. It is folded into every hash, so a bump forces a full re-embed.
 # Must match PIPELINE_VERSION in the alembic backfill migration.
-PIPELINE_VERSION = "v1"
+PIPELINE_VERSION = "v3"
 
 DOCUMENTS = [
     "about-us.md",
@@ -56,6 +56,7 @@ async def ingest_one(db, filename: str) -> tuple[str, dict]:
         raise FileNotFoundError(f"Missing source document: {path}")
 
     content = path.read_text(encoding="utf-8")
+    content = strip_boilerplate_lines(content)
     doc_hash = _sha256(content)
 
     existing = await db.scalar(select(Document).where(Document.source_name == filename))

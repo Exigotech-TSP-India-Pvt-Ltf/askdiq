@@ -16,6 +16,8 @@ off-topic / low-confidence gates in orchestrator.py well-calibrated.
 """
 
 import logging
+import time
+from contextvars import ContextVar
 from functools import lru_cache
 
 from app.core.config import get_settings
@@ -24,6 +26,12 @@ from app.models.db_models import Chunk
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+# Optional per-request sink: the evaluation harness sets a list here and each
+# rerank call appends its duration in ms (None outside evaluation).
+rerank_timing_sink: ContextVar[list[float] | None] = ContextVar(
+    "rerank_timing_sink", default=None
+)
 
 
 @lru_cache(maxsize=1)
@@ -70,7 +78,11 @@ def rerank(
     try:
         encoder = _get_encoder()
         documents = [chunk.content for chunk, _ in candidates]
+        started = time.perf_counter()
         raw_scores = list(encoder.rerank(query, documents))
+        sink = rerank_timing_sink.get()
+        if sink is not None:
+            sink.append((time.perf_counter() - started) * 1000)
     except Exception:
         logger.warning(
             "Reranker unavailable, falling back to cosine order", exc_info=True

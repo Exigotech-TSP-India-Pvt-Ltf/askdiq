@@ -13,6 +13,12 @@ from starlette.requests import Request
 
 from app.core.database import AsyncSessionLocal
 from app.models.db_models import LatencyRecord
+from app.retrieval.embeddings import embedding_timing_sink
+from app.retrieval.reranker import rerank_timing_sink
+
+
+# Process-local counters feeding the governance monitoring dashboard.
+METRICS = {"requests": 0, "errors": 0, "active_queries": 0}
 
 
 class LatencyMiddleware(BaseHTTPMiddleware):
@@ -20,8 +26,29 @@ class LatencyMiddleware(BaseHTTPMiddleware):
         request.state.request_id = str(uuid.uuid4())
         request.state.stage_timings = {}  # populated by downstream layers
 
+        rerank_sink: list[float] = []
+        rerank_timing_sink.set(rerank_sink)
+        embed_sink: list[float] = []
+        embedding_timing_sink.set(embed_sink)
         start = time.perf_counter()
-        response = await call_next(request)
+        is_query = request.url.path == "/query" and request.method == "POST"
+        METRICS["requests"] += 1
+        if is_query:
+            METRICS["active_queries"] += 1
+        try:
+            response = await call_next(request)
+        except Exception:
+            METRICS["errors"] += 1
+            raise
+        finally:
+            if is_query:
+                METRICS["active_queries"] -= 1
+        if embed_sink:
+            request.state.stage_timings["embedding"] = sum(embed_sink)
+        if rerank_sink:
+            request.state.stage_timings["reranker"] = sum(rerank_sink)
+        if response.status_code >= 500:
+            METRICS["errors"] += 1
         total_ms = (time.perf_counter() - start) * 1000
 
         response.headers["X-Request-ID"] = request.state.request_id
@@ -47,6 +74,7 @@ class LatencyMiddleware(BaseHTTPMiddleware):
                     guardrail_pre_ms=stages.get("guardrail_pre"),
                     llm_ms=stages.get("llm"),
                     guardrail_post_ms=stages.get("guardrail_post"),
+                    reranker_ms=stages.get("reranker"),
                 )
             )
             await session.commit()

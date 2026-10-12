@@ -19,6 +19,11 @@ class IngestResponse(BaseModel):
     document_id: str
     chunk_count: int
     strategy_used: str
+    status: str = "new"
+    chunks_added: int = 0
+    chunks_kept: int = 0
+    chunks_removed: int = 0
+    quality: dict | None = None
 
 
 class DocumentSummary(BaseModel):

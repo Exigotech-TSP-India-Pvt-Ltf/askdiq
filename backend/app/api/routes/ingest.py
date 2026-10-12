@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends
+﻿"""Document ingestion endpoint (incremental: only new/changed chunks are embedded)."""
+
+import time
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import asyncio
-
-from app.chunking.factory import get_strategy
 from app.core.database import get_db
+from app.evaluation.kb_eval import KBChunk, evaluate_kb
 from app.governance.auth import get_current_actor
 from app.governance.pii import redact_pii
-from app.models.db_models import Chunk, Document
-from app.retrieval.embeddings import embed_texts_sync
+from app.ingestion.service import ingest_text
 from app.schemas.document import IngestRequest, IngestResponse
 
 router = APIRouter()
@@ -22,42 +23,55 @@ async def ingest(
 ) -> IngestResponse:
     redacted_content, pii_found = redact_pii(body.content)
 
-    document = Document(
-        source_name=body.source_name,
-        source_type=body.source_type,
-        doc_metadata={**body.metadata, "pii_redacted": pii_found},
-    )
-    db.add(document)
-    await db.flush()  # get document.id before creating chunks
+    try:
+        result = await ingest_text(
+            db,
+            source_name=body.source_name,
+            source_type=body.source_type,
+            content=redacted_content,
+            chunking_strategy=body.chunking_strategy,
+            metadata={**body.metadata, "pii_redacted": pii_found},
+        )
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ingestion failed: {exc}") from exc
 
-    strategy = get_strategy(body.chunking_strategy, source_type=body.source_type)
-    chunk_results = strategy.chunk(redacted_content, source_metadata={"document_id": str(document.id)})
+    document = result["document"]
+    chunk_results = result["chunk_results"]
+    stored = result["added"] + result["kept"]
 
+    quality = None
     if chunk_results:
-        # Batch-embed all chunks in one local call (RETRIEVAL_DOCUMENT task type)
-        # rather than embedding one chunk at a time.
-        embeddings = await asyncio.to_thread(
-            embed_texts_sync, [cr.content for cr in chunk_results], "RETRIEVAL_DOCUMENT"
-        )
-    else:
-        embeddings = []
-
-    for cr, embedding in zip(chunk_results, embeddings):
-        db.add(
-            Chunk(
-                document_id=document.id,
-                content=cr.content,
-                embedding=embedding,
-                strategy=cr.metadata.get("strategy", body.chunking_strategy),
-                chunk_index=cr.chunk_index,
-                chunk_metadata=cr.metadata,
+        try:
+            kb_chunks = [
+                KBChunk(body.source_name, cr.chunk_index, cr.content, dict(cr.metadata))
+                for cr in chunk_results
+            ]
+            quality = evaluate_kb(
+                {body.source_name: redacted_content},
+                {body.source_name: kb_chunks},
+                expected_docs=[body.source_name],
+                timings_ms={body.source_name: result["chunk_ms"]},
             )
-        )
-
-    await db.commit()
+            quality["pii_redacted"] = pii_found
+        except Exception:
+            quality = None
+    if quality is not None:
+        quality["timings_ms"] = {
+            "chunking": round(result["chunk_ms"], 1),
+            "embedding": round(result["embed_ms"], 1),
+            "total": round((time.perf_counter() - result["started"]) * 1000, 1),
+        }
 
     return IngestResponse(
         document_id=str(document.id),
-        chunk_count=len(chunk_results),
-        strategy_used=chunk_results[0].metadata.get("strategy") if chunk_results else body.chunking_strategy,
+        chunk_count=stored,
+        strategy_used=(
+            chunk_results[0].metadata.get("strategy") if chunk_results else body.chunking_strategy
+        ),
+        status=result["status"],
+        chunks_added=result["added"],
+        chunks_kept=result["kept"],
+        chunks_removed=result["removed"],
+        quality=quality,
     )

@@ -9,6 +9,9 @@ Usage (from backend/, with the venv active and Postgres/pgvector up):
     python scripts/run_evaluation.py --ids zt_pillars e8_control_list
     python scripts/run_evaluation.py --json report.json
     python scripts/run_evaluation.py --min-pass-rate 0.85   # exit 1 below threshold (for CI)
+    python scripts/run_evaluation.py --kb                  # + knowledge-base / ingestion evaluation
+    python scripts/run_evaluation.py --kb-only --kb-db     # ingestion checks only, incl. stored DB state
+    python scripts/run_evaluation.py --repeat 3 --concurrency 4 --price-in 0.25 --price-out 2.0
 """
 
 import argparse
@@ -24,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import configure_logging
 from app.core.database import AsyncSessionLocal, engine
-from app.evaluation.dataset import EVAL_CASES
+from app.evaluation.dataset import ALL_DOCS, EVAL_CASES
 from app.evaluation.evaluator import STAGES, EvalResult, run_evaluation
 from app.retrieval.vector_store import VectorStore
 
@@ -175,6 +178,85 @@ def _print_report(report, show_all: bool) -> None:
     print("=" * 88)
 
 
+def _fmt(value) -> str:
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    return str(value)
+
+
+def _print_section(title: str, data) -> None:
+    """Print a nested dict of metrics, skipping empty/None leaves."""
+
+    def walk(node, indent):
+        for key, val in node.items():
+            if isinstance(val, dict):
+                if val:
+                    print(f"{' ' * indent}{key}:")
+                    walk(val, indent + 2)
+            elif val not in (None, [], ()):
+                print(f"{' ' * indent}{key}: {_fmt(val)}")
+
+    print(f"\n[{title}]")
+    walk(data, 2)
+
+
+def _print_extended(s: dict) -> None:
+    print("\n" + "=" * 88)
+    print("KNOWLEDGE-BASE RAG EVALUATION (retrieval / answer / citation / safety / robustness / ops)")
+    print("=" * 88)
+    r = s["retrieval"]
+    if r:
+        keys = ("hit_rate@k", "context_coverage", "noise_ratio")
+        _print_section("retrieval (extra)", {k: r[k] for k in keys if k in r})
+    _print_section("noise sensitivity", s["noise_sensitivity"])
+    _print_section("answer quality (judge)", s["deep_judge"])
+    _print_section("citation & attribution", s["citation"])
+    _print_section("abstention", s["abstention"])
+    _print_section("safety / privacy / security", s["safety"])
+    _print_section("robustness", s["robustness"])
+    _print_section("operational", s["operational"])
+
+
+async def _run_kb(args: argparse.Namespace) -> dict:
+    from datetime import datetime
+
+    from app.chunking.metadata_aware import MetadataAwareChunker
+    from app.chunking.structure_aware import StructureAwareChunker
+    from app.evaluation import kb_eval
+
+    source_dir = Path(__file__).resolve().parent.parent / "data" / "real_docs"
+    corpus = kb_eval.load_corpus(source_dir)
+    chunks, timings = kb_eval.chunk_corpus(
+        corpus, lambda: MetadataAwareChunker(base_strategy=StructureAwareChunker())
+    )
+    mtimes = {n: datetime.utcfromtimestamp((source_dir / n).stat().st_mtime) for n in corpus}
+    result = kb_eval.evaluate_kb(
+        corpus, chunks, ALL_DOCS, mtimes=mtimes, timings_ms=timings
+    )
+    if args.kb_db:
+        from ingest_real_docs import _sha256
+
+        async with AsyncSessionLocal() as db:
+            result["ingested"] = await kb_eval.evaluate_ingested(db, corpus, mtimes, _sha256)
+
+    print("\n" + "=" * 88)
+    print("KNOWLEDGE BASE & INGESTION EVALUATION")
+    print("=" * 88)
+    summary = {k: v for k, v in result["summary"].items() if k != "duplicates"}
+    summary["duplicates"] = {
+        "exact": len(result["summary"]["duplicates"]["exact"]),
+        "near": len(result["summary"]["duplicates"]["near"]),
+    }
+    summary["metadata_problems"] = len(summary["metadata_problems"])
+    _print_section("summary", summary)
+    if "ingested" in result:
+        _print_section("stored in database", result["ingested"])
+    print("\nfindings:")
+    for finding in result["findings"] or ["none"]:
+        print(f"  - {finding}")
+    return result
+
+
 def _to_json(report) -> dict:
     # Top-level keys (pass_rate, retrieval_recall, groundedness_accuracy,
     # latency, ...) match the original report; new metrics sit alongside them.
@@ -196,8 +278,16 @@ def _select_cases(ids: list[str] | None, types: list[str] | None):
 
 
 async def main(args: argparse.Namespace) -> int:
+    kb_result = await _run_kb(args) if (args.kb or args.kb_only) else None
+    if args.kb_only:
+        if args.json_path:
+            with open(args.json_path, "w", encoding="utf-8") as f:
+                json.dump({"kb": kb_result}, f, indent=2, default=str)
+        await engine.dispose()
+        return 0
+
     cases = _select_cases(args.ids, args.types)
-    total = len(cases)
+    total = len(cases) * max(1, args.repeat)
     counter = {"i": 0}
 
     def on_result(result: EvalResult) -> None:
@@ -215,13 +305,22 @@ async def main(args: argparse.Namespace) -> int:
             use_judge=args.judge,
             judge_min_faithfulness=args.judge_min_faithfulness,
             on_result=on_result,
+            repeat=args.repeat,
+            concurrency=args.concurrency,
+            price_in_per_1m=args.price_in,
+            price_out_per_1m=args.price_out,
+            session_factory=AsyncSessionLocal,
         )
 
     _print_report(report, show_all=args.verbose)
+    _print_extended(report.summary())
 
     if args.json_path:
         with open(args.json_path, "w", encoding="utf-8") as f:
-            json.dump(_to_json(report), f, indent=2)
+            json.dump(
+                {**_to_json(report), **({"kb": kb_result} if kb_result else {})},
+                f, indent=2, default=str,
+            )
         print(f"\nWrote JSON report to {args.json_path}")
 
     await engine.dispose()
@@ -244,6 +343,13 @@ if __name__ == "__main__":
     parser.add_argument("--ids", nargs="+", help="run only these case ids")
     parser.add_argument("--types", nargs="+", help="run only these case types")
     parser.add_argument("--min-pass-rate", type=float, default=None, help="exit 1 if pass rate (0-1) is below this")
+    parser.add_argument("--repeat", type=int, default=1, help="run each case N times (repeated-question consistency)")
+    parser.add_argument("--concurrency", type=int, default=1, help="cases in flight at once (throughput/concurrency)")
+    parser.add_argument("--price-in", type=float, default=0.0, help="USD per 1M input tokens (cost metrics)")
+    parser.add_argument("--price-out", type=float, default=0.0, help="USD per 1M output tokens (cost metrics)")
+    parser.add_argument("--kb", action="store_true", help="also run the knowledge-base / ingestion evaluation")
+    parser.add_argument("--kb-only", action="store_true", help="run only the knowledge-base evaluation (no LLM calls)")
+    parser.add_argument("--kb-db", action="store_true", help="with --kb: also compare stored DB documents to source files")
     parser.add_argument("--verbose", action="store_true", help="print detail for passing cases too")
     parsed = parser.parse_args()
 

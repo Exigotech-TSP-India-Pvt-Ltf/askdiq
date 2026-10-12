@@ -1,4 +1,4 @@
-"""RAG evaluation harness: dataset of test queries with expected outcomes.
+﻿"""RAG evaluation harness: dataset of test queries with expected outcomes.
 
 The first 13 cases are the original baseline, unchanged, so pass-rate numbers
 stay comparable with earlier runs. The rest widen coverage:
@@ -41,6 +41,8 @@ CaseType = Literal[
     "followup",
     "conversational",
     "robustness",
+    "abstention",
+    "safety",
 ]
 
 
@@ -62,6 +64,17 @@ class EvalCase:
     forbidden_keywords: list[str] = field(default_factory=list)
     expect_follow_up_detected: bool | None = None
     known_issue: str | None = None
+    # --- RAG-evaluation extensions ---------------------------------------
+    # Abstention: the system must decline / say it cannot answer.
+    expect_abstain: bool = False
+    abstain_category: str | None = None
+    # Safety: documents that must never be retrieved for this asker; and
+    # whether the answer must stay free of PII / secrets.
+    forbidden_docs: list[str] = field(default_factory=list)
+    check_leakage: bool = False
+    # Robustness: id of the clean case this one perturbs, and how.
+    variant_of: str | None = None
+    perturbation: str | None = None
 
 
 # Source documents in the corpus (kept here so the dataset test can catch typos).
@@ -201,7 +214,7 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         query="What are the eight controls in the Essential Eight?",
         case_type="answerable",
         expected_docs=[E8_LEARN],
-        expected_keywords=["application control", "backup", "multi-factor|mfa|multifactor"],
+        expected_keywords=["application control", "backup", "multi‑factor|multi-factor|mfa"],
     ),
     EvalCase(
         id="e8_delivery_speed",
@@ -365,7 +378,7 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         query="What kinds of organisations is the Essential Eight service for?",
         case_type="answerable",
         expected_docs=[E8_LEARN],
-        expected_keywords=["any size|small|enterprise"],
+        expected_keywords=["maturity|auditable|implementing"],
     ),
 ]
 
@@ -627,7 +640,7 @@ _FOLLOWUP_CASES: list[EvalCase] = [
             ("user", "What is Zero Trust?"),
             (
                 "assistant",
-                "Zero Trust is a security model that removes implicit trust, "
+                "Zero Trust is a security model that removes implicit trust, "  # noqa: ISC004
                 "continuously verifying every access request by identity, "
                 "device, context, and risk.",
             ),
@@ -657,7 +670,7 @@ _FOLLOWUP_CASES: list[EvalCase] = [
             ("user", "What is the Essential Eight?"),
             (
                 "assistant",
-                "The ACSC Essential Eight is a set of eight mitigation "
+                "The ACSC Essential Eight is a set of eight mitigation "  # noqa: ISC004
                 "strategies that reduce the likelihood of cyber compromise.",
             ),
         ],
@@ -674,7 +687,7 @@ _FOLLOWUP_CASES: list[EvalCase] = [
             ("user", "What are the pillars of Zero Trust?"),
             (
                 "assistant",
-                "The pillars are identity, devices, applications, data, "
+                "The pillars are identity, devices, applications, data, "  # noqa: ISC004
                 "infrastructure, network, and visibility and analytics.",
             ),
         ],
@@ -691,8 +704,8 @@ _FOLLOWUP_CASES: list[EvalCase] = [
             ("user", "How does DeployIQ use AI responsibly?"),
             (
                 "assistant",
-                "DeployIQ applies AI deliberately, securely, and with "
-                "explicit human accountability.",
+                ("DeployIQ applies AI deliberately, securely, and with "
+                "explicit human accountability."),
             ),
         ],
         expected_docs=[RAI],
@@ -701,6 +714,8 @@ _FOLLOWUP_CASES: list[EvalCase] = [
     ),
 ]
 
+
+from app.evaluation.dataset_extra import build_extra_cases
 
 EVAL_CASES: list[EvalCase] = [
     *_ORIGINAL_CASES,
@@ -711,4 +726,5 @@ EVAL_CASES: list[EvalCase] = [
     *_GUARDRAIL_CASES,
     *_CONVERSATIONAL_CASES,
     *_FOLLOWUP_CASES,
+    *build_extra_cases(EvalCase),
 ]

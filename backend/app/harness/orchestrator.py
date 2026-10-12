@@ -230,10 +230,11 @@ async def run_query(
     confidence = 0.0
     post_flags: list[str] = []
     guardrail_post_ms = 0.0
+    usage: dict[str, int] | None = None
 
     for attempt in range(settings.max_llm_retries + 1):
         try:
-            answer = await asyncio.to_thread(
+            answer, usage = await asyncio.to_thread(
                 call_llm,
                 query,
                 [source.content for source in sources],
@@ -336,4 +337,7 @@ async def run_query(
         guardrail_flags=post_flags,
         follow_up_detected=follow_up_detected,
         history_turns_sent=history_turns_sent,
+        prompt_tokens=(usage or {}).get("prompt_tokens"),
+        completion_tokens=(usage or {}).get("completion_tokens"),
+        total_tokens=(usage or {}).get("total_tokens"),
     )
