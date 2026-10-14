@@ -54,6 +54,9 @@ def invalidate_audience_cache() -> None:
         "user_ips": set(),
         "as_of": None,
     }
+    from app.governance.test_ips import invalidate_test_ips_cache
+
+    invalidate_test_ips_cache()
     try:
         from app.api.routes.admin_usage import clear_usage_caches
 
