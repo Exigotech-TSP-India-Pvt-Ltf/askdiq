@@ -52,6 +52,7 @@ export interface ChatMessageOut {
   created_at: string;
   grounded?: boolean | null;
   guardrail_flags?: string[] | null;
+  feedback_rating?: number | null;
 }
 
 export interface ChatSessionDetail extends ChatSessionSummary {
@@ -67,6 +68,198 @@ export interface ChatMessage {
   response?: QueryResponse;
   pending?: boolean;
   error?: string;
+  feedbackRating?: number | null;
+}
+
+export interface StageTokenBreakdown {
+  query_embed: number;
+  prompt: number;
+  reasoning: number;
+  visible: number;
+  guardrail_embed: number;
+  total_billed: number;
+}
+
+export interface StageCostBreakdown {
+  query_embed: number;
+  prompt: number;
+  reasoning: number;
+  visible: number;
+  guardrail_embed: number;
+  total_usd: number;
+}
+
+export interface FeedbackSubmission {
+  message_id: string;
+  rating: number; // 1-5
+  comment?: string | null;
+  conversation_id: string;
+}
+
+export interface IngestResult {
+  source_name: string;
+  original_filename?: string;
+  converted_from?: string;
+  status: "new" | "updated" | "unchanged" | "repaired" | "forced";
+  content_hash: string;
+  previous_content_hash?: string | null;
+  chunks_added: number;
+  chunks_kept: number;
+  chunks_removed: number;
+  embedding_tokens: number;
+  embedding_cost_usd: number;
+  warnings: string[];
+  quarantined: boolean;
+  images_dropped?: number;
+}
+
+export type Audience = "overview" | "users" | "testing";
+
+export interface PageEnvelope<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+  stats?: Record<string, any>;
+}
+
+export interface AudienceCounts {
+  overview: { queries: number; sessions: number; ips: number };
+  users: { queries: number; sessions: number; ips: number };
+  testing: { queries: number; sessions: number; ips: number };
+}
+
+export interface UsageSummary {
+  audience: Audience;
+  as_of: string;
+  financial: {
+    total_cost_usd: number;
+    llm_cost_usd: number;
+    embeddings_cost_usd: number;
+    avg_cost_per_query_usd: number;
+    stage_costs: {
+      query_embed_cost: number;
+      guardrail_embed_cost: number;
+      prompt_uncached_cost: number;
+      cached_prompt_cost: number;
+      cached_savings_usd: number;
+      reasoning_cost: number;
+      visible_cost: number;
+      ingestion_overhead_cost: number;
+    };
+  };
+  tokens: {
+    total_billed_tokens: number;
+    llm_tokens: {
+      prompt_context_tokens: number;
+      cached_prompt_tokens: number;
+      reasoning_tokens: number;
+      visible_output_tokens: number;
+      total_llm_tokens: number;
+    };
+    embeddings_tokens: {
+      query_embed_tokens: number;
+      guardrail_embed_tokens: number;
+      ingestion_embed_tokens: number;
+      total_embeddings_tokens: number;
+    };
+  };
+  pricing: {
+    price_embed_per_million: number;
+    price_prompt_per_million: number;
+    price_output_per_million: number;
+    price_cached_per_million: number;
+  };
+  accounting: {
+    total_turns: number;
+    actual_turns: number;
+    estimated_turns: number;
+    actual_pct: number;
+  };
+  quality: {
+    total_queries: number;
+    outcomes: Record<string, number>;
+    groundedness_pass_rate: number;
+    avg_billed_tokens_per_turn: number;
+    latency: {
+      avg_ms: number;
+      p50_ms: number;
+      p95_ms: number;
+    };
+  };
+}
+
+export interface UsageUserRow {
+  ip_address: string;
+  is_test: boolean;
+  type: string;
+  sessions: number;
+  queries: number;
+  embed_tokens: number;
+  prompt_tokens: number;
+  reasoning_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+
+export interface UsageSessionRow {
+  id: string;
+  title: string;
+  ip_address: string;
+  queries: number;
+  embed_tokens: number;
+  prompt_tokens: number;
+  reasoning_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  last_active: string | null;
+}
+
+export interface UsageQueryRow {
+  request_id: string;
+  created_at: string | null;
+  query: string;
+  answer: string;
+  ip_address: string;
+  session_id: string;
+  session_title: string;
+  prompt_tokens: number;
+  reasoning_tokens: number;
+  output_tokens: number;
+  embed_tokens: number;
+  cost_usd: number;
+  outcome: string;
+  grounded: boolean | null;
+  latency_ms: number | null;
+}
+
+export interface QueryInspectorDetail {
+  request_id: string;
+  timestamp: string | null;
+  outcome: string;
+  grounded: boolean | null;
+  cost_usd: number;
+  pricing_rate_card: Record<string, number>;
+  session: { id: string; title: string; ip: string };
+  user_query: string;
+  assistant_answer: string;
+  latency: {
+    total_ms: number | null;
+    retrieval_ms: number | null;
+    llm_generation_ms: number | null;
+    guardrails_ms: number | null;
+  };
+  tokens: {
+    prompt: number;
+    cached_prompt: number;
+    reasoning: number;
+    query_embedding?: number;
+    query_embed?: number;
+    total_billed: number;
+  };
+  accounting: { is_actual: boolean };
 }
 
 export interface DocumentSummary {
@@ -75,6 +268,16 @@ export interface DocumentSummary {
   source_type: string;
   chunk_count: number;
   created_at: string;
+  updated_at?: string;
+  original_format?: string;
+  active_format?: "MARKDOWN" | string;
+  converted_from?: "docx" | "md" | null;
+  original_filename?: string;
+  content_hash?: string;
+  original_sha256?: string;
+  ingest_count?: number;
+  warnings?: string[];
+  quarantined?: boolean;
 }
 
 export interface LatencyPercentiles {

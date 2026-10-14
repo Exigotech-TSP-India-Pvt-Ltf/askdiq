@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/lib/types";
 import { renderFormattedText } from "@/lib/format-text";
+import { useChat } from "@/lib/chat-context";
 
 function CopyIcon() {
   return (
@@ -30,65 +31,156 @@ function TrashIcon() {
   );
 }
 
-function BubbleActions({
-  onCopy,
-  onDelete,
-  tone,
-}: {
-  onCopy: () => void;
-  onDelete?: () => void;
-  tone: "light" | "dark";
-}) {
-  const [copied, setCopied] = useState(false);
-  const iconClass =
-    tone === "dark"
-      ? "text-white/60 hover:text-white"
-      : "text-ink/35 hover:text-ink/70";
-
+function ThumbsUpIcon({ filled }: { filled?: boolean }) {
   return (
-    <div className="mt-1 flex items-center justify-end gap-2">
-      <button
-        type="button"
-        onClick={() => {
-          onCopy();
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-        className={`inline-flex items-center gap-1 text-[11px] transition ${iconClass}`}
-        aria-label="Copy message"
-      >
-        {copied ? <CheckIcon /> : <CopyIcon />}
-        {copied ? "Copied" : "Copy"}
-      </button>
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M7 10v12" />
+      <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z" />
+    </svg>
+  );
+}
 
-      {onDelete && (
-        <button
-          type="button"
-          onClick={onDelete}
-          className={`inline-flex items-center gap-1 text-[11px] transition ${iconClass}`}
-          aria-label="Delete this exchange"
-        >
-          <TrashIcon />
-          Delete
-        </button>
-      )}
-    </div>
+function ThumbsDownIcon({ filled }: { filled?: boolean }) {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M17 14V2" />
+      <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z" />
+    </svg>
+  );
+}
+
+function MessageSquareIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
   );
 }
 
 export function MessageBubble({
   message,
   onDelete,
+  onFeedback,
 }: {
   message: ChatMessage;
   onDelete?: () => void;
+  onFeedback?: (messageId: string, rating: number, comment?: string) => Promise<void>;
 }) {
   const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
+  const [activeRating, setActiveRating] = useState<number | null>(
+    message.feedbackRating ?? null
+  );
+  const [commentOpen, setCommentOpen] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [savingFeedback, setSavingFeedback] = useState(false);
 
-  const copy = () => {
-    navigator.clipboard?.writeText(message.content).catch(() => {
-      // Clipboard API unavailable/blocked — nothing else we can do here.
-    });
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  // Sync rehydrated rating from server message
+  useEffect(() => {
+    if (message.feedbackRating !== undefined && message.feedbackRating !== null) {
+      setActiveRating(message.feedbackRating);
+    }
+  }, [message.feedbackRating]);
+
+  // Handle focus when comment popover opens
+  useEffect(() => {
+    if (commentOpen) {
+      textareaRef.current?.focus();
+    }
+  }, [commentOpen]);
+
+  // Handle escape key closing comment popover
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && commentOpen) {
+        setCommentOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [commentOpen]);
+
+  // Obtain feedback submission handler
+  let chatFeedback: ((messageId: string, rating: number, comment?: string) => Promise<void>) | undefined;
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const chat = useChat();
+    chatFeedback = chat?.submitFeedback;
+  } catch {
+    // Context unavailable (e.g. isolated component test)
+  }
+
+  const submitFn = onFeedback || chatFeedback;
+
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(message.content).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const handleRatingClick = async (ratingVal: number) => {
+    if (savingFeedback) return;
+    const prevRating = activeRating;
+    setActiveRating(ratingVal);
+    setFeedbackError(null);
+
+    if (submitFn) {
+      setSavingFeedback(true);
+      try {
+        await submitFn(message.id, ratingVal, commentText || undefined);
+        // Prompt optional comment if not provided
+        if (!commentText) {
+          setCommentOpen(true);
+        }
+      } catch (err: any) {
+        setActiveRating(prevRating);
+        setFeedbackError(err?.message || "Failed to submit rating. Please try again.");
+      } finally {
+        setSavingFeedback(false);
+      }
+    }
+  };
+
+  const handleCommentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRating || savingFeedback) return;
+
+    if (submitFn) {
+      setSavingFeedback(true);
+      setFeedbackError(null);
+      try {
+        await submitFn(message.id, activeRating, commentText.trim());
+        setCommentOpen(false);
+      } catch (err: any) {
+        setFeedbackError(err?.message || "Failed to save comment.");
+      } finally {
+        setSavingFeedback(false);
+      }
+    } else {
+      setCommentOpen(false);
+    }
   };
 
   if (isUser) {
@@ -98,7 +190,28 @@ export function MessageBubble({
           <div className="rounded-2xl rounded-tr-sm bg-brand-600 px-4 py-2.5 text-sm text-white">
             {message.content}
           </div>
-          <BubbleActions onCopy={copy} onDelete={onDelete} tone="light" />
+          <div className="mt-1 flex items-center justify-end gap-2 text-ink/35">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1 text-[11px] transition hover:text-ink/70"
+              aria-label="Copy message"
+            >
+              {copied ? <CheckIcon /> : <CopyIcon />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+            {onDelete && (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="inline-flex items-center gap-1 text-[11px] transition hover:text-ink/70"
+                aria-label="Delete this exchange"
+              >
+                <TrashIcon />
+                Delete
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -106,10 +219,10 @@ export function MessageBubble({
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[80%] space-y-2.5">
+      <div className="relative max-w-[80%] space-y-2">
         <div className="rounded-2xl rounded-tl-sm border border-ink/10 bg-ink/[0.02] px-4 py-3 text-sm text-ink">
           {message.pending ? (
-            <span className="inline-flex items-center gap-1.5 text-ink/50">
+            <span className="inline-flex items-center gap-1.5 text-ink/50" role="status" aria-label="Thinking">
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink/30 [animation-delay:-0.3s]" />
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink/30 [animation-delay:-0.15s]" />
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink/30" />
@@ -122,10 +235,132 @@ export function MessageBubble({
         </div>
 
         {!message.pending && !message.error && (
-          <BubbleActions onCopy={copy} onDelete={onDelete} tone="dark" />
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+            {/* Feedback: Thumbs Up */}
+            <button
+              type="button"
+              onClick={() => handleRatingClick(5)}
+              aria-label="Helpful response"
+              aria-pressed={activeRating === 5}
+              disabled={savingFeedback}
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition focus:outline-none focus:ring-1 focus:ring-brand-500 ${
+                activeRating === 5
+                  ? "bg-emerald-50 font-medium text-emerald-700 ring-1 ring-emerald-300"
+                  : "text-ink/40 hover:text-ink/80"
+              }`}
+            >
+              <ThumbsUpIcon filled={activeRating === 5} />
+              <span>Helpful</span>
+            </button>
+
+            {/* Feedback: Thumbs Down */}
+            <button
+              type="button"
+              onClick={() => handleRatingClick(1)}
+              aria-label="Unhelpful response"
+              aria-pressed={activeRating === 1}
+              disabled={savingFeedback}
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition focus:outline-none focus:ring-1 focus:ring-brand-500 ${
+                activeRating === 1
+                  ? "bg-rose-50 font-medium text-rose-700 ring-1 ring-rose-300"
+                  : "text-ink/40 hover:text-ink/80"
+              }`}
+            >
+              <ThumbsDownIcon filled={activeRating === 1} />
+              <span>Unhelpful</span>
+            </button>
+
+            {/* Add Note trigger if rating has been selected */}
+            {activeRating !== null && (
+              <button
+                type="button"
+                onClick={() => setCommentOpen(!commentOpen)}
+                aria-label="Add feedback note"
+                aria-expanded={commentOpen}
+                className="inline-flex items-center gap-1 text-ink/40 transition hover:text-ink/80 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <MessageSquareIcon />
+                <span>{commentText ? "Edit note" : "Add note"}</span>
+              </button>
+            )}
+
+            <div className="ml-auto flex items-center gap-2 text-ink/35">
+              {/* Copy */}
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="inline-flex items-center gap-1 transition hover:text-ink/70 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                aria-label="Copy message"
+              >
+                {copied ? <CheckIcon /> : <CopyIcon />}
+                <span>{copied ? "Copied" : "Copy"}</span>
+              </button>
+
+              {/* Delete */}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  className="inline-flex items-center gap-1 transition hover:text-ink/70 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  aria-label="Delete this exchange"
+                >
+                  <TrashIcon />
+                  <span>Delete</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Feedback Error Notice */}
+        {feedbackError && (
+          <p className="text-[11px] text-rose-600" role="alert">
+            {feedbackError}
+          </p>
+        )}
+
+        {/* Comment Popover / Expansion */}
+        {commentOpen && (
+          <div
+            ref={popoverRef}
+            role="dialog"
+            aria-label="Feedback comment dialog"
+            className="mt-2 w-full rounded-xl border border-ink/10 bg-white p-3 shadow-md"
+          >
+            <form onSubmit={handleCommentSubmit} className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-ink/60">
+                <span>Why was this answer {activeRating === 5 ? "helpful" : "unhelpful"}?</span>
+                <span className="text-[10px] text-ink/40">{commentText.length}/1000</span>
+              </div>
+              <textarea
+                ref={textareaRef}
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value.slice(0, 1000))}
+                rows={2}
+                maxLength={1000}
+                placeholder="Optional: Tell us what went well or what could be improved. Do not include personal information."
+                className="w-full resize-none rounded-lg border border-ink/15 bg-ink/[0.01] p-2 text-xs text-ink placeholder-ink/35 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCommentOpen(false)}
+                  className="rounded px-2.5 py-1 text-xs text-ink/60 hover:text-ink"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingFeedback}
+                  className="rounded bg-brand-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-brand-700 disabled:opacity-50"
+                >
+                  {savingFeedback ? "Saving…" : "Save note"}
+                </button>
+              </div>
+            </form>
+          </div>
         )}
       </div>
     </div>
   );
 }
-

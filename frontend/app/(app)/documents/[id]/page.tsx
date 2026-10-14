@@ -7,6 +7,7 @@ import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { renderFormattedText } from "@/lib/format-text";
 import type { DocumentSummary } from "@/lib/types";
+import { FormatBadge } from "@/components/documents/FormatBadge";
 import { FileText, Hash, Layers, ArrowLeft, ChevronDown } from "lucide-react";
 
 type DocChunk = Awaited<ReturnType<typeof api.documentChunks>>[number];
@@ -118,9 +119,11 @@ export default function DocumentChunksPage() {
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {doc && (
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${sourceTypeBadge(doc.source_type)}`}>
-                  {doc.source_type}
-                </span>
+                <FormatBadge
+                  convertedFrom={doc.converted_from}
+                  originalFilename={doc.original_filename}
+                  originalSha256={doc.original_sha256}
+                />
               )}
               <span className="inline-flex items-center gap-1 text-xs text-ink/50">
                 <Layers className="h-3.5 w-3.5" />
