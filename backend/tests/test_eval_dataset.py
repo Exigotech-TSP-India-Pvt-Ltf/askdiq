@@ -61,6 +61,7 @@ def test_dataset_is_bigger_than_the_original_baseline():
         "zero_trust",
     ]
 
+
 def test_variants_point_at_existing_cases_and_abstentions_are_ungrounded():
     ids = {c.id for c in EVAL_CASES}
     for case in EVAL_CASES:
@@ -73,8 +74,22 @@ def test_variants_point_at_existing_cases_and_abstentions_are_ungrounded():
 
 def test_extended_categories_are_covered():
     cats = {c.abstain_category for c in EVAL_CASES if c.expect_abstain}
-    assert {"not_in_corpus", "partially_answerable", "ambiguous", "contradictory_documents",
-            "out_of_scope", "real_time", "no_permission"} <= cats
+    assert {
+        "not_in_corpus",
+        "partially_answerable",
+        "ambiguous",
+        "contradictory_documents",
+        "out_of_scope",
+        "real_time",
+        "no_permission",
+    } <= cats
     perts = {c.perturbation for c in EVAL_CASES if c.perturbation}
-    assert {"typo", "short_vague", "very_long", "acronym", "synonym",
-            "repeated_question", "long_conversation_history"} <= perts
+    assert {
+        "typo",
+        "short_vague",
+        "very_long",
+        "acronym",
+        "synonym",
+        "repeated_question",
+        "long_conversation_history",
+    } <= perts

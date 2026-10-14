@@ -8,6 +8,8 @@ import type { DocumentSummary, IngestResult } from "@/lib/types";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { TableCard } from "@/components/admin/TableCard";
 import { FormatBadge } from "@/components/documents/FormatBadge";
 import {
   AlertTriangle,
@@ -34,7 +36,6 @@ export default function DocumentsPage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"overview" | "details">("details");
 
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -309,290 +310,267 @@ export default function DocumentsPage() {
   ];
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6 space-y-6">
-      {/* Header */}
-      <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-slate-200 pb-5">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">
-            Knowledge Base Documents
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Standardized markdown knowledge documents, ingestion provenance, and vector chunk mappings.
-          </p>
-        </div>
-
-        <label
-          className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium text-white shadow-brand-glow transition ${
-            uploading
-              ? "cursor-not-allowed bg-brand-indigo/60"
-              : "cursor-pointer bg-brand-gradient hover:opacity-90"
-          }`}
-        >
-          {uploading ? (
-            <RefreshCw className="h-4 w-4 animate-spin" />
-          ) : (
-            <Upload className="h-4 w-4" />
-          )}
-          <span>{uploading ? "Standardizing & Ingesting…" : "Upload Document"}</span>
-          <input
-            type="file"
-            accept=".md,.docx"
-            className="hidden"
-            disabled={uploading}
-            onChange={handleFileSelect}
-          />
-        </label>
-      </header>
-
-      {/* Upload Error Banner */}
-      {uploadError && (
-        <div className="flex items-center justify-between rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-xs text-rose-700">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-            <span>{uploadError}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setUploadError(null)}
-            className="text-rose-500 hover:text-rose-700"
-            aria-label="Dismiss"
+    <div className="flex flex-col min-h-screen bg-slate-50/50">
+      {/* Standard Top Bar Line */}
+      <DashboardHeader
+        title="Knowledge Base Documents"
+        subtitle="Standardized markdown knowledge documents, ingestion provenance, and vector chunk mappings"
+        icon={FileText}
+        showAudienceTabs={false}
+        actions={
+          <label
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold text-white shadow-brand-glow transition ${
+              uploading
+                ? "cursor-not-allowed bg-brand-indigo/60"
+                : "cursor-pointer bg-brand-gradient hover:opacity-90"
+            }`}
           >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
+            {uploading ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            <span>{uploading ? "Standardizing & Ingesting…" : "Upload Document"}</span>
+            <input
+              type="file"
+              accept=".md,.docx"
+              className="hidden"
+              disabled={uploading}
+              onChange={handleFileSelect}
+            />
+          </label>
+        }
+      />
 
-      {/* Result Status Banner */}
-      {result && (
-        <div
-          className={`rounded-xl border p-4 text-xs ${
-            result.status === "unchanged"
-              ? "border-slate-200 bg-slate-50 text-slate-800"
-              : result.quarantined
-              ? "border-amber-200 bg-amber-50 text-amber-900"
-              : "border-emerald-200 bg-emerald-50/70 text-emerald-900"
-          }`}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              {result.status === "unchanged" ? (
-                <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
-              ) : result.quarantined ? (
-                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-              ) : (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-              )}
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-slate-900">{result.source_name}</span>
-                  {result.original_filename && result.original_filename !== result.source_name && (
-                    <span className="text-[11px] text-slate-500">
-                      (standardized from {result.original_filename})
-                    </span>
-                  )}
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                      result.status === "new"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : result.status === "updated"
-                        ? "bg-blue-100 text-blue-800"
-                        : result.status === "unchanged"
-                        ? "bg-slate-200 text-slate-700"
-                        : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
-                    {result.status}
-                  </span>
-                </div>
-                <p className="text-slate-600">
-                  {result.chunks_added} chunks added, {result.chunks_kept} kept unchanged,{" "}
-                  {result.chunks_removed} removed. Embeddings cost: ${result.embedding_cost_usd.toFixed(4)}.
-                </p>
-              </div>
+      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
+        {/* Upload Error Banner */}
+        {uploadError && (
+          <div className="flex items-center justify-between rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-xs text-rose-700">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+              <span>{uploadError}</span>
             </div>
             <button
               type="button"
-              onClick={() => setResult(null)}
-              className="text-slate-400 hover:text-slate-600"
-              aria-label="Dismiss result"
+              onClick={() => setUploadError(null)}
+              className="text-rose-500 hover:text-rose-700"
+              aria-label="Dismiss"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Confirmation Modal */}
-      {pendingPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
-            <h3 className="text-sm font-bold text-slate-900">Confirm Document Re-ingest</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              Re-ingesting <strong>{pendingPreview.preview.source_name}</strong> will update changed
-              chunks and reuse unchanged embeddings.
-            </p>
-            <div className="my-4 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs space-y-1.5">
-              <div className="flex justify-between">
-                <span className="text-slate-500">New chunks:</span>
-                <span className="font-semibold text-emerald-600">
-                  +{pendingPreview.preview.chunks_added}
-                </span>
+        {/* Result Status Banner */}
+        {result && (
+          <div
+            className={`rounded-xl border p-4 text-xs ${
+              result.status === "unchanged"
+                ? "border-slate-200 bg-slate-50 text-slate-800"
+                : result.quarantined
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-emerald-200 bg-emerald-50/70 text-emerald-900"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                {result.status === "unchanged" ? (
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
+                ) : result.quarantined ? (
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                ) : (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                )}
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-900">{result.source_name}</span>
+                    {result.original_filename && result.original_filename !== result.source_name && (
+                      <span className="text-[11px] text-slate-500">
+                        (standardized from {result.original_filename})
+                      </span>
+                    )}
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        result.status === "new"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : result.status === "updated"
+                          ? "bg-blue-100 text-blue-800"
+                          : result.status === "unchanged"
+                          ? "bg-slate-200 text-slate-700"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {result.status}
+                    </span>
+                  </div>
+                  <p className="text-slate-600">
+                    {result.chunks_added} chunks added, {result.chunks_kept} kept unchanged,{" "}
+                    {result.chunks_removed} removed. Embeddings cost: ${result.embedding_cost_usd.toFixed(4)}.
+                  </p>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Unchanged:</span>
-                <span className="font-semibold text-slate-700">
-                  {pendingPreview.preview.chunks_kept}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Removed:</span>
-                <span className="font-semibold text-rose-600">
-                  -{pendingPreview.preview.chunks_removed}
-                </span>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setPendingPreview(null)}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                onClick={() => setResult(null)}
+                className="text-slate-400 hover:text-slate-600"
+                aria-label="Dismiss result"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmReingest}
-                className="rounded-lg bg-brand-gradient px-4 py-1.5 text-xs font-medium text-white shadow-brand-glow hover:opacity-90"
-              >
-                Confirm Re-ingest
+                <X className="h-4 w-4" />
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Navigation Tabs */}
-      <div className="border-b border-slate-200">
-        <nav className="flex space-x-6" role="tablist">
-          <button
-            role="tab"
-            aria-selected={tab === "overview"}
-            onClick={() => setTab("overview")}
-            className={`py-2 px-1 border-b-2 text-xs font-semibold transition ${
-              tab === "overview"
-                ? "border-brand-indigo text-brand-indigo"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Overview
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === "details"}
-            onClick={() => setTab("details")}
-            className={`py-2 px-1 border-b-2 text-xs font-semibold transition ${
-              tab === "details"
-                ? "border-brand-indigo text-brand-indigo"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Document Details & Provenance
-          </button>
-        </nav>
-      </div>
+        {/* Confirmation Modal */}
+        {pendingPreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
+              <h3 className="text-sm font-bold text-slate-900">Confirm Document Re-ingest</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Re-ingesting <strong>{pendingPreview.preview.source_name}</strong> will update changed
+                chunks and reuse unchanged embeddings.
+              </p>
+              <div className="my-4 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">New chunks:</span>
+                  <span className="font-semibold text-emerald-600">
+                    +{pendingPreview.preview.chunks_added}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Unchanged:</span>
+                  <span className="font-semibold text-slate-700">
+                    {pendingPreview.preview.chunks_kept}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Removed:</span>
+                  <span className="font-semibold text-rose-600">
+                    -{pendingPreview.preview.chunks_removed}
+                  </span>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPendingPreview(null)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmReingest}
+                  className="rounded-lg bg-brand-gradient px-4 py-1.5 text-xs font-medium text-white shadow-brand-glow hover:opacity-90"
+                >
+                  Confirm Re-ingest
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
-      {/* Overview Cards */}
-      {tab === "overview" && (
+        {/* Overview Hero Stat Cards (Permanently Merged at Top) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo border border-indigo-100">
               <FileText className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">Total Canonical Documents</p>
-              <p className="text-lg font-bold text-slate-900">{totalDocuments}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Total Canonical Documents</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{totalDocuments}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo border border-indigo-100">
               <Layers className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">Total Indexed Chunks</p>
-              <p className="text-lg font-bold text-slate-900">{totalChunks.toLocaleString()}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Total Indexed Chunks</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{totalChunks.toLocaleString()}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo border border-indigo-100">
               <Clock className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs text-slate-500">Last Ingestion Event</p>
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Last Ingestion Event</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
                 {lastIngested ? new Date(lastIngested).toLocaleString() : "—"}
               </p>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Standardized DataTable View */}
-      {tab === "details" && (
-        <div className="space-y-3">
-          <TableToolbar
-            search={search}
-            onSearchChange={(v) => {
-              setSearch(v);
-              setPage(1);
-            }}
-            searchPlaceholder="Search source document, ID, or content hash..."
-            filters={[
-              {
-                id: "origin",
-                label: "Origin Format",
-                value: filterOrigin,
-                options: [
-                  { label: "All Formats", value: "all" },
-                  { label: "Native Markdown", value: "markdown" },
-                  { label: "Converted from DOCX", value: "docx" },
-                ],
-                onChange: (v: string) => {
-                  setFilterOrigin(v);
-                  setPage(1);
+        {/* Complete Inventory Table Integrated in TableCard */}
+        <TableCard
+          toolbar={
+            <TableToolbar
+              search={search}
+              onSearchChange={(v) => {
+                setSearch(v);
+                setPage(1);
+              }}
+              searchPlaceholder="Search source document, ID, or content hash..."
+              filters={[
+                {
+                  id: "origin",
+                  label: "Origin Format",
+                  value: filterOrigin,
+                  options: [
+                    { label: "All Formats", value: "all" },
+                    { label: "Native Markdown", value: "markdown" },
+                    { label: "Converted from DOCX", value: "docx" },
+                  ],
+                  onChange: (v: string) => {
+                    setFilterOrigin(v);
+                    setPage(1);
+                  },
                 },
-              },
-              {
-                id: "quarantine",
-                label: "Quarantine Status",
-                value: filterQuarantine,
-                options: [
-                  { label: "All Documents", value: "all" },
-                  { label: "Quarantined Only", value: "quarantined" },
-                  { label: "Active & Verified", value: "normal" },
-                ],
-                onChange: (v: string) => {
-                  setFilterQuarantine(v);
-                  setPage(1);
+                {
+                  id: "quarantine",
+                  label: "Quarantine Status",
+                  value: filterQuarantine,
+                  options: [
+                    { label: "All Documents", value: "all" },
+                    { label: "Quarantined Only", value: "quarantined" },
+                    { label: "Active & Verified", value: "normal" },
+                  ],
+                  onChange: (v: string) => {
+                    setFilterQuarantine(v);
+                    setPage(1);
+                  },
                 },
-              },
-              {
-                id: "warnings",
-                label: "Health Warnings",
-                value: filterWarnings,
-                options: [
-                  { label: "All Documents", value: "all" },
-                  { label: "With Warnings Only", value: "warnings_only" },
-                ],
-                onChange: (v: string) => {
-                  setFilterWarnings(v);
-                  setPage(1);
+                {
+                  id: "warnings",
+                  label: "Health Warnings",
+                  value: filterWarnings,
+                  options: [
+                    { label: "All Documents", value: "all" },
+                    { label: "With Warnings Only", value: "warnings_only" },
+                  ],
+                  onChange: (v: string) => {
+                    setFilterWarnings(v);
+                    setPage(1);
+                  },
                 },
-              },
-            ]}
-          />
-
+              ]}
+            />
+          }
+          pagination={
+            <Pagination
+              page={page}
+              pageCount={Math.ceil(sortedDocuments.length / pageSize)}
+              totalItems={sortedDocuments.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
           <DataTable
             columns={columns}
             data={pagedDocuments}
@@ -605,17 +583,8 @@ export default function DocumentsPage() {
             onRowClick={(doc: DocumentSummary) => router.push(`/documents/${doc.document_id}`)}
             emptyMessage="No documents found matching the selected filters."
           />
-
-          <Pagination
-            page={page}
-            pageCount={Math.ceil(sortedDocuments.length / pageSize)}
-            totalItems={sortedDocuments.length}
-            pageSize={pageSize}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-          />
-        </div>
-      )}
+        </TableCard>
+      </div>
     </div>
   );
 }

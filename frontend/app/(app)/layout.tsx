@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { useAuth } from "@/lib/auth-context";
 import { ChatProvider } from "@/lib/chat-context";
+import { AudienceProvider } from "@/lib/audience-context";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { token, isLoading } = useAuth();
@@ -29,9 +30,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           query keeps running and its answer isn't lost when navigating to
           Documents/Metrics and back — only this layout, not the page, stays
           mounted across those route changes. */}
-      <ChatProvider>
-        <main className="flex-1 overflow-hidden">{children}</main>
-      </ChatProvider>
+      <AudienceProvider>
+        <ChatProvider>
+          <main className="flex-1 overflow-hidden">{children}</main>
+        </ChatProvider>
+      </AudienceProvider>
     </div>
   );
 }

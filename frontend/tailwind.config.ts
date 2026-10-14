@@ -37,9 +37,12 @@ const config: Config = {
       backgroundImage: {
         "brand-panel":
           "linear-gradient(135deg, #1c0e52 0%, #34199a 48%, #5433e0 100%)",
+        "brand-gradient":
+          "linear-gradient(135deg, var(--brand-gradient-from) 0%, var(--brand-gradient-via) 50%, var(--brand-gradient-to) 100%)",
       },
       boxShadow: {
         card: "0 1px 2px rgba(14, 11, 31, 0.04), 0 8px 24px rgba(14, 11, 31, 0.06)",
+        "brand-glow": "0 4px 14px 0 var(--brand-glow)",
       },
     },
   },

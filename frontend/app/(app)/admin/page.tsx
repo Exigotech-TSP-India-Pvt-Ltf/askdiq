@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import {
+  LayoutDashboard,
   Users,
   UserCheck,
   MessagesSquare,
@@ -135,12 +138,14 @@ function ChartCard({
 
 export default function AdminDashboard() {
   const { token } = useAuth();
+  const { audience } = useAudience();
   const [data, setData] = useState<DashboardData>(emptyData);
 
   useEffect(() => {
     if (!token) return;
-    api.adminGet<DashboardData>(token, "/dashboard").then(setData).catch(() => {});
-  }, [token]);
+    const qs = audience && audience !== "overview" ? `?audience=${audience}` : "";
+    api.adminGet<DashboardData>(token, `/dashboard${qs}`).then(setData).catch(() => {});
+  }, [token, audience]);
 
   const trend = useMemo(
     () =>
@@ -168,17 +173,14 @@ export default function AdminDashboard() {
   );
 
   return (
-    <div>
-      <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-8">
-        <div>
-          <h1 className="text-sm font-semibold text-slate-900">Dashboard</h1>
-          <p className="text-xs text-slate-500">
-            Monitor users, conversations, RAG performance and governance.
-          </p>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50/50">
+      <DashboardHeader
+        title="Dashboard"
+        subtitle="Monitor users, conversations, RAG performance and governance."
+        icon={LayoutDashboard}
+      />
 
-      <div className="p-8">
+      <div className="p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Total Users" value={data.users} icon={Users} accent="indigo" />
         <MetricCard

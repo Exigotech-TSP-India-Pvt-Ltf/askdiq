@@ -16,6 +16,7 @@ import {
   MessagesSquare,
   ThumbsUp,
   ClipboardCheck,
+  Shield,
   ShieldCheck,
   CircleDollarSign,
 } from "lucide-react";
@@ -34,6 +35,7 @@ const ADMIN_ITEMS = [
   { href: "/admin/evaluation", label: "Evaluation", icon: ClipboardCheck },
   { href: "/admin/governance", label: "Admin Governance", icon: ShieldCheck },
 ];
+
 
 function initials(name: string) {
   return name
@@ -99,18 +101,18 @@ export function Sidebar() {
         key={item.href}
         href={item.href}
         title={collapsed ? item.label : undefined}
-        className={`group relative flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-colors ${
+        className={`group relative flex items-center gap-2.5 rounded-lg py-1.5 text-[13px] font-medium transition-colors ${
           collapsed ? "justify-center px-0" : "px-3"
         } ${
           active
-            ? "bg-brand-50 text-brand-700"
+            ? "bg-brand-50 text-brand-700 font-semibold"
             : "text-ink/60 hover:bg-ink/[0.04] hover:text-ink"
         }`}
       >
         {active && !collapsed && (
-          <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-brand-600" />
+          <span className="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-r-full bg-brand-600" />
         )}
-        <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? "text-brand-600" : "text-ink/40 group-hover:text-ink/70"}`} strokeWidth={2} />
+        <Icon className={`h-4 w-4 shrink-0 ${active ? "text-brand-600" : "text-ink/40 group-hover:text-ink/70"}`} strokeWidth={1.8} />
         {!collapsed && <span className="truncate">{item.label}</span>}
       </Link>
     );
@@ -144,9 +146,12 @@ export function Sidebar() {
           <>
             <button
               onClick={toggleAdminExpanded}
-              className="flex w-full items-center justify-between rounded-md px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-ink/35 hover:text-ink/60"
+              className="flex w-full items-center justify-between rounded-md px-3 pb-2 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink/40 hover:text-ink/70"
             >
-              <span>Admin</span>
+              <span className="flex items-center gap-1.5">
+                <Shield className="h-3.5 w-3.5 text-brand-600" />
+                <span>Admin</span>
+              </span>
               <ChevronDown
                 className={`h-3.5 w-3.5 transition-transform ${adminExpanded ? "" : "-rotate-90"}`}
               />
@@ -155,6 +160,7 @@ export function Sidebar() {
           </>
         )}
       </nav>
+
 
       <div className="border-t border-ink/10 p-3">
         <div

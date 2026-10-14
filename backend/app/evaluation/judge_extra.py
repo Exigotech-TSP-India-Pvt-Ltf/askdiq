@@ -7,12 +7,17 @@ supported claims / total verifiable claims. Never raises; None on failure.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 
 from app.core.config import get_settings
-from app.evaluation.judge import _MAX_CHUNK_CHARS, _MAX_CHUNKS, _clamp_score, _client_for, _extract_json
+from app.evaluation.judge import (
+    _MAX_CHUNK_CHARS,
+    _MAX_CHUNKS,
+    _clamp_score,
+    _client_for,
+    _extract_json,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +96,12 @@ class DeepJudgeScores:
         }
 
 
-def build_deep_prompt(question: str, chunks: list[str], answer: str, key_facts: list[str] | None) -> str:
-    context = "\n\n".join(f"[{i}] {c[:_MAX_CHUNK_CHARS]}" for i, c in enumerate(chunks[:_MAX_CHUNKS], 1))
+def build_deep_prompt(
+    question: str, chunks: list[str], answer: str, key_facts: list[str] | None
+) -> str:
+    context = "\n\n".join(
+        f"[{i}] {c[:_MAX_CHUNK_CHARS]}" for i, c in enumerate(chunks[:_MAX_CHUNKS], 1)
+    )
     facts = ""
     if key_facts:
         facts = "EXPECTED FACTS:\n" + "\n".join(f"- {f}" for f in key_facts) + "\n\n"
@@ -114,7 +123,11 @@ def parse_deep_output(text: str) -> DeepJudgeScores | None:
             if isinstance(c, dict)
         ]
         corr = {
-            k: (None if (data.get("correctness") or {}).get(k) is None else _clamp_score(data["correctness"][k]))
+            k: (
+                None
+                if (data.get("correctness") or {}).get(k) is None
+                else _clamp_score(data["correctness"][k])
+            )
             for k in CORRECTNESS_AXES
         }
         help_ = {
@@ -133,38 +146,48 @@ def parse_deep_output(text: str) -> DeepJudgeScores | None:
         return None
 
 
-def _deep_sync(question, chunks, answer, key_facts) -> DeepJudgeScores | None:
+async def _deep(question, chunks, answer, key_facts) -> DeepJudgeScores | None:
     settings = get_settings()
-    deployment = getattr(settings, "azure_judge_deployment_name", None) or settings.azure_deployment_name
-    client = _client_for(deployment)
-    common = dict(
-        model=deployment,
-        messages=[
-            {"role": "system", "content": DEEP_JUDGE_PROMPT},
-            {"role": "user", "content": build_deep_prompt(question, chunks, answer, key_facts)},
-        ],
-        temperature=settings.azure_openai_temperature,
-        max_completion_tokens=settings.llm_max_completion_tokens,
-        reasoning_effort=settings.llm_reasoning_effort,
+    deployment = (
+        getattr(settings, "azure_judge_deployment_name", None)
+        or settings.azure_deployment_name
     )
+    client = _client_for(deployment)
+    common = {
+        "model": deployment,
+        "messages": [
+            {"role": "system", "content": DEEP_JUDGE_PROMPT},
+            {
+                "role": "user",
+                "content": build_deep_prompt(question, chunks, answer, key_facts),
+            },
+        ],
+        "reasoning_effort": settings.llm_reasoning_effort,
+    }
     for json_mode in (True, False):
         try:
             kwargs = dict(common)
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
-            resp = client.chat.completions.create(**kwargs)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("deep_judge_call_failed json_mode=%s error=%s", json_mode, exc)
+            resp = await client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            logger.warning(
+                "deep_judge_call_failed json_mode=%s error=%s", json_mode, exc
+            )
             continue
-        scores = parse_deep_output((resp.choices[0].message.content if resp.choices else "") or "")
+        scores = parse_deep_output(
+            (resp.choices[0].message.content if resp.choices else "") or ""
+        )
         if scores is not None:
             return scores
     return None
 
 
-async def deep_judge(question, chunks, answer, key_facts=None) -> DeepJudgeScores | None:
+async def deep_judge(
+    question, chunks, answer, key_facts=None
+) -> DeepJudgeScores | None:
     try:
-        return await asyncio.to_thread(_deep_sync, question, chunks, answer, key_facts)
-    except Exception as exc:  # noqa: BLE001
+        return await _deep(question, chunks, answer, key_facts)
+    except Exception as exc:
         logger.warning("deep_judge_failed error=%s", exc)
         return None

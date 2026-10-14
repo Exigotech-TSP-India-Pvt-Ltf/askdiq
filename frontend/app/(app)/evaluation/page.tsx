@@ -3,8 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
-import { CheckCircle2, Target, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Target, ShieldCheck, ClipboardCheck, Sparkles } from "lucide-react";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { TabGroup, EVALUATION_TABS } from "@/components/admin/TabGroup";
+import { TableCard } from "@/components/admin/TableCard";
+import { TableToolbar } from "@/components/admin/TableToolbar";
 import {
   Bar,
   BarChart,
@@ -201,6 +206,7 @@ type Tab = (typeof TABS)[number];
 
 export default function EvaluationPage() {
   const { token } = useAuth();
+  const { audience } = useAudience();
   const [r, setR] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "failed">("all");
@@ -209,27 +215,26 @@ export default function EvaluationPage() {
   useEffect(() => {
     if (!token) return;
     api
-      .evaluationReport(token)
+      .evaluationReport(token, audience)
       .then(setR)
       .catch((err) =>
         setError(
           err instanceof ApiError ? err.message : "Couldn't load evaluation report."
         )
       );
-  }, [token]);
+  }, [token, audience]);
 
-  const lat = r?.operational?.latency_ms ?? {};
-  const cases: any[] = r?.cases ?? [];
-  const shown = cases.filter((c) => (filter === "failed" ? !c.passed : true));
+  const shown = (r?.cases ?? []).filter((c: any) => (filter === "failed" ? !c.passed : true));
 
   const passBreakdown = useMemo(() => {
-    const passed = cases.filter((c) => c.passed && !c.known_issue).length;
-    const failed = cases.filter((c) => !c.passed && !c.known_issue).length;
+    const casesList: any[] = r?.cases ?? [];
+    const passed = casesList.filter((c) => c.passed && !c.known_issue).length;
+    const failed = casesList.filter((c) => !c.passed && !c.known_issue).length;
     return [
       { name: "Passed", value: passed },
       { name: "Failed", value: failed },
     ].filter((d) => d.value > 0);
-  }, [cases]);
+  }, [r?.cases]);
 
   const qualityRadar = useMemo(
     () => [
@@ -252,65 +257,48 @@ export default function EvaluationPage() {
     [r]
   );
 
-  const latencyBars = useMemo(
-    () =>
-      Object.entries(lat).map(([k, v]: [string, any]) => ({
-        stage: label(k),
-        p50: (v.p50 ?? 0) / 1000,
-        p95: (v.p95 ?? 0) / 1000,
-        p99: (v.p99 ?? 0) / 1000,
-      })),
-    [lat]
-  );
+  const latencyBars = useMemo(() => {
+    const stageMap: Record<string, any> = r?.operational?.latency_ms ?? {};
+    return Object.entries(stageMap).map(([k, v]: [string, any]) => ({
+      stage: label(k),
+      p50: (v.p50 ?? 0) / 1000,
+      p95: (v.p95 ?? 0) / 1000,
+      p99: (v.p99 ?? 0) / 1000,
+    }));
+  }, [r?.operational?.latency_ms]);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <header className="flex h-16 shrink-0 items-center border-b border-ink/10 bg-white px-6">
-        <div>
-          <h1 className="text-sm font-semibold text-ink">RAG Evaluation</h1>
-          {/* <p className="text-xs text-ink/50">
-            Latest report{r?.report_file ? `: ${r.report_file}` : ""}. Generate a new
-            one with <code className="rounded bg-ink/5 px-1 py-0.5">python scripts/run_evaluation.py --judge --json eval_report.json</code>.
-          </p> */}
-        </div>
-      </header>
-      <div className="px-6 py-6">
+    <div className="flex flex-col min-h-screen bg-slate-50/50">
+      <DashboardHeader
+        title="RAG Evaluation"
+        subtitle="Systematic evaluation metrics, benchmark pass rates, and turn-level quality scorecard"
+        icon={ClipboardCheck}
+      />
+      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
       {error && <p className="text-sm text-red-600">{error}</p>}
       {!r && !error && <p className="text-sm text-ink/50">Loading…</p>}
 
       {r && (
         <>
-          <div className="mb-6 flex flex-wrap gap-1 rounded-xl border border-ink/10 bg-white p-1.5">
-            {TABS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setActiveTab(t)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeTab === t
-                    ? "bg-brand-600 text-white shadow-sm"
-                    : "text-ink/55 hover:bg-ink/5 hover:text-ink"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
+          <div className="flex items-center justify-between overflow-x-auto pb-1">
+            <TabGroup
+              tabs={EVALUATION_TABS}
+              activeTab={activeTab}
+              onChange={(t) => setActiveTab(t as Tab)}
+              ariaLabel="Evaluation sub-tabs"
+            />
           </div>
 
           {activeTab === "Overall" && (
           <>
-          <Section title="Overall">
-            <Stat label="Pass rate" value={pct(r.pass_rate)} />
-            <Stat label="Cases total" value={String(r.n_cases ?? "—")} />
-            <Stat label="Cases scored" value={String(r.n_scored ?? "—")} />
-            <Stat label="Retrieval recall" value={pct(r.retrieval_recall)} />
-            <Stat label="Groundedness accuracy" value={pct(r.groundedness_accuracy)} />
-            <Stat label="Follow-up accuracy" value={pct(r.follow_up_accuracy)} />
-          </Section>
-
-          <div className="mb-7 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {/* Unified 6-stat hero grid consolidating redundant rows */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <HeroStat label="Pass rate" value={pct(r.pass_rate)} icon={CheckCircle2} accent="bg-emerald-500" />
+            <HeroStat label="Cases total" value={String(r.n_cases ?? "—")} icon={Target} accent="bg-slate-500" />
             <HeroStat label="Cases scored" value={String(r.n_scored ?? "—")} icon={Target} accent="bg-indigo-500" />
             <HeroStat label="Retrieval recall" value={pct(r.retrieval_recall)} icon={ShieldCheck} accent="bg-cyan-500" />
+            <HeroStat label="Groundedness" value={pct(r.groundedness_accuracy)} icon={CheckCircle2} accent="bg-purple-500" />
+            <HeroStat label="Follow-up acc." value={pct(r.follow_up_accuracy)} icon={Sparkles} accent="bg-amber-500" />
           </div>
 
           <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -525,62 +513,61 @@ export default function EvaluationPage() {
           )}
 
           {activeTab === "All test cases" && (
-          <section className="mb-10 rounded-xl border border-ink/10 bg-white p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink/50">
-                <span className="h-3 w-1 rounded-full bg-brand-500" />
-                All test cases ({shown.length})
-              </h2>
-              <div className="flex gap-1 rounded-lg bg-ink/5 p-1 text-xs">
-                {(["all", "failed"] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className={`rounded-md px-2.5 py-1 transition-colors ${
-                      filter === f
-                        ? "bg-white text-brand-700 shadow-sm"
-                        : "text-ink/50 hover:text-ink/80"
-                    }`}
-                  >
-                    {label(f)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="overflow-x-auto rounded-lg border border-ink/10">
+          <TableCard
+            title={`All test cases (${shown.length})`}
+            toolbar={
+              <TableToolbar
+                search=""
+                onSearchChange={() => {}}
+                filters={[
+                  {
+                    id: "outcome",
+                    label: "Case Outcome",
+                    value: filter,
+                    options: [
+                      { label: "All Cases", value: "all" },
+                      { label: "Failed Only", value: "failed" },
+                    ],
+                    onChange: (v) => setFilter(v as "all" | "failed"),
+                  },
+                ]}
+              />
+            }
+          >
+            <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-ink/5 text-ink/60">
+                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200/80">
                   <tr>
                     {["Status", "ID", "Type", "Query", "Conf.", "Recall", "Cit. prec.", "Faith.", "Latency", "Flags / notes"].map((h) => (
-                      <th key={h} className="px-3 py-2 font-medium">
+                      <th key={h} className="px-3.5 py-2.5 font-medium">
                         {h}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map((c) => (
-                    <tr key={c.id} className="border-t border-ink/5 align-top odd:bg-white even:bg-ink/[0.02] hover:bg-brand-50/40">
-                      <td className="px-3 py-2">
+                  {shown.map((c: any) => (
+                    <tr key={c.id} className="border-t border-slate-100 align-top odd:bg-white even:bg-slate-50/40 hover:bg-brand-50/30">
+                      <td className="px-3.5 py-2.5">
                         <span
                           className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
                             c.passed
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-red-50 text-red-700"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-red-50 text-red-700 border border-red-200"
                           }`}
                         >
                           {c.passed ? "✅ pass" : "❌ fail"}
                         </span>
                       </td>
-                      <td className="px-3 py-2 font-medium text-ink">{c.id}</td>
-                      <td className="px-3 py-2">{c.type}</td>
-                      <td className="max-w-xs px-3 py-2">{c.query}</td>
-                      <td className="px-3 py-2">{num(c.confidence)}</td>
-                      <td className="px-3 py-2">{pct(c.recall)}</td>
-                      <td className="px-3 py-2">{pct(c.citation_precision)}</td>
-                      <td className="px-3 py-2">{c.faithfulness ?? "—"}</td>
-                      <td className="px-3 py-2">{ms(c.latency_ms)}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-3.5 py-2.5 font-medium text-slate-900">{c.id}</td>
+                      <td className="px-3.5 py-2.5">{c.type}</td>
+                      <td className="max-w-xs px-3.5 py-2.5 text-slate-700">{c.query}</td>
+                      <td className="px-3.5 py-2.5 font-mono">{num(c.confidence)}</td>
+                      <td className="px-3.5 py-2.5 font-mono">{pct(c.recall)}</td>
+                      <td className="px-3.5 py-2.5 font-mono">{pct(c.citation_precision)}</td>
+                      <td className="px-3.5 py-2.5">{c.faithfulness ?? "—"}</td>
+                      <td className="px-3.5 py-2.5 font-mono text-slate-500">{ms(c.latency_ms)}</td>
+                      <td className="px-3.5 py-2.5 text-slate-500">
                         {[
                           ...(c.flags ?? []),
                           c.abstained ? "abstained" : "",
@@ -595,7 +582,7 @@ export default function EvaluationPage() {
                 </tbody>
               </table>
             </div>
-          </section>
+          </TableCard>
           )}
         </>
       )}

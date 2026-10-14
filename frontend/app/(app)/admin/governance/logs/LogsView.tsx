@@ -1,10 +1,14 @@
 "use client";
 
-import { Fragment, useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
+import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
+import { TableCard } from "@/components/admin/TableCard";
+import { ChevronDown, ChevronRight, Activity, Terminal } from "lucide-react";
 
 type Log = {
   created_at?: string;
@@ -18,18 +22,15 @@ type Log = {
 };
 
 const LEVEL_STYLES: Record<string, string> = {
-  CRITICAL: "bg-red-100 text-red-800",
-  ALERT: "bg-orange-50 text-orange-700",
-  ERROR: "bg-red-50 text-red-700",
-  WARN: "bg-amber-50 text-amber-700",
-  WARNING: "bg-amber-50 text-amber-700",
-  INFO: "bg-sky-50 text-sky-700",
-  DEBUG: "bg-slate-100 text-slate-600",
+  CRITICAL: "bg-red-100 text-red-800 border-red-200",
+  ALERT: "bg-orange-50 text-orange-700 border-orange-200",
+  ERROR: "bg-red-50 text-red-700 border-red-200",
+  WARN: "bg-amber-50 text-amber-700 border-amber-200",
+  WARNING: "bg-amber-50 text-amber-700 border-amber-200",
+  INFO: "bg-sky-50 text-sky-700 border-sky-200",
+  DEBUG: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
-// Always offered as filter choices, regardless of what's currently in the
-// data, so Critical/Alert/Error/Warning can be selected even when there
-// happen to be zero matching entries right now.
 const KNOWN_LEVELS = ["CRITICAL", "ALERT", "ERROR", "WARNING", "INFO"];
 
 function levelClass(level?: string) {
@@ -41,8 +42,6 @@ function shortId(id?: string, head = 8) {
   return id.length > head ? `${id.slice(0, head)}…` : id;
 }
 
-/** Governance log messages are often JSON blobs (e.g. query events); parse
- * them into a short, scannable summary instead of dumping raw JSON inline. */
 function summarize(message?: string): { text: string; badges: string[] } {
   if (!message) return { text: "—", badges: [] };
   try {
@@ -66,50 +65,41 @@ function summarize(message?: string): { text: string; badges: string[] } {
       return { text, badges };
     }
   } catch {
-    // Not JSON — fall through to plain text.
+    // Plain text
   }
   return { text: message, badges: [] };
 }
 
 export default function LogsView({ hideHeader = false }: { hideHeader?: boolean } = {}) {
   const [logs, setLogs] = useState<Log[]>([]);
-  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [page, setPage] = useState(1);
-  const pageSize = 15;
+  const [pageSize, setPageSize] = useState(10);
 
   const { token } = useAuth();
+  const { audience } = useAudience();
 
   useEffect(() => {
     if (!token) return;
-    const load = (showSpinner: boolean) => {
-      if (showSpinner) setLoading(true);
-      api
-        .adminGet<{ total: number; items: Log[] }>(token, "/governance/logs?limit=2000")
-        .then((data) => {
-          setLogs(data.items);
-          setTotal(data.total);
-          setLastUpdated(new Date());
-        })
-        .catch(() => setLogs([]))
-        .finally(() => setLoading(false));
-    };
-    load(true);
-    const timer = setInterval(() => load(false), 10000);
-    return () => clearInterval(timer);
-  }, [token]);
+    setLoading(true);
+    const qs = audience && audience !== "overview" ? `&audience=${audience}` : "";
+    api
+      .adminGet<{ total: number; items: Log[] }>(token, `/governance/logs?limit=2000${qs}`)
+      .then((data) => {
+        setLogs(data.items);
+        setLastUpdated(new Date());
+      })
+      .catch(() => setLogs([]))
+      .finally(() => setLoading(false));
+  }, [token, audience]);
 
   const levels = useMemo(() => {
-    const present = new Set(logs.map((l) => (l.level || "INFO").toUpperCase()));
-    // Always offer the full known severity list first (in fixed, most- to
-    // least-severe order), then any extra/unexpected level found in the
-    // data that isn't one of them.
-    const extras = Array.from(present).filter((lvl) => !KNOWN_LEVELS.includes(lvl));
-    return ["all", ...KNOWN_LEVELS, ...extras];
+    const fromData = Array.from(new Set(logs.map((l) => (l.level || "INFO").toUpperCase())));
+    return ["all", ...Array.from(new Set([...KNOWN_LEVELS, ...fromData]))];
   }, [logs]);
 
   const filtered = useMemo(
@@ -125,178 +115,154 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
     [logs, levelFilter, search]
   );
 
-  useEffect(() => {
-    setPage(1);
-    setExpandedIndex(null);
-  }, [search, levelFilter]);
+  const paged = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const columns: ColumnDef<Log>[] = [
+    {
+      key: "created_at",
+      header: "Timestamp",
+      render: (log) => (
+        <span className="whitespace-nowrap text-xs text-slate-500 font-mono">
+          {log.created_at ? new Date(log.created_at).toLocaleTimeString() : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "level",
+      header: "Level",
+      align: "center",
+      render: (log) => (
+        <span
+          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold border ${levelClass(
+            log.level
+          )}`}
+        >
+          {log.level || "INFO"}
+        </span>
+      ),
+    },
+    {
+      key: "service",
+      header: "Service",
+      render: (log) => (
+        <span className="text-xs font-mono font-medium text-slate-700">
+          {log.service || "app"}
+        </span>
+      ),
+    },
+    {
+      key: "message",
+      header: "Event Summary & Traces",
+      render: (log) => {
+        const { text, badges } = summarize(log.message);
+        return (
+          <div className="flex flex-col gap-1 max-w-md">
+            <span className="text-xs text-slate-800 line-clamp-1">{text}</span>
+            {badges.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {badges.map((b, i) => (
+                  <span
+                    key={i}
+                    className="rounded bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 text-[10px] font-medium text-indigo-700"
+                  >
+                    {b}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "ip_address",
+      header: "Client IP",
+      render: (log) => (
+        <span className="font-mono text-xs text-slate-600">
+          {log.ip_address || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "request_id",
+      header: "Request ID",
+      render: (log) => (
+        <span className="font-mono text-[10px] text-slate-400" title={log.request_id}>
+          {shortId(log.request_id)}
+        </span>
+      ),
+    },
+  ];
 
   return (
-    <div>
+    <div className="space-y-6">
       {!hideHeader && (
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-8">
-        <div>
-          <h1 className="text-sm font-semibold text-slate-900">Governance Logs</h1>
-          <p className="text-xs text-slate-500">
-            Searchable application and security activity.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-500">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-          </span>
-          {lastUpdated ? `Live · updated ${lastUpdated.toLocaleTimeString()}` : "Connecting…"}
-        </div>
-      </header>
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-8">
+          <div>
+            <h1 className="text-sm font-semibold text-slate-900">Governance Logs</h1>
+            <p className="text-xs text-slate-500">
+              Audit trails, system operations, and security events.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-500">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            {lastUpdated ? `Live · updated ${lastUpdated.toLocaleTimeString()}` : "Connecting…"}
+          </div>
+        </header>
       )}
 
       <div className="p-8">
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="p-4 pb-0">
-          <TableToolbar
-            search={search}
-            onSearchChange={setSearch}
-            searchPlaceholder="Search message, service or user…"
-            filterOptions={levels.map((lvl) => ({
-              label: lvl === "all" ? "All" : lvl,
-              value: lvl,
-            }))}
-            filterValue={levelFilter}
-            onFilterChange={setLevelFilter}
-            countLabel={`${total} entries`}
+        <TableCard
+          toolbar={
+            <TableToolbar
+              search={search}
+              onSearchChange={(v) => {
+                setSearch(v);
+                setPage(1);
+              }}
+              searchPlaceholder="Search message, service, or client IP…"
+              filters={[
+                {
+                  id: "level",
+                  label: "Log Level",
+                  value: levelFilter,
+                  options: levels.map((lvl) => ({
+                    label: lvl === "all" ? "All Levels" : lvl,
+                    value: lvl,
+                  })),
+                  onChange: (v) => {
+                    setLevelFilter(v);
+                    setPage(1);
+                  },
+                },
+              ]}
+            />
+          }
+          pagination={
+            <Pagination
+              page={page}
+              pageCount={Math.ceil(filtered.length / pageSize)}
+              totalItems={filtered.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <DataTable
+            columns={columns}
+            data={paged}
+            keyField="request_id"
+            isLoading={loading}
+            emptyMessage="No log entries match the selected filters."
           />
-        </div>
-
-        <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="sticky top-0 z-10">
-              <tr>
-                {["Timestamp", "Level", "Service", "Summary", "IP", "Request ID", ""].map((x) => (
-                  <th
-                    key={x}
-                    className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-semibold uppercase text-slate-500"
-                  >
-                    {x}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-sm text-slate-400">
-                    Loading logs…
-                  </td>
-                </tr>
-              )}
-
-              {!loading && paged.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-sm text-slate-400">
-                    No log entries match this filter.
-                  </td>
-                </tr>
-              )}
-
-              {!loading &&
-                paged.map((log, index) => {
-                  const { text, badges } = summarize(log.message);
-                  const isExpanded = expandedIndex === index;
-                  return (
-                    <Fragment key={index}>
-                      <tr
-                        onClick={() => setExpandedIndex(isExpanded ? null : index)}
-                        className={`cursor-pointer border-b border-slate-100 align-top transition-colors odd:bg-white even:bg-slate-50/40 hover:bg-purple-50/50 ${
-                          isExpanded ? "bg-purple-50/60" : ""
-                        }`}
-                      >
-                        <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-500">
-                          {log.created_at ? new Date(log.created_at).toLocaleString() : "—"}
-                        </td>
-                        <td className="px-5 py-4">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${levelClass(
-                              log.level
-                            )}`}
-                          >
-                            {(log.level || "INFO").toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4 text-sm capitalize text-slate-600">
-                          {log.service || "API"}
-                        </td>
-                        <td className="max-w-sm px-5 py-4">
-                          <p className="truncate text-sm text-slate-800" title={text}>
-                            {text}
-                          </p>
-                          {badges.length > 0 && (
-                            <div className="mt-1.5 flex flex-wrap gap-1">
-                              {badges.map((b) => (
-                                <span
-                                  key={b}
-                                  className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600"
-                                >
-                                  {b}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-5 py-4 text-sm text-slate-500">
-                          {log.ip_address || "—"}
-                        </td>
-                        <td
-                          className="px-5 py-4 font-mono text-xs text-slate-500"
-                          title={log.request_id}
-                        >
-                          {shortId(log.request_id)}
-                        </td>
-                        <td className="px-5 py-4 text-right">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setExpandedIndex(isExpanded ? null : index);
-                            }}
-                            className="text-xs font-medium text-purple-600 hover:text-purple-700"
-                          >
-                            {isExpanded ? "Hide" : "Details"}
-                          </button>
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr className="border-b border-slate-100 bg-slate-50/60">
-                          <td colSpan={8} className="px-5 py-4">
-                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-white p-3 text-[11px] text-slate-600 ring-1 ring-slate-200">
-                              {(() => {
-                                try {
-                                  return JSON.stringify(JSON.parse(log.message ?? ""), null, 2);
-                                } catch {
-                                  return log.message || "—";
-                                }
-                              })()}
-                            </pre>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-
-        <Pagination
-          page={page}
-          pageCount={pageCount}
-          onPageChange={setPage}
-          totalItems={filtered.length}
-          pageSize={pageSize}
-        />
-      </div>
+        </TableCard>
       </div>
     </div>
   );
