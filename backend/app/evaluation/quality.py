@@ -11,9 +11,9 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Sequence
 
+from app.core.stats import percentile
 from app.evaluation.metrics import _matches
 from app.governance.pii import PATTERNS as PII_PATTERNS
-from app.core.stats import percentile
 
 # ---------------------------------------------------------------------------
 # Citation and attribution
@@ -40,7 +40,9 @@ def citation_precision(
     for s in sources:
         if s.get("source_name") not in expected_docs:
             continue
-        if headings and not any(h in (s.get("section_heading") or "").lower() for h in headings):
+        if headings and not any(
+            h in (s.get("section_heading") or "").lower() for h in headings
+        ):
             continue
         correct += 1
     return correct / len(sources)
@@ -84,7 +86,8 @@ def citation_quality(
         "correct_document": any(docs_ok) if expected_docs else None,
         "correct_section": (
             any(
-                d and any(h in (s.get("section_heading") or "").lower() for h in headings)
+                d
+                and any(h in (s.get("section_heading") or "").lower() for h in headings)
                 for d, s in zip(docs_ok, sources)
             )
             if headings
@@ -110,7 +113,8 @@ def is_stale(metadata: dict) -> bool:
     return bool(
         metadata.get("superseded_by")
         or metadata.get("is_current") is False
-        or str(metadata.get("status", "")).lower() in {"superseded", "deprecated", "archived"}
+        or str(metadata.get("status", "")).lower()
+        in {"superseded", "deprecated", "archived"}
     )
 
 
@@ -173,10 +177,14 @@ SECRET_PATTERNS = {
 }
 
 INJECTION_PATTERNS = (
-    re.compile(r"(?i)ignore (all |any )?(the )?(previous|prior|above) (instructions|prompts?)"),
+    re.compile(
+        r"(?i)ignore (all |any )?(the )?(previous|prior|above) (instructions|prompts?)"
+    ),
     re.compile(r"(?i)disregard (all |any )?(the )?(previous|prior|above|earlier)"),
     re.compile(r"(?i)you are now\b"),
-    re.compile(r"(?i)(reveal|print|show) (your |the )?(system|hidden) (prompt|instructions)"),
+    re.compile(
+        r"(?i)(reveal|print|show) (your |the )?(system|hidden) (prompt|instructions)"
+    ),
     re.compile(r"(?i)\bnew instructions?\s*:"),
     re.compile(r"(?i)<\s*/?\s*(system|assistant)\s*>"),
 )
@@ -200,11 +208,15 @@ def injection_in_chunks(chunks: Iterable[str]) -> list[int]:
     """Indexes of retrieved chunks that contain instruction-like injection text."""
 
     return [
-        i for i, chunk in enumerate(chunks) if any(p.search(chunk) for p in INJECTION_PATTERNS)
+        i
+        for i, chunk in enumerate(chunks)
+        if any(p.search(chunk) for p in INJECTION_PATTERNS)
     ]
 
 
-def unauthorized_sources(sources: Sequence[dict], forbidden_docs: Sequence[str]) -> list[str]:
+def unauthorized_sources(
+    sources: Sequence[dict], forbidden_docs: Sequence[str]
+) -> list[str]:
     """Retrieved documents the asker must not see (named in the case, or whose
     ``access_level`` metadata is not public)."""
 
@@ -212,7 +224,12 @@ def unauthorized_sources(sources: Sequence[dict], forbidden_docs: Sequence[str])
     for s in sources:
         name = s.get("source_name")
         level = str((s.get("metadata") or {}).get("access_level", "public")).lower()
-        if name in forbidden_docs or level in {"restricted", "confidential", "internal", "private"}:
+        if name in forbidden_docs or level in {
+            "restricted",
+            "confidential",
+            "internal",
+            "private",
+        }:
             leaked.append(name or "?")
     return sorted(set(leaked))
 

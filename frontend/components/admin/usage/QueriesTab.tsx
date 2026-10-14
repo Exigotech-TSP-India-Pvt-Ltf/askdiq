@@ -1,0 +1,491 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import type { PageEnvelope, UsageQueryRow } from "@/lib/types";
+import { api } from "@/lib/api";
+import { useTableState } from "@/lib/use-table-state";
+import { DataTable, type ColumnDef } from "../DataTable";
+import { TableToolbar } from "../TableToolbar";
+import { Pagination } from "../Pagination";
+import { TableCard } from "../TableCard";
+import dynamic from "next/dynamic";
+import { StatCard, OutcomePillBar } from "../insights";
+
+const QueryInspectorDrawer = dynamic(
+  () => import("./QueryInspectorDrawer").then((mod) => mod.QueryInspectorDrawer),
+  { ssr: false }
+);
+import {
+  Sparkles,
+  Clock,
+  ShieldCheck,
+  Cpu,
+  Download,
+  Eye,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  HelpCircle,
+} from "lucide-react";
+
+interface QueriesTabProps {
+  token: string;
+  initialSessionId?: string;
+  initialIp?: string;
+  onSelectIp?: (ip: string) => void;
+  onSelectSession?: (sessionId: string) => void;
+}
+
+export function QueriesTab({
+  token,
+  initialSessionId,
+  initialIp,
+  onSelectIp,
+  onSelectSession,
+}: QueriesTabProps) {
+  const {
+    page,
+    pageSize,
+    offset,
+    sort,
+    search,
+    filters,
+    audience,
+    setPage,
+    setPageSize,
+    setSort,
+    setSearchInput,
+    setFilter,
+    getSignal,
+  } = useTableState({
+    tableKey: "queries",
+    defaultSort: "created_at_desc",
+    allowedSorts: [
+      "created_at_desc",
+      "created_at_asc",
+      "cost_desc",
+      "cost_asc",
+      "tokens_desc",
+      "tokens_asc",
+      "latency_desc",
+      "latency_asc",
+    ],
+    defaultFilters: {
+      session_id: initialSessionId || "",
+      ip: initialIp || "",
+      outcome: "all",
+      grounded: "all",
+    },
+  });
+
+  const [data, setData] = useState<PageEnvelope<UsageQueryRow> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [inspectRequestId, setInspectRequestId] = useState<string | null>(null);
+
+  // Sync initialSessionId / initialIp if changed externally
+  useEffect(() => {
+    if (initialSessionId !== undefined && initialSessionId !== filters.session_id) {
+      setFilter("session_id", initialSessionId);
+    }
+  }, [initialSessionId, filters.session_id, setFilter]);
+
+  useEffect(() => {
+    if (initialIp !== undefined && initialIp !== filters.ip) {
+      setFilter("ip", initialIp);
+    }
+  }, [initialIp, filters.ip, setFilter]);
+
+  const fetchData = React.useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await api.getUsageQueries(
+        token,
+        {
+          audience,
+          q: search || undefined,
+          session_id: filters.session_id || undefined,
+          ip: filters.ip || undefined,
+          outcome: filters.outcome !== "all" ? filters.outcome : undefined,
+          grounded:
+            filters.grounded === "true"
+              ? true
+              : filters.grounded === "false"
+              ? false
+              : undefined,
+          sort,
+          limit: pageSize,
+          offset,
+        },
+        getSignal()
+      );
+      setData(res);
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        setError(err.message || "Failed to load queries analytics.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [
+    token,
+    audience,
+    search,
+    filters.session_id,
+    filters.ip,
+    filters.outcome,
+    filters.grounded,
+    sort,
+    pageSize,
+    offset,
+    getSignal,
+  ]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const stats = data?.stats || {};
+  const outcomesCount = (stats.outcomes || {}) as Record<string, number>;
+
+  const getOutcomeBadge = (outcome: string) => {
+    switch (outcome?.toLowerCase()) {
+      case "answered":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 border border-emerald-200">
+            <CheckCircle2 className="w-3 h-3" />
+            Answered
+          </span>
+        );
+      case "ungrounded":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200">
+            <AlertTriangle className="w-3 h-3" />
+            Ungrounded
+          </span>
+        );
+      case "blocked_guardrail":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700 border border-rose-200">
+            <XCircle className="w-3 h-3" />
+            Blocked
+          </span>
+        );
+      case "conversational":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 border border-blue-200">
+            <HelpCircle className="w-3 h-3" />
+            Conversational
+          </span>
+        );
+      case "llm_failed":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 border border-slate-300">
+            <XCircle className="w-3 h-3" />
+            Failed
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+            {outcome || "Unknown"}
+          </span>
+        );
+    }
+  };
+
+  const columns: ColumnDef<UsageQueryRow>[] = [
+    {
+      key: "query",
+      header: "User Query Text",
+      render: (r) => (
+        <div className="flex flex-col max-w-xs sm:max-w-md">
+          <span
+            className="font-medium text-slate-800 line-clamp-2 text-xs"
+            title={r.query}
+          >
+            {r.query}
+          </span>
+          <span className="font-mono text-[10px] text-slate-400 truncate">
+            {r.request_id}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: "ip_address",
+      header: "Client IP",
+      render: (r) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectIp?.(r.ip_address);
+          }}
+          className="font-mono text-xs text-brand-indigo hover:underline text-left"
+        >
+          {r.ip_address}
+        </button>
+      ),
+    },
+    {
+      key: "session_title",
+      header: "Session",
+      render: (r) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectSession?.(r.session_id);
+          }}
+          className="text-xs text-slate-600 hover:text-brand-indigo text-left truncate max-w-[140px] block"
+          title={r.session_title}
+        >
+          {r.session_title || r.session_id.slice(0, 8)}
+        </button>
+      ),
+    },
+    {
+      key: "outcome",
+      header: "Status / Outcome",
+      align: "center",
+      render: (r) => getOutcomeBadge(r.outcome),
+    },
+    {
+      key: "prompt_tokens",
+      header: "Input Tok",
+      align: "right",
+      render: (r) => (
+        <span className="font-mono text-xs text-slate-600">
+          {(r.prompt_tokens ?? 0).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: "reasoning_tokens",
+      header: "Reasoning",
+      align: "right",
+      render: (r) => (
+        <span className="font-mono text-xs text-purple-600">
+          {(r.reasoning_tokens ?? 0).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: "output_tokens",
+      header: "Output Tok",
+      align: "right",
+      render: (r) => (
+        <span className="font-mono text-xs text-emerald-600">
+          {(r.output_tokens ?? 0).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: "cost",
+      header: "Cost (USD)",
+      sortable: true,
+      align: "right",
+      render: (r) => (
+        <span className="font-mono font-bold text-xs text-slate-900">
+          ${r.cost_usd.toFixed(4)}
+        </span>
+      ),
+    },
+    {
+      key: "latency_ms",
+      header: "Latency",
+      sortable: true,
+      align: "right",
+      render: (r) => (
+        <span className="font-mono text-xs text-slate-500 whitespace-nowrap">
+          {r.latency_ms !== null ? `${r.latency_ms} ms` : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "Inspect",
+      align: "right",
+      render: (r) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setInspectRequestId(r.request_id);
+          }}
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-xs hover:bg-slate-50 transition"
+          aria-label={`Inspect query ${r.request_id}`}
+        >
+          <Eye className="w-3 h-3 text-brand-indigo" />
+          <span>Inspect</span>
+        </button>
+      ),
+    },
+  ];
+
+  const exportUrl = `/api/proxy/admin/usage/export?tab=queries&audience=${audience}&q=${encodeURIComponent(
+    search
+  )}${filters.session_id ? `&session_id=${encodeURIComponent(filters.session_id)}` : ""}${
+    filters.ip ? `&ip=${encodeURIComponent(filters.ip)}` : ""
+  }${filters.outcome !== "all" ? `&outcome=${encodeURIComponent(filters.outcome)}` : ""}${
+    filters.grounded !== "all" ? `&grounded=${encodeURIComponent(filters.grounded)}` : ""
+  }`;
+
+  return (
+    <div className="space-y-6">
+      {/* ========================================================================= */}
+      {/* PRE-TABLE INTELLIGENCE HEADER */}
+      {/* ========================================================================= */}
+      <section className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            title="Total Queries"
+            value={stats.total_queries ?? data?.total ?? 0}
+            subtitle={`Audience: ${audience}`}
+            icon={Sparkles}
+          />
+
+          <StatCard
+            title="Groundedness Pass Rate"
+            value={
+              stats.groundedness_pass_rate !== undefined
+                ? `${Number(stats.groundedness_pass_rate).toFixed(1)}%`
+                : "—"
+            }
+            subtitle={
+              stats.groundedness_evaluated_turns
+                ? `${stats.groundedness_passed_turns || 0} / ${stats.groundedness_evaluated_turns} generation turns`
+                : "Generation turns only"
+            }
+            icon={ShieldCheck}
+          />
+
+          <StatCard
+            title="Avg Turn Latency"
+            value={stats.avg_latency_ms ? `${Math.round(stats.avg_latency_ms)} ms` : "—"}
+            subtitle="P50 / P95 response time"
+            icon={Clock}
+          />
+
+          <StatCard
+            title="Avg Token Budget"
+            value={stats.avg_tokens_per_query ? Math.round(stats.avg_tokens_per_query).toLocaleString() : "—"}
+            subtitle="Billed tokens / turn"
+            icon={Cpu}
+          />
+        </div>
+
+        {/* Outcome Filter Pill Bar */}
+        <div className="space-y-1.5">
+          <span className="text-xs font-semibold text-slate-700 block">
+            Filter by Execution Outcome
+          </span>
+          <OutcomePillBar
+            outcomes={outcomesCount}
+            selectedOutcome={filters.outcome}
+            onSelectOutcome={(val) => setFilter("outcome", val)}
+          />
+        </div>
+      </section>
+
+      {/* ========================================================================= */}
+      {/* TABLE CONTROLS & DATA TABLE (Integrated TableCard) */}
+      {/* ========================================================================= */}
+      <section>
+        <TableCard
+          toolbar={
+            <TableToolbar
+              search={search}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Search query, answer, session title, IP, or request ID..."
+              filters={[
+                {
+                  id: "grounded",
+                  label: "Groundedness",
+                  value: filters.grounded,
+                  options: [
+                    { label: "All Turns", value: "all" },
+                    { label: "Verified Grounded", value: "true" },
+                    { label: "Ungrounded", value: "false" },
+                  ],
+                  onChange: (val) => setFilter("grounded", val),
+                },
+                ...(filters.session_id
+                  ? [
+                      {
+                        id: "session_id",
+                        label: `Session: ${filters.session_id.slice(0, 8)}...`,
+                        value: filters.session_id,
+                        options: [
+                          { label: `Session: ${filters.session_id}`, value: filters.session_id },
+                          { label: "Clear Session Filter", value: "" },
+                        ],
+                        onChange: (val: string) => setFilter("session_id", val),
+                      },
+                    ]
+                  : []),
+                ...(filters.ip
+                  ? [
+                      {
+                        id: "ip",
+                        label: `IP: ${filters.ip}`,
+                        value: filters.ip,
+                        options: [
+                          { label: `IP: ${filters.ip}`, value: filters.ip },
+                          { label: "Clear IP Filter", value: "" },
+                        ],
+                        onChange: (val: string) => setFilter("ip", val),
+                      },
+                    ]
+                  : []),
+              ]}
+              extraActions={
+                <a
+                  href={exportUrl}
+                  download
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Export CSV</span>
+                </a>
+              }
+            />
+          }
+          pagination={
+            <Pagination
+              page={page}
+              pageCount={Math.ceil((data?.total || 0) / pageSize)}
+              totalItems={data?.total || 0}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <DataTable
+            columns={columns}
+            data={data?.items || []}
+            keyField="request_id"
+            isLoading={isLoading}
+            error={error}
+            onRetry={fetchData}
+            currentSort={sort}
+            onSortChange={setSort}
+            onRowClick={(r) => setInspectRequestId(r.request_id)}
+          />
+        </TableCard>
+      </section>
+
+      {/* Inspector Slide-Over Drawer */}
+      {inspectRequestId && (
+        <QueryInspectorDrawer
+          requestId={inspectRequestId}
+          token={token}
+          onClose={() => setInspectRequestId(null)}
+        />
+      )}
+    </div>
+  );
+}

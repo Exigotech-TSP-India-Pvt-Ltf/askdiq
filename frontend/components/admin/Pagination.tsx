@@ -17,6 +17,7 @@ export interface PaginationProps {
   pageSize: number;
   onPageChange: (page: number) => void;
   onPageSizeChange?: (size: PageSize) => void;
+  onPrefetchNext?: () => void;
   className?: string;
 }
 
@@ -28,6 +29,7 @@ export function Pagination({
   pageSize,
   onPageChange,
   onPageSizeChange,
+  onPrefetchNext,
   className = "",
 }: PaginationProps) {
   const safePageCount = Math.max(1, pageCount);
@@ -123,6 +125,15 @@ export function Pagination({
         {/* Next */}
         <button
           onClick={() => onPageChange(page + 1)}
+          onMouseEnter={() => {
+            if (page < safePageCount && onPrefetchNext) {
+              try {
+                onPrefetchNext();
+              } catch {
+                // Ignore prefetch errors gracefully
+              }
+            }
+          }}
           disabled={page >= safePageCount}
           aria-label="Next page"
           title="Next page"

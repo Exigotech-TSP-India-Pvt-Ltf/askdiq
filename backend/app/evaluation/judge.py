@@ -21,14 +21,13 @@ Notes
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-from openai import AzureOpenAI
+from openai import AsyncAzureOpenAI
 
 from app.core.config import get_settings
 
@@ -122,7 +121,7 @@ def _extract_json(text: str) -> dict | None:
 
 
 def _clamp_score(value) -> int:
-    return max(1, min(5, int(round(float(value)))))
+    return max(1, min(5, round(float(value))))
 
 
 def parse_judge_output(text: str) -> JudgeScores | None:
@@ -145,9 +144,9 @@ def parse_judge_output(text: str) -> JudgeScores | None:
 
 
 @lru_cache(maxsize=4)
-def _client_for(deployment: str) -> AzureOpenAI:
+def _client_for(deployment: str) -> AsyncAzureOpenAI:
     settings = get_settings()
-    return AzureOpenAI(
+    return AsyncAzureOpenAI(
         api_key=settings.azure_openai_api_key,
         azure_endpoint=settings.azure_openai_endpoint,
         api_version=settings.azure_openai_api_version,
@@ -156,7 +155,7 @@ def _client_for(deployment: str) -> AzureOpenAI:
     )
 
 
-def _judge_sync(
+async def _judge(
     question: str,
     context_chunks: list[str],
     answer: str,
@@ -176,13 +175,11 @@ def _judge_sync(
             "content": build_judge_prompt(question, context_chunks, answer, key_facts),
         },
     ]
-    common = dict(
-        model=deployment,
-        messages=messages,
-        temperature=settings.azure_openai_temperature,
-        max_completion_tokens=settings.llm_max_completion_tokens,
-        reasoning_effort=settings.llm_reasoning_effort,
-    )
+    common = {
+        "model": deployment,
+        "messages": messages,
+        "reasoning_effort": settings.llm_reasoning_effort,
+    }
 
     # Prefer JSON mode; fall back to a plain call if the deployment rejects it.
     for use_json_mode in (True, False):
@@ -190,8 +187,8 @@ def _judge_sync(
             kwargs = dict(common)
             if use_json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
-            response = client.chat.completions.create(**kwargs)
-        except Exception as exc:  # noqa: BLE001 - evaluation must not crash
+            response = await client.chat.completions.create(**kwargs)
+        except Exception as exc:
             logger.warning(
                 "judge_call_failed json_mode=%s error_type=%s error=%s",
                 use_json_mode,
@@ -218,9 +215,7 @@ async def judge_answer(
     """Grade ``answer`` against ``context_chunks``. Never raises."""
 
     try:
-        return await asyncio.to_thread(
-            _judge_sync, question, context_chunks, answer, key_facts
-        )
-    except Exception as exc:  # noqa: BLE001
+        return await _judge(question, context_chunks, answer, key_facts)
+    except Exception as exc:
         logger.warning("judge_failed error_type=%s error=%s", type(exc).__name__, exc)
         return None

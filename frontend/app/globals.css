@@ -2,7 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
+:root {
+  --brand-primary: #5433e0;
+  --brand-surface: #ffffff;
+  --brand-accent: #7257f5;
+  --brand-gradient-from: #4c48e3;
+  --brand-gradient-via: #6745d7;
+  --brand-gradient-to: #8242cc;
+  --brand-glow: rgba(76, 72, 227, 0.35);
+}
+
+html {
+  height: 100%;
+  scrollbar-gutter: stable;
+}
+
 body {
   height: 100%;
 }

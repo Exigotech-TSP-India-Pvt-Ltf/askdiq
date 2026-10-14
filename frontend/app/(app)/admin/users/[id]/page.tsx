@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, useMemo } from "react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
+import { TableToolbar } from "@/components/admin/TableToolbar";
+import { Pagination } from "@/components/admin/Pagination";
 
 type Message = {
   id: string;
@@ -35,32 +40,85 @@ type UserDetail = {
 };
 
 export default function UserDetailPage() {
+  const router = useRouter();
   const params = useParams();
   const id = params.id as string;
 
+  const { token } = useAuth();
   const [user, setUser] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Conversations table state
+  const [convSearch, setConvSearch] = useState("");
+  const [convPage, setConvPage] = useState(1);
+  const [convPageSize, setConvPageSize] = useState(10);
+
+  const filteredConversations = useMemo(() => {
+    if (!user?.conversations_data) return [];
+    if (!convSearch.trim()) return user.conversations_data;
+    const needle = convSearch.toLowerCase();
+    return user.conversations_data.filter(
+      (c) =>
+        (c.title || "").toLowerCase().includes(needle) ||
+        c.id.toLowerCase().includes(needle)
+    );
+  }, [user?.conversations_data, convSearch]);
+
+  const pagedConversations = useMemo(() => {
+    const start = (convPage - 1) * convPageSize;
+    return filteredConversations.slice(start, start + convPageSize);
+  }, [filteredConversations, convPage, convPageSize]);
+
+  const convColumns: ColumnDef<Conversation>[] = [
+    {
+      key: "title",
+      header: "Conversation Title & ID",
+      render: (c) => (
+        <div className="flex flex-col">
+          <span className="font-medium text-brand-indigo hover:underline">
+            {c.title || "Untitled Conversation"}
+          </span>
+          <span className="font-mono text-[10px] text-slate-400">{c.id}</span>
+        </div>
+      ),
+    },
+    {
+      key: "created_at",
+      header: "Created",
+      render: (c) => (
+        <span className="text-xs text-slate-600">
+          {formatDate(c.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: "last_activity_at",
+      header: "Last Activity",
+      render: (c) => (
+        <span className="text-xs text-slate-600">
+          {formatDate(c.last_activity_at)}
+        </span>
+      ),
+    },
+    {
+      key: "message_count",
+      header: "Messages",
+      align: "center",
+      render: (c) => (
+        <span className="font-medium text-slate-900">
+          {c.message_count ?? 0}
+        </span>
+      ),
+    },
+  ];
+
   useEffect(() => {
-    if (!id) return;
+    if (!id || !token) return;
+    const authToken = token;
 
     async function loadUser() {
       try {
-        const response = await fetch(
-          `http://localhost:8000/admin/users/${id}`,
-          {
-            headers: {
-              "X-API-Key": "dep-iq-key",
-            },
-          }
-        );
-
-        if (!response.ok) {
-          setUser(null);
-          return;
-        }
-
-        const data = await response.json();
+        const data = await api.adminGet<UserDetail>(authToken, `/users/${id}`);
         setUser(data);
       } catch {
         setUser(null);
@@ -70,7 +128,7 @@ export default function UserDetailPage() {
     }
 
     loadUser();
-  }, [id]);
+  }, [id, token]);
 
   if (loading) {
     return (
@@ -185,77 +243,42 @@ export default function UserDetailPage() {
       </div>
 
       {/* Conversations */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-6 py-4">
+      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
+        <div>
           <h2 className="text-base font-semibold text-slate-900">
             Conversations
           </h2>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Conversations associated with this user.
+          <p className="mt-0.5 text-xs text-slate-500">
+            Conversations associated with this client IP address.
           </p>
         </div>
 
-        {user.conversations_data &&
-        user.conversations_data.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="border-b border-slate-200 bg-slate-50">
-                <tr>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Conversation
-                  </th>
+        <TableToolbar
+          search={convSearch}
+          onSearchChange={(v) => {
+            setConvSearch(v);
+            setConvPage(1);
+          }}
+          searchPlaceholder="Search conversations…"
+        />
 
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Created
-                  </th>
+        <DataTable
+          columns={convColumns}
+          data={pagedConversations}
+          keyField="id"
+          isLoading={false}
+          onRowClick={(c) => router.push(`/admin/conversations/${c.id}`)}
+          emptyMessage="No conversations found for this user."
+        />
 
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Last Activity
-                  </th>
-
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Messages
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {user.conversations_data.map((conversation) => (
-                  <tr
-                    key={conversation.id}
-                    className="border-b border-slate-100 last:border-0"
-                  >
-                    <td className="px-5 py-4">
-                      <Link
-                        href={`/admin/conversations/${conversation.id}`}
-                        className="font-medium text-purple-700 hover:text-purple-900"
-                      >
-                        {conversation.title || "Untitled Conversation"}
-                      </Link>
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      {formatDate(conversation.created_at)}
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      {formatDate(conversation.last_activity_at)}
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      {conversation.message_count ?? 0}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="p-8 text-center text-sm text-slate-500">
-            No conversations found for this user.
-          </div>
-        )}
+        <Pagination
+          page={convPage}
+          pageCount={Math.ceil(filteredConversations.length / convPageSize)}
+          totalItems={filteredConversations.length}
+          pageSize={convPageSize}
+          onPageChange={setConvPage}
+          onPageSizeChange={setConvPageSize}
+        />
       </div>
     </div>
   );

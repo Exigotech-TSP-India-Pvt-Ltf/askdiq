@@ -25,6 +25,8 @@ from pathlib import Path
 # sys.path[0], so `app` isn't importable without this — add backend/ too.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from datetime import UTC
+
 from app.core.config import configure_logging
 from app.core.database import AsyncSessionLocal, engine
 from app.evaluation.dataset import ALL_DOCS, EVAL_CASES
@@ -45,8 +47,7 @@ def _print_progress(index: int, total: int, result: EvalResult) -> None:
     if result.known_issue:
         tag = "KNOWN-FIXED" if result.passed else "KNOWN"
     print(
-        f"[{index}/{total}] {tag:<11} {result.case.id} "
-        f"({result.latency_ms:.0f} ms)",
+        f"[{index}/{total}] {tag:<11} {result.case.id} ({result.latency_ms:.0f} ms)",
         flush=True,
     )
 
@@ -60,7 +61,9 @@ def _print_case_detail(result: EvalResult) -> None:
     print(f"\n[{status}] {case.id} ({case.case_type})")
     print(f"  query: {case.query[:120]}{'...' if len(case.query) > 120 else ''}")
     if case.history:
-        print(f"  history_turns={len(case.history)} follow_up_detected={result.follow_up_detected}")
+        print(
+            f"  history_turns={len(case.history)} follow_up_detected={result.follow_up_detected}"
+        )
     print(
         f"  grounded={result.grounded} (expected {case.expect_grounded}) "
         f"confidence={result.confidence:.3f} flags={result.guardrail_flags}"
@@ -84,7 +87,9 @@ def _print_case_detail(result: EvalResult) -> None:
                 f"{item['section_heading']} | score={item['score']}"
             )
     if result.heading_ok is not None:
-        print(f"  heading_hit={result.heading_ok} expected_any_of={case.expected_headings}")
+        print(
+            f"  heading_hit={result.heading_ok} expected_any_of={case.expected_headings}"
+        )
     if result.missing_keywords:
         print(f"  MISSING keywords: {result.missing_keywords}")
     if result.forbidden_found:
@@ -155,12 +160,18 @@ def _print_report(report, show_all: bool) -> None:
 
     print("\npass rate by case type:")
     for case_type, stats in s["by_case_type"].items():
-        print(f"  {case_type:<15} {stats['passed']}/{stats['n']}  ({_pct(stats['pass_rate'])})")
+        print(
+            f"  {case_type:<15} {stats['passed']}/{stats['n']}  ({_pct(stats['pass_rate'])})"
+        )
 
     if s["known_issues"]:
         print("\nknown issues (not counted):")
         for item in s["known_issues"]:
-            state = "FIXED - remove known_issue marker" if item["passing_now"] else "still failing"
+            state = (
+                "FIXED - remove known_issue marker"
+                if item["passing_now"]
+                else "still failing"
+            )
             print(f"  {item['id']}: {state}")
 
     overall = s["latency"]["total"]
@@ -202,7 +213,9 @@ def _print_section(title: str, data) -> None:
 
 def _print_extended(s: dict) -> None:
     print("\n" + "=" * 88)
-    print("KNOWLEDGE-BASE RAG EVALUATION (retrieval / answer / citation / safety / robustness / ops)")
+    print(
+        "KNOWLEDGE-BASE RAG EVALUATION (retrieval / answer / citation / safety / robustness / ops)"
+    )
     print("=" * 88)
     r = s["retrieval"]
     if r:
@@ -225,11 +238,16 @@ async def _run_kb(args: argparse.Namespace) -> dict:
     from app.evaluation import kb_eval
 
     source_dir = Path(__file__).resolve().parent.parent / "data" / "real_docs"
-    corpus = kb_eval.load_corpus(source_dir)
-    chunks, timings = kb_eval.chunk_corpus(
+    corpus = await kb_eval.load_corpus(source_dir)
+    chunks, timings = await kb_eval.chunk_corpus(
         corpus, lambda: MetadataAwareChunker(base_strategy=StructureAwareChunker())
     )
-    mtimes = {n: datetime.utcfromtimestamp((source_dir / n).stat().st_mtime) for n in corpus}
+    mtimes = await asyncio.to_thread(
+        lambda: {
+            n: datetime.fromtimestamp((source_dir / n).stat().st_mtime, tz=UTC)
+            for n in corpus
+        }
+    )
     result = kb_eval.evaluate_kb(
         corpus, chunks, ALL_DOCS, mtimes=mtimes, timings_ms=timings
     )
@@ -237,7 +255,9 @@ async def _run_kb(args: argparse.Namespace) -> dict:
         from ingest_real_docs import _sha256
 
         async with AsyncSessionLocal() as db:
-            result["ingested"] = await kb_eval.evaluate_ingested(db, corpus, mtimes, _sha256)
+            result["ingested"] = await kb_eval.evaluate_ingested(
+                db, corpus, mtimes, _sha256
+            )
 
     print("\n" + "=" * 88)
     print("KNOWLEDGE BASE & INGESTION EVALUATION")
@@ -281,8 +301,11 @@ async def main(args: argparse.Namespace) -> int:
     kb_result = await _run_kb(args) if (args.kb or args.kb_only) else None
     if args.kb_only:
         if args.json_path:
-            with open(args.json_path, "w", encoding="utf-8") as f:
-                json.dump({"kb": kb_result}, f, indent=2, default=str)
+            await asyncio.to_thread(
+                Path(args.json_path).write_text,
+                json.dumps({"kb": kb_result}, indent=2, default=str),
+                encoding="utf-8",
+            )
         await engine.dispose()
         return 0
 
@@ -294,7 +317,9 @@ async def main(args: argparse.Namespace) -> int:
         counter["i"] += 1
         _print_progress(counter["i"], total, result)
 
-    print(f"Running {total} case(s) at top_k={args.top_k} judge={'on' if args.judge else 'off'}")
+    print(
+        f"Running {total} case(s) at top_k={args.top_k} judge={'on' if args.judge else 'off'}"
+    )
 
     async with AsyncSessionLocal() as db:
         vector_store = VectorStore(db)
@@ -316,11 +341,15 @@ async def main(args: argparse.Namespace) -> int:
     _print_extended(report.summary())
 
     if args.json_path:
-        with open(args.json_path, "w", encoding="utf-8") as f:
-            json.dump(
+        await asyncio.to_thread(
+            Path(args.json_path).write_text,
+            json.dumps(
                 {**_to_json(report), **({"kb": kb_result} if kb_result else {})},
-                f, indent=2, default=str,
-            )
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
         print(f"\nWrote JSON report to {args.json_path}")
 
     await engine.dispose()
@@ -335,22 +364,76 @@ async def main(args: argparse.Namespace) -> int:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--json", dest="json_path", default=None, help="write the full report as JSON")
-    parser.add_argument("--judge", action="store_true", help="enable LLM-as-judge scoring (1 extra LLM call per case)")
-    parser.add_argument("--judge-min-faithfulness", type=int, default=4, help="judge faithfulness (1-5) needed to pass; default 4")
-    parser.add_argument("--top-k", type=int, default=6, help="chunks retrieved per query; default 6")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--json", dest="json_path", default=None, help="write the full report as JSON"
+    )
+    parser.add_argument(
+        "--judge",
+        action="store_true",
+        help="enable LLM-as-judge scoring (1 extra LLM call per case)",
+    )
+    parser.add_argument(
+        "--judge-min-faithfulness",
+        type=int,
+        default=4,
+        help="judge faithfulness (1-5) needed to pass; default 4",
+    )
+    parser.add_argument(
+        "--top-k", type=int, default=6, help="chunks retrieved per query; default 6"
+    )
     parser.add_argument("--ids", nargs="+", help="run only these case ids")
     parser.add_argument("--types", nargs="+", help="run only these case types")
-    parser.add_argument("--min-pass-rate", type=float, default=None, help="exit 1 if pass rate (0-1) is below this")
-    parser.add_argument("--repeat", type=int, default=1, help="run each case N times (repeated-question consistency)")
-    parser.add_argument("--concurrency", type=int, default=1, help="cases in flight at once (throughput/concurrency)")
-    parser.add_argument("--price-in", type=float, default=0.0, help="USD per 1M input tokens (cost metrics)")
-    parser.add_argument("--price-out", type=float, default=0.0, help="USD per 1M output tokens (cost metrics)")
-    parser.add_argument("--kb", action="store_true", help="also run the knowledge-base / ingestion evaluation")
-    parser.add_argument("--kb-only", action="store_true", help="run only the knowledge-base evaluation (no LLM calls)")
-    parser.add_argument("--kb-db", action="store_true", help="with --kb: also compare stored DB documents to source files")
-    parser.add_argument("--verbose", action="store_true", help="print detail for passing cases too")
+    parser.add_argument(
+        "--min-pass-rate",
+        type=float,
+        default=None,
+        help="exit 1 if pass rate (0-1) is below this",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="run each case N times (repeated-question consistency)",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="cases in flight at once (throughput/concurrency)",
+    )
+    parser.add_argument(
+        "--price-in",
+        type=float,
+        default=0.0,
+        help="USD per 1M input tokens (cost metrics)",
+    )
+    parser.add_argument(
+        "--price-out",
+        type=float,
+        default=0.0,
+        help="USD per 1M output tokens (cost metrics)",
+    )
+    parser.add_argument(
+        "--kb",
+        action="store_true",
+        help="also run the knowledge-base / ingestion evaluation",
+    )
+    parser.add_argument(
+        "--kb-only",
+        action="store_true",
+        help="run only the knowledge-base evaluation (no LLM calls)",
+    )
+    parser.add_argument(
+        "--kb-db",
+        action="store_true",
+        help="with --kb: also compare stored DB documents to source files",
+    )
+    parser.add_argument(
+        "--verbose", action="store_true", help="print detail for passing cases too"
+    )
     parsed = parser.parse_args()
 
     sys.exit(asyncio.run(main(parsed)))

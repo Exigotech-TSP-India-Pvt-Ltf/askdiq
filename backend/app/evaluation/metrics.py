@@ -112,7 +112,9 @@ def hit_rate_at_k(flags: Sequence[bool], k: int) -> float:
     return 1.0 if any(flags[:k]) else 0.0
 
 
-def context_coverage(context_chunks: Iterable[str], key_facts: Iterable[str]) -> float | None:
+def context_coverage(
+    context_chunks: Iterable[str], key_facts: Iterable[str]
+) -> float | None:
     """Share of expected key facts present anywhere in the retrieved context.
 
     None when the case lists no key facts. Facts use the same ``a|b``
