@@ -1,0 +1,1333 @@
+"""SQL Usage & Cost Aggregation API (Phase 2 & Phase 3).
+
+High-performance, database-aggregated endpoints for:
+- Audience counts badge: GET /admin/usage/audience-counts (Task 2.4)
+- Summary: GET /admin/usage/summary (Task 3.2, separated cost & tokens)
+- Users: GET /admin/usage/users (Task 3.3.1, paginated + intelligence header)
+- Sessions: GET /admin/usage/sessions (Task 3.3.2, paginated + intelligence header)
+- Queries: GET /admin/usage/queries (Task 3.3.3, paginated + intelligence header)
+- Query Inspector Detail: GET /admin/usage/queries/{request_id} (Task 3.5.3)
+- Streaming CSV Export: GET /admin/usage/export (Task 3.4, formula injection protected)
+"""
+
+import asyncio
+import csv
+import io
+import logging
+import time
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+from sqlalchemy import (
+    String,
+    and_,
+    case,
+    cast,
+    desc,
+    func,
+    or_,
+    select,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
+
+from app.core.config import get_settings
+from app.core.database import get_db
+from app.governance.audience import (
+    Audience,
+    audience_scope,
+    build_audience_filter,
+    get_classified_ips,
+)
+from app.governance.audit import record_audit_event
+from app.governance.auth import get_current_actor
+from app.governance.costing import calculate_stage_costs
+from app.governance.outcomes import GENERATION_OUTCOMES
+from app.governance.usage_queries import (
+    apply_usage_filters,
+    escape_ilike_pattern,
+)
+from app.models.db_models import (
+    AuditLog,
+    ChatMessageRecord,
+    ChatSession,
+    LatencyRecord,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/usage", tags=["usage"])
+
+__all__ = ["calculate_stage_costs", "router"]
+
+
+# Concurrency semaphore for heavy aggregations (Task 5.1.2)
+_agg_semaphore = asyncio.Semaphore(4)
+_summary_cache: dict[tuple, tuple[float, dict]] = {}
+_summary_cache_lock = asyncio.Lock()
+_counts_cache: dict[str, tuple[float, dict]] = {}
+_counts_cache_lock = asyncio.Lock()
+
+
+def clear_usage_caches() -> None:
+    """Clear all usage summary and audience counts caches (Task 5.1.1)."""
+    _summary_cache.clear()
+    _counts_cache.clear()
+
+
+# ============================================================================
+# AUDIENCE COUNTS (Task 2.4 & Task 5.1)
+# ============================================================================
+
+
+@router.get("/audience-counts")
+async def get_audience_counts(
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+):
+    """Return badge counts (queries, sessions, distinct IPs) for Overview, Users, and Testing with short-TTL cache."""
+    settings = get_settings()
+    ttl = settings.usage_summary_cache_ttl_seconds
+    now_ts = time.time()
+    if "counts" in _counts_cache:
+        cached_ts, cached_val = _counts_cache["counts"]
+        if now_ts - cached_ts < ttl:
+            return cached_val
+
+    async with _counts_cache_lock:
+        now_ts = time.time()
+        if "counts" in _counts_cache:
+            cached_ts, cached_val = _counts_cache["counts"]
+            if now_ts - cached_ts < ttl:
+                return cached_val
+
+        test_ips, _user_ips, _ = await get_classified_ips(db)
+        test_ip_list = list(test_ips)
+
+        user_msg = aliased(ChatMessageRecord, name="user_turn")
+        asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+        client_ip_col = func.coalesce(user_msg.ip_address, ChatSession.created_ip)
+
+        # 1. Total counts (Overview)
+        q_total = (
+            await db.execute(
+                select(func.count(asst_msg.id))
+                .select_from(asst_msg)
+                .join(
+                    user_msg,
+                    and_(
+                        asst_msg.session_id == user_msg.session_id,
+                        asst_msg.turn_index == user_msg.turn_index,
+                        user_msg.role == "user",
+                    ),
+                )
+                .where(asst_msg.role == "assistant")
+            )
+        ).scalar() or 0
+
+        s_total = (await db.execute(select(func.count(ChatSession.id)))).scalar() or 0
+
+        # Distinct IPs across sessions and messages
+        q_all_ips = (
+            select(ChatMessageRecord.ip_address)
+            .where(ChatMessageRecord.ip_address.isnot(None))
+            .union(
+                select(ChatSession.created_ip).where(ChatSession.created_ip.isnot(None))
+            )
+        )
+        all_distinct_ips = set((await db.execute(q_all_ips)).scalars().all())
+
+        # 2. Testing counts (IP is NULL/empty OR in test_ip_list)
+        if test_ip_list:
+            test_cond_msgs = or_(
+                client_ip_col.is_(None),
+                client_ip_col.in_(test_ip_list),
+            )
+            test_cond_sess = or_(
+                ChatSession.created_ip.is_(None),
+                ChatSession.created_ip.in_(test_ip_list),
+            )
+        else:
+            test_cond_msgs = client_ip_col.is_(None)
+            test_cond_sess = ChatSession.created_ip.is_(None)
+
+        q_testing = (
+            await db.execute(
+                select(func.count(asst_msg.id))
+                .select_from(asst_msg)
+                .join(
+                    user_msg,
+                    and_(
+                        asst_msg.session_id == user_msg.session_id,
+                        asst_msg.turn_index == user_msg.turn_index,
+                        user_msg.role == "user",
+                    ),
+                )
+                .join(ChatSession, asst_msg.session_id == ChatSession.id)
+                .where(
+                    asst_msg.role == "assistant",
+                    test_cond_msgs,
+                )
+            )
+        ).scalar() or 0
+
+        s_testing = (
+            await db.execute(select(func.count(ChatSession.id)).where(test_cond_sess))
+        ).scalar() or 0
+
+        # 3. User counts: Overview minus Testing guarantees exact reconciliation
+        q_users = max(0, q_total - q_testing)
+        s_users = max(0, s_total - s_testing)
+
+        distinct_test_count = sum(1 for ip in all_distinct_ips if ip in test_ips)
+        distinct_user_count = max(0, len(all_distinct_ips) - distinct_test_count)
+
+        result = {
+            "overview": {
+                "queries": q_total,
+                "sessions": s_total,
+                "ips": len(all_distinct_ips),
+            },
+            "users": {
+                "queries": q_users,
+                "sessions": s_users,
+                "ips": distinct_user_count,
+            },
+            "testing": {
+                "queries": q_testing,
+                "sessions": s_testing,
+                "ips": distinct_test_count,
+            },
+        }
+        _counts_cache["counts"] = (time.time(), result)
+        return result
+
+
+# ============================================================================
+# USAGE SUMMARY (Task 3.2)
+# ============================================================================
+
+
+@router.get("/summary")
+async def get_usage_summary(
+    audience: Audience = Depends(audience_scope),
+    from_date: str | None = None,
+    to_date: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+):
+    """Overall Stage Economics summary separating Financial Cost from Token Volume (Task 3.2)."""
+    settings = get_settings()
+
+    # Parse and validate dates
+    from_dt: datetime | None = None
+    to_dt: datetime | None = None
+    if from_date:
+        try:
+            from_dt = datetime.fromisoformat(from_date.replace("Z", ""))
+        except ValueError:
+            raise HTTPException(
+                status_code=422, detail="Invalid from_date format. Use ISO 8601."
+            ) from None
+    if to_date:
+        try:
+            to_dt = datetime.fromisoformat(to_date.replace("Z", ""))
+        except ValueError:
+            raise HTTPException(
+                status_code=422, detail="Invalid to_date format. Use ISO 8601."
+            ) from None
+
+    if from_dt and to_dt and (to_dt - from_dt).days > settings.usage_max_range_days:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Requested date range exceeds maximum allowed limit of {settings.usage_max_range_days} days.",
+        )
+
+    cache_key = (audience, from_date, to_date)
+    ttl = settings.usage_summary_cache_ttl_seconds
+    now_ts = time.time()
+    if cache_key in _summary_cache:
+        cached_ts, cached_val = _summary_cache[cache_key]
+        if now_ts - cached_ts < ttl:
+            return cached_val
+
+    async with _summary_cache_lock:
+        now_ts = time.time()
+        if cache_key in _summary_cache:
+            cached_ts, cached_val = _summary_cache[cache_key]
+            if now_ts - cached_ts < ttl:
+                return cached_val
+
+        async with _agg_semaphore:
+            # Build base selectable
+            user_msg = aliased(ChatMessageRecord, name="user_turn")
+            asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+
+            client_ip_col = func.coalesce(user_msg.ip_address, ChatSession.created_ip)
+            aud_cond = await build_audience_filter(db, client_ip_col, audience)
+
+        # Aggregate sums and averages in SQL
+        agg_stmt = (
+            select(
+                func.count(asst_msg.id).label("total_turns"),
+                func.coalesce(func.sum(asst_msg.prompt_tokens), 0).label("sum_prompt"),
+                func.coalesce(func.sum(asst_msg.completion_tokens), 0).label(
+                    "sum_completion"
+                ),
+                func.coalesce(func.sum(asst_msg.total_tokens), 0).label(
+                    "sum_total_tokens"
+                ),
+                func.coalesce(func.sum(asst_msg.reasoning_tokens), 0).label(
+                    "sum_reasoning"
+                ),
+                func.coalesce(func.sum(asst_msg.embedding_tokens), 0).label(
+                    "sum_query_embed"
+                ),
+                func.coalesce(func.sum(asst_msg.guardrail_tokens), 0).label(
+                    "sum_guardrail_embed"
+                ),
+                func.coalesce(func.sum(asst_msg.cost_usd), 0.0).label("sum_cost"),
+                # Count actual vs estimated turns (safely handle JSON boolean / string)
+                func.count(
+                    case(
+                        (asst_msg.token_details["is_actual"].as_string() == "false", 1),
+                        else_=None,
+                    )
+                ).label("estimated_turns"),
+            )
+            .select_from(asst_msg)
+            .join(
+                user_msg,
+                and_(
+                    asst_msg.session_id == user_msg.session_id,
+                    asst_msg.turn_index == user_msg.turn_index,
+                    user_msg.role == "user",
+                ),
+            )
+            .join(ChatSession, asst_msg.session_id == ChatSession.id)
+            .where(asst_msg.role == "assistant")
+        )
+
+        if aud_cond is not None:
+            agg_stmt = agg_stmt.where(aud_cond)
+        if from_dt:
+            agg_stmt = agg_stmt.where(user_msg.created_at >= from_dt)
+        if to_dt:
+            agg_stmt = agg_stmt.where(user_msg.created_at <= to_dt)
+
+        row = (await db.execute(agg_stmt)).one()
+        total_turns = row.total_turns
+        sum_prompt = int(row.sum_prompt)
+        sum_completion = int(row.sum_completion)
+        sum_total_tokens = int(row.sum_total_tokens)
+        sum_reasoning = int(row.sum_reasoning)
+        sum_query_embed = int(row.sum_query_embed)
+        sum_guardrail_embed = int(row.sum_guardrail_embed)
+        sum_cost = float(row.sum_cost)
+        estimated_turns = int(row.estimated_turns)
+        actual_turns = max(0, total_turns - estimated_turns)
+
+        # Ingestion platform overhead from AuditLog (Task 3.2.3) - dialect-safe in Python
+        ingest_stmt = select(AuditLog.detail).where(AuditLog.action == "ingest")
+
+        ingest_aud_cond = await build_audience_filter(db, AuditLog.ip_address, audience)
+        if ingest_aud_cond is not None:
+            ingest_stmt = ingest_stmt.where(ingest_aud_cond)
+        if from_dt:
+            ingest_stmt = ingest_stmt.where(AuditLog.created_at >= from_dt)
+        if to_dt:
+            ingest_stmt = ingest_stmt.where(AuditLog.created_at <= to_dt)
+
+        ingest_rows = (await db.execute(ingest_stmt)).scalars().all()
+        ingest_embed_tokens = 0
+        ingest_cost = 0.0
+        for d in ingest_rows:
+            if isinstance(d, dict):
+                ingest_embed_tokens += int(d.get("embedding_tokens") or 0)
+                ingest_cost += float(d.get("cost_usd") or 0.0)
+
+        # Outcome counts distribution
+        outcome_stmt = (
+            select(asst_msg.outcome, func.count(asst_msg.id))
+            .select_from(asst_msg)
+            .join(
+                user_msg,
+                and_(
+                    asst_msg.session_id == user_msg.session_id,
+                    asst_msg.turn_index == user_msg.turn_index,
+                    user_msg.role == "user",
+                ),
+            )
+            .join(ChatSession, asst_msg.session_id == ChatSession.id)
+            .where(asst_msg.role == "assistant")
+            .group_by(asst_msg.outcome)
+        )
+        if aud_cond is not None:
+            outcome_stmt = outcome_stmt.where(aud_cond)
+        if from_dt:
+            outcome_stmt = outcome_stmt.where(user_msg.created_at >= from_dt)
+        if to_dt:
+            outcome_stmt = outcome_stmt.where(user_msg.created_at <= to_dt)
+
+        outcome_rows = dict((await db.execute(outcome_stmt)).all())
+        outcomes_dist = {
+            "answered": outcome_rows.get("answered", 0),
+            "ungrounded": outcome_rows.get("ungrounded", 0),
+            "blocked": outcome_rows.get("blocked", 0),
+            "conversational": outcome_rows.get("conversational", 0),
+            "llm_failed": outcome_rows.get("llm_failed", 0),
+        }
+
+        # Groundedness pass rate over GENERATION_OUTCOMES only
+        gen_turns = sum(outcomes_dist[k] for k in GENERATION_OUTCOMES)
+        answered_turns = outcomes_dist["answered"]
+        grounded_pct = (
+            round((answered_turns / gen_turns * 100), 1) if gen_turns > 0 else 100.0
+        )
+
+        # Latency statistics
+        lat_stmt = (
+            select(
+                func.coalesce(func.avg(LatencyRecord.total_ms), 0.0).label("avg_lat"),
+                func.coalesce(
+                    func.percentile_cont(0.50).within_group(LatencyRecord.total_ms), 0.0
+                ).label("p50_lat"),
+                func.coalesce(
+                    func.percentile_cont(0.95).within_group(LatencyRecord.total_ms), 0.0
+                ).label("p95_lat"),
+            )
+            .select_from(asst_msg)
+            .join(LatencyRecord, asst_msg.request_id == LatencyRecord.request_id)
+            .join(
+                user_msg,
+                and_(
+                    asst_msg.session_id == user_msg.session_id,
+                    asst_msg.turn_index == user_msg.turn_index,
+                    user_msg.role == "user",
+                ),
+            )
+            .join(ChatSession, asst_msg.session_id == ChatSession.id)
+        )
+        if aud_cond is not None:
+            lat_stmt = lat_stmt.where(aud_cond)
+        if from_dt:
+            lat_stmt = lat_stmt.where(user_msg.created_at >= from_dt)
+        if to_dt:
+            lat_stmt = lat_stmt.where(user_msg.created_at <= to_dt)
+
+        lat_row = (await db.execute(lat_stmt)).one()
+
+        # Rates & Savings calculation
+        cached_rate = settings.price_cached_per_million
+        prompt_rate = settings.price_prompt_per_million
+        output_rate = settings.price_output_per_million
+        embed_rate = settings.price_embed_per_million
+
+        # Visible vs reasoning tokens
+        visible_tokens = max(0, sum_completion - sum_reasoning)
+        prompt_cost = (sum_prompt * prompt_rate) / 1e6
+        reasoning_cost = (sum_reasoning * output_rate) / 1e6
+        visible_cost = (visible_tokens * output_rate) / 1e6
+        query_embed_cost = (sum_query_embed * embed_rate) / 1e6
+        guardrail_embed_cost = (sum_guardrail_embed * embed_rate) / 1e6
+        llm_cost = prompt_cost + reasoning_cost + visible_cost
+        embeddings_cost = query_embed_cost + guardrail_embed_cost + ingest_cost
+
+        total_platform_cost = sum_cost + ingest_cost
+        avg_cost_per_query = (
+            (total_platform_cost / total_turns) if total_turns > 0 else 0.0
+        )
+        actual_pct = (
+            round((actual_turns / total_turns * 100), 1) if total_turns > 0 else 100.0
+        )
+
+        summary_res = {
+            "audience": audience,
+            "as_of": datetime.now(UTC).isoformat(),
+            "financial": {
+                "total_cost_usd": round(total_platform_cost, 6),
+                "llm_cost_usd": round(llm_cost, 6),
+                "embeddings_cost_usd": round(embeddings_cost, 6),
+                "avg_cost_per_query_usd": round(avg_cost_per_query, 6),
+                "stage_costs": {
+                    "query_embed_cost": round(query_embed_cost, 6),
+                    "guardrail_embed_cost": round(guardrail_embed_cost, 6),
+                    "prompt_uncached_cost": round(prompt_cost, 6),
+                    "cached_prompt_cost": 0.0,
+                    "cached_savings_usd": 0.0,
+                    "reasoning_cost": round(reasoning_cost, 6),
+                    "visible_cost": round(visible_cost, 6),
+                    "ingestion_overhead_cost": round(ingest_cost, 6),
+                },
+            },
+            "tokens": {
+                "total_billed_tokens": sum_total_tokens
+                + sum_query_embed
+                + sum_guardrail_embed
+                + ingest_embed_tokens,
+                "llm_tokens": {
+                    "prompt_context_tokens": sum_prompt,
+                    "cached_prompt_tokens": 0,
+                    "reasoning_tokens": sum_reasoning,
+                    "visible_output_tokens": visible_tokens,
+                    "total_llm_tokens": sum_total_tokens,
+                },
+                "embeddings_tokens": {
+                    "query_embed_tokens": sum_query_embed,
+                    "guardrail_embed_tokens": sum_guardrail_embed,
+                    "ingestion_embed_tokens": ingest_embed_tokens,
+                    "total_embeddings_tokens": sum_query_embed
+                    + sum_guardrail_embed
+                    + ingest_embed_tokens,
+                },
+            },
+            "pricing": {
+                "price_embed_per_million": embed_rate,
+                "price_prompt_per_million": prompt_rate,
+                "price_output_per_million": output_rate,
+                "price_cached_per_million": cached_rate,
+            },
+            "accounting": {
+                "total_turns": total_turns,
+                "actual_turns": actual_turns,
+                "estimated_turns": estimated_turns,
+                "actual_pct": actual_pct,
+            },
+            "quality": {
+                "total_queries": total_turns,
+                "outcomes": outcomes_dist,
+                "groundedness_pass_rate": grounded_pct,
+                "avg_billed_tokens_per_turn": round(sum_total_tokens / total_turns, 1)
+                if total_turns > 0
+                else 0,
+                "latency": {
+                    "avg_ms": round(float(lat_row.avg_lat), 1),
+                    "p50_ms": round(float(lat_row.p50_lat), 1),
+                    "p95_ms": round(float(lat_row.p95_lat), 1),
+                },
+            },
+        }
+        _summary_cache[cache_key] = (time.time(), summary_res)
+        return summary_res
+
+
+# ============================================================================
+# USERS TAB ENDPOINT (Task 3.3.1)
+# ============================================================================
+
+
+@router.get("/users")
+async def get_usage_users(
+    audience: Audience = Depends(audience_scope),
+    q: str | None = None,
+    user_type: str | None = Query(None, alias="type"),
+    sort: str = "cost_desc",
+    limit: int = 10,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+):
+    ALLOWED_USER_SORTS = {
+        "cost_desc",
+        "cost_asc",
+        "queries_desc",
+        "queries_asc",
+        "tokens_desc",
+        "tokens_asc",
+        "sessions_desc",
+        "sessions_asc",
+    }
+    if sort not in ALLOWED_USER_SORTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(ALLOWED_USER_SORTS)}",
+        )
+
+    test_ips, _, _ = await get_classified_ips(db)
+
+    user_msg = aliased(ChatMessageRecord, name="user_turn")
+    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+
+    # Base grouping by client IP
+    ip_col = func.coalesce(user_msg.ip_address, "Unknown")
+    query = (
+        select(
+            ip_col.label("ip_address"),
+            func.count(func.distinct(user_msg.session_id)).label("sessions"),
+            func.count(asst_msg.id).label("queries"),
+            func.coalesce(func.sum(asst_msg.embedding_tokens), 0).label("embed_tokens"),
+            func.coalesce(func.sum(asst_msg.prompt_tokens), 0).label("prompt_tokens"),
+            func.coalesce(func.sum(asst_msg.reasoning_tokens), 0).label(
+                "reasoning_tokens"
+            ),
+            func.coalesce(
+                func.sum(
+                    func.greatest(
+                        0, asst_msg.completion_tokens - asst_msg.reasoning_tokens
+                    )
+                ),
+                0,
+            ).label("output_tokens"),
+            func.coalesce(func.sum(asst_msg.total_tokens), 0).label("total_tokens"),
+            func.coalesce(func.sum(asst_msg.cost_usd), 0.0).label("cost_usd"),
+        )
+        .select_from(user_msg)
+        .join(
+            asst_msg,
+            and_(
+                user_msg.session_id == asst_msg.session_id,
+                user_msg.turn_index == asst_msg.turn_index,
+                asst_msg.role == "assistant",
+            ),
+        )
+        .where(user_msg.role == "user")
+        .group_by(ip_col)
+    )
+
+    aud_cond = await build_audience_filter(db, user_msg.ip_address, audience)
+    if aud_cond is not None:
+        query = query.where(aud_cond)
+
+    if q and q.strip():
+        escaped = escape_ilike_pattern(q.strip())
+        query = query.where(
+            cast(user_msg.ip_address, String).ilike(f"%{escaped}%", escape="\\")
+        )
+
+    all_rows = (await db.execute(query)).all()
+    items = []
+    total_tokens_all = sum(r.total_tokens for r in all_rows) or 1
+
+    for r in all_rows:
+        is_test = r.ip_address in test_ips or r.ip_address == "Unknown"
+        t_type = "Test" if is_test else "Production"
+        if user_type and user_type.lower() != t_type.lower():
+            continue
+
+        items.append(
+            {
+                "ip_address": r.ip_address,
+                "is_test": is_test,
+                "type": t_type,
+                "sessions": r.sessions,
+                "queries": r.queries,
+                "embed_tokens": int(r.embed_tokens),
+                "prompt_tokens": int(r.prompt_tokens),
+                "reasoning_tokens": int(r.reasoning_tokens),
+                "output_tokens": int(r.output_tokens),
+                "total_tokens": int(r.total_tokens),
+                "cost_usd": round(float(r.cost_usd), 6),
+            }
+        )
+
+    # Sort
+    reverse = "asc" not in sort
+    sort_key = "cost_usd"
+    if "queries" in sort:
+        sort_key = "queries"
+    elif "tokens" in sort:
+        sort_key = "total_tokens"
+    items.sort(
+        key=lambda x: x.get(sort_key) if x.get(sort_key) is not None else 0,
+        reverse=reverse,
+    )
+
+    # Compute header intelligence stats
+    top_3 = items[:3]
+    top_consumer_tokens = sum(x["total_tokens"] for x in top_3)
+    top_consumer_share_pct = round((top_consumer_tokens / total_tokens_all * 100), 1)
+
+    top_cards = [
+        {
+            "ip_address": x["ip_address"],
+            "queries": x["queries"],
+            "tokens": x["total_tokens"],
+            "cost_usd": x["cost_usd"],
+            "token_share_pct": round(x["total_tokens"] / total_tokens_all * 100, 1),
+        }
+        for x in top_3
+    ]
+
+    total_count = len(items)
+    paged_items = items[offset : offset + limit]
+
+    return {
+        "items": paged_items,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+        "stats": {
+            "unique_users": total_count,
+            "active_sessions": sum(x["sessions"] for x in items),
+            "queries_driven": sum(x["queries"] for x in items),
+            "top_consumer_share_pct": top_consumer_share_pct,
+            "top_users": top_cards,
+            "shared_gateway_hint": any(x["queries"] > 50 for x in items),
+        },
+    }
+
+
+# ============================================================================
+# SESSIONS TAB ENDPOINT (Task 3.3.2)
+# ============================================================================
+
+
+@router.get("/sessions")
+async def get_usage_sessions(
+    audience: Audience = Depends(audience_scope),
+    q: str | None = None,
+    ip: str | None = None,
+    sort: str = "last_active_desc",
+    limit: int = 10,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+):
+    """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2)."""
+    ALLOWED_SESSION_SORTS = {
+        "cost_desc",
+        "cost_asc",
+        "queries_desc",
+        "queries_asc",
+        "last_active_desc",
+        "last_active_asc",
+    }
+    if sort not in ALLOWED_SESSION_SORTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(ALLOWED_SESSION_SORTS)}",
+        )
+    settings = get_settings()
+    if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
+        raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
+
+    user_msg = aliased(ChatMessageRecord, name="user_turn")
+    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+
+    query = (
+        select(
+            ChatSession.id.label("id"),
+            ChatSession.title.label("title"),
+            ChatSession.created_ip.label("ip_address"),
+            ChatSession.last_activity_at.label("last_active"),
+            func.count(asst_msg.id).label("queries"),
+            func.coalesce(func.sum(asst_msg.embedding_tokens), 0).label("embed_tokens"),
+            func.coalesce(func.sum(asst_msg.prompt_tokens), 0).label("prompt_tokens"),
+            func.coalesce(func.sum(asst_msg.reasoning_tokens), 0).label(
+                "reasoning_tokens"
+            ),
+            func.coalesce(
+                func.sum(
+                    func.greatest(
+                        0, asst_msg.completion_tokens - asst_msg.reasoning_tokens
+                    )
+                ),
+                0,
+            ).label("output_tokens"),
+            func.coalesce(func.sum(asst_msg.total_tokens), 0).label("total_tokens"),
+            func.coalesce(func.sum(asst_msg.cost_usd), 0.0).label("cost_usd"),
+        )
+        .select_from(ChatSession)
+        .join(
+            user_msg,
+            and_(
+                ChatSession.id == user_msg.session_id,
+                user_msg.role == "user",
+            ),
+        )
+        .join(
+            asst_msg,
+            and_(
+                user_msg.session_id == asst_msg.session_id,
+                user_msg.turn_index == asst_msg.turn_index,
+                asst_msg.role == "assistant",
+            ),
+        )
+        .group_by(
+            ChatSession.id,
+            ChatSession.title,
+            ChatSession.created_ip,
+            ChatSession.last_activity_at,
+        )
+    )
+
+    aud_cond = await build_audience_filter(db, ChatSession.created_ip, audience)
+    if aud_cond is not None:
+        query = query.where(aud_cond)
+
+    if ip and ip.strip():
+        query = query.where(ChatSession.created_ip == ip.strip())
+
+    if q and q.strip():
+        escaped = escape_ilike_pattern(q.strip())
+        pattern = f"%{escaped}%"
+        query = query.where(
+            or_(
+                ChatSession.title.ilike(pattern, escape="\\"),
+                cast(ChatSession.id, String).ilike(pattern, escape="\\"),
+                cast(ChatSession.created_ip, String).ilike(pattern, escape="\\"),
+            )
+        )
+
+    all_rows = (await db.execute(query)).all()
+    items = [
+        {
+            "id": str(r.id),
+            "title": r.title,
+            "ip_address": r.ip_address or "Unknown",
+            "queries": r.queries,
+            "embed_tokens": int(r.embed_tokens),
+            "prompt_tokens": int(r.prompt_tokens),
+            "reasoning_tokens": int(r.reasoning_tokens),
+            "output_tokens": int(r.output_tokens),
+            "total_tokens": int(r.total_tokens),
+            "cost_usd": round(float(r.cost_usd), 6),
+            "last_active": r.last_active.isoformat() + "Z" if r.last_active else None,
+        }
+        for r in all_rows
+    ]
+
+    reverse = "asc" not in sort
+    if "cost" in sort:
+        items.sort(
+            key=lambda x: x.get("cost_usd") if x.get("cost_usd") is not None else 0.0,
+            reverse=reverse,
+        )
+    elif "queries" in sort:
+        items.sort(
+            key=lambda x: x.get("queries") if x.get("queries") is not None else 0,
+            reverse=reverse,
+        )
+    else:
+        items.sort(key=lambda x: x.get("last_active") or "", reverse=reverse)
+
+    top_3 = sorted(items, key=lambda x: x["cost_usd"], reverse=True)[:3]
+    top_cards = [
+        {
+            "id": x["id"],
+            "title": x["title"],
+            "ip_address": x["ip_address"],
+            "queries": x["queries"],
+            "cost_usd": x["cost_usd"],
+        }
+        for x in top_3
+    ]
+
+    total_count = len(items)
+    avg_turns = (
+        round(sum(x["queries"] for x in items) / total_count, 1)
+        if total_count > 0
+        else 0
+    )
+    avg_cost = (
+        round(sum(x["cost_usd"] for x in items) / total_count, 6)
+        if total_count > 0
+        else 0.0
+    )
+    max_depth = max((x["queries"] for x in items), default=0)
+
+    paged_items = items[offset : offset + limit]
+
+    return {
+        "items": paged_items,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+        "stats": {
+            "total_sessions": total_count,
+            "avg_turns_per_session": avg_turns,
+            "avg_cost_per_session": avg_cost,
+            "max_depth": max_depth,
+            "top_sessions": top_cards,
+        },
+    }
+
+
+# ============================================================================
+# QUERIES TAB ENDPOINT & INSPECTOR (Task 3.3.3 & 3.5.3)
+# ============================================================================
+
+
+@router.get("/queries")
+async def get_usage_queries(
+    audience: Audience = Depends(audience_scope),
+    q: str | None = None,
+    ip: str | None = None,
+    session_id: str | None = None,
+    outcome: str | None = None,
+    grounded: bool | None = None,
+    sort: str = "created_at_desc",
+    limit: int = 10,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+):
+    ALLOWED_QUERY_SORTS = {
+        "created_at_desc",
+        "created_at_asc",
+        "cost_desc",
+        "cost_asc",
+        "tokens_desc",
+        "tokens_asc",
+    }
+    if sort not in ALLOWED_QUERY_SORTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(ALLOWED_QUERY_SORTS)}",
+        )
+    settings = get_settings()
+    if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
+        raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
+
+    user_msg = aliased(ChatMessageRecord, name="user_turn")
+    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+
+    query = (
+        select(
+            asst_msg.request_id.label("request_id"),
+            user_msg.created_at.label("created_at"),
+            user_msg.content.label("query"),
+            asst_msg.content.label("answer"),
+            func.coalesce(user_msg.ip_address, ChatSession.created_ip, "Unknown").label(
+                "ip_address"
+            ),
+            ChatSession.id.label("session_id"),
+            ChatSession.title.label("session_title"),
+            func.coalesce(asst_msg.prompt_tokens, 0).label("prompt_tokens"),
+            func.coalesce(asst_msg.reasoning_tokens, 0).label("reasoning_tokens"),
+            func.coalesce(
+                func.greatest(
+                    0, asst_msg.completion_tokens - asst_msg.reasoning_tokens
+                ),
+                0,
+            ).label("output_tokens"),
+            func.coalesce(asst_msg.embedding_tokens, 0).label("embed_tokens"),
+            func.coalesce(asst_msg.cost_usd, 0.0).label("cost_usd"),
+            asst_msg.outcome.label("outcome"),
+            asst_msg.grounded.label("grounded"),
+            LatencyRecord.total_ms.label("latency_ms"),
+        )
+        .select_from(user_msg)
+        .join(
+            asst_msg,
+            and_(
+                user_msg.session_id == asst_msg.session_id,
+                user_msg.turn_index == asst_msg.turn_index,
+                asst_msg.role == "assistant",
+            ),
+        )
+        .join(ChatSession, user_msg.session_id == ChatSession.id)
+        .outerjoin(LatencyRecord, asst_msg.request_id == LatencyRecord.request_id)
+        .where(user_msg.role == "user")
+    )
+
+    query = await apply_usage_filters(
+        query=query,
+        db=db,
+        user_alias=user_msg,
+        asst_alias=asst_msg,
+        audience=audience,
+        ip=ip,
+        session_id=session_id,
+        outcome=outcome,
+        grounded=grounded,
+        search=q,
+    )
+
+    # Count total matching queries
+    count_sub = query.subquery()
+    total_count = (
+        await db.execute(select(func.count()).select_from(count_sub))
+    ).scalar() or 0
+
+    # Sort
+    if sort == "cost_desc":
+        query = query.order_by(desc(asst_msg.cost_usd), desc(user_msg.created_at))
+    elif sort == "tokens_desc":
+        query = query.order_by(desc(asst_msg.total_tokens), desc(user_msg.created_at))
+    else:
+        query = query.order_by(desc(user_msg.created_at))
+
+    paged_rows = (await db.execute(query.limit(limit).offset(offset))).all()
+
+    items = [
+        {
+            "request_id": r.request_id or "unknown",
+            "created_at": r.created_at.isoformat() + "Z" if r.created_at else None,
+            "query": (r.query or "")[:160],
+            "answer": (r.answer or "")[:200],
+            "ip_address": r.ip_address,
+            "session_id": str(r.session_id),
+            "session_title": r.session_title,
+            "prompt_tokens": int(r.prompt_tokens),
+            "reasoning_tokens": int(r.reasoning_tokens),
+            "output_tokens": int(r.output_tokens),
+            "embed_tokens": int(r.embed_tokens),
+            "cost_usd": round(float(r.cost_usd), 6),
+            "outcome": r.outcome or "answered",
+            "grounded": r.grounded,
+            "latency_ms": round(float(r.latency_ms), 1) if r.latency_ms else None,
+        }
+        for r in paged_rows
+    ]
+
+    # Pre-table stats
+    return {
+        "items": items,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+        "stats": {
+            "total_queries": total_count,
+        },
+    }
+
+
+@router.get("/queries/{request_id}")
+async def get_query_detail(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+):
+    """Single-turn inspector detail exposing rates and cached prompt details (Task 3.5.3)."""
+    settings = get_settings()
+    user_msg = aliased(ChatMessageRecord, name="user_turn")
+    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+
+    row = (
+        await db.execute(
+            select(
+                asst_msg,
+                user_msg.content.label("query"),
+                user_msg.ip_address.label("ip_address"),
+                ChatSession.title.label("session_title"),
+                LatencyRecord.total_ms.label("latency_ms"),
+                LatencyRecord.embedding_ms.label("embedding_ms"),
+                LatencyRecord.retrieval_ms.label("retrieval_ms"),
+                LatencyRecord.llm_ms.label("llm_ms"),
+            )
+            .select_from(asst_msg)
+            .join(
+                user_msg,
+                and_(
+                    asst_msg.session_id == user_msg.session_id,
+                    asst_msg.turn_index == user_msg.turn_index,
+                    user_msg.role == "user",
+                ),
+            )
+            .join(ChatSession, asst_msg.session_id == ChatSession.id)
+            .outerjoin(LatencyRecord, asst_msg.request_id == LatencyRecord.request_id)
+            .where(asst_msg.request_id == request_id)
+        )
+    ).first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Query record not found.")
+
+    (
+        asst,
+        query_text,
+        client_ip,
+        session_title,
+        lat_total,
+        lat_embed,
+        lat_ret,
+        lat_llm,
+    ) = row
+    details = asst.token_details or {}
+
+    return {
+        "request_id": asst.request_id,
+        "session_id": str(asst.session_id),
+        "session_title": session_title,
+        "query": query_text,
+        "answer": asst.content,
+        "created_at": asst.created_at.isoformat() + "Z" if asst.created_at else None,
+        "ip_address": client_ip or "Unknown",
+        "outcome": asst.outcome or "answered",
+        "grounded": asst.grounded,
+        "guardrail_flags": asst.guardrail_flags or [],
+        "cost_usd": asst.cost_usd or 0.0,
+        "tokens": {
+            "prompt": asst.prompt_tokens or 0,
+            "prompt_tokens": asst.prompt_tokens or 0,
+            "completion": asst.completion_tokens or 0,
+            "completion_tokens": asst.completion_tokens or 0,
+            "reasoning": asst.reasoning_tokens or 0,
+            "reasoning_tokens": asst.reasoning_tokens or 0,
+            "visible": max(
+                0, (asst.completion_tokens or 0) - (asst.reasoning_tokens or 0)
+            ),
+            "cached_prompt": details.get("cached_tokens", 0),
+            "cached_tokens": details.get("cached_tokens", 0),
+            "query_embed": asst.embedding_tokens or 0,
+            "query_embed_tokens": asst.embedding_tokens or 0,
+            "guardrail_embed": asst.guardrail_tokens or 0,
+            "guardrail_embed_tokens": asst.guardrail_tokens or 0,
+            "total_tokens": asst.total_tokens or 0,
+            "total_billed": (asst.embedding_tokens or 0)
+            + (asst.guardrail_tokens or 0)
+            + (asst.total_tokens or 0),
+        },
+        "rates": {
+            "price_embed_per_million": settings.price_embed_per_million,
+            "price_input_per_million": settings.price_prompt_per_million,
+            "price_prompt_per_million": settings.price_prompt_per_million,
+            "price_output_per_million": settings.price_output_per_million,
+            "price_cached_per_million": settings.price_cached_per_million,
+        },
+        "pricing_rate_card": {
+            "price_embed_per_million": settings.price_embed_per_million,
+            "price_input_per_million": settings.price_prompt_per_million,
+            "price_output_per_million": settings.price_output_per_million,
+            "price_cached_per_million": settings.price_cached_per_million,
+        },
+        "latencies": {
+            "total_ms": lat_total,
+            "embedding_ms": lat_embed,
+            "retrieval_ms": lat_ret,
+            "llm_ms": lat_llm,
+        },
+    }
+
+
+# ============================================================================
+# STREAMING CSV EXPORT (Task 3.4)
+# ============================================================================
+
+
+def _sanitize_csv_cell(val: Any) -> str:
+    """Neutralize formula injection by prefixing leading special characters with a single quote."""
+    if val is None:
+        return ""
+    text = str(val)
+    if text.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return f"'{text}"
+    return text
+
+
+@router.get("/export")
+async def export_usage_csv(
+    request: Request,
+    tab: str = Query("queries", pattern="^(users|sessions|queries)$"),
+    audience: Audience = Depends(audience_scope),
+    q: str | None = None,
+    ip: str | None = None,
+    session_id: str | None = None,
+    outcome: str | None = None,
+    grounded: bool | None = None,
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+):
+    """Stream CSV export with formula injection defense and cap truncation (Task 3.4)."""
+    settings = get_settings()
+    brand_slug = settings.brand_name.lower().replace(" ", "-")
+    now_str = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    filename = f"{brand_slug}-{tab}-{audience}-{now_str}.csv"
+
+    # Audit export
+    await record_audit_event(
+        db,
+        request_id=getattr(request.state, "request_id", "admin-export"),
+        actor=actor,
+        action="usage_export",
+        detail={"tab": tab, "audience": audience},
+        commit=True,
+    )
+
+    async def csv_generator() -> AsyncGenerator[str, None]:
+        # Yield UTF-8 BOM for Microsoft Excel compatibility
+        yield "\ufeff"
+
+        out = io.StringIO()
+        writer = csv.writer(out)
+
+        if tab == "queries":
+            headers = [
+                "Request ID",
+                "Created At",
+                "User (IP)",
+                "Session Title",
+                "Query",
+                "Prompt Tokens",
+                "Reasoning Tokens",
+                "Output Tokens",
+                "Embed Tokens",
+                "Cost ($)",
+                "Status",
+                "Grounded",
+            ]
+            writer.writerow(headers)
+            yield out.getvalue()
+            out.seek(0)
+            out.truncate(0)
+
+            # Query data
+            user_msg = aliased(ChatMessageRecord, name="user_turn")
+            asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+            stmt = (
+                select(
+                    asst_msg.request_id,
+                    user_msg.created_at,
+                    user_msg.ip_address,
+                    ChatSession.title,
+                    user_msg.content,
+                    asst_msg.prompt_tokens,
+                    asst_msg.reasoning_tokens,
+                    func.greatest(
+                        0, asst_msg.completion_tokens - asst_msg.reasoning_tokens
+                    ),
+                    asst_msg.embedding_tokens,
+                    asst_msg.cost_usd,
+                    asst_msg.outcome,
+                    asst_msg.grounded,
+                )
+                .select_from(user_msg)
+                .join(
+                    asst_msg,
+                    and_(
+                        user_msg.session_id == asst_msg.session_id,
+                        user_msg.turn_index == asst_msg.turn_index,
+                        asst_msg.role == "assistant",
+                    ),
+                )
+                .join(ChatSession, user_msg.session_id == ChatSession.id)
+                .where(user_msg.role == "user")
+            )
+            stmt = await apply_usage_filters(
+                query=stmt,
+                db=db,
+                user_alias=user_msg,
+                asst_alias=asst_msg,
+                audience=audience,
+                ip=ip,
+                session_id=session_id,
+                outcome=outcome,
+                grounded=grounded,
+                search=q,
+            )
+            stmt = stmt.order_by(desc(user_msg.created_at)).limit(
+                settings.usage_export_max_rows
+            )
+
+            rows = (await db.execute(stmt)).all()
+            for r in rows:
+                row_cells = [
+                    _sanitize_csv_cell(r[0]),
+                    _sanitize_csv_cell(r[1].isoformat() if r[1] else ""),
+                    _sanitize_csv_cell(r[2] or "Unknown"),
+                    _sanitize_csv_cell(r[3]),
+                    _sanitize_csv_cell(r[4]),
+                    _sanitize_csv_cell(r[5] or 0),
+                    _sanitize_csv_cell(r[6] or 0),
+                    _sanitize_csv_cell(r[7] or 0),
+                    _sanitize_csv_cell(r[8] or 0),
+                    _sanitize_csv_cell(
+                        f"{r[9]:.6f}" if r[9] is not None else "0.000000"
+                    ),
+                    _sanitize_csv_cell(r[10] or "answered"),
+                    _sanitize_csv_cell("Yes" if r[11] else "No"),
+                ]
+                writer.writerow(row_cells)
+                yield out.getvalue()
+                out.seek(0)
+                out.truncate(0)
+
+        elif tab == "users":
+            headers = [
+                "User (IP)",
+                "Type",
+                "Sessions",
+                "Queries",
+                "Embed Tokens",
+                "Prompt Tokens",
+                "Reasoning Tokens",
+                "Output Tokens",
+                "Total Tokens",
+                "Cost ($)",
+            ]
+            writer.writerow(headers)
+            yield out.getvalue()
+            out.seek(0)
+            out.truncate(0)
+
+            user_res = await get_usage_users(
+                audience=audience,
+                q=q,
+                sort="cost_desc",
+                limit=settings.usage_export_max_rows,
+                offset=0,
+                db=db,
+                actor=actor,
+            )
+            for item in user_res["items"]:
+                writer.writerow(
+                    [
+                        _sanitize_csv_cell(item["ip_address"]),
+                        _sanitize_csv_cell(item["type"]),
+                        _sanitize_csv_cell(item["sessions"]),
+                        _sanitize_csv_cell(item["queries"]),
+                        _sanitize_csv_cell(item["embed_tokens"]),
+                        _sanitize_csv_cell(item["prompt_tokens"]),
+                        _sanitize_csv_cell(item["reasoning_tokens"]),
+                        _sanitize_csv_cell(item["output_tokens"]),
+                        _sanitize_csv_cell(item["total_tokens"]),
+                        _sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
+                    ]
+                )
+                yield out.getvalue()
+                out.seek(0)
+                out.truncate(0)
+
+        elif tab == "sessions":
+            headers = [
+                "Session ID",
+                "Session Title",
+                "User (IP)",
+                "Queries",
+                "Total Tokens",
+                "Cost ($)",
+                "Last Active",
+            ]
+            writer.writerow(headers)
+            yield out.getvalue()
+            out.seek(0)
+            out.truncate(0)
+
+            sess_res = await get_usage_sessions(
+                audience=audience,
+                q=q,
+                ip=ip,
+                sort="cost_desc",
+                limit=settings.usage_export_max_rows,
+                offset=0,
+                db=db,
+                actor=actor,
+            )
+            for item in sess_res["items"]:
+                writer.writerow(
+                    [
+                        _sanitize_csv_cell(item["id"]),
+                        _sanitize_csv_cell(item["title"]),
+                        _sanitize_csv_cell(item["ip_address"]),
+                        _sanitize_csv_cell(item["queries"]),
+                        _sanitize_csv_cell(item["total_tokens"]),
+                        _sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
+                        _sanitize_csv_cell(item["last_active"] or ""),
+                    ]
+                )
+                yield out.getvalue()
+                out.seek(0)
+                out.truncate(0)
+
+    return StreamingResponse(
+        csv_generator(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
