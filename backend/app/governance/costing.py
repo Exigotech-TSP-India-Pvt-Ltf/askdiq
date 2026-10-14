@@ -133,3 +133,26 @@ def compute_exchange_cost(
     }
 
     return total_cost_float, details
+
+
+def calculate_stage_costs(
+    *,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    reasoning_tokens: int = 0,
+    cached_tokens: int = 0,
+    query_embed_tokens: int = 0,
+    guardrail_embed_tokens: int = 0,
+    rates: dict[str, Decimal | float] | None = None,
+) -> dict[str, float]:
+    """Computes stage-by-stage token costs with 6 decimal places of precision."""
+    total_cost, details = compute_exchange_cost(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        reasoning_tokens=reasoning_tokens,
+        cached_tokens=cached_tokens,
+        query_embed_tokens=query_embed_tokens,
+        guardrail_embed_tokens=guardrail_embed_tokens,
+        pricing_snapshot=rates,
+    )
+    return details["costs_usd"]

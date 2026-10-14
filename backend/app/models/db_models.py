@@ -120,7 +120,10 @@ class AuditLog(Base):
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    __table_args__ = (Index("ix_audit_log_ip_created", "ip_address", "created_at"),)
+    __table_args__ = (
+        Index("ix_audit_log_ip_created", "ip_address", "created_at"),
+        Index("ix_audit_log_created_action", "created_at", "action"),
+    )
 
 
 class ChatSession(Base):
