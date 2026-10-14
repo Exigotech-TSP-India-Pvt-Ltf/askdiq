@@ -33,10 +33,14 @@ ignore = [
     "RUF001",  # ambiguous unicode character (intentional quotes / dashes in domain strings and tests)
     "RUF002",  # ambiguous unicode character in docstrings
     "RUF003",  # ambiguous unicode character in comments
+    "RUF007",  # prefer itertools.pairwise over zip
     "RUF043",  # regex metacharacters in test match
     "RUF046",  # redundant int cast
+    "RUF059",  # unused unpacked variables
     "RUF100",  # unused noqa directives
+    "W291",    # trailing whitespace
     "W292",    # no newline at end of file
+    "C402",    # unnecessary generator (dict comprehension)
     "C408",    # unnecessary dict() call
     "C416",    # unnecessary list comprehension
 ]
