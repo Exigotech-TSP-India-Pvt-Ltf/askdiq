@@ -11,6 +11,8 @@ chat history. It's NOT a security boundary (client-controlled, spoofable)
 — only `X-API-Key` gates access; `X-Client-Id` just partitions sessions.
 """
 
+import re
+
 from fastapi import Header, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
@@ -22,6 +24,21 @@ DEFAULT_ACTOR = "default@local"
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+# Allows UUID v4 or safe alphanumeric strings with dash/underscore/dot/at, max 64 chars.
+_SAFE_CLIENT_ID_RE = re.compile(
+    r"^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[a-zA-Z0-9_\-\.@]{1,64})$"
+)
+
+
+def sanitize_client_id(client_id: str | None) -> str:
+    """Validate client_id format; normalize to DEFAULT_ACTOR if invalid/suspicious."""
+    if not client_id:
+        return DEFAULT_ACTOR
+    cleaned = client_id.strip()
+    if len(cleaned) <= 64 and _SAFE_CLIENT_ID_RE.match(cleaned):
+        return cleaned
+    return DEFAULT_ACTOR
+
 
 async def get_current_actor(
     api_key: str | None = Security(api_key_header),
@@ -29,4 +46,4 @@ async def get_current_actor(
 ) -> str:
     if not settings.api_key_name or api_key != settings.api_key_name:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Access Denied!")
-    return x_client_id or DEFAULT_ACTOR
+    return sanitize_client_id(x_client_id)
