@@ -3,7 +3,7 @@
 import json
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,82 +28,99 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/users")
 async def list_users(
+    audience: str = Query("overview"),
+    include_test: bool | None = None,
+    q: str | None = None,
+    status: str | None = None,
+    user_type: str | None = Query(None, alias="type"),
+    sort: str = "last_active_desc",
+    limit: int = 50,
+    offset: int = 0,
     db: AsyncSession = Depends(get_db),  # noqa: B008
     actor: str = Depends(get_current_actor),
 ):
-    """Return users with activity statistics."""
+    """Return users grouped by client IP with activity statistics."""
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
 
-    users_result = await db.execute(
-        select(User).order_by(User.created_at.desc())
+    ip_rows = (
+        await db.execute(
+            select(
+                ChatSession.created_ip.label("ip"),
+                func.min(ChatSession.created_at).label("first_seen"),
+                func.max(ChatSession.last_activity_at).label("last_active"),
+                func.count(ChatSession.id).label("sessions"),
+            )
+            .where(ChatSession.created_ip.isnot(None))
+            .group_by(ChatSession.created_ip)
+        )
+    ).all()
+
+    queries_by_ip = dict(
+        (
+            await db.execute(
+                select(ChatMessageRecord.ip_address, func.count(ChatMessageRecord.id))
+                .where(ChatMessageRecord.ip_address.isnot(None))
+                .group_by(ChatMessageRecord.ip_address)
+            )
+        ).all()
     )
 
-    users = users_result.scalars().all()
-
-    result = []
-
-    for user in users:
-        # ---------------------------------------------------------------
-        # Session / conversation count and last activity
-        # ---------------------------------------------------------------
-        session_result = await db.execute(
-            select(
-                func.count(ChatSession.id),
-                func.max(ChatSession.last_activity_at),
-            ).where(
-                ChatSession.user_email == user.email
+    feedback_counts = dict(
+        (
+            await db.execute(
+                select(AuditLog.ip_address, func.count(AuditLog.id))
+                .where(
+                    AuditLog.action.ilike("%feedback%"),
+                    AuditLog.ip_address.isnot(None),
+                )
+                .group_by(AuditLog.ip_address)
             )
-        )
+        ).all()
+    )
 
-        session_count, last_activity = session_result.one()
+    test_ip_set = {"127.0.0.1", "::1", "localhost"}
 
-        # ---------------------------------------------------------------
-        # Total messages / queries
-        # ---------------------------------------------------------------
-        message_result = await db.execute(
-            select(func.count(ChatMessageRecord.id))
-            .join(
-                ChatSession,
-                ChatMessageRecord.session_id == ChatSession.id,
-            )
-            .where(
-                ChatSession.user_email == user.email
-            )
-        )
+    all_users = []
+    for row in ip_rows:
+        ip = row.ip
+        is_test = ip in test_ip_set
+        t_type = "Test" if is_test else "Production"
 
-        query_count = message_result.scalar() or 0
+        if user_type and user_type.lower() != t_type.lower():
+            continue
 
-        # ---------------------------------------------------------------
-        # Most recent IP address
-        # ---------------------------------------------------------------
-        ip_result = await db.execute(
-            select(ChatSession.created_ip)
-            .where(
-                ChatSession.user_email == user.email,
-                ChatSession.created_ip.is_not(None),
-            )
-            .order_by(ChatSession.last_activity_at.desc())
-            .limit(1)
-        )
+        if q and q.strip() and q.strip().lower() not in ip.lower():
+            continue
 
-        ip_address = ip_result.scalar_one_or_none()
-
-        result.append(
+        all_users.append(
             {
-                "id": str(user.id),
-                "email": user.email,
-                "full_name": user.full_name,
-                "ip_address": ip_address,
-                "first_seen": user.created_at,
-                "last_active": last_activity or user.created_at,
+                "id": f"client-{ip}",
+                "ip_address": ip,
+                "is_test": is_test,
+                "type": t_type,
                 "status": "Active",
-                "sessions": session_count or 0,
-                "conversations": session_count or 0,
-                "queries": query_count,
-                "feedback_count": 0,
+                "sessions": row.sessions,
+                "conversations": row.sessions,
+                "queries": queries_by_ip.get(ip, 0),
+                "feedback_count": feedback_counts.get(ip, 0),
+                "first_seen": row.first_seen.isoformat() if row.first_seen else None,
+                "last_active": row.last_active.isoformat() if row.last_active else None,
             }
         )
 
-    return result
+    reverse = "asc" not in sort
+    all_users.sort(key=lambda u: u.get("last_active") or "", reverse=reverse)
+
+    total = len(all_users)
+    paged = all_users[offset : offset + limit]
+
+    return {
+        "items": paged,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/users/{user_id}")
@@ -1027,4 +1044,81 @@ async def _governance_status(db: AsyncSession, since: datetime) -> dict:
         "tracing": f"{latency_24h or 0:,} traces (24h)",
         "audit_logs": f"{audit_total or 0:,} entries",
         "guardrails": f"{flagged or 0:,} responses with flags (24h)",
+    }
+
+
+# ============================================================================
+# FEEDBACK
+# ============================================================================
+
+
+@router.get("/feedback")
+async def list_feedback(
+    rating: int | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    actor: str = Depends(get_current_actor),
+):
+    """Return feedback records with de-duplication by message_id and pagination."""
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    query = (
+        select(AuditLog)
+        .where(AuditLog.action.ilike("%feedback%"))
+        .order_by(AuditLog.created_at.desc())
+    )
+
+    rows = (await db.execute(query)).scalars().all()
+
+    seen_messages: set[str] = set()
+    filtered = []
+    for a in rows:
+        detail = a.detail if isinstance(a.detail, dict) else {}
+        mid = detail.get("message_id")
+        if mid:
+            if mid in seen_messages:
+                continue
+            seen_messages.add(mid)
+
+        item_rating = detail.get("rating")
+        if rating is not None and item_rating != rating:
+            continue
+
+        comment = detail.get("comment") or ""
+        conv_id = detail.get("conversation_id") or ""
+        ip_addr = a.ip_address or "Unknown"
+
+        if q and q.strip():
+            needle = q.strip().lower()
+            if not (
+                needle in comment.lower()
+                or needle in ip_addr.lower()
+                or needle in conv_id.lower()
+                or needle in (mid or "").lower()
+            ):
+                continue
+
+        filtered.append(
+            {
+                "id": str(a.id),
+                "rating": item_rating,
+                "comment": comment,
+                "ip_address": ip_addr,
+                "conversation_id": conv_id,
+                "message_id": mid,
+                "created_at": a.created_at.isoformat() + "Z" if a.created_at else None,
+            }
+        )
+
+    total_count = len(filtered)
+    paged = filtered[offset : offset + limit]
+
+    return {
+        "items": paged,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
     }

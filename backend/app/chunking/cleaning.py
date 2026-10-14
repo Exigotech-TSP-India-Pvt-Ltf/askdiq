@@ -5,6 +5,7 @@ are removed — if the same words appear as part of a larger sentence/section
 (e.g. a paragraph that happens to mention "internal use only"), the line is
 left untouched since it no longer matches the pattern exactly.
 """
+
 import re
 
 # Each pattern must match a line in full (re.fullmatch), case-insensitively.
@@ -27,7 +28,10 @@ def strip_boilerplate_lines(text: str, extra_patterns: list[str] | None = None) 
     patterns — text that merely contains these words as part of a longer
     line/sentence is preserved.
     """
-    patterns = [re.compile(p, re.IGNORECASE) for p in (*_DEFAULT_PATTERNS, *(extra_patterns or []))]
+    patterns = [
+        re.compile(p, re.IGNORECASE)
+        for p in (*_DEFAULT_PATTERNS, *(extra_patterns or []))
+    ]
 
     kept_lines = []
     for line in text.splitlines():

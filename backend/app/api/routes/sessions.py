@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import sessions as session_service
 from app.core.database import get_db
+from app.core.rate_limit import enforce_feedback_rate_limit
 from app.core.request_meta import get_client_ip
 from app.governance.auth import get_current_actor
 from app.schemas.session import (
@@ -16,6 +17,8 @@ from app.schemas.session import (
     ChatSessionSummary,
     CreateSessionRequest,
     RenameSessionRequest,
+    UserFeedbackRequest,
+    UserFeedbackResponse,
 )
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -79,3 +82,33 @@ async def delete_exchange(
     actor: str = Depends(get_current_actor),
 ) -> None:
     await session_service.delete_exchange(db, session_id, message_id, actor)
+
+
+@router.post(
+    "/{session_id}/messages/{message_id}/feedback",
+    response_model=UserFeedbackResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def submit_feedback(
+    request: Request,
+    session_id: str,
+    message_id: str,
+    body: UserFeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+) -> UserFeedbackResponse:
+    """Submit or update satisfaction rating and optional comment for an assistant turn (Subtask 1.3.2)."""
+    client_ip = get_client_ip(request)
+    enforce_feedback_rate_limit(actor, client_ip, limit=30)
+    req_id = getattr(request.state, "request_id", None)
+
+    return await session_service.record_feedback(
+        db,
+        session_id=session_id,
+        message_id=message_id,
+        actor=actor,
+        rating=body.rating,
+        comment=body.comment,
+        client_ip=client_ip,
+        request_id=req_id,
+    )

@@ -9,19 +9,51 @@ client — so:
     isn't lost if the browser tab is closed.
 """
 
+import asyncio
+import logging
 import uuid
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.models.db_models import ChatMessageRecord, ChatSession
+from app.core.database import AsyncSessionLocal
+from app.governance.audit import record_audit_event
+from app.governance.costing import compute_exchange_cost
+from app.governance.pii import redact_pii
+from app.models.db_models import ChatMessageRecord, ChatSession, MessageFeedback
 from app.schemas.query import ChatTurn
-from app.schemas.session import ChatMessageOut, ChatSessionDetail, ChatSessionSummary
+from app.schemas.session import (
+    ChatMessageOut,
+    ChatSessionDetail,
+    ChatSessionSummary,
+    UserFeedbackResponse,
+)
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+# user_email -> in-flight background exchange writes (see schedule_exchange_write).
+_pending_writes: dict[str, set[asyncio.Task]] = defaultdict(set)
+
+
+async def drain_pending_writes(user_email: str) -> None:
+    """Wait for this user's background writes so reads see their latest turn."""
+    tasks = list(_pending_writes.get(user_email, ()))
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def _forget_write(user_email: str, task: asyncio.Task) -> None:
+    bucket = _pending_writes.get(user_email)
+    if bucket is not None:
+        bucket.discard(task)
+        if not bucket:
+            _pending_writes.pop(user_email, None)
 
 
 def _session_timeout() -> timedelta:
@@ -42,6 +74,7 @@ def _parse_uuid(value: str) -> uuid.UUID | None:
 async def _get_owned_session(
     db: AsyncSession, session_id: str, user_email: str
 ) -> ChatSession:
+    await drain_pending_writes(user_email)
     sid = _parse_uuid(session_id)
     session = await db.get(ChatSession, sid) if sid else None
 
@@ -67,8 +100,10 @@ async def resolve_session_for_query(
       different IP (e.g. a different network/location) always gets its own
       session instead of silently continuing one created elsewhere.
     """
-    now = datetime.utcnow()  # noqa: DTZ003
+    now = datetime.utcnow()
     session: ChatSession | None = None
+
+    await drain_pending_writes(user_email)
 
     if session_id:
         sid = _parse_uuid(session_id)
@@ -96,7 +131,9 @@ async def resolve_session_for_query(
     if session is not None:
         return session
 
+    # Persisted later by schedule_exchange_write, so the id is assigned here.
     session = ChatSession(
+        id=uuid.uuid4(),
         user_email=user_email,
         title="New chat",
         created_at=now,
@@ -104,8 +141,6 @@ async def resolve_session_for_query(
         expires_at=now + _session_timeout(),
         created_ip=client_ip,
     )
-    db.add(session)
-    await db.flush()
     return session
 
 
@@ -142,13 +177,51 @@ async def record_exchange(
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     total_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
+    embedding_tokens: int | None = None,
+    guardrail_tokens: int | None = None,
+    cost_usd: float | None = None,
+    token_details: dict | None = None,
+    outcome: str | None = None,
+    commit: bool = True,
+    user_message_id: uuid.UUID | None = None,
+    assistant_message_id: uuid.UUID | None = None,
 ) -> tuple[str, str]:
     """Persist the user question + assistant answer, refresh session TTL,
     and return (user_message_id, assistant_message_id) for the new pair."""
-    now = datetime.utcnow()  # noqa: DTZ003
+    now = datetime.utcnow()
     turn_index = await _next_turn_index(db, session.id)
 
+    # Derive canonical outcome if not supplied
+    if outcome is None:
+        from app.governance.outcomes import derive_outcome
+
+        outcome = derive_outcome(
+            outcome_hint=(token_details or {}).get("outcome"),
+            guardrail_flags=guardrail_flags,
+            grounded=grounded,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            query=user_text,
+            answer=answer_text,
+            token_details=token_details,
+        )
+
+    # Compute cost & details if not supplied
+    if cost_usd is None:
+        computed_cost, computed_details = compute_exchange_cost(
+            prompt_tokens=prompt_tokens or 0,
+            completion_tokens=completion_tokens or 0,
+            reasoning_tokens=reasoning_tokens or 0,
+            cached_tokens=(token_details or {}).get("cached_tokens", 0),
+            query_embed_tokens=embedding_tokens or 0,
+            guardrail_embed_tokens=guardrail_tokens or 0,
+        )
+        cost_usd = computed_cost
+        token_details = {**computed_details, **(token_details or {})}
+
     user_message = ChatMessageRecord(
+        **({"id": user_message_id} if user_message_id else {}),
         session_id=session.id,
         turn_index=turn_index,
         role="user",
@@ -160,6 +233,7 @@ async def record_exchange(
         ip_address=client_ip,
     )
     assistant_message = ChatMessageRecord(
+        **({"id": assistant_message_id} if assistant_message_id else {}),
         session_id=session.id,
         turn_index=turn_index,
         role="assistant",
@@ -168,11 +242,17 @@ async def record_exchange(
         request_id=request_id,
         grounded=grounded,
         guardrail_flags=guardrail_flags,
+        outcome=outcome,
         # Actual Azure OpenAI usage for this exchange's LLM call (None when
         # there wasn't one — guardrail-blocked/fallback/conversational).
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
+        reasoning_tokens=reasoning_tokens,
+        embedding_tokens=embedding_tokens,
+        guardrail_tokens=guardrail_tokens,
+        cost_usd=cost_usd,
+        token_details=token_details,
     )
     db.add_all([user_message, assistant_message])
 
@@ -182,9 +262,102 @@ async def record_exchange(
     session.last_activity_at = now
     session.expires_at = now + _session_timeout()
 
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        # Caller commits once; flush assigns the message ids.
+        await db.flush()
 
     return str(user_message.id), str(assistant_message.id)
+
+
+async def _write_exchange(
+    *,
+    user_email: str,
+    session_id: uuid.UUID,
+    new_session: ChatSession | None,
+    user_message_id: uuid.UUID,
+    assistant_message_id: uuid.UUID,
+    request_id: str,
+    client_ip: str | None,
+    audit_detail: dict,
+    **exchange,
+) -> None:
+    try:
+        async with AsyncSessionLocal() as db:
+            if new_session is not None:
+                db.add(new_session)
+                session = new_session
+            else:
+                session = await db.get(ChatSession, session_id)
+                if session is None:
+                    logger.warning("exchange_persist_skipped session=%s", session_id)
+                    return
+
+            await record_exchange(
+                db,
+                session=session,
+                request_id=request_id,
+                client_ip=client_ip,
+                commit=False,
+                user_message_id=user_message_id,
+                assistant_message_id=assistant_message_id,
+                **exchange,
+            )
+            await record_audit_event(
+                db,
+                request_id=request_id,
+                actor=user_email,
+                action="query",
+                detail=audit_detail,
+                ip_address=client_ip,
+                commit=False,
+            )
+            await db.commit()
+    except Exception:
+        logger.warning(
+            "exchange_persist_failed request_id=%s", request_id, exc_info=True
+        )
+
+
+def schedule_exchange_write(
+    *,
+    user_email: str,
+    session: ChatSession,
+    audit_detail: dict,
+    request_id: str,
+    client_ip: str | None,
+    **exchange,
+) -> tuple[str, str, str]:
+    """Persist the exchange + audit row in the background.
+
+    Returns (user_message_id, assistant_message_id, session_title) immediately;
+    ids are generated here so the response needn't wait for the database.
+    """
+    user_message_id = uuid.uuid4()
+    assistant_message_id = uuid.uuid4()
+
+    title = session.title
+    if title == "New chat":
+        title = exchange["user_text"].strip()[:80] or title
+
+    task = asyncio.create_task(
+        _write_exchange(
+            user_email=user_email,
+            session_id=session.id,
+            new_session=session if sa_inspect(session).transient else None,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            request_id=request_id,
+            client_ip=client_ip,
+            audit_detail=audit_detail,
+            **exchange,
+        )
+    )
+    _pending_writes[user_email].add(task)
+    task.add_done_callback(lambda t: _forget_write(user_email, t))
+
+    return str(user_message_id), str(assistant_message_id), title
 
 
 def _to_summary(
@@ -202,7 +375,8 @@ def _to_summary(
 
 
 async def list_sessions(db: AsyncSession, user_email: str) -> list[ChatSessionSummary]:
-    now = datetime.utcnow()  # noqa: DTZ003
+    await drain_pending_writes(user_email)
+    now = datetime.utcnow()
     result = await db.execute(
         select(ChatSession, func.count(ChatMessageRecord.id))
         .outerjoin(ChatMessageRecord, ChatMessageRecord.session_id == ChatSession.id)
@@ -216,7 +390,7 @@ async def list_sessions(db: AsyncSession, user_email: str) -> list[ChatSessionSu
 async def create_session(
     db: AsyncSession, user_email: str, title: str | None, client_ip: str | None = None
 ) -> ChatSessionSummary:
-    now = datetime.utcnow()  # noqa: DTZ003
+    now = datetime.utcnow()
     session = ChatSession(
         user_email=user_email,
         title=(title or "New chat").strip()[:256] or "New chat",
@@ -242,8 +416,21 @@ async def get_session_detail(
         .order_by(ChatMessageRecord.created_at)
     )
     messages = result.scalars().all()
-    now = datetime.utcnow()  # noqa: DTZ003
+    now = datetime.utcnow()
     summary = _to_summary(session, len(messages), now)
+
+    feedback_map: dict[uuid.UUID, int] = {}
+    if messages:
+        msg_ids = [m.id for m in messages]
+        feedback_rows = (
+            await db.execute(
+                select(MessageFeedback.message_id, MessageFeedback.rating).where(
+                    MessageFeedback.message_id.in_(msg_ids),
+                    MessageFeedback.actor == user_email,
+                )
+            )
+        ).all()
+        feedback_map = dict(feedback_rows)
 
     return ChatSessionDetail(
         **summary.model_dump(),
@@ -255,6 +442,15 @@ async def get_session_detail(
                 created_at=m.created_at,
                 grounded=m.grounded,
                 guardrail_flags=m.guardrail_flags,
+                feedback_rating=feedback_map.get(m.id),
+                prompt_tokens=m.prompt_tokens,
+                completion_tokens=m.completion_tokens,
+                total_tokens=m.total_tokens,
+                reasoning_tokens=m.reasoning_tokens,
+                embedding_tokens=m.embedding_tokens,
+                guardrail_tokens=m.guardrail_tokens,
+                cost_usd=m.cost_usd,
+                token_details=m.token_details,
             )
             for m in messages
         ],
@@ -274,7 +470,7 @@ async def rename_session(
             ChatMessageRecord.session_id == session.id
         )
     )
-    return _to_summary(session, count_result.scalar_one(), datetime.utcnow())  # noqa: DTZ003
+    return _to_summary(session, count_result.scalar_one(), datetime.utcnow())
 
 
 async def delete_session(db: AsyncSession, session_id: str, user_email: str) -> None:
@@ -302,3 +498,103 @@ async def delete_exchange(
         )
     )
     await db.commit()
+
+
+async def record_feedback(
+    db: AsyncSession,
+    *,
+    session_id: str,
+    message_id: str,
+    actor: str,
+    rating: int,
+    comment: str | None = None,
+    client_ip: str | None = None,
+    request_id: str | None = None,
+) -> UserFeedbackResponse:
+    """Upsert feedback for an assistant message and record an audit event (Subtasks 1.3.2 & 1.3.3)."""
+    session = await _get_owned_session(db, session_id, actor)
+
+    mid = _parse_uuid(message_id)
+    if not mid:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message not found",
+        )
+
+    message = await db.scalar(
+        select(ChatMessageRecord).where(
+            ChatMessageRecord.id == mid,
+            ChatMessageRecord.session_id == session.id,
+        )
+    )
+    if message is None or message.role != "assistant":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assistant message not found in this session",
+        )
+
+    # Check for existing feedback by this actor on this message
+    existing = await db.scalar(
+        select(MessageFeedback).where(
+            MessageFeedback.message_id == mid,
+            MessageFeedback.actor == actor,
+        )
+    )
+
+    now = datetime.utcnow()
+    clean_comment = comment.strip() if comment else None
+    redacted_comment = redact_pii(clean_comment)[0] if clean_comment else None
+
+    if existing is not None:
+        existing.rating = rating
+        existing.comment = clean_comment
+        existing.updated_at = now
+        feedback_obj = existing
+    else:
+        feedback_obj = MessageFeedback(
+            message_id=mid,
+            session_id=session.id,
+            actor=actor,
+            rating=rating,
+            comment=clean_comment,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(feedback_obj)
+
+    # Append audit event with expected keys
+    req_id = request_id or f"feedback-{uuid.uuid4().hex[:12]}"
+    effective_ip = (
+        session.created_ip
+        if (
+            client_ip in ("127.0.0.1", "::1", "localhost", "testclient", None)
+            and session.created_ip
+        )
+        else (client_ip or session.created_ip)
+    )
+    await record_audit_event(
+        db,
+        request_id=req_id,
+        actor=actor,
+        action="user_feedback",
+        detail={
+            "rating": rating,
+            "comment": redacted_comment,
+            "conversation_id": str(session.id),
+            "message_id": str(mid),
+        },
+        ip_address=effective_ip,
+        commit=False,
+    )
+
+    await db.commit()
+    await db.refresh(feedback_obj)
+
+    return UserFeedbackResponse(
+        message_id=str(feedback_obj.message_id),
+        session_id=str(feedback_obj.session_id),
+        rating=feedback_obj.rating,
+        comment=feedback_obj.comment,
+        created_at=feedback_obj.created_at,
+        updated_at=feedback_obj.updated_at,
+    )

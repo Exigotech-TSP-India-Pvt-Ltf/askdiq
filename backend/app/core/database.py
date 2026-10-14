@@ -10,15 +10,16 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
 
-
 settings = get_settings()
 
 engine = create_async_engine(
     settings.database_url,
-    echo=(settings.env == "development"),
+    echo=settings.db_echo,
     pool_size=settings.db_pool_size,
     max_overflow=settings.db_max_overflow,
-    pool_pre_ping=True,
+    # No per-checkout SELECT 1; recycle instead so stale connections age out.
+    pool_pre_ping=False,
+    pool_recycle=1800,
 )
 
 AsyncSessionLocal = async_sessionmaker(
