@@ -97,13 +97,12 @@ async def _run_evaluation_task(
         detected_flags: list[str] = list(initial_flags)
 
         # 1. Secret Scanner (Lightweight regex rules)
-        for rule_id, pattern in SECRET_PATTERNS.items():
+        for pattern in SECRET_PATTERNS.values():
             if pattern.search(answer):
                 detected_flags.append("secret_leak_detected")
                 logger.warning(
-                    "online_eval_rule_violation request_id=%s rule_matched=%s",
+                    "online_eval_rule_violation request_id=%s",
                     request_id,
-                    rule_id,
                 )
                 break
 
@@ -112,9 +111,9 @@ async def _run_evaluation_task(
         if leaked:
             detected_flags.append("pii_leak_detected")
             logger.warning(
-                "online_eval_pii_leak request_id=%s types=%s",
+                "online_eval_pii_leak request_id=%s count=%d",
                 request_id,
-                leaked,
+                len(leaked),
             )
 
         # 3. Sampled LLM Judge
