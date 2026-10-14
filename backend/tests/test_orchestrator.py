@@ -30,19 +30,25 @@ async def _run(
     if llm_side_effect is not None:
         calls = iter(llm_side_effect)
 
-        def fake_call_llm(_query, _chunks, _history=None):
+        async def fake_call_llm(_query, _chunks, _history=None):
             item = next(calls)
             if isinstance(item, Exception):
                 raise item
-            return item, {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+            return item, {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+            }
 
         monkeypatch.setattr(orchestrator, "call_llm", fake_call_llm)
 
     if post_checks_side_effect is not None:
         post_calls = iter(post_checks_side_effect)
-        monkeypatch.setattr(
-            orchestrator, "run_post_checks", lambda *a, **k: next(post_calls)
-        )
+
+        async def fake_post_checks(*_a, **_k):
+            return next(post_calls)
+
+        monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
 
     return await orchestrator.run_query(
         query="What is Deploy IQ?",
@@ -135,30 +141,23 @@ async def test_empty_llm_output_returns_fallback_with_flag(monkeypatch):
     assert response.guardrail_flags == ["empty_llm_output"]
 
 
-async def test_groundedness_retry_succeeds_on_second_sample(monkeypatch):
+async def test_ungrounded_answer_is_not_retried(monkeypatch):
+    # Only one LLM sample is available; a retry would raise StopIteration.
     response = await _run(
         monkeypatch,
-        llm_side_effect=["poorly grounded phrasing", "Deploy IQ does X, per the docs."],
-        post_checks_side_effect=[
-            (False, 0.30, ["possible_hallucination"]),
-            (True, 0.80, []),
-        ],
+        llm_side_effect=["poorly grounded phrasing"],
+        post_checks_side_effect=[(False, 0.30, ["possible_hallucination"])],
     )
 
-    assert response.grounded is True
-    assert response.confidence == 0.80
-    assert response.answer == "Deploy IQ does X, per the docs."
+    assert response.grounded is False
+    assert response.guardrail_flags == ["possible_hallucination"]
 
 
-async def test_groundedness_exhausted_retries_returns_fallback(monkeypatch):
+async def test_groundedness_failure_returns_fallback(monkeypatch):
     response = await _run(
         monkeypatch,
-        llm_side_effect=["a1", "a2", "a3"],
-        post_checks_side_effect=[
-            (False, 0.2, ["possible_hallucination"]),
-            (False, 0.25, ["possible_hallucination"]),
-            (False, 0.3, ["possible_hallucination"]),
-        ],
+        llm_side_effect=["a1"],
+        post_checks_side_effect=[(False, 0.2, ["possible_hallucination"])],
     )
 
     assert response.grounded is False

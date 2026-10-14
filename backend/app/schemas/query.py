@@ -75,3 +75,9 @@ class QueryResponse(BaseModel):
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    embedding_tokens: int | None = None
+    guardrail_tokens: int | None = None
+    cost_usd: float | None = None
+    outcome: str = "answered"
+    token_details: dict | None = None

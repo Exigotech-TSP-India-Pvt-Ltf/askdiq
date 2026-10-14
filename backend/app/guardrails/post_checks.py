@@ -2,9 +2,10 @@
 
 import re
 
-from app.retrieval.embeddings import embed_texts_sync
-from app.schemas.query import SourceChunk
+import numpy as np
 
+from app.retrieval.embeddings import current_embedding_stage, embed_texts
+from app.schemas.query import SourceChunk
 
 # Answers that explicitly decline to answer (because the corpus genuinely
 # lacks the information) are grounded by definition — declining beats
@@ -46,15 +47,16 @@ def _unsupported_figures(answer: str, source_text: str) -> list[str]:
     )
 
 
+def _cosine_similarities(query: list[float], matrix: list[list[float]]) -> np.ndarray:
+    """Cosine similarity of `query` against each row of `matrix` (0.0 for zero vectors)."""
+    q = np.asarray(query, dtype=np.float64)
+    m = np.asarray(matrix, dtype=np.float64).reshape(len(matrix), -1)
+    denom = np.linalg.norm(m, axis=1) * np.linalg.norm(q)
+    return np.divide(m @ q, denom, out=np.zeros(len(m)), where=denom != 0)
+
+
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(y * y for y in b) ** 0.5
-
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-
-    return dot / (norm_a * norm_b)
+    return float(_cosine_similarities(a, [b])[0])
 
 
 def check_has_sources(
@@ -72,7 +74,7 @@ def check_has_sources(
     return True, None
 
 
-def check_groundedness(
+async def check_groundedness(
     answer: str,
     sources: list[SourceChunk],
     threshold: float,
@@ -104,24 +106,29 @@ def check_groundedness(
         return False, 0.0, "unsupported_numeric_claim"
 
     try:
-        answer_embedding = embed_texts_sync([answer])[0]
+        stage_token = current_embedding_stage.set("guardrail")
+        try:
+            answer_embedding = (await embed_texts([answer]))[0]
 
-        source_embeddings: list[list[float] | None] = [s.embedding for s in sources]
-        missing = [i for i, e in enumerate(source_embeddings) if e is None]
+            source_embeddings: list[list[float] | None] = [s.embedding for s in sources]
+            missing = [i for i, e in enumerate(source_embeddings) if e is None]
 
-        if missing:
-            fresh = embed_texts_sync([sources[i].content for i in missing])
-            for index, embedding in zip(missing, fresh):
-                source_embeddings[index] = embedding
+            if missing:
+                fresh = await embed_texts([sources[i].content for i in missing])
+                for index, embedding in zip(missing, fresh):
+                    source_embeddings[index] = embedding
+        finally:
+            current_embedding_stage.reset(stage_token)
     except Exception:
         return False, 0.0, "groundedness_check_failed"
 
-    similarities = [
-        _cosine_similarity(answer_embedding, source_embedding)
-        for source_embedding in source_embeddings
-    ]
+    similarities = (
+        _cosine_similarities(answer_embedding, source_embeddings)
+        if source_embeddings
+        else np.zeros(0)
+    )
 
-    confidence = max(similarities) if similarities else 0.0
+    confidence = float(similarities.max()) if similarities.size else 0.0
 
     return (
         confidence >= threshold,
@@ -130,7 +137,7 @@ def check_groundedness(
     )
 
 
-def run_post_checks(
+async def run_post_checks(
     answer: str,
     sources: list[SourceChunk],
     groundedness_threshold: float,
@@ -149,7 +156,7 @@ def run_post_checks(
         flags.append(flag)
         return False, 0.0, flags
 
-    grounded, confidence, flag = check_groundedness(
+    grounded, confidence, flag = await check_groundedness(
         answer,
         sources,
         groundedness_threshold,

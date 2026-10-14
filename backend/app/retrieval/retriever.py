@@ -6,15 +6,16 @@ instead of being averaged into one vector that matches neither topic well.
 """
 
 import asyncio
-import time
 import re
+import time
 import uuid
+from functools import lru_cache
 
 from app.core.config import get_settings
-from app.retrieval.embeddings import embed_text_sync, embedding_timing_sink
+from app.guardrails.pre_checks import is_gibberish_token
+from app.retrieval.embeddings import embed_text, embedding_timing_sink
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, SourceChunk
-
 
 _AND_SPLIT_RE = re.compile(r"\band\b", re.IGNORECASE)
 
@@ -26,21 +27,33 @@ _REFERENTIAL_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Almost every genuine follow-up either has referential language above, or
-# is extremely terse ("why?", "how much?") — real standalone questions that
-# just happen to be short ("What is Zero Trust?", "What is the Essential
-# Eight?") are usually 4-5 words. Kept low (not 6) so those aren't
-# mislabeled as follow-ups and don't get an unrelated prior turn's history
-# folded in.
 _SHORT_QUERY_WORD_COUNT = 3
+_SHORT_FOLLOW_UP_TOKENS = {
+    "why",
+    "how",
+    "more",
+    "details",
+    "pricing",
+    "cost",
+    "features",
+    "elaborate",
+    "explain",
+    "what",
+    "can",
+    "does",
+    "is",
+    "are",
+}
 
 
+@lru_cache(maxsize=1024)
 def needs_conversation_context(query: str) -> bool:
     """Heuristic: does this query look like a follow-up on its own?
 
     Rule-based (no LLM call), mirroring the style of decompose_query:
-    flags queries that are either short or contain referential language
-    that can't be resolved without the preceding conversation turns.
+    flags queries that are either short interrogatives or contain referential
+    language that can't be resolved without the preceding conversation turns.
+    Guards against attaching history to gibberish or pure punctuation.
     """
 
     text = query.strip()
@@ -48,10 +61,28 @@ def needs_conversation_context(query: str) -> bool:
     if not text:
         return False
 
+    # Never attach history if input is pure punctuation or symbols
+    if re.match(r"^[\s\W_]+$", text):
+        return False
+
+    # Never attach history if input contains any gibberish token
+    words = text.split()
+    if any(is_gibberish_token(w) for w in words):
+        return False
+
+    # Ultra-short inputs (<= 2 chars) that are not recognized domain terms
+    clean_chars = re.sub(r"[\W_]", "", text).lower()
+    if len(clean_chars) <= 2 and clean_chars not in {"e8", "ai", "ip", "db"}:
+        return False
+
     if _REFERENTIAL_RE.search(text):
         return True
 
-    return len(text.split()) <= _SHORT_QUERY_WORD_COUNT
+    # Short queries (<= 3 words) must contain at least one recognized follow-up token
+    clean_words = {w.lower().strip("?!.,:;") for w in words}
+    return len(words) <= _SHORT_QUERY_WORD_COUNT and bool(
+        clean_words & _SHORT_FOLLOW_UP_TOKENS
+    )
 
 
 def contextualize_query(query: str, history: list[ChatTurn] | None) -> str:
@@ -120,12 +151,9 @@ def decompose_query(query: str) -> list[str]:
 
 
 async def embed_query(query: str) -> list[float]:
-    """Generate a query embedding without blocking the async event loop."""
+    """Generate a query embedding with the async Azure client."""
 
-    return await asyncio.to_thread(
-        embed_text_sync,
-        query,
-    )
+    return await embed_text(query)
 
 
 async def retrieve(
@@ -218,6 +246,10 @@ async def retrieve(
             reverse=True,
         )[:final_top_k]
 
+    embeddings_by_id = await vector_store.fetch_embeddings(
+        [chunk.id for chunk, _ in results]
+    )
+
     return [
         SourceChunk(
             chunk_id=str(chunk.id),
@@ -225,7 +257,7 @@ async def retrieve(
             content=chunk.content,
             score=score,
             metadata=chunk.chunk_metadata,
-            embedding=list(chunk.embedding),
+            embedding=embeddings_by_id.get(chunk.id),
         )
         for chunk, score in results
     ]

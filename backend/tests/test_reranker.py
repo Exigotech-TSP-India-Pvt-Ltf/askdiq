@@ -12,7 +12,7 @@ class _FakeEncoder:
     def __init__(self, scores):
         self._scores = scores
 
-    def rerank(self, _query, _documents):
+    def rerank(self, _query, _documents, batch_size=None):
         return self._scores
 
 
@@ -45,15 +45,13 @@ def test_rerank_reorders_by_cross_encoder_but_keeps_cosine_scores(monkeypatch):
     candidates = [(low_score_chunk, 0.42), (high_score_chunk, 0.40)]
 
     # ...but the cross-encoder correctly prefers the second document.
-    monkeypatch.setattr(
-        reranker, "_get_encoder", lambda: _FakeEncoder([-5.0, 8.0])
-    )
+    monkeypatch.setattr(reranker, "_get_encoder", lambda: _FakeEncoder([-5.0, 8.0]))
 
     result = reranker.rerank("What directly answers this?", candidates)
 
     assert [chunk for chunk, _ in result] == [high_score_chunk, low_score_chunk]
     # Cosine scores travel with their chunk, unchanged by reranking.
-    assert dict((id(c), s) for c, s in result) == dict((id(c), s) for c, s in candidates)
+    assert {id(c): s for c, s in result} == {id(c): s for c, s in candidates}
 
 
 def test_rerank_falls_back_to_cosine_order_on_encoder_failure(monkeypatch):

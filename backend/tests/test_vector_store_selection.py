@@ -35,10 +35,9 @@ def test_select_diverse_chunks_guarantees_second_document_representation():
     doc_a = uuid.uuid4()  # strongest document, many candidates
     doc_b = uuid.uuid4()  # second-strongest, fewer candidates
 
-    candidates = (
-        [_chunk(doc_a, score) for score in [0.95, 0.94, 0.93, 0.92, 0.91]]
-        + [_chunk(doc_b, score) for score in [0.80, 0.79]]
-    )
+    candidates = [_chunk(doc_a, score) for score in [0.95, 0.94, 0.93, 0.92, 0.91]] + [
+        _chunk(doc_b, score) for score in [0.80, 0.79]
+    ]
     candidates.sort(key=lambda item: item[1], reverse=True)
 
     selected = VectorStore._select_diverse_chunks(candidates, top_k=4)

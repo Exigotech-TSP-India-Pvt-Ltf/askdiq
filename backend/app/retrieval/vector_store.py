@@ -17,6 +17,7 @@ from collections import defaultdict
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.core.config import get_settings
 from app.models.db_models import Chunk
@@ -28,6 +29,18 @@ settings = get_settings()
 class VectorStore:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    async def fetch_embeddings(self, chunk_ids: list) -> dict:
+        """Embeddings for just these chunks (candidates are loaded without them)."""
+        if not chunk_ids:
+            return {}
+        rows = (
+            await self.session.execute(
+                select(Chunk.id, Chunk.embedding).where(Chunk.id.in_(chunk_ids))
+            )
+        ).all()
+        await self.session.commit()
+        return {chunk_id: list(embedding) for chunk_id, embedding in rows}
 
     async def similarity_search(
         self,
@@ -55,7 +68,7 @@ class VectorStore:
         stmt = select(
             Chunk,
             Chunk.embedding.cosine_distance(query_embedding).label("distance"),
-        )
+        ).options(defer(Chunk.embedding))
 
         if filters:
             for key, value in filters.items():
@@ -64,6 +77,10 @@ class VectorStore:
         stmt = stmt.order_by("distance").limit(candidate_k)
 
         rows = (await self.session.execute(stmt)).all()
+
+        # End the read transaction now so the pooled connection is returned
+        # before the slow rerank/LLM stages (expire_on_commit=False keeps rows usable).
+        await self.session.commit()
 
         if not rows:
             return []

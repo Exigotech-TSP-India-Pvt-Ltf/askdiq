@@ -2,8 +2,8 @@ import pytest
 
 from app.guardrails import post_checks
 from app.guardrails.post_checks import (
-    _cosine_similarity,
     _NEGATIVE_ANSWER_RE,
+    _cosine_similarity,
     _unsupported_figures,
     check_groundedness,
     check_has_sources,
@@ -97,20 +97,22 @@ def test_check_has_sources_passes_above_threshold():
 # ---------------------------------------------------------------------
 
 
-def test_check_groundedness_empty_answer():
-    grounded, confidence, flag = check_groundedness("", [_source("x")], 0.55)
+async def test_check_groundedness_empty_answer():
+    grounded, confidence, flag = await check_groundedness("", [_source("x")], 0.55)
     assert grounded is False
     assert confidence == 0.0
     assert flag == "empty_answer"
 
 
-def test_check_groundedness_negative_answer_is_grounded_by_definition(monkeypatch):
-    def _boom(*_args, **_kwargs):
+async def test_check_groundedness_negative_answer_is_grounded_by_definition(
+    monkeypatch,
+):
+    async def _boom(*_args, **_kwargs):
         raise AssertionError("should not embed a declined answer")
 
-    monkeypatch.setattr(post_checks, "embed_texts_sync", _boom)
+    monkeypatch.setattr(post_checks, "embed_texts", _boom)
 
-    grounded, confidence, flag = check_groundedness(
+    grounded, confidence, flag = await check_groundedness(
         "The documents do not provide that information.",
         [_source("x")],
         0.55,
@@ -120,14 +122,14 @@ def test_check_groundedness_negative_answer_is_grounded_by_definition(monkeypatc
     assert flag is None
 
 
-def test_check_groundedness_high_similarity_passes(monkeypatch):
-    def _fake_embed(texts):
+async def test_check_groundedness_high_similarity_passes(monkeypatch):
+    async def _fake_embed(texts):
         # Same vector for answer and source -> cosine similarity 1.0.
         return [[1.0, 0.0, 0.0] for _ in texts]
 
-    monkeypatch.setattr(post_checks, "embed_texts_sync", _fake_embed)
+    monkeypatch.setattr(post_checks, "embed_texts", _fake_embed)
 
-    grounded, confidence, flag = check_groundedness(
+    grounded, confidence, flag = await check_groundedness(
         "Deploy IQ manages Essential Eight compliance end-to-end.",
         [_source("Essential Eight content")],
         0.55,
@@ -137,17 +139,17 @@ def test_check_groundedness_high_similarity_passes(monkeypatch):
     assert flag is None
 
 
-def test_check_groundedness_low_similarity_flags_hallucination(monkeypatch):
+async def test_check_groundedness_low_similarity_flags_hallucination(monkeypatch):
     calls = {"n": 0}
 
-    def _fake_embed(texts):
+    async def _fake_embed(texts):
         calls["n"] += 1
         # First call = answer embedding, second = source embeddings.
         return [[1.0, 0.0]] if calls["n"] == 1 else [[0.0, 1.0]]
 
-    monkeypatch.setattr(post_checks, "embed_texts_sync", _fake_embed)
+    monkeypatch.setattr(post_checks, "embed_texts", _fake_embed)
 
-    grounded, confidence, flag = check_groundedness(
+    grounded, confidence, flag = await check_groundedness(
         "Something unrelated to the sources.",
         [_source("Unrelated source content")],
         0.55,
@@ -157,13 +159,13 @@ def test_check_groundedness_low_similarity_flags_hallucination(monkeypatch):
     assert flag == "possible_hallucination"
 
 
-def test_check_groundedness_embedding_failure_is_ungrounded(monkeypatch):
-    def _boom(_texts):
+async def test_check_groundedness_embedding_failure_is_ungrounded(monkeypatch):
+    async def _boom(_texts):
         raise RuntimeError("Azure unavailable")
 
-    monkeypatch.setattr(post_checks, "embed_texts_sync", _boom)
+    monkeypatch.setattr(post_checks, "embed_texts", _boom)
 
-    grounded, confidence, flag = check_groundedness(
+    grounded, confidence, flag = await check_groundedness(
         "Some answer.", [_source("x")], 0.55
     )
     assert grounded is False
@@ -171,18 +173,18 @@ def test_check_groundedness_embedding_failure_is_ungrounded(monkeypatch):
     assert flag == "groundedness_check_failed"
 
 
-def test_check_groundedness_reuses_precomputed_source_embeddings(monkeypatch):
+async def test_check_groundedness_reuses_precomputed_source_embeddings(monkeypatch):
     # Sources already carrying an embedding (as retriever.py populates them
     # from the ingested chunk) must NOT be re-embedded — only the new
     # answer text needs a fresh embedding call.
     calls = {"n": 0, "texts": []}
 
-    def _fake_embed(texts):
+    async def _fake_embed(texts):
         calls["n"] += 1
         calls["texts"].append(list(texts))
         return [[1.0, 0.0, 0.0] for _ in texts]
 
-    monkeypatch.setattr(post_checks, "embed_texts_sync", _fake_embed)
+    monkeypatch.setattr(post_checks, "embed_texts", _fake_embed)
 
     source_with_embedding = SourceChunk(
         chunk_id="00000000-0000-0000-0000-000000000001",
@@ -193,7 +195,7 @@ def test_check_groundedness_reuses_precomputed_source_embeddings(monkeypatch):
         embedding=[1.0, 0.0, 0.0],
     )
 
-    grounded, confidence, flag = check_groundedness(
+    grounded, confidence, flag = await check_groundedness(
         "Deploy IQ manages Essential Eight compliance end-to-end.",
         [source_with_embedding],
         0.55,
@@ -248,17 +250,17 @@ def test_unsupported_figures_flags_invented_percentage():
     assert result == ["42%"]
 
 
-def test_check_groundedness_rejects_invented_dollar_figure_even_if_on_topic(
+async def test_check_groundedness_rejects_invented_dollar_figure_even_if_on_topic(
     monkeypatch,
 ):
     # Same-vector embeddings would otherwise pass the semantic check —
     # the figure anchor must catch this independently, before embedding.
-    def _fail_if_called(*_a, **_k):
+    async def _fail_if_called(*_a, **_k):
         raise AssertionError("should short-circuit before embedding")
 
-    monkeypatch.setattr(post_checks, "embed_texts_sync", _fail_if_called)
+    monkeypatch.setattr(post_checks, "embed_texts", _fail_if_called)
 
-    grounded, confidence, flag = check_groundedness(
+    grounded, confidence, flag = await check_groundedness(
         "Essential Eight implementation costs $12,500.",
         [_source("Deploy IQ delivers Essential Eight with no published pricing.")],
         0.55,
@@ -273,19 +275,20 @@ def test_check_groundedness_rejects_invented_dollar_figure_even_if_on_topic(
 # ---------------------------------------------------------------------
 
 
-def test_run_post_checks_fails_fast_with_no_sources():
-    grounded, confidence, flags = run_post_checks("answer", [], 0.55)
+async def test_run_post_checks_fails_fast_with_no_sources():
+    grounded, confidence, flags = await run_post_checks("answer", [], 0.55)
     assert grounded is False
     assert confidence == 0.0
     assert flags == ["no_retrieved_sources"]
 
 
-def test_run_post_checks_grounded_end_to_end(monkeypatch):
-    monkeypatch.setattr(
-        post_checks, "embed_texts_sync", lambda texts: [[1.0, 0.0] for _ in texts]
-    )
+async def test_run_post_checks_grounded_end_to_end(monkeypatch):
+    async def _fake_embed(texts):
+        return [[1.0, 0.0] for _ in texts]
 
-    grounded, confidence, flags = run_post_checks(
+    monkeypatch.setattr(post_checks, "embed_texts", _fake_embed)
+
+    grounded, _confidence, flags = await run_post_checks(
         "Deploy IQ does X.", [_source("Deploy IQ does X.", score=0.9)], 0.55
     )
     assert grounded is True
