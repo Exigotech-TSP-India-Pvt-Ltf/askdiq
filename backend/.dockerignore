@@ -18,4 +18,11 @@ docker-compose.prod.yml
 .ruff_cache/
 tests/
 eval_report*.json
+evaluation_report.json
+conc_*.json
+reports/
 scripts/_*.py
+*.tgz
+.mcp.json
+docs/
+data/archive/

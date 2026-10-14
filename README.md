@@ -140,7 +140,7 @@ backend/
   rerun (replaces existing chunks per source document).
 - `scripts/seed_ingest.py` — ingests via the live `/ingest` API instead of a
   direct DB session (needs a running server + auth token).
-- `show_chunking.py` — prints one document's stored chunks (heading, char
+- `scripts/show_chunking.py [source_name]` — prints one document's stored chunks (heading, char
   count, content) to sanity-check chunking output after a change.
 
 ## Frontend structure

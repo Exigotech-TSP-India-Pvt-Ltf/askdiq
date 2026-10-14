@@ -4,3 +4,7 @@ node_modules/
 .git
 .gitignore
 npm-debug.log*
+*.md
+*.tgz
+tests/
+vitest.config.ts
