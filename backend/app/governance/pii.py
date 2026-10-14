@@ -27,7 +27,9 @@ RE_AU_PHONE = re.compile(
     r"(?:\+61[-\s]?4\d{2}[-\s]?\d{3}[-\s]?\d{3}|04\d{2}[-\s]?\d{3}[-\s]?\d{3}|(?:\+61[-\s]?[2378]|0[2378])[-\s]?\d{4}[-\s]?\d{4})"
 )
 RE_GENERIC_PHONE = re.compile(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b")
-RE_EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+RE_EMAIL = re.compile(
+    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b"
+)
 RE_SSN_LIKE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 
 # Backward compatibility mapping for quality evaluators

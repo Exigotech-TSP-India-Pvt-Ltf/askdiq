@@ -234,11 +234,6 @@ async def run_query(
         sorted({s.document_id for s in sources}),
     )
     logger.debug(
-        "retrieval_query request_id=%s raw_query=%r",
-        request_id,
-        query,
-    )
-    logger.debug(
         "retrieval_detail request_id=%s sources=%s",
         request_id,
         [

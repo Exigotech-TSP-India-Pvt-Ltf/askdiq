@@ -97,13 +97,13 @@ async def _run_evaluation_task(
         detected_flags: list[str] = list(initial_flags)
 
         # 1. Secret Scanner (Lightweight regex rules)
-        for name, pattern in SECRET_PATTERNS.items():
+        for rule_id, pattern in SECRET_PATTERNS.items():
             if pattern.search(answer):
                 detected_flags.append("secret_leak_detected")
                 logger.warning(
-                    "online_eval_secret_leak request_id=%s secret_type=%s",
+                    "online_eval_rule_violation request_id=%s rule_matched=%s",
                     request_id,
-                    name,
+                    rule_id,
                 )
                 break
 

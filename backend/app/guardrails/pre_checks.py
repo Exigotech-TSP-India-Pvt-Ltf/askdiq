@@ -1,4 +1,5 @@
 import re
+import string
 import unicodedata
 
 UNSAFE_PATTERNS = [
@@ -69,9 +70,12 @@ _KEYBOARD_SEQS = (
 _UNUSUAL_DOUBLES_RE = re.compile(r"(jj|qq|vv|xx|hh|ww|yy)", re.IGNORECASE)
 
 
+_STRIP_CHARS = string.punctuation + string.whitespace
+
+
 def _clean_token(token: str) -> str:
     """Strip leading and trailing punctuation/symbols from token."""
-    return re.sub(r"^[\W_]+|[\W_]+$", "", token)
+    return token.strip(_STRIP_CHARS)
 
 
 def is_gibberish_token(token: str) -> bool:

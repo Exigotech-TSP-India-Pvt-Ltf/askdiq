@@ -55,7 +55,6 @@ def _format_history(query: str, history: list[ChatTurn] | None) -> str:
             len(query),
             len(history or []),
         )
-        logger.debug("history_check raw_query=%r", query)
         return ""
 
     recent = history[-_MAX_HISTORY_TURNS:]
@@ -111,7 +110,6 @@ def _format_history(query: str, history: list[ChatTurn] | None) -> str:
         turns_sent,
         history_tokens,
     )
-    logger.debug("history_check raw_query=%r", query)
 
     return history_block if lines else ""
 
