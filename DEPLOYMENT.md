@@ -41,20 +41,53 @@ Services defined in [docker-compose.yml](docker-compose.yml):
   `frontend/.env.local` via `env_file`, with `API_BASE_URL` overridden to
   `http://backend:8000`. Exposed on `3000`.
 
-## 3. One-off setup (migrations + ingestion)
+## 3. One-off setup (migrations + backfill + ingestion)
 
 Not baked into the backend image's `CMD`, so container restarts never
 silently re-run them. Run once the `backend` container is healthy:
 
 ```bash
+# 1. Apply database migrations (including d5e6f7a8b9c0 for usage outcome tracking)
 docker compose exec backend alembic upgrade head
+
+# 2. Run idempotent usage accounting backfill for legacy messages
+docker compose exec backend python scripts/backfill_usage_accounting.py --dry-run
+docker compose exec backend python scripts/backfill_usage_accounting.py --apply
+
+# 3. Canonical Markdown ingestion (strictly accepts .md files; non-.md files are rejected)
 docker compose exec backend python scripts/ingest_real_docs.py
 ```
 
 Re-run `ingest_real_docs.py` any time `backend/data/real_docs/*.md` changes
 — it's safe to rerun (replaces existing chunks per source document).
 
-## 4. Verify
+## 4. Operational Environment Variables & Proxy Configuration
+
+Configure the following variables in `backend/.env` for production deployments:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TRUST_PROXY_HEADERS` | `true` in prod / `false` in dev | Mandatory when running behind Nginx, Traefik, or Azure App Gateway so `X-Forwarded-For` is correctly resolved for Audience Classification. |
+| `TEST_IPS` | `127.0.0.1,::1,localhost` | Initial comma-separated list of test IPs / CIDR blocks (e.g. `10.0.0.0/8,192.168.1.0/24`). Can be dynamically overridden via Admin Console. |
+| `AUDIENCE_CACHE_TTL_SECONDS` | `15` | In-memory cache TTL for audience classification counts. |
+| `USAGE_SUMMARY_CACHE_TTL_SECONDS` | `30` | In-memory cache TTL for `/admin/usage/summary` metrics. |
+| `USAGE_MAX_RANGE_DAYS` | `90` | Maximum date range allowed for usage summaries. |
+| `PRICING_PRICE_EMBED_PER_MILLION` | `0.02` | Rate card for query and guardrail embedding tokens ($/1M). |
+| `PRICING_PRICE_INPUT_PER_MILLION` | `0.25` | Rate card for prompt input tokens ($/1M). |
+| `PRICING_PRICE_OUTPUT_PER_MILLION` | `2.00` | Rate card for visible and reasoning completion tokens ($/1M). |
+| `PRICING_PRICE_CACHED_PER_MILLION` | `0.0625` | Rate card for cached prompt tokens ($/1M). |
+
+## 5. API Deprecations
+
+- **`GET /admin/usage/cost-breakdown`**: Deprecated as of release 2.0. This legacy monolithic endpoint will be removed in release 2.1.
+- **Replacement Endpoints**:
+  - `GET /admin/usage/summary`: High-level economics ($ USD and Token Volumes separated) with audience scoping.
+  - `GET /admin/usage/users`: Paginated, audience-aware user table with top-consumer intelligence.
+  - `GET /admin/usage/sessions`: Paginated session table with turn metrics.
+  - `GET /admin/usage/queries`: Paginated turn list with outcome filter and single-turn rate-card inspector.
+  - `GET /admin/usage/export`: Streaming CSV export with formula injection sanitization.
+
+## 6. Verify
 
 - Backend health: `http://localhost:8000/health`
 - Frontend: `http://localhost:3000`
@@ -70,6 +103,4 @@ Re-run `ingest_real_docs.py` any time `backend/data/real_docs/*.md` changes
   correct for non-Docker local dev; Compose always overrides it.
 - `docker-compose.yml` never duplicates secrets into the compose file
   itself — both `env_file` entries load real values from the `.env` files.
-- No production deployment (cloud hosting, TLS termination, secrets
-  manager, etc.) is covered here — this guide is local/dev Docker Compose
-  only.
+- Ensure reverse proxies pass `X-Forwarded-For` with client IP so audience classification accurately separates authentic end users from internal test runners.

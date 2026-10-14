@@ -118,4 +118,3 @@ def embed_text_sync(
 ) -> list[float]:
     """Synchronous wrapper for embed_text."""
     return embed_texts_sync([text], task_type=task_type, stage=stage)[0]
-
