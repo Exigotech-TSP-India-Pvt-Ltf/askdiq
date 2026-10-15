@@ -29,5 +29,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # main.py (at backend/ root) defines `app` -> module path "main:app".
-# One worker: the in-memory rate limiter and post-answer write ordering are per-process.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Multiple workers are safe: rate limits, OIDC state, the job queue and event
+# fan-out are shared through Postgres (planchanges4 B1.4), and a request's
+# post-answer writes stay inside the one process that served it.
+# WEB_CONCURRENCY sets the worker count (docker-compose.prod.yml sets 2 per
+# replica); size the DB pool with the rule in DEPLOYMENT.md. Shell form so the
+# variable expands; `exec` keeps uvicorn as PID 1 to receive SIGTERM.
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1}"]
