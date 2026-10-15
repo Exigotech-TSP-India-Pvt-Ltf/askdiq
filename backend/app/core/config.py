@@ -1,10 +1,11 @@
 """Centralized application configuration."""
 
+import re
 from functools import lru_cache
 from typing import Self
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Placeholder identifiers used only by the local mock IdP (AUTH_DEV_MOCK=true)
@@ -19,6 +20,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Database
@@ -319,10 +321,23 @@ class Settings(BaseSettings):
 
     # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
     # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).
-    entra_tenant_id: str | None = None
-    entra_client_id: str | None = None
-    entra_client_secret: SecretStr | None = None
-    entra_redirect_uri: str | None = None
+    # Each also accepts the generic OIDC_* names other Exigo apps use, so one .env works for both.
+    # ENTRA_TENANT_ID may be omitted when OIDC_DISCOVERY_URL contains the tenant.
+    entra_tenant_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("ENTRA_TENANT_ID", "OIDC_TENANT_ID")
+    )
+    entra_client_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("ENTRA_CLIENT_ID", "OIDC_CLIENT_ID")
+    )
+    entra_client_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ENTRA_CLIENT_SECRET", "OIDC_CLIENT_SECRET"),
+    )
+    # Optional: defaults to APP_BASE_URL + /auth/callback.
+    entra_redirect_uri: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ENTRA_REDIRECT_URI", "OIDC_REDIRECT_URI"),
+    )
     entra_authority_host: str = "https://login.microsoftonline.com"
     app_base_url: str = "http://localhost:3000"
     # Keys the session-id hash (HMAC-SHA256); no default, must be set in .env.
@@ -365,20 +380,27 @@ class Settings(BaseSettings):
             if not self.entra_client_secret:
                 self.entra_client_secret = SecretStr(MOCK_CLIENT_SECRET)
         else:
+            if not self.entra_tenant_id and self.oidc_discovery_url:
+                found = re.search(
+                    r"^https://[^/]+/([^/]+)/v2\.0/\.well-known/openid-configuration$",
+                    self.oidc_discovery_url.strip(),
+                )
+                if found:
+                    self.entra_tenant_id = found.group(1)
             missing = [
                 name.upper()
                 for name in (
                     "entra_tenant_id",
                     "entra_client_id",
                     "entra_client_secret",
-                    "entra_redirect_uri",
                 )
                 if not _has_value(getattr(self, name))
             ]
             if missing:
                 raise ValueError(
                     f"Missing SSO settings: {', '.join(missing)} "
-                    "(or set AUTH_DEV_MOCK=true with ENV=development)."
+                    "(ENTRA_* or OIDC_* names; the tenant may come from "
+                    "OIDC_DISCOVERY_URL; or set AUTH_DEV_MOCK=true with ENV=development)."
                 )
         if not self.entra_redirect_uri:
             self.entra_redirect_uri = f"{self.app_base_url.rstrip('/')}/auth/callback"
