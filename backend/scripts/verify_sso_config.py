@@ -54,12 +54,16 @@ def _value(settings: Settings, name: str) -> str:
 
 
 def _redirect_ok(actual: str, expected_base: str) -> bool:
-    """`/auth/callback`, or `/auth/callback/<provider-slug>` (both are served by the frontend)."""
+    """Paths the frontend serves: `/auth/callback`, `/auth/callback/<provider>` and the
+    Auth.js-style `/api/auth/callback/<provider>`."""
     if actual == expected_base:
         return True
-    prefix = expected_base + "/"
-    slug = actual[len(prefix) :] if actual.startswith(prefix) else ""
-    return bool(slug) and slug.replace("-", "").replace("_", "").isalnum()
+    base = expected_base.removesuffix("/auth/callback")
+    for prefix in (expected_base + "/", base + "/api/auth/callback/"):
+        if actual.startswith(prefix):
+            slug = actual[len(prefix) :]
+            return bool(slug) and slug.replace("-", "").replace("_", "").isalnum()
+    return False
 
 
 def _static_checks(settings: Settings) -> list[CheckResult]:
