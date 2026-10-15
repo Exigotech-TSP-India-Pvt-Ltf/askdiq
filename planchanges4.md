@@ -475,46 +475,46 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 - [ ] **[Test]** Phase B2 complete: auth, RBAC and route-walk suites pass.
 
 #### Task B2.1: Data model and config
-- [ ] **[Dev]** Task B2.1: add the migration and settings.
-- [ ] **[Lint]** Task B2.1: LINT-BE.
-- [ ] **[Test]** Task B2.1: the migration round-trip and the settings validation tests pass.
+- [x] **[Dev]** Task B2.1: add the migration and settings.
+- [x] **[Lint]** Task B2.1: LINT-BE.
+- [x] **[Test]** Task B2.1: the migration round-trip and the settings validation tests pass.
 
 ##### Subtask B2.1.1: Migration
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Extend `users` with `entra_oid` (unique), `tenant_id`, `role` (enum, nullable), `status` (enum, default pending), `last_login_at`, `approved_by`, `approved_at` and `version`. Make `password_hash` nullable.
   - Create `access_requests` with a partial unique index (one `pending` request per user).
   - Create `auth_sessions` with `id_hash` (sha256), `user_id`, `created_at`, `expires_at`, `idle_expires_at`, `last_seen_at`, `revoked_at`, `ip_address` and `user_agent`. Index `(user_id, revoked_at)`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Upgrade, downgrade, upgrade. The partial unique index rejects a second pending request.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Upgrade, downgrade, upgrade. The partial unique index rejects a second pending request.
 
 ##### Subtask B2.1.2: Settings
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Add every variable in newplan §7.6 to `core/config.py`. Secrets get no default.
   - Add a `model_validator`: `ENTRA_*` is required unless `AUTH_DEV_MOCK`, and **startup fails if `AUTH_DEV_MOCK` and `ENV != development`**.
   - Remove the unused `api_jwt_secret`, and update CI env to `SESSION_SECRET`.
   - Update `backend/.env.example` and `frontend/.env.local.example`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Validator tests cover each rule, injected through env vars or fixtures (no `.env`).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Validator tests cover each rule, injected through env vars or fixtures (no `.env`).
 
 ---
 
 #### Task B2.2: OIDC client and mock IdP
-- [ ] **[Dev]** Task B2.2: add `app/auth/oidc.py`, the JWKS cache and `app/auth/mock_idp.py`.
-- [ ] **[Lint]** Task B2.2: LINT-BE.
-- [ ] **[Test]** Task B2.2: `tests/test_auth_oidc.py` passes, including all the negative token cases.
+- [x] **[Dev]** Task B2.2: add `app/auth/oidc.py`, the JWKS cache and `app/auth/mock_idp.py`.
+- [x] **[Lint]** Task B2.2: LINT-BE.
+- [x] **[Test]** Task B2.2: `tests/test_auth_oidc.py` passes, including all the negative token cases.
 
 ##### Subtask B2.2.1: Authorize URL with PKCE, state and nonce
-- [ ] **[Dev]** `build_authorize_url()` generates `state`, `nonce` and a PKCE verifier (S256), and stores them in `oidc_states` (B1.4.2) with a 10-minute TTL and one-time use, so the callback can land on any replica. It reads endpoints from the **discovery document** (`https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration`), not hard-coded URLs, and requests scopes `openid profile email`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The URL params are correct. A state is single-use, so replaying it gives 400.
+- [x] **[Dev]** `build_authorize_url()` generates `state`, `nonce` and a PKCE verifier (S256), and stores them in `oidc_states` (B1.4.2) with a 10-minute TTL and one-time use, so the callback can land on any replica. It reads endpoints from the **discovery document** (`https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration`), not hard-coded URLs, and requests scopes `openid profile email`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The URL params are correct. A state is single-use, so replaying it gives 400.
 
 ##### Subtask B2.2.2: Code exchange and ID token validation
-- [ ] **[Dev]** Exchange the code via `httpx.AsyncClient` (with timeout) using the client secret server-side. Validate with PyJWT (pinned) against the JWKS: `alg` allow-list RS256, `iss`, `aud`, `tid == ENTRA_TENANT_ID`, `exp`/`nbf` with a 60 s leeway, and `nonce`. Cache the JWKS in `StateBackend`, refreshing once on an unknown `kid`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Negative tests: bad signature, `alg=none`, wrong `iss`, `aud` or `tid`, expired token, bad nonce, unknown `kid` (refetch once, then fail). All fail closed.
+- [x] **[Dev]** Exchange the code via `httpx.AsyncClient` (with timeout) using the client secret server-side. Validate with PyJWT (pinned) against the JWKS: `alg` allow-list RS256, `iss`, `aud`, `tid == ENTRA_TENANT_ID`, `exp`/`nbf` with a 60 s leeway, and `nonce`. Cache the JWKS in `StateBackend`, refreshing once on an unknown `kid`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Negative tests: bad signature, `alg=none`, wrong `iss`, `aud` or `tid`, expired token, bad nonce, unknown `kid` (refetch once, then fail). All fail closed.
 
 ##### Subtask B2.2.3: Entra-faithful mock IdP (development and test only)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Mounted only when `AUTH_DEV_MOCK=true`, at `/mock-idp/{tenant}/v2.0/...`. It provides discovery, authorize (renders a tiny "pick a user" form in development, and auto-approves with test-chosen claims in tests), token and JWKS endpoints.
   - The discovery document copies Microsoft's shape, and the issuer is `.../{tid}/v2.0`.
   - ID token claims: `ver "2.0"`, `oid`, `tid`, `sub`, `name`, `preferred_username`, `nonce`, `aud`, `iat`, `nbf` and `exp`. `email` is **omitted unless the test asks for it**.
@@ -522,8 +522,8 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
   - Codes are single use, and PKCE S256 is verified.
   - Errors use the OAuth shape `{error, error_description}`.
   - The OIDC client uses the **same code path** for mock and real. Only the discovery URL base differs (`AUTH_DEV_MOCK` switches it to `APP_BASE_URL`-relative).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - The real validator accepts mock tokens.
   - Email falls back to `preferred_username` when `email` is absent.
   - Key rotation works.
@@ -532,7 +532,7 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
   - `tests/fixtures/entra_discovery_v2.json` (a recorded public Microsoft discovery document) parses through the same code.
 
 ##### Subtask B2.2.4: `scripts/verify_sso_config.py` (owner preflight after filling in `.env`)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Load `Settings` the normal way, so it reads `.env` at runtime. The script never prints values, only the names of the checks.
   - Checks:
     - The required `ENTRA_*` and `SESSION_SECRET` values are present.
@@ -544,52 +544,52 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
     - The cookie `Secure` setting matches the URL scheme.
     - `SUPERADMIN_EMAILS` is not empty.
   - Exit code 0 only if every check passes.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Unit tests with httpx mocked: each failing condition gives a FAIL line and exit code 1, and **no secret appears in the output** (asserted).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Unit tests with httpx mocked: each failing condition gives a FAIL line and exit code 1, and **no secret appears in the output** (asserted).
 
 ---
 
 #### Task B2.3: Sessions, permissions and guards
-- [ ] **[Dev]** Task B2.3: add `app/auth/sessions.py`, `app/auth/permissions.py` and `app/auth/deps.py`.
-- [ ] **[Lint]** Task B2.3: LINT-BE.
-- [ ] **[Test]** Task B2.3: `tests/test_auth_rbac.py` and `tests/test_route_guards.py` pass.
+- [x] **[Dev]** Task B2.3: add `app/auth/sessions.py`, `app/auth/permissions.py` and `app/auth/deps.py`.
+- [x] **[Lint]** Task B2.3: LINT-BE.
+- [x] **[Test]** Task B2.3: `tests/test_auth_rbac.py` and `tests/test_route_guards.py` pass.
 
 ##### Subtask B2.3.1: Session lifecycle
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `create_session` uses `secrets.token_urlsafe(32)` and stores only the sha256.
   - It enforces absolute TTL (`SESSION_TTL_MINUTES`) and an idle TTL.
   - `last_seen_at` is written at most once a minute (to avoid a write storm).
   - Add `revoke` and `revoke_all(user_id)`.
   - Rotate the session on login.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Expiry, idle expiry, revocation and rotation tests. A raw id is never stored (assert on the DB value).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Expiry, idle expiry, revocation and rotation tests. A raw id is never stored (assert on the DB value).
 
 ##### Subtask B2.3.2: Permission table
-- [ ] **[Dev]** `Permission` is a `StrEnum` (`dashboard:read`, `documents:write`, `feedback:triage`, `feedback:export`, `eval:run`, `testip:write`, `usage:export`, `users:manage`, `audit:auth:read`, `branding:write`, `taxonomy:write`). `ROLE_PERMISSIONS` maps each role to its permissions exactly as newplan §7.3, plus `branding:write` and `taxonomy:write` for the superadmin.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A matrix test is generated from §7.3 for every role and permission.
+- [x] **[Dev]** `Permission` is a `StrEnum` (`dashboard:read`, `documents:write`, `feedback:triage`, `feedback:export`, `eval:run`, `testip:write`, `usage:export`, `users:manage`, `audit:auth:read`, `branding:write`, `taxonomy:write`). `ROLE_PERMISSIONS` maps each role to its permissions exactly as newplan §7.3, plus `branding:write` and `taxonomy:write` for the superadmin.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A matrix test is generated from §7.3 for every role and permission.
 
 ##### Subtask B2.3.3: Dependency family
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `current_user` resolves the proxy service key **and** the session cookie value forwarded by the proxy in `X-Session`. It loads the user and checks status on every request (cached permissions keyed by `user_id` and `version`, invalidated on change).
   - Add `require_active_user`, `require_role_or_chat` and `require_permission(p)`.
   - Replace `get_current_actor` in the ~44 route dependencies.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Each case returns the right code: no session 401, pending on a dashboard route 403, pending on chat 200, suspended anywhere 403, wrong role 403, right role 200.
   - A suspension takes effect on the next request.
 
 ##### Subtask B2.3.4: Route-walk guard test and IDOR checks
-- [ ] **[Dev]** Add an allow-list of public routes (`/health`, `/branding`, `/branding/assets/*`, `/auth/sso/*`, mock IdP in development).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Dev]** Add an allow-list of public routes (`/health`, `/branding`, `/branding/assets/*`, `/auth/sso/*`, mock IdP in development).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - `test_route_guards.py` iterates `app.routes` and fails if any non-allow-listed route lacks a guard dependency.
   - IDOR tests: a pending user cannot read another user's chat session.
 
 ##### Subtask B2.3.5: CSRF defence
-- [ ] **[Dev]** For cookie-authenticated state-changing requests, the backend requires an `X-Requested-With: askdiq` header (which the proxy adds) and an `Origin` in `APP_BASE_URL`, and rejects anything else with 403.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A cross-origin POST is rejected, and a same-origin POST passes.
+- [x] **[Dev]** For cookie-authenticated state-changing requests, the backend requires an `X-Requested-With: askdiq` header (which the proxy adds) and an `Origin` in `APP_BASE_URL`, and rejects anything else with 403.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A cross-origin POST is rejected, and a same-origin POST passes.
 
 ---
 
@@ -625,9 +625,9 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 ---
 
 #### Task B2.5: Proxy contract (backend side)
-- [ ] **[Dev]** Document and validate the headers the Next proxy must send (`X-API-Key`, `X-Session`, `X-Requested-With`, `X-Forwarded-For`). Set `trust_proxy_headers` from env for deployment.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A missing service key gives 401 even with a valid session, so the backend cannot be called directly.
+- [x] **[Dev]** Document and validate the headers the Next proxy must send (`X-API-Key`, `X-Session`, `X-Requested-With`, `X-Forwarded-For`). Set `trust_proxy_headers` from env for deployment.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A missing service key gives 401 even with a valid session, so the backend cannot be called directly.
 
 #### Task B2.6: Phase B2 integration testing
 - [ ] **[Dev]** Create `tests/test_auth_flow_integration.py`. Mock IdP flow: new user logs in (pending), uses chat, gets 403 on dashboard, requests access, superadmin approves, the next request is authorized, the user is suspended, and the next request is denied.
@@ -2067,4 +2067,4 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | – | PR-05 | `feat/platform-load-balancing` | Code done, CI green, stacks after PR-09 | Added a `least_conn` nginx upstream across 2 replicas with an SSE location; prod compose runs api-1, api-2 and a worker; `--workers ${WEB_CONCURRENCY}`; the load test script gained budgets and `--smoke`; 25 tests. **Needs a Docker host:** `nginx -t`, `compose config`, the replica-kill test and the 2-replica smoke run. It surfaced a flaky loop-block test in PR-04, which is being fixed. |
 | – | PR-06, PR-12, PR-15, PR-01 | – | In progress, parallel | PR-01 was told to keep Next 14 and FastAPI 0.115; advisories that need a major upgrade go to an expiring allow-list for your decision. |
 
-**Stack order for review and merge** (each PR's base is the one before it): #14 → #16 → #17 → #18 → then PR-09, PR-06, … in the order they complete, as long as their dependencies are met. Merge from the bottom up. After each merge, GitHub retargets the next PR to `main`.
+**Stack shape for review and merge: a dependency tree.** Each PR's base is the branch it depends on: #14 → {#19 PR-01, #16 PR-02 → #17 PR-03 → #18 PR-04 → {#21 PR-05, #20 PR-06 → {PR-07, PR-08, PR-09 → PR-10, PR-11, PR-12 → PR-13}}}. Merge a parent, then delete its branch, and GitHub retargets its children to `main`. Siblings may need a quick rebase on `main` when merged.
