@@ -324,10 +324,6 @@ async def governance_traces_page(
         q=_clean_q(q),
         date_from=start,
         date_to=end,
-        # Auth events (newplan §7.5) are superadmin-only (`audit:auth:read`).
-        hidden_actions=frozenset()
-        if user.has(Permission.AUDIT_AUTH_READ)
-        else AUTH_AUDIT_ACTIONS,
     )
     cap = get_settings().governance_exact_count_cap
     (items, next_cursor), total = await runner.gather(
@@ -409,6 +405,10 @@ def _log_filters(
         q=_clean_q(q),
         date_from=start,
         date_to=end,
+        # Auth events (newplan §7.5) are superadmin-only (`audit:auth:read`).
+        hidden_actions=frozenset()
+        if user.has(Permission.AUDIT_AUTH_READ)
+        else AUTH_AUDIT_ACTIONS,
     )
 
 
