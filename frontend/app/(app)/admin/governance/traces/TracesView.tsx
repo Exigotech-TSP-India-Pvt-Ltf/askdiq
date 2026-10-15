@@ -1,257 +1,285 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import React, { useCallback, useMemo } from "react";
+import { RefreshCw, Timer } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
-import { formatLatencyMs } from "@/lib/format";
-import { Activity, Gauge, Timer, AlertTriangle } from "lucide-react";
-import { TableToolbar } from "@/components/admin/TableToolbar";
-import { Pagination } from "@/components/admin/Pagination";
+import { useApiQuery } from "@/lib/query-cache";
+import { useDeepLink } from "@/lib/use-deep-link";
+import { useRange } from "@/lib/range-context";
+import { useCursorStack } from "@/lib/use-cursor-stack";
+import { useAutoRefresh } from "@/lib/use-governance-stream";
+import {
+  LATENCY_BUCKETS,
+  TRACE_OUTCOMES,
+  TRACE_STATUSES,
+  governanceApi,
+  type GovernanceTraceItem,
+  type GovernanceTracePage,
+} from "@/lib/governance-api";
+import { formatCount, formatDateTime, formatMs, formatUsd, humanize } from "@/lib/governance-format";
+import { parseOne, rangeBounds } from "@/lib/governance-links";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
+import { TableToolbar } from "@/components/admin/TableToolbar";
+import { TraceStatusBadge } from "@/components/admin/governance/badges";
+import { TraceDrawer, stageLabel } from "@/components/admin/governance/TraceDrawer";
+import { focusRing } from "@/components/ui/styles";
 
-type Trace = {
-  request_id: string;
-  user_id?: string;
-  conversation_id?: string;
-  ip_address?: string;
-  timestamp?: string;
-  status?: string;
-  outcome?: string | null;
-  total_ms?: number;
+export const TRACES_PAGE_SIZE = 50;
+
+const LATENCY_LABEL: Record<string, string> = {
+  fast: "Fast",
+  moderate: "Moderate",
+  slow: "Slow",
+  very_slow: "Very slow",
 };
 
-function shortId(id?: string, head = 10) {
+const LATENCY_TONE: Record<string, string> = {
+  fast: "bg-status-ok-bg text-status-ok-fg",
+  moderate: "bg-status-info-bg text-status-info-fg",
+  slow: "bg-status-warn-bg text-status-warn-fg",
+  very_slow: "bg-status-danger-bg text-status-danger-fg",
+};
+
+function shortId(id: string | null, head = 10): string {
   if (!id) return "—";
   return id.length > head ? `${id.slice(0, head)}…` : id;
 }
 
-function statusBadge(status?: string) {
-  const s = (status || "ok").toLowerCase();
-  if (s === "ok" || s === "success")
-    return "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80";
-  if (s === "error" || s === "failed")
-    return "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/80";
-  return "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80";
-}
-
-function latencyBadge(ms?: number) {
-  if (ms == null) return "bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400";
-  if (ms >= 8000) return "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300";
-  if (ms >= 4000) return "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300";
-  return "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300";
-}
-
-export default function TracesView({ hideHeader = false }: { hideHeader?: boolean } = {}) {
-  const [traces, setTraces] = useState<Trace[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
-  const { token } = useAuth();
-  const { audience } = useAudience();
-
-  useEffect(() => {
-    if (!token) return;
-    setLoading(true);
-    const qs = audience && audience !== "overview" ? `?audience=${audience}` : "";
-    api
-      .adminGet<Trace[]>(token, `/governance/traces${qs}`)
-      .then(setTraces)
-      .catch(() => setTraces([]))
-      .finally(() => setLoading(false));
-  }, [token, audience]);
-
-  const avgLatency = useMemo(() => {
-    const vals = traces.map((t) => t.total_ms).filter((v): v is number => v != null);
-    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
-  }, [traces]);
-
-  const errorCount = useMemo(
-    () => traces.filter((t) => (t.status || "").toLowerCase() === "failed").length,
-    [traces]
-  );
-
-  const filtered = useMemo(
-    () =>
-      traces.filter((t) => {
-        if (statusFilter !== "all") {
-          const s = (t.status || "ok").toLowerCase();
-          if (statusFilter === "ok" && s !== "ok" && s !== "success") return false;
-          if (statusFilter === "error" && s !== "error" && s !== "failed") return false;
-        }
-        if (!search.trim()) return true;
-        const needle = search.trim().toLowerCase();
-        return (
-          t.request_id.toLowerCase().includes(needle) ||
-          (t.ip_address ?? "").toLowerCase().includes(needle)
-        );
-      }),
-    [traces, statusFilter, search]
-  );
-
-  const paged = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, page, pageSize]);
-
-  const columns: ColumnDef<Trace>[] = [
+function traceColumns(open: (id: string) => void): ColumnDef<GovernanceTraceItem>[] {
+  return [
     {
       key: "request_id",
-      header: "Request ID",
+      header: "Request",
       render: (t) => (
-        <span className="font-mono text-xs text-slate-900 dark:text-slate-100" title={t.request_id}>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            open(t.request_id);
+          }}
+          title={`Open trace ${t.request_id}`}
+          className={`rounded font-mono text-[11px] text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+        >
           {shortId(t.request_id, 12)}
+        </button>
+      ),
+    },
+    {
+      key: "timestamp",
+      header: "Time",
+      render: (t) => <span className="whitespace-nowrap text-xs text-fg-muted">{formatDateTime(t.timestamp)}</span>,
+    },
+    {
+      key: "user_id",
+      header: "User",
+      render: (t) => (
+        <span className="font-mono text-xs text-fg-muted" title={t.user_id ?? undefined}>
+          {shortId(t.user_id, 12)}
         </span>
       ),
     },
     {
       key: "ip_address",
-      header: "Client IP",
+      header: "IP",
+      render: (t) => <span className="font-mono text-xs text-fg-muted">{t.ip_address ?? "—"}</span>,
+    },
+    {
+      key: "query",
+      header: "Query",
       render: (t) => (
-        <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
-          {t.ip_address || "—"}
+        <span className="block max-w-[18rem] truncate text-xs text-fg" title={t.query ?? undefined}>
+          {t.query ?? "—"}
         </span>
       ),
     },
     {
       key: "status",
-      header: "Status",
-      align: "center",
+      header: "Status / outcome",
       render: (t) => (
-        <span
-          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(
-            t.status
-          )}`}
-        >
-          {t.status || "ok"}
+        <span className="flex flex-col items-start gap-0.5">
+          <TraceStatusBadge status={t.status} />
+          {t.outcome ? <span className="text-[10px] text-fg-subtle">{humanize(t.outcome)}</span> : null}
         </span>
       ),
     },
     {
       key: "total_ms",
-      header: "Pipeline Latency",
-      sortable: true,
+      header: "Latency",
       align: "right",
       render: (t) => (
         <span
-          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${latencyBadge(
-            t.total_ms
-          )}`}
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+            LATENCY_TONE[t.latency_bucket ?? ""] ?? "bg-surface-muted text-fg-muted"
+          }`}
         >
-          <Timer className="h-3 w-3" />
-          {t.total_ms != null ? formatLatencyMs(t.total_ms) : "—"}
+          <Timer className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+          {formatMs(t.total_ms)}
         </span>
       ),
     },
     {
-      key: "timestamp",
-      header: "Timestamp",
-      sortable: true,
+      key: "slowest_stage",
+      header: "Slowest stage",
       render: (t) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-          {t.timestamp ? new Date(t.timestamp).toLocaleString() : "—"}
+        <span className="whitespace-nowrap text-xs text-fg-muted">
+          {t.slowest_stage ? `${stageLabel(t.slowest_stage.stage)} · ${formatMs(t.slowest_stage.ms)}` : "—"}
         </span>
       ),
     },
+    {
+      key: "tokens",
+      header: "Tokens",
+      align: "right",
+      render: (t) => <span className="text-xs tabular-nums text-fg-muted">{formatCount(t.tokens.total)}</span>,
+    },
+    {
+      key: "cost_usd",
+      header: "Cost",
+      align: "right",
+      render: (t) => <span className="text-xs tabular-nums text-fg-muted">{formatUsd(t.cost_usd)}</span>,
+    },
   ];
+}
+
+const option = (value: string, label: string) => ({ value, label });
+
+export default function TracesView() {
+  const { token } = useAuth();
+  const { audience } = useAudience();
+  const { get, set } = useDeepLink();
+  const rangeCtx = useRange();
+  const { from, to } = rangeBounds(rangeCtx?.range);
+
+  const status = parseOne(get("status"), TRACE_STATUSES);
+  const outcome = parseOne(get("outcome"), TRACE_OUTCOMES);
+  const latencyBucket = parseOne(get("latency_bucket"), LATENCY_BUCKETS);
+  const q = (get("q") ?? "").slice(0, 200);
+  const requestId = get("request_id");
+  const [autoRefresh, setAutoRefresh] = React.useState(false);
+
+  const filterKey = [audience, status, outcome, latencyBucket, q, from, to].join("|");
+  const pager = useCursorStack(filterKey);
+
+  const query = useApiQuery<GovernanceTracePage>(
+    ["admin/governance/traces", filterKey, pager.cursor],
+    (signal) =>
+      governanceApi.traces(
+        token,
+        {
+          audience,
+          limit: TRACES_PAGE_SIZE,
+          cursor: pager.cursor,
+          status: status ? [status] : undefined,
+          outcome: outcome ? [outcome] : undefined,
+          latency_bucket: latencyBucket ? [latencyBucket] : undefined,
+          q: q || undefined,
+          from,
+          to,
+        },
+        signal,
+      ),
+    { enabled: Boolean(token) },
+  );
+  const page = query.data;
+  const items = useMemo(() => page?.items ?? [], [page]);
+  const { refetch } = query;
+  const live = useAutoRefresh(autoRefresh && !pager.hasPrev, () => void refetch());
+
+  const openTrace = useCallback((id: string | null) => set({ request_id: id }, { history: id ? "push" : "replace" }), [set]);
+  const idx = requestId ? items.findIndex((t) => t.request_id === requestId) : -1;
+  const onPrev = idx > 0 ? () => openTrace(items[idx - 1].request_id) : undefined;
+  const onNext = idx >= 0 && idx < items.length - 1 ? () => openTrace(items[idx + 1].request_id) : undefined;
+
+  const columns = useMemo(() => traceColumns((id) => openTrace(id)), [openTrace]);
+  const total = page ? `${page.total_is_estimate ? "≈ " : ""}${formatCount(page.total)} traces` : undefined;
 
   return (
-    <div className="space-y-6">
-      {!hideHeader && (
-        <header className="flex h-20 shrink-0 items-center border-b border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface px-8">
-          <div>
-            <h1 className="text-sm font-semibold text-slate-900 dark:text-white">Request Traces</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Complete request journey across the RAG pipeline.
-            </p>
-          </div>
-        </header>
-      )}
-
-      <div className="p-8 space-y-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface p-4 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Pipeline Traces</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{traces.length.toLocaleString()}</p>
-            </div>
-            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/60">
-              <Activity className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface p-4 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Average Turn Latency</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{formatLatencyMs(avgLatency)}</p>
-            </div>
-            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/60">
-              <Gauge className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface p-4 shadow-xs flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Pipeline Errors</p>
-              <p className="mt-1 text-2xl font-bold text-rose-600 dark:text-rose-400">{errorCount}</p>
-            </div>
-            <div className="rounded-lg bg-rose-50 dark:bg-rose-950/60 p-2.5 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/60">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-          </div>
-        </div>
-
-        <TableCard
-          toolbar={
-            <TableToolbar
-              search={search}
-              onSearchChange={(v) => {
-                setSearch(v);
-                setPage(1);
-              }}
-              searchPlaceholder="Search request ID or IP…"
-              filters={[
-                {
-                  id: "status",
-                  label: "Trace Status",
-                  value: statusFilter,
-                  options: [
-                    { label: "All Traces", value: "all" },
-                    { label: "Successful Only", value: "ok" },
-                    { label: "Errors Only", value: "error" },
-                  ],
-                  onChange: (v) => {
-                    setStatusFilter(v);
-                    setPage(1);
-                  },
-                },
-              ]}
-            />
-          }
-          pagination={
-            <Pagination
-              page={page}
-              pageCount={Math.ceil(filtered.length / pageSize)}
-              totalItems={filtered.length}
-              pageSize={pageSize}
-              onPageChange={setPage}
-              onPageSizeChange={setPageSize}
-            />
-          }
-        >
-          <DataTable
-            columns={columns}
-            data={paged}
-            keyField="request_id"
-            isLoading={loading}
-            emptyMessage="No request traces found matching the selected filters."
+    <>
+      <TableCard
+        title="Request traces"
+        description="Every /query request with its derived status, latency, tokens and cost. Select a row for the stage waterfall."
+        badge={
+          total ? (
+            <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-fg-muted">{total}</span>
+          ) : null
+        }
+        headerActions={
+          <button
+            type="button"
+            aria-pressed={autoRefresh}
+            onClick={() => setAutoRefresh((v) => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              autoRefresh ? "bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300" : "text-fg-muted hover:text-fg"
+            } ${focusRing}`}
+          >
+            <RefreshCw className={`h-4 w-4 ${live ? "motion-safe:animate-spin" : ""}`} strokeWidth={1.75} aria-hidden="true" />
+            Auto-refresh {autoRefresh ? (live ? "on" : "paused") : "off"}
+          </button>
+        }
+        toolbar={
+          <TableToolbar
+            search={q}
+            onSearchChange={(v) => set({ q: v || null })}
+            debounceMs={300}
+            searchPlaceholder="Search query text or request ID…"
+            filters={[
+              {
+                id: "status",
+                label: "Status",
+                value: status ?? "all",
+                options: [option("all", "All statuses"), ...TRACE_STATUSES.map((s) => option(s, humanize(s)))],
+                onChange: (v) => set({ status: v === "all" ? null : v }),
+              },
+              {
+                id: "outcome",
+                label: "Outcome",
+                value: outcome ?? "all",
+                options: [option("all", "All outcomes"), ...TRACE_OUTCOMES.map((s) => option(s, humanize(s)))],
+                onChange: (v) => set({ outcome: v === "all" ? null : v }),
+              },
+              {
+                id: "latency_bucket",
+                label: "Latency",
+                value: latencyBucket ?? "all",
+                options: [option("all", "Any latency"), ...LATENCY_BUCKETS.map((s) => option(s, LATENCY_LABEL[s]))],
+                onChange: (v) => set({ latency_bucket: v === "all" ? null : v }),
+              },
+            ]}
+            countLabel={rangeCtx ? `Range: ${rangeCtx.range.label}` : undefined}
           />
-        </TableCard>
-      </div>
-    </div>
+        }
+        cursor={{
+          hasPrev: pager.hasPrev,
+          hasNext: Boolean(page?.has_more && page.next_cursor),
+          onPrev: pager.prev,
+          onNext: () => pager.next(page?.next_cursor),
+          pageItemCount: items.length,
+          itemLabel: "traces",
+          isLoading: query.isValidating,
+        }}
+      >
+        <DataTable
+          columns={columns}
+          data={items}
+          keyField="request_id"
+          isLoading={query.isLoading}
+          error={query.error && !page ? "Couldn't load traces." : null}
+          onRetry={() => void refetch()}
+          onRowClick={(row) => openTrace(row.request_id)}
+          emptyMessage="No request traces match these filters."
+        />
+      </TableCard>
+
+      <TraceDrawer
+        requestId={requestId}
+        audience={audience}
+        token={token}
+        onClose={() => openTrace(null)}
+        onPrev={onPrev}
+        onNext={onNext}
+      />
+    </>
   );
 }

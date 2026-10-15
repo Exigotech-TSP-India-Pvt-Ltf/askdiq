@@ -1,7 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import MonitoringView from "./MonitoringView";
-
-export default function MonitoringPage() {
-  return <MonitoringView />;
+/** The Monitoring view lives in a tab of /admin/governance (deep-linkable via ?tab=). */
+export default function GovernanceMonitoringPage() {
+  redirect("/admin/governance?tab=Monitoring");
 }

@@ -1,7 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import TracesView from "./TracesView";
-
-export default function TracesPage() {
-  return <TracesView />;
+/** The Traces view lives in a tab of /admin/governance (deep-linkable via ?tab=). */
+export default function GovernanceTracesPage() {
+  redirect("/admin/governance?tab=Traces");
 }
