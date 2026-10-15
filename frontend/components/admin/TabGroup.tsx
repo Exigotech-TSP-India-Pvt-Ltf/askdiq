@@ -34,6 +34,12 @@ import {
   Gauge,
   Timer,
   ScrollText,
+  BookOpen,
+  LayoutDashboard,
+  TrendingUp,
+  Workflow,
+  TrendingDown,
+  MessagesSquare,
 } from "lucide-react";
 
 export interface TabItem<T extends string = string> {
@@ -182,4 +188,15 @@ export const GOVERNANCE_TABS: TabItem[] = [
 export const DOCUMENTS_TABS: TabItem[] = [
   { id: "overview", label: "Overview", icon: Layers },
   { id: "inventory", label: "Document Inventory", icon: FileText },
+];
+
+/** Analytics (Chatbot Insights port, planchanges4 F6.1). Ids match the `?tab=` values. */
+export const ANALYTICS_TABS: TabItem[] = [
+  { id: "guide", label: "Guide", icon: BookOpen },
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "trend", label: "Trend", icon: TrendingUp },
+  { id: "flow", label: "Flow", icon: Workflow },
+  { id: "topics", label: "Topics", icon: LayoutGrid },
+  { id: "dropoff", label: "Drop-off", icon: TrendingDown },
+  { id: "conversations", label: "Conversations", icon: MessagesSquare },
 ];

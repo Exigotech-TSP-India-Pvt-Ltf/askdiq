@@ -62,6 +62,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/suspended` and suspended gate (PR-18) | Pass | Pass | Pass | Same layout as `BrandedStatusPage`; icon on `status-danger-bg` | [ ] |
 | `/admin/user-management` (Users, Access Requests, Roles & Permissions, Audit Trail tabs) (PR-19) | Pass | Pass | Pass | KPI cards and charts on `bg-surface-card` with `chartTheme` marks (bar, funnel, donut, histogram recolour on toggle, journey-tested); pending KPI `status-warn-bg` highlight; role / status / event chips on `status-*-bg` + `status-*-fg` and brand tints with `dark:` pairs | [ ] |
 | `/admin/settings` (Branding, Insights Taxonomy tabs) (PR-26) | Pass | Pass | Pass | Cards `bg-surface-card` + `border-line`; inputs, badges and table on tokens; superadmin only | [ ] |
+| `/admin/analytics` (new, PR-25: Guide, Overview, Trend, Flow, Topics, Drop-off, Conversations tabs) | Pass | Pass | Pass | Native port of the Chatbot Insights HTML. Filter bar, chips, KPI cards, tour and pending state on `surface-*` / `line` / `brand-*` / `status-info-*` tokens; outcome pills on `status-*-bg` / `*-fg` | [ ] |
 
 ## Shared components
 
@@ -136,6 +137,9 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `settings/AssetDropzone` (PR-26) | Pass | Pass | Pass | Dashed `border-line-strong`, hover lift + brand border; dark artwork previewed on `bg-surface-inverse` |
 | `settings/TaxonomyTab` table and add form (PR-26) | Pass | Pass | Pass | `surface-muted` header, archived rows at 60 % opacity, status pills on `status-*` tokens |
 | `brand/BrandLogo` live update (PR-26) | Pass | Pass | Pass | Saving branding re-renders logos and rewrites every `--brand-*` variable without a reload |
+| `analytics/TrendChart`, `HourOfDayChart`, `FlowSankey`, `QualityDonut`, `DropoffChart`, `PeopleBubble` (new, PR-25) | Pass | Pass | Pass | Hand-drawn SVG on the chart-kit primitives; colours from `chartTheme.<theme>.insights` (the HTML's outcome, quality, handled and hour colours, lifted for dark; light Partly / Greeting moved to `status-warn` / slate for 3:1) via `useInsightsPalette()`; grid / axis / tooltip from `chartTheme`; theme flip covered by `tests/components/analytics` |
+| `analytics/TopicsTreemap` (new, PR-25) | Pass | Pass | Pass | `TreemapChart` (next/dynamic) with per-tile `color` from the handled-% scale (`mixHex(handled.low, handled.high)`) and `readableOn()` labels |
+| `analytics/ConversationsTable` (new, PR-25) | Pass | Pass | Pass | `TableCard` + `Pagination`; outcome pills on `status-*` tokens; expand panel on `surface-muted` |
 
 ## Known follow-ups (not theme-breaking)
 

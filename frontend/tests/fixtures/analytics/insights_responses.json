@@ -1,0 +1,1976 @@
+{
+  "_comment": "Recorded /admin/insights/* responses (period=all, tz=Australia/Sydney) for the reference HTML's 49 conversations and 117 exchanges, computed with the renderer's formulas. Generated from backend/tests/fixtures/insights_reference.json. C10 is 'Mixed' (60 % user-type rule, see backend test_insights_parity.py).",
+  "summary": {
+    "range": {
+      "from": "2026-05-15",
+      "to": "2026-10-05"
+    },
+    "conversations": 49,
+    "exchanges": 117,
+    "handled_exchanges": 62,
+    "substantive_questions": 106,
+    "handled_questions": 51,
+    "handled_pct": 48.11,
+    "served_conversations": 11,
+    "active_conversations": 47,
+    "served_pct": 23.4,
+    "people": 46,
+    "avg_questions_per_conversation": 2.26,
+    "pending_classification": 0,
+    "source": "live"
+  },
+  "trend": {
+    "range": {
+      "from": "2026-05-15",
+      "to": "2026-10-05"
+    },
+    "days": [
+      {
+        "day": "2026-05-15",
+        "questions": 12,
+        "conversations": 6
+      },
+      {
+        "day": "2026-05-16",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-17",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-18",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-05-19",
+        "questions": 0,
+        "conversations": 1
+      },
+      {
+        "day": "2026-05-20",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-21",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-22",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-23",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-24",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-25",
+        "questions": 5,
+        "conversations": 2
+      },
+      {
+        "day": "2026-05-26",
+        "questions": 3,
+        "conversations": 2
+      },
+      {
+        "day": "2026-05-27",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-28",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-29",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-30",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-05-31",
+        "questions": 2,
+        "conversations": 1
+      },
+      {
+        "day": "2026-06-01",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-02",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-03",
+        "questions": 11,
+        "conversations": 5
+      },
+      {
+        "day": "2026-06-04",
+        "questions": 2,
+        "conversations": 1
+      },
+      {
+        "day": "2026-06-05",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-06",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-07",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-08",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-09",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-10",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-11",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-12",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-06-13",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-14",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-15",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-16",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-06-17",
+        "questions": 4,
+        "conversations": 1
+      },
+      {
+        "day": "2026-06-18",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-19",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-20",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-21",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-22",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-06-23",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-24",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-25",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-26",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-27",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-28",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-29",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-06-30",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-01",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-07-02",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-03",
+        "questions": 2,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-04",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-05",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-06",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-07",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-08",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-09",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-10",
+        "questions": 6,
+        "conversations": 2
+      },
+      {
+        "day": "2026-07-11",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-12",
+        "questions": 2,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-13",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-14",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-15",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-07-16",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-17",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-18",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-19",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-20",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-21",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-22",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-23",
+        "questions": 2,
+        "conversations": 1
+      },
+      {
+        "day": "2026-07-24",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-25",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-26",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-27",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-28",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-29",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-07-30",
+        "questions": 2,
+        "conversations": 2
+      },
+      {
+        "day": "2026-07-31",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-01",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-02",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-03",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-04",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-05",
+        "questions": 3,
+        "conversations": 3
+      },
+      {
+        "day": "2026-08-06",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-08-07",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-08",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-09",
+        "questions": 8,
+        "conversations": 1
+      },
+      {
+        "day": "2026-08-10",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-11",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-12",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-13",
+        "questions": 7,
+        "conversations": 1
+      },
+      {
+        "day": "2026-08-14",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-15",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-16",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-17",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-18",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-19",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-20",
+        "questions": 2,
+        "conversations": 1
+      },
+      {
+        "day": "2026-08-21",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-22",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-23",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-24",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-25",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-26",
+        "questions": 2,
+        "conversations": 1
+      },
+      {
+        "day": "2026-08-27",
+        "questions": 7,
+        "conversations": 1
+      },
+      {
+        "day": "2026-08-28",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-29",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-30",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-08-31",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-01",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-02",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-09-03",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-04",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-05",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-06",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-07",
+        "questions": 2,
+        "conversations": 1
+      },
+      {
+        "day": "2026-09-08",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-09",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-10",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-11",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-12",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-13",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-14",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-15",
+        "questions": 2,
+        "conversations": 1
+      },
+      {
+        "day": "2026-09-16",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-17",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-09-18",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-19",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-20",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-21",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-22",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-23",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-24",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-09-25",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-26",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-27",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-28",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-09-29",
+        "questions": 3,
+        "conversations": 1
+      },
+      {
+        "day": "2026-09-30",
+        "questions": 2,
+        "conversations": 1
+      },
+      {
+        "day": "2026-10-01",
+        "questions": 1,
+        "conversations": 1
+      },
+      {
+        "day": "2026-10-02",
+        "questions": 3,
+        "conversations": 1
+      },
+      {
+        "day": "2026-10-03",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-10-04",
+        "questions": 0,
+        "conversations": 0
+      },
+      {
+        "day": "2026-10-05",
+        "questions": 1,
+        "conversations": 1
+      }
+    ],
+    "source": "live"
+  },
+  "hourly": {
+    "tz": "Australia/Sydney",
+    "hours": [
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      2,
+      2,
+      4,
+      13,
+      11,
+      7,
+      21,
+      6,
+      5,
+      4,
+      5,
+      1,
+      6,
+      1,
+      0,
+      9,
+      4,
+      3
+    ],
+    "total": 106,
+    "peak_hour": 12
+  },
+  "flow": {
+    "total": 47,
+    "user_types": [
+      {
+        "name": "Customer / prospect",
+        "conversations": 29
+      },
+      {
+        "name": "Career seeker",
+        "conversations": 9
+      },
+      {
+        "name": "Staff / people lookup",
+        "conversations": 2
+      },
+      {
+        "name": "Mixed",
+        "conversations": 4
+      },
+      {
+        "name": "Off-scope request",
+        "conversations": 3
+      }
+    ],
+    "outcomes": [
+      {
+        "name": "Served",
+        "conversations": 11
+      },
+      {
+        "name": "Partly served",
+        "conversations": 14
+      },
+      {
+        "name": "Not served",
+        "conversations": 22
+      }
+    ],
+    "links": [
+      {
+        "user_type": "Customer / prospect",
+        "outcome": "Served",
+        "conversations": 9
+      },
+      {
+        "user_type": "Customer / prospect",
+        "outcome": "Partly served",
+        "conversations": 9
+      },
+      {
+        "user_type": "Customer / prospect",
+        "outcome": "Not served",
+        "conversations": 11
+      },
+      {
+        "user_type": "Career seeker",
+        "outcome": "Not served",
+        "conversations": 9
+      },
+      {
+        "user_type": "Staff / people lookup",
+        "outcome": "Served",
+        "conversations": 1
+      },
+      {
+        "user_type": "Staff / people lookup",
+        "outcome": "Partly served",
+        "conversations": 1
+      },
+      {
+        "user_type": "Mixed",
+        "outcome": "Served",
+        "conversations": 1
+      },
+      {
+        "user_type": "Mixed",
+        "outcome": "Partly served",
+        "conversations": 2
+      },
+      {
+        "user_type": "Mixed",
+        "outcome": "Not served",
+        "conversations": 1
+      },
+      {
+        "user_type": "Off-scope request",
+        "outcome": "Partly served",
+        "conversations": 2
+      },
+      {
+        "user_type": "Off-scope request",
+        "outcome": "Not served",
+        "conversations": 1
+      }
+    ]
+  },
+  "topics": {
+    "total": 106,
+    "items": [
+      {
+        "intent": "SVC",
+        "label": "Services",
+        "group": "Customer / prospect",
+        "questions": 33,
+        "handled": 19,
+        "handled_pct": 57.58
+      },
+      {
+        "intent": "CAR",
+        "label": "Careers",
+        "group": "Career seeker",
+        "questions": 21,
+        "handled": 0,
+        "handled_pct": 0
+      },
+      {
+        "intent": "CO",
+        "label": "Company facts",
+        "group": "Customer / prospect",
+        "questions": 13,
+        "handled": 4,
+        "handled_pct": 30.77
+      },
+      {
+        "intent": "CON",
+        "label": "Contact",
+        "group": "Customer / prospect",
+        "questions": 11,
+        "handled": 10,
+        "handled_pct": 90.91
+      },
+      {
+        "intent": "STAFF",
+        "label": "Staff lookup",
+        "group": "Staff / people lookup",
+        "questions": 10,
+        "handled": 9,
+        "handled_pct": 90
+      },
+      {
+        "intent": "OOS",
+        "label": "Off-scope",
+        "group": "Off-scope request",
+        "questions": 5,
+        "handled": 4,
+        "handled_pct": 80
+      },
+      {
+        "intent": "BIZ",
+        "label": "Partner / quote",
+        "group": "Customer / prospect",
+        "questions": 3,
+        "handled": 0,
+        "handled_pct": 0
+      },
+      {
+        "intent": "PRIV",
+        "label": "Private person",
+        "group": "Staff / people lookup",
+        "questions": 3,
+        "handled": 3,
+        "handled_pct": 100
+      },
+      {
+        "intent": "OTHER",
+        "label": "Other",
+        "group": "Off-scope request",
+        "questions": 2,
+        "handled": 0,
+        "handled_pct": 0
+      },
+      {
+        "intent": "AMB",
+        "label": "Ambiguous",
+        "group": "Off-scope request",
+        "questions": 1,
+        "handled": 1,
+        "handled_pct": 100
+      },
+      {
+        "intent": "INJ",
+        "label": "Prompt injection",
+        "group": "Off-scope request",
+        "questions": 1,
+        "handled": 1,
+        "handled_pct": 100
+      },
+      {
+        "intent": "META",
+        "label": "About the bot",
+        "group": "Off-scope request",
+        "questions": 1,
+        "handled": 0,
+        "handled_pct": 0
+      },
+      {
+        "intent": "SUP",
+        "label": "Support",
+        "group": "Customer / prospect",
+        "questions": 1,
+        "handled": 0,
+        "handled_pct": 0
+      },
+      {
+        "intent": "TECH",
+        "label": "Technical",
+        "group": "Off-scope request",
+        "questions": 1,
+        "handled": 0,
+        "handled_pct": 0
+      }
+    ],
+    "source": "live"
+  },
+  "quality": {
+    "total": 106,
+    "items": [
+      {
+        "quality": "OK",
+        "label": "Answered correctly",
+        "color": null,
+        "questions": 32,
+        "pct": 30.19
+      },
+      {
+        "quality": "CORR",
+        "label": "Correct refusal",
+        "color": null,
+        "questions": 8,
+        "pct": 7.55
+      },
+      {
+        "quality": "SCOPE",
+        "label": "Out of scope",
+        "color": null,
+        "questions": 3,
+        "pct": 2.83
+      },
+      {
+        "quality": "PART",
+        "label": "Partly answered",
+        "color": null,
+        "questions": 37,
+        "pct": 34.91
+      },
+      {
+        "quality": "FB",
+        "label": "No-info reply",
+        "color": null,
+        "questions": 5,
+        "pct": 4.72
+      },
+      {
+        "quality": "CLAR",
+        "label": "Clarifying question",
+        "color": null,
+        "questions": 5,
+        "pct": 4.72
+      },
+      {
+        "quality": "OFF",
+        "label": "Off-target",
+        "color": null,
+        "questions": 15,
+        "pct": 14.15
+      },
+      {
+        "quality": "FALSE",
+        "label": "False action claim",
+        "color": null,
+        "questions": 1,
+        "pct": 0.94
+      }
+    ],
+    "source": "live"
+  },
+  "dropoff": {
+    "total": 36,
+    "items": [
+      {
+        "issue": "JOBS",
+        "label": "No live job openings",
+        "conversations": 13
+      },
+      {
+        "issue": "NARROW",
+        "label": "Answer too narrow",
+        "conversations": 7
+      },
+      {
+        "issue": "KB_GAP",
+        "label": "Info not in knowledge base",
+        "conversations": 6
+      },
+      {
+        "issue": "WRONG",
+        "label": "Wrong answer",
+        "conversations": 6
+      },
+      {
+        "issue": "GENERIC",
+        "label": "Generic answer",
+        "conversations": 1
+      },
+      {
+        "issue": "FALSE_ACTION",
+        "label": "Claimed an action it cannot do",
+        "conversations": 1
+      },
+      {
+        "issue": "CLAR_LEFT",
+        "label": "Clarifying question, user left",
+        "conversations": 1
+      },
+      {
+        "issue": "NO_ROUTE",
+        "label": "Support request, no route",
+        "conversations": 1
+      }
+    ]
+  },
+  "people": {
+    "total": 46,
+    "items": [
+      {
+        "person": "P01",
+        "person_id": "d4ed3e8809100c89",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P02",
+        "person_id": "7c6f7d8f2bceffb9",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P03",
+        "person_id": "65bc6a660f9df617",
+        "conversations": 2,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1,
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P04",
+        "person_id": "8a0e282e78924a17",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P05",
+        "person_id": "20fc831f5c9ea4a7",
+        "conversations": 1,
+        "dominant_outcome": "Greeting only",
+        "outcomes": {
+          "Greeting only": 1
+        }
+      },
+      {
+        "person": "P06",
+        "person_id": "0515b8e7338904f8",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P07",
+        "person_id": "f74518b0466b756d",
+        "conversations": 3,
+        "dominant_outcome": "Greeting only",
+        "outcomes": {
+          "Greeting only": 1,
+          "Served": 1,
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P08",
+        "person_id": "43c3e3812d961af3",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P09",
+        "person_id": "bbba2ab30ae96643",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P10",
+        "person_id": "4e7a40720075140c",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P11",
+        "person_id": "85b3b58dc630ffbc",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P12",
+        "person_id": "f52c0b053f3d9a99",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P13",
+        "person_id": "704c3671a241c457",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P14",
+        "person_id": "091f5f9f9a652028",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P15",
+        "person_id": "42cb78ee2eb0e4ba",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P16",
+        "person_id": "b458a21a4cfa914c",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P17",
+        "person_id": "f84987610cd72edb",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P18",
+        "person_id": "93752c46604e4716",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P19",
+        "person_id": "6dee76224310a8c5",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P20",
+        "person_id": "ac909d4bf1186ed7",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P21",
+        "person_id": "dfd7419e276cd6d1",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P22",
+        "person_id": "2003ddbf710e95aa",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P23",
+        "person_id": "5973a4cfd6fcd416",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P24",
+        "person_id": "ff76bf3defc4c994",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P25",
+        "person_id": "d2a81636cb48fecd",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P26",
+        "person_id": "b15d477e58fe421d",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P27",
+        "person_id": "ce0cc9810caed832",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P28",
+        "person_id": "1be876bbfe209e01",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P29",
+        "person_id": "ba4edd786bb1d857",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P30",
+        "person_id": "b0e402987a31c2ae",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P31",
+        "person_id": "454432f44e4a7954",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P32",
+        "person_id": "23b9c5e30004159a",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P33",
+        "person_id": "01852e9701fc694e",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P34",
+        "person_id": "a80caa2493fc20de",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P35",
+        "person_id": "3024b2612f316516",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P36",
+        "person_id": "7c3709ff1d1987d3",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P37",
+        "person_id": "3c3d96d894769621",
+        "conversations": 1,
+        "dominant_outcome": "Served",
+        "outcomes": {
+          "Served": 1
+        }
+      },
+      {
+        "person": "P38",
+        "person_id": "d9902dde69c1d340",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P39",
+        "person_id": "37b3cdb1206c9d44",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P40",
+        "person_id": "058aa1102172fc88",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P41",
+        "person_id": "ef2f50bc9cd57189",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P42",
+        "person_id": "6f3c591b7be69d09",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P43",
+        "person_id": "74b2e047c7159b51",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P44",
+        "person_id": "0b5368baab5862c6",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      },
+      {
+        "person": "P45",
+        "person_id": "d2c76139a17d652d",
+        "conversations": 1,
+        "dominant_outcome": "Partly served",
+        "outcomes": {
+          "Partly served": 1
+        }
+      },
+      {
+        "person": "P46",
+        "person_id": "cba353a900defd3e",
+        "conversations": 1,
+        "dominant_outcome": "Not served",
+        "outcomes": {
+          "Not served": 1
+        }
+      }
+    ]
+  },
+  "conversations": {
+    "items": [
+      {
+        "conv_id": "8d851a35-491f-4ee6-8968-fae9bf32caab",
+        "person": "P46",
+        "person_id": "cba353a900defd3e",
+        "start": "2026-10-05T21:19:53+10:00",
+        "end": "2026-10-05T21:19:53+10:00",
+        "minutes": 0,
+        "user_type": "Customer / prospect",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "WRONG",
+        "issue_label": "Wrong answer",
+        "failing_question": "Become a partner vendor",
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "c05369dc-aaf9-495e-8c78-c7dd828c5371",
+        "person": "P45",
+        "person_id": "d2c76139a17d652d",
+        "start": "2026-10-02T08:36:53+10:00",
+        "end": "2026-10-02T08:37:27+10:00",
+        "minutes": 0.6,
+        "user_type": "Off-scope request",
+        "outcome": "Partly served",
+        "experience_rating": "Partly served",
+        "issue": "WRONG",
+        "issue_label": "Wrong answer",
+        "failing_question": "Yes",
+        "exchanges": 3,
+        "substantive_exchanges": 3
+      },
+      {
+        "conv_id": "47e55500-ef22-4c7e-8615-9e76fe5d3787",
+        "person": "P44",
+        "person_id": "0b5368baab5862c6",
+        "start": "2026-10-01T01:28:53+10:00",
+        "end": "2026-10-01T01:28:53+10:00",
+        "minutes": 0,
+        "user_type": "Career seeker",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "JOBS",
+        "issue_label": "No live job openings",
+        "failing_question": "Is there any openings for oracle fusion",
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "949c924a-280d-43ea-843a-7f5cd96ded6b",
+        "person": "P43",
+        "person_id": "74b2e047c7159b51",
+        "start": "2026-09-30T16:08:37+10:00",
+        "end": "2026-09-30T16:09:00+10:00",
+        "minutes": 0.4,
+        "user_type": "Career seeker",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "JOBS",
+        "issue_label": "No live job openings",
+        "failing_question": "Career opportunities",
+        "exchanges": 2,
+        "substantive_exchanges": 2
+      },
+      {
+        "conv_id": "066efa6d-5f33-4f50-8957-0ba917afe539",
+        "person": "P42",
+        "person_id": "6f3c591b7be69d09",
+        "start": "2026-09-29T18:17:28+10:00",
+        "end": "2026-09-29T18:17:48+10:00",
+        "minutes": 0.3,
+        "user_type": "Customer / prospect",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "NO_ROUTE",
+        "issue_label": "Support request, no route",
+        "failing_question": "AzureVirtualMachines",
+        "exchanges": 3,
+        "substantive_exchanges": 3
+      },
+      {
+        "conv_id": "842a79b8-2d2e-456a-8d9d-a0835801ca55",
+        "person": "P41",
+        "person_id": "ef2f50bc9cd57189",
+        "start": "2026-09-24T13:13:28+10:00",
+        "end": "2026-09-24T13:13:28+10:00",
+        "minutes": 0,
+        "user_type": "Career seeker",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "JOBS",
+        "issue_label": "No live job openings",
+        "failing_question": "Supervisor",
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "65bafe79-acd7-4ed4-8c20-47bbab58f8f6",
+        "person": "P40",
+        "person_id": "058aa1102172fc88",
+        "start": "2026-09-17T23:58:41+10:00",
+        "end": "2026-09-17T23:58:41+10:00",
+        "minutes": 0,
+        "user_type": "Career seeker",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "JOBS",
+        "issue_label": "No live job openings",
+        "failing_question": "job in bangalore",
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "533cb0b4-8385-4777-881b-f9c903f3c826",
+        "person": "P39",
+        "person_id": "37b3cdb1206c9d44",
+        "start": "2026-09-15T22:42:39+10:00",
+        "end": "2026-09-15T22:43:20+10:00",
+        "minutes": 0.7,
+        "user_type": "Customer / prospect",
+        "outcome": "Partly served",
+        "experience_rating": "Partly served",
+        "issue": "NARROW",
+        "issue_label": "Answer too narrow",
+        "failing_question": "What solutions does Exigo Tech provide?",
+        "exchanges": 2,
+        "substantive_exchanges": 2
+      },
+      {
+        "conv_id": "f31d4f36-4b51-4976-8373-0c67e2b4a887",
+        "person": "P38",
+        "person_id": "d9902dde69c1d340",
+        "start": "2026-09-07T10:57:19+10:00",
+        "end": "2026-09-07T10:57:52+10:00",
+        "minutes": 0.6,
+        "user_type": "Career seeker",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "JOBS",
+        "issue_label": "No live job openings",
+        "failing_question": "Career opportunities",
+        "exchanges": 2,
+        "substantive_exchanges": 2
+      },
+      {
+        "conv_id": "150dcab5-2987-44dc-8493-c1bf54ac9136",
+        "person": "P37",
+        "person_id": "3c3d96d894769621",
+        "start": "2026-09-02T16:04:01+10:00",
+        "end": "2026-09-02T16:04:01+10:00",
+        "minutes": 0,
+        "user_type": "Customer / prospect",
+        "outcome": "Served",
+        "experience_rating": "Good",
+        "issue": null,
+        "issue_label": null,
+        "failing_question": null,
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "d06b0d63-d68d-4155-8740-39eafe18f5ce",
+        "person": "P36",
+        "person_id": "7c3709ff1d1987d3",
+        "start": "2026-08-27T09:16:42+10:00",
+        "end": "2026-08-27T09:22:33+10:00",
+        "minutes": 5.8,
+        "user_type": "Customer / prospect",
+        "outcome": "Partly served",
+        "experience_rating": "Partly served",
+        "issue": "JOBS",
+        "issue_label": "No live job openings",
+        "failing_question": "Career opportunities",
+        "exchanges": 7,
+        "substantive_exchanges": 7
+      },
+      {
+        "conv_id": "96fd99b0-83e2-4b0d-8daf-3ec469dfc1c0",
+        "person": "P35",
+        "person_id": "3024b2612f316516",
+        "start": "2026-08-26T10:17:04+10:00",
+        "end": "2026-08-26T10:17:11+10:00",
+        "minutes": 0.1,
+        "user_type": "Customer / prospect",
+        "outcome": "Partly served",
+        "experience_rating": "Partly served",
+        "issue": "NARROW",
+        "issue_label": "Answer too narrow",
+        "failing_question": "What solutions does Exigo Tech provide?",
+        "exchanges": 2,
+        "substantive_exchanges": 2
+      },
+      {
+        "conv_id": "e632a192-5cad-423e-80d2-dc6c460d9cf6",
+        "person": "P34",
+        "person_id": "a80caa2493fc20de",
+        "start": "2026-08-20T11:09:31+10:00",
+        "end": "2026-08-20T11:09:46+10:00",
+        "minutes": 0.2,
+        "user_type": "Career seeker",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "JOBS",
+        "issue_label": "No live job openings",
+        "failing_question": "Career opportunities",
+        "exchanges": 2,
+        "substantive_exchanges": 2
+      },
+      {
+        "conv_id": "60d45f97-0876-4eb0-8d97-dddd1af38469",
+        "person": "P33",
+        "person_id": "01852e9701fc694e",
+        "start": "2026-08-13T10:42:08+10:00",
+        "end": "2026-08-13T10:45:04+10:00",
+        "minutes": 2.9,
+        "user_type": "Staff / people lookup",
+        "outcome": "Partly served",
+        "experience_rating": "Partly served",
+        "issue": "KB_GAP",
+        "issue_label": "Info not in knowledge base",
+        "failing_question": "What can you tell me about [name] that is not available on LinkedIn",
+        "exchanges": 7,
+        "substantive_exchanges": 7
+      },
+      {
+        "conv_id": "0e1cb8b0-256f-4232-8c8b-eb51474c2ee0",
+        "person": "P32",
+        "person_id": "23b9c5e30004159a",
+        "start": "2026-08-09T21:18:39+10:00",
+        "end": "2026-08-09T21:22:08+10:00",
+        "minutes": 3.5,
+        "user_type": "Customer / prospect",
+        "outcome": "Partly served",
+        "experience_rating": "Partly served",
+        "issue": "JOBS",
+        "issue_label": "No live job openings",
+        "failing_question": "Career opportunities",
+        "exchanges": 8,
+        "substantive_exchanges": 8
+      },
+      {
+        "conv_id": "89f7f053-94c5-4258-86d9-45044e84c612",
+        "person": "P31",
+        "person_id": "454432f44e4a7954",
+        "start": "2026-08-06T09:32:50+10:00",
+        "end": "2026-08-06T09:32:50+10:00",
+        "minutes": 0,
+        "user_type": "Customer / prospect",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "WRONG",
+        "issue_label": "Wrong answer",
+        "failing_question": "Do you work in the Network Marketing field",
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "01c4c65c-0539-4a67-8a63-347cc5f131a8",
+        "person": "P30",
+        "person_id": "b0e402987a31c2ae",
+        "start": "2026-08-05T13:26:52+10:00",
+        "end": "2026-08-05T13:27:14+10:00",
+        "minutes": 0.4,
+        "user_type": "Customer / prospect",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "WRONG",
+        "issue_label": "Wrong answer",
+        "failing_question": "partnership",
+        "exchanges": 2,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "cfddd174-16c1-48fd-8134-7b7e525c278f",
+        "person": "P29",
+        "person_id": "ba4edd786bb1d857",
+        "start": "2026-08-05T09:01:50+10:00",
+        "end": "2026-08-05T09:01:50+10:00",
+        "minutes": 0,
+        "user_type": "Customer / prospect",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "NARROW",
+        "issue_label": "Answer too narrow",
+        "failing_question": "What solutions does Exigo Tech provide?",
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "2e521ff1-7226-4b1e-8332-f06e03a7d341",
+        "person": "P28",
+        "person_id": "1be876bbfe209e01",
+        "start": "2026-08-05T04:04:25+10:00",
+        "end": "2026-08-05T04:04:25+10:00",
+        "minutes": 0,
+        "user_type": "Customer / prospect",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "KB_GAP",
+        "issue_label": "Info not in knowledge base",
+        "failing_question": "What’s your abn",
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "ed970b4b-864e-40e7-8b0d-b3fb6011f2b1",
+        "person": "P27",
+        "person_id": "ce0cc9810caed832",
+        "start": "2026-07-30T12:00:25+10:00",
+        "end": "2026-07-30T12:00:25+10:00",
+        "minutes": 0,
+        "user_type": "Customer / prospect",
+        "outcome": "Served",
+        "experience_rating": "Good",
+        "issue": null,
+        "issue_label": null,
+        "failing_question": null,
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "cf949d14-4ce1-42b9-8c36-48ed87bce531",
+        "person": "P26",
+        "person_id": "b15d477e58fe421d",
+        "start": "2026-07-30T07:50:54+10:00",
+        "end": "2026-07-30T07:50:54+10:00",
+        "minutes": 0,
+        "user_type": "Customer / prospect",
+        "outcome": "Served",
+        "experience_rating": "Good",
+        "issue": null,
+        "issue_label": null,
+        "failing_question": null,
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "d1ce4d42-6d33-42d9-8b77-c233a9c468ed",
+        "person": "P25",
+        "person_id": "d2a81636cb48fecd",
+        "start": "2026-07-23T22:12:51+10:00",
+        "end": "2026-07-23T22:13:23+10:00",
+        "minutes": 0.5,
+        "user_type": "Customer / prospect",
+        "outcome": "Partly served",
+        "experience_rating": "Partly served",
+        "issue": "KB_GAP",
+        "issue_label": "Info not in knowledge base",
+        "failing_question": "How many people are there in caompny",
+        "exchanges": 2,
+        "substantive_exchanges": 2
+      },
+      {
+        "conv_id": "dcd275a6-bc44-429c-89b4-118282fcb829",
+        "person": "P24",
+        "person_id": "ff76bf3defc4c994",
+        "start": "2026-07-15T12:08:08+10:00",
+        "end": "2026-07-15T12:08:08+10:00",
+        "minutes": 0,
+        "user_type": "Customer / prospect",
+        "outcome": "Not served",
+        "experience_rating": "Dropped",
+        "issue": "CLAR_LEFT",
+        "issue_label": "Clarifying question, user left",
+        "failing_question": "intial quotation",
+        "exchanges": 1,
+        "substantive_exchanges": 1
+      },
+      {
+        "conv_id": "cc7a0c27-c410-4f8f-82eb-892d9e236f42",
+        "person": "P23",
+        "person_id": "5973a4cfd6fcd416",
+        "start": "2026-07-10T18:38:53+10:00",
+        "end": "2026-07-10T18:40:27+10:00",
+        "minutes": 1.6,
+        "user_type": "Customer / prospect",
+        "outcome": "Served",
+        "experience_rating": "Served with friction",
+        "issue": null,
+        "issue_label": null,
+        "failing_question": null,
+        "exchanges": 5,
+        "substantive_exchanges": 3
+      },
+      {
+        "conv_id": "e2d88490-9f65-4256-8316-0049f2d25ddc",
+        "person": "P22",
+        "person_id": "2003ddbf710e95aa",
+        "start": "2026-07-10T11:57:37+10:00",
+        "end": "2026-07-10T11:59:34+10:00",
+        "minutes": 1.9,
+        "user_type": "Customer / prospect",
+        "outcome": "Served",
+        "experience_rating": "Great",
+        "issue": null,
+        "issue_label": null,
+        "failing_question": null,
+        "exchanges": 3,
+        "substantive_exchanges": 3
+      }
+    ],
+    "total": 49,
+    "limit": 25,
+    "offset": 0,
+    "sort": "start",
+    "direction": "desc"
+  },
+  "conversation_detail": {
+    "conversation": {
+      "conv_id": "8d851a35-491f-4ee6-8968-fae9bf32caab",
+      "person": "P46",
+      "person_id": "cba353a900defd3e",
+      "start": "2026-10-05T21:19:53+10:00",
+      "end": "2026-10-05T21:19:53+10:00",
+      "minutes": 0,
+      "user_type": "Customer / prospect",
+      "outcome": "Not served",
+      "experience_rating": "Dropped",
+      "issue": "WRONG",
+      "issue_label": "Wrong answer",
+      "failing_question": "Become a partner vendor",
+      "exchanges": 1,
+      "substantive_exchanges": 1
+    },
+    "turns": [
+      {
+        "turn": 1,
+        "timestamp": "2026-10-05T21:19:53+10:00",
+        "user_message": "Become a partner vendor",
+        "intent": "BIZ",
+        "intent_label": "Partner / quote",
+        "substantive": true,
+        "handled": false,
+        "quality": "OFF",
+        "quality_label": "Off-target",
+        "issue": "WRONG",
+        "issue_label": "Wrong answer",
+        "friction": null,
+        "classified_by": "rule",
+        "pending": false
+      }
+    ]
+  },
+  "pending": {
+    "pending": 0,
+    "labelled": 117,
+    "total": 117,
+    "progress_pct": 100
+  }
+}
