@@ -53,7 +53,9 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/admin/governance/monitoring` | Pass | Fixed (T1, T2) | Fixed (T1) | Whole view was light-only; now tokens + `chartTheme` | [ ] |
 | `/admin/governance/logs` | Pass | Fixed (T2) | Pass | Default level badge tokenised | [ ] |
 | `/admin/governance/traces` | Pass | Pass | Pass | No change needed | [ ] |
-| `/_not-found` (Next default) | Pass | Pass | Pass | Branded 404 is F0.6.6 (PR-17) | [ ] |
+| `/_not-found` (`app/not-found.tsx`) | Pass | Pass | Pass | Branded 404 (PR-17): `BrandLogo` pair, `bg-surface-*` / `text-fg*` tokens | [ ] |
+| Route error boundary (`app/error.tsx`) | Pass | Pass | Pass | Branded (PR-17): reference digest + copy, retry; no error text shown | [ ] |
+| Any `(app)` route at < `md` (390 px) | Pass | Pass | Pass | PR-17: `MobileTopBar` + off-canvas sidebar; desktop aside `hidden md:flex` | [ ] |
 | `/login` | n/a | n/a | n/a | Route not built yet (F1, PR-19); must use `BrandLogo` | n/a |
 
 ## Shared components
@@ -75,7 +77,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `admin/TableFormatters` | Pass | Pass | Pass | Existing `dark:` pairs |
 | `admin/Pagination` | Pass | Pass | Pass | Existing `dark:` pairs |
 | `admin/QueryInspectorDrawer` | Pass | Pass | Pass | `bg-surface-card` |
-| `admin/usage/QueryInspectorDrawer` | Pass | Pass | Pass | Existing `dark:` pairs (duplicate removed in PR-17) |
+| `admin/usage/QueryInspectorDrawer` | Pass | Pass | Pass | PR-17: chrome now from `ui/DrawerShell` (shared with the evaluation inspector); body keeps its `dark:` pairs; errors use `ErrorState` |
 | `admin/EvaluationCompareMatrix` | Pass | Fixed (T1) | Fixed (T1) | Radar + tooltip from `chartTheme` |
 | `admin/insights/StatCard` | Pass | Pass | Pass | `bg-surface-card` |
 | `admin/insights/HighlightCard` | Pass | Pass | Pass | `bg-surface-card` |
@@ -98,6 +100,19 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `charts/QuadrantScatter`, `charts/Radar` (new) | Pass | Pass | Pass | Quadrant dots from `status`; radar series from `categorical` |
 | `charts/TreemapChart`, `charts/SankeyChart` (new, `next/dynamic`) | Pass | Pass | Pass | Recharts wrappers fed from `useChartTheme()`; skeleton while the chunk loads |
 | Chart tooltip (`charts/primitives`) | Pass | Pass | Pass | Card on `bg-surface-elevated` + `border-line` + `shadow-md`; focus ring `.chart-mark:focus-visible` uses `--brand-500` |
+| `ui/DrawerShell` (PR-17) | Pass | Pass | Pass | Portal drawer: `bg-surface-elevated`, `border-line`, backdrop `bg-ink/40` / `dark:bg-black/60` |
+| `ui/Modal`, `ui/ConfirmDialog` (PR-17) | Pass | Pass | Pass | Same tokens as the drawer; danger tone uses `status-danger` / `status-danger-bg` (dark text on the lifted dark red) |
+| `ui/ToastProvider` (PR-17) | Pass | Pass | Pass | `bg-surface-elevated` cards, tone icons from `status-*` |
+| `ui/EntityLink`, `ui/CopyButton` (PR-17) | Pass | Pass | Pass | Links `brand-700` / `dark:brand-300`; tooltip `bg-surface-inverse` + `text-fg-inverse` (flips per theme) |
+| `ui/EmptyState`, `ui/ErrorState`, `ui/Skeleton` (PR-17) | Pass | Pass | Pass | `surface-muted` placeholders; pulse off under reduced motion |
+| `ui/DateRangePicker` (PR-17) | Pass | Pass | Pass | Popover + native date inputs on `bg-surface-card`; active preset brand tint |
+| `ui/CommandPalette`, `ui/ShortcutsSheet` (PR-17) | Pass | Pass | Pass | Selected row `brand-50` / `dark:brand-950/60`; `kbd` chips `surface-muted` |
+| `ui/ActivePill` (in `TabGroup`, `AudienceScopeTabs`) (PR-17) | Pass | Pass | Pass | Sliding `bg-brand-gradient` pill (layoutId); same in both themes |
+| `shell/ProfileMenu`, `shell/NotificationBell`, `shell/HeaderUtilities` (PR-17) | Pass | Pass | Pass | Popovers on `surface-elevated`; theme radio (light / dark / system) applies instantly |
+| `shell/MobileTopBar`, `Sidebar` (mobile drawer) (PR-17) | Pass | Pass | Pass | `bg-surface-card`, `border-line`; nav items reuse the desktop classes |
+| `shell/BrandedStatusPage` (PR-17) | Pass | Pass | Pass | `BrandLogo` pair on `bg-surface-card` |
+| `admin/CursorPagination` (PR-17) | Pass | Pass | Pass | Mirrors `Pagination` (existing `dark:` pairs) |
+| `admin/TableToolbar` (columns, density) (PR-17) | Pass | Pass | Pass | Column menu on `surface-elevated`; buttons reuse the existing `dark:` pairs |
 
 ## Known follow-ups (not theme-breaking)
 

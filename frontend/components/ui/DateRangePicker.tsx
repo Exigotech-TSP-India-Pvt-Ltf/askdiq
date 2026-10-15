@@ -100,7 +100,7 @@ export function DateRangePicker({ className = "" }: { className?: string }) {
                 );
               })}
             </div>
-            <form onSubmit={applyCustom} className="mt-1.5 space-y-2 border-t border-line px-1.5 pb-1 pt-2.5">
+            <form onSubmit={applyCustom} noValidate className="mt-1.5 space-y-2 border-t border-line px-1.5 pb-1 pt-2.5">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Custom range</p>
               <div className="grid grid-cols-2 gap-2">
                 <label htmlFor={fromId} className="space-y-1 text-[11px] text-fg-muted">
