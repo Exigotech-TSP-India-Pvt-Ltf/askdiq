@@ -50,8 +50,11 @@ backend/conc_*.json
 /planchanges*.md
 /planchanges3.md
 /*_plan.md
+/newplan.md
 /audience_segmentation_tabs_plan.md
 /monitoring_and_governance_plan.md
+/*_analysis.md
+/*_standalone.html
 /backend/docs/
 
 # --- Knowledge-base scratch files (only the .md files listed in scripts/ingest_real_docs.py are sources) ---
