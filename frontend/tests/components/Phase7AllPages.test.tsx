@@ -290,7 +290,8 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: /RAG Evaluation/i })).toBeInTheDocument();
     });
-    expect(screen.getByRole("tab", { name: /^retrieval$/i })).toBeInTheDocument();
+    // The heading renders before the report resolves; the tabs appear after it.
+    expect(await screen.findByRole("tab", { name: /^retrieval$/i })).toBeInTheDocument();
   });
 
   it("renders Governance Page with DashboardHeader and TabGroup", async () => {
