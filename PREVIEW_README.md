@@ -3,7 +3,7 @@
 Branch `preview/all` in `C:\Projects\askdiq-wt\preview` combines every admin-console
 branch (backend PR-01 to PR-13 chain + auth/user-management API, load balancing,
 and UI PR-17 to PR-26: nav cleanup, auth gate/login, user management, governance
-revamp, feedback workspace, settings/branding, analytics, interactive dashboard).
+revamp, feedback workspace, settings/branding, analytics, interactive dashboard, entity pages/deep links).
 It is for local testing only. It is never pushed.
 
 All commands below are for Windows PowerShell. `PREVIEW` means
@@ -104,6 +104,7 @@ Stop anything else on ports 8000 / 3000 first (e.g. your main checkout's servers
 | Area | Where | What should be true |
 | --- | --- | --- |
 | Dashboard | `/admin` | Interactive dashboard: KPI trend cards, charts that drill through to the matching page, activity feed, health pill |
+| Entity pages | `/admin/users` (Visitors), `/admin/conversations`, `/documents` and their detail pages | Charts that filter the table through the URL, preview drawers, breadcrumbs, two-way deep links (e.g. visitor -> conversation -> turn) |
 | Usage & Cost | `/admin/usage` | The **Overview** tab is the former Live Telemetry view (with cost insights above it); the old Overview is gone; old `?tab=live_telemetry` links land on Overview |
 | Sidebar | every page | Dashboard, Chat, Documents, Visitors, Usage & Cost, Conversation Logs, Feedback, Evaluation (Live), Governance, Analytics, User Management, Settings; **no** old "Evaluation" item; `/admin/evaluation` and `/evaluation` redirect to `/admin/evaluation-live`; items are filtered by role |
 | User Management | `/admin/user-management` | Users, Access Requests (pending badge in the sidebar), Roles & Permissions matrix, Audit Trail; invite, approve/reject, change role, suspend, revoke sessions |
