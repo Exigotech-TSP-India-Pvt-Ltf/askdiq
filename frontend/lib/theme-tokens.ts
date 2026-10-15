@@ -231,6 +231,13 @@ export const brandGradient = {
   to: "#068987",
 } as const;
 
+/**
+ * Microsoft four-square mark on the "Sign in with Microsoft" button (newplan
+ * §7.7; Microsoft identity branding guidelines). Third-party brand colours,
+ * identical in both themes.
+ */
+export const microsoftLogoColors = ["#F25022", "#7FBA00", "#00A4EF", "#FFB900"] as const;
+
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 export function isHexColor(value: unknown): value is string {

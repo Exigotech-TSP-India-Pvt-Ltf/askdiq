@@ -168,7 +168,7 @@ describe("CommandCenter shortcuts (F0.6.4)", () => {
     expect(hrefs).toContain("/admin/governance");
     expect(hrefs).not.toContain("/admin/analytics");
     expect(hrefs).not.toContain("/admin/user-management");
-    expect(hrefs).not.toContain("/admin/settings");
+    expect(hrefs).toContain("/admin/settings"); // live since PR-26
   });
 
   it("isTypingTarget treats text fields as typing and buttons / checkboxes as not", () => {

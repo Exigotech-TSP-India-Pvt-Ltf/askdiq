@@ -71,12 +71,13 @@ describe("Sidebar nav registry, icons and active indicator (PR-17)", () => {
   // The collapse test above stores "collapsed"; start each case expanded.
   beforeEach(() => window.localStorage.clear());
 
-  it("pre-registers Analytics, User Management and Settings but does not render them yet", () => {
+  it("pre-registers Analytics and User Management but does not render them yet (Settings is live, PR-26)", () => {
     render(<Sidebar />);
     const planned = NAV_ITEMS.filter((item) => !isNavItemEnabled(item)).map((item) => item.label);
-    expect(planned).toEqual(["Analytics", "User Management", "Settings"]);
+    expect(planned).toEqual(["Analytics", "User Management"]);
     for (const label of planned) expect(screen.queryByText(label)).not.toBeInTheDocument();
     expect(NAV_ITEMS.find((item) => item.label === "User Management")?.badgeKey).toBe("pendingAccess");
+    expect(NAV_ITEMS.find((item) => item.label === "Settings")?.permission).toBe("branding:write");
   });
 
   it("marks only the current page active, with the layoutId indicator and 18px / 1.75 icons", () => {
@@ -122,7 +123,7 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
 
     // Shift+Tab from the first control wraps to the last link inside the drawer.
     await user.tab({ shift: true });
-    expect(within(drawer).getByRole("link", { name: /admin governance/i })).toHaveFocus();
+    expect(within(drawer).getByRole("link", { name: /^settings$/i })).toHaveFocus();
     await user.tab();
     expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus();
 

@@ -15,6 +15,11 @@ interface BrandLogoProps {
   className?: string;
   /** Overrides the accessible name (defaults to the brand's company name). */
   alt?: string;
+  /**
+   * Renders only one artwork regardless of the page theme (Settings live
+   * preview shows a light and a dark pane side by side).
+   */
+  forceTheme?: "light" | "dark";
 }
 
 /**
@@ -22,12 +27,17 @@ interface BrandLogoProps {
  * dark artwork as a `dark:hidden` / `hidden dark:block` pair, so the swap is
  * pure CSS and follows the theme instantly with no flash or re-render.
  */
-export function BrandLogo({ variant = "full", className = "", alt }: BrandLogoProps) {
+export function BrandLogo({ variant = "full", className = "", alt, forceTheme }: BrandLogoProps) {
   const brand = useBrand();
   const label = alt ?? brand.companyName;
   const [lightSrc, darkSrc] =
     variant === "full" ? [brand.logos.light, brand.logos.dark] : [brand.logos.markLight, brand.logos.markDark];
   const size = `${SIZE[variant]} ${className}`.trim();
+
+  if (forceTheme) {
+    const src = forceTheme === "dark" ? darkSrc : lightSrc;
+    return <img src={src} alt={label} data-theme-variant={forceTheme} className={`${size} block`} />;
+  }
 
   return (
     <>

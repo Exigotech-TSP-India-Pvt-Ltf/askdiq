@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, m } from "motion/react";
 import { useAuth } from "@/lib/auth-context";
+import { userCan, type Permission } from "@/lib/use-can";
 import {
   ChevronLeft,
   ChevronDown,
@@ -49,6 +50,8 @@ export interface NavItem {
   badgeKey?: NavBadgeKey;
   /** Extra palette search terms. */
   keywords?: string[];
+  /** Hidden unless the signed-in user has this permission (PR-18 consolidates role filtering). */
+  permission?: Permission;
 }
 
 const ADMIN_ITEMS: NavItem[] = [
@@ -78,7 +81,13 @@ const PLANNED_ITEMS: NavItem[] = [
     badgeKey: "pendingAccess",
     keywords: ["access requests", "roles"],
   },
-  { href: "/admin/settings", label: "Settings", icon: Settings2, enabled: false, keywords: ["branding", "taxonomy"] },
+  {
+    href: "/admin/settings",
+    label: "Settings",
+    icon: Settings2,
+    permission: "branding:write",
+    keywords: ["branding", "taxonomy", "white-label"],
+  },
 ];
 
 /** Every registered nav item, including disabled ones (used by the command palette). */
@@ -111,9 +120,11 @@ interface NavListProps {
 }
 
 function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: NavListProps) {
+  const { user } = useAuth();
+  const allowed = (item: NavItem) => !item.permission || userCan(user, item.permission);
   return (
     <>
-      {items.filter(isNavItemEnabled).map((item) => {
+      {items.filter((item) => isNavItemEnabled(item) && allowed(item)).map((item) => {
         const active = isActive(pathname, item.href);
         const Icon = item.icon;
         const badge = item.badgeKey ? badges?.[item.badgeKey] : undefined;
