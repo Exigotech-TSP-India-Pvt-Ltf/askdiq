@@ -1443,18 +1443,18 @@ Fill every gap in the newplan §1 interactivity audit and every page row in the 
 - [ ] **[Test]** Phase F3 complete.
 
 #### Task F3.1: Dashboard (`admin/page.tsx`)
-- [ ] **[Dev]** Task F3.1: build the interactive dashboard.
-- [ ] **[Lint]** Task F3.1: LINT-FE.
+- [x] **[Dev]** Task F3.1: build the interactive dashboard.
+- [x] **[Lint]** Task F3.1: LINT-FE.
 - [ ] **[Test]** Task F3.1: `tests/components/Dashboard.test.tsx` passes.
 
 ##### Subtask F3.1.1: KPI cards
-- [ ] **[Dev]** `KpiTrendCard` with a sparkline, delta arrow, count-up and window label. Hover lift and arrow. A click deep-links pre-filtered (Feedback, Governance Monitoring, Usage, Usage queries). Prefetch on intent. A staggered entrance.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** `KpiTrendCard` with a sparkline, delta arrow, count-up and window label. Hover lift and arrow. A click deep-links pre-filtered (Feedback, Governance Monitoring, Usage, Usage queries). Prefetch on intent. A staggered entrance.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Each card's href is checked. The prefetch fires on dwell.
 
 ##### Subtask F3.1.2: Charts
-- [ ] **[Dev]** `StackedArea` of queries by outcome, `PercentileBand` latency, `BulletChart` for cost vs budget and forecast, `RadialGauge` for satisfaction, a mini `Treemap` of intents (to Analytics), a live activity feed (SSE) and a health pill. `DateRangePicker` drives everything. Widgets fetch in parallel with independent skeletons.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** `StackedArea` of queries by outcome, `PercentileBand` latency, `BulletChart` for cost vs budget and forecast, `RadialGauge` for satisfaction, a mini `Treemap` of intents (to Analytics), a live activity feed (SSE) and a health pill. `DateRangePicker` drives everything. Widgets fetch in parallel with independent skeletons.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** A segment click navigates with the filter. One slow widget does not block the others.
 
 ---
@@ -1481,11 +1481,11 @@ Fill every gap in the newplan §1 interactivity audit and every page row in the 
 - [ ] **[Test]** An operator sees no upload or delete controls. Chunk search is debounced.
 
 #### Task F3.5: Usage & Cost additions, Evaluation (Live) additions and Chat
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Usage gets the cost-by-stage `StackedArea`, a forecast line and a cache-hit `RadialGauge`.
   - Evaluation (Live) gets the quality `Radar` (current vs previous run) and a pass-rate trend with run markers.
   - Chat gets the brand header, a signed-in user chip, and an admin-only "View trace" link.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Component tests. The trace link is hidden for users without a role.
 
 #### Task F3.6: Phase F3 integration testing
@@ -2101,3 +2101,7 @@ Merge a parent, then delete its branch, and GitHub retargets its children to `ma
 **Rebase sweep in progress:** the backend PRs are being turned into one linear chain, in this order: #19 → #16 → #17 → #18 → {#21, #20 → {#25, #23 → #31 → #26 → #27 → #22 → #29}}. This brings PR-01's stricter CI and PR-04's flaky-test fixes into every branch, and re-links the four sibling migrations into one alembic chain: `a9b0c1d2e3f4` → `4c1e9a7d2b65` → `b0c1d2e3f4a5` → `5712ebd9d3c9` → `72125f44984d`. The PR bases are being retargeted to match.
 
 **2026-10-16: local CI gate.** At your request, nothing is pushed unless `ci_local.ps1` (a full mirror of `ci.yml`, including a fresh Postgres DB per worktree and the full-stack smoke test) passes locally first. **Pushes are on hold until you set the `ASKDIQ_TEST_DB_ADMIN_URL` user environment variable.** Workers keep committing locally in the meantime.
+
+| – | PR-21 | `feat/ui-dashboard-interactive-charts` | #32 | **Committed locally (193059d), waiting on the local CI gate before push** | 8 drill-down KPI cards (sparkline, delta, count-up, prefetch), outcome stacked area, p50/p95 band, cost vs budget, satisfaction gauge, intents treemap, live activity feed, health pill, date range. Usage cost insights, eval radar and pass-rate trend, chat header and trace link. The old made-up placeholder numbers are removed. Contract for PR-14: `frontend/docs/contracts/dashboard-aggregations.md`. |
+| – | sweep | backend chain | – | **Done locally; pushes waiting on the local CI gate** | One linear chain with single migration line `a9b0c1d2e3f4 → 4c1e9a7d2b65 → bd75f2033c21 (new: planner statistics, summary 380 → 195 ms) → b0c1d2e3f4a5 → 5712ebd9d3c9 → 72125f44984d`. The perf gates run in their own CI step and pylint fail-under is 9.34. Seven PRs were briefly closed by a script bug and reopened (none merged). Diagnostic branches `sweep/*` are deleted. |
+| – | preview | `preview/all` (local only, never pushed) | – | Building | Everything combined in `C:\Projects\askdiq-wt\preview` so you can run it; see `PREVIEW_README.md`. |
