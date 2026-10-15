@@ -51,13 +51,36 @@ vi.mock("next/navigation", async () => {
   };
 });
 
+// Superadmin-only permissions; admin gets the rest (mirrors ROLE_PERMISSIONS).
+const SUPERADMIN_ONLY = ["users:manage", "audit:auth:read", "branding:write", "taxonomy:write"];
+const ALL_PERMISSIONS = [
+  "dashboard:read",
+  "documents:write",
+  "feedback:triage",
+  "feedback:export",
+  "eval:run",
+  "testip:write",
+  "usage:export",
+  ...SUPERADMIN_ONLY,
+];
+function permissionsFor(role: string | undefined | null): string[] {
+  if (role === "superadmin") return ALL_PERMISSIONS;
+  if (role === "admin") return ALL_PERMISSIONS.filter((p) => !SUPERADMIN_ONLY.includes(p));
+  if (role === "operator") return ["dashboard:read"];
+  return [];
+}
+
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({
     token: "t",
     user: { id: "u1", full_name: "Sam Super", email: "sam@contoso.example", created_at: "", role: auth.role },
     isLoading: false,
     logout: vi.fn(),
+    role: auth.role ?? null,
+    status: auth.role ? "active" : "pending",
+    permissions: permissionsFor(auth.role),
   }),
+  usePermission: (permission: string) => permissionsFor(auth.role).includes(permission),
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 

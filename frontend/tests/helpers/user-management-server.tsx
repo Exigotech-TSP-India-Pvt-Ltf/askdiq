@@ -3,6 +3,7 @@
  * exactly like `schemas/user_management.py`, a call log, and per-route
  * overrides (errors, deferred responses for optimistic-update checks).
  */
+import { AuthProvider } from "@/lib/auth-context";
 import React from "react";
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
@@ -310,8 +311,10 @@ export function setupUserManagement(url = "/admin/user-management", data = fixtu
 
 export function renderWithProviders(ui: React.ReactElement) {
   return render(
-    <MotionProvider>
-      <ToastProvider>{ui}</ToastProvider>
-    </MotionProvider>,
+    <AuthProvider>
+      <MotionProvider>
+        <ToastProvider>{ui}</ToastProvider>
+      </MotionProvider>
+    </AuthProvider>,
   );
 }

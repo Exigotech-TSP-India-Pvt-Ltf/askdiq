@@ -1,49 +1,58 @@
 "use client";
 
 /**
- * Tiny permission gate for feature pages until PR-18 lands `usePermission` /
- * `<RequirePermission>` backed by `GET /auth/me` (consolidate then).
+ * Former per-PR permission shim (PR-21, PR-24, PR-26), consolidated in the
+ * preview build: `useCan` now delegates to PR-18's canonical `usePermission`
+ * (`GET /auth/me` via `AuthProvider`). The exported names are kept so feature
+ * pages compile unchanged.
  *
- * Permission names match `app/auth/permissions.py`. Without a provider every
- * permission is granted, which matches today's no-login guest build; tests and
- * PR-18 wrap the tree in `PermissionsProvider` with the signed-in user's list.
+ * `PermissionsProvider` remains only as an explicit override for component
+ * tests that render a page without `AuthProvider`; production never mounts it.
  */
 import React, { createContext, useContext } from "react";
+import { usePermission } from "@/lib/auth-context";
+import { PERMISSIONS, hasPermission, type Permission, type Role } from "@/lib/permissions";
 
-export type Permission =
-  | "dashboard:read"
-  | "documents:write"
-  | "feedback:triage"
-  | "feedback:export"
-  | "eval:run"
-  | "testip:write"
-  | "usage:export"
-  | "users:manage"
-  | "audit:auth:read"
-  | "branding:write"
-  | "taxonomy:write";
+export { PERMISSIONS };
+export type { Permission, Role };
+
+const OPERATOR: readonly Permission[] = ["dashboard:read"];
+const ADMIN: readonly Permission[] = [
+  ...OPERATOR,
+  "documents:write",
+  "feedback:triage",
+  "feedback:export",
+  "eval:run",
+  "testip:write",
+  "usage:export",
+];
+const SUPERADMIN: readonly Permission[] = [...ADMIN, "users:manage", "audit:auth:read", "branding:write", "taxonomy:write"];
 
 /** Role table mirrored from the backend (newplan §7.3). */
-export const ROLE_PERMISSIONS: Record<"operator" | "admin" | "superadmin", readonly Permission[]> = {
-  operator: ["dashboard:read"],
-  admin: ["dashboard:read", "documents:write", "feedback:triage", "feedback:export", "eval:run", "testip:write", "usage:export"],
-  superadmin: [
-    "dashboard:read",
-    "documents:write",
-    "feedback:triage",
-    "feedback:export",
-    "eval:run",
-    "testip:write",
-    "usage:export",
-    "users:manage",
-    "audit:auth:read",
-    "branding:write",
-    "taxonomy:write",
-  ],
+export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
+  operator: OPERATOR,
+  admin: ADMIN,
+  superadmin: SUPERADMIN,
 };
+
+interface MaybeAuthorizedUser {
+  role?: string | null;
+  permissions?: readonly string[] | null;
+}
+
+/** Pure check for non-hook callers: explicit `permissions` win, else the role table. */
+export function userCan(account: object | null | undefined, permission: Permission): boolean {
+  if (!account) return false;
+  const user = account as MaybeAuthorizedUser;
+  if (Array.isArray(user.permissions)) return user.permissions.includes(permission);
+  if (user.role === undefined) return true; // legacy guest identity (tests only)
+  if (user.role === null) return false;
+  return ROLE_PERMISSIONS[user.role as Role]?.includes(permission) ?? false;
+}
 
 const PermissionsContext = createContext<readonly Permission[] | null>(null);
 
+/** Test-only override of the signed-in user's permissions. */
 export function PermissionsProvider({
   permissions,
   children,
@@ -54,8 +63,10 @@ export function PermissionsProvider({
   return <PermissionsContext.Provider value={permissions}>{children}</PermissionsContext.Provider>;
 }
 
-/** True when the current user holds `permission`. */
-export function useCan(permission: Permission): boolean {
-  const granted = useContext(PermissionsContext);
-  return granted === null ? true : granted.includes(permission);
+/** True when the signed-in user holds `permission` (delegates to `usePermission`). */
+export function useCan(permission: Permission | undefined): boolean {
+  const override = useContext(PermissionsContext);
+  const granted = usePermission(permission ?? "dashboard:read");
+  if (!permission) return true;
+  return override === null ? granted : hasPermission(override, permission);
 }

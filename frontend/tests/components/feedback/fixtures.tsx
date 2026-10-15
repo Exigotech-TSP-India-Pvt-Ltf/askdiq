@@ -6,7 +6,8 @@ import React from "react";
 import { vi } from "vitest";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { ToastProvider } from "@/components/ui/ToastProvider";
-import { PermissionsProvider, ROLE_PERMISSIONS } from "@/lib/use-can";
+import { AuthProvider } from "@/lib/auth-context";
+import { makeMe } from "../../helpers/auth";
 import type { FeedbackAnalytics, FeedbackItem, GoldenCase } from "@/lib/feedback-api";
 
 // ---------------------------------------------------------------------------
@@ -200,10 +201,10 @@ export type Role = "operator" | "admin" | "superadmin";
 
 export function Providers({ role = "admin", children }: { role?: Role; children: React.ReactNode }) {
   return (
-    <MotionProvider>
-      <ToastProvider>
-        <PermissionsProvider permissions={ROLE_PERMISSIONS[role]}>{children}</PermissionsProvider>
-      </ToastProvider>
-    </MotionProvider>
+    <AuthProvider key={role} initialMe={makeMe(role)}>
+      <MotionProvider>
+        <ToastProvider>{children}</ToastProvider>
+      </MotionProvider>
+    </AuthProvider>
   );
 }

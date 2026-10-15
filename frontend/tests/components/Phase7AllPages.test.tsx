@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({ token: "mock-token", user: { id: "admin-1", role: "admin" }, loading: false }),
+  usePermission: () => true,
 }));
 
 vi.mock("next/navigation", () => ({

@@ -29,6 +29,8 @@ vi.mock("@/lib/auth-context", () => ({
     isLoading: false,
     logout: vi.fn(),
   }),
+  // PermissionsProvider below overrides the real check in these tests.
+  usePermission: () => false,
 }));
 
 beforeEach(() => {
