@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 
+from app.branding.service import BRANDING_CACHE_ID, invalidate_branding_cache
 from app.core.cache import aggregation_cache
 from app.core.config import get_settings
 from app.core.events import TOPIC_CACHE_INVALIDATE, Event, EventBus, get_event_bus
@@ -24,6 +25,9 @@ AUDIENCE_CACHE_ID = "audience"
 def _invalidate_local_caches(event: Event) -> None:
     if event.id == AUDIENCE_CACHE_ID:
         invalidate_audience_cache()
+        return
+    if event.id == BRANDING_CACHE_ID:
+        invalidate_branding_cache()
         return
     aggregation_cache.invalidate_prefix(event.id)
 

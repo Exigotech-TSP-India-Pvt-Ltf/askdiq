@@ -51,6 +51,8 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/admin/insights/taxonomy/{kind}/{code}/archive"): (
         Permission.TAXONOMY_WRITE
     ),
+    ("PUT", "/admin/branding"): Permission.BRANDING_WRITE,
+    ("POST", "/admin/branding/assets"): Permission.BRANDING_WRITE,
     ("POST", "/query"): CHAT,
     ("POST", "/sessions"): CHAT,
     ("PATCH", "/sessions/{session_id}"): CHAT,
@@ -136,12 +138,16 @@ def test_public_allow_list_matches_reality() -> None:
             assert requirement(route) is None
 
 
-def test_mock_idp_is_the_only_public_prefix_present_in_development() -> None:
+def test_public_prefixes_present_are_assets_and_dev_mock_idp() -> None:
     prefixes = {
         p for r in api_routes() for p in PUBLIC_PREFIXES if r.path.startswith(p)
     }
-    assert prefixes <= {"/mock-idp/"}
+    assert prefixes <= {"/branding/assets/", "/mock-idp/"}
+    assert "/branding/assets/" in prefixes
     assert ("/mock-idp/" in prefixes) is get_settings().auth_dev_mock
+    # The only public asset route is the read-only GET.
+    asset_routes = [r for r in api_routes() if r.path.startswith("/branding/assets/")]
+    assert [sorted(r.methods) for r in asset_routes] == [["GET"]]
 
 
 def test_write_routes_require_admin_level_permissions() -> None:
