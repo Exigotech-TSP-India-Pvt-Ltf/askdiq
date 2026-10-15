@@ -260,6 +260,9 @@ async def add_or_update_test_ip(
         )
     ).scalar_one_or_none()
 
+    previous: dict | None = (
+        {"description": row.description, "is_active": row.is_active} if row else None
+    )
     if not row:
         count = (
             await db.execute(select(func.count()).select_from(TestIpConfig))
@@ -286,8 +289,13 @@ async def add_or_update_test_ip(
         db,
         request_id=request_id or "admin-test-ip-action",
         actor=actor,
-        action="test_ip_added",
-        detail={"ip_address": clean_ip, "description": description},
+        action="test_ip_updated" if previous else "test_ip_added",
+        detail={
+            "ip_address": clean_ip,
+            "description": description,
+            "is_active": is_active,
+            **({"previous": previous} if previous else {}),
+        },
         ip_address=client_ip,
         commit=False,
     )

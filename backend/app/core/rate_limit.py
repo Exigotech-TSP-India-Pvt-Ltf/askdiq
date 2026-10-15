@@ -26,6 +26,7 @@ from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
 from app.core.state import MemoryState, get_state_backend, sub_window_seconds
+from app.governance.audit import emit_audit_event
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -91,6 +92,16 @@ def _reject(key: str, limit: int, label: str, retry_after: int, count: int) -> N
         label=label,
         retry_after_s=retry_after,
         window_count=count,
+    )
+    emit_audit_event(
+        "rate_limited",
+        {
+            "scope": label,
+            "limit": limit,
+            "retry_after_s": retry_after,
+            "status_code": status.HTTP_429_TOO_MANY_REQUESTS,
+        },
+        actor=key if label.endswith("per user") else None,
     )
     raise HTTPException(
         status.HTTP_429_TOO_MANY_REQUESTS,

@@ -23,7 +23,11 @@ from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.core.logging_config import get_logger
 from app.feedback import repository as feedback_repo
-from app.governance.audit import record_audit_event
+from app.governance.audit import (
+    current_request_id,
+    emit_audit_event,
+    record_audit_event,
+)
 from app.governance.costing import compute_exchange_cost
 from app.governance.outcomes import derive_outcome
 from app.governance.pii import redact_pii
@@ -117,17 +121,20 @@ async def resolve_session_for_query(
     """
     now = datetime.utcnow()
     session: ChatSession | None = None
+    rotated_from: str | None = None
+    rotate_reason: str | None = None
 
     await drain_pending_writes(user_email)
 
     if session_id:
         sid = _parse_uuid(session_id)
         candidate = await db.get(ChatSession, sid) if sid else None
-        if (
-            candidate is not None
-            and candidate.user_email == user_email
-            and not _is_expired(candidate, now)
-        ):
+        if candidate is None or candidate.user_email != user_email:
+            rotated_from, rotate_reason = session_id[:64], "not_found"
+        elif _is_expired(candidate, now):
+            rotated_from, rotate_reason = str(candidate.id), "expired"
+            _emit_session_expired(candidate, user_email, client_ip)
+        else:
             session = candidate
     else:
         result = await db.execute(
@@ -142,12 +149,15 @@ async def resolve_session_for_query(
         candidate = result.scalar_one_or_none()
         if candidate is not None and not _is_expired(candidate, now):
             session = candidate
+        elif candidate is not None:
+            rotated_from, rotate_reason = str(candidate.id), "expired"
+            _emit_session_expired(candidate, user_email, client_ip)
 
     if session is not None:
         return session
 
     # Persisted later by schedule_exchange_write, so the id is assigned here.
-    return ChatSession(
+    session = ChatSession(
         id=uuid.uuid4(),
         user_email=user_email,
         title="New chat",
@@ -155,6 +165,32 @@ async def resolve_session_for_query(
         last_activity_at=now,
         expires_at=now + _session_timeout(),
         created_ip=client_ip,
+    )
+    if rotate_reason:
+        emit_audit_event(
+            "session_rotated",
+            {
+                "from_session_id": rotated_from,
+                "to_session_id": str(session.id),
+                "reason": rotate_reason,
+            },
+            actor=user_email,
+            ip_address=client_ip,
+        )
+    return session
+
+
+def _emit_session_expired(
+    session: ChatSession, user_email: str, client_ip: str | None
+) -> None:
+    emit_audit_event(
+        "session_expired",
+        {
+            "session_id": str(session.id),
+            "expired_at": session.expires_at.isoformat() + "Z",
+        },
+        actor=user_email,
+        ip_address=client_ip,
     )
 
 
@@ -300,6 +336,15 @@ async def _write_exchange(
             if new_session is not None:
                 db.add(new_session)
                 session = new_session
+                await record_audit_event(
+                    db,
+                    request_id=request_id,
+                    actor=user_email,
+                    action="session_created",
+                    detail={"session_id": str(new_session.id), "source": "query"},
+                    ip_address=client_ip,
+                    commit=False,
+                )
             else:
                 session = await db.get(ChatSession, session_id)
                 if session is None:
@@ -417,6 +462,16 @@ async def create_session(
         created_ip=client_ip,
     )
     db.add(session)
+    await db.flush()
+    await record_audit_event(
+        db,
+        request_id=current_request_id(),
+        actor=user_email,
+        action="session_created",
+        detail={"session_id": str(session.id), "source": "explicit"},
+        ip_address=client_ip,
+        commit=False,
+    )
     await db.commit()
     await db.refresh(session)
     return _to_summary(session, 0, now)

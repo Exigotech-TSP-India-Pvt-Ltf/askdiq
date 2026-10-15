@@ -12,6 +12,7 @@ from app.core.circuit import CircuitOpenError
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.evaluation.quality import injection_in_chunks
+from app.governance.audit import emit_audit_event
 from app.guardrails.conversational import detect_conversational_intent
 from app.guardrails.post_checks import run_post_checks
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
@@ -312,7 +313,19 @@ async def run_query(
     tot_reasoning = 0
     tot_cached = 0
 
-    for attempt in range(settings.max_llm_retries + 1):
+    max_attempts = settings.max_llm_retries + 1
+    retry_reason = ""
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            emit_audit_event(
+                "llm_retry",
+                {
+                    "attempt": attempt + 1,
+                    "max_attempts": max_attempts,
+                    "reason": retry_reason,
+                },
+                request_id=request_id,
+            )
         try:
             attempt_answer, usage = await call_llm(
                 query,
@@ -329,6 +342,7 @@ async def run_query(
         except Exception as exc:
             last_error = exc
             answer = ""
+            retry_reason = "llm_call_failed"
 
             logger.error(
                 "llm_call_failed request_id=%s attempt=%d error_type=%s error=%s",
@@ -337,12 +351,25 @@ async def run_query(
                 type(exc).__name__,
                 exc,
             )
+            emit_audit_event(
+                "llm_call_failed",
+                {
+                    "attempt": attempt + 1,
+                    "max_attempts": max_attempts,
+                    "error_type": type(exc).__name__,
+                    "status_code": getattr(exc, "status_code", None),
+                    "will_retry": attempt + 1 < max_attempts
+                    and not isinstance(exc, CircuitOpenError),
+                },
+                request_id=request_id,
+            )
             if isinstance(exc, CircuitOpenError):
                 # Breaker is open: retrying now would fail fast again.
                 break
             continue
 
         if not answer.strip():
+            retry_reason = "empty_llm_output"
             continue
 
         t_post = time.perf_counter()

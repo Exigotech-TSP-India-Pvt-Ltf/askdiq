@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.security_headers import apply_security_headers, build_security_headers
+from app.governance.audit import record_server_error
 from app.governance.pii import redact_pii
 
 logger = get_logger(__name__)
@@ -154,6 +155,9 @@ async def unhandled_exception_handler(
         error=_mask(str(exc)),
         traceback=_mask("".join(traceback.format_exception(exc))),
     )
+    # Unhandled exceptions bypass LatencyMiddleware's 5xx-response hook,
+    # so this is the single place they are audited.
+    record_server_error(request_id, request.url.path, 500, type(exc).__name__)
     response = problem_response(
         request, 500, INTERNAL_DETAIL, problem_type=INTERNAL_TYPE
     )

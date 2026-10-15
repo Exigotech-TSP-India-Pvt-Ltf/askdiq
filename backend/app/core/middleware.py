@@ -21,6 +21,7 @@ from app.core.logging_config import (
 )
 from app.core.request_meta import get_client_ip
 from app.core.tasks import spawn
+from app.governance.audit import record_server_error
 from app.governance.pii import redact_pii
 from app.models.db_models import LatencyRecord
 from app.retrieval.embeddings import embedding_timing_sink
@@ -84,6 +85,7 @@ class LatencyMiddleware(BaseHTTPMiddleware):
             request.state.stage_timings["reranker"] = sum(rerank_sink)
         if response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
             METRICS["errors"] += 1
+            record_server_error(request_id, request.url.path, response.status_code)
 
         total_ms = (time.perf_counter() - start) * 1000
 

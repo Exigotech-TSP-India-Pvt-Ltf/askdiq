@@ -27,6 +27,17 @@ from app.governance.audience import (
     get_classified_ips,
 )
 from app.governance.costing import compute_exchange_cost
+from app.governance.log_summary import LEVEL_BY_ACTION, service_for, summarize
+from app.governance.monitoring import (
+    LATENCY_UNIT,
+    QUERY_ACTION,
+    count_traces,
+    derive_trace_status,
+    labelled,
+    persisted_error_counts,
+    scoped_latency_query,
+    stage_latency_summary,
+)
 from app.governance.online_eval import quality_tracker
 from app.governance.test_ips import (
     add_or_update_test_ip,
@@ -499,28 +510,41 @@ def _pctl(values: list[float], q: float) -> float | None:
     return ordered[min(len(ordered) - 1, int(round(q * (len(ordered) - 1))))]  # noqa: RUF046
 
 
-@router.get("/governance/monitoring")
+_MONITORING_DESCRIPTION = (
+    "Rolling 24h snapshot for the Governance Monitoring and Overall tabs.\n\n"
+    '- Every latency is in **milliseconds** (`latency_unit: "ms"`).\n'
+    "- `stage_latency.<stage>` gives `avg_ms` plus `sample_count`; a stage with "
+    "no samples is `null` (never 0). The flat `*_latency_ms` fields mirror it.\n"
+    "- `total_latency_ms` is the canonical end-to-end turn latency (same value as "
+    "`avg_latency_ms`); use it instead of `llm_latency_ms` for overall latency.\n"
+    "- `error_rate` (percent) is derived from persisted rows (`llm_failed` turns "
+    "plus `server_error` audit rows), audience-scoped; `error_counts` has the "
+    "inputs. It no longer uses in-memory counters.\n"
+    "- `counts` labels every count with its `window` and `source`.\n"
+    "- `traces_total` is the true number of traces for the audience."
+)
+
+
+@router.get(
+    "/governance/monitoring",
+    summary="Governance monitoring snapshot",
+    description=_MONITORING_DESCRIPTION,
+)
 async def governance_monitoring(
     audience: str = Query("overview"),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    since = datetime.utcnow() - timedelta(hours=24)
-    q_records = select(LatencyRecord).where(LatencyRecord.created_at >= since)
-    if audience != "overview":
-        aud_filter = await build_audience_filter(db, AuditLog.ip_address, audience)
-        if aud_filter is not None:
-            q_records = (
-                select(LatencyRecord)
-                .join(AuditLog, LatencyRecord.request_id == AuditLog.request_id)
-                .where(LatencyRecord.created_at >= since, aud_filter)
-            )
+    window_hours = 24
+    window = f"{window_hours}h"
+    since = datetime.utcnow() - timedelta(hours=window_hours)
+    q_records = await scoped_latency_query(
+        db, audience, select(LatencyRecord).where(LatencyRecord.created_at >= since)
+    )
     records = (await db.execute(q_records)).scalars().all()
     totals = [r.total_ms for r in records]
-
-    def avg(field: str) -> float | None:
-        vals = [getattr(r, field) for r in records if getattr(r, field) is not None]
-        return sum(vals) / len(vals) if vals else None
+    stages = stage_latency_summary(records)
+    avg_total_ms = sum(totals) / len(totals) if totals else None
 
     aud_sess = await build_audience_filter(db, ChatSession.created_ip, audience)
     q_active = select(func.count(func.distinct(ChatSession.created_ip))).where(
@@ -529,7 +553,9 @@ async def governance_monitoring(
     )
     if aud_sess is not None:
         q_active = q_active.where(aud_sess)
-    active_users = await db.scalar(q_active)
+    active_users = (await db.scalar(q_active)) or 0
+    errors = await persisted_error_counts(db, audience, since)
+    traces_total = await count_traces(db, audience)
 
     cpu = ram_mb = ram_pct = None
     try:
@@ -547,26 +573,45 @@ async def governance_monitoring(
     except Exception:
         logger.debug("psutil_metrics_unavailable", exc_info=True)
 
-    requests_total = len(records) if audience != "overview" else METRICS["requests"]
+    process_counter = audience == "overview"
+    requests_total = METRICS["requests"] if process_counter else len(records)
 
     quota_data = quota_monitor.get_summary()
     online_kpis = quality_tracker.get_kpis()
+    error_source = "chat_messages.outcome+audit_log.server_error"
 
     return {
-        "window_hours": 24,
+        "window_hours": window_hours,
+        "latency_unit": LATENCY_UNIT,
         "api_requests": requests_total,
         "queries_24h": len(records),
-        "active_users": active_users or 0,
+        "active_users": active_users,
         "active_queries": METRICS["active_queries"],
-        "avg_latency_ms": sum(totals) / len(totals) if totals else None,
+        "avg_latency_ms": avg_total_ms,
+        "total_latency_ms": avg_total_ms,
         "p95_latency_ms": _pctl(totals, 0.95),
-        "error_rate": (METRICS["errors"] * 100 / requests_total)
-        if requests_total
-        else 0.0,
-        "embedding_latency_ms": avg("embedding_ms"),
-        "retrieval_latency_ms": avg("retrieval_ms"),
-        "llm_latency_ms": avg("llm_ms"),
-        "reranker_latency_ms": avg("reranker_ms"),
+        "error_rate": errors["error_rate"],
+        "error_counts": {**errors, "window": window, "source": error_source},
+        "traces_total": traces_total,
+        "embedding_latency_ms": stages["embedding"]["avg_ms"],
+        "retrieval_latency_ms": stages["retrieval"]["avg_ms"],
+        "llm_latency_ms": stages["llm"]["avg_ms"],
+        "reranker_latency_ms": stages["reranker"]["avg_ms"],
+        "stage_latency": stages,
+        "counts": {
+            "api_requests": labelled(
+                requests_total,
+                "since_process_start" if process_counter else window,
+                "in_memory_counter" if process_counter else "latency_metrics",
+            ),
+            "queries_24h": labelled(len(records), window, "latency_metrics"),
+            "active_users": labelled(active_users, window, "chat_sessions"),
+            "active_queries": labelled(
+                METRICS["active_queries"], "now", "in_memory_counter"
+            ),
+            "errors": labelled(errors["errors"], window, error_source),
+            "traces_total": labelled(traces_total, "all_time", "latency_metrics"),
+        },
         "process_cpu_percent": cpu,
         "process_ram_mb": ram_mb,
         "process_ram_percent": ram_pct,
@@ -575,35 +620,48 @@ async def governance_monitoring(
     }
 
 
-@router.get("/governance/traces")
+_TRACES_DESCRIPTION = (
+    "Most recent `/query` traces (newest first, at most `limit`, capped at 500) "
+    "as a JSON array. The true number of traces for the audience is returned "
+    "in the `X-Total-Count` header (and as `traces_total` on "
+    "`/governance/monitoring`).\n\n"
+    "`status` is derived from the turn's persisted `outcome` and "
+    "`guardrail_flags`: `ok`, `ungrounded`, `blocked`, `failed`, or `unknown` "
+    "when no turn was persisted. `total_ms` is milliseconds.\n\n"
+    "**Deprecated / removed:** `trace_id` is no longer returned. It always "
+    "equalled `request_id`; use `request_id`."
+)
+
+
+@router.get(
+    "/governance/traces",
+    summary="Recent pipeline traces",
+    description=_TRACES_DESCRIPTION,
+)
 async def governance_traces(
-    limit: int = 100,
+    response: Response,
+    limit: int = Query(100, ge=1),
     audience: str = Query("overview"),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    q_records = (
-        select(LatencyRecord)
-        .order_by(LatencyRecord.created_at.desc())
-        .limit(min(limit, 500))
+    q_records = await scoped_latency_query(db, audience, select(LatencyRecord))
+    q_records = q_records.order_by(LatencyRecord.created_at.desc()).limit(
+        min(limit, 500)
     )
-    if audience != "overview":
-        aud_filter = await build_audience_filter(db, AuditLog.ip_address, audience)
-        if aud_filter is not None:
-            q_records = (
-                select(LatencyRecord)
-                .join(AuditLog, LatencyRecord.request_id == AuditLog.request_id)
-                .where(aud_filter)
-                .order_by(LatencyRecord.created_at.desc())
-                .limit(min(limit, 500))
-            )
     records = (await db.execute(q_records)).scalars().all()
+    response.headers["X-Total-Count"] = str(await count_traces(db, audience))
     ids = [r.request_id for r in records]
     audits = (
         {
             a.request_id: a
             for a in (
-                await db.execute(select(AuditLog).where(AuditLog.request_id.in_(ids)))
+                await db.execute(
+                    select(AuditLog).where(
+                        AuditLog.request_id.in_(ids),
+                        AuditLog.action == QUERY_ACTION,
+                    )
+                )
             )
             .scalars()
             .all()
@@ -611,36 +669,47 @@ async def governance_traces(
         if ids
         else {}
     )
-    convos = (
-        dict(
-            (
+    turns = (
+        {
+            row.request_id: row
+            for row in (
                 await db.execute(
                     select(
-                        ChatMessageRecord.request_id, ChatMessageRecord.session_id
-                    ).where(ChatMessageRecord.request_id.in_(ids))
+                        ChatMessageRecord.request_id,
+                        ChatMessageRecord.session_id,
+                        ChatMessageRecord.outcome,
+                        ChatMessageRecord.guardrail_flags,
+                    ).where(
+                        ChatMessageRecord.request_id.in_(ids),
+                        ChatMessageRecord.role == "assistant",
+                    )
                 )
             ).all()
-        )
+        }
         if ids
         else {}
     )
-    return [
-        {
-            "request_id": r.request_id,
-            "trace_id": r.request_id,
-            "user_id": audits[r.request_id].actor if r.request_id in audits else None,
-            "conversation_id": str(convos[r.request_id])
-            if r.request_id in convos
-            else None,
-            "ip_address": audits[r.request_id].ip_address
-            if r.request_id in audits
-            else None,
-            "timestamp": r.created_at.isoformat() + "Z",
-            "status": "ok",
-            "total_ms": r.total_ms,
-        }
-        for r in records
-    ]
+    items = []
+    for r in records:
+        audit = audits.get(r.request_id)
+        turn = turns.get(r.request_id)
+        items.append(
+            {
+                "request_id": r.request_id,
+                "user_id": audit.actor if audit else None,
+                "conversation_id": str(turn.session_id) if turn else None,
+                "ip_address": audit.ip_address if audit else None,
+                "timestamp": r.created_at.isoformat() + "Z",
+                "status": derive_trace_status(
+                    turn.outcome if turn else None,
+                    turn.guardrail_flags if turn else None,
+                ),
+                "outcome": turn.outcome if turn else None,
+                "guardrail_flags": (turn.guardrail_flags or []) if turn else [],
+                "total_ms": r.total_ms,
+            }
+        )
+    return items
 
 
 # Guardrail flag -> log severity, from most to least severe. Anything not
@@ -670,11 +739,11 @@ _WARNING_FLAGS = {
 }
 
 
-def _log_level_for(detail: dict | None) -> str:
-    """Map a /query audit event's guardrail flags (and groundedness) to a
-    log severity, so the Governance Logs page can filter by
-    Critical/Alert/Error/Warning/Info instead of everything showing as the
-    same level.
+def _log_level_for(detail: dict | None, action: str | None = None) -> str:
+    """Map an audit event to a log severity, so the Governance Logs page can
+    filter by Critical/Alert/Error/Warning/Info instead of everything showing
+    as the same level. Flag-carrying events (query, online_eval) use their
+    guardrail flags; other actions use ``LEVEL_BY_ACTION``.
     """
     flags = set((detail or {}).get("guardrail_flags") or [])
     if flags & _CRITICAL_FLAGS:
@@ -687,12 +756,31 @@ def _log_level_for(detail: dict | None) -> str:
         return "WARNING"
     if (detail or {}).get("grounded") is False:
         return "WARNING"
+    if action in LEVEL_BY_ACTION:
+        return LEVEL_BY_ACTION[action]
     return "INFO"
 
 
-@router.get("/governance/logs")
+_LOGS_DESCRIPTION = (
+    "Audit-log entries, newest first (at most `limit`, capped at 2000); "
+    "`total` is the count for the audience.\n\n"
+    "- `summary`: one-line, human-readable message per action.\n"
+    "- `service`: category of the action (`auth`, `query`, `ingest`, "
+    "`feedback`, `admin`, `system`); the raw action is in `action`.\n"
+    "- `detail`: the event detail as a JSON object.\n"
+    "- `message` (**deprecated**): the legacy JSON-string form of `detail`, "
+    "truncated to 300 chars; use `summary` / `detail`.\n\n"
+    "**Removed:** `trace_id` (it always equalled `request_id`)."
+)
+
+
+@router.get(
+    "/governance/logs",
+    summary="Governance audit-log entries",
+    description=_LOGS_DESCRIPTION,
+)
 async def governance_logs(
-    limit: int = 200,
+    limit: int = Query(200, ge=1),
     audience: str = Query("overview"),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
@@ -707,22 +795,25 @@ async def governance_logs(
         q_rows = q_rows.where(aud_log)
     total = await db.scalar(q_total)
     rows = (await db.execute(q_rows)).scalars().all()
-    return {
-        "total": total or 0,
-        "items": [
+    items = []
+    for a in rows:
+        action = str(getattr(a.action, "value", a.action))
+        detail = a.detail if isinstance(a.detail, dict) else {}
+        items.append(
             {
                 "created_at": a.created_at.isoformat() + "Z",
-                "level": _log_level_for(a.detail),
-                "service": str(getattr(a.action, "value", a.action)),
-                "message": json.dumps(a.detail, default=str)[:300] if a.detail else "",
+                "level": _log_level_for(detail, action),
+                "service": service_for(action),
+                "action": action,
+                "summary": summarize(action, detail),
+                "detail": detail,
+                "message": json.dumps(detail, default=str)[:300] if detail else "",
                 "user_id": a.actor,
                 "ip_address": a.ip_address,
                 "request_id": a.request_id,
-                "trace_id": a.request_id,
             }
-            for a in rows
-        ],
-    }
+        )
+    return {"total": total or 0, "items": items}
 
 
 # ============================================================================
@@ -1686,7 +1777,11 @@ async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
             q_lat = (
                 select(func.avg(LatencyRecord.total_ms))
                 .select_from(LatencyRecord)
-                .join(AuditLog, LatencyRecord.request_id == AuditLog.request_id)
+                .join(
+                    AuditLog,
+                    (LatencyRecord.request_id == AuditLog.request_id)
+                    & (AuditLog.action == QUERY_ACTION),
+                )
                 .where(aud_filter)
             )
     avg_latency = await db.scalar(q_lat)
@@ -1752,7 +1847,11 @@ async def _latency_breakdown(
         if aud_filter is not None:
             q = (
                 select(LatencyRecord)
-                .join(AuditLog, LatencyRecord.request_id == AuditLog.request_id)
+                .join(
+                    AuditLog,
+                    (LatencyRecord.request_id == AuditLog.request_id)
+                    & (AuditLog.action == QUERY_ACTION),
+                )
                 .where(LatencyRecord.created_at >= since, aud_filter)
             )
     rows = (await db.execute(q)).scalars().all()

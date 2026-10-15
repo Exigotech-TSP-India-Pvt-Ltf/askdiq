@@ -53,12 +53,19 @@ function OverallSummary() {
   useEffect(() => {
     if (!token) return;
     const qs = audience && audience !== "overview" ? `?audience=${audience}` : "";
-    api.adminGet<any>(token, `/governance/monitoring${qs}`).then(setMonitoring).catch(() => {});
+    api
+      .adminGet<any>(token, `/governance/monitoring${qs}`)
+      .then((m) => {
+        setMonitoring(m);
+        // True total over the audience, not the length of the capped list (G4).
+        if (typeof m?.traces_total === "number") setTraceCount(m.traces_total);
+      })
+      .catch(() => {});
     api
       .adminGet<any[]>(token, `/governance/traces${qs}`)
       .then((traces) => {
-        setTraceCount(traces.length);
-        setTraceErrors(traces.filter((t) => (t.status || "ok").toLowerCase() !== "ok").length);
+        setTraceCount((prev) => prev ?? traces.length);
+        setTraceErrors(traces.filter((t) => (t.status || "ok").toLowerCase() === "failed").length);
       })
       .catch(() => {});
     api
@@ -82,8 +89,12 @@ function OverallSummary() {
       <InfoRow
         icon={Gauge}
         label="Latency"
-        detail="LLM response time, end to end"
-        value={monitoring?.llm_latency_ms != null ? formatLatencyMs(monitoring.llm_latency_ms) : "Loading…"}
+        detail="Average turn latency, end to end (24h)"
+        value={
+          monitoring
+            ? formatLatencyMs(monitoring.total_latency_ms ?? monitoring.avg_latency_ms)
+            : "Loading…"
+        }
       />
       <InfoRow
         icon={FileSearch}
