@@ -1,6 +1,6 @@
 """feedback triage columns, eval_promoted_cases, import promoted JSON
 
-Revision ID: b0c1d2e3f4a5
+Revision ID: 5712ebd9d3c9
 Revises: a9b0c1d2e3f4
 Create Date: 2026-10-15 15:00:00.000000
 
@@ -18,7 +18,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "b0c1d2e3f4a5"
+revision: str = "5712ebd9d3c9"
 down_revision: str | None = "a9b0c1d2e3f4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

@@ -54,7 +54,7 @@ MIGRATION = (
     BACKEND_DIR
     / "alembic"
     / "versions"
-    / "b0c1d2e3f4a5_add_feedback_triage_and_promoted_cases.py"
+    / "5712ebd9d3c9_add_feedback_triage_and_promoted_cases.py"
 )
 
 
