@@ -227,10 +227,14 @@ async def test_60_concurrent_requests_all_succeed_within_3s(conc_env):
 
 
 async def test_concurrent_mix_never_blocks_the_event_loop(conc_env):
-    # Warm up outside the detector, then run a concurrent mix with asyncio
-    # debug mode watching for callbacks that block the loop for > 50 ms.
+    # Warm up every request type outside the detector (first-use costs such
+    # as statement compilation are not loop blocking) and let the warm-up's
+    # background writes finish, then run a concurrent mix while the
+    # detector watches for callbacks that block the loop for > 50 ms.
     assert (await _dashboard(conc_env)).status_code == 200
     assert (await _query(conc_env, 0)).status_code == 200
+    assert (await _feedback(conc_env, FEEDBACK_COUNT - 1)).status_code == 200
+    await _drain_background_writes()
 
     async with LoopBlockingDetector():
         responses = await asyncio.gather(
