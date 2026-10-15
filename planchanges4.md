@@ -1554,29 +1554,29 @@ Build the interactive human-feedback loop in newplan §5.4.
 - [ ] **[Test]** Phase F5 complete.
 
 #### Task F5.1: Chat feedback capture
-- [ ] **[Dev]** A thumbs-down pops in the reason chips (`pop` preset) and an optional "what should it have said?" box (with a character counter). Thumbs-up stays one click. An optimistic update shows a toast.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Tags are submitted. A resubmission updates the existing feedback.
+- [x] **[Dev]** A thumbs-down pops in the reason chips (`pop` preset) and an optional "what should it have said?" box (with a character counter). Thumbs-up stays one click. An optimistic update shows a toast.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Tags are submitted. A resubmission updates the existing feedback.
 
 #### Task F5.2: Overview tab
-- [ ] **[Dev]** KPIs (the unfiltered total), a satisfaction trend, rating distribution, outcome breakdown, reasons bar, triage `Funnel` and disagreement `QuadrantScatter`, plus the spike alert. **Every mark filters the queue**, and the active filters show as removable chips synced to the URL.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A click on each chart type sets the right filter chip.
+- [x] **[Dev]** KPIs (the unfiltered total), a satisfaction trend, rating distribution, outcome breakdown, reasons bar, triage `Funnel` and disagreement `QuadrantScatter`, plus the spike alert. **Every mark filters the queue**, and the active filters show as removable chips synced to the URL.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A click on each chart type sets the right filter chip.
 
 #### Task F5.3: Review Queue (triage workspace)
-- [ ] **[Dev]** Keyboard shortcuts `j`, `k`, `p`, `d`, `r` and `Enter`. Multi-select with bulk actions. The drawer shows the full exchange, labels, and "Write the correct answer". Optimistic updates with undo. Promoted rows animate out. Permission-gated (operators read-only). Next page prefetched while idle.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The keyboard flow works. A 409 conflict toast appears. An operator has no action controls.
+- [x] **[Dev]** Keyboard shortcuts `j`, `k`, `p`, `d`, `r` and `Enter`. Multi-select with bulk actions. The drawer shows the full exchange, labels, and "Write the correct answer". Optimistic updates with undo. Promoted rows animate out. Permission-gated (operators read-only). Next page prefetched while idle.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The keyboard flow works. A 409 conflict toast appears. An operator has no action controls.
 
 #### Task F5.4: Golden Cases, Preference Data and Knowledge Gaps tabs
-- [ ] **[Dev]** Golden Cases: last eval result, and "Run now" with a job progress chip. Preference Data: a preview, incomplete pairs flagged, and a JSONL download. Knowledge Gaps: ranked topics with "Open document" and "Add document".
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The job chip polls until done. The download triggers.
+- [x] **[Dev]** Golden Cases: last eval result, and "Run now" with a job progress chip. Preference Data: a preview, incomplete pairs flagged, and a JSONL download. Knowledge Gaps: ranked topics with "Open document" and "Add document".
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The job chip polls until done. The download triggers.
 
 #### Task F5.5: Phase F5 integration testing
-- [ ] **[Dev]** `tests/journeys/feedback.test.tsx`: thumbs-down with reasons sends the right payload, then keyboard triage in the queue (`j`, `k`, `p`) calls the right endpoints, and the promoted row leaves the queue. The real data flow (chat, queue, promote, export) is already covered by the backend `test_feedback_integration.py`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/feedback.test.tsx`: thumbs-down with reasons sends the right payload, then keyboard triage in the queue (`j`, `k`, `p`) calls the right endpoints, and the promoted row leaves the queue. The real data flow (chat, queue, promote, export) is already covered by the backend `test_feedback_integration.py`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F5.6: PR
 - **PR-24** `feat/ui-feedback-triage-workspace`.
@@ -2084,7 +2084,8 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #32 | PR-17 | `feat/ui-global-ux-primitives` | #30 | Open, **all jobs green** (317 vitest tests) | EntityLink and useDeepLink, DrawerShell (both QueryInspectorDrawers consolidated), toasts with undo, a typed ConfirmDialog, state components, DateRangePicker (opt-in), Ctrl+K palette, `?` shortcuts sheet, table column and density preferences, cursor pagination, branded 404 and error pages, mobile off-canvas sidebar, profile menu and bell shells, nav pre-registration, layoutId pills. The route JS increase is at most 27 KB (budget 60). **Manual:** screenshots and a 390 px check. |
 | #33 | PR-25 | `feat/ui-analytics-insights` | #30 | Open, **all jobs green** (273 vitest tests) | Analytics page: a native port of the Insights HTML on the `/admin/insights` API, with URL-synced filters, cross-filtering, 6 KPIs, trend with setDay, radial hour-of-day, Sankey flow, treemap, donut, lollipop, bubbles, an expandable conversations table, a guide tour and a pending-classification state. Parity test on screen: 49 conversations, 106 questions, 48 % handled, 23 % served, 46 people, Served 11, Partly 14, Not 22. Two light-mode colours were swapped for AA contrast. **After merge:** set `enabled: true` on the Analytics nav item. **Manual:** side-by-side screenshots with the HTML. |
 | #35 | PR-19 | `feat/ui-user-management` | #32 | Open, **all 4 jobs green** (351 vitest tests) | KPI cards with sparklines, a funnel, a role donut and a histogram that drill into the Users tab. Users table and drawer with role change, suspend, revoke and invite (typed confirmation, optimistic updates, 409 toast, blocked self and last-superadmin changes). Access-request queue with bulk approve and `a`/`x` keys. Roles matrix and auth audit trail. **Note:** writes need PR-18's proxy header forwarding, and the temporary `useCan` shim is replaced by PR-18's `usePermission`. |
-| – | PR-18, PR-23, PR-24, PR-26 | (feature UIs) | #32 | In progress, parallel | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
+| #34 | PR-24 | `feat/ui-feedback-triage-workspace` | #32 | Open, **all 4 jobs green** (349 vitest tests) | Chat reason chips and a "what should it have said?" box. Workspace tabs: Overview (every chart mark filters the queue), Review Queue (j/k/x/r/d/p keys, bulk actions, drawer, optimistic updates with 409 handling, read-only for operators), Golden Cases with Run now, Preference Data export, Knowledge Gaps. **Backend follow-ups queued for #27:** `PATCH` should accept `corrected_answer`; add reason-tag and sentiment list filters; add a golden-run job status endpoint; widen the undo transitions. |
+| – | PR-18, PR-23, PR-26 | (feature UIs) | #32 | In progress, parallel | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
 | #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
 
 **Stack shape for review and merge: a dependency tree.** Each PR's base is the branch it depends on:
