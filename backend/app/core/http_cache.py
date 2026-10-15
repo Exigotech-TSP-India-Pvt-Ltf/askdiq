@@ -27,21 +27,28 @@ def _etag_matches(if_none_match: str | None, etag: str) -> bool:
 
 
 def cached_response(
-    request: Request, payload: Any, max_age: int | None = None
+    request: Request,
+    payload: Any,
+    max_age: int | None = None,
+    *,
+    public: bool = False,
 ) -> Response:
     """JSON response with a weak ETag; 304 when ``If-None-Match`` matches.
 
-    ``Cache-Control: private`` keeps per-user admin data out of shared caches.
+    ``Cache-Control: private`` (the default) keeps per-user admin data out of
+    shared caches; ``public=True`` is only for data that is the same for
+    every caller (for example ``GET /branding``).
     """
     if max_age is None:
         max_age = get_settings().http_cache_max_age_seconds
     response = JSONResponse(jsonable_encoder(payload))
     etag = weak_etag(bytes(response.body))
-    headers = {
-        "ETag": etag,
-        "Cache-Control": f"private, max-age={max_age}",
-        "Vary": "X-API-Key, X-Client-Id",
-    }
+    headers = {"ETag": etag}
+    if public:
+        headers["Cache-Control"] = f"public, max-age={max_age}"
+    else:
+        headers["Cache-Control"] = f"private, max-age={max_age}"
+        headers["Vary"] = "X-API-Key, X-Client-Id"
     if _etag_matches(request.headers.get("if-none-match"), etag):
         return Response(status_code=304, headers=headers)
     response.headers.update(headers)
