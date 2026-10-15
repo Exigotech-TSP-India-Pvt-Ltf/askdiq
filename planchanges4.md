@@ -728,32 +728,32 @@ Fix every backend cause in newplan §4.1, add the endpoints in §4.5, and add th
 - [ ] **[Test]** Phase B4 complete.
 
 #### Task B4.1: Data correctness fixes
-- [ ] **[Dev]** Task B4.1: fix G3 to G7, G9 and G11 at the source.
-- [ ] **[Lint]** Task B4.1: LINT-BE.
-- [ ] **[Test]** Task B4.1: `tests/test_governance_defects.py` has one regression test per defect id.
+- [x] **[Dev]** Task B4.1: fix G3 to G7, G9 and G11 at the source.
+- [x] **[Lint]** Task B4.1: LINT-BE.
+- [x] **[Test]** Task B4.1: `tests/test_governance_defects.py` has one regression test per defect id.
 
 ##### Subtask B4.1.1: Units and nulls (G1, G2, G3)
-- [ ] **[Dev]** All latencies are returned in **ms**, with an explicit `unit` field. A null stage average returns `null` plus `sample_count: 0` instead of 0. The Overall tab uses the same total-latency field as Monitoring.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Fixtures with known values give the exact ms. A stage with no data gives null.
+- [x] **[Dev]** All latencies are returned in **ms**, with an explicit `unit` field. A null stage average returns `null` plus `sample_count: 0` instead of 0. The Overall tab uses the same total-latency field as Monitoring.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Fixtures with known values give the exact ms. A stage with no data gives null.
 
 ##### Subtask B4.1.2: Totals, status and ids (G4, G5, G9)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Traces return the real `total` (count over the filter).
   - `status` is derived from `chat_messages.outcome` and `guardrail_flags` (ok, ungrounded, blocked, failed).
   - `trace_id` is dropped from the response (it is set to `request_id` today), with a deprecation note in OpenAPI.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** 150 fixture traces give total 150. Each outcome maps to the right status.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** 150 fixture traces give total 150. Each outcome maps to the right status.
 
 ##### Subtask B4.1.3: Persisted error rate and labelled windows (G6, G7)
-- [ ] **[Dev]** The error rate comes from the DB (`outcome = llm_failed` plus 5xx audit rows), is audience-scoped, and drops the in-memory `METRICS`. Every count in the response carries `window` and `source` fields.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The error rate survives an app restart (no in-memory dependency). Audience scoping is applied.
+- [x] **[Dev]** The error rate comes from the DB (`outcome = llm_failed` plus 5xx audit rows), is audience-scoped, and drops the in-memory `METRICS`. Every count in the response carries `window` and `source` fields.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The error rate survives an app restart (no in-memory dependency). Audience scoping is applied.
 
 ##### Subtask B4.1.4: Structured log messages (G11)
-- [ ] **[Dev]** A per-action `summarize(action, detail) -> str` registry. `service` is derived from an action category map (auth, query, ingest, feedback, admin, system). The raw `detail` is returned as an object, not a JSON string.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** One summary test per action. An unknown action falls back safely.
+- [x] **[Dev]** A per-action `summarize(action, detail) -> str` registry. `service` is derived from an action category map (auth, query, ingest, feedback, admin, system). The raw `detail` is returned as an object, not a JSON string.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** One summary test per action. An unknown action falls back safely.
 
 ---
 
@@ -801,19 +801,19 @@ Fix every backend cause in newplan §4.1, add the endpoints in §4.5, and add th
 ---
 
 #### Task B4.3: Missing log sources (A09)
-- [ ] **[Dev]** Task B4.3: add insert-only audit events (the immutability trigger is respected).
-- [ ] **[Lint]** Task B4.3: LINT-BE.
-- [ ] **[Test]** Task B4.3: `tests/test_audit_sources.py` passes.
+- [x] **[Dev]** Task B4.3: add insert-only audit events (the immutability trigger is respected).
+- [x] **[Lint]** Task B4.3: LINT-BE.
+- [x] **[Test]** Task B4.3: `tests/test_audit_sources.py` passes.
 
 ##### Subtask B4.3.1: Request-level events
-- [ ] **[Dev]** Add `rate_limited` (429) in `rate_limit.py`, `server_error` (5xx) from the exception handler (B1.2.1), and `llm_call_failed` and retries as discrete rows. Use batched inserts through the supervised spawner so the request path is not blocked.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Each trigger writes exactly one row. `detail` passes the PII scan (`pii.py`).
+- [x] **[Dev]** Add `rate_limited` (429) in `rate_limit.py`, `server_error` (5xx) from the exception handler (B1.2.1), and `llm_call_failed` and retries as discrete rows. Use batched inserts through the supervised spawner so the request path is not blocked.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Each trigger writes exactly one row. `detail` passes the PII scan (`pii.py`).
 
 ##### Subtask B4.3.2: Lifecycle and admin events
-- [ ] **[Dev]** Session create, rotate and expire, document edit, audience and test-IP changes (where missing), branding and taxonomy changes, and the auth events from B2.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Assert the event per action. An update or delete on `audit_log` still raises (trigger regression).
+- [x] **[Dev]** Session create, rotate and expire, document edit, audience and test-IP changes (where missing), branding and taxonomy changes, and the auth events from B2.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Assert the event per action. An update or delete on `audit_log` still raises (trigger regression).
 
 ---
 
@@ -2059,7 +2059,11 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 |---|---|---|---|---|
 | – | #14 | `chore/env-examples-rev3` | PR open, CI green | All new env variables documented as placeholders. Base of the stack. |
 | – | #15 | `docs/plan-theme-parity-audit` | PR open | Plan: theme parity audit, branded login design, progress ticks. |
-| – | PR-03 | `feat/platform-security-headers-errors` | Code done, CI green, waiting to stack | B1.1 and B1.2 done (50 new tests). **Open:** B1.1.3 `nginx -t` and `curl -I` can't run locally (no Docker), so verify them in a compose environment. Chat-completion timeout kept at `AZURE_OPENAI_REQUEST_TIMEOUT` (60 s); `OUTBOUND_TIMEOUT_SECONDS` applies to embeddings and httpx. A 422 response's `detail` is now a string, and the field errors moved to `errors`. |
+| – | #17 (PR-03) | `feat/platform-security-headers-errors` | PR open (base #16), CI green | B1.1 and B1.2 done (50 new tests). **Open:** B1.1.3 `nginx -t` and `curl -I` can't run locally (no Docker), so verify them in a compose environment. Chat-completion timeout kept at `AZURE_OPENAI_REQUEST_TIMEOUT` (60 s); `OUTBOUND_TIMEOUT_SECONDS` applies to embeddings and httpx. A 422 response's `detail` is now a string, and the field errors moved to `errors`. |
 | – | PR-01 | `chore/ci-hardening` | In progress | |
-| – | PR-02 | `chore/lint-scope-claude-md` | Code done, CI green, waiting to stack | Ruff now selects E, W, F, I, UP, B, N, PL, SIM, S, ASYNC, C4, T20, RUF, ARG, RET and FAST, with zero findings. **Flagged per CLAUDE.md precedence:** FAST002 and FAST001 are ignored, because the existing code uses `Depends()` defaults and explicit `response_model`. The PLR complexity limits are ignored for about 50 handlers; refactoring them is a follow-up. `GuardrailBlocked` was renamed to `GuardrailBlockedError`. The B0.3.3 format-on-save check is manual and still to do. |
-| – | PR-04 | `feat/platform-jobs-state-http` | Rebased onto PR-03, CI green (492 passed), head `bb6f0c7` | Added migrations `e7f8a9b0c1d2` (jobs) and `f8a9b0c1d2e3` (UNLOGGED rate_limit_buckets, oidc_states), plus `app/jobs`, the state backend, the LISTEN/NOTIFY bus, an SSE-safe GZip, ETag responses, `gather_scoped`, the LLM gate (429 with Retry-After), and the 60-request concurrency gate (under 3 s in CI). `requests` was removed. **Partial:** B1.7.2 the event-loop blocking detector covers only the hot-path tests, not the whole suite. **Notes:** the dashboard ETag rarely returns 304 because live counters change every call. `read_only_session()` is not on any route yet. A pre-existing foreign-key race on `evaluation_records.message_id` (online-eval write before commit) is logged for B5. |
+| – | #16 (PR-02) | `chore/lint-scope-claude-md` | PR open (base #14), CI green | Ruff now selects E, W, F, I, UP, B, N, PL, SIM, S, ASYNC, C4, T20, RUF, ARG, RET and FAST, with zero findings. **Flagged per CLAUDE.md precedence:** FAST002 and FAST001 are ignored, because the existing code uses `Depends()` defaults and explicit `response_model`. The PLR complexity limits are ignored for about 50 handlers; refactoring them is a follow-up. `GuardrailBlocked` was renamed to `GuardrailBlockedError`. The B0.3.3 format-on-save check is manual and still to do. |
+| – | #18 (PR-04) | `feat/platform-jobs-state-http` | PR open (base #17), CI green (492 passed) | Added migrations `e7f8a9b0c1d2` (jobs) and `f8a9b0c1d2e3` (UNLOGGED rate_limit_buckets, oidc_states), plus `app/jobs`, the state backend, the LISTEN/NOTIFY bus, an SSE-safe GZip, ETag responses, `gather_scoped`, the LLM gate (429 with Retry-After), and the 60-request concurrency gate (under 3 s in CI). `requests` was removed. **Partial:** B1.7.2 the event-loop blocking detector covers only the hot-path tests, not the whole suite. **Notes:** the dashboard ETag rarely returns 304 because live counters change every call. `read_only_session()` is not on any route yet. A pre-existing foreign-key race on `evaluation_records.message_id` (online-eval write before commit) is logged for B5. |
+| – | PR-09 | `fix/governance-data-correctness` | Code done, CI green, rebasing onto #18 | G1–G7, G9 and G11 are fixed with regression tests. New audit events: rate_limited, server_error, llm_call_failed, llm_retry, session created/rotated/expired, test_ip_updated. **Breaking:** `trace_id` is removed (the frontend is updated); `service` is now a category and the raw action is in `action`; `error_rate` is 24-hour, DB-based and audience-scoped. Deferred: no document-edit or audience-change routes exist yet. |
+| – | PR-05, PR-06, PR-12, PR-15, PR-01 | – | In progress, parallel | PR-01 was told to keep Next 14 and FastAPI 0.115; advisories that need a major upgrade go to an expiring allow-list for your decision. |
+
+**Stack order for review and merge** (each PR's base is the one before it): #14 → #16 → #17 → #18 → then PR-09, PR-06, … in the order they complete, as long as their dependencies are met. Merge from the bottom up. After each merge, GitHub retargets the next PR to `main`.
