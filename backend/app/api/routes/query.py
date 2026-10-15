@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limited_actor
 from app.core.request_meta import get_client_ip
 from app.core.sessions import (
+    exchange_write_task,
     load_recent_history,
     resolve_session_for_query,
     schedule_exchange_write,
@@ -128,6 +129,7 @@ async def query(
         outcome=response.outcome,
         grounded=response.grounded,
         confidence=response.confidence,
+        after=exchange_write_task(assistant_message_id),
     )
 
     response.session_id = str(session.id)

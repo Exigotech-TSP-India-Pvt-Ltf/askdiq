@@ -266,14 +266,77 @@ class MessageFeedback(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    # --- RLHF triage loop (PR-11, newplan §5.4) ---
+    reason_tags: Mapped[list] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
+    corrected_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    triage_status: Mapped[str] = mapped_column(
+        String(16), default="new", server_default="new"
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    promoted_case_id: Mapped[str | None] = mapped_column(
+        ForeignKey("eval_promoted_cases.id", ondelete="SET NULL"), nullable=True
+    )
+    # Optimistic concurrency for triage (409 on a stale version).
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
     __table_args__ = (
         CheckConstraint(
             "rating >= 1 AND rating <= 5", name="ck_message_feedback_rating_range"
         ),
+        CheckConstraint(
+            "triage_status IN ('new', 'reviewed', 'promoted', 'dismissed')",
+            name="ck_message_feedback_triage_status",
+        ),
         UniqueConstraint(
             "message_id", "actor", name="uq_message_feedback_message_actor"
         ),
+        Index("ix_message_feedback_triage_created", "triage_status", "created_at"),
+        Index("ix_message_feedback_created_id", "created_at", "id"),
+    )
+
+
+class EvalPromotedCase(Base):
+    """A golden regression case promoted from human feedback (durable, F4/F5)."""
+
+    __tablename__ = "eval_promoted_cases"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query: Mapped[str] = mapped_column(Text)
+    case_type: Mapped[str] = mapped_column(
+        String(32), default="robustness", server_default="robustness"
+    )
+    expect_grounded: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true")
+    )
+    expected_outcome: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # No FK: imported legacy cases may point at messages that no longer exist.
+    source_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    feedback_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    reference_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason_tags: Mapped[list] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
+    promoted_by: Mapped[str] = mapped_column(String(256))
+    promoted_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, server_default=func.now()
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_run_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_run_detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_message_id", name="uq_eval_promoted_cases_source_message_id"
+        ),
+        Index("ix_eval_promoted_cases_promoted_at", "promoted_at"),
     )
 
 
