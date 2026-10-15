@@ -31,6 +31,15 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "recharts"],
   },
+  // The retired Evaluation page (newplan 2.3). A config redirect answers with a
+  // real 307 + Location before the (app) layout starts streaming; the page-level
+  // redirect() stays as a fallback.
+  async redirects() {
+    return [
+      { source: "/admin/evaluation", destination: "/admin/evaluation-live", permanent: false },
+      { source: "/evaluation", destination: "/admin/evaluation-live", permanent: false },
+    ];
+  },
   async headers() {
     return [
       {
@@ -42,4 +51,5 @@ const nextConfig = {
 };
 
 module.exports = nextConfig;
-module.exports.buildSecurityHeaders = buildSecurityHeaders;
+// Non-enumerable so Next's config validation does not warn about an unknown key.
+Object.defineProperty(module.exports, "buildSecurityHeaders", { value: buildSecurityHeaders, enumerable: false });
