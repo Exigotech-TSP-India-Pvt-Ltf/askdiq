@@ -30,8 +30,8 @@ STAGE_FIELDS: dict[str, str] = {
 
 TraceStatus = Literal["ok", "ungrounded", "blocked", "failed", "unknown"]
 
-_FAILED_FLAGS = frozenset({"llm_call_failed", "empty_llm_output"})
-_BLOCKED_FLAGS = frozenset(
+FAILED_FLAGS = frozenset({"llm_call_failed", "empty_llm_output"})
+BLOCKED_FLAGS = frozenset(
     {
         "unsafe_input_detected",
         "spam_detected",
@@ -42,7 +42,7 @@ _BLOCKED_FLAGS = frozenset(
         "empty_query",
     }
 )
-_UNGROUNDED_FLAGS = frozenset(
+UNGROUNDED_FLAGS = frozenset(
     {
         "groundedness_check_failed",
         "possible_hallucination",
@@ -94,7 +94,7 @@ def derive_trace_status(
     """
     flags = set(guardrail_flags or [])
     normalized = LEGACY_OUTCOME_MAP.get(outcome.lower()) if outcome else None
-    if normalized == "llm_failed" or flags & _FAILED_FLAGS:
+    if normalized == "llm_failed" or flags & FAILED_FLAGS:
         return "failed"
     if normalized == "blocked":
         return "blocked"
@@ -105,9 +105,9 @@ def derive_trace_status(
     if outcome is None and guardrail_flags is None:
         return "unknown"
     # Legacy rows without an outcome: fall back to the flags.
-    if flags & _BLOCKED_FLAGS:
+    if flags & BLOCKED_FLAGS:
         return "blocked"
-    if flags & _UNGROUNDED_FLAGS:
+    if flags & UNGROUNDED_FLAGS:
         return "ungrounded"
     return "ok"
 

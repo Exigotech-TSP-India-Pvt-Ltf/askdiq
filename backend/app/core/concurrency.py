@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from fastapi import HTTPException, status
@@ -18,7 +20,9 @@ from app.core import database
 from app.core.config import get_settings
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+SessionFactory = Callable[[], AbstractAsyncContextManager["AsyncSession"]]
 
 T = TypeVar("T")
 
@@ -86,7 +90,7 @@ single_flight: SingleFlight[Any] = SingleFlight()
 async def gather_scoped(
     *factories: Callable[[AsyncSession], Awaitable[Any]],
     limit: int | None = None,
-    session_factory: async_sessionmaker[AsyncSession] | None = None,
+    session_factory: SessionFactory | None = None,
 ) -> list[Any]:
     """Run ``factories`` in parallel, each with its **own** short-lived session.
 
@@ -111,6 +115,34 @@ async def gather_scoped(
     except BaseExceptionGroup as group:
         raise group.exceptions[0] from None
     return results
+
+
+@dataclass(frozen=True, slots=True)
+class ScopedRunner:
+    """Injectable handle on ``gather_scoped`` and short-lived sessions.
+
+    Routes take it via ``Depends(get_scoped_runner)`` so tests can swap the
+    session factory (e.g. one shared transactional session with ``limit=1``).
+    """
+
+    session_factory: SessionFactory | None = None
+    limit: int | None = None
+
+    def session(self) -> AbstractAsyncContextManager[AsyncSession]:
+        factory = self.session_factory or database.AsyncSessionLocal
+        return factory()
+
+    async def gather(
+        self, *factories: Callable[[AsyncSession], Awaitable[Any]]
+    ) -> list[Any]:
+        return await gather_scoped(
+            *factories, limit=self.limit, session_factory=self.session_factory
+        )
+
+
+def get_scoped_runner() -> ScopedRunner:
+    """FastAPI dependency: the default runner (one pooled session per task)."""
+    return ScopedRunner()
 
 
 class LLMGate:

@@ -23,11 +23,14 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
+from app.core.events import TOPIC_GOVERNANCE_INCIDENT, publish_event
 from app.core.logging_config import get_logger
 from app.core.tasks import spawn
+from app.governance.log_summary import INCIDENT_LEVELS, level_for
 from app.governance.pii import redact_pii
 from app.models.db_models import AuditLog
 
@@ -56,17 +59,45 @@ async def record_audit_event(
     ip_address: str | None = None,
     commit: bool = True,
 ) -> None:
-    session.add(
-        AuditLog(
-            request_id=request_id,
-            actor=actor,
-            action=action,
-            detail=detail,
-            ip_address=ip_address,
-        )
+    row = AuditLog(
+        request_id=request_id,
+        actor=actor,
+        action=action,
+        detail=detail,
+        ip_address=ip_address,
     )
+    session.add(row)
+    if is_incident(action, detail):
+        # Publish only once the row is visible to other connections.
+        event.listen(
+            session.sync_session,
+            "after_commit",
+            lambda _s: notify_incidents([row]),
+            once=True,
+        )
     if commit:
         await session.commit()
+
+
+def is_incident(action: str, detail: Any) -> bool:
+    """CRITICAL / ALERT rows wake the live governance stream on every replica."""
+    return level_for(detail if isinstance(detail, dict) else {}, action) in (
+        INCIDENT_LEVELS
+    )
+
+
+def notify_incidents(rows: list[AuditLog]) -> None:
+    """NOTIFY (via the event bus) for each committed incident row; never raises."""
+    for row in rows:
+        if row.id is None or not is_incident(row.action, row.detail):
+            continue
+        try:
+            spawn(
+                publish_event(TOPIC_GOVERNANCE_INCIDENT, row.id),
+                name="governance_incident_notify",
+            )
+        except RuntimeError:
+            logger.debug("incident_notify_skipped_no_loop")
 
 
 def mask_detail(value: Any) -> Any:
@@ -89,8 +120,10 @@ def current_request_id() -> str:
 
 async def _write_batch(rows: list[dict[str, Any]]) -> None:
     async with AsyncSessionLocal() as session:
-        session.add_all([AuditLog(**row) for row in rows])
+        written = [AuditLog(**row) for row in rows]
+        session.add_all(written)
         await session.commit()
+    notify_incidents(written)
 
 
 # Indirection so tests can capture batches without a database.

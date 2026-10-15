@@ -36,6 +36,9 @@ _QUEUE_MAXSIZE = 1000
 _HEALTH_CHECK_SECONDS = 5.0
 
 TOPIC_CACHE_INVALIDATE = "cache.invalidate"
+# A CRITICAL / ALERT audit row was written (id = audit_log.id); wakes the
+# governance SSE producers on every replica.
+TOPIC_GOVERNANCE_INCIDENT = "governance.incident"
 
 
 @dataclass(frozen=True, slots=True)

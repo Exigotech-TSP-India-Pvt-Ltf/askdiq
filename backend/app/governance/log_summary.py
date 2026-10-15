@@ -31,11 +31,24 @@ SERVICE_BY_ACTION: dict[str, Service] = {
     "test_ip_updated": "admin",
     "test_ip_removed": "admin",
     "usage_export": "admin",
+    "governance_logs_export": "admin",
     "rate_limited": "system",
     "server_error": "system",
 }
 
-_AUTH_PREFIXES = ("auth", "login", "logout", "token", "register")
+AUTH_PREFIXES = ("auth", "login", "logout", "token", "register")
+SERVICES: tuple[Service, ...] = (
+    "auth",
+    "query",
+    "ingest",
+    "feedback",
+    "admin",
+    "system",
+)
+
+# Severities, most to least severe. CRITICAL and ALERT rows are "incidents".
+LEVELS: tuple[str, ...] = ("CRITICAL", "ALERT", "ERROR", "WARNING", "INFO")
+INCIDENT_LEVELS: tuple[str, ...] = ("CRITICAL", "ALERT")
 
 # Level for actions whose severity does not come from guardrail flags.
 LEVEL_BY_ACTION: dict[str, str] = {
@@ -46,12 +59,76 @@ LEVEL_BY_ACTION: dict[str, str] = {
     "negative_feedback_spike": "ALERT",
 }
 
+# Guardrail flag -> severity, checked from most to least severe. Anything not
+# listed (e.g. a normal, unflagged, grounded query) falls through to
+# ``LEVEL_BY_ACTION`` and then INFO.
+LEVEL_FLAGS: tuple[tuple[str, frozenset[str]], ...] = (
+    (
+        "CRITICAL",
+        frozenset(
+            {"llm_call_failed", "groundedness_check_failed", "secret_leak_detected"}
+        ),
+    ),
+    (
+        "ALERT",
+        frozenset(
+            {
+                "unsafe_input_detected",
+                "spam_detected",
+                "pii_leak_detected",
+                "online_unfaithful",
+            }
+        ),
+    ),
+    (
+        "ERROR",
+        frozenset(
+            {
+                "empty_llm_output",
+                "empty_answer",
+                "no_retrieved_sources",
+                "unsupported_numeric_claim",
+            }
+        ),
+    ),
+    (
+        "WARNING",
+        frozenset(
+            {
+                "low_retrieval_confidence",
+                "possible_hallucination",
+                "query_too_long",
+                "empty_query",
+            }
+        ),
+    ),
+)
+
+
+def level_for(detail: Mapping[str, Any] | None, action: str | None = None) -> str:
+    """Severity of an audit row (Critical/Alert/Error/Warning/Info).
+
+    Flag-carrying events (query, online_eval) use their guardrail flags; an
+    explicit ``grounded: false`` is a WARNING; other actions use
+    ``LEVEL_BY_ACTION``. ``app.governance.logs.level_sql`` mirrors this in SQL.
+    """
+    data = detail if isinstance(detail, Mapping) else {}
+    flags = set(data.get("guardrail_flags") or [])
+    for level, level_flags in LEVEL_FLAGS:
+        if flags & level_flags:
+            return level
+    if data.get("grounded") is False:
+        return "WARNING"
+    if action in LEVEL_BY_ACTION:
+        return LEVEL_BY_ACTION[action]
+    return "INFO"
+
 
 def service_for(action: str) -> Service:
     """Category for an audit action; unknown actions fall back safely."""
     if action in SERVICE_BY_ACTION:
         return SERVICE_BY_ACTION[action]
-    if action.startswith(_AUTH_PREFIXES):
+    if action.startswith(AUTH_PREFIXES):
         return "auth"
     return "system"
 
@@ -121,6 +198,16 @@ def _usage_export(d: Mapping[str, Any]) -> str:
     return f"Usage export ({d.get('tab', 'all')}, audience {d.get('audience', 'all')})"
 
 
+def _logs_export(d: Mapping[str, Any]) -> str:
+    filters = d.get("filters")
+    parts = (
+        [f"{k}={v}" for k, v in sorted(filters.items()) if v not in (None, "", [])]
+        if isinstance(filters, Mapping)
+        else []
+    )
+    return f"Governance logs export ({', '.join(parts) or 'all'})"
+
+
 def _rate_limited(d: Mapping[str, Any]) -> str:
     return (
         f"Rate limited ({d.get('scope', 'unknown')}): limit {d.get('limit', '?')}/min, "
@@ -171,6 +258,7 @@ SUMMARIZERS: dict[str, Summarizer] = {
     "test_ip_updated": _test_ip("updated"),
     "test_ip_removed": _test_ip("removed"),
     "usage_export": _usage_export,
+    "governance_logs_export": _logs_export,
     "rate_limited": _rate_limited,
     "server_error": _server_error,
     "llm_call_failed": _llm_call_failed,
