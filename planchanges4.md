@@ -758,45 +758,45 @@ Fix every backend cause in newplan §4.1, add the endpoints in §4.5, and add th
 ---
 
 #### Task B4.2: Endpoints (newplan §4.5)
-- [ ] **[Dev]** Task B4.2: implement the endpoints, all `async`, guarded with `dashboard:read`, with `gather_scoped` for multi-query responses.
-- [ ] **[Lint]** Task B4.2: LINT-BE.
-- [ ] **[Test]** Task B4.2: `tests/test_governance_endpoints.py` passes.
+- [x] **[Dev]** Task B4.2: implement the endpoints, all `async`, guarded with `dashboard:read`, with `gather_scoped` for multi-query responses.
+- [x] **[Lint]** Task B4.2: LINT-BE.
+- [x] **[Test]** Task B4.2: `tests/test_governance_endpoints.py` passes.
 
 ##### Subtask B4.2.1: `GET /governance/logs`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Keyset cursor on `(created_at, id)` plus `limit` (max 200).
   - Filters for `level`, `service`, `q` (LIKE-escaped, on the summary and action), `from` and `to`.
   - `level_counts` for the chips. A true `total`, or `total_estimate` above 100k rows.
   - Streaming `GET /governance/logs/export.csv` with formula neutralization.
   - A composite index migration.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The cursor walks 1,000 rows with no duplicates or gaps. An injection string in `q` is inert. CSV cells starting `=`, `+`, `-` or `@` are prefixed.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The cursor walks 1,000 rows with no duplicates or gaps. An injection string in `q` is inert. CSV cells starting `=`, `+`, `-` or `@` are prefixed.
 
 ##### Subtask B4.2.2: `GET /governance/traces` and `/{request_id}`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - The list has `status`, `outcome`, latency buckets, tokens, cost and the slowest stage.
   - The detail has stage timings (for the waterfall), sources with scores, flags and `conversation_id`.
   - Object-level guard on the detail.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The detail matches the fixture. An unknown id gives 404. The audience filter applies.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The detail matches the fixture. An unknown id gives 404. The audience filter applies.
 
 ##### Subtask B4.2.3: `GET /governance/monitoring` extension
-- [ ] **[Dev]** p50, p95 and p99 per stage (`percentile_cont`), 24 hourly buckets for latency, requests and errors, the Azure quota series, CPU and RAM, a guardrail flag breakdown, the outcome mix and online quality KPIs.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Percentiles over a known distribution are exact. All 24 buckets are present, including empty ones (zero-filled).
+- [x] **[Dev]** p50, p95 and p99 per stage (`percentile_cont`), 24 hourly buckets for latency, requests and errors, the Azure quota series, CPU and RAM, a guardrail flag breakdown, the outcome mix and online quality KPIs.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Percentiles over a known distribution are exact. All 24 buckets are present, including empty ones (zero-filled).
 
 ##### Subtask B4.2.4: `GET /governance/overview`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Health status (Healthy, Degraded or Incident), with thresholds from config.
   - KPIs with 24-hour sparklines, and recent incidents (CRITICAL and ALERT).
   - One call, computed with `gather_scoped` and wrapped in `cached_response`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Threshold boundary tests for each status. The response uses at most N queries (asserted through a SQLAlchemy event counter).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Threshold boundary tests for each status. The response uses at most N queries (asserted through a SQLAlchemy event counter).
 
 ##### Subtask B4.2.5: `GET /governance/stream` (SSE)
-- [ ] **[Dev]** Pushes health-status changes, new incidents and monitoring deltas every 5 s. One shared producer per worker fans out to subscribers (no per-client DB polling). Writers `NOTIFY` through the B1.4.3 event bus, so every replica receives events.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** With 50 subscribers, the DB query rate stays constant. A new incident reaches every subscriber.
+- [x] **[Dev]** Pushes health-status changes, new incidents and monitoring deltas every 5 s. One shared producer per worker fans out to subscribers (no per-client DB polling). Writers `NOTIFY` through the B1.4.3 event bus, so every replica receives events.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** With 50 subscribers, the DB query rate stays constant. A new incident reaches every subscriber.
 
 ---
 
@@ -818,9 +818,9 @@ Fix every backend cause in newplan §4.1, add the endpoints in §4.5, and add th
 ---
 
 #### Task B4.4: Phase B4 integration testing
-- [ ] **[Dev]** Create `tests/test_governance_integration.py`: seed 2k logs and 500 traces, then walk the cursor pagination, filters, overview, trace detail, export and SSE. Check the G1 to G13 regression ids.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass. `EXPLAIN` shows an index scan for the logs filters (assert the plan in the test, or record it in the PR).
+- [x] **[Dev]** Create `tests/test_governance_integration.py`: seed 2k logs and 500 traces, then walk the cursor pagination, filters, overview, trace detail, export and SSE. Check the G1 to G13 regression ids.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass. `EXPLAIN` shows an index scan for the logs filters (assert the plan in the test, or record it in the PR).
 
 #### Task B4.5: PRs
 - **PR-09** `fix/governance-data-correctness`: B4.1 and B4.3.
@@ -2077,7 +2077,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #24 | PR-15 | `feat/ui-foundations-motion-tokens-brand` | #19 | Open, **all 4 jobs green** | `motion` 14.3.0. Tokens, light/dark parity fixes T1–T6 (plus tooltips, documents and monitoring dark bugs), BrandProvider and BrandLogo with dark variants. 128 vitest tests. **Your review:** the off-canvas "ARTIFICIAL INTELLIGENCE" tagline was removed from the logo SVG. **Manual:** screenshots. |
 | #25 | PR-07 | `feat/auth-user-management-api` | #20 | Open, CI green | `/auth/*` routes, users-accounts and access-requests (`users:manage`), FOR UPDATE concurrency, 409 safeguards, auth audit events, the frontend contract and the go-live checklist in DEPLOYMENT.md. B2.8.1: the port-3000 smoke run comes with PR-18. |
 | #26 | PR-08 | `feat/branding-white-label-api` | #20 | Open, CI green | Migration `b0c1d2e3f4a5`. Branding API with an OKLCH palette and WCAG check, hardened PNG/WebP/SVG validation (polyglot-proof, allow-list SVG rebuild), login copy and URL fields, ETag and cross-worker invalidation. **Sibling migration with #23**: whichever merges second re-links its `down_revision` (§8.3). |
-| – | PR-10 | `feat/governance-endpoints-stream` | #22 | In progress | Logs and traces cursors, overview, monitoring percentiles, SSE stream. |
+| #28 | PR-10 | `feat/governance-endpoints-stream` | #22 | Open, CI green | Migration `72125f44984d` (keyset indexes, built CONCURRENTLY). Logs and traces keyset cursors, `/traces/page` envelope (the old array is kept), trace detail with waterfall, streaming CSV export, monitoring p50/p95/p99 and hourly series, overview (at most 6 queries, ETag), SSE stream with NOTIFY fan-out. **Sibling migration** with #23, #26 and #27. |
 | #27 | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | Open, CI green (migration `5712ebd9d3c9`; sibling of #23 and #26 on `a9b0c1d2e3f4`, so re-link at merge) | Triage state machine with optimistic version, enriched one-query queue with a keyset cursor, analytics, bulk actions, promotion now stored in the DB (JSON imported), streaming JSONL preference export, golden-run job, and the online-eval FK race fix. Old response fields are kept. **Behaviour change:** promote-to-test no longer writes `data/promoted_test_cases.json`. |
 | – | PR-13 | `feat/insights-analytics-endpoints` | #23 | In progress | `/admin/insights/*` with HTML parity. |
 | – | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | In progress | Chart kit, consolidated ChartCard, cached data layer and prefetch. |
