@@ -594,29 +594,29 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 ---
 
 #### Task B2.4: Auth and User Management routes
-- [ ] **[Dev]** Task B2.4: add `app/api/routes/auth.py` and `app/api/routes/user_management.py`, with the repository and service in `app/auth/`.
-- [ ] **[Lint]** Task B2.4: LINT-BE.
-- [ ] **[Test]** Task B2.4: `tests/test_auth_routes.py` and `tests/test_user_management.py` pass.
+- [x] **[Dev]** Task B2.4: add `app/api/routes/auth.py` and `app/api/routes/user_management.py`, with the repository and service in `app/auth/`.
+- [x] **[Lint]** Task B2.4: LINT-BE.
+- [x] **[Test]** Task B2.4: `tests/test_auth_routes.py` and `tests/test_user_management.py` pass.
 
 ##### Subtask B2.4.1: `/auth/*`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `GET /auth/sso/login` and `POST /auth/sso/callback`. The callback upserts on `oid`, bootstraps `SUPERADMIN_EMAILS`, applies the newplan §7.2 status rules, and audits `login_success` / `login_denied`.
   - `GET /auth/me` returns user, role, status, permissions and `access_contact_email`, and is cached.
   - `POST /auth/logout`.
   - `POST` and `GET /auth/access-request`.
   - Login endpoints are rate-limited per IP.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** First login creates a pending user. A superadmin email is made active. Logout revokes the server session. The login rate limit gives 429. Each step writes an audit row.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** First login creates a pending user. A superadmin email is made active. Logout revokes the server session. The login rate limit gives 429. Each step writes an audit row.
 
 ##### Subtask B2.4.2: `/admin/users-accounts` and `/admin/access-requests`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - List: paginated, with search (LIKE-escaped) and role and status filters (allow-list).
   - Approve with a role, reject with a note, and bulk approve (batched, in one transaction).
   - `PATCH` role and status with optimistic concurrency (a `version` mismatch gives 409).
   - Revoke sessions, and invite or pre-provision by email.
   - `GET /admin/users-accounts/stats` (KPIs, logins per day, funnel, role mix, time-to-approve histogram) for the F1 charts.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Self-demote or self-suspend gives 409, and removing the last active superadmin gives 409.
   - Two concurrent approvals: exactly one succeeds and the other gets 409.
   - Bulk approve is all-or-nothing.
@@ -630,9 +630,9 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 - [x] **[Test]** A missing service key gives 401 even with a valid session, so the backend cannot be called directly.
 
 #### Task B2.6: Phase B2 integration testing
-- [ ] **[Dev]** Create `tests/test_auth_flow_integration.py`. Mock IdP flow: new user logs in (pending), uses chat, gets 403 on dashboard, requests access, superadmin approves, the next request is authorized, the user is suspended, and the next request is denied.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass, and the route-walk and OWASP A01/A07 tests pass.
+- [x] **[Dev]** Create `tests/test_auth_flow_integration.py`. Mock IdP flow: new user logs in (pending), uses chat, gets 403 on dashboard, requests access, superadmin approves, the next request is authorized, the user is suspended, and the next request is denied.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass, and the route-walk and OWASP A01/A07 tests pass.
 
 #### Task B2.8: Go-live readiness for real Entra (testable now, switched on by `.env` later)
 - [ ] **[Dev]** Task B2.8: full-stack sign-in smoke against the mock, plus the owner's go-live checklist.
@@ -645,13 +645,13 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 - [ ] **[Test]** Green in CI.
 
 ##### Subtask B2.8.2: Owner go-live checklist (add to `DEPLOYMENT.md`; nothing else changes in code)
-- [ ] **[Dev]** Write the checklist:
+- [x] **[Dev]** Write the checklist:
   1. In Entra, register a single-tenant app. Add the Web redirect URI `http://localhost:3000/auth/callback` (and the production HTTPS URL). Create a client secret. Grant `openid`, `profile` and `email`. Optionally add the `email` claim to the ID token.
   2. Fill in `backend/.env` (`ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_REDIRECT_URI`, `SESSION_SECRET`, `SUPERADMIN_EMAILS`, `ACCESS_CONTACT_EMAIL`, `AUTH_DEV_MOCK=false`) and `frontend/.env.local` (`APP_BASE_URL`, `SESSION_COOKIE_NAME`, `SESSION_COOKIE_SECURE`).
   3. Run `backend\venv\Scripts\python.exe scripts\verify_sso_config.py`. Every check must PASS.
   4. Run `npm run dev` (port 3000) and the backend, then sign in as a superadmin email. You should land on the dashboard.
   5. Sign in with a second account. You should get Chat plus Access Required. Approve it in User Management, and the second account should get the dashboard without signing in again.
-- [ ] **[Lint]** Check the markdown.
+- [x] **[Lint]** Check the markdown.
 - [ ] **[Test]** The owner runs it after the work is complete (tracked as V.5.3).
 
 #### Task B2.7: PRs
@@ -2075,7 +2075,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #22 | PR-09 | `fix/governance-data-correctness` | #20 | Open, CI green | G1–G7, G9 and G11 fixed. New audit sources (rate_limited, server_error, llm_call_failed/llm_retry, session lifecycle, test_ip_updated). **Breaking:** `trace_id` removed; `service` is now a category; `error_rate` is 24h and DB-based. |
 | #23 | PR-12 | `feat/insights-taxonomy-classifier` | #20 | Open, CI green | Migration `4c1e9a7d2b65`. Taxonomy and the hybrid classifier via the job queue (PII-masked, injection-safe, daily budget, circuit breaker). HTML parity fixture: 49/117, Served 11, Partly 14, Not 22, handled 62. |
 | #24 | PR-15 | `feat/ui-foundations-motion-tokens-brand` | #19 | Open, **all 4 jobs green** | `motion` 14.3.0. Tokens, light/dark parity fixes T1–T6 (plus tooltips, documents and monitoring dark bugs), BrandProvider and BrandLogo with dark variants. 128 vitest tests. **Your review:** the off-canvas "ARTIFICIAL INTELLIGENCE" tagline was removed from the logo SVG. **Manual:** screenshots. |
-| – | PR-07 | `feat/auth-user-management-api` | #20 | In progress | `/auth/*` routes, user management, access requests, smoke sign-in journey. |
+| #25 | PR-07 | `feat/auth-user-management-api` | #20 | Open, CI green | `/auth/*` routes, users-accounts and access-requests (`users:manage`), FOR UPDATE concurrency, 409 safeguards, auth audit events, the frontend contract and the go-live checklist in DEPLOYMENT.md. B2.8.1: the port-3000 smoke run comes with PR-18. |
 | – | PR-08 | `feat/branding-white-label-api` | #20 | In progress | Branding API, assets and login copy fields. |
 | – | PR-10 | `feat/governance-endpoints-stream` | #22 | In progress | Logs and traces cursors, overview, monitoring percentiles, SSE stream. |
 | – | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | In progress | Feedback triage loop, export, golden cases, online-eval FK race fix. |
