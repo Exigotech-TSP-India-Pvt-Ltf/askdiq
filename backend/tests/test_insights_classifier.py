@@ -953,3 +953,68 @@ async def test_insights_migration_round_trip(engine):
         )
     assert gone == 0
     assert seeded == len(DEFAULT_ENTRIES)
+
+
+async def test_classify_enqueue_is_part_of_the_exchange_transaction(
+    engine, monkeypatch
+):
+    """Outbox: the job exists only if the exchange commits; a queue error is
+    contained in a SAVEPOINT and never loses the exchange."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.insights import triggers
+
+    monkeypatch.setattr(settings, "insights_classify_on_write", True)
+    rolled_back, committed = uuid.uuid4(), uuid.uuid4()
+    keys = [triggers.classify_dedupe_key(m) for m in (rolled_back, committed)]
+
+    async def pending(key: str) -> int:
+        async with engine.connect() as conn:
+            return await conn.scalar(
+                text("SELECT count(*) FROM jobs WHERE dedupe_key = :k"), {"k": key}
+            )
+
+    try:
+        async with AsyncSession(engine) as db:
+            await triggers.enqueue_classification_in_transaction(db, rolled_back)
+            await db.rollback()
+        assert await pending(keys[0]) == 0
+
+        async with AsyncSession(engine) as db:
+            await triggers.enqueue_classification_in_transaction(db, committed)
+            await db.commit()
+        assert await pending(keys[1]) == 1
+
+        async def broken(executor, *_args, **_kwargs):
+            await executor.execute(text("SELECT * FROM no_such_table_for_test"))
+
+        monkeypatch.setattr(triggers, "enqueue_in", broken)
+        async with AsyncSession(engine) as db:
+            await triggers.enqueue_classification_in_transaction(db, uuid.uuid4())
+            # The outer transaction is still usable after the failed savepoint.
+            assert await db.scalar(text("SELECT 1")) == 1
+            await db.rollback()
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("DELETE FROM jobs WHERE dedupe_key = ANY(:k)"), {"k": keys}
+            )
+
+
+async def test_classify_on_write_can_be_disabled(monkeypatch):
+    from app.insights import triggers
+
+    calls: list[Any] = []
+
+    async def fake_enqueue_in(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(triggers, "enqueue_in", fake_enqueue_in)
+    monkeypatch.setattr(settings, "insights_classify_on_write", False)
+
+    class NoDb:
+        def begin_nested(self):
+            raise AssertionError("must not touch the session when disabled")
+
+    await triggers.enqueue_classification_in_transaction(NoDb(), uuid.uuid4())
+    assert calls == []

@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
-from app.jobs.queue import enqueue
+from app.jobs.queue import enqueue, enqueue_in
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncEngine
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 logger = get_logger(__name__)
 
@@ -21,24 +21,40 @@ def classify_dedupe_key(message_id: uuid.UUID | str) -> str:
     return f"{CLASSIFY_JOB}:{message_id}"
 
 
+def _payload(message_id: uuid.UUID | str) -> dict[str, str]:
+    return {"message_id": str(message_id)}
+
+
 async def enqueue_classification(
     message_id: uuid.UUID | str, *, engine: AsyncEngine | None = None
 ) -> uuid.UUID | None:
     """Queue ``insights.classify`` for an assistant message (deduped)."""
     return await enqueue(
         CLASSIFY_JOB,
-        {"message_id": str(message_id)},
+        _payload(message_id),
         dedupe_key=classify_dedupe_key(message_id),
         engine=engine,
     )
 
 
-async def classify_after_persist(message_id: uuid.UUID) -> None:
-    """Best effort: a failed enqueue is picked up later by the backfill."""
+async def enqueue_classification_in_transaction(
+    db: AsyncSession, message_id: uuid.UUID
+) -> None:
+    """Queue classification in the same transaction that writes the message.
+
+    Runs inside a SAVEPOINT, so a failure here (e.g. the queue is unavailable)
+    never loses the exchange itself; the backfill picks such turns up later.
+    """
     if not get_settings().insights_classify_on_write:
         return
     try:
-        await enqueue_classification(message_id)
+        async with db.begin_nested():
+            await enqueue_in(
+                db,
+                CLASSIFY_JOB,
+                _payload(message_id),
+                dedupe_key=classify_dedupe_key(message_id),
+            )
     except Exception as exc:
         logger.warning(
             "insights_enqueue_failed",
