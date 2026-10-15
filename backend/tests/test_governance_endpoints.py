@@ -961,3 +961,17 @@ def test_naive_utc_conversion_of_aware_filters():
     aware = datetime(2026, 1, 1, 10, tzinfo=UTC)
     assert _naive_utc(aware) == datetime(2026, 1, 1, 10)
     assert _naive_utc(None) is None
+
+
+async def test_planner_estimate_binds_user_values(db_session):
+    from app.governance.pagination import planner_estimate
+
+    stmt = select(AuditLog.id).where(
+        AuditLog.action.in_(["query", "x'); DROP TABLE audit_log; --"]),
+        AuditLog.created_at >= datetime(2000, 1, 1),
+    )
+    estimate = await planner_estimate(db_session, stmt)
+    assert isinstance(estimate, int)
+    assert estimate >= 0
+    # The session is still usable afterwards.
+    assert (await db_session.execute(select(AuditLog.id).limit(1))).all() is not None
