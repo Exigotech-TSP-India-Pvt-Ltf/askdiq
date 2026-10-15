@@ -50,7 +50,7 @@ PERMISSION_ATTR = "__auth_permission__"
 
 F = TypeVar("F", bound=Callable[..., Any])
 
-DETAIL_SERVICE_KEY = "Invalid or missing service key."
+DETAIL_SERVICE_KEY = "Access Denied!"  # unchanged legacy text; clients match on it
 DETAIL_UNAUTHENTICATED = "Not authenticated."
 DETAIL_CSRF = "Cross-site request rejected."
 DETAIL_SUSPENDED = "Account suspended."
