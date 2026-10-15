@@ -23,7 +23,9 @@
 | Execution order (rev 3) | **Backend first, then frontend.** Every backend API ships with tests before the UI that uses it (see `planchanges4.md`). |
 | Delivery (rev 3) | **One feature equals one branch and one PR into `main`.** CI must be green and review approved before merge. Never push or merge directly to `main`. |
 | Security baseline (rev 3) | **OWASP Top 10:2025** plus the OWASP LLM Top 10 for the RAG and classifier paths (section 12). |
-| Performance (rev 3) | **Async-only pipeline**, horizontal scaling behind nginx (section 13). |
+| Performance (rev 3.1) | **Async-only pipeline.** The system must sustain **at least 50 concurrent requests**. That is a hard requirement, verified at 100 concurrent with headroom. Horizontal scaling sits behind nginx (section 13). |
+| Redis (rev 3.1) | **Not used.** Shared state across workers and replicas (rate limits, login handshake state, live-update fan-out) lives in **Postgres**, which we already run (section 13.6). No scaling task is dropped. |
+| Browser automation (rev 3.1) | **No Playwright, no automated accessibility scan, no Lighthouse and no ZAP for now.** End-to-end testing is done through the real HTTP stack with httpx (backend journeys plus a full-stack smoke through port 3000) and vitest UI journeys (section 16.2). |
 | White-labelling (rev 3) | **Runtime-configurable branding** (name, logos, palette, favicon, contact), managed by a superadmin (section 14). |
 
 ## Open items (defaults assumed unless you object)
@@ -34,7 +36,13 @@
 4. **First superadmin (owner: you, later):** you set `SUPERADMIN_EMAILS` in your `.env` for your test. A listed email becomes an active superadmin on its first SSO login.
 5. **Chat access (decided):** any signed-in user can use Chat with no approval, whatever their role or status (pending, rejected, no role). Only **suspended** users are blocked from everything, as a safety measure (assumption, say if you disagree). The **dashboard** needs an approved role. Unapproved users see a clear message with the admin contact email, which comes from `ACCESS_CONTACT_EMAIL` (you choose the address later).
 6. **Existing "Users" page:** it shows visitor telemetry by client IP, not accounts. Default is to rename it "Visitors" in the sidebar so it isn't confused with the new "User Management".
-7. **Redis (rev 3, new dependency, needs your OK):** today the rate limiter, TTL cache and SingleFlight live in process memory. That is why `Dockerfile.prod` pins uvicorn to **1 worker**, and why load balancing is impossible. The default is to add the `redis` client (asyncio) behind a `StateBackend` interface, enabled only when `REDIS_URL` is set. Without `REDIS_URL` the in-memory backend is used and the single-worker rule stays. If you decline Redis, section 13's horizontal-scaling tasks are skipped and everything else still ships.
+7. **Shared state without Redis (decided, rev 3.1):** today the rate limiter, TTL cache and SingleFlight live in process memory. That is why `Dockerfile.prod` pins uvicorn to **1 worker**. The fix uses Postgres, with no new dependency (section 13.6):
+   - **Rate limits:** an UNLOGGED `rate_limit_buckets` table with atomic `INSERT ... ON CONFLICT DO UPDATE` counters.
+   - **OIDC handshake state:** an `oidc_states` table, single use.
+   - **Live-update fan-out across replicas:** Postgres `LISTEN/NOTIFY`.
+   - **Read caches:** stay per process (short TTL, invalidated on write), which is safe because each read is idempotent.
+
+   This lifts the single-worker limit, so multi-worker and multi-replica load balancing stay in scope.
 8. **Branch protection (owner, later):** a repo admin turns on the `main` protection rule in section 16.3. Until then, the agent follows the same rules voluntarily.
 9. **GitHub CLI:** `gh` is not installed on this machine. Install it (`winget install GitHub.cli`, then `gh auth login`) to raise PRs from the terminal. The GitHub web UI works as a fallback.
 10. **Ruff and pylint scope (rev 3):** `backend/pyproject.toml` selects only `E, W, F, B, C4, UP, SIM, RUF` and has **no pylint config**. CLAUDE.md asks for more (`N, PL, S, ASYNC, T20, I` and others). Following "never downgrade security", phase B0 adds `S`, `ASYNC`, `T20` and `I` and a pylint config, and fixes the findings in its own PR. `N` and `PL` are added with per-file ignores only where the existing code style needs them. Also, ruff's `exclude` lists `.venv` but **not `venv`**, the venv this repo actually uses. B0 adds it.
@@ -56,16 +64,27 @@ This plan is written as requirements. The goal is that **nothing blocks developm
 - The mock exposes the same authorize, token and JWKS endpoints the real flow uses, signs ID tokens with a throwaway key, and lets a test choose the email, name, `oid` and `tid`. The real validation code (signature, `iss`, `aud`, `tid`, `exp`, `nonce`) runs against it unchanged.
 - It is local-only. The app must refuse to start when `AUTH_DEV_MOCK=true` and `ENV` is not `development`, and a test covers that.
 - Automated tests never call Microsoft and never need real secrets. Tests inject settings through environment variables or fixtures (for example `SESSION_SECRET=test-secret`), not through a `.env` file.
+- **The mock must behave like real Entra**, so the same code works unchanged once the real values are in `.env` (rev 3.1):
+  - **Endpoints:** v2.0 endpoints, the issuer format `https://login.microsoftonline.com/{tid}/v2.0`, and a discovery document at `/.well-known/openid-configuration` with the same shape as Microsoft's.
+  - **ID token claims:** `ver: "2.0"`, `oid`, `tid`, `sub`, `name`, `preferred_username`, `nonce`, `aud = client id`, `iat`, `nbf`, `exp`.
+  - **Email claim:** absent by default, because Entra often omits `email`. The app must fall back to `preferred_username`, and the test covers both cases.
+  - **Signing:** an RS256 key with a `kid` in the JWKS. A key-rotation test serves a second `kid`.
+  - **Code flow:** the authorization code is single use, PKCE S256 is verified, and errors return the Entra OAuth error shape (`error`, `error_description`).
+- **Verification once real values exist (no code change needed):**
+  - `backend\venv\Scripts\python.exe scripts\verify_sso_config.py` loads settings, fetches the real discovery document and JWKS, and checks that the issuer matches the tenant and that `ENTRA_REDIRECT_URI` equals `APP_BASE_URL + /auth/callback`. It prints PASS or FAIL per check **without printing any secret**.
+  - Then sign in manually once (the go-live checklist in `planchanges4.md`, task B2.8).
+  - A recorded copy of Microsoft's public discovery document is stored as a test fixture, so CI proves our parser handles the real format.
 
 **4. Environment and tooling (follow the existing project, then CLAUDE.md):**
 - The backend virtualenv in this repo is `backend\venv`, not `.venv`. Existing project convention wins, so use `backend\venv\Scripts\python.exe`, `...\ruff.exe` and `...\pylint.exe`. Do not create a second `.venv`. Never run bare `python`, `pip`, `pytest`, `alembic`, `ruff` or `pylint`.
 - Backend: `python -m pytest`, `python -m alembic upgrade head`, `ruff check .`, `ruff format .`, `pylint` (all through the venv). `backend/pyproject.toml` already holds the config.
 - Frontend (from `frontend/`): `npm run typecheck`, `npm run lint`, `npm test` (vitest), `npm run build`.
 - Backend tests that touch the database use the existing `conftest.py` fixtures (transactional session, rolled back per test). If no database is reachable, run the pure-logic tests and say which DB tests were skipped. Do not mark a phase done on skipped tests without saying so.
-- Do not add dependencies beyond these: `motion` (frontend, pinned), one JWT/JWKS library on the backend (PyJWT with crypto, or Authlib), and, subject to open item 7, the `redis` client. Pin versions in `requirements.txt` and `package.json`.
+- Do not add dependencies beyond these: `motion` (frontend, pinned) and one JWT/JWKS library on the backend (**PyJWT[crypto]**, pinned). Pin versions in `requirements.txt` and `package.json`.
+  - **No Redis** (open item 7).
   - The background job queue is a Postgres table using `FOR UPDATE SKIP LOCKED`, so no Celery or arq.
   - Load tests use the existing `scripts/run_concurrency_test.py` and `run_admin_load_test.py` (httpx plus asyncio), extended rather than adding Locust.
-  - `@playwright/test` is already a dev dependency and is now actually used.
+  - **No Playwright, axe, Lighthouse or ZAP.** End-to-end testing uses httpx and vitest (section 16.2).
 - Name new test files after the feature (`test_auth_sso.py`, `test_governance_traces.py`), not the phase. Phase numbers have been reused across plans and are already ambiguous.
 
 **5. Definition of done for every phase:**
@@ -425,6 +444,8 @@ The renderer needs two record types. Today the app has the raw material (message
 - `insight_taxonomy`: configurable lists for intent codes, labels and colors, bot-quality values and issue values, so the DeployIQ list can change without a deploy. Seeded in the migration.
 - Conversation-level fields (`user_type`, `outcome`, `experience_rating`, `issue`, `failing_question`) are **computed at query time** from `turn_insights` plus `chat_messages`, not stored. This avoids a second source of truth.
 
+**Taxonomy codes (rev 3.1):** keep the HTML's code style and its non-substantive codes exactly. **`GRE` = Greeting** and **`ACK` = Closing**: the renderer's `isSub()` treats every other code as substantive. Keep the bot-quality codes unchanged (`OK, CORR, SCOPE, PART, OFF, FB, CLAR, FALSE, ACK`), since they are domain-neutral. Replace only the website-specific intents (`CAR` Careers, `STAFF` Staff lookup, `PRIV` Private person) and issues (`No live job openings`) with DeployIQ ones.
+
 **Taxonomy (DeployIQ-native, editable):** Platform and Services, Security and Compliance (Zero Trust, Essential Eight), Responsible AI and Trust, Company Facts, Contact and Pricing, Partner or Quote request, Support, Off-scope, Prompt injection, Ambiguous, Other, Greeting, and Closing (ack). The final list is confirmed with you before the seed migration is written.
 
 **Classifier (hybrid):**
@@ -450,6 +471,67 @@ The renderer needs two record types. Today the app has the raw material (message
 - An empty state for unlabeled history ("N turns pending classification", with a progress indicator).
 
 **Reference copy:** save the sanitized HTML to the folder in open item 1, with the embedded sample data and favicon stripped. It is the design spec and the visual regression reference.
+
+### 6.4 Connecting the HTML to our data (rev 3.1, read from the HTML source)
+
+I read the renderer script line by line (`metrics()`, `scope()`, `passConv()`, `isSub()`, `trend()`, `radial()`, `flow()`, `treemap()`, `donut()`, `lollipop()`, `bubble()`, `table()`, `detailBox()`). Its embedded data holds **49 conversations and 117 exchanges**. Every number in the Analytics page must reproduce these formulas from our tables.
+
+**Unit mapping:**
+- HTML **conversation** = one `chat_sessions` row. A session already ends after `session_timeout_minutes` (60) of inactivity, which is the same idea as the HTML's conversation.
+- HTML **exchange** = one `chat_messages` row with `role='user'`, paired with the next `role='assistant'` row in the same session (`turn_index`). Labels live on the assistant row's `turn_insights`.
+
+**Field mapping:**
+
+| HTML field | Our source (exact) |
+|---|---|
+| `conv_id` | `chat_sessions.id` (shown shortened, linked to `/admin/conversations/{id}`) |
+| `person` | Stable pseudonym. After SSO it is `sha256(user_email)`. For older rows it is `sha256(created_ip + user_agent bucket)`. Shown as `P01…` per result set, so no PII is displayed. |
+| `start`, `end`, `minutes` | `min(created_at)` and `max(created_at)` of the session's messages, and their difference |
+| `exchanges` | Count of user messages |
+| `substantive_exchanges` | Count of user messages whose `intent ∉ {GRE, ACK}` |
+| `questions_asked` | `string_agg(content, ' \| ' ORDER BY turn_index)` over user messages, PII-masked |
+| `timestamp`, `turn`, `user_message` | `created_at`, `turn_index`, `content` (PII-masked) |
+| `intent`, `bot_quality`, `issue`, `handled`, `substantive` | `turn_insights` (rule plus LLM). `handled` = `bot_quality ∈ {OK, CORR}` and, for `OK`, `grounded = true`. |
+| `user_type` | Mode of the session's intent **groups** (the taxonomy `group` column, for example Customer or prospect). "Mixed" if no group holds at least 60 % of the turns. "Greeting only" if there are no substantive turns. |
+| `outcome` | "Greeting only" if there are 0 substantive turns. "Served" if every substantive turn is handled. "Not served" if none are. "Partly served" otherwise. |
+| `experience_rating` | Feedback override first: any rating ≤ 2 gives "Dropped", and a rating of 5 on a served session gives "Great". Otherwise derived: Served gives "Good"; Served with `friction` gives "Served with friction"; Partly served gives "Partly served"; Not served gives "Dropped"; and no question gives "No question asked". |
+| `issue`, `failing_question` | The `issue` and `user_message` of the **last** unhandled substantive turn |
+| `friction` | An LLM flag on the closing turn (hostile or abandoned), stored in `turn_insights.friction` |
+| `policy_flag` | Readable text from `guardrail_flags` (for example `pii_detected`, `blocked_unsafe`) |
+| `pages` | Not captured. Hidden (open item 2). |
+| `touched_careers` | Generalised to "touched topic X" via a taxonomy flag. Hidden by default. |
+
+**KPI formulas (copied from `metrics()`):**
+- **Conversations** = sessions in scope.
+- **Substantive questions** = exchanges in scope with `isSub`.
+- **Questions handled %** = handled ÷ substantive.
+- **Conversations served %** = Served ÷ conversations that are not "Greeting only".
+- **Probable people** = distinct `person`.
+- **Average questions per conversation** = Σ `substantive_exchanges` ÷ active conversations.
+
+**Charts:**
+
+| Chart | Formula | Endpoint |
+|---|---|---|
+| Daily trend | Substantive questions per day, plus conversations per day. Clicking a day sets from = to = that day, and clicking again clears it. | `/admin/insights/trend` |
+| Questions by hour (radial) | Substantive exchanges grouped by hour of `created_at`, **in the viewer's timezone** (`tz` parameter, default `Australia/Sydney`) | `/hourly` |
+| Flow | `user_type` to `outcome`, excluding "Greeting only" | `/flow` |
+| Topics treemap | Per intent: size = substantive count, colour = handled % on a red `#C0362C` to teal `#008080` scale | `/topics` |
+| How questions were answered (donut) | `bot_quality` counts in the order `OK, CORR, SCOPE, PART, FB, CLAR, OFF, FALSE` | `/quality` |
+| Where conversations dropped (lollipop) | `issue` counts over sessions with outcome Partly served or Not served | `/dropoff` |
+| Conversations per person (bubble) | Conversations per `person`, coloured by that person's most common outcome | `/people` |
+| Conversations table | Columns Conv, Person, Started, Type, Outcome, Rating, Issue, Qs. Sortable, 8 rows per page in the HTML (we use 25 with `Pagination`). The expand view lists the turns with time, intent, handled, quality and issue. | `/conversations` |
+
+**Filters (from `passConv()` and `scope()`):** period (all, 7d, 30d, custom), user type, outcome, rating, **issue**, **intent**, **quality**, **person**, and free text over id, person, type, issue, failing question and questions asked. The intent and quality filters keep a conversation if **any** of its turns match, and they also narrow the exchange set. The server reproduces exactly these semantics, and a parity test checks them (`planchanges4.md` B6.4).
+
+**Guide tab:** the HTML has a step-through guide (`STEPS`, `gShow`) that highlights each section. We port it as a dismissible "Tour" on the Guide tab, rewritten for our definitions.
+
+**Parity fixture:** `backend/tests/fixtures/insights_reference.json` holds the HTML's 49 conversations and 117 exchanges, with names already masked in the source. It is loaded into `chat_sessions`, `chat_messages` and `turn_insights` (labels taken from the fixture, not the classifier), and every endpoint must return the HTML's numbers:
+- Outcomes: Served 11, Partly served 14, Not served 22, Greeting only 2.
+- Exchanges: handled 62 out of 117.
+- Top drop issue: "No live job openings", 13 conversations.
+
+Only for this fixture, the taxonomy seed includes the HTML's original codes, so parity is exact.
 
 ---
 
@@ -730,14 +812,14 @@ Each row is enforced in code and proven by a test. Existing controls are kept an
 | **Parallel task execution** | Dashboard, governance overview, insights summary, feedback analytics | `asyncio.TaskGroup` with **one short-lived `AsyncSession` per task** (a session is not concurrency-safe), bounded by a configurable semaphore (`AGG_MAX_CONCURRENCY`). Where possible, one CTE query instead of N queries. |
 | **Batching** | Classifier (N turns per LLM call), embeddings (already batched), bulk triage (`POST /feedback/bulk`), bulk access approval, audit inserts | Batch size and parallelism come from config. Use `insert().values([...])` for bulk writes. |
 | **Background job queue** | Classifier, backfill, rollup refresh, online eval | A `jobs` table (`type`, `payload`, `status`, `attempts`, `run_after`, `locked_by`). Workers claim jobs with `SELECT ... FOR UPDATE SKIP LOCKED`. Retries use exponential backoff with jitter, and a dead-letter status. The worker runs in-process under a lifespan `TaskGroup`, or as a separate `worker` service in compose. It is safe with multiple replicas. |
-| **Caching** | Branding, `/auth/me` permissions, aggregations | A `StateBackend` interface with Memory and Redis implementations (open item 7). TTL caches with key versioning, invalidated on writes (test-IP, branding, role change). `SingleFlight` against stampedes. |
+| **Caching** | Branding, `/auth/me` permissions, aggregations | Per-process TTL caches with key versioning. Invalidation is broadcast to every worker and replica through Postgres `NOTIFY cache_invalidate` (test-IP, branding, role change). `SingleFlight` against stampedes. Data that must be shared (rate limits, OIDC state) lives in Postgres (13.6). |
 | **Pre-aggregation** | Analytics and dashboard trends | Hourly and daily rollup tables (`insight_daily_rollup`, `usage_hourly_rollup`) refreshed incrementally by a job. Charts read the rollups, and only today's partial bucket is computed live. |
 | **Pagination** | Logs, traces, conversations | Keyset (cursor) pagination on `(created_at, id)` for the large tables. Offset pagination is kept for small tables. Exact `total` is computed only where it is cheap, otherwise an estimate with a flag. |
 | **Indexes** | New filter columns | A composite index for every new filter and sort pair (the migration includes `EXPLAIN` evidence in the PR). Indexes are created `CONCURRENTLY` where the table is large. |
 | **Streaming** | CSV and JSONL exports, `/query` (optional) | `StreamingResponse` over `stream()` / `yield_per(1000)`, so memory stays flat. SSE for live governance and monitoring updates, replacing 10 s polling. |
 | **HTTP efficiency** | All JSON | `GZipMiddleware(minimum_size=1024)` (or gzip at nginx). Weak `ETag` plus `Cache-Control: private, max-age=15` on aggregation GETs, with 304 on `If-None-Match`. `Cache-Control: public, max-age=3600` on `/branding` and brand assets. |
 | **Connection pool** | `database.py` | `pool_pre_ping=True`, pool size from config, and a statement timeout per session (`SET LOCAL statement_timeout`) on dashboard reads. |
-| **Load balancing** | `askdiq.conf`, `docker-compose.prod.yml` | `upstream askdiq_api { least_conn; server api1:8000 max_fails=3 fail_timeout=10s; server api2:8000 ...; keepalive 32; }`, plus health checks on `/health`. Uvicorn runs `--workers ${WEB_CONCURRENCY}` once Redis backs the shared state. Sessions live in Postgres, so **no sticky sessions** are needed. Graceful shutdown drains in-flight requests and jobs. |
+| **Load balancing** | `askdiq.conf`, `docker-compose.prod.yml` | `upstream askdiq_api { least_conn; server api1:8000 max_fails=3 fail_timeout=10s; server api2:8000 ...; keepalive 32; }`, plus health checks on `/health`. Uvicorn runs `--workers ${WEB_CONCURRENCY}` (default 2 per replica) once the Postgres-backed shared state (13.6) is in. Sessions live in Postgres, so **no sticky sessions** are needed. The DB pool is sized so that `replicas × workers × (pool_size + max_overflow)` stays below Postgres `max_connections` minus 20. Graceful shutdown drains in-flight requests and jobs. |
 | **Back-pressure** | LLM path | The existing Azure quota monitor plus a global LLM semaphore (`LLM_MAX_CONCURRENCY`). Return 429 with `Retry-After` when saturated. A circuit breaker on repeated Azure failures. |
 
 ### 13.3 Frontend techniques
@@ -766,15 +848,29 @@ Each row is enforced in code and proven by a test. Existing controls are kept an
 
 ### 13.5 Load and concurrency test profile
 
+**Requirement: at least 50 concurrent requests, all succeeding within budget.** Every profile is run at 50 (requirement) and at 100 (headroom).
+
 - **Tooling:** extend `scripts/run_admin_load_test.py` and `run_concurrency_test.py` (httpx with asyncio).
-- **Admin profile:** 50 concurrent admin users for 10 minutes, mixing dashboard, analytics, governance logs (deep pages) and feedback triage.
-- **Chat profile:** 200 concurrent chat sessions with the LLM mocked by a latency-injected fake.
+- **Admin profile:** 50, then 100, concurrent admin users for 10 minutes, mixing dashboard, analytics, governance logs (deep pages) and feedback triage.
+- **Chat profile:** 50, then 100, concurrent `/query` requests, plus 200 open chat sessions, with the LLM mocked by a latency-injected fake (2 to 6 s). This proves the event loop never blocks while waiting on the LLM. The per-user rate limit is raised for the test users only, through test settings.
+- **CI gate:** `tests/test_concurrency_50.py` fires 60 simultaneous requests at the ASGI app (fake LLM, real Postgres). All must succeed, with p95 inside budget. It runs on every PR.
 - **Concurrency correctness:**
   - Two superadmins approving the same request, where exactly one wins.
   - Concurrent triage on one item, with no lost update (optimistic `version` column or `SELECT ... FOR UPDATE`).
   - Job queue with 4 workers, where no job runs twice.
-  - Rate limiter consistent across 2 workers (Redis).
+  - Rate limiter exact across 2 workers and 2 replicas (Postgres buckets).
   - Concurrent same-key cache misses, where SingleFlight issues one query.
+
+### 13.6 Postgres-backed shared state (replaces Redis)
+
+| Need | Mechanism | Notes |
+|---|---|---|
+| Rate limiting across workers and replicas | UNLOGGED table `rate_limit_buckets(key, window_start, count)`, primary key `(key, window_start)`. A fixed 10 s sub-window approximates a sliding window. One atomic `INSERT ... ON CONFLICT DO UPDATE SET count = count + 1 RETURNING count` per check. A periodic job deletes old windows. | About 1 ms per check on a local DB. UNLOGGED means no WAL cost, and losing it on a crash only resets counters. |
+| OIDC `state`, `nonce` and PKCE verifier | Table `oidc_states(state_hash, nonce, verifier, expires_at)`, consumed with `DELETE ... RETURNING` (single use, atomic). | Works on any replica that receives the callback. |
+| Live updates (SSE) and cache invalidation | `LISTEN askdiq_events` on one dedicated asyncpg connection per worker. Writers call `NOTIFY` (payload is at most 8 KB, so we send ids rather than data). Each worker fans out to its SSE clients in memory. | No polling per client. |
+| Job queue | `jobs` table with `FOR UPDATE SKIP LOCKED` (13.2). | Already planned. |
+| Single-flight and read caches | Per process. | Duplicates across workers are bounded by the worker count, which is acceptable. |
+| Async-only audit | Ruff `ASYNC` rules plus `tests/test_async_only.py`. Known items to fix: sync `open()` of `promoted_test_cases.json` in `evaluation/dataset_extra.py` (moved to the DB in B5), sync `read_text` in `metrics.py` (wrap in `asyncio.to_thread`), `psutil.Process().memory_info()` in `admin.py` (cheap, but moved into the same `to_thread` call), unused `requests` and `embed_*_sync` helpers removed. | CPU-heavy work (reranker, docx, chunking) already uses `to_thread` and stays that way. |
 - **Soak:** 30 minutes, with RSS and the DB pool watched for leaks.
 
 ---
@@ -911,15 +1007,18 @@ Shared chart components live in `components/charts/`: `ChartCard`, `Sparkline`, 
 | `backend-lint` | `ruff check .`, `ruff format --check .`, `pylint app`, `bandit -r app -ll`, `pip-audit -r requirements.txt` |
 | `backend-tests` | Postgres pgvector service. `alembic upgrade head`, then `alembic heads` must print exactly 1, then `alembic downgrade -1 && alembic upgrade head`. `pytest -q --cov=app --cov-fail-under=80` |
 | `frontend-checks` | `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm audit --audit-level=high --omit=dev` |
-| `e2e` | Needs the two above. Starts Postgres, the backend (`AUTH_DEV_MOCK=true`) and `next start -p 3000`, then runs `npx playwright test` (Chromium). Uploads the HTML report and traces as an artifact on failure. |
-| `perf-smoke` (PR label `perf` or nightly) | A short `run_admin_load_test.py --smoke` that asserts the 13.4 budgets at low concurrency. |
+| `fullstack-smoke` | Needs the two above. Starts Postgres, the backend (`AUTH_DEV_MOCK=true`, `ENV=development`) and `next start -p 3000`. Then runs `backend\scripts\smoke_e2e.py`: an **httpx client** that signs in through port 3000 (Next callback, then the mock IdP, then the cookie), and calls dashboard APIs through the Next proxy as each role. No browser and no Playwright. |
+| `perf-smoke` (PR label `perf` or nightly) | `run_admin_load_test.py --smoke --concurrency 50` asserts the 13.4 budgets at the required concurrency. |
+
+**End-to-end testing without a browser:** backend journey tests (`backend/tests/e2e/`, real Postgres, mock IdP, full router stack), frontend journey tests (`frontend/tests/journeys/`, vitest and Testing Library with a mocked `fetch`), and the full-stack smoke above. Visual checks (light and dark screenshots) stay **manual** and are attached to the PR.
 
 Triggers: `pull_request` to `main`, `push` to `main` only, and `workflow_dispatch`. `concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }`. Keep `permissions: contents: read`.
 
 ### 16.3 Branch protection on `main` (repo admin, open item 8)
 
 - Require a pull request with 1 approval, and dismiss stale approvals.
-- Required status checks: `backend-lint`, `backend-tests`, `frontend-checks` and `e2e`. Branches must be up to date before merging.
+- Required status checks: `backend-lint`, `backend-tests`, `frontend-checks` and `fullstack-smoke`. Branches must be up to date before merging.
+- **Before turning protection on,** push the two plan files and `.gitignore` change in one PR (`chore/plan-admin-console-rev3`), or push them first if you prefer a direct push. Once protection is on, every change, plan files included, goes through a PR. `newplan.md` is still git-ignored (`/newplan.md` in `.gitignore`). Remove that line if you want it committed.
 - Require conversation resolution. Block force-push and deletion. Linear history is optional: the team's earlier PRs used merge commits.
 - CodeQL default setup stays on (it already raised alerts fixed in `50f777a`).
 
@@ -940,7 +1039,8 @@ Triggers: `pull_request` to `main`, `push` to `main` only, and `workflow_dispatc
    - A rollback plan.
 6. Wait for green CI. Fix failures by pushing new commits, never by suppressing a check. Request review and resolve comments.
 7. Merge through GitHub only, after approval and green checks. Delete the branch, then `git switch main && git pull` before the next feature.
-8. If a feature depends on an unmerged one, stack the PR on that branch (base equals the parent branch) as in `pr_raising_plan.md`. Retarget it to `main` after the parent merges.
+8. Do **not** stack PRs by default. Work in the **merge waves** in `planchanges4.md` section 8: every PR in a wave branches from `main` after the previous wave has merged. Stack only if a wave would otherwise stall, and then follow `pr_raising_plan.md`.
+9. Merge with **squash** (one commit per feature on `main`, titled with the PR title). Before merging, rebase on `main`, rerun CI, and apply the migration re-link rule (`planchanges4.md` 8.3).
 
 ### 16.5 Execution order (backend first)
 
@@ -966,7 +1066,16 @@ Triggers: `pull_request` to `main`, `push` to `main` only, and `workflow_dispatc
 
 ---
 
-## 17. Revision 3 change log
+## 17. Revision 3.1 change log (2026-10-15)
+
+- **Redis removed.** Shared state moved to Postgres (13.6). Multi-worker and multi-replica load balancing are kept.
+- **Hard target of at least 50 concurrent requests.** It is tested at 50 and 100, with a CI gate (`test_concurrency_50.py`). An async-only audit lists the known sync hotspots.
+- **Playwright, axe, Lighthouse and ZAP removed.** E2E now runs on httpx (backend journeys plus a full-stack smoke through port 3000) and vitest journeys. The CI check is `fullstack-smoke` instead of `e2e`.
+- **SSO.** The mock IdP now behaves like real Entra (claims, issuer, JWKS rotation, no `email` claim). Added the `verify_sso_config.py` preflight and the go-live checklist, so filling in `.env` is the only step left.
+- **Analytics.** The HTML renderer was read, and section 6.4 maps every field, KPI, chart and filter to our tables, with a 49-conversation parity fixture. The `GRE` and `ACK` codes are kept.
+- **Merges.** Merge waves, squash merges and the migration re-link rule are in `planchanges4.md` sections 8 and 9, along with the parallel execution guide.
+
+## 18. Revision 3 change log
 
 - The baseline commit is marked done (PR #13). Branching moves to one feature, one PR, and no direct push to `main`.
 - The reference HTML folder moves out of the git-ignored `/backend/docs/`.

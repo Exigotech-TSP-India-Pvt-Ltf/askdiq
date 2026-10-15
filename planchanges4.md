@@ -2,7 +2,12 @@
 
 **Source:** [newplan.md](newplan.md) revision 3 (sections 1 to 17). Section numbers like "§7.5" refer to that file.
 **Baseline:** `main` @ `9382178` (PR #13 merged). Every feature below is its own branch and its own PR into `main`. Nothing is pushed or merged to `main` directly.
-**Order:** backend phases **B0 to B7**, then frontend phases **F0 to F7**, then verification phase **V**.
+**Order:** backend phases **B0 to B7**, then frontend phases **F0 to F7**, then verification phase **V**. The PRs run in **14 merge waves** (section 8), worked in parallel sessions (section 9).
+**Rev 3.1 constraints:**
+- No Redis. Shared state lives in Postgres.
+- At least 50 concurrent requests, all async, enforced by a CI gate.
+- No Playwright, axe, Lighthouse or ZAP. E2E runs through httpx and vitest.
+- SSO is fully tested against an Entra-faithful mock. Real Entra needs only `.env` values and the preflight script.
 
 ---
 
@@ -35,9 +40,9 @@ A **task** box is ticked only when all of its subtasks are ticked. A **phase** b
 Every **PR task** has the same three boxes:
 - **[Dev]** The branch is cut from a fresh `main`, the commits follow Conventional Commits with the attribution trailer, and the PR is raised with `gh pr create --base main`. The template is filled in: summary, plan ids, screenshots (light and dark), migration notes, OWASP rows touched, perf numbers, assumptions, test evidence and rollback.
 - **[Lint]** The CI jobs `backend-lint` and `frontend-checks` (lint part) are green on the PR.
-- **[Test]** The CI jobs `backend-tests`, `frontend-checks` (test and build) and `e2e` are green, review is approved, and the PR is merged **through GitHub**. Then the branch is deleted and local `main` is pulled.
+- **[Test]** The CI jobs `backend-tests` (including the 50-concurrency gate), `frontend-checks` (test and build) and `fullstack-smoke` are green, review is approved, and the PR is **squash-merged through GitHub** in its wave (section 8). Then the branch is deleted and local `main` is pulled.
 
-Never merge red. Never push to `main`. If a PR depends on an unmerged one, stack it (base = parent branch) and retarget it to `main` after the parent merges.
+Never merge red. Never push to `main`. Don't stack PRs: a PR starts only when its wave begins (section 8.1), so everything it depends on is already on `main`.
 
 ### 1.4 Roadmap
 
@@ -93,7 +98,8 @@ VERIFICATION
 | Parallel task execution (`TaskGroup`, one session per task, semaphore) | B1 utility, used in B4–B7 | F0 `Promise.all` widgets |
 | Batching | B5 bulk triage, B6 classifier batches, B2 bulk approve | F5 bulk actions |
 | Background job queue (`SKIP LOCKED`) | B1, used in B5, B6 | F5/F6 job progress chips |
-| Caching + SingleFlight + StateBackend (Redis opt-in) | B1, B2 (`/auth/me`), B3 (`/branding`) | F0 query cache, dedupe, SWR |
+| Caching + SingleFlight + Postgres shared state (no Redis): rate-limit buckets, OIDC state, LISTEN/NOTIFY | B1, B2 (`/auth/me`), B3 (`/branding`) | F0 query cache, dedupe, SWR |
+| **50+ concurrent requests** (CI gate at 60, load test at 50 and 100) | B1.7, V.2 | – |
 | Prefetching | – | F0 hover/intent prefetch, next-page idle prefetch |
 | Pre-aggregation rollups | B6, B7 | – |
 | Keyset pagination + indexes | B4, B5, B6 | F4 cursor tables |
@@ -140,7 +146,7 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 ---
 
 #### Task B0.2: CI workflow hardening (`.github/workflows/ci.yml`)
-- [ ] **[Dev]** Task B0.2: split into the `backend-lint`, `backend-tests`, `frontend-checks`, `e2e` and `perf-smoke` jobs (newplan §16.2).
+- [ ] **[Dev]** Task B0.2: split into the `backend-lint`, `backend-tests`, `frontend-checks`, `fullstack-smoke` and `perf-smoke` jobs (newplan §16.2).
 - [ ] **[Lint]** Task B0.2: `actionlint` (run via `npx` / docker locally) is clean, and the YAML parses.
 - [ ] **[Test]** Task B0.2: the workflow passes on the PR-01 branch.
 
@@ -164,10 +170,12 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 - [ ] **[Lint]** Run actionlint.
 - [ ] **[Test]** The job is green.
 
-##### Subtask B0.2.5: E2E job skeleton
-- [ ] **[Dev]** Add `frontend/playwright.config.ts` (Chromium, `baseURL http://localhost:3000`, trace on first retry) and a `smoke.spec.ts` that loads `/`. The CI job starts Postgres, the backend (test env vars, `AUTH_DEV_MOCK` added in B2) and `next start -p 3000`, then runs `npx playwright install --with-deps chromium && npx playwright test`. On failure it uploads the report.
-- [ ] **[Lint]** Run LINT-FE on the spec and config.
-- [ ] **[Test]** The smoke spec passes in CI.
+##### Subtask B0.2.5: Full-stack smoke job skeleton (no browser, no Playwright)
+- [ ] **[Dev]**
+  - Add `backend/scripts/smoke_e2e.py`, an httpx `AsyncClient` with a cookie jar. For now it checks that `GET http://localhost:3000/` and `/api/proxy/health` both return 200. The sign-in steps are added in B2.8.
+  - The CI job `fullstack-smoke` starts Postgres, runs `alembic upgrade head`, starts uvicorn in the background (test env vars) and `npm run build && npm run start` (port 3000), waits for health, then runs the script. On failure it uploads the server logs.
+- [ ] **[Lint]** Run LINT-BE on the script.
+- [ ] **[Test]** The job is green in CI.
 
 ##### Subtask B0.2.6: Perf smoke job (label or nightly)
 - [ ] **[Dev]** Add a job gated on the `perf` label or a `schedule` that runs `run_admin_load_test.py --smoke` (the flag is added in B1.6).
@@ -318,23 +326,39 @@ Build the security and performance platform that every later feature uses (newpl
 
 ---
 
-#### Task B1.4: Shared state backend (open item 7)
-- [ ] **[Dev]** Task B1.4: add a `StateBackend` interface with Memory and Redis implementations, and move the rate limiter and caches onto it.
+#### Task B1.4: Postgres-backed shared state (no Redis; newplan §13.6)
+- [ ] **[Dev]** Task B1.4: move the rate limiter, OIDC handshake state and cross-worker events onto Postgres, so multiple workers and replicas behave as one system.
 - [ ] **[Lint]** Task B1.4: LINT-BE.
-- [ ] **[Test]** Task B1.4: the same contract test suite passes against both backends (Redis via the CI service container).
+- [ ] **[Test]** Task B1.4: `tests/test_shared_state.py` passes, including the multi-instance cases.
 
-##### Subtask B1.4.1: Interface and Memory implementation
-- [ ] **[Dev]** Add `app/core/state.py` with a `StateBackend` Protocol: `get`, `set(ttl)`, `incr_window`, `delete`, `lock`. Wrap the existing `TTLCache` and sliding window as `MemoryState`.
+##### Subtask B1.4.1: `StateBackend` interface and Memory implementation
+- [ ] **[Dev]** Add `app/core/state.py` with a `StateBackend` Protocol: `incr_window(key, window_s)`, `put_once(key, value, ttl)`, `take_once(key)`. Wrap the existing sliding window as `MemoryState`, used only in unit tests and single-process development.
 - [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** The existing `test_rate_limit.py` and `test_single_flight.py` pass unchanged.
 
-##### Subtask B1.4.2: Redis implementation (only if open item 7 is approved)
-- [ ] **[Dev]** `RedisState` uses `redis.asyncio`. It is selected when `REDIS_URL` is set. The rate limit is a sorted-set sliding window in a Lua script, so it is atomic. Add `REDIS_URL` (no default) to `.env.example` and a `redis` service to compose.
+##### Subtask B1.4.2: `PostgresState`
+- [ ] **[Dev]**
+  - Migration: UNLOGGED table `rate_limit_buckets(key text, window_start timestamptz, count int, PRIMARY KEY (key, window_start))`, and table `oidc_states(state_hash text primary key, payload jsonb, expires_at timestamptz)`.
+  - `incr_window` runs one `INSERT ... ON CONFLICT DO UPDATE SET count = rate_limit_buckets.count + 1 RETURNING count`, summing 10 s sub-windows for the sliding minute.
+  - `take_once` runs `DELETE ... WHERE state_hash = :h AND expires_at > now() RETURNING payload`.
+  - A cleanup job (B1.3) deletes expired rows every minute.
+  - It is the default when `ENV != test`.
 - [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The contract suite passes. Two app instances share one limit, so 10/min holds across both.
+- [ ] **[Test]**
+  - Two app instances (two engines) share one limit, so 10/min holds across both.
+  - `take_once` is single use under 20 concurrent callers (exactly 1 gets the payload).
+  - The rate-limit check adds under 3 ms p95 locally.
 
-##### Subtask B1.4.3: Configurable semaphores
-- [ ] **[Dev]** Replace the hard-coded `asyncio.Semaphore(4)` in `admin_usage.py` and `online_eval.py` with config (`usage_agg_max_concurrency`, `ONLINE_EVAL_MAX_CONCURRENCY`). Add a global `LLM_MAX_CONCURRENCY` semaphore with a 429 and `Retry-After` when saturated.
+##### Subtask B1.4.3: LISTEN/NOTIFY event bus
+- [ ] **[Dev]**
+  - `app/core/events.py` keeps one dedicated asyncpg `LISTEN askdiq_events` connection per worker (it reconnects with backoff). `publish(topic, id)` sends a `NOTIFY` with a small JSON payload of ids only.
+  - Subscribers register in-process queues.
+  - It is used for cache invalidation (test-IP, branding, role changes) and SSE fan-out (B4.2.5).
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** An event published on instance A reaches a subscriber on instance B within 1 s. A dropped listener connection reconnects and resubscribes.
+
+##### Subtask B1.4.4: Configurable semaphores
+- [ ] **[Dev]** Replace the hard-coded `asyncio.Semaphore(4)` in `admin_usage.py` and `online_eval.py` with config (`usage_agg_max_concurrency`, `ONLINE_EVAL_MAX_CONCURRENCY`). Add a global `LLM_MAX_CONCURRENCY` semaphore (default 64, so it does not cap the 50-concurrency target) that returns 429 with `Retry-After` when saturated.
 - [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** A saturation test returns 429 with `Retry-After`. The limits follow the config.
 
@@ -383,9 +407,12 @@ Build the security and performance platform that every later feature uses (newpl
 - [ ] **[Test]** Killing one replica does not interrupt service. Requests are spread across both (check via `X-Upstream` in debug).
 
 ##### Subtask B1.6.2: Workers and replicas
-- [ ] **[Dev]** In `Dockerfile.prod`, run `uvicorn --workers ${WEB_CONCURRENCY:-1}`. Keep the default at 1 unless `REDIS_URL` is set, and log a startup warning if workers > 1 without Redis. Compose prod gets `api-1`, `api-2` and `worker`.
+- [ ] **[Dev]**
+  - In `Dockerfile.prod`, run `uvicorn --workers ${WEB_CONCURRENCY:-2}`, and update the comment there: the rate limiter is now shared through Postgres (B1.4).
+  - Compose prod gets `api-1`, `api-2` and `worker`.
+  - Size the pool: `replicas × workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) ≤ max_connections − 20`, with defaults of 2 × 2 × (10 + 5) = 60. Document this in `DEPLOYMENT.md`.
 - [ ] **[Lint]** Run `docker compose -f docker-compose.prod.yml config`.
-- [ ] **[Test]** The startup warning test passes. The compose stack is healthy.
+- [ ] **[Test]** The compose stack is healthy. The rate limit is enforced across both replicas (`smoke_e2e.py --rate-limit-check`).
 
 ##### Subtask B1.6.3: Load script upgrade
 - [ ] **[Dev]** Add `--smoke`, `--profile admin|chat`, `--concurrency` and `--duration` to `scripts/run_admin_load_test.py`. It writes a JSON report with p50, p95, p99 and error % per route, and exits non-zero if a §13.4 budget is breached.
@@ -394,14 +421,43 @@ Build the security and performance platform that every later feature uses (newpl
 
 ---
 
-#### Task B1.7: Phase B1 integration testing
+#### Task B1.7: Async-only audit and the 50-concurrency gate (newplan §13.5, §13.6)
+- [ ] **[Dev]** Task B1.7: remove every blocking call from async paths, and add the permanent 50+ concurrency test.
+- [ ] **[Lint]** Task B1.7: ruff `ASYNC` rules (ASYNC210, ASYNC230, ASYNC251 and others) report zero findings in `app/`.
+- [ ] **[Test]** Task B1.7: `tests/test_async_only.py` and `tests/test_concurrency_50.py` pass on every PR.
+
+##### Subtask B1.7.1: Fix the known sync hotspots
+- [ ] **[Dev]**
+  - Wrap `json.loads(...read_text())` in `api/routes/metrics.py` (around lines 124 and 131) in `asyncio.to_thread`, or confirm the caller already offloads it.
+  - Move the sync `open()` of `promoted_test_cases.json` in `evaluation/dataset_extra.py` (line 289) behind `to_thread` now. B5 replaces it with a DB read.
+  - Fold `psutil.Process().memory_info()` in `api/routes/admin.py` (around lines 526 and 1093) into the same `to_thread` call as `cpu_percent`.
+  - Remove the unused `requests` from `requirements.txt` (check with `rg "import requests"` first) and the unused `embed_*_sync` helpers.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** The full TEST-BE suite passes.
+
+##### Subtask B1.7.2: Event-loop blocking detector
+- [ ] **[Dev]** Add a test fixture that enables `loop.slow_callback_duration = 0.05` and asyncio debug mode, and fails the test if any callback blocks the loop for more than 50 ms during the API test suite.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** It passes on the full API test set, or the offenders are fixed.
+
+##### Subtask B1.7.3: `tests/test_concurrency_50.py` (CI gate)
+- [ ] **[Dev]** Fire 60 simultaneous requests through `asyncio.gather` at the ASGI app (real Postgres, `fake_llm` with a 1 s delay, `fake_embed`). The mix is 30 `/query`, 20 admin dashboard GETs and 10 feedback POSTs. Test users are exempted from the per-user limit through settings injection.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]**
+  - All 60 requests succeed (200 or 201).
+  - Total wall time is under 3 s, which proves they ran concurrently rather than one by one (60 s).
+  - No `QueuePool` timeout occurs.
+
+---
+
+#### Task B1.8: Phase B1 integration testing
 - [ ] **[Dev]** Create `tests/test_platform_integration.py`. It boots the app with the Memory backend and covers: headers on success and error, problem+json on a forced 500, a job enqueued and processed end to end, an ETag 304 round-trip, `gather_scoped` used by the dashboard, and an SSE stream.
 - [ ] **[Lint]** Run LINT-BE on the test file.
 - [ ] **[Test]** Pass, and the CI `perf-smoke` passes with the `perf` label.
 
-#### Task B1.8: PRs
+#### Task B1.9: PRs
 - **PR-03** `feat/platform-security-headers-errors`: B1.1 and B1.2.
-- **PR-04** `feat/platform-jobs-state-http`: B1.3, B1.4 and B1.5.
+- **PR-04** `feat/platform-jobs-state-http`: B1.3, B1.4, B1.5 and B1.7.
 - **PR-05** `feat/platform-load-balancing`: B1.6.
 - [ ] **[Dev]** PR-03, PR-04 and PR-05 raised per §1.3.
 - [ ] **[Lint]** CI lint is green.
@@ -448,7 +504,7 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 - [ ] **[Test]** Task B2.2: `tests/test_auth_oidc.py` passes, including all the negative token cases.
 
 ##### Subtask B2.2.1: Authorize URL with PKCE, state and nonce
-- [ ] **[Dev]** `build_authorize_url()` generates `state`, `nonce` and a PKCE verifier (S256) and stores them in the `StateBackend` with a 10-minute TTL and one-time use.
+- [ ] **[Dev]** `build_authorize_url()` generates `state`, `nonce` and a PKCE verifier (S256), and stores them in `oidc_states` (B1.4.2) with a 10-minute TTL and one-time use, so the callback can land on any replica. It reads endpoints from the **discovery document** (`https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration`), not hard-coded URLs, and requests scopes `openid profile email`.
 - [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** The URL params are correct. A state is single-use, so replaying it gives 400.
 
@@ -457,10 +513,39 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 - [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** Negative tests: bad signature, `alg=none`, wrong `iss`, `aud` or `tid`, expired token, bad nonce, unknown `kid` (refetch once, then fail). All fail closed.
 
-##### Subtask B2.2.3: Mock IdP (development only)
-- [ ] **[Dev]** Mounted only when `AUTH_DEV_MOCK=true`. It provides authorize, token and JWKS endpoints with a throwaway RSA key, and a test hook to choose the email, name, `oid` and `tid`.
+##### Subtask B2.2.3: Entra-faithful mock IdP (development and test only)
+- [ ] **[Dev]**
+  - Mounted only when `AUTH_DEV_MOCK=true`, at `/mock-idp/{tenant}/v2.0/...`. It provides discovery, authorize (renders a tiny "pick a user" form in development, and auto-approves with test-chosen claims in tests), token and JWKS endpoints.
+  - The discovery document copies Microsoft's shape, and the issuer is `.../{tid}/v2.0`.
+  - ID token claims: `ver "2.0"`, `oid`, `tid`, `sub`, `name`, `preferred_username`, `nonce`, `aud`, `iat`, `nbf` and `exp`. `email` is **omitted unless the test asks for it**.
+  - RS256 with a `kid`, and a rotation hook to serve a second key.
+  - Codes are single use, and PKCE S256 is verified.
+  - Errors use the OAuth shape `{error, error_description}`.
+  - The OIDC client uses the **same code path** for mock and real. Only the discovery URL base differs (`AUTH_DEV_MOCK` switches it to `APP_BASE_URL`-relative).
 - [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The real validator accepts mock tokens. The router is absent when the flag is off. The startup guard test passes.
+- [ ] **[Test]**
+  - The real validator accepts mock tokens.
+  - Email falls back to `preferred_username` when `email` is absent.
+  - Key rotation works.
+  - A reused code or a wrong PKCE verifier is rejected.
+  - The router is absent when the flag is off, and the startup guard (mock flag with `ENV != development`) refuses to boot.
+  - `tests/fixtures/entra_discovery_v2.json` (a recorded public Microsoft discovery document) parses through the same code.
+
+##### Subtask B2.2.4: `scripts/verify_sso_config.py` (owner preflight after filling in `.env`)
+- [ ] **[Dev]**
+  - Load `Settings` the normal way, so it reads `.env` at runtime. The script never prints values, only the names of the checks.
+  - Checks:
+    - The required `ENTRA_*` and `SESSION_SECRET` values are present.
+    - `SESSION_SECRET` is at least 32 bytes.
+    - `AUTH_DEV_MOCK` is false.
+    - The real discovery document is reachable, and its issuer contains `ENTRA_TENANT_ID`.
+    - JWKS has at least one key.
+    - `ENTRA_REDIRECT_URI == APP_BASE_URL + "/auth/callback"`.
+    - The cookie `Secure` setting matches the URL scheme.
+    - `SUPERADMIN_EMAILS` is not empty.
+  - Exit code 0 only if every check passes.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** Unit tests with httpx mocked: each failing condition gives a FAIL line and exit code 1, and **no secret appears in the output** (asserted).
 
 ---
 
@@ -549,12 +634,32 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 - [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** Pass, and the route-walk and OWASP A01/A07 tests pass.
 
+#### Task B2.8: Go-live readiness for real Entra (testable now, switched on by `.env` later)
+- [ ] **[Dev]** Task B2.8: full-stack sign-in smoke against the mock, plus the owner's go-live checklist.
+- [ ] **[Lint]** Task B2.8: LINT-BE on `smoke_e2e.py`.
+- [ ] **[Test]** Task B2.8: the `fullstack-smoke` CI job passes the sign-in steps.
+
+##### Subtask B2.8.1: Extend `smoke_e2e.py`
+- [ ] **[Dev]** Through **port 3000**: open `/login`, follow `GET /api/proxy/auth/sso/login` to the mock authorize page, then to `/auth/callback`, then check that the session cookie is set (httpOnly). Then `GET /api/proxy/auth/me` returns the user. A pending user gets 403 on `/api/proxy/admin/dashboard`. A superadmin (from `SUPERADMIN_EMAILS` in the CI env) gets 200. Logout invalidates the cookie.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** Green in CI.
+
+##### Subtask B2.8.2: Owner go-live checklist (add to `DEPLOYMENT.md`; nothing else changes in code)
+- [ ] **[Dev]** Write the checklist:
+  1. In Entra, register a single-tenant app. Add the Web redirect URI `http://localhost:3000/auth/callback` (and the production HTTPS URL). Create a client secret. Grant `openid`, `profile` and `email`. Optionally add the `email` claim to the ID token.
+  2. Fill in `backend/.env` (`ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_REDIRECT_URI`, `SESSION_SECRET`, `SUPERADMIN_EMAILS`, `ACCESS_CONTACT_EMAIL`, `AUTH_DEV_MOCK=false`) and `frontend/.env.local` (`APP_BASE_URL`, `SESSION_COOKIE_NAME`, `SESSION_COOKIE_SECURE`).
+  3. Run `backend\venv\Scripts\python.exe scripts\verify_sso_config.py`. Every check must PASS.
+  4. Run `npm run dev` (port 3000) and the backend, then sign in as a superadmin email. You should land on the dashboard.
+  5. Sign in with a second account. You should get Chat plus Access Required. Approve it in User Management, and the second account should get the dashboard without signing in again.
+- [ ] **[Lint]** Check the markdown.
+- [ ] **[Test]** The owner runs it after the work is complete (tracked as V.5.3).
+
 #### Task B2.7: PRs
 - **PR-06** `feat/auth-sso-sessions-rbac`: B2.1, B2.2, B2.3 and B2.5.
-- **PR-07** `feat/auth-user-management-api`: B2.4 and B2.6.
+- **PR-07** `feat/auth-user-management-api`: B2.4, B2.6 and B2.8.
 - [ ] **[Dev]** Raised per §1.3. The PR body includes a threat-model note (A01, A04, A07).
 - [ ] **[Lint]** CI lint is green.
-- [ ] **[Test]** CI tests are green (the e2e job env now sets `AUTH_DEV_MOCK=true`), approved, and merged.
+- [ ] **[Test]** CI tests and `fullstack-smoke` are green (CI env: `AUTH_DEV_MOCK=true`, `ENV=development`, `SESSION_SECRET` and `SUPERADMIN_EMAILS` set to test values), approved, and merged.
 
 ---
 
@@ -689,7 +794,7 @@ Fix every backend cause in newplan §4.1, add the endpoints in §4.5, and add th
 - [ ] **[Test]** Threshold boundary tests for each status. The response uses at most N queries (asserted through a SQLAlchemy event counter).
 
 ##### Subtask B4.2.5: `GET /governance/stream` (SSE)
-- [ ] **[Dev]** Pushes health-status changes, new incidents and monitoring deltas every 5 s. One shared producer fans out to subscribers (no per-client DB polling). With Redis it uses pub/sub across replicas.
+- [ ] **[Dev]** Pushes health-status changes, new incidents and monitoring deltas every 5 s. One shared producer per worker fans out to subscribers (no per-client DB polling). Writers `NOTIFY` through the B1.4.3 event bus, so every replica receives events.
 - [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** With 50 subscribers, the DB query rate stays constant. A new incident reaches every subscriber.
 
@@ -865,8 +970,30 @@ Produce the labels and server-side aggregations the Analytics port needs (newpla
   - Audience scoping applies.
   - Taxonomy edits are audited, and renaming does not break existing labels (stable codes).
 
-#### Task B6.4: Phase B6 integration testing
-- [ ] **[Dev]** Create `tests/test_insights_integration.py`: seed conversations, run the worker (mock LLM), roll up, query every endpoint, edit the taxonomy, and check the result.
+#### Task B6.4: Phase B6 integration testing and HTML parity
+- [ ] **[Dev]** Task B6.4: real-data integration test and parity with `ExigoTech_Chatbot_Insights_standalone.html` (newplan §6.4).
+- [ ] **[Lint]** Task B6.4: LINT-BE.
+- [ ] **[Test]** Task B6.4: both suites pass.
+
+##### Subtask B6.4.1: Parity fixture loader
+- [ ] **[Dev]** `scripts/extract_insights_fixture.py` reads the root HTML, takes the `window.__EMBED__` conversations and exchanges, and writes `backend/tests/fixtures/insights_reference.json` (49 conversations and 117 exchanges, names already masked). A pytest fixture loads it into `chat_sessions`, `chat_messages` and `turn_insights`, using the HTML's own codes and labels.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** The loader is idempotent, and the row counts are 49 sessions and 117 user turns.
+
+##### Subtask B6.4.2: `tests/test_insights_parity.py`
+- [ ] **[Dev]** Assert that the endpoints reproduce the HTML's renderer formulas (`metrics()`, `flow()`, `treemap()`, `donut()`, `lollipop()`, `bubble()`, `trend()`, `radial()`) on the fixture.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]**
+  - Outcome counts: Served 11, Partly served 14, Not served 22, Greeting only 2.
+  - Handled exchanges: 62 out of 117.
+  - Top drop issue: "No live job openings", 13 conversations.
+  - Intent `SVC` has 33 exchanges.
+  - Bot quality: `PART` 37, `OK` 32.
+  - The KPI strip equals the HTML's computed values for the "all" period and for one custom range.
+  - Filter semantics match `passConv()`: the intent and quality filters keep a conversation if any turn matches.
+
+##### Subtask B6.4.3: Live-data integration
+- [ ] **[Dev]** Create `tests/test_insights_integration.py`: seed conversations through the real `/query` pipeline (LLM mocked), run the worker (classifier mocked), roll up, query every endpoint, edit the taxonomy, and re-check.
 - [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** Pass. The summary on 100k turns returns in under 600 ms p95 locally (recorded).
 
@@ -968,7 +1095,7 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
 ##### Subtask F0.1.1: Port 3000 pin
 - [ ] **[Dev]** `"dev": "next dev --turbo -p 3000"`, `"dev:webpack": "next dev -p 3000"`, `"start": "next start -p 3000"`. Add `APP_BASE_URL` to `.env.local.example`.
 - [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** `npm run dev` serves on 3000 (manual). The e2e job uses 3000.
+- [ ] **[Test]** `npm run dev` serves on 3000 (manual). The `fullstack-smoke` job uses 3000.
 
 ##### Subtask F0.1.2: Security headers and CSP (A02, A05)
 - [ ] **[Dev]**
@@ -976,7 +1103,7 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
   - A nonce-based CSP is set in `middleware.ts` (F1.1): `script-src 'self' 'nonce-…' 'strict-dynamic'`, `img-src 'self' data: blob:`, `connect-src 'self'` and `frame-ancestors 'none'`.
   - `optimizePackageImports: ['lucide-react','recharts']`.
 - [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A config test asserts the headers. The Playwright smoke test checks the response headers and that the console has no CSP violations.
+- [ ] **[Test]** A config test asserts the `headers()` output, and a middleware unit test asserts that the CSP has a fresh nonce per request. `smoke_e2e.py` asserts the headers on a real `next start` response. A manual check in the browser console for CSP violations is noted in the PR.
 
 ---
 
@@ -1028,7 +1155,11 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
   - Create `exigotech-logo-dark.svg` and `exigotech-mark-dark.svg` (white wordmark, `brand-400` teal).
   - `BrandLogo variant="full|mark"` swaps light and dark with a `dark:hidden` / `hidden dark:block` pair, sized `h-10 w-auto max-w-[200px]` inside an `h-16` header.
 - [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The rendered logo width is at least 160 px in an expanded sidebar (assert the bbox in Playwright). The dark variant contrast against `dark-bg` is at least 3:1.
+- [ ] **[Test]**
+  - Vitest asserts that the re-cropped SVG viewBox aspect ratio is within 5 % of the tight PNG (about 4.06), so the artwork fills the box.
+  - `BrandLogo` renders the right source per theme with the size classes.
+  - A unit test proves that the dark variant contrast against `dark-bg` is at least 3:1.
+  - A manual screenshot shows the logo at least 160 px wide in the expanded sidebar.
 
 ---
 
@@ -1118,12 +1249,12 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
 ##### Subtask F0.6.6: Branded error pages and mobile sidebar
 - [ ] **[Dev]** `not-found.tsx` and `error.tsx` use `BrandLogo`. Below `md`, the sidebar becomes an off-canvas drawer with a hamburger in the header.
 - [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Render tests, and a 390 px viewport Playwright check with no horizontal scroll.
+- [ ] **[Test]** Render tests (the drawer opens and closes, focus is trapped), and a manual check at 390 px width (browser device toolbar) with no horizontal scroll, screenshot in the PR.
 
 ---
 
 #### Task F0.7: Phase F0 integration testing
-- [ ] **[Dev]** Create `tests/components/FoundationsIntegration.test.tsx` and `e2e/foundations.spec.ts`. They check: the brand loads and changes the CSS variables, the logo has the right size in both themes, the palette navigates, a toast with undo works, and the deep-link round-trips with browser back.
+- [ ] **[Dev]** Create `tests/journeys/foundations.test.tsx` (vitest and Testing Library, `fetch` mocked). It checks: the brand loads and changes the CSS variables, `BrandLogo` swaps with the theme, the palette navigates by keyboard, a toast with undo works, and the deep-link round-trips (`useDeepLink` with a mocked router history).
 - [ ] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Pass. `next build` shows the route JS delta within the §13.4 budget (recorded).
 
@@ -1133,7 +1264,7 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
 - **PR-17** `feat/ui-global-ux-primitives`: F0.6 and F0.7.
 - [ ] **[Dev]** Raised per §1.3, with light and dark screenshots.
 - [ ] **[Lint]** CI lint is green.
-- [ ] **[Test]** CI tests and e2e are green, approved, and merged.
+- [ ] **[Test]** CI tests and `fullstack-smoke` are green, approved, and merged.
 
 ---
 
@@ -1224,7 +1355,9 @@ Put the B2 security model into the UI (newplan §7.7, §7.8). The UI hides what 
 - [ ] **[Test]** Bulk approve. An approved row animates out (`AnimatePresence`).
 
 #### Task F1.5: Phase F1 integration and E2E
-- [ ] **[Dev]** `e2e/auth.spec.ts` (mock IdP): a new user logs in, uses chat, sees Access Required and requests access. The superadmin logs in (second context), approves from the bell and the queue, and the user's screen transitions to the dashboard. The superadmin suspends them, and the user is locked out on their next navigation.
+- [ ] **[Dev]**
+  - `tests/journeys/auth.test.tsx` (vitest, `/auth/me` mocked through each state): a new user sees Chat, then Access Required, submits a request, the status flips to approved, and the dashboard renders. A suspended user sees the suspended page.
+  - `smoke_e2e.py --journey access`, against the real stack and mock IdP through port 3000: a new user requests access, the superadmin approves through the API, the user's next `/auth/me` is active, and a dashboard API returns 200. Then the user is suspended, and the next call returns 403.
 - [ ] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Pass in CI.
 
@@ -1233,7 +1366,7 @@ Put the B2 security model into the UI (newplan §7.7, §7.8). The UI hides what 
 - **PR-19** `feat/ui-user-management`: F1.4 and F1.5.
 - [ ] **[Dev]** Raised per §1.3.
 - [ ] **[Lint]** CI lint is green.
-- [ ] **[Test]** CI tests and e2e are green, approved, and merged.
+- [ ] **[Test]** CI tests and `fullstack-smoke` are green, approved, and merged.
 
 ---
 
@@ -1253,7 +1386,7 @@ Make the quick structural changes from newplan §2 and §3.
   - Confirm that `EvaluationCompareMatrix` and benchmark features are reachable from Live, **or flag them in the PR before deleting anything**.
   - The `Sparkles` icon and tooltip show in the collapsed rail.
 - [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** `Sidebar.test.tsx` is updated. Playwright checks the redirect.
+- [ ] **[Test]** `Sidebar.test.tsx` is updated. A vitest test asserts that the page modules call `redirect('/admin/evaluation-live')`. `smoke_e2e.py` asserts a 307 or 308 from `/admin/evaluation`.
 
 #### Task F2.2: Usage & Cost
 - [ ] **[Dev]** Remove the `overview` / `OverviewTab`. Live Telemetry becomes the first tab, renamed **Overview**, with `Sparkles` and the `Live` badge. The URL parser maps `live_telemetry` and `overall` to `overview`. Delete `OverviewTab.tsx` after an importer check.
@@ -1261,7 +1394,7 @@ Make the quick structural changes from newplan §2 and §3.
 - [ ] **[Test]** Old bookmarks resolve. Tests referencing the old ids are updated.
 
 #### Task F2.3: Phase F2 integration testing
-- [ ] **[Dev]** `e2e/navigation.spec.ts` covers every sidebar item for each role, the legacy URLs and the collapsed rail.
+- [ ] **[Dev]** `tests/journeys/navigation.test.tsx` covers every sidebar item for each role, the collapsed rail tooltips and the Usage URL alias parsing. `smoke_e2e.py` covers the legacy URL redirects on the real server.
 - [ ] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Pass.
 
@@ -1329,7 +1462,7 @@ Fill every gap in the newplan §1 interactivity audit and every page row in the 
 - [ ] **[Test]** Component tests. The trace link is hidden for users without a role.
 
 #### Task F3.6: Phase F3 integration testing
-- [ ] **[Dev]** `e2e/interactivity.spec.ts` checks every row of the newplan §1 audit: click through, then use browser Back to restore the view, in both directions. The audience and range carry across pages.
+- [ ] **[Dev]** `tests/journeys/interactivity.test.tsx` checks every row of the newplan §1 audit: each clickable element produces the expected deep-link href, and the target page parses those params into the same filter state (round-trip). The audience and range carry across pages. A manual click-through with browser Back is recorded in the PR.
 - [ ] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Pass. Light and dark screenshots of every touched page are attached.
 
@@ -1338,7 +1471,7 @@ Fill every gap in the newplan §1 interactivity audit and every page row in the 
 - **PR-22** `feat/ui-entity-pages-deeplinks`: F3.2, F3.3, F3.4 and F3.6.
 - [ ] **[Dev]** Raised per §1.3.
 - [ ] **[Lint]** CI lint is green.
-- [ ] **[Test]** CI tests and e2e are green, approved, and merged.
+- [ ] **[Test]** CI tests and `fullstack-smoke` are green, approved, and merged.
 
 ---
 
@@ -1372,7 +1505,7 @@ Show the B4 data with the newplan §4.2 layout and fix the UI side of G1, G8, G1
 - [ ] **[Test]** Deep pages are reachable beyond 2,000 rows. The JSON viewer escapes `<script>`.
 
 #### Task F4.5: Phase F4 integration testing
-- [ ] **[Dev]** `e2e/governance.spec.ts`: the overview incident links into Logs, a trace drawer link opens the conversation, and the Logs cursor walks pages. Attach G1 to G13 before and after screenshots.
+- [ ] **[Dev]** `tests/journeys/governance.test.tsx`: the overview incident links into Logs with filters, the trace drawer link targets the conversation, and the Logs cursor "next" uses the returned cursor. Attach G1 to G13 before and after screenshots (manual).
 - [ ] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Pass.
 
@@ -1414,7 +1547,7 @@ Build the interactive human-feedback loop in newplan §5.4.
 - [ ] **[Test]** The job chip polls until done. The download triggers.
 
 #### Task F5.5: Phase F5 integration testing
-- [ ] **[Dev]** `e2e/feedback.spec.ts`: thumbs-down in chat with reasons, the item appears in the queue, it is triaged by keyboard, promoted, appears in Golden Cases, and the export contains it.
+- [ ] **[Dev]** `tests/journeys/feedback.test.tsx`: thumbs-down with reasons sends the right payload, then keyboard triage in the queue (`j`, `k`, `p`) calls the right endpoints, and the promoted row leaves the queue. The real data flow (chat, queue, promote, export) is already covered by the backend `test_feedback_integration.py`.
 - [ ] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Pass.
 
@@ -1451,12 +1584,12 @@ Port the HTML's design (newplan §6) onto the B6 endpoints in light and dark.
 - [ ] **[Test]** Expand and collapse are keyboard-accessible. The pending state renders.
 
 #### Task F6.4: Reference HTML and visual check
-- [ ] **[Dev]** Save the sanitized HTML to `frontend/tests/fixtures/analytics/` (newplan open item 1). Add `e2e/analytics-visual.spec.ts`, which compares numbers between the port and the reference for the same dataset.
+- [ ] **[Dev]** Save the sanitized HTML to `frontend/tests/fixtures/analytics/` (newplan open item 1). Add `tests/journeys/analytics-parity.test.tsx`: render the page with API responses recorded from the backend parity fixture (B6.4) and assert the HTML's KPI values and chart totals (newplan §6.4). Put manual side-by-side screenshots (HTML vs port, light and dark) in the PR.
 - [ ] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Pass.
 
 #### Task F6.5: Phase F6 integration testing
-- [ ] **[Dev]** `e2e/analytics.spec.ts`: filter, then a topic click, then conversations filtered, then a conversation opened, then Back restores the view. Both themes are checked.
+- [ ] **[Dev]** `tests/journeys/analytics.test.tsx`: a filter change, then a topic click, then the Conversations tab filtered (URL params), then the row link targets `/admin/conversations/{id}`. Clicking a trend day toggles from = to = that day, as in the HTML's `setDay()`.
 - [ ] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Pass.
 
@@ -1488,7 +1621,7 @@ Give the superadmin runtime control of white-labelling and the taxonomy (newplan
 - [ ] **[Test]** A duplicate code is rejected. An archived item disappears from the filters but historic labels still render.
 
 #### Task F7.3: Phase F7 integration testing
-- [ ] **[Dev]** `e2e/settings.spec.ts`: change the brand colour and logo, check that the sidebar, login and favicon update, then revert. An admin (non-superadmin) gets 403 and has no nav item.
+- [ ] **[Dev]** `tests/journeys/settings.test.tsx`: saving a brand colour updates the CSS variables, the logo upload pre-check rejects a bad type, and an admin (non-superadmin) has no nav item. `smoke_e2e.py --journey branding` updates the brand through the proxy and checks that `/branding` and `generateMetadata` reflect it, then reverts.
 - [ ] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Pass.
 
@@ -1509,14 +1642,19 @@ Prove the whole system after development is complete: functional E2E journeys, t
 - [ ] **[Lint]** Phase V complete: the whole repo is clean (LINT-BE and LINT-FE), with no suppressions added without a justification comment.
 - [ ] **[Test]** Phase V complete: every suite below passes, with reports attached to PR-27.
 
-#### Task V.1: End-to-end journeys (Playwright, mock IdP, seeded DB)
-- [ ] **[Dev]** Task V.1: add `e2e/journeys/*.spec.ts` and the seed script `scripts/seed_e2e.py`.
-- [ ] **[Lint]** Task V.1: LINT-FE and LINT-BE on the seed script.
+#### Task V.1: End-to-end journeys (no browser automation: httpx through the real stack, plus vitest UI journeys)
+- [ ] **[Dev]** Task V.1: add `backend/tests/e2e/` (API journeys on real Postgres with the mock IdP), the `smoke_e2e.py --journey all` full-stack journeys through port 3000, and the seed script `scripts/seed_e2e.py`.
+- [ ] **[Lint]** Task V.1: LINT-BE and LINT-FE.
 - [ ] **[Test]** Task V.1: all journeys pass three times in a row in CI (flake check).
 
 ##### Subtask V.1.1: Identity journeys
-- [ ] **[Dev]** Covers: no session (every dashboard route redirects to login, every API returns 401); a pending user (chat works, dashboard shows Access Required, API returns 403); approval unlocks without re-login; suspension locks out on the next request; the last superadmin cannot be demoted.
-- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Dev]** Covers:
+  - No session: every dashboard page returns a redirect to `/login` from Next, and every API returns 401.
+  - A pending user: chat works, and dashboard APIs return 403. The Access Required page is covered by the vitest journey.
+  - Approval unlocks access without signing in again.
+  - Suspension locks the user out on the next request.
+  - The last superadmin cannot be demoted.
+- [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** Pass.
 
 ##### Subtask V.1.2: Operator, admin and superadmin journeys
@@ -1524,35 +1662,43 @@ Prove the whole system after development is complete: functional E2E journeys, t
   - Operator: views every page, and no write controls are rendered or accepted (a forced API call returns 403).
   - Admin: uploads a document, it is cited in chat, it appears in document citations, a thumbs-down goes through triage, promotion and a golden case run.
   - Superadmin: rebrands, changes the taxonomy, manages users.
-- [ ] **[Lint]** Run LINT-FE.
+  - All of these run through the API as each role. The UI side is covered by the vitest journeys in `frontend/tests/journeys/`.
+- [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** Pass.
 
 ##### Subtask V.1.3: Cross-page deep-link chain
-- [ ] **[Dev]** Visitor, then session, then conversation, then turn, then trace, then feedback, then analytics, then document chunk, and back again with browser Back. The audience and range persist throughout.
-- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Dev]**
+  - API: every id returned by one endpoint resolves on the next endpoint in the chain: visitor, session, conversation, turn, trace, feedback, analytics, document chunk.
+  - UI: `interactivity.test.tsx` covers the href and param round-trips.
+  - Manual: one browser click-through with Back, recorded in the PR.
+- [ ] **[Lint]** Run LINT-BE and LINT-FE.
 - [ ] **[Test]** Pass.
 
-##### Subtask V.1.4: Accessibility and theming sweep
-- [ ] **[Dev]** An axe-core scan via `@axe-core/playwright`. This is a new devDependency, so it needs owner approval. If declined, do a manual checklist. Every page is checked in light and dark, with reduced motion, keyboard-only and at 390 px.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** No serious or critical axe violations. Screenshots are archived.
+##### Subtask V.1.4: Theming sweep (manual, no automated scanners)
+- [ ] **[Dev]** Take screenshots of every page in light and dark, with reduced motion on, keyboard-only and at 390 px, and attach them to PR-27.
+- [ ] **[Lint]** n/a.
+- [ ] **[Test]** The owner signs off on the screenshots.
 
 ---
 
 #### Task V.2: Performance testing
-- [ ] **[Dev]** Task V.2: run the §13.5 profiles against the production-like compose stack (2 API replicas, worker, Redis if approved, nginx).
+- [ ] **[Dev]** Task V.2: run the §13.5 profiles against the production-like compose stack (2 API replicas × 2 workers, job worker, Postgres, nginx). **No Redis.** Every profile runs at **50 concurrent (requirement) and 100 (headroom)**.
 - [ ] **[Lint]** Task V.2: LINT-BE on any script changes.
 - [ ] **[Test]** Task V.2: every §13.4 budget is met. The report JSON and charts are in the PR.
 
 ##### Subtask V.2.1: Backend latency budgets
-- [ ] **[Dev]** `run_admin_load_test.py --profile admin --concurrency 50 --duration 600`. Captures p50, p95 and p99 per route, cached vs uncached.
+- [ ] **[Dev]** `run_admin_load_test.py --profile admin --concurrency 50 --duration 600`, then again with `--concurrency 100`. Captures p50, p95 and p99 per route, cached vs uncached.
 - [ ] **[Lint]** n/a.
 - [ ] **[Test]** Cached p95 < 150 ms, uncached p95 < 600 ms, `/auth/me` p95 < 50 ms, logs at 1M rows p95 < 250 ms, errors < 0.5 %.
 
 ##### Subtask V.2.2: Chat path under load (LLM mocked with latency injection)
-- [ ] **[Dev]** `run_concurrency_test.py --profile chat --concurrency 200`.
+- [ ] **[Dev]** `run_concurrency_test.py --profile chat --concurrency 50`, then 100 (the fake LLM takes 2 to 6 s), plus 200 idle open sessions.
 - [ ] **[Lint]** n/a.
-- [ ] **[Test]** Pipeline TTFB excluding the LLM stays within `latency_budget_ms`. Back-pressure returns 429 with `Retry-After` when saturated. No 5xx.
+- [ ] **[Test]**
+  - **At 50 concurrent, 100 % succeed.** The pipeline TTFB excluding the LLM stays within `latency_budget_ms`.
+  - The wall time is roughly the LLM delay, not 50 times it, which proves the work is async.
+  - At 100 concurrent, there are no 5xx. Any 429 carries `Retry-After`.
+  - The event-loop lag stays under 50 ms (sampled).
 
 ##### Subtask V.2.3: Load balancing and failover
 - [ ] **[Dev]** Run the admin profile while killing `api-1` mid-run, then restore it.
@@ -1565,9 +1711,13 @@ Prove the whole system after development is complete: functional E2E journeys, t
 - [ ] **[Test]** API RSS growth < 10 %. The DB pool never exhausts (`QueuePool` overflow logged as 0). The asyncio task count is stable.
 
 ##### Subtask V.2.5: Frontend performance
-- [ ] **[Dev]** Run Lighthouse (`npx lighthouse`, ad hoc, not a dependency) on the production build for the dashboard, analytics and governance. Record the bundle analysis per route.
+- [ ] **[Dev]** Record the per-route First Load JS from the `next build` output, before (`main` @ baseline) and after. Use the Chrome DevTools Performance panel manually (no Lighthouse) on the dashboard, analytics and governance.
 - [ ] **[Lint]** n/a.
-- [ ] **[Test]** LCP < 2.5 s, CLS < 0.1, INP < 200 ms. Route JS growth stays within budget. Prefetch is shown to cut repeat-navigation time (before and after numbers). A 500-row table holds 60 fps with motion on.
+- [ ] **[Test]**
+  - Route JS growth stays within the §13.4 budget (from the build output).
+  - The manual DevTools trace shows no long task over 200 ms on interaction.
+  - Prefetch cuts repeat-navigation time (before and after numbers from the Network panel).
+  - A 500-row table scrolls without jank with motion on.
 
 ---
 
@@ -1578,7 +1728,9 @@ Prove the whole system after development is complete: functional E2E journeys, t
   - Concurrent approval of the same request: exactly one wins.
   - Concurrent triage of one feedback item: no lost update.
   - 4 job workers on 500 jobs: no double execution.
-  - The rate limit is exact across 2 workers (Redis).
+  - The rate limit is exact across 2 workers and 2 engines (Postgres `rate_limit_buckets`).
+  - A `take_once` on the OIDC state under 20 concurrent callers gives exactly 1 winner.
+  - A LISTEN/NOTIFY event reaches subscribers on both instances.
   - SingleFlight issues 1 query for 100 same-key misses.
   - Concurrent branding updates: a 409 for the loser.
   - SSE fan-out to 200 clients: constant DB load.
@@ -1607,11 +1759,6 @@ Prove the whole system after development is complete: functional E2E journeys, t
 - [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** Pass.
 
-##### Subtask V.4.3: Manual DAST pass (optional, owner-approved)
-- [ ] **[Dev]** Run an OWASP ZAP baseline scan (docker image, not a project dependency) against the local stack with a mock-IdP session.
-- [ ] **[Lint]** n/a.
-- [ ] **[Test]** No medium-or-higher alerts left without a triage note.
-
 ---
 
 #### Task V.5: Release readiness
@@ -1625,24 +1772,24 @@ Prove the whole system after development is complete: functional E2E journeys, t
 - [ ] **[Test]** Both directions succeed with no data loss on the seeded tables.
 
 ##### Subtask V.5.2: Docs and environment
-- [ ] **[Dev]** Update `DEPLOYMENT.md` (Entra registration steps, `SUPERADMIN_EMAILS`, Redis, replicas, nginx), `README.md` (port 3000, mock IdP for development) and both `.env.example` files. Append the "Implementation log" to `newplan.md`.
+- [ ] **[Dev]** Update `DEPLOYMENT.md` (the Entra go-live checklist from B2.8.2, `SUPERADMIN_EMAILS`, replicas, workers, pool sizing, nginx), `README.md` (port 3000, mock IdP for development) and both `.env.example` files. Append the "Implementation log" to `newplan.md`.
 - [ ] **[Lint]** Check the markdown links.
 - [ ] **[Test]** A fresh clone, following the docs, boots with the mock IdP.
 
 ##### Subtask V.5.3: Real Entra check (owner, after registration)
-- [ ] **[Dev]** The owner fills in the `ENTRA_*` values, then signs in with real Entra on port 3000.
+- [ ] **[Dev]** The owner follows the B2.8.2 checklist: fill in `.env`, then run `verify_sso_config.py` (every check must PASS), then sign in with real Entra on port 3000.
 - [ ] **[Lint]** n/a.
-- [ ] **[Test]** The full newplan §11 Access checklist passes against real Entra.
+- [ ] **[Test]** The full newplan §11 Access checklist passes against real Entra. If a check fails, the preflight names which setting is wrong. No code change should be needed, because the mock matched Entra's contract.
 
 #### Task V.6: PR
 - **PR-27** `chore/release-verification`: the V.1 to V.5 test code, scripts and docs, with reports attached.
 - [ ] **[Dev]** Raised per §1.3, with all reports linked.
 - [ ] **[Lint]** CI lint is green.
-- [ ] **[Test]** CI tests, e2e and `perf-smoke` are all green, approved, and merged. **Release tagged** (`v<next>`) from `main` via GitHub Releases.
+- [ ] **[Test]** CI tests, `fullstack-smoke` and `perf-smoke` are all green, approved, and merged. **Release tagged** (`v<next>`) from `main` via GitHub Releases.
 
 ---
 
-## 6. PR register
+## 6. PR register (the wave is in section 8.1)
 
 | PR | Branch | Phase | Depends on | Status |
 |---|---|---|---|---|
@@ -1674,12 +1821,205 @@ Prove the whole system after development is complete: functional E2E journeys, t
 | PR-26 | `feat/ui-settings-branding-taxonomy` | F7 | PR-19 | ☐ |
 | PR-27 | `chore/release-verification` | V | all | ☐ |
 
-Prefer merging each PR before starting a dependent one, branching from a fresh `main`. Stack only when unavoidable (§1.3).
+Each PR branches from a fresh `main` once the wave before it has merged (section 8). No stacking.
 
 ## 7. Risks specific to this execution plan
 
 - **The B0 lint-scope PR is large.** Split it by rule family if review is slow. It must not change behaviour (the full suite is the guard).
-- **The e2e job lengthens CI.** Run only Chromium, shard if it exceeds 10 minutes, and cache the Playwright browsers.
-- **Redis (open item 7) not approved:** skip B1.4.2, B1.6.2 (more than 1 worker) and the Redis variants in V.3. Everything else is unchanged.
+- **The `fullstack-smoke` job adds about 4 minutes to CI.** Cache pip and npm. It runs only after lint and unit tests pass.
 - **Taxonomy seed (B6.1)** needs owner confirmation of the list before PR-12 merges. The seed can be edited in F7 afterwards.
-- **New devDependency `@axe-core/playwright` (V.1.4)** needs owner approval. The fallback is a manual a11y checklist.
+- **Postgres connection budget:** more replicas and workers means more pool connections. Respect the B1.6.2 sizing rule, or raise `max_connections`.
+- **Parallel PRs touching the same files:** see the conflict-hotspot owners in section 8.4.
+
+---
+
+## 8. Merge plan: waves, order and rules
+
+### 8.1 Waves
+
+PRs in the same wave are developed **in parallel** (one session and one worktree each). A wave starts only when every PR in the previous wave has merged. Inside a wave, PRs merge in the order listed.
+
+| Wave | PRs (merge order) | Why grouped |
+|---|---|---|
+| W1 | PR-01 | New CI must exist before anything else can go green. |
+| W2 | PR-02 | Touches nearly every backend file, so it must run alone. |
+| W3 | PR-03 → PR-04 | Platform pieces, independent of each other. |
+| W4 | PR-06 → PR-12 → PR-05 | Auth needs shared state. The classifier needs the job queue. Load balancing needs shared state. |
+| W5 | PR-07 → PR-08 → PR-09 → PR-11 → PR-13 | All need the auth guards from PR-06 (PR-13 also needs PR-12). |
+| W6 | PR-10 | Needs PR-09. |
+| W7 | PR-14 | Needs PR-10, PR-11 and PR-13. **Backend complete.** |
+| W8 | PR-15 | Frontend foundations (needs the branding API). |
+| W9 | PR-16 | Chart kit and data layer. **Adds every API type and client method**, so later UI PRs do not edit `lib/api.ts` or `lib/types.ts`. |
+| W10 | PR-17 | Global UX primitives. **Pre-registers every nav item** in `Sidebar.tsx`, each with an `enabled` flag. |
+| W11 | PR-18 → PR-21 → PR-23 → PR-24 → PR-25 | Independent pages. Each one only flips its own nav flag. |
+| W12 | PR-19 → PR-20 → PR-22 | Need PR-18 (gate) or PR-21. |
+| W13 | PR-26 | Settings. |
+| W14 | PR-27 | Verification and release. |
+
+The longest wave has 5 PRs, so at most 5 sessions run at once. Total: 14 waves and 27 PRs.
+
+### 8.2 Merge rules (every PR)
+
+1. **Green means:**
+   - Required checks pass: `backend-lint`, `backend-tests` (with the 50-concurrency gate), `frontend-checks` and `fullstack-smoke`.
+   - No unresolved review threads.
+   - The branch is up to date with `main`.
+2. **Squash merge** through GitHub: `gh pr merge <n> --squash --delete-branch`. The squash title is the PR title (Conventional Commit), and the body keeps the plan ids and the attribution trailer. **Never** run `git push origin main`, force-push to `main`, or merge locally.
+3. After each merge in a wave, every **remaining** PR in that wave rebases on the new `main`: `git fetch && git rebase origin/main && git push --force-with-lease`. Force-pushing your own feature branch is allowed. Then CI reruns, and the PR merges only after it is green again.
+4. **Approvals:**
+   - Branch protection asks for 1 approval, but GitHub does not let you approve your own PR. The agent's PRs are opened under your `gh` login, so you are the author.
+   - Choose one of two setups:
+     - **(a) Unattended.** Set "Required approvals" to **0**, but keep the required status checks and "require up to date". The agent then merges when everything is green.
+     - **(b) Reviewed.** Keep 1 approval. The agent stops when a wave is green, and a **second GitHub account** (a teammate) approves the PRs. The author cannot approve their own PR.
+   - The default in the prompts below is **(a)**, with you reviewing at each wave boundary through the PR list.
+5. If CI goes red, the worker fixes the root cause and pushes again. It **never** skips, deletes or `xfail`s a test, adds `# noqa` without a reason, or lowers a threshold to get green.
+
+### 8.3 Alembic migration re-link rule (parallel PRs that add migrations)
+
+The migration PRs are PR-04, PR-05 (none), PR-06, PR-08, PR-09, PR-11, PR-12, PR-13 (rollup) and PR-14.
+- Each one creates its migration with `down_revision` set to the current `main` head at branch time.
+- When an earlier PR in the same wave merges first, the later PR's `alembic heads` shows 2 heads after the rebase. The fix is a one-line edit: set its `down_revision` to the new head. Then run `alembic heads`, which must print exactly 1. Run `alembic upgrade head`, then `alembic downgrade -1`, then `alembic upgrade head` on the worker's own database, push, and wait for green CI.
+- **Never** use `alembic merge` to create a merge revision. The chain stays linear, as in the existing repo history.
+
+### 8.4 Conflict-hotspot owners
+
+| File | Owned by | Others may |
+|---|---|---|
+| `backend/app/core/config.py` | whichever PR adds a setting | append settings only inside their own `# --- <feature> ---` block |
+| `backend/app/models/db_models.py` | each PR | add new classes at the end of the file, and edit existing classes only within their scope |
+| `backend/main.py` | PR-03 (middleware) | add their own `include_router` line only |
+| `backend/.env.example` / `frontend/.env.local.example` | each PR | append their own block |
+| `frontend/lib/api.ts`, `lib/types.ts` | **PR-16** | not touch, except for a type fix after PR-16 |
+| `frontend/components/Sidebar.tsx` | **PR-17** | flip their own `enabled` flag only |
+| `frontend/components/admin/TabGroup.tsx` | PR-17 | add their own tab constant only |
+| `.github/workflows/ci.yml` | PR-01 | change it only in PR-27, or with owner approval |
+
+---
+
+## 9. Running this plan in parallel sessions (and surviving usage limits)
+
+### 9.1 What to use
+
+- **Recommended: Claude Code** (desktop app or CLI) on this machine. It has everything this plan needs:
+  - Git worktrees, so each PR gets its own isolated checkout.
+  - Parallel sessions, plus a multi-agent **workflow** mode that you opt into by writing "use a workflow" in the prompt.
+  - Shell access for the venv, npm, `gh` and the local Postgres.
+  - `claude --continue` / `--resume` and headless `claude -p` for automatic restarts.
+- **Claude Cowork:** I could not confirm that Cowork can run several isolated git worktrees in parallel, run `gh`, or reach your local Postgres and venv. If you use Cowork, give it the same prompt (9.4). If it cannot spawn parallel sessions, it will run the waves one PR at a time, which is slower but works the same way. Check whether your Cowork setup supports local shell commands before relying on it.
+
+### 9.2 One-time setup (you, about 15 minutes)
+
+1. Install the GitHub CLI and sign in: `winget install GitHub.cli`, then `gh auth login`.
+2. Push the plan files first, so that every worktree sees them. You said you'll commit these yourself.
+3. In GitHub, branch protection on `main`: require status checks `backend-lint`, `backend-tests`, `frontend-checks` and `fullstack-smoke` (the names exist after PR-01, so add them after W1). Require up to date. **Required approvals: 0 for an unattended run** (8.2.4). Block force-push to `main`.
+4. Create the folder `C:\Projects\askdiq-wt\` (worktrees and the run ledger live there, outside the repo).
+5. Postgres for parallel tests: each worker uses its **own database** (`askdiq_test_pr06` and so on) on your local Postgres, passed through the `DATABASE_URL` environment variable on the command, never through `.env`. Make sure your local Postgres user may `CREATE DATABASE`.
+6. Permissions for unattended runs, in `C:\Projects\askdiq\.claude\settings.local.json` (local, not committed):
+   - **Allow:** `git`, `gh`, `npm`, `npx`, and `C:\Projects\askdiq\backend\venv\Scripts\*`.
+   - **Deny:** reading `.env` and `.env.local`, `git push origin main`, `git push --force origin main`, `git push -f origin main`, and `gh pr merge --admin`.
+   - Then run with `--permission-mode auto`, or `acceptEdits` plus that allow list. Check the exact mode names with `claude --help`.
+
+### 9.3 How the run works
+
+- **Orchestrator:** one session in `C:\Projects\askdiq` (on `main`) reads the ledger, picks the current wave, and launches one **worker** per PR.
+  - Each worker gets its own worktree: `git worktree add C:\Projects\askdiq-wt\pr-06 -b feat/auth-sso-sessions-rbac origin/main`.
+  - The worker uses the main checkout's venv by absolute path (`C:\Projects\askdiq\backend\venv\Scripts\python.exe`, run from the worktree's `backend` folder, so tests import the worktree's code) and runs `npm ci` in its own `frontend` folder.
+- **Worker loop:**
+  1. Implement its tasks.
+  2. Run LINT and TEST locally.
+  3. Commit and push.
+  4. `gh pr create` (filled template).
+  5. `gh pr checks <n> --watch`.
+  6. Fix until green.
+  7. Report back.
+- **The orchestrator merges the wave** in the 8.1 order, using the 8.2 rules. It rebases the rest, re-links migrations (8.3), waits for green, removes the worktrees, ticks the boxes in `planchanges4.md` through a small docs PR per wave (`chore/plan-progress-w<N>`), and moves to the next wave.
+- **The ledger** at `C:\Projects\askdiq-wt\LEDGER.md` has one line per PR: wave, branch, worktree path, PR number, state (`todo`, `coding`, `pr-open`, `green`, `merged`) and the last note. It is written after **every** state change. This is what makes a restart safe: a new session reads it, and also reconciles with `gh pr list --state all` and `git worktree list`.
+
+### 9.4 Prompt to paste (orchestrator: Claude Code or Cowork)
+
+```text
+You are the orchestrator for executing C:\Projects\askdiq\planchanges4.md (source: newplan.md rev 3.1).
+Use a workflow / parallel sessions where available. Follow CLAUDE.md and planchanges4.md §1.2 rules exactly.
+
+STATE & RESUME
+- The ledger is C:\Projects\askdiq-wt\LEDGER.md (create it from planchanges4.md §6 + §8.1 if missing).
+- On start, ALWAYS reconcile: read LEDGER.md, `gh pr list --state all --limit 50`, `git worktree list`,
+  `git fetch origin`. Trust GitHub + git over the ledger if they disagree, then fix the ledger.
+- Never redo merged work. Resume any PR in state coding/pr-open from its existing worktree/branch.
+- Update LEDGER.md after every state change (todo → coding → pr-open → green → merged).
+
+EXECUTION
+- Work wave by wave (§8.1). Start a wave only when every PR of the previous wave is merged.
+- For each PR in the current wave, start a separate worker session/agent in its own git worktree:
+  git worktree add C:\Projects\askdiq-wt\pr-NN -b <branch from §6> origin/main
+  Run up to 5 workers in parallel. Give each worker the WORKER PROMPT below with its PR id filled in.
+- Workers use their own test DB: DATABASE_URL=postgresql+asyncpg://<user>:<pass>@localhost:5432/askdiq_test_prNN
+  passed as an environment variable on each command (never write or read .env).
+- When all PRs in the wave are green: merge in §8.1 order with `gh pr merge N --squash --delete-branch`,
+  after each merge rebase the remaining wave PRs on origin/main (`git rebase origin/main`,
+  `git push --force-with-lease` on the feature branch only), apply the Alembic re-link rule (§8.3),
+  and wait for CI to be green again before the next merge.
+- After the wave: remove its worktrees, open a docs PR `chore/plan-progress-wN` ticking the
+  [Dev]/[Lint]/[Test] boxes for the merged PRs in planchanges4.md, merge it when green, continue.
+
+HARD RULES
+- Never push to or merge locally into main. Never force-push main. Never use admin merge.
+- Never read, create, print or commit .env / .env.local.
+- Never skip, delete, xfail or weaken a test, lint rule or CI check to get green; fix the cause.
+- No Redis, no Playwright/axe/Lighthouse/ZAP, no new dependencies beyond newplan.md execution guide §4.
+- If blocked on an owner decision (e.g. taxonomy list before PR-12), record it in LEDGER.md,
+  continue with every other PR that is not blocked, and list blockers in your final message.
+- Stop only when PR-27 is merged and green, or when everything left is blocked; then print a summary table.
+```
+
+**Worker prompt** (the orchestrator fills in `PR-NN`):
+
+```text
+You implement PR-NN from C:\Projects\askdiq\planchanges4.md in worktree C:\Projects\askdiq-wt\pr-NN
+on branch <branch>. Read newplan.md sections referenced by your tasks first.
+- Do every task/subtask listed for PR-NN, including its phase integration task when listed.
+- Backend commands: run from <worktree>\backend with C:\Projects\askdiq\backend\venv\Scripts\python.exe
+  (-m pytest, -m alembic, -m ruff / ruff.exe, pylint.exe) and DATABASE_URL=<your test db> as env var.
+- Frontend: npm ci, npm run lint, npm run typecheck, npm test, npm run build (in <worktree>\frontend).
+- All LINT and TEST commands must pass locally before pushing.
+- Commit with Conventional Commits + the attribution trailer; push; `gh pr create --base main` using
+  .github/pull_request_template.md, filled completely (plan ids, OWASP rows, perf numbers, assumptions,
+  test evidence, rollback). Then `gh pr checks <n> --watch`; fix failures and push until all green.
+- Respect the file-ownership table (§8.4). Don't touch files owned by other PRs.
+- Report: PR number, final check status, anything assumed or blocked.
+```
+
+### 9.5 Automatic restart after usage limits
+
+A session that hits the usage limit stops. It does not reliably restart itself when the limit resets. Use one of these approaches, and the ledger makes either one safe:
+
+- **Manual:** when the limit resets, open the session again with `claude --continue` (or `claude --resume` and pick it), then type `continue per LEDGER.md`.
+- **Automatic (Windows Task Scheduler):** retry every 30 minutes. A lock file stops two runs overlapping. Each run reconciles from the ledger and GitHub, so a run that starts while you are still limited just exits, and the first run after the reset continues the work.
+
+```powershell
+# C:\Projects\askdiq-wt\resume.ps1
+$lock = "C:\Projects\askdiq-wt\runner.lock"
+if ((Test-Path $lock) -and ((Get-Item $lock).LastWriteTime -gt (Get-Date).AddHours(-3))) { exit }
+New-Item $lock -ItemType File -Force | Out-Null
+try {
+  Set-Location C:\Projects\askdiq
+  $prompt = Get-Content C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.md -Raw
+  claude -p $prompt --permission-mode auto *>> C:\Projects\askdiq-wt\runner.log
+} finally { Remove-Item $lock -Force }
+
+# one-time registration (run once in an elevated PowerShell):
+$a = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File C:\Projects\askdiq-wt\resume.ps1"
+$t = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 30)
+Register-ScheduledTask -TaskName "askdiq-plan-runner" -Action $a -Trigger $t
+# remove when done: Unregister-ScheduledTask -TaskName "askdiq-plan-runner" -Confirm:$false
+```
+
+Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.md`. Check `claude --help` for the exact permission-mode names in your version. If the machine sleeps, Task Scheduler runs the task at the next wake when "Run task as soon as possible after a scheduled start is missed" is ticked.
+
+### 9.6 Speed tips
+
+- Keep the waves (8.1). Running more than 5 workers at once mostly creates rebase churn.
+- Each worker runs **only its own tests** while iterating (`pytest tests/test_<feature>*.py`), and runs the full suite once before pushing. CI runs everything.
+- Run `npm ci` once per worktree. The npm cache makes it quick.
+- Watch CI with `gh pr checks --watch` rather than polling.
+- Rebase right after each merge (8.2.3), so conflicts stay small.
