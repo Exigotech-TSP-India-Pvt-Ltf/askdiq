@@ -1,9 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import type { ChatMessage } from "@/lib/types";
 import { renderFormattedText } from "@/lib/format-text";
 import { useChat } from "@/lib/chat-context";
+import type { FeedbackDetails, ReasonTag } from "@/lib/feedback-api";
+import { FeedbackReasonPanel } from "@/components/chat/FeedbackReasonPanel";
+import { useToast } from "@/components/ui/ToastProvider";
+
+type FeedbackFn = (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
+
+const THUMBS_UP = 5;
+const THUMBS_DOWN = 1;
 
 function CopyIcon() {
   return (
@@ -82,7 +91,7 @@ export function MessageBubble({
 }: {
   message: ChatMessage;
   onDelete?: () => void;
-  onFeedback?: (messageId: string, rating: number, comment?: string) => Promise<void>;
+  onFeedback?: FeedbackFn;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -93,6 +102,10 @@ export function MessageBubble({
   const [commentText, setCommentText] = useState("");
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [savingFeedback, setSavingFeedback] = useState(false);
+  const [reasonsOpen, setReasonsOpen] = useState(false);
+  const [reasons, setReasons] = useState<ReasonTag[]>([]);
+  const [correctedAnswer, setCorrectedAnswer] = useState("");
+  const toast = useToast();
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -123,7 +136,7 @@ export function MessageBubble({
   }, [commentOpen]);
 
   // Obtain feedback submission handler
-  let chatFeedback: ((messageId: string, rating: number, comment?: string) => Promise<void>) | undefined;
+  let chatFeedback: FeedbackFn | undefined;
   try {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const chat = useChat();
@@ -140,46 +153,73 @@ export function MessageBubble({
     setTimeout(() => setCopied(false), 1500);
   };
 
+  /** Thumbs-down detail, sent only when there is some (keeps the one-click call minimal). */
+  const currentDetails = (): FeedbackDetails | undefined => {
+    const corrected = correctedAnswer.trim();
+    if (reasons.length === 0 && !corrected) return undefined;
+    return { reason_tags: reasons, corrected_answer: corrected || null };
+  };
+
+  /** Upserts the rating; a resubmission updates the existing feedback row. */
+  const submit = async (rating: number, comment: string | undefined, details: FeedbackDetails | undefined) => {
+    if (!submitFn) return true;
+    setSavingFeedback(true);
+    setFeedbackError(null);
+    try {
+      if (details) await submitFn(message.id, rating, comment, details);
+      else await submitFn(message.id, rating, comment);
+      return true;
+    } catch (err: unknown) {
+      setFeedbackError(err instanceof Error && err.message ? err.message : "Failed to submit rating. Please try again.");
+      return false;
+    } finally {
+      setSavingFeedback(false);
+    }
+  };
+
   const handleRatingClick = async (ratingVal: number) => {
     if (savingFeedback) return;
+    if (ratingVal === THUMBS_DOWN && activeRating === THUMBS_DOWN) {
+      setReasonsOpen((open) => !open);
+      return;
+    }
     const prevRating = activeRating;
+    // Optimistic: the thumb lights up before the request settles.
     setActiveRating(ratingVal);
-    setFeedbackError(null);
+    setReasonsOpen(ratingVal === THUMBS_DOWN);
+    const details = ratingVal === THUMBS_DOWN ? currentDetails() : undefined;
+    const ok = await submit(ratingVal, commentText || undefined, details);
+    if (!ok) {
+      setActiveRating(prevRating);
+      setReasonsOpen(false);
+      return;
+    }
+    if (ratingVal === THUMBS_UP) {
+      toast.show({ title: "Thanks for the feedback", tone: "success" });
+    }
+  };
 
-    if (submitFn) {
-      setSavingFeedback(true);
-      try {
-        await submitFn(message.id, ratingVal, commentText || undefined);
-        // Prompt optional comment if not provided
-        if (!commentText) {
-          setCommentOpen(true);
-        }
-      } catch (err: any) {
-        setActiveRating(prevRating);
-        setFeedbackError(err?.message || "Failed to submit rating. Please try again.");
-      } finally {
-        setSavingFeedback(false);
-      }
+  const toggleReason = (tag: ReasonTag) => {
+    setReasons((list) => (list.includes(tag) ? list.filter((t) => t !== tag) : [...list, tag]));
+  };
+
+  const handleReasonsSubmit = async () => {
+    if (savingFeedback) return;
+    const ok = await submit(THUMBS_DOWN, commentText.trim() || undefined, currentDetails());
+    if (ok) {
+      setReasonsOpen(false);
+      toast.show({ title: "Feedback sent", description: "Thanks, this helps us improve the answers.", tone: "success" });
     }
   };
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeRating || savingFeedback) return;
-
-    if (submitFn) {
-      setSavingFeedback(true);
-      setFeedbackError(null);
-      try {
-        await submitFn(message.id, activeRating, commentText.trim());
-        setCommentOpen(false);
-      } catch (err: any) {
-        setFeedbackError(err?.message || "Failed to save comment.");
-      } finally {
-        setSavingFeedback(false);
-      }
-    } else {
+    const details = activeRating === THUMBS_DOWN ? currentDetails() : undefined;
+    const ok = await submit(activeRating, commentText.trim(), details);
+    if (ok) {
       setCommentOpen(false);
+      if (submitFn) toast.show({ title: "Note saved", tone: "success" });
     }
   };
 
@@ -239,7 +279,7 @@ export function MessageBubble({
             {/* Feedback: Thumbs Up */}
             <button
               type="button"
-              onClick={() => handleRatingClick(5)}
+              onClick={() => handleRatingClick(THUMBS_UP)}
               aria-label="Helpful response"
               aria-pressed={activeRating === 5}
               disabled={savingFeedback}
@@ -256,7 +296,7 @@ export function MessageBubble({
             {/* Feedback: Thumbs Down */}
             <button
               type="button"
-              onClick={() => handleRatingClick(1)}
+              onClick={() => handleRatingClick(THUMBS_DOWN)}
               aria-label="Unhelpful response"
               aria-pressed={activeRating === 1}
               disabled={savingFeedback}
@@ -318,6 +358,22 @@ export function MessageBubble({
             {feedbackError}
           </p>
         )}
+
+        {/* Thumbs-down reason chips (pop preset) */}
+        <AnimatePresence>
+          {reasonsOpen && activeRating === THUMBS_DOWN ? (
+            <FeedbackReasonPanel
+              key="reasons"
+              reasons={reasons}
+              onToggleReason={toggleReason}
+              correctedAnswer={correctedAnswer}
+              onCorrectedAnswerChange={setCorrectedAnswer}
+              onSubmit={handleReasonsSubmit}
+              onCancel={() => setReasonsOpen(false)}
+              saving={savingFeedback}
+            />
+          ) : null}
+        </AnimatePresence>
 
         {/* Comment Popover / Expansion */}
         {commentOpen && (

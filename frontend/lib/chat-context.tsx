@@ -11,6 +11,7 @@ import {
 } from "react";
 import { api, ApiError } from "./api";
 import { useAuth } from "./auth-context";
+import { submitMessageFeedback, type FeedbackDetails } from "./feedback-api";
 import { parseServerDate } from "./time";
 import type { ChatMessage, ChatMessageOut, ChatSessionSummary } from "./types";
 
@@ -37,7 +38,8 @@ interface ChatContextValue {
   sending: boolean;
   loadingMessages: boolean;
   sendQuery: (text: string) => Promise<void>;
-  submitFeedback: (messageId: string, rating: number, comment?: string) => Promise<void>;
+  /** Upserts the rating; `details` carries thumbs-down reason chips and the corrected answer. */
+  submitFeedback: (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
   deleteExchange: (messageId: string) => void;
   selectSession: (sessionId: string) => Promise<void>;
   startNewSession: () => Promise<void>;
@@ -257,7 +259,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }
 
   const submitFeedback = useCallback(
-    async (messageId: string, rating: number, comment?: string) => {
+    async (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => {
       if (!token || !activeSessionId) return;
       const prevRating = messages.find((m) => m.id === messageId)?.feedbackRating;
       // Optimistic update
@@ -265,7 +267,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         prev.map((m) => (m.id === messageId ? { ...m, feedbackRating: rating } : m))
       );
       try {
-        await api.submitFeedback(token, activeSessionId, messageId, rating, comment);
+        await submitMessageFeedback(token, activeSessionId, messageId, { rating, comment, ...details });
       } catch (err) {
         // Rollback on failure
         setMessages((prev) =>

@@ -276,12 +276,13 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
     expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
   });
 
-  it("renders Feedback Page with DashboardHeader and TableCard", async () => {
+  it("renders Feedback Page with DashboardHeader and the triage TabGroup", async () => {
     render(<FeedbackPage />);
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: /Feedback/i })).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
+    // The queue (with its Filters popover) lives on the Review Queue tab (PR-24).
+    expect(screen.getByRole("tab", { name: /review queue/i })).toBeInTheDocument();
   });
 
   it("renders Evaluation Page with DashboardHeader and TabGroup", async () => {

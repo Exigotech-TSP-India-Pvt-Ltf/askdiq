@@ -45,7 +45,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/admin/users/[id]` | Pass | Fixed (T2) | Pass | "User not found" card tokenised | [ ] |
 | `/admin/conversations` | Pass | Pass | Pass | Page bg token | [ ] |
 | `/admin/conversations/[id]` | Pass | Fixed (T2) | Pass | All `text-gray-*`, `bg-white`, `border-gray-*` replaced; purple accents -> brand | [ ] |
-| `/admin/feedback` | Pass | Pass | Pass | Page bg token | [ ] |
+| `/admin/feedback` (PR-24 triage workspace: Overview, Review Queue, Golden Cases, Preference Data, Knowledge Gaps) | Pass | Pass | Pass | Page bg token; KPI / chart cards on `surface-card`; queue rows `border-line`, focused row `brand-50` / `dark:brand-950/40`; status and rating badges on `status-*-bg` / `status-*-fg`; spike alert `status-danger-bg` | [ ] |
 | `/admin/usage` (Overview, Users, Sessions, Queries tabs) | Pass | Fixed (T1, T2) | Fixed (T1) | Token rings, gauges, needles and legend dots from `chartTheme`; tab headings and chips tokenised | [ ] |
 | `/admin/evaluation` = `/evaluation` | Pass | Fixed (T1) | Fixed (T1) | Radar, outcome pie, pass-rate and latency bars, tooltips from `chartTheme` | [ ] |
 | `/admin/evaluation-live` = `/evaluation-live` | Pass | Fixed (T1) | Fixed (T1) | As above; white tooltips fixed; compare matrix radar migrated | [ ] |
@@ -113,6 +113,11 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `shell/BrandedStatusPage` (PR-17) | Pass | Pass | Pass | `BrandLogo` pair on `bg-surface-card` |
 | `admin/CursorPagination` (PR-17) | Pass | Pass | Pass | Mirrors `Pagination` (existing `dark:` pairs) |
 | `admin/TableToolbar` (columns, density) (PR-17) | Pass | Pass | Pass | Column menu on `surface-elevated`; buttons reuse the existing `dark:` pairs |
+| `charts/BarList` (PR-24) | Pass | Pass | Pass | Bars from `chartTheme.categorical` / `status`, track `chartTheme.track`, labels `chartTheme.axis`; switches with the theme class |
+| `admin/feedback/FilterChips` (PR-24) | Pass | Pass | Pass | Chips `brand-50` / `dark:brand-950/60`, border `brand-300` / `dark:brand-700/60`; `pop` preset |
+| `admin/feedback/FeedbackDrawer` (PR-24) | Pass | Pass | Pass | `DrawerShell` tokens; meta tiles `surface-muted`; flags `status-warn-bg` |
+| `admin/feedback` Golden job chip, Preference pair flags (PR-24) | Pass | Pass | Pass | Chips on `status-info` / `status-ok` / `status-danger` / `status-warn` bg+fg tokens |
+| `chat/FeedbackReasonPanel` (PR-24) | Pass | Pass | Pass | Panel `surface-card` + `border-line`; selected chip `brand-50` / `dark:brand-950/60`; `pop` preset |
 
 ## Known follow-ups (not theme-breaking)
 
