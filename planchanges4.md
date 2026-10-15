@@ -124,69 +124,69 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 - [ ] **[Test]** Phase B0 complete: the full backend and frontend suites pass in the new CI on a PR.
 
 #### Task B0.1: Baseline health check on `main`
-- [ ] **[Dev]** Task B0.1: run all current checks on `main` and record the results.
-- [ ] **[Lint]** Task B0.1: record the current LINT-BE and LINT-FE results (including pre-existing failures).
-- [ ] **[Test]** Task B0.1: record the current TEST-BE and TEST-FE pass, fail and skip counts.
+- [x] **[Dev]** Task B0.1: run all current checks on `main` and record the results.
+- [x] **[Lint]** Task B0.1: record the current LINT-BE and LINT-FE results (including pre-existing failures).
+- [x] **[Test]** Task B0.1: record the current TEST-BE and TEST-FE pass, fail and skip counts.
 
 ##### Subtask B0.1.1: Backend baseline
-- [ ] **[Dev]** Run `alembic heads` (expect one head, `d6e7f8a9b0c1`) and `alembic upgrade head` on a scratch DB.
-- [ ] **[Lint]** Run `ruff check .`, `ruff format --check .` and `pylint app`, and save the output to the scratchpad.
-- [ ] **[Test]** Run `pytest -q` and note the DB-skipped tests.
+- [x] **[Dev]** Run `alembic heads` (expect one head, `d6e7f8a9b0c1`) and `alembic upgrade head` on a scratch DB.
+- [x] **[Lint]** Run `ruff check .`, `ruff format --check .` and `pylint app`, and save the output to the scratchpad.
+- [x] **[Test]** Run `pytest -q` and note the DB-skipped tests.
 
 ##### Subtask B0.1.2: Frontend baseline
-- [ ] **[Dev]** Run `npm ci --legacy-peer-deps` and `npm run build`.
-- [ ] **[Lint]** Run `npm run lint` and `npm run typecheck`.
-- [ ] **[Test]** Run `npm test` (vitest). This is not run in CI today.
+- [x] **[Dev]** Run `npm ci --legacy-peer-deps` and `npm run build`.
+- [x] **[Lint]** Run `npm run lint` and `npm run typecheck`.
+- [x] **[Test]** Run `npm test` (vitest). This is not run in CI today.
 
 ##### Subtask B0.1.3: Pending change on `main`
-- [ ] **[Dev]** Move the uncommitted `frontend/.env.local.example` change onto branch `chore/env-example-sync` (it is part of PR-01). Do not commit it to `main`.
-- [ ] **[Lint]** Check that the file has placeholders only and no real values.
-- [ ] **[Test]** `git status` on `main` is clean.
+- [x] **[Dev]** Move the uncommitted `frontend/.env.local.example` change onto branch `chore/env-example-sync` (it is part of PR-01). Do not commit it to `main`.
+- [x] **[Lint]** Check that the file has placeholders only and no real values.
+- [x] **[Test]** `git status` on `main` is clean.
 
 ---
 
 #### Task B0.2: CI workflow hardening (`.github/workflows/ci.yml`)
-- [ ] **[Dev]** Task B0.2: split into the `backend-lint`, `backend-tests`, `frontend-checks`, `fullstack-smoke` and `perf-smoke` jobs (newplan §16.2).
-- [ ] **[Lint]** Task B0.2: `actionlint` (run via `npx` / docker locally) is clean, and the YAML parses.
-- [ ] **[Test]** Task B0.2: the workflow passes on the PR-01 branch.
+- [x] **[Dev]** Task B0.2: split into the `backend-lint`, `backend-tests`, `frontend-checks`, `fullstack-smoke` and `perf-smoke` jobs (newplan §16.2).
+- [x] **[Lint]** Task B0.2: `actionlint` (run via `npx` / docker locally) is clean, and the YAML parses.
+- [x] **[Test]** Task B0.2: the workflow passes on the PR-01 branch.
 
 ##### Subtask B0.2.1: Triggers and concurrency
-- [ ] **[Dev]** Run on `pull_request` (to main), `push` (branches: main) and `workflow_dispatch`. Add `concurrency: ci-${{ github.ref }}` with `cancel-in-progress`. Keep `permissions: contents: read`.
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** Each PR push triggers exactly one run, and a superseded run is cancelled.
+- [x] **[Dev]** Run on `pull_request` (to main), `push` (branches: main) and `workflow_dispatch`. Add `concurrency: ci-${{ github.ref }}` with `cancel-in-progress`. Keep `permissions: contents: read`.
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** Each PR push triggers exactly one run, and a superseded run is cancelled.
 
 ##### Subtask B0.2.2: Backend lint job
-- [ ] **[Dev]** Add `ruff format --check .`, `pylint app`, `bandit -r app -ll` (already present) and `pip-audit -r requirements.txt --strict`.
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** The job is green. If `pip-audit` finds anything, bump the pin in this PR or record a justified, time-boxed `--ignore-vuln`.
+- [x] **[Dev]** Add `ruff format --check .`, `pylint app`, `bandit -r app -ll` (already present) and `pip-audit -r requirements.txt --strict`.
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** The job is green. If `pip-audit` finds anything, bump the pin in this PR or record a justified, time-boxed `--ignore-vuln`.
 
 ##### Subtask B0.2.3: Backend test job
-- [ ] **[Dev]** Run `alembic upgrade head`, then check that `alembic heads` returns exactly one line, then run `alembic downgrade -1 && alembic upgrade head`, then `pytest -q --cov=app --cov-report=xml --cov-fail-under=<baseline>`. Raise the coverage threshold to 80 % by phase V.
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** The job is green, and the coverage XML is uploaded as an artifact.
+- [x] **[Dev]** Run `alembic upgrade head`, then check that `alembic heads` returns exactly one line, then run `alembic downgrade -1 && alembic upgrade head`, then `pytest -q --cov=app --cov-report=xml --cov-fail-under=<baseline>`. Raise the coverage threshold to 80 % by phase V.
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** The job is green, and the coverage XML is uploaded as an artifact.
 
 ##### Subtask B0.2.4: Frontend job
-- [ ] **[Dev]** Add `npm test` (vitest) and `npm audit --audit-level=high --omit=dev` after the existing lint, tsc and build steps.
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** The job is green.
+- [x] **[Dev]** Add `npm test` (vitest) and `npm audit --audit-level=high --omit=dev` after the existing lint, tsc and build steps.
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** The job is green.
 
 ##### Subtask B0.2.5: Full-stack smoke job skeleton (no browser, no Playwright)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Add `backend/scripts/smoke_e2e.py`, an httpx `AsyncClient` with a cookie jar. For now it checks that `GET http://localhost:3000/` and `/api/proxy/health` both return 200. The sign-in steps are added in B2.8.
   - The CI job `fullstack-smoke` starts Postgres, runs `alembic upgrade head`, starts uvicorn in the background (test env vars) and `npm run build && npm run start` (port 3000), waits for health, then runs the script. On failure it uploads the server logs.
-- [ ] **[Lint]** Run LINT-BE on the script.
-- [ ] **[Test]** The job is green in CI.
+- [x] **[Lint]** Run LINT-BE on the script.
+- [x] **[Test]** The job is green in CI.
 
 ##### Subtask B0.2.6: Perf smoke job (label or nightly)
-- [ ] **[Dev]** Add a job gated on the `perf` label or a `schedule` that runs `run_admin_load_test.py --smoke` (the flag is added in B1.6).
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** The job is skipped on normal PRs, and runs when the label is set.
+- [x] **[Dev]** Add a job gated on the `perf` label or a `schedule` that runs `run_admin_load_test.py --smoke` (the flag is added in B1.6).
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** The job is skipped on normal PRs, and runs when the label is set.
 
 ---
 
 #### Task B0.3: Lint scope to CLAUDE.md (open item 10)
-- [ ] **[Dev]** Task B0.3: extend the ruff selection and add the pylint config.
-- [ ] **[Lint]** Task B0.3: zero findings on the whole backend after the fixes.
+- [x] **[Dev]** Task B0.3: extend the ruff selection and add the pylint config.
+- [x] **[Lint]** Task B0.3: zero findings on the whole backend after the fixes.
 - [ ] **[Test]** Task B0.3: the full suite still passes, so the fixes changed no behaviour.
 
 ##### Subtask B0.3.1: Ruff config
@@ -199,9 +199,9 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 - [ ] **[Test]** TEST-BE passes in full.
 
 ##### Subtask B0.3.2: Pylint config
-- [ ] **[Dev]** Add `[tool.pylint]` to `pyproject.toml`: py-version 3.14, `max-line-length=88`, `disable` only the checks that duplicate ruff (C0301, C0114 for tests), and `ignore-paths` for alembic and venv.
-- [ ] **[Lint]** `pylint app` scores 10.00, or the score is ratcheted and recorded with a plan to reach 10.
-- [ ] **[Test]** TEST-BE passes.
+- [x] **[Dev]** Add `[tool.pylint]` to `pyproject.toml`: py-version 3.14, `max-line-length=88`, `disable` only the checks that duplicate ruff (C0301, C0114 for tests), and `ignore-paths` for alembic and venv.
+- [x] **[Lint]** `pylint app` scores 10.00, or the score is ratcheted and recorded with a plan to reach 10.
+- [x] **[Test]** TEST-BE passes.
 
 ##### Subtask B0.3.3: VS Code workspace settings
 - [x] **[Dev]** Create `.vscode/settings.json`: interpreter `backend/venv/Scripts/python.exe`, Ruff as the formatter, Pylint extension enabled, `ruff.path` pointing at the venv.
@@ -216,13 +216,13 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 - [ ] **[Test]** Task B0.4: PR-01 renders the template, and a test push to `main` is rejected once protection is on.
 
 ##### Subtask B0.4.1: `.github/pull_request_template.md`
-- [ ] **[Dev]** Sections: Summary, Plan task ids, Type, Screenshots (light and dark), Migration (with downgrade tested), Security (OWASP rows touched), Performance (budgets measured), Assumptions, Test evidence, Rollback, Checklist (Dev, Lint and Test boxes mirroring this plan).
-- [ ] **[Lint]** Check the markdown.
-- [ ] **[Test]** It appears on `gh pr create`.
+- [x] **[Dev]** Sections: Summary, Plan task ids, Type, Screenshots (light and dark), Migration (with downgrade tested), Security (OWASP rows touched), Performance (budgets measured), Assumptions, Test evidence, Rollback, Checklist (Dev, Lint and Test boxes mirroring this plan).
+- [x] **[Lint]** Check the markdown.
+- [x] **[Test]** It appears on `gh pr create`.
 
 ##### Subtask B0.4.2: Dependabot grouping
-- [ ] **[Dev]** Add `.github/dependabot.yml` with weekly, grouped minor and patch updates for pip, npm and github-actions. Dependabot is already raising PRs.
-- [ ] **[Lint]** YAML is valid.
+- [x] **[Dev]** Add `.github/dependabot.yml` with weekly, grouped minor and patch updates for pip, npm and github-actions. Dependabot is already raising PRs.
+- [x] **[Lint]** YAML is valid.
 - [ ] **[Test]** Dependabot shows the config as valid in the repo Insights.
 
 ##### Subtask B0.4.3: Branch protection (owner action)
