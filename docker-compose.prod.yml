@@ -3,23 +3,72 @@
 # Postgres is the already-running production instance, reached via
 # DATABASE_URL in backend/.env — no postgres service defined here.
 #
+# Topology (planchanges4 B1.6, newplan section 13.2):
+#   api-1, api-2  two API replicas, WEB_CONCURRENCY uvicorn workers each,
+#                 load balanced by nginx (askdiq.conf upstream askdiq_api)
+#   worker        the Postgres job queue worker (python -m app.jobs.worker);
+#                 the API replicas run with JOBS_WORKER_ENABLED=false
+#
+# Pool sizing: replicas x workers x (DB_POOL_SIZE + DB_MAX_OVERFLOW) must stay
+# <= Postgres max_connections - 20 (see DEPLOYMENT.md). The values below
+# override backend/.env; change them through the shell or a project-root .env.
+#
 # Usage:
 #   docker compose -f docker-compose.prod.yml build
 #   docker compose -f docker-compose.prod.yml up -d
+
+x-askdiq-backend: &askdiq-backend
+  build:
+    context: ./backend
+    dockerfile: Dockerfile.prod
+  image: askdiq-api:latest
+  env_file:
+    - ./backend/.env
+  restart: unless-stopped
+  networks:
+    - askdiq-net
+
+x-askdiq-api: &askdiq-api
+  <<: *askdiq-backend
+  environment:
+    WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+    DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+    JOBS_WORKER_ENABLED: "false"
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+    interval: 15s
+    timeout: 5s
+    start_period: 40s
+    retries: 3
+  # uvicorn drains in-flight requests on SIGTERM before exiting.
+  stop_grace_period: 30s
+
 services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
-    image: askdiq-api:latest
-    container_name: askdiq-api
-    env_file:
-      - ./backend/.env
-    restart: unless-stopped
+  api-1:
+    <<: *askdiq-api
+    container_name: askdiq-api-1
     ports:
       - "127.0.0.1:5500:8000"
-    networks:
-      - askdiq-net
+
+  api-2:
+    <<: *askdiq-api
+    container_name: askdiq-api-2
+    ports:
+      - "127.0.0.1:5501:8000"
+
+  worker:
+    <<: *askdiq-backend
+    container_name: askdiq-worker
+    command: ["python", "-m", "app.jobs.worker"]
+    environment:
+      DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-5}
+    # No HTTP server here, so the image's /health HEALTHCHECK does not apply.
+    healthcheck:
+      disable: true
+    # Longer than JOBS_SHUTDOWN_TIMEOUT_SECONDS (30 s) so running jobs drain.
+    stop_grace_period: 45s
 
 networks:
   askdiq-net:
