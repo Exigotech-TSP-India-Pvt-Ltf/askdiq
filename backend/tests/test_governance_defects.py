@@ -382,6 +382,10 @@ _SUMMARY_CASES: dict[str, tuple[dict, str]] = {
         {"tab": "llm", "audience": "users"},
         "Usage export (llm, audience users)",
     ),
+    "governance_logs_export": (
+        {"filters": {"level": "ERROR", "q": "", "audience": "overview"}},
+        "Governance logs export (audience=overview, level=ERROR)",
+    ),
     "rate_limited": (
         {"scope": "per IP", "limit": 30, "retry_after_s": 12},
         "Rate limited (per IP): limit 30/min, retry in 12s",

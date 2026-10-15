@@ -61,7 +61,7 @@ async def seeded(db_session):
             outcome=outcome,
             flags=flags,
             stages={"embedding": 15.0, "retrieval": 40.0, "llm": 120.0 + i},
-            query=f"question number {i}",
+            query=f"question #{i:04d}",
         )
         db_session.add_all(rows)
         trace_ids.append(rid)
@@ -122,7 +122,10 @@ async def test_logs_cursor_walk_filters_and_counts(client, seeded):
 
 
 async def test_logs_filter_uses_index_scan(db_session, seeded):
+    # Freshly seeded rows have no statistics yet; take the cost model out of
+    # the picture and prove the keyset query is served in index order.
     await db_session.execute(text("SET LOCAL enable_seqscan = off"))
+    await db_session.execute(text("SET LOCAL enable_bitmapscan = off"))
     plan = (
         (
             await db_session.execute(
@@ -169,13 +172,13 @@ async def test_traces_page_walk_filters_and_detail(client, seeded):
     ).json()
     assert slow["total"] > 0
     assert all(i["total_ms"] >= 10000 for i in slow["items"])
-    one = (await _get(client, "traces/page", q="question number 42", **window)).json()
+    one = (await _get(client, "traces/page", q="#0042", **window)).json()
     assert one["total"] == 1
 
     rid = one["items"][0]["request_id"]
     detail = (await _get(client, f"traces/{rid}")).json()
     assert detail["conversation_id"] == str(seeded["session"].id)
-    assert detail["query"] == "question number 42"
+    assert detail["query"] == "question #0042"
     assert detail["stages"]["unit"] == "ms"  # G1
     by_stage = {s["stage"]: s for s in detail["stages"]["stages"]}
     assert by_stage["llm"]["duration_ms"] == 162.0

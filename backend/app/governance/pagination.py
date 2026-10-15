@@ -93,11 +93,13 @@ async def planner_estimate(db: AsyncSession, stmt: Select) -> int | None:
     names = compiled.positiontup or []
     params = tuple(compiled.params[name] for name in names)
     try:
-        result = await conn.exec_driver_sql(
-            "EXPLAIN (FORMAT JSON) " + compiled.string,  # nosec B608 - compiled SA statement, values are bound
-            params,
-        )
-        plan = result.scalar()
+        # A savepoint keeps a failed EXPLAIN from aborting the caller's transaction.
+        async with conn.begin_nested():
+            result = await conn.exec_driver_sql(
+                "EXPLAIN (FORMAT JSON) " + compiled.string,  # nosec B608 - compiled SA statement, values are bound
+                params,
+            )
+            plan = result.scalar()
     except Exception:
         logger.warning("planner_estimate_failed", exc_info=True)
         return None
