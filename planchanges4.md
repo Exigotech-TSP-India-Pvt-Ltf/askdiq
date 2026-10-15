@@ -1089,73 +1089,73 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
 - [ ] **[Test]** Phase F0 complete: TEST-FE passes.
 
 #### Task F0.1: Tooling and security config
-- [ ] **[Dev]** Task F0.1: pin the port, add the Next security headers and tidy the scripts.
-- [ ] **[Lint]** Task F0.1: LINT-FE.
-- [ ] **[Test]** Task F0.1: `tests/lib/next-config.test.ts` passes.
+- [x] **[Dev]** Task F0.1: pin the port, add the Next security headers and tidy the scripts.
+- [x] **[Lint]** Task F0.1: LINT-FE.
+- [x] **[Test]** Task F0.1: `tests/lib/next-config.test.ts` passes.
 
 ##### Subtask F0.1.1: Port 3000 pin
-- [ ] **[Dev]** `"dev": "next dev --turbo -p 3000"`, `"dev:webpack": "next dev -p 3000"`, `"start": "next start -p 3000"`. Add `APP_BASE_URL` to `.env.local.example`.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** `"dev": "next dev --turbo -p 3000"`, `"dev:webpack": "next dev -p 3000"`, `"start": "next start -p 3000"`. Add `APP_BASE_URL` to `.env.local.example`.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** `npm run dev` serves on 3000 (manual). The `fullstack-smoke` job uses 3000.
 
 ##### Subtask F0.1.2: Security headers and CSP (A02, A05)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `next.config.js`: `poweredByHeader: false`, and a `headers()` block with `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options: DENY`, `COOP` and HSTS in production.
   - A nonce-based CSP is set in `middleware.ts` (F1.1): `script-src 'self' 'nonce-…' 'strict-dynamic'`, `img-src 'self' data: blob:`, `connect-src 'self'` and `frame-ancestors 'none'`.
   - `optimizePackageImports: ['lucide-react','recharts']`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A config test asserts the `headers()` output, and a middleware unit test asserts that the CSP has a fresh nonce per request. `smoke_e2e.py` asserts the headers on a real `next start` response. A manual check in the browser console for CSP violations is noted in the PR.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A config test asserts the `headers()` output, and a middleware unit test asserts that the CSP has a fresh nonce per request. `smoke_e2e.py` asserts the headers on a real `next start` response. A manual check in the browser console for CSP violations is noted in the PR.
 
 ---
 
 #### Task F0.2: Motion layer (newplan §8, §15.3)
-- [ ] **[Dev]** Task F0.2: install `motion` (exact pin) and add `lib/motion.ts` and `MotionProvider`.
-- [ ] **[Lint]** Task F0.2: LINT-FE.
-- [ ] **[Test]** Task F0.2: `tests/lib/motion.test.tsx` passes.
+- [x] **[Dev]** Task F0.2: install `motion` (exact pin) and add `lib/motion.ts` and `MotionProvider`.
+- [x] **[Lint]** Task F0.2: LINT-FE.
+- [x] **[Test]** Task F0.2: `tests/lib/motion.test.tsx` passes.
 
 ##### Subtask F0.2.1: Install and provider
-- [ ] **[Dev]** `npm i motion@<exact>`. `MotionProvider` wraps `LazyMotion features={domAnimation} strict` and `MotionConfig reducedMotion="user"` in `app/layout.tsx`. Only `m.*` components are used.
-- [ ] **[Lint]** Run LINT-FE. ESLint `no-restricted-imports` blocks `motion` `motion.*` in favour of `m.*`.
-- [ ] **[Test]** With reduced motion emulated, the variants resolve to no transform.
+- [x] **[Dev]** `npm i motion@<exact>`. `MotionProvider` wraps `LazyMotion features={domAnimation} strict` and `MotionConfig reducedMotion="user"` in `app/layout.tsx`. Only `m.*` components are used.
+- [x] **[Lint]** Run LINT-FE. ESLint `no-restricted-imports` blocks `motion` `motion.*` in favour of `m.*`.
+- [x] **[Test]** With reduced motion emulated, the variants resolve to no transform.
 
 ##### Subtask F0.2.2: Presets
-- [ ] **[Dev]** `lib/motion.ts`: durations (120, 200 and 320 ms), `spring`, `ease`, and `fadeUp`, `stagger`, `drawer`, `toast`, `pop`, `countUp`, `cardHover` and `crossfade`.
-- [ ] **[Lint]** Run LINT-FE. No hard-coded durations remain outside `lib/motion.ts` (grep check in the test).
-- [ ] **[Test]** Preset unit tests.
+- [x] **[Dev]** `lib/motion.ts`: durations (120, 200 and 320 ms), `spring`, `ease`, and `fadeUp`, `stagger`, `drawer`, `toast`, `pop`, `countUp`, `cardHover` and `crossfade`.
+- [x] **[Lint]** Run LINT-FE. No hard-coded durations remain outside `lib/motion.ts` (grep check in the test).
+- [x] **[Test]** Preset unit tests.
 
 ---
 
 #### Task F0.3: Theme tokens, `BrandProvider` and `BrandLogo` (white-label, logo fix)
-- [ ] **[Dev]** Task F0.3: add CSS variables, the Tailwind var mapping, the runtime brand and the logo fixes (newplan §1.7 to §1.10, §14).
-- [ ] **[Lint]** Task F0.3: LINT-FE.
+- [x] **[Dev]** Task F0.3: add CSS variables, the Tailwind var mapping, the runtime brand and the logo fixes (newplan §1.7 to §1.10, §14).
+- [x] **[Lint]** Task F0.3: LINT-FE.
 - [ ] **[Test]** Task F0.3: `tests/components/BrandProvider.test.tsx` and `BrandLogo.test.tsx` pass.
 
 ##### Subtask F0.3.1: `lib/theme-tokens.ts` and CSS variables
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `:root` and `.dark` variables for the brand ramp, surfaces, borders, status colors (ok, warn #B7791F, danger #C0362C, info), and `chartTheme` (categorical, sequential and diverging).
   - `tailwind.config.ts` brand colors become `rgb(var(--brand-600) / <alpha-value>)`.
-- [ ] **[Lint]** Run LINT-FE. A grep test fails on new inline hex colors in `app/` and `components/`.
-- [ ] **[Test]** Snapshot tests of the token values for light and dark.
+- [x] **[Lint]** Run LINT-FE. A grep test fails on new inline hex colors in `app/` and `components/`.
+- [x] **[Test]** Snapshot tests of the token values for light and dark.
 
 ##### Subtask F0.3.2: Hard-coded colour audit (newplan §1.6)
-- [ ] **[Dev]** Replace `#f4fbfb`, `slate-*` and `gray-*` used for brand surfaces with tokens. Fix the un-themed `text-gray-900` in `conversations/[id]`.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** Replace `#f4fbfb`, `slate-*` and `gray-*` used for brand surfaces with tokens. Fix the un-themed `text-gray-900` in `conversations/[id]`.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Visual check in light and dark (screenshots in the PR).
 
 ##### Subtask F0.3.3: `BrandProvider`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - The server layout fetches `/branding` (revalidate 300). `generateMetadata` sets the title and favicon from the brand, so "DeployIQ" is no longer hard-coded in `app/layout.tsx`.
   - The provider writes the `--brand-*` variables and exposes `useBrand()`.
   - Chat sample questions come from the brand.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A mocked brand changes the CSS variables and the title. On a fetch failure the seeded defaults are used.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A mocked brand changes the CSS variables and the title. On a fetch failure the seeded defaults are used.
 
 ##### Subtask F0.3.4: Logo re-crop and dark variants
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Measure the artwork bbox, then re-crop the `exigotech-logo.svg` viewBox.
   - Create `exigotech-logo-dark.svg` and `exigotech-mark-dark.svg` (white wordmark, `brand-400` teal).
   - `BrandLogo variant="full|mark"` swaps light and dark with a `dark:hidden` / `hidden dark:block` pair, sized `h-10 w-auto max-w-[200px]` inside an `h-16` header.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]**
   - Vitest asserts that the re-cropped SVG viewBox aspect ratio is within 5 % of the tight PNG (about 4.06), so the artwork fills the box.
   - `BrandLogo` renders the right source per theme with the size classes.
@@ -1163,7 +1163,7 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
   - A manual screenshot shows the logo at least 160 px wide in the expanded sidebar.
 
 ##### Subtask F0.3.5: Light and dark theme parity audit and fix (newplan §15.2a, T1 to T6)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - **Inventory.** Write `frontend/docs/theme-audit.md` listing every page and every shared component, with a light result, a dark result and a toggle result for each.
   - **Fixes:**
     - T1: add a `useChartTheme()` hook and move all 50 chart hex values onto it.
@@ -1172,7 +1172,7 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
     - T4: add the System mode and cross-tab sync.
     - T6: add dark status tokens.
   - **Guard.** Add an ESLint `no-restricted-syntax` rule (or a vitest grep) that fails on new hex colours or `bg-white`/`text-gray-*` without `dark:` outside `lib/theme-tokens.ts`.
-- [ ] **[Lint]** Run LINT-FE. The guard runs in CI and is clean.
+- [x] **[Lint]** Run LINT-FE. The guard runs in CI and is clean.
 - [ ] **[Test]**
   - `tests/lib/theme.test.tsx`: the toggle flips the `dark` class, re-renders chart colours through `useChartTheme`, syncs through the storage event, and System mode follows `matchMedia`.
   - A contrast unit test checks every text and status token pair in both themes (AA).
@@ -2068,3 +2068,4 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | – | PR-06, PR-12, PR-15, PR-01 | – | In progress, parallel | PR-01 was told to keep Next 14 and FastAPI 0.115; advisories that need a major upgrade go to an expiring allow-list for your decision. |
 
 **Stack shape for review and merge: a dependency tree.** Each PR's base is the branch it depends on: #14 → {#19 PR-01, #16 PR-02 → #17 PR-03 → #18 PR-04 → {#21 PR-05, #20 PR-06 → {PR-07, PR-08, PR-09 → PR-10, PR-11, PR-12 → PR-13}}}. Merge a parent, then delete its branch, and GitHub retargets its children to `main`. Siblings may need a quick rebase on `main` when merged.
+| – | PR-15 | `feat/ui-foundations-motion-tokens-brand` | Code done, CI green, rebasing onto #19 (PR-01) so frontend CI runs vitest and the audit gate | `motion` 14.3.0 is pinned exactly. Token system with a CSS-variable brand ramp, `useChartTheme`, a pre-paint theme script, a System mode, cross-tab sync and dark status tokens. Added `BrandProvider` and `BrandLogo` (re-cropped viewBox, aspect about 4.01, plus dark variants). Fixed light/dark causes T1–T6, plus extra dark-mode bugs: Recharts tooltips stuck white, an invisible document name, and a monitoring view that only worked in light mode. 128 vitest tests pass. **For your review:** the off-canvas "ARTIFICIAL INTELLIGENCE" tagline was removed from the logo SVG, matching the tight PNG. **Manual:** light and dark screenshots in `frontend/docs/theme-audit.md`. |
