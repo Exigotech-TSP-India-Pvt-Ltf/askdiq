@@ -120,10 +120,18 @@ export function useAuth(): AuthContextValue {
   return useContext(AuthContext) ?? SIGNED_OUT;
 }
 
-/** True when the signed-in user's role grants `permission` (deny by default). */
+/**
+ * True when the signed-in user's role grants `permission`. Fails closed: false
+ * while `/auth/me` is loading, when signed out, or for an unknown permission.
+ * This is the canonical permission hook; feature PRs' temporary `useCan`
+ * shims are replaced by it (or its `useCan` alias).
+ */
 export function usePermission(permission: Permission): boolean {
   return hasPermission(useAuth().permissions, permission);
 }
+
+/** Alias of `usePermission` (same signature) for code written against `useCan`. */
+export const useCan = usePermission;
 
 interface RequirePermissionProps {
   permission: Permission;

@@ -2,7 +2,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { AuthProvider, RequirePermission, SESSION_MARKER, useAuth, usePermission } from "@/lib/auth-context";
+import { AuthProvider, RequirePermission, SESSION_MARKER, useAuth, useCan, usePermission } from "@/lib/auth-context";
 import { gateDecision, type GateDecision } from "@/lib/auth-gate";
 import { parseMe } from "@/lib/auth-api";
 import type { Permission, Role, UserStatus } from "@/lib/permissions";
@@ -118,6 +118,22 @@ describe("AuthProvider: real state from GET /auth/me (F1.1.4)", () => {
     await waitFor(() => expect(screen.getByTestId("state")).toHaveTextContent("active"));
     await act(async () => screen.getByRole("button", { name: "Sign out" }).click());
     await waitFor(() => expect(redirectTo).toHaveBeenCalledWith("/login"));
+  });
+
+  it("fails closed while /auth/me is loading, and useCan is the same hook", async () => {
+    let resolve: (r: Response) => void = () => undefined;
+    fetchMock.mockReturnValue(new Promise<Response>((r) => (resolve = r)));
+    render(
+      <AuthProvider>
+        <Probe permission="dashboard:read" />
+      </AuthProvider>,
+    );
+    expect(screen.getByTestId("state")).toHaveTextContent("loading");
+    expect(screen.getByTestId("allowed")).toHaveTextContent("false");
+    expect(screen.getByText("hidden")).toBeInTheDocument();
+    await act(async () => resolve(json(200, makeMe("operator"))));
+    await waitFor(() => expect(screen.getByTestId("allowed")).toHaveTextContent("true"));
+    expect(useCan).toBe(usePermission);
   });
 
   it("outside a provider useAuth is signed out and makes no request", () => {

@@ -78,6 +78,7 @@ describe("middleware: nonce CSP (F0.1.2)", () => {
       "/auth/callback",
       "/auth/login",
       "/mock-idp/t/oauth2/v2.0/authorize",
+      "/branding/assets/0123abcd",
       "/_next/static/chunks/main.js",
       "/_next/image",
       "/favicon.ico",
