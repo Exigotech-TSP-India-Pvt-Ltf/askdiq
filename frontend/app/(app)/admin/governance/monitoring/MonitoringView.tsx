@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
+import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
 import {
   Activity,
   AlertTriangle,
@@ -64,24 +65,6 @@ function HeroStat({
       </div>
       <p className="mt-3 text-2xl font-semibold text-fg">{value}</p>
     </div>
-  );
-}
-
-function ChartCard({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-line bg-surface-card p-6">
-      <h2 className="text-base font-semibold text-fg">{title}</h2>
-      {subtitle && <p className="mt-1 text-xs text-fg-subtle">{subtitle}</p>}
-      <div className="mt-5 h-64 w-full">{children}</div>
-    </section>
   );
 }
 
@@ -205,7 +188,14 @@ export default function MonitoringView({ hideHeader = false }: { hideHeader?: bo
 
       <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="xl:col-span-2">
-          <ChartCard title="Pipeline Latency" subtitle="Current measurement per stage (seconds)">
+          <ChartCard
+            title="Pipeline Latency"
+            subtitle="Current measurement per stage (seconds)"
+            table={toChartTable(latencyBars, [
+              { key: "stage", label: "Stage" },
+              { key: "seconds", label: "Seconds", numeric: true },
+            ])}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={latencyBars}>
                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />

@@ -8,6 +8,7 @@ import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { useChartTheme } from "@/lib/use-chart-theme";
+import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
 import {
   LayoutDashboard,
   Users,
@@ -202,48 +203,6 @@ function AuroraMetricCard({
 }
 
 // =============================================================================
-// SUBCOMPONENT: AURORA CHART CONTAINER
-// =============================================================================
-function AuroraChartCard({
-  title,
-  subtitle,
-  badge,
-  children,
-  className = "",
-}: {
-  title: string;
-  subtitle?: string;
-  badge?: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <section
-      className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${className}`}
-    >
-      {/* Ambient Aurora Glow in top right */}
-      <div className="absolute -top-12 -right-12 w-36 h-36 bg-teal-400/10 dark:bg-teal-500/15 rounded-full blur-2xl pointer-events-none" />
-
-      <div className="relative z-10 flex items-center justify-between pb-3 border-b border-teal-100 dark:border-teal-500/20">
-        <div>
-          <h2 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">
-            {title}
-          </h2>
-          {subtitle && (
-            <p className="text-[11px] text-slate-500 dark:text-teal-200/70 font-medium mt-0.5">
-              {subtitle}
-            </p>
-          )}
-        </div>
-        {badge}
-      </div>
-
-      <div className="relative z-10 mt-5 h-64 w-full">{children}</div>
-    </section>
-  );
-}
-
-// =============================================================================
 // SUBCOMPONENT: DUAL-MODE FROSTED TOOLTIP
 // =============================================================================
 function CustomChartTooltip({ active, payload, label, unit = "" }: any) {
@@ -412,10 +371,15 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           {/* Query Volume Area Chart (xl:col-span-2) */}
           <div className="xl:col-span-2">
-            <AuroraChartCard
+            <ChartCard
+              variant="aurora"
               title="Query Volume"
+              table={toChartTable(trend, [
+                { key: "label", label: "Day" },
+                { key: "queries", label: "Queries", numeric: true },
+              ])}
               subtitle="User queries over the last 7 days"
-              badge={
+              actions={
                 <span className="font-mono font-bold text-xs bg-teal-50/70 dark:bg-teal-500/15 text-teal-800 dark:text-teal-200 px-2.5 py-1 rounded-lg border border-teal-200/80 dark:border-teal-500/30 shadow-2xs">
                   {totalQueriesInTrend.toLocaleString()} queries in 7d
                 </span>
@@ -457,14 +421,19 @@ export default function AdminDashboard() {
                   />
                 </AreaChart>
               </ResponsiveContainer>
-            </AuroraChartCard>
+            </ChartCard>
           </div>
 
           {/* User Engagement Radial Donut Chart (xl:col-span-1) */}
-          <AuroraChartCard
+          <ChartCard
+            variant="aurora"
             title="User Engagement"
+            table={toChartTable(engagementPie, [
+              { key: "name", label: "Audience" },
+              { key: "value", label: "Users", numeric: true },
+            ])}
             subtitle="Active vs. total registered audience"
-            badge={
+            actions={
               <span className="text-[10px] uppercase font-bold tracking-wider font-mono text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-500/15 border border-cyan-200/80 dark:border-cyan-500/30 px-2 py-0.5 rounded-full">
                 {activePct}% Active
               </span>
@@ -521,7 +490,7 @@ export default function AdminDashboard() {
                 </span>
               </div>
             </div>
-          </AuroraChartCard>
+          </ChartCard>
         </div>
 
         {/* ========================================================================= */}
@@ -529,10 +498,15 @@ export default function AdminDashboard() {
         {/* ========================================================================= */}
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           {/* Pipeline Stage Latency Bar Chart (xl:col-span-1) */}
-          <AuroraChartCard
+          <ChartCard
+            variant="aurora"
             title="Pipeline Latency"
+            table={toChartTable(latency, [
+              { key: "stage", label: "Stage" },
+              { key: "ms", label: "Average ms", numeric: true },
+            ])}
             subtitle="Average ms per stage (last 24h)"
-            badge={
+            actions={
               <span className="text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15 border border-amber-200/80 dark:border-amber-500/30 px-2 py-0.5 rounded-full">
                 Native MS
               </span>
@@ -566,7 +540,7 @@ export default function AdminDashboard() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          </AuroraChartCard>
+          </ChartCard>
 
           {/* RAG Pipeline Execution Health Visualizer (xl:col-span-1) */}
           <section className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl transition-all overflow-hidden flex flex-col justify-between hover:border-teal-400 dark:hover:border-teal-400/60">

@@ -1,41 +1,42 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
-import { useAuth } from "@/lib/auth-context";
 import { ChatProvider } from "@/lib/chat-context";
 import { AudienceProvider } from "@/lib/audience-context";
+import { MobileNavProvider } from "@/lib/mobile-nav-context";
+import { CommandCenter } from "@/components/shell/CommandCenter";
+import { MobileTopBar } from "@/components/shell/MobileTopBar";
+import { GateContent, useRouteGate } from "@/components/auth/RouteGate";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { token, isLoading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!isLoading && !token) router.replace("/login");
-  }, [isLoading, token, router]);
-
-  if (isLoading || !token) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-white dark:bg-dark-bg">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
-      </div>
-    );
-  }
+  // Route gate (F1.2.3): login redirect, suspended page, Access Required in
+  // place of dashboard routes for users without an approved role.
+  const gate = useRouteGate();
+  if (gate.screen) return <>{gate.screen}</>;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white dark:bg-dark-bg">
-      <Sidebar />
-      {/* ChatProvider lives here (not inside the chat page) so an in-flight
-          query keeps running and its answer isn't lost when navigating to
-          Documents/Metrics and back — only this layout, not the page, stays
-          mounted across those route changes. */}
-      <AudienceProvider>
-        <ChatProvider>
-          <main className="flex-1 overflow-hidden bg-surface-page">{children}</main>
-        </ChatProvider>
-      </AudienceProvider>
-    </div>
+    <MobileNavProvider>
+      <CommandCenter>
+        <div className="flex h-screen overflow-hidden bg-white dark:bg-dark-bg">
+          {/* Permission-filtered: users without a role see Chat only. */}
+          <Sidebar />
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Below md the sidebar is off-canvas; this bar holds the hamburger. */}
+            <MobileTopBar />
+            {/* ChatProvider lives here (not inside the chat page) so an in-flight
+                query keeps running and its answer isn't lost when navigating to
+                Documents/Metrics and back — only this layout, not the page, stays
+                mounted across those route changes. */}
+            <AudienceProvider>
+              <ChatProvider>
+                <main className="min-h-0 flex-1 overflow-hidden bg-surface-page">
+                  <GateContent decision={gate.decision}>{children}</GateContent>
+                </main>
+              </ChatProvider>
+            </AudienceProvider>
+          </div>
+        </div>
+      </CommandCenter>
+    </MobileNavProvider>
   );
 }
-

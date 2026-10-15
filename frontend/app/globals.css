@@ -142,3 +142,12 @@ html.dark ::selection {
 html.dark .scrollbar-thin::-webkit-scrollbar-thumb {
   background: rgb(var(--line));
 }
+
+/* Chart kit (components/charts): focusable marks get the brand focus ring. */
+.chart-mark {
+  outline: none;
+}
+.chart-mark:focus-visible {
+  outline: 2px solid rgb(var(--brand-500));
+  outline-offset: 2px;
+}

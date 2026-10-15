@@ -2,6 +2,12 @@
 
 import React from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, AlertCircle, Inbox } from "lucide-react";
+import type { TableDensity } from "@/lib/use-table-preferences";
+
+const CELL_PADDING: Record<TableDensity, string> = {
+  comfortable: "px-4 py-3",
+  compact: "px-3 py-1.5",
+};
 
 export interface ColumnDef<T> {
   key: string;
@@ -27,6 +33,8 @@ export interface DataTableProps<T> {
   onSortChange?: (sortKey: string) => void;
   onRowClick?: (row: T) => void;
   nested?: boolean;
+  /** Row density from `useTablePreferences` / the TableToolbar toggle. */
+  density?: TableDensity;
   className?: string;
 }
 
@@ -43,6 +51,7 @@ export function DataTable<T extends Record<string, any>>({
   onSortChange,
   onRowClick,
   nested = true,
+  density = "comfortable",
   className = "",
 }: DataTableProps<T>) {
   const getRowKey = (row: T, idx: number): string => {
@@ -114,7 +123,7 @@ export function DataTable<T extends Record<string, any>>({
                     aria-sort={getAriaSort(col)}
                     style={col.width ? { width: col.width } : undefined}
                     onClick={() => handleHeaderClick(col)}
-                    className={`px-4 py-3 font-semibold select-none ${alignClass} ${
+                    className={`${CELL_PADDING[density]} font-semibold select-none ${alignClass} ${
                       col.sortable ? "cursor-pointer group hover:bg-slate-100/70 dark:hover:bg-white/5 transition" : ""
                     }`}
                   >
@@ -148,7 +157,7 @@ export function DataTable<T extends Record<string, any>>({
               Array.from({ length: 6 }).map((_, i) => (
                 <tr key={`skeleton-${i}`} className="animate-pulse">
                   {columns.map((col) => (
-                    <td key={`skeleton-cell-${col.key}`} className="px-4 py-3">
+                    <td key={`skeleton-cell-${col.key}`} className={CELL_PADDING[density]}>
                       <div className="h-3.5 bg-slate-200/60 dark:bg-white/10 rounded-md w-3/4" />
                     </td>
                   ))}
@@ -218,7 +227,7 @@ export function DataTable<T extends Record<string, any>>({
                       }
 
                       return (
-                        <td key={col.key} className={`px-4 py-3 text-xs ${alignClass}`}>
+                        <td key={col.key} className={`${CELL_PADDING[density]} text-xs ${alignClass}`} data-density={density}>
                           {content}
                         </td>
                       );

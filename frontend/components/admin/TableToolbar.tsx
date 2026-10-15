@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Search, SlidersHorizontal, X, RotateCcw, Check } from "lucide-react";
+import { Search, SlidersHorizontal, X, RotateCcw, Check, Columns3, Rows3, Rows4 } from "lucide-react";
+import type { TableDensity } from "@/lib/use-table-preferences";
+import { usePopover } from "@/lib/use-popover";
+import { focusRing, popoverPanel } from "@/components/ui/styles";
 
 export type FilterOption = { label: string; value: string };
 
@@ -28,6 +31,71 @@ export interface TableToolbarProps {
   countLabel?: string;
   onClearAll?: () => void;
   extraActions?: React.ReactNode;
+  /** Column-visibility menu (pair with `useTablePreferences`). */
+  columnOptions?: ColumnOption[];
+  hiddenColumns?: string[];
+  onToggleColumn?: (key: string) => void;
+  /** Density toggle (comfortable / compact). */
+  density?: TableDensity;
+  onDensityChange?: (density: TableDensity) => void;
+  /** Export action slot (e.g. a CSV export button for tables with a server export). */
+  exportAction?: React.ReactNode;
+}
+
+export type ColumnOption = { key: string; label: string; hideable?: boolean };
+
+const toolbarButton = `flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white ${focusRing}`;
+
+function ColumnMenu({
+  options,
+  hidden,
+  onToggle,
+}: {
+  options: ColumnOption[];
+  hidden: string[];
+  onToggle: (key: string) => void;
+}) {
+  const { open, toggle, triggerRef, panelRef } = usePopover();
+  const visibleCount = options.filter((o) => !hidden.includes(o.key)).length;
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={toggle}
+        aria-haspopup="true"
+        aria-expanded={open}
+        className={toolbarButton}
+      >
+        <Columns3 className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" strokeWidth={1.75} aria-hidden="true" />
+        <span>Columns</span>
+      </button>
+      {open && (
+        <div ref={panelRef} role="group" aria-label="Visible columns" className={`absolute right-0 z-50 mt-2 w-56 ${popoverPanel}`}>
+          {options.map((opt) => {
+            const checked = !hidden.includes(opt.key);
+            // Never hide the last visible column, nor a column marked not hideable.
+            const locked = opt.hideable === false || (checked && visibleCount <= 1);
+            return (
+              <label
+                key={opt.key}
+                className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-fg-muted hover:bg-surface-muted ${locked ? "opacity-60" : "cursor-pointer"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={locked}
+                  onChange={() => onToggle(opt.key)}
+                  className="h-3.5 w-3.5 rounded border-line accent-brand-600"
+                />
+                {opt.label}
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function TableToolbar({
@@ -43,6 +111,12 @@ export function TableToolbar({
   countLabel,
   onClearAll,
   extraActions,
+  columnOptions,
+  hiddenColumns = [],
+  onToggleColumn,
+  density,
+  onDensityChange,
+  exportAction,
 }: TableToolbarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [internalSearch, setInternalSearch] = useState(search);
@@ -260,6 +334,30 @@ export function TableToolbar({
               )}
             </div>
           )}
+
+          {/* Column visibility and density (remembered per table) */}
+          {columnOptions && columnOptions.length > 0 && onToggleColumn ? (
+            <ColumnMenu options={columnOptions} hidden={hiddenColumns} onToggle={onToggleColumn} />
+          ) : null}
+          {density && onDensityChange ? (
+            <button
+              type="button"
+              aria-pressed={density === "compact"}
+              onClick={() => onDensityChange(density === "compact" ? "comfortable" : "compact")}
+              title={density === "compact" ? "Comfortable rows" : "Compact rows"}
+              className={toolbarButton}
+            >
+              {density === "compact" ? (
+                <Rows4 className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" strokeWidth={1.75} aria-hidden="true" />
+              ) : (
+                <Rows3 className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" strokeWidth={1.75} aria-hidden="true" />
+              )}
+              <span>Compact</span>
+            </button>
+          ) : null}
+
+          {/* Export action slot */}
+          {exportAction}
 
           {/* Optional Extra Action Buttons (e.g. Export CSV) */}
           {extraActions}

@@ -53,8 +53,12 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/admin/governance/monitoring` | Pass | Fixed (T1, T2) | Fixed (T1) | Whole view was light-only; now tokens + `chartTheme` | [ ] |
 | `/admin/governance/logs` | Pass | Fixed (T2) | Pass | Default level badge tokenised | [ ] |
 | `/admin/governance/traces` | Pass | Pass | Pass | No change needed | [ ] |
-| `/_not-found` (Next default) | Pass | Pass | Pass | Branded 404 is F0.6.6 (PR-17) | [ ] |
-| `/login` | n/a | n/a | n/a | Route not built yet (F1, PR-19); must use `BrandLogo` | n/a |
+| `/_not-found` (`app/not-found.tsx`) | Pass | Pass | Pass | Branded 404 (PR-17): `BrandLogo` pair, `bg-surface-*` / `text-fg*` tokens | [ ] |
+| Route error boundary (`app/error.tsx`) | Pass | Pass | Pass | Branded (PR-17): reference digest + copy, retry; no error text shown | [ ] |
+| Any `(app)` route at < `md` (390 px) | Pass | Pass | Pass | PR-17: `MobileTopBar` + off-canvas sidebar; desktop aside `hidden md:flex` | [ ] |
+| `/login` (PR-18) | Pass | Pass | Pass | Split screen (§7.7): left panel `from-brand-600 to-brand-800` gradient with white text in both themes (white on `brand-600` 4.8:1), white `BrandLogo tone="onDark"`, hexagons/rings `text-white/*` (currentColor); right panel `bg-surface-page` + `text-fg*`, button `bg-surface-card border-line-strong`, error banner `status-danger-*`. Below `md`: teal header strip + single column. Microsoft logo colours are fixed brand colours in `theme-tokens.ts` | [ ] |
+| Access Required (any dashboard route, pending / rejected) (PR-18) | Pass | Pass | Pass | Card on `bg-surface-card`; stepper dots `brand-600` / `surface-card` / `status-danger-*`; rail `bg-line`; form fields `border-line bg-surface-card text-fg` | [ ] |
+| `/suspended` and suspended gate (PR-18) | Pass | Pass | Pass | Same layout as `BrandedStatusPage`; icon on `status-danger-bg` | [ ] |
 
 ## Shared components
 
@@ -75,7 +79,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `admin/TableFormatters` | Pass | Pass | Pass | Existing `dark:` pairs |
 | `admin/Pagination` | Pass | Pass | Pass | Existing `dark:` pairs |
 | `admin/QueryInspectorDrawer` | Pass | Pass | Pass | `bg-surface-card` |
-| `admin/usage/QueryInspectorDrawer` | Pass | Pass | Pass | Existing `dark:` pairs (duplicate removed in PR-17) |
+| `admin/usage/QueryInspectorDrawer` | Pass | Pass | Pass | PR-17: chrome now from `ui/DrawerShell` (shared with the evaluation inspector); body keeps its `dark:` pairs; errors use `ErrorState` |
 | `admin/EvaluationCompareMatrix` | Pass | Fixed (T1) | Fixed (T1) | Radar + tooltip from `chartTheme` |
 | `admin/evaluation/LegacyEvaluationReport` (moved, unmounted) | Pass | Fixed (T1) | Fixed (T1) | Former `/evaluation` page body, unchanged; not routed (PR-20) |
 | `admin/insights/StatCard` | Pass | Pass | Pass | `bg-surface-card` |
@@ -89,6 +93,32 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `admin/usage/QueriesTab` | Pass | Fixed (T2) | Pass | Neutral chips tokenised |
 | `admin/usage/TestIpManager` | Pass | Fixed (T2) | Pass | Cancel button tokenised |
 | `documents/FormatBadge` | Pass | Fixed (T2) | Pass | Default badge tokenised |
+| `charts/ChartCard` (new, PR-16) | Pass | Pass | Pass | Replaces the local cards in Dashboard (`AuroraChartCard`), Monitoring, Evaluation and Evaluation Live; `plain` / `aurora` variants on `surface-*`, `line`, `brand-*` tokens; skeleton, error, empty and "View as table" states use tokens |
+| `charts/Sparkline`, `charts/KpiTrendCard` (new) | Pass | Pass | Pass | SVG colours from `useChartTheme()`; delta badge on `status-*-bg` / `status-*-fg` |
+| `charts/StackedArea`, `PercentileBand`, `Histogram` (new) | Pass | Pass | Pass | Series `chartTheme.categorical`, grid `chartTheme.grid`, axis `chartTheme.axis`; legend hover dims to `dimOpacity` |
+| `charts/Waterfall`, `BulletChart`, `Funnel` (new) | Pass | Pass | Pass | Bars from `categorical` / `status` / `sequential`; ranges on `chartTheme.track` |
+| `charts/CalendarHeatmap` (new) | Pass | Pass | Pass | Cells on the sequential ramp (separate light and dark ramps) |
+| `charts/RadialGauge` (new) | Pass | Pass | Pass | Track `chartTheme.track`; value tone from `chartTheme.status` (lifted dark values, T6) |
+| `charts/QuadrantScatter`, `charts/Radar` (new) | Pass | Pass | Pass | Quadrant dots from `status`; radar series from `categorical` |
+| `charts/TreemapChart`, `charts/SankeyChart` (new, `next/dynamic`) | Pass | Pass | Pass | Recharts wrappers fed from `useChartTheme()`; skeleton while the chunk loads |
+| Chart tooltip (`charts/primitives`) | Pass | Pass | Pass | Card on `bg-surface-elevated` + `border-line` + `shadow-md`; focus ring `.chart-mark:focus-visible` uses `--brand-500` |
+| `ui/DrawerShell` (PR-17) | Pass | Pass | Pass | Portal drawer: `bg-surface-elevated`, `border-line`, backdrop `bg-ink/40` / `dark:bg-black/60` |
+| `ui/Modal`, `ui/ConfirmDialog` (PR-17) | Pass | Pass | Pass | Same tokens as the drawer; danger tone uses `status-danger` / `status-danger-bg` (dark text on the lifted dark red) |
+| `ui/ToastProvider` (PR-17) | Pass | Pass | Pass | `bg-surface-elevated` cards, tone icons from `status-*` |
+| `ui/EntityLink`, `ui/CopyButton` (PR-17) | Pass | Pass | Pass | Links `brand-700` / `dark:brand-300`; tooltip `bg-surface-inverse` + `text-fg-inverse` (flips per theme) |
+| `ui/EmptyState`, `ui/ErrorState`, `ui/Skeleton` (PR-17) | Pass | Pass | Pass | `surface-muted` placeholders; pulse off under reduced motion |
+| `ui/DateRangePicker` (PR-17) | Pass | Pass | Pass | Popover + native date inputs on `bg-surface-card`; active preset brand tint |
+| `ui/CommandPalette`, `ui/ShortcutsSheet` (PR-17) | Pass | Pass | Pass | Selected row `brand-50` / `dark:brand-950/60`; `kbd` chips `surface-muted` |
+| `ui/ActivePill` (in `TabGroup`, `AudienceScopeTabs`) (PR-17) | Pass | Pass | Pass | Sliding `bg-brand-gradient` pill (layoutId); same in both themes |
+| `shell/ProfileMenu`, `shell/NotificationBell`, `shell/HeaderUtilities` (PR-17) | Pass | Pass | Pass | Popovers on `surface-elevated`; theme radio (light / dark / system) applies instantly |
+| `shell/MobileTopBar`, `Sidebar` (mobile drawer) (PR-17) | Pass | Pass | Pass | `bg-surface-card`, `border-line`; nav items reuse the desktop classes |
+| `shell/BrandedStatusPage` (PR-17) | Pass | Pass | Pass | `BrandLogo` pair on `bg-surface-card` |
+| `admin/CursorPagination` (PR-17) | Pass | Pass | Pass | Mirrors `Pagination` (existing `dark:` pairs) |
+| `admin/TableToolbar` (columns, density) (PR-17) | Pass | Pass | Pass | Column menu on `surface-elevated`; buttons reuse the existing `dark:` pairs |
+| `auth/LoginView`, `auth/BrandPanelDecor`, `auth/MicrosoftSignInButton` (PR-18) | Pass | Pass | Pass | Sheen `via-brand-100/60` (light) / `dark:via-white/10`; hover border `brand-400` / `dark:brand-500`; focus ring token |
+| `auth/AccessRequiredView`, `auth/SuspendedView` (PR-18) | Pass | Pass | Pass | Tokens only; reduced motion renders the stepper static |
+| `shell/RoleBadge` (PR-18) | Pass | Pass | Pass | Superadmin `brand-50` / `dark:brand-950/60`; admin `status-info-*`; operator `surface-muted` |
+| `Sidebar` role filtering + pending badge (PR-18) | Pass | Pass | Pass | Badge `bg-status-warn` with `text-white dark:text-fg-inverse` (existing pair); role badge under the email |
 
 ## Known follow-ups (not theme-breaking)
 
@@ -97,5 +127,4 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
   when their components are next touched (F3 to F6).
 - Decorative glows still use `rgba(...)` drop-shadows on the dark hero panels; they are
   theme-neutral.
-- The CSP nonce for the pre-paint script is added by PR-18 (middleware); until then the script is
-  a plain inline script.
+- The pre-paint theme script carries the per-request CSP nonce from `middleware.ts` (PR-18).

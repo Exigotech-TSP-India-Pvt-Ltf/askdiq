@@ -28,6 +28,7 @@ import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { QueryInspectorDrawer } from "@/components/admin/QueryInspectorDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
+import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
 import {
   Bar,
   BarChart,
@@ -117,29 +118,6 @@ function HeroStat({
       </div>
       <p className="mt-2 text-2xl font-black font-mono text-slate-900 dark:text-white tracking-tight tabular-nums">{value}</p>
     </div>
-  );
-}
-
-function ChartCard({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
-      <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-2xl" />
-      <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90 flex items-center gap-2">
-          {title}
-        </h2>
-        {subtitle && <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">{subtitle}</p>}
-      </div>
-      <div className="h-64 w-full">{children}</div>
-    </section>
   );
 }
 
@@ -309,7 +287,16 @@ export default function EvaluationLivePage() {
             {/* Radar and Outcomes */}
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
               <div className="xl:col-span-2">
-                <ChartCard title="Quality scorecard" subtitle="Continuous evaluation performance (%)">
+                <ChartCard
+                  title="Quality scorecard"
+                  subtitle="Continuous evaluation performance (%)"
+                  variant="aurora"
+                  titleStyle="eyebrow"
+                  table={toChartTable(qualityRadar, [
+                  { key: "metric", label: "Metric" },
+                  { key: "score", label: "Score", numeric: true, format: (v) => `${Number(v).toFixed(1)}%` },
+                ])}
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart data={qualityRadar} outerRadius="75%">
                       <PolarGrid stroke={ct.grid} />
@@ -331,7 +318,18 @@ export default function EvaluationLivePage() {
                 </ChartCard>
               </div>
 
-              <ChartCard title="Case outcomes" subtitle="Pass / fail split across live evaluations">
+              <ChartCard
+                title="Case outcomes"
+                subtitle="Pass / fail split across live evaluations"
+                variant="aurora"
+                titleStyle="eyebrow"
+                empty={passBreakdown.length === 0}
+                emptyMessage="No scored cases yet"
+                table={toChartTable(passBreakdown, [
+                { key: "name", label: "Outcome" },
+                { key: "value", label: "Cases", numeric: true },
+              ])}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -357,7 +355,16 @@ export default function EvaluationLivePage() {
 
             {/* Category breakdown & Stage Latency */}
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-              <ChartCard title="Pass rate by query type" subtitle="Distribution of passing answers per intent">
+              <ChartCard
+                title="Pass rate by query type"
+                subtitle="Distribution of passing answers per intent"
+                variant="aurora"
+                titleStyle="eyebrow"
+                table={toChartTable(caseTypeBars, [
+                { key: "type", label: "Query type" },
+                { key: "passRate", label: "Pass rate", numeric: true, format: (v) => `${String(v)}%` },
+              ])}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={caseTypeBars}>
                     <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
@@ -382,7 +389,18 @@ export default function EvaluationLivePage() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Latency by pipeline stage" subtitle="p50 / p95 / p99 across stages (seconds)">
+              <ChartCard
+                title="Latency by pipeline stage"
+                subtitle="p50 / p95 / p99 across stages (seconds)"
+                variant="aurora"
+                titleStyle="eyebrow"
+                table={toChartTable(latencyBars, [
+                { key: "stage", label: "Stage" },
+                { key: "p50", label: "p50", numeric: true, format: (v) => `${Number(v).toFixed(2)} s` },
+                { key: "p95", label: "p95", numeric: true, format: (v) => `${Number(v).toFixed(2)} s` },
+                { key: "p99", label: "p99", numeric: true, format: (v) => `${Number(v).toFixed(2)} s` },
+              ])}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={latencyBars}>
                     <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />

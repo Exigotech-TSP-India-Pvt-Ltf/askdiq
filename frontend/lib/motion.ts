@@ -49,6 +49,16 @@ export const drawer: Variants = {
   exit: { x: "100%", transition: tween(duration.base) },
 };
 
+/** Off-canvas navigation drawer entering from the left (mobile sidebar). */
+export const drawerLeft: Variants = {
+  hidden: { x: "-100%" },
+  visible: { x: 0, transition: spring },
+  exit: { x: "-100%", transition: tween(duration.base) },
+};
+
+/** Shared-layout transition for `layoutId` indicators (active nav bar, tab pills). */
+export const layoutSpring: Transition = spring;
+
 export const toast: Variants = {
   hidden: { opacity: 0, y: 12, scale: 0.98 },
   visible: { opacity: 1, y: 0, scale: 1, transition: spring },
@@ -72,6 +82,23 @@ export const crossfade: Variants = {
   visible: { opacity: 1, transition: tween(duration.base) },
   exit: { opacity: 0, transition: tween(duration.fast) },
 };
+
+/**
+ * Ambient decoration loops (login brand panel, newplan §7.7): very slow,
+ * transform-only drift between 20 and 40 s. Not UI feedback, so the 300 ms
+ * cap does not apply; callers render them static under reduced motion.
+ */
+export const ambientLoopSeconds = { short: 22, medium: 30, long: 38 } as const;
+
+export function ambientLoop(loop: keyof typeof ambientLoopSeconds): Transition {
+  return { duration: ambientLoopSeconds[loop], ease: "easeInOut", repeat: Infinity, repeatType: "mirror" };
+}
+
+/** Pointer parallax smoothing for decoration layers (`useSpring`). */
+export const parallaxSpring = { stiffness: 60, damping: 20, mass: 0.6 } as const;
+
+/** Sign-in step indicator: the progress rail fills over `slow`. */
+export const progressFill: Transition = { duration: duration.slow, ease };
 
 /** Transition for number count-ups (`animate(from, to, countUp)`). */
 export const countUp: Transition = { duration: duration.slow, ease };

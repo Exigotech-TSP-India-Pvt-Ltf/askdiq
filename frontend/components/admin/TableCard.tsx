@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { CursorPagination, type CursorPaginationProps } from "@/components/admin/CursorPagination";
 
 export interface TableCardProps {
   title?: React.ReactNode;
@@ -10,6 +11,8 @@ export interface TableCardProps {
   toolbar?: React.ReactNode;
   children: React.ReactNode;
   pagination?: React.ReactNode;
+  /** Cursor-pagination variant (used when `pagination` is not given). */
+  cursor?: CursorPaginationProps;
   className?: string;
 }
 
@@ -21,8 +24,10 @@ export function TableCard({
   toolbar,
   children,
   pagination,
+  cursor,
   className = "",
 }: TableCardProps) {
+  const footer = pagination ?? (cursor ? <CursorPagination {...cursor} /> : null);
   const hasCardHeader = Boolean(title || description || badge || headerActions);
 
   return (
@@ -65,9 +70,9 @@ export function TableCard({
       </div>
 
       {/* Bottom Pagination Slot */}
-      {pagination && (
+      {footer && (
         <div>
-          {pagination}
+          {footer}
         </div>
       )}
     </div>

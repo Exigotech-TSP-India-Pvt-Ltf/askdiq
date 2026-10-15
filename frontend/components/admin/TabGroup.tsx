@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useId, useRef } from "react";
+import { ActivePill } from "@/components/ui/ActivePill";
 import {
   BarChart3,
   Users,
@@ -38,7 +39,7 @@ import {
 export interface TabItem<T extends string = string> {
   id: T;
   label: string;
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: React.ComponentType<{ className?: string; strokeWidth?: string | number }>;
   badgeCount?: number | string | null;
   description?: string;
 }
@@ -59,6 +60,7 @@ export function TabGroup<T extends string = string>({
   ariaLabel = "Tab Navigation",
 }: TabGroupProps<T>) {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const pillId = `tab-pill-${useId()}`;
 
   const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
     let nextIndex = index;
@@ -100,23 +102,25 @@ export function TabGroup<T extends string = string>({
             onClick={() => onChange(tab.id)}
             onKeyDown={(e) => handleKeyDown(e, idx)}
             title={tab.description || tab.label}
-            className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-lg transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
+            className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
               isActive
-                ? "bg-brand-gradient text-white shadow-brand-glow font-semibold"
+                ? "text-white font-semibold"
                 : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 font-medium"
             }`}
           >
+            {isActive && <ActivePill layoutId={pillId} />}
             {Icon && (
               <Icon
-                className={`w-3.5 h-3.5 flex-shrink-0 ${
+                className={`relative w-4 h-4 flex-shrink-0 ${
                   isActive ? "text-white" : "text-slate-500 dark:text-slate-400"
                 }`}
+                strokeWidth={1.75}
               />
             )}
-            <span className="whitespace-nowrap">{tab.label}</span>
+            <span className="relative whitespace-nowrap">{tab.label}</span>
             {tab.badgeCount !== undefined && tab.badgeCount !== null ? (
               <span
-                className={`text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
+                className={`relative text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
                   isActive
                     ? "bg-white/20 text-white"
                     : "bg-surface-muted text-fg-muted"
