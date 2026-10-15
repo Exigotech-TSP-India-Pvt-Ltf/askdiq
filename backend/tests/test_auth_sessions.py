@@ -199,7 +199,10 @@ async def test_auth_migration_upgrade_downgrade_upgrade() -> None:
     try:
         heads = await asyncio.to_thread(_alembic, "heads")
         assert heads.count("(head)") == 1
-        assert "a9b0c1d2e3f4" in heads
+        # Later migrations stack on top (planchanges4 8.3): the auth revision
+        # must be on the single linear chain to head, not necessarily head.
+        chain = await asyncio.to_thread(_alembic, "history", "-r", "a9b0c1d2e3f4:head")
+        assert "a9b0c1d2e3f4" in chain
 
         await asyncio.to_thread(_alembic, "downgrade", "f8a9b0c1d2e3")
         async with engine.connect() as conn:
