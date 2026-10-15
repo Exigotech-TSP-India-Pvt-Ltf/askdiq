@@ -56,7 +56,9 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/_not-found` (`app/not-found.tsx`) | Pass | Pass | Pass | Branded 404 (PR-17): `BrandLogo` pair, `bg-surface-*` / `text-fg*` tokens | [ ] |
 | Route error boundary (`app/error.tsx`) | Pass | Pass | Pass | Branded (PR-17): reference digest + copy, retry; no error text shown | [ ] |
 | Any `(app)` route at < `md` (390 px) | Pass | Pass | Pass | PR-17: `MobileTopBar` + off-canvas sidebar; desktop aside `hidden md:flex` | [ ] |
-| `/login` | n/a | n/a | n/a | Route not built yet (F1, PR-19); must use `BrandLogo` | n/a |
+| `/login` (PR-18) | Pass | Pass | Pass | Split screen (§7.7): left panel `from-brand-600 to-brand-800` gradient with white text in both themes (white on `brand-600` 4.8:1), white `BrandLogo tone="onDark"`, hexagons/rings `text-white/*` (currentColor); right panel `bg-surface-page` + `text-fg*`, button `bg-surface-card border-line-strong`, error banner `status-danger-*`. Below `md`: teal header strip + single column. Microsoft logo colours are fixed brand colours in `theme-tokens.ts` | [ ] |
+| Access Required (any dashboard route, pending / rejected) (PR-18) | Pass | Pass | Pass | Card on `bg-surface-card`; stepper dots `brand-600` / `surface-card` / `status-danger-*`; rail `bg-line`; form fields `border-line bg-surface-card text-fg` | [ ] |
+| `/suspended` and suspended gate (PR-18) | Pass | Pass | Pass | Same layout as `BrandedStatusPage`; icon on `status-danger-bg` | [ ] |
 
 ## Shared components
 
@@ -113,6 +115,10 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `shell/BrandedStatusPage` (PR-17) | Pass | Pass | Pass | `BrandLogo` pair on `bg-surface-card` |
 | `admin/CursorPagination` (PR-17) | Pass | Pass | Pass | Mirrors `Pagination` (existing `dark:` pairs) |
 | `admin/TableToolbar` (columns, density) (PR-17) | Pass | Pass | Pass | Column menu on `surface-elevated`; buttons reuse the existing `dark:` pairs |
+| `auth/LoginView`, `auth/BrandPanelDecor`, `auth/MicrosoftSignInButton` (PR-18) | Pass | Pass | Pass | Sheen `via-brand-100/60` (light) / `dark:via-white/10`; hover border `brand-400` / `dark:brand-500`; focus ring token |
+| `auth/AccessRequiredView`, `auth/SuspendedView` (PR-18) | Pass | Pass | Pass | Tokens only; reduced motion renders the stepper static |
+| `shell/RoleBadge` (PR-18) | Pass | Pass | Pass | Superadmin `brand-50` / `dark:brand-950/60`; admin `status-info-*`; operator `surface-muted` |
+| `Sidebar` role filtering + pending badge (PR-18) | Pass | Pass | Pass | Badge `bg-status-warn` with `text-white dark:text-fg-inverse` (existing pair); role badge under the email |
 
 ## Known follow-ups (not theme-breaking)
 
@@ -121,5 +127,4 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
   when their components are next touched (F3 to F6).
 - Decorative glows still use `rgba(...)` drop-shadows on the dark hero panels; they are
   theme-neutral.
-- The CSP nonce for the pre-paint script is added by PR-18 (middleware); until then the script is
-  a plain inline script.
+- The pre-paint theme script carries the per-request CSP nonce from `middleware.ts` (PR-18).
