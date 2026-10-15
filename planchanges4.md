@@ -1364,22 +1364,22 @@ Put the B2 security model into the UI (newplan §7.7, §7.8). The UI hides what 
 #### Task F1.4: User Management page (`/admin/user-management`)
 - [x] **[Dev]** Task F1.4: build the KPI strip, charts and four tabs (newplan §7.8, §15.4).
 - [x] **[Lint]** Task F1.4: LINT-FE.
-- [ ] **[Test]** Task F1.4: `tests/components/UserManagement.test.tsx` passes.
+- [x] **[Test]** Task F1.4: `tests/components/UserManagement.test.tsx` passes.
 
 ##### Subtask F1.4.1: KPIs and charts
 - [x] **[Dev]** KPI cards for total, active, pending (highlighted) and suspended users, and logins in the last 24h, each with a sparkline. Charts: logins per day bar, access-request `Funnel`, role donut, time-to-approve `Histogram`. Clicking a segment filters the Users tab.
 - [x] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Drill-down sets the filters.
+- [x] **[Test]** Drill-down sets the filters.
 
 ##### Subtask F1.4.2: Users tab and drawer
 - [x] **[Dev]** A `TableCard` with search, a Filters popover (role, status) and pagination. The drawer shows profile, sessions, activity and audit entries. Actions: change role, suspend or reactivate, revoke sessions (`ConfirmDialog`) and invite. The disabled self and last-superadmin actions show the reason in a tooltip.
 - [x] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A 409 shows the conflict toast. Optimistic updates roll back on error.
+- [x] **[Test]** A 409 shows the conflict toast. Optimistic updates roll back on error.
 
 ##### Subtask F1.4.3: Access Requests, Roles & Permissions, and Audit Trail tabs
 - [x] **[Dev]** Queue with approve (role select) and reject (note), multi-select bulk approve, keyboard `a` and `x`, and the decision history. The matrix renders from `/auth/me` and the permissions endpoint. The audit tab is filtered to auth events.
 - [x] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Bulk approve. An approved row animates out (`AnimatePresence`).
+- [x] **[Test]** Bulk approve. An approved row animates out (`AnimatePresence`).
 
 #### Task F1.5: Phase F1 integration and E2E
 - [ ] **[Dev]**
@@ -2083,7 +2083,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #30 | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | Open, **all jobs green** | One ChartCard replacing 4 copies, with a "View as table" toggle. 12 keyboard-accessible SVG catalogue charts on chart tokens. Dynamic Treemap and Sankey. `useApiQuery` with dedupe, SWR, abort and focus refetch; intent and idle prefetch; optimistic mutations with undo and 409 handling. 234 vitest tests. F0.5.4 (OpenAPI type sync) is deferred until after B7. |
 | #32 | PR-17 | `feat/ui-global-ux-primitives` | #30 | Open, **all jobs green** (317 vitest tests) | EntityLink and useDeepLink, DrawerShell (both QueryInspectorDrawers consolidated), toasts with undo, a typed ConfirmDialog, state components, DateRangePicker (opt-in), Ctrl+K palette, `?` shortcuts sheet, table column and density preferences, cursor pagination, branded 404 and error pages, mobile off-canvas sidebar, profile menu and bell shells, nav pre-registration, layoutId pills. The route JS increase is at most 27 KB (budget 60). **Manual:** screenshots and a 390 px check. |
 | #33 | PR-25 | `feat/ui-analytics-insights` | #30 | Open, **all jobs green** (273 vitest tests) | Analytics page: a native port of the Insights HTML on the `/admin/insights` API, with URL-synced filters, cross-filtering, 6 KPIs, trend with setDay, radial hour-of-day, Sankey flow, treemap, donut, lollipop, bubbles, an expandable conversations table, a guide tour and a pending-classification state. Parity test on screen: 49 conversations, 106 questions, 48 % handled, 23 % served, 46 people, Served 11, Partly 14, Not 22. Two light-mode colours were swapped for AA contrast. **After merge:** set `enabled: true` on the Analytics nav item. **Manual:** side-by-side screenshots with the HTML. |
-| #35 | PR-19 | `feat/ui-user-management` | #32 | Open, CI running (passes locally: 351 vitest tests) | KPI cards with sparklines, a funnel, a role donut and a histogram that drill into the Users tab. Users table and drawer with role change, suspend, revoke and invite (typed confirmation, optimistic updates, 409 toast, blocked self and last-superadmin changes). Access-request queue with bulk approve and `a`/`x` keys. Roles matrix and auth audit trail. **Note:** writes need PR-18's proxy header forwarding, and the temporary `useCan` shim is replaced by PR-18's `usePermission`. |
+| #35 | PR-19 | `feat/ui-user-management` | #32 | Open, **all 4 jobs green** (351 vitest tests) | KPI cards with sparklines, a funnel, a role donut and a histogram that drill into the Users tab. Users table and drawer with role change, suspend, revoke and invite (typed confirmation, optimistic updates, 409 toast, blocked self and last-superadmin changes). Access-request queue with bulk approve and `a`/`x` keys. Roles matrix and auth audit trail. **Note:** writes need PR-18's proxy header forwarding, and the temporary `useCan` shim is replaced by PR-18's `usePermission`. |
 | – | PR-18, PR-23, PR-24, PR-26 | (feature UIs) | #32 | In progress, parallel | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
 | #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
 
