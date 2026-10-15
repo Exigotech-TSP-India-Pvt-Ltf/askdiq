@@ -124,12 +124,14 @@ jobs:
           fi
       - name: Migration downgrade round-trip
         run: alembic downgrade -1 && alembic upgrade head
-      - name: Run backend tests with coverage
-        run: python -m pytest -q -m "not perf" --cov=app --cov-report=xml --cov-report=term --cov-fail-under=${{ env.COV_FAIL_UNDER }}
-      # Timing gates (loop blocking, latency budgets) run without coverage
-      # tracing, which adds per-line overhead and skews their measurements.
+      # Timing gates (loop blocking, latency budgets) run first, on the freshly
+      # migrated database and without coverage tracing: per-line tracing
+      # overhead and the rows the rest of the suite leaves behind (latency
+      # records, audit rows) would skew their measurements.
       - name: Run backend performance gates (no coverage tracing)
         run: python -m pytest -q -m perf
+      - name: Run backend tests with coverage
+        run: python -m pytest -q -m "not perf" --cov=app --cov-report=xml --cov-report=term --cov-fail-under=${{ env.COV_FAIL_UNDER }}
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
