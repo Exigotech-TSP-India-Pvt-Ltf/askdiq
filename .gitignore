@@ -47,10 +47,11 @@ backend/conc_*.json
 *.tgz
 
 # --- Local planning / design notes (not part of the product) ---
-/planchanges*.md
+/planchanges1.md
 /planchanges3.md
+/planchanges2.md
+/planchanges.md
 /*_plan.md
-/newplan.md
 /audience_segmentation_tabs_plan.md
 /monitoring_and_governance_plan.md
 /*_analysis.md
