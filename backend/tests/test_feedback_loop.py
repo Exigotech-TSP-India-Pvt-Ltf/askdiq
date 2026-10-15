@@ -417,7 +417,9 @@ async def test_list_is_enriched_and_uses_at_most_two_queries_for_50_rows(
     sync_conn = db_session.bind.sync_connection
 
     def _count(conn, cursor, statement, *args):
-        statements.append(statement)
+        # SAVEPOINTs come from the per-test transaction, not the endpoint.
+        if not statement.lstrip().upper().startswith(("SAVEPOINT", "RELEASE")):
+            statements.append(statement)
 
     event.listen(sync_conn, "before_cursor_execute", _count)
     try:
@@ -703,16 +705,18 @@ async def test_bulk_is_all_or_nothing(client, db_session):
                 triage_status=st,
             )
         )
-    ids = [str(r.id) for r in rows]
+    # Plain ids: a service rollback expires the ORM objects.
+    row_ids = [r.id for r in rows]
+    ids = [str(i) for i in row_ids]
 
     async def statuses() -> list[str]:
         res = await db_session.execute(
             select(MessageFeedback.id, MessageFeedback.triage_status).where(
-                MessageFeedback.id.in_([r.id for r in rows])
+                MessageFeedback.id.in_(row_ids)
             )
         )
         by_id = dict(res.all())
-        return [by_id[r.id] for r in rows]
+        return [by_id[i] for i in row_ids]
 
     conflict = await client.post(
         "/admin/feedback/bulk", json={"ids": ids, "action": "dismissed"}
