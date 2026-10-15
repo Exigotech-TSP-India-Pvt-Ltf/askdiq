@@ -305,94 +305,94 @@ Build the security and performance platform that every later feature uses (newpl
 ---
 
 #### Task B1.3: Async job queue (Postgres `SKIP LOCKED`)
-- [ ] **[Dev]** Task B1.3: add the `jobs` table, enqueue API and worker runner.
-- [ ] **[Lint]** Task B1.3: LINT-BE on `app/jobs/`.
-- [ ] **[Test]** Task B1.3: `tests/test_jobs_queue.py` passes, including the concurrency cases.
+- [x] **[Dev]** Task B1.3: add the `jobs` table, enqueue API and worker runner.
+- [x] **[Lint]** Task B1.3: LINT-BE on `app/jobs/`.
+- [x] **[Test]** Task B1.3: `tests/test_jobs_queue.py` passes, including the concurrency cases.
 
 ##### Subtask B1.3.1: Migration `jobs`
-- [ ] **[Dev]** Columns: `id`, `type`, `payload` (JSONB), `status` (queued, running, done, failed, dead), `attempts`, `max_attempts`, `run_after`, `locked_by`, `locked_at`, `last_error`, `dedupe_key` (unique, nullable), `created_at` and `finished_at`. Index on `(status, run_after)`. Downgrade drops the table.
-- [ ] **[Lint]** Run LINT-BE on the migration (per-file ignores apply).
-- [ ] **[Test]** Upgrade, downgrade, then upgrade again on a scratch DB.
+- [x] **[Dev]** Columns: `id`, `type`, `payload` (JSONB), `status` (queued, running, done, failed, dead), `attempts`, `max_attempts`, `run_after`, `locked_by`, `locked_at`, `last_error`, `dedupe_key` (unique, nullable), `created_at` and `finished_at`. Index on `(status, run_after)`. Downgrade drops the table.
+- [x] **[Lint]** Run LINT-BE on the migration (per-file ignores apply).
+- [x] **[Test]** Upgrade, downgrade, then upgrade again on a scratch DB.
 
 ##### Subtask B1.3.2: Enqueue and claim
-- [ ] **[Dev]** Add `enqueue(type, payload, dedupe_key=None, run_after=None)` and `claim(batch)`, which runs `SELECT ... FOR UPDATE SKIP LOCKED LIMIT n`, then updates the rows to running. Retries use exponential backoff with jitter. A job becomes `dead` after `max_attempts`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** With 4 concurrent claimers and 100 jobs, each job runs exactly once. A dedupe key stops the same job being queued twice. Backoff timing is respected (`frozen_time`).
+- [x] **[Dev]** Add `enqueue(type, payload, dedupe_key=None, run_after=None)` and `claim(batch)`, which runs `SELECT ... FOR UPDATE SKIP LOCKED LIMIT n`, then updates the rows to running. Retries use exponential backoff with jitter. A job becomes `dead` after `max_attempts`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** With 4 concurrent claimers and 100 jobs, each job runs exactly once. A dedupe key stops the same job being queued twice. Backoff timing is respected (`frozen_time`).
 
 ##### Subtask B1.3.3: Worker runner
-- [ ] **[Dev]** Add a handler registry `@job_handler("insights.classify")`. The runner starts in the lifespan `TaskGroup` when `JOBS_WORKER_ENABLED=true`, or runs as a `python -m app.jobs.worker` service in compose. Concurrency comes from `JOBS_MAX_CONCURRENCY`. Shutdown is graceful, and a stale lock is reclaimed after `JOBS_LOCK_TIMEOUT_SECONDS`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A handler error records `last_error` and retries. A crashed worker's job is reclaimed.
+- [x] **[Dev]** Add a handler registry `@job_handler("insights.classify")`. The runner starts in the lifespan `TaskGroup` when `JOBS_WORKER_ENABLED=true`, or runs as a `python -m app.jobs.worker` service in compose. Concurrency comes from `JOBS_MAX_CONCURRENCY`. Shutdown is graceful, and a stale lock is reclaimed after `JOBS_LOCK_TIMEOUT_SECONDS`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A handler error records `last_error` and retries. A crashed worker's job is reclaimed.
 
 ---
 
 #### Task B1.4: Postgres-backed shared state (no Redis; newplan §13.6)
-- [ ] **[Dev]** Task B1.4: move the rate limiter, OIDC handshake state and cross-worker events onto Postgres, so multiple workers and replicas behave as one system.
-- [ ] **[Lint]** Task B1.4: LINT-BE.
-- [ ] **[Test]** Task B1.4: `tests/test_shared_state.py` passes, including the multi-instance cases.
+- [x] **[Dev]** Task B1.4: move the rate limiter, OIDC handshake state and cross-worker events onto Postgres, so multiple workers and replicas behave as one system.
+- [x] **[Lint]** Task B1.4: LINT-BE.
+- [x] **[Test]** Task B1.4: `tests/test_shared_state.py` passes, including the multi-instance cases.
 
 ##### Subtask B1.4.1: `StateBackend` interface and Memory implementation
-- [ ] **[Dev]** Add `app/core/state.py` with a `StateBackend` Protocol: `incr_window(key, window_s)`, `put_once(key, value, ttl)`, `take_once(key)`. Wrap the existing sliding window as `MemoryState`, used only in unit tests and single-process development.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The existing `test_rate_limit.py` and `test_single_flight.py` pass unchanged.
+- [x] **[Dev]** Add `app/core/state.py` with a `StateBackend` Protocol: `incr_window(key, window_s)`, `put_once(key, value, ttl)`, `take_once(key)`. Wrap the existing sliding window as `MemoryState`, used only in unit tests and single-process development.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The existing `test_rate_limit.py` and `test_single_flight.py` pass unchanged.
 
 ##### Subtask B1.4.2: `PostgresState`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Migration: UNLOGGED table `rate_limit_buckets(key text, window_start timestamptz, count int, PRIMARY KEY (key, window_start))`, and table `oidc_states(state_hash text primary key, payload jsonb, expires_at timestamptz)`.
   - `incr_window` runs one `INSERT ... ON CONFLICT DO UPDATE SET count = rate_limit_buckets.count + 1 RETURNING count`, summing 10 s sub-windows for the sliding minute.
   - `take_once` runs `DELETE ... WHERE state_hash = :h AND expires_at > now() RETURNING payload`.
   - A cleanup job (B1.3) deletes expired rows every minute.
   - It is the default when `ENV != test`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Two app instances (two engines) share one limit, so 10/min holds across both.
   - `take_once` is single use under 20 concurrent callers (exactly 1 gets the payload).
   - The rate-limit check adds under 3 ms p95 locally.
 
 ##### Subtask B1.4.3: LISTEN/NOTIFY event bus
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `app/core/events.py` keeps one dedicated asyncpg `LISTEN askdiq_events` connection per worker (it reconnects with backoff). `publish(topic, id)` sends a `NOTIFY` with a small JSON payload of ids only.
   - Subscribers register in-process queues.
   - It is used for cache invalidation (test-IP, branding, role changes) and SSE fan-out (B4.2.5).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** An event published on instance A reaches a subscriber on instance B within 1 s. A dropped listener connection reconnects and resubscribes.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** An event published on instance A reaches a subscriber on instance B within 1 s. A dropped listener connection reconnects and resubscribes.
 
 ##### Subtask B1.4.4: Configurable semaphores
-- [ ] **[Dev]** Replace the hard-coded `asyncio.Semaphore(4)` in `admin_usage.py` and `online_eval.py` with config (`usage_agg_max_concurrency`, `ONLINE_EVAL_MAX_CONCURRENCY`). Add a global `LLM_MAX_CONCURRENCY` semaphore (default 64, so it does not cap the 50-concurrency target) that returns 429 with `Retry-After` when saturated.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A saturation test returns 429 with `Retry-After`. The limits follow the config.
+- [x] **[Dev]** Replace the hard-coded `asyncio.Semaphore(4)` in `admin_usage.py` and `online_eval.py` with config (`usage_agg_max_concurrency`, `ONLINE_EVAL_MAX_CONCURRENCY`). Add a global `LLM_MAX_CONCURRENCY` semaphore (default 64, so it does not cap the 50-concurrency target) that returns 429 with `Retry-After` when saturated.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A saturation test returns 429 with `Retry-After`. The limits follow the config.
 
 ---
 
 #### Task B1.5: HTTP efficiency and parallel aggregation utility
-- [ ] **[Dev]** Task B1.5: add compression, ETag and cache headers, the pool settings, the `gather_scoped` helper and the SSE helper.
-- [ ] **[Lint]** Task B1.5: LINT-BE.
-- [ ] **[Test]** Task B1.5: `tests/test_http_efficiency.py` passes.
+- [x] **[Dev]** Task B1.5: add compression, ETag and cache headers, the pool settings, the `gather_scoped` helper and the SSE helper.
+- [x] **[Lint]** Task B1.5: LINT-BE.
+- [x] **[Test]** Task B1.5: `tests/test_http_efficiency.py` passes.
 
 ##### Subtask B1.5.1: GZip, ETag and Cache-Control
-- [ ] **[Dev]** Add `GZipMiddleware(minimum_size=1024)`, and a `cached_response()` helper that computes a weak ETag (hash of the JSON), returns 304 on `If-None-Match`, and sets `Cache-Control: private, max-age=<ttl>`. Apply it to the dashboard and usage summary.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A second request with the ETag gets 304. Large payloads are gzip-encoded.
+- [x] **[Dev]** Add `GZipMiddleware(minimum_size=1024)`, and a `cached_response()` helper that computes a weak ETag (hash of the JSON), returns 304 on `If-None-Match`, and sets `Cache-Control: private, max-age=<ttl>`. Apply it to the dashboard and usage summary.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A second request with the ETag gets 304. Large payloads are gzip-encoded.
 
 ##### Subtask B1.5.2: Pool and statement timeout
-- [ ] **[Dev]** Set `pool_pre_ping=True` from config. Add a `read_only_session()` dependency that sets `SET LOCAL statement_timeout = DASHBOARD_STATEMENT_TIMEOUT_MS`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A slow query (`pg_sleep`) is cancelled with a clean 503.
+- [x] **[Dev]** Set `pool_pre_ping=True` from config. Add a `read_only_session()` dependency that sets `SET LOCAL statement_timeout = DASHBOARD_STATEMENT_TIMEOUT_MS`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A slow query (`pg_sleep`) is cancelled with a clean 503.
 
 ##### Subtask B1.5.3: `gather_scoped` parallel helper
-- [ ] **[Dev]** Add `app/core/concurrency.py: gather_scoped(*factories, limit)`. It runs coroutines in an `asyncio.TaskGroup`, each with its **own** `AsyncSession` from the session factory, bounded by a semaphore, and propagates the first error and cancels the rest.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** 8 parallel queries never share a session, peak concurrency is at most `limit`, and cancellation propagates.
+- [x] **[Dev]** Add `app/core/concurrency.py: gather_scoped(*factories, limit)`. It runs coroutines in an `asyncio.TaskGroup`, each with its **own** `AsyncSession` from the session factory, bounded by a semaphore, and propagates the first error and cancels the rest.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** 8 parallel queries never share a session, peak concurrency is at most `limit`, and cancellation propagates.
 
 ##### Subtask B1.5.4: SSE helper
-- [ ] **[Dev]** Add `app/core/sse.py` with an `event_stream(generator, heartbeat=15s)` that returns a `StreamingResponse(media_type="text/event-stream")`, honours client disconnect, and sends `retry:` hints.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The heartbeat is emitted, the stream stops on disconnect, and nothing leaks (task count returns to baseline).
+- [x] **[Dev]** Add `app/core/sse.py` with an `event_stream(generator, heartbeat=15s)` that returns a `StreamingResponse(media_type="text/event-stream")`, honours client disconnect, and sends `retry:` hints.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The heartbeat is emitted, the stream stops on disconnect, and nothing leaks (task count returns to baseline).
 
 ##### Subtask B1.5.5: Async-only guard
-- [ ] **[Dev]** Remove the unused `embed_texts_sync` and `embed_text_sync`.
-- [ ] **[Lint]** Ruff `ASYNC` is clean.
-- [ ] **[Test]** `tests/test_async_only.py` walks `app.routes` and fails if any endpoint is a plain `def`.
+- [x] **[Dev]** Remove the unused `embed_texts_sync` and `embed_text_sync`.
+- [x] **[Lint]** Ruff `ASYNC` is clean.
+- [x] **[Test]** `tests/test_async_only.py` walks `app.routes` and fails if any endpoint is a plain `def`.
 
 ---
 
@@ -423,27 +423,27 @@ Build the security and performance platform that every later feature uses (newpl
 
 #### Task B1.7: Async-only audit and the 50-concurrency gate (newplan §13.5, §13.6)
 - [ ] **[Dev]** Task B1.7: remove every blocking call from async paths, and add the permanent 50+ concurrency test.
-- [ ] **[Lint]** Task B1.7: ruff `ASYNC` rules (ASYNC210, ASYNC230, ASYNC251 and others) report zero findings in `app/`.
-- [ ] **[Test]** Task B1.7: `tests/test_async_only.py` and `tests/test_concurrency_50.py` pass on every PR.
+- [x] **[Lint]** Task B1.7: ruff `ASYNC` rules (ASYNC210, ASYNC230, ASYNC251 and others) report zero findings in `app/`.
+- [x] **[Test]** Task B1.7: `tests/test_async_only.py` and `tests/test_concurrency_50.py` pass on every PR.
 
 ##### Subtask B1.7.1: Fix the known sync hotspots
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Wrap `json.loads(...read_text())` in `api/routes/metrics.py` (around lines 124 and 131) in `asyncio.to_thread`, or confirm the caller already offloads it.
   - Move the sync `open()` of `promoted_test_cases.json` in `evaluation/dataset_extra.py` (line 289) behind `to_thread` now. B5 replaces it with a DB read.
   - Fold `psutil.Process().memory_info()` in `api/routes/admin.py` (around lines 526 and 1093) into the same `to_thread` call as `cpu_percent`.
   - Remove the unused `requests` from `requirements.txt` (check with `rg "import requests"` first) and the unused `embed_*_sync` helpers.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The full TEST-BE suite passes.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The full TEST-BE suite passes.
 
 ##### Subtask B1.7.2: Event-loop blocking detector
 - [ ] **[Dev]** Add a test fixture that enables `loop.slow_callback_duration = 0.05` and asyncio debug mode, and fails the test if any callback blocks the loop for more than 50 ms during the API test suite.
-- [ ] **[Lint]** Run LINT-BE.
+- [x] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** It passes on the full API test set, or the offenders are fixed.
 
 ##### Subtask B1.7.3: `tests/test_concurrency_50.py` (CI gate)
-- [ ] **[Dev]** Fire 60 simultaneous requests through `asyncio.gather` at the ASGI app (real Postgres, `fake_llm` with a 1 s delay, `fake_embed`). The mix is 30 `/query`, 20 admin dashboard GETs and 10 feedback POSTs. Test users are exempted from the per-user limit through settings injection.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Dev]** Fire 60 simultaneous requests through `asyncio.gather` at the ASGI app (real Postgres, `fake_llm` with a 1 s delay, `fake_embed`). The mix is 30 `/query`, 20 admin dashboard GETs and 10 feedback POSTs. Test users are exempted from the per-user limit through settings injection.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - All 60 requests succeed (200 or 201).
   - Total wall time is under 3 s, which proves they ran concurrently rather than one by one (60 s).
   - No `QueuePool` timeout occurs.
@@ -2062,4 +2062,4 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | – | PR-03 | `feat/platform-security-headers-errors` | Code done, CI green, waiting to stack | B1.1 and B1.2 done (50 new tests). **Open:** B1.1.3 `nginx -t` and `curl -I` can't run locally (no Docker), so verify them in a compose environment. Chat-completion timeout kept at `AZURE_OPENAI_REQUEST_TIMEOUT` (60 s); `OUTBOUND_TIMEOUT_SECONDS` applies to embeddings and httpx. A 422 response's `detail` is now a string, and the field errors moved to `errors`. |
 | – | PR-01 | `chore/ci-hardening` | In progress | |
 | – | PR-02 | `chore/lint-scope-claude-md` | Code done, CI green, waiting to stack | Ruff now selects E, W, F, I, UP, B, N, PL, SIM, S, ASYNC, C4, T20, RUF, ARG, RET and FAST, with zero findings. **Flagged per CLAUDE.md precedence:** FAST002 and FAST001 are ignored, because the existing code uses `Depends()` defaults and explicit `response_model`. The PLR complexity limits are ignored for about 50 handlers; refactoring them is a follow-up. `GuardrailBlocked` was renamed to `GuardrailBlockedError`. The B0.3.3 format-on-save check is manual and still to do. |
-| – | PR-04 | `feat/platform-jobs-state-http` | In progress | |
+| – | PR-04 | `feat/platform-jobs-state-http` | Code done, CI green (442 passed), rebasing onto PR-03 | Added migrations `e7f8a9b0c1d2` (jobs) and `f8a9b0c1d2e3` (UNLOGGED rate_limit_buckets, oidc_states), plus `app/jobs`, the state backend, the LISTEN/NOTIFY bus, an SSE-safe GZip, ETag responses, `gather_scoped`, the LLM gate (429 with Retry-After), and the 60-request concurrency gate (under 3 s in CI). `requests` was removed. **Partial:** B1.7.2 the event-loop blocking detector covers only the hot-path tests, not the whole suite. **Notes:** the dashboard ETag rarely returns 304 because live counters change every call. `read_only_session()` is not on any route yet. A pre-existing foreign-key race on `evaluation_records.message_id` (online-eval write before commit) is logged for B5. |
