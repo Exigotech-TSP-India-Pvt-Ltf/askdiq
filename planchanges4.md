@@ -673,42 +673,42 @@ Make the brand runtime-configurable (newplan §14), with safe asset handling (A0
 - [ ] **[Test]** Phase B3 complete.
 
 #### Task B3.1: Model and migration
-- [ ] **[Dev]** Add `brand_settings` (a singleton enforced by a `CHECK (id = 1)`) and `brand_assets` (with a `sha256` primary key). Seed from the current config values and the Exigo Tech teal palette. The seed also fills in the login copy fields (`login_eyebrow`, `login_headline`, `login_subtext`, `login_description`) with DeployIQ defaults, and leaves `privacy_url`, `terms_url` and `help_url` empty. The URLs are validated as `https://` or relative only, so a `javascript:` URL is impossible.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Migration round-trip. The seed matches the config defaults.
+- [x] **[Dev]** Add `brand_settings` (a singleton enforced by a `CHECK (id = 1)`) and `brand_assets` (with a `sha256` primary key). Seed from the current config values and the Exigo Tech teal palette. The seed also fills in the login copy fields (`login_eyebrow`, `login_headline`, `login_subtext`, `login_description`) with DeployIQ defaults, and leaves `privacy_url`, `terms_url` and `help_url` empty. The URLs are validated as `https://` or relative only, so a `javascript:` URL is impossible.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Migration round-trip. The seed matches the config defaults.
 
 #### Task B3.2: Branding service
-- [ ] **[Dev]** Task B3.2: add `app/branding/` with palette derivation, a contrast checker and an asset sanitizer.
-- [ ] **[Lint]** Task B3.2: LINT-BE.
-- [ ] **[Test]** Task B3.2: `tests/test_branding.py` passes.
+- [x] **[Dev]** Task B3.2: add `app/branding/` with palette derivation, a contrast checker and an asset sanitizer.
+- [x] **[Lint]** Task B3.2: LINT-BE.
+- [x] **[Test]** Task B3.2: `tests/test_branding.py` passes.
 
 ##### Subtask B3.2.1: Palette derivation and WCAG check
-- [ ] **[Dev]** Pure functions derive the 50 to 950 ramp (OKLCH lightness steps) and compute contrast ratios. A palette is rejected if `brand-600` on white or `brand-400` on `dark-bg` is below 4.5:1 for text.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** `#008080` passes with the expected ramp. `#FFFF00` is rejected with a reason.
+- [x] **[Dev]** Pure functions derive the 50 to 950 ramp (OKLCH lightness steps) and compute contrast ratios. A palette is rejected if `brand-600` on white or `brand-400` on `dark-bg` is below 4.5:1 for text.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** `#008080` passes with the expected ramp. `#FFFF00` is rejected with a reason.
 
 ##### Subtask B3.2.2: Asset validation
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Sniff magic bytes, ignoring the extension. Accept PNG, WebP or SVG up to 512 KB.
   - Check dimensions for PNG and WebP.
   - SVG goes through `defusedxml` (already a dependency): an allow-list of elements and attributes, with `script`, `foreignObject`, `on*` and external `href` / `xlink:href` stripped.
   - Store content-addressed.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** An SVG with `<script>`, `onload` or `javascript:` is neutralized. A polyglot PNG/HTML is rejected on MIME. A 600 KB file gives 413.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** An SVG with `<script>`, `onload` or `javascript:` is neutralized. A polyglot PNG/HTML is rejected on MIME. A 600 KB file gives 413.
 
 #### Task B3.3: Routes
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Move `/branding` from `main.py` to `app/api/routes/branding.py`. `GET /branding` is public, with ETag and `Cache-Control: public, max-age=300`.
   - `GET /branding/assets/{sha}` serves with `immutable`, `max-age=31536000`, the correct `Content-Type`, `nosniff`, and for SVG `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'`.
   - `PUT /admin/branding` (version check gives 409, audited) and `POST /admin/branding/assets` are `branding:write` only.
   - The cache is invalidated on update.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Public GET with 304 on the ETag. A non-superadmin gets 403. A concurrent update gets 409. An audit row is written. The OpenAPI schema is checked.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Public GET with 304 on the ETag. A non-superadmin gets 403. A concurrent update gets 409. An audit row is written. The OpenAPI schema is checked.
 
 #### Task B3.4: Phase B3 integration testing
-- [ ] **[Dev]** Create `tests/test_branding_integration.py`: upload a logo, update the palette, `GET /branding` reflects the change with a new ETag, and the asset URL serves safe headers.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** Create `tests/test_branding_integration.py`: upload a logo, update the palette, `GET /branding` reflects the change with a new ETag, and the asset URL serves safe headers.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass.
 
 #### Task B3.5: PR
 - **PR-08** `feat/branding-white-label-api`.
@@ -2076,7 +2076,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #23 | PR-12 | `feat/insights-taxonomy-classifier` | #20 | Open, CI green | Migration `4c1e9a7d2b65`. Taxonomy and the hybrid classifier via the job queue (PII-masked, injection-safe, daily budget, circuit breaker). HTML parity fixture: 49/117, Served 11, Partly 14, Not 22, handled 62. |
 | #24 | PR-15 | `feat/ui-foundations-motion-tokens-brand` | #19 | Open, **all 4 jobs green** | `motion` 14.3.0. Tokens, light/dark parity fixes T1–T6 (plus tooltips, documents and monitoring dark bugs), BrandProvider and BrandLogo with dark variants. 128 vitest tests. **Your review:** the off-canvas "ARTIFICIAL INTELLIGENCE" tagline was removed from the logo SVG. **Manual:** screenshots. |
 | #25 | PR-07 | `feat/auth-user-management-api` | #20 | Open, CI green | `/auth/*` routes, users-accounts and access-requests (`users:manage`), FOR UPDATE concurrency, 409 safeguards, auth audit events, the frontend contract and the go-live checklist in DEPLOYMENT.md. B2.8.1: the port-3000 smoke run comes with PR-18. |
-| – | PR-08 | `feat/branding-white-label-api` | #20 | In progress | Branding API, assets and login copy fields. |
+| #26 | PR-08 | `feat/branding-white-label-api` | #20 | Open, CI green | Migration `b0c1d2e3f4a5`. Branding API with an OKLCH palette and WCAG check, hardened PNG/WebP/SVG validation (polyglot-proof, allow-list SVG rebuild), login copy and URL fields, ETag and cross-worker invalidation. **Sibling migration with #23**: whichever merges second re-links its `down_revision` (§8.3). |
 | – | PR-10 | `feat/governance-endpoints-stream` | #22 | In progress | Logs and traces cursors, overview, monitoring percentiles, SSE stream. |
 | – | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | In progress | Feedback triage loop, export, golden cases, online-eval FK race fix. |
 | – | PR-13 | `feat/insights-analytics-endpoints` | #23 | In progress | `/admin/insights/*` with HTML parity. |
