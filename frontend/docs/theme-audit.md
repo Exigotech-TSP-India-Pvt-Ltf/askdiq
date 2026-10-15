@@ -56,6 +56,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/_not-found` (`app/not-found.tsx`) | Pass | Pass | Pass | Branded 404 (PR-17): `BrandLogo` pair, `bg-surface-*` / `text-fg*` tokens | [ ] |
 | Route error boundary (`app/error.tsx`) | Pass | Pass | Pass | Branded (PR-17): reference digest + copy, retry; no error text shown | [ ] |
 | Any `(app)` route at < `md` (390 px) | Pass | Pass | Pass | PR-17: `MobileTopBar` + off-canvas sidebar; desktop aside `hidden md:flex` | [ ] |
+| `/admin/user-management` (Users, Access Requests, Roles & Permissions, Audit Trail tabs) (PR-19) | Pass | Pass | Pass | KPI cards and charts on `bg-surface-card` with `chartTheme` marks (bar, funnel, donut, histogram recolour on toggle, journey-tested); pending KPI `status-warn-bg` highlight; role / status / event chips on `status-*-bg` + `status-*-fg` and brand tints with `dark:` pairs | [ ] |
 | `/login` | n/a | n/a | n/a | Route not built yet (F1, PR-19); must use `BrandLogo` | n/a |
 
 ## Shared components
@@ -113,6 +114,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `shell/BrandedStatusPage` (PR-17) | Pass | Pass | Pass | `BrandLogo` pair on `bg-surface-card` |
 | `admin/CursorPagination` (PR-17) | Pass | Pass | Pass | Mirrors `Pagination` (existing `dark:` pairs) |
 | `admin/TableToolbar` (columns, density) (PR-17) | Pass | Pass | Pass | Column menu on `surface-elevated`; buttons reuse the existing `dark:` pairs |
+| `admin/user-management/*` (PR-19: `UserOverview`, `charts` DailyBars / Donut, `UserDrawer`, `AccessRequestsTab`, `RolesMatrixTab`, `AuthAuditTab`, `InviteUserDialog`) | Pass | Pass | Pass | Tokens only (`surface-*`, `fg*`, `line`, `status-*`, `brand-*` with `dark:`); safeguard tooltip `bg-surface-inverse` + `text-fg-inverse`; row exit via `AnimatePresence` + `fadeUp` preset |
 
 ## Known follow-ups (not theme-breaking)
 

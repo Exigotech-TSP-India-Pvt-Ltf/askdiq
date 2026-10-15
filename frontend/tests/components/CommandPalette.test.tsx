@@ -167,7 +167,8 @@ describe("CommandCenter shortcuts (F0.6.4)", () => {
     const hrefs = PALETTE_PAGES.map((p) => p.href);
     expect(hrefs).toContain("/admin/governance");
     expect(hrefs).not.toContain("/admin/analytics");
-    expect(hrefs).not.toContain("/admin/user-management");
+    // User Management is live since PR-19.
+    expect(hrefs).toContain("/admin/user-management");
     expect(hrefs).not.toContain("/admin/settings");
   });
 

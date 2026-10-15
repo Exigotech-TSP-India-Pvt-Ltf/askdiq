@@ -74,7 +74,6 @@ const PLANNED_ITEMS: NavItem[] = [
     href: "/admin/user-management",
     label: "User Management",
     icon: UserCog,
-    enabled: false,
     badgeKey: "pendingAccess",
     keywords: ["access requests", "roles"],
   },
