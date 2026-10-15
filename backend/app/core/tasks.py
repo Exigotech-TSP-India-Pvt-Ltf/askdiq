@@ -49,16 +49,18 @@ def pending_tasks() -> int:
     return sum(1 for t in _tasks if not t.done())
 
 
-async def drain(timeout: float) -> int:
-    """Wait up to ``timeout`` seconds for in-flight tasks, then cancel the rest.
+async def drain(grace_seconds: float) -> int:
+    """Wait up to ``grace_seconds`` seconds for in-flight tasks, then cancel the rest.
 
     Returns the number of tasks that had to be cancelled.
     """
     pending = {t for t in _tasks if not t.done()}
     if not pending:
         return 0
-    logger.info("background_tasks_draining", pending=len(pending), timeout=timeout)
-    _done, still_running = await asyncio.wait(pending, timeout=timeout)
+    logger.info(
+        "background_tasks_draining", pending=len(pending), grace_seconds=grace_seconds
+    )
+    _done, still_running = await asyncio.wait(pending, timeout=grace_seconds)
     for task in still_running:
         task.cancel()
     if still_running:

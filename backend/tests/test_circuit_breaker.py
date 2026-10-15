@@ -213,7 +213,7 @@ def _source() -> SourceChunk:
 
 
 async def _run_query_with_llm(monkeypatch, fake_call_llm) -> object:
-    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *a, **k: [])
+    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *_a, **_k: [])
 
     async def fake_retrieve(*_a, **_k):
         return [_source()]

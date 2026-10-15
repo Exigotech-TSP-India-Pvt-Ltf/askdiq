@@ -20,13 +20,13 @@ from main import app
 
 settings = get_settings()
 API_KEY = settings.api_key_name or "ci-test-key"
-SECRET_EMAIL = "jane.citizen@example.com"
+PII_EMAIL = "jane.citizen@example.com"
 
 
 class _ExplodingSession:
     def __getattr__(self, name: str):
         raise RuntimeError(
-            f"connection to db-internal-host:5432 failed for {SECRET_EMAIL}"
+            f"connection to db-internal-host:5432 failed for {PII_EMAIL}"
         )
 
 
@@ -75,7 +75,7 @@ async def test_forced_error_returns_500_problem_without_internals(
         "Traceback",
         "RuntimeError",
         "db-internal-host",
-        SECRET_EMAIL,
+        PII_EMAIL,
         'File "',
     ):
         assert leaked not in text, leaked
@@ -88,16 +88,16 @@ async def test_forced_error_returns_500_problem_without_internals(
     assert kwargs["request_id"] == body["request_id"]
     assert kwargs["error_type"] == "RuntimeError"
     # Logged with PII masked.
-    assert SECRET_EMAIL not in kwargs["error"]
+    assert PII_EMAIL not in kwargs["error"]
     assert "[REDACTED_EMAIL]" in kwargs["error"]
-    assert SECRET_EMAIL not in kwargs["traceback"]
+    assert PII_EMAIL not in kwargs["traceback"]
 
 
 async def test_validation_error_lists_fields_without_echoing_input(
     api: AsyncClient,
 ) -> None:
-    secret = "sk-live-SUPERSECRET-9f8e7d"
-    res = await api.get(f"/admin/usage/queries?limit={secret}&offset=-5")
+    leaked_value = "sk-live-SUPERSECRET-9f8e7d"
+    res = await api.get(f"/admin/usage/queries?limit={leaked_value}&offset=-5")
     body = _assert_problem(res, 422)
     assert body["type"] == "urn:askdiq:problem:validation-error"
     assert isinstance(body["detail"], str)
@@ -105,17 +105,17 @@ async def test_validation_error_lists_fields_without_echoing_input(
     assert ("query", "limit") in fields
     for err in body["errors"]:
         assert set(err) == {"loc", "msg", "type"}
-    assert secret not in res.text
+    assert leaked_value not in res.text
 
 
 async def test_validation_error_on_body_does_not_echo_secret(
     api: AsyncClient,
 ) -> None:
-    secret = "password=hunter2-TOPSECRET"
-    res = await api.post("/query", json={"query": {"nested": secret}})
+    leaked_value = "password=hunter2-TOPSECRET"
+    res = await api.post("/query", json={"query": {"nested": leaked_value}})
     body = _assert_problem(res, 422)
     assert body["errors"]
-    assert secret not in res.text
+    assert leaked_value not in res.text
     assert "hunter2" not in res.text
 
 
@@ -142,7 +142,7 @@ async def test_not_found_and_method_not_allowed_are_problem_json(
 
 async def test_failing_task_is_logged_not_lost() -> None:
     async def boom() -> None:
-        raise ValueError(f"persist failed for {SECRET_EMAIL}")
+        raise ValueError(f"persist failed for {PII_EMAIL}")
 
     with patch.object(tasks, "logger") as log:
         task = tasks.spawn(boom(), name="test_boom")
@@ -156,7 +156,7 @@ async def test_failing_task_is_logged_not_lost() -> None:
     kwargs = log.error.call_args.kwargs
     assert kwargs["task_name"] == "test_boom"
     assert kwargs["error_type"] == "ValueError"
-    assert SECRET_EMAIL not in kwargs["error"]
+    assert PII_EMAIL not in kwargs["error"]
 
 
 async def test_drain_waits_for_in_flight_tasks() -> None:
@@ -168,7 +168,7 @@ async def test_drain_waits_for_in_flight_tasks() -> None:
 
     tasks.spawn(slow_ok(), name="test_slow_ok")
     assert tasks.pending_tasks() >= 1
-    cancelled = await tasks.drain(timeout=2.0)
+    cancelled = await tasks.drain(grace_seconds=2.0)
     assert cancelled == 0
     assert finished == ["done"]
     assert tasks.pending_tasks() == 0
@@ -181,14 +181,14 @@ async def test_drain_is_bounded_and_cancels_stragglers() -> None:
     task = tasks.spawn(hang(), name="test_hang")
     loop = asyncio.get_running_loop()
     started = loop.time()
-    cancelled = await tasks.drain(timeout=0.05)
+    cancelled = await tasks.drain(grace_seconds=0.05)
     assert loop.time() - started < 2.0
     assert cancelled == 1
     assert task.cancelled()
 
 
 async def test_drain_with_nothing_pending_returns_immediately() -> None:
-    assert await tasks.drain(timeout=0.01) == 0
+    assert await tasks.drain(grace_seconds=0.01) == 0
 
 
 def test_latency_middleware_uses_supervised_spawn() -> None:

@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from enum import StrEnum
 from functools import lru_cache
+from http import HTTPStatus
 
 import httpx
 import openai
@@ -60,7 +61,10 @@ def is_transient_failure(exc: BaseException) -> bool:
     if isinstance(exc, openai.APIConnectionError):  # includes APITimeoutError
         return True
     status = getattr(exc, "status_code", None)
-    return isinstance(status, int) and (status == 429 or status >= 500)
+    return isinstance(status, int) and (
+        status == HTTPStatus.TOO_MANY_REQUESTS
+        or status >= HTTPStatus.INTERNAL_SERVER_ERROR
+    )
 
 
 class CircuitBreaker:

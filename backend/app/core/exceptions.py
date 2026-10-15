@@ -93,7 +93,7 @@ async def http_exception_handler(
         return Response(
             status_code=exc.status_code, headers=getattr(exc, "headers", None)
         )
-    if exc.status_code >= 500:
+    if exc.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
         logger.error(
             "http_exception",
             request_id=get_request_id(request),
