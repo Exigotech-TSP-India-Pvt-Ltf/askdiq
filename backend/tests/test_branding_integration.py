@@ -325,10 +325,10 @@ async def test_branding_migration_round_trip() -> None:
         assert heads.count("(head)") == 1
         # Later migrations may stack on top: the branding revision must be on
         # the single linear chain to head, not necessarily head itself.
-        chain = await asyncio.to_thread(_alembic, "history", "-r", "4c1e9a7d2b65:head")
+        chain = await asyncio.to_thread(_alembic, "history", "-r", "bd75f2033c21:head")
         assert "b0c1d2e3f4a5" in chain
 
-        await asyncio.to_thread(_alembic, "downgrade", "4c1e9a7d2b65")
+        await asyncio.to_thread(_alembic, "downgrade", "bd75f2033c21")
         async with engine.connect() as conn:
             assert await conn.scalar(query) == 0
         await engine.dispose()
