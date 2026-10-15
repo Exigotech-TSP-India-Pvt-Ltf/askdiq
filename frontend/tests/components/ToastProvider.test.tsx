@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MotionProvider } from "@/components/providers/MotionProvider";
+import { ApiError } from "@/lib/api";
+import { CONFLICT_TOAST, HTTP_CONFLICT, useApiMutation } from "@/lib/query-cache";
 import { TOAST_DURATION_MS, ToastProvider, useToast, type ToastOptions } from "@/components/ui/ToastProvider";
 
 afterEach(() => vi.useRealTimers());
@@ -83,5 +85,47 @@ describe("ToastProvider (F0.6.2)", () => {
     render(<Trigger title="Nothing" />);
     fireEvent.click(screen.getByRole("button", { name: "Notify" }));
     expect(screen.queryByText("Nothing")).not.toBeInTheDocument();
+  });
+});
+
+describe("useApiMutation conflict toast (PR-16 data layer + F0.6 toasts)", () => {
+  function SaveButton({ onConflict }: { onConflict?: () => void }) {
+    const { mutate } = useApiMutation<string, never>({
+      mutationFn: () => Promise.reject(new ApiError("version mismatch", HTTP_CONFLICT)),
+      onConflict,
+    });
+    return (
+      <button type="button" onClick={() => void mutate("x")}>
+        Save
+      </button>
+    );
+  }
+
+  it("shows the 'changed by someone else' toast on a 409 by default", async () => {
+    render(
+      <MotionProvider>
+        <ToastProvider>
+          <SaveButton />
+        </ToastProvider>
+      </MotionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status", { name: "Notifications" })).toHaveTextContent(CONFLICT_TOAST.title),
+    );
+  });
+
+  it("a custom onConflict replaces the default toast", async () => {
+    const onConflict = vi.fn();
+    render(
+      <MotionProvider>
+        <ToastProvider>
+          <SaveButton onConflict={onConflict} />
+        </ToastProvider>
+      </MotionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onConflict).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("status", { name: "Notifications" })).toBeEmptyDOMElement();
   });
 });

@@ -17,6 +17,7 @@
  * No dependency: plain React (`useSyncExternalStore`) and the Fetch API.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useToast } from "@/components/ui/ToastProvider";
 
 export type QueryKeyPart = string | number | boolean | null | undefined;
 /** `"admin/dashboard"` or `["admin/dashboard", { from, to }]`-style tuples of primitives. */
@@ -493,7 +494,8 @@ export interface UseApiMutationOptions<TVars, TResult, TData = unknown> {
   onError?: (error: unknown, vars: TVars) => void;
   /**
    * 409 Conflict: the optimistic change is rolled back, the affected keys are
-   * refetched, then this fires. PR-17 wires the "changed by someone else" toast here.
+   * refetched, then this fires. Defaults to the "changed by someone else"
+   * toast (`CONFLICT_TOAST`); pass a handler to replace it.
    */
   onConflict?: (conflict: MutationConflict<TVars>) => void;
   cache?: QueryCache;
@@ -512,6 +514,13 @@ export interface UseApiMutationResult<TVars, TResult> {
   reset: () => void;
 }
 
+/** Default 409 toast shown by `useApiMutation` when no `onConflict` is given. */
+export const CONFLICT_TOAST = {
+  title: "Changed by someone else",
+  description: "This record was updated elsewhere. The latest version has been loaded; review it and try again.",
+  tone: "info",
+} as const;
+
 interface UndoSnapshot<TData> {
   key: string;
   previous: TData | undefined;
@@ -523,6 +532,7 @@ export function useApiMutation<TVars, TResult, TData = unknown>(
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const cache = options.cache ?? queryCache;
+  const toast = useToast();
   const [isPending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(undefined);
   const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot<TData> | null>(null);
@@ -554,7 +564,8 @@ export function useApiMutation<TVars, TResult, TData = unknown>(
         if (errorStatus(err) === HTTP_CONFLICT) {
           const refetched = [...(snapshot ? [snapshot.key] : []), ...(opts.invalidate ?? [])];
           for (const prefix of refetched) cache.invalidate(prefix);
-          opts.onConflict?.({ error: err, vars, refetched });
+          if (opts.onConflict) opts.onConflict({ error: err, vars, refetched });
+          else toast.show(CONFLICT_TOAST);
         }
         opts.onError?.(err, vars);
         throw err;
@@ -562,7 +573,7 @@ export function useApiMutation<TVars, TResult, TData = unknown>(
         setPending(false);
       }
     },
-    [cache],
+    [cache, toast],
   );
 
   const mutate = useCallback(
