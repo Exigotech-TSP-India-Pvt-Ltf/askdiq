@@ -1,7 +1,7 @@
 """add brand_settings singleton and content-addressed brand_assets
 
 Revision ID: b0c1d2e3f4a5
-Revises: 4c1e9a7d2b65
+Revises: bd75f2033c21
 Create Date: 2026-10-15 15:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "b0c1d2e3f4a5"
-down_revision: str | None = "4c1e9a7d2b65"
+down_revision: str | None = "bd75f2033c21"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
