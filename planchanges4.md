@@ -841,61 +841,61 @@ Fix F1 to F9 (newplan §5.3), build the durable triage loop with promotion, pref
 - [ ] **[Test]** Phase B5 complete.
 
 #### Task B5.1: Migration
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Extend `message_feedback` with `reason_tags` (JSONB), `corrected_answer`, `triage_status` (enum), `reviewed_by`, `reviewed_at`, `review_note`, `promoted_case_id` and `version`. Index `(triage_status, created_at)`.
   - Create the `eval_promoted_cases` table. A data step imports the existing `data/promoted_test_cases.json` idempotently.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Round-trip. The import is idempotent (running it twice gives no duplicates). `dataset_extra.py` reads from the DB, with the JSON as a fallback.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Round-trip. The import is idempotent (running it twice gives no duplicates). `dataset_extra.py` reads from the DB, with the JSON as a fallback.
 
 #### Task B5.2: Feedback domain (`app/feedback/`: repository and service)
-- [ ] **[Dev]** Task B5.2: add the triage state machine, promotion, bulk actions, export and analytics.
-- [ ] **[Lint]** Task B5.2: LINT-BE.
-- [ ] **[Test]** Task B5.2: `tests/test_feedback_loop.py` passes.
+- [x] **[Dev]** Task B5.2: add the triage state machine, promotion, bulk actions, export and analytics.
+- [x] **[Lint]** Task B5.2: LINT-BE.
+- [x] **[Test]** Task B5.2: `tests/test_feedback_loop.py` passes.
 
 ##### Subtask B5.2.1: Triage state machine
-- [ ] **[Dev]** Transitions: new to reviewed, promoted or dismissed; reviewed to promoted or dismissed; dismissed to new (reopen). Optimistic `version` check. Each transition is audited.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** An invalid transition gives 409. Two concurrent updates: one wins and the other gets 409.
+- [x] **[Dev]** Transitions: new to reviewed, promoted or dismissed; reviewed to promoted or dismissed; dismissed to new (reopen). Optimistic `version` check. Each transition is audited.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** An invalid transition gives 409. Two concurrent updates: one wins and the other gets 409.
 
 ##### Subtask B5.2.2: Chat-side upsert
-- [ ] **[Dev]** `POST /feedback` upserts on `(message_id, actor)` with `reason_tags` (Enum allow-list) and an optional `corrected_answer` (max 4,000 characters, PII-masked before storage). `actor` is the authenticated email (B2).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A second submission updates the row and does not insert a new one. An unknown tag gives 422. PII is masked.
+- [x] **[Dev]** `POST /feedback` upserts on `(message_id, actor)` with `reason_tags` (Enum allow-list) and an optional `corrected_answer` (max 4,000 characters, PII-masked before storage). `actor` is the authenticated email (B2).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A second submission updates the row and does not insert a new one. An unknown tag gives 422. PII is masked.
 
 ##### Subtask B5.2.3: Enriched list (F1, F9)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `GET /feedback` joins the user query, answer, outcome, grounded, flags, sources, latency, cost, actor, triage status and promoted id in **one** query (no N+1).
   - Filters: triage status, outcome, grounded, has-comment and date range. Keyset pagination.
   - `?message_id=` for deep-links.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A query-count assertion stays at or below 2 for 50 rows. Each filter is tested.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A query-count assertion stays at or below 2 for 50 rows. Each filter is tested.
 
 ##### Subtask B5.2.4: Analytics (F2, F3, F8)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Daily trend, rating distribution, by outcome, by intent (when B6 exists, otherwise omitted), top reasons, and the triage funnel.
   - **Disagreement** quadrant data and knowledge-gap candidates (low rating with low retrieval confidence).
   - An unfiltered `total` (F3).
   - Uses `gather_scoped` and `cached_response`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The fixture gives exact counts. The total does not change when list filters are applied.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The fixture gives exact counts. The total does not change when list filters are applied.
 
 ##### Subtask B5.2.5: Bulk actions, promotion and export
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `POST /feedback/bulk` (reviewed, dismissed or promoted, max 200 ids, one transaction).
   - `POST /feedback/{id}/promote-to-test` writes to the DB table (F4, F5).
   - `GET /feedback/export?format=jsonl` streams preference pairs (prompt, chosen, rejected, rating, tags, source ids) and flags incomplete pairs.
   - `POST /feedback/golden/{id}/run` enqueues an eval job (B1.3).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Bulk is all-or-nothing.
   - The export streams with flat memory: 10k pairs keep RSS growth under 20 MB.
   - The run job is queued once (dedupe).
   - RBAC: an operator gets 403 on triage and export.
 
 #### Task B5.3: Phase B5 integration testing
-- [ ] **[Dev]** Create `tests/test_feedback_integration.py`: chat thumbs-down with reasons and a corrected answer, the row appears in the queue with the full context, it is triaged and promoted, it is visible in golden cases, the JSONL export contains it as a pair, and the analytics update.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** Create `tests/test_feedback_integration.py`: chat thumbs-down with reasons and a corrected answer, the row appears in the queue with the full context, it is triaged and promoted, it is visible in golden cases, the JSONL export contains it as a pair, and the analytics update.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass.
 
 #### Task B5.4: PR
 - **PR-11** `feat/feedback-rlhf-loop-api`.
@@ -2078,7 +2078,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #25 | PR-07 | `feat/auth-user-management-api` | #20 | Open, CI green | `/auth/*` routes, users-accounts and access-requests (`users:manage`), FOR UPDATE concurrency, 409 safeguards, auth audit events, the frontend contract and the go-live checklist in DEPLOYMENT.md. B2.8.1: the port-3000 smoke run comes with PR-18. |
 | #26 | PR-08 | `feat/branding-white-label-api` | #20 | Open, CI green | Migration `b0c1d2e3f4a5`. Branding API with an OKLCH palette and WCAG check, hardened PNG/WebP/SVG validation (polyglot-proof, allow-list SVG rebuild), login copy and URL fields, ETag and cross-worker invalidation. **Sibling migration with #23**: whichever merges second re-links its `down_revision` (§8.3). |
 | – | PR-10 | `feat/governance-endpoints-stream` | #22 | In progress | Logs and traces cursors, overview, monitoring percentiles, SSE stream. |
-| – | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | In progress | Feedback triage loop, export, golden cases, online-eval FK race fix. |
+| – | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | Code done, CI green; renumbering its migration id (collided with #26), then opening the PR | Triage state machine with optimistic version, enriched one-query queue with a keyset cursor, analytics, bulk actions, promotion now stored in the DB (JSON imported), streaming JSONL preference export, golden-run job, and the online-eval FK race fix. Old response fields are kept. **Behaviour change:** promote-to-test no longer writes `data/promoted_test_cases.json`. |
 | – | PR-13 | `feat/insights-analytics-endpoints` | #23 | In progress | `/admin/insights/*` with HTML parity. |
 | – | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | In progress | Chart kit, consolidated ChartCard, cached data layer and prefetch. |
 | – | PR-17 | `feat/ui-global-ux-primitives` | #24 | In progress | Drawers, toasts, dialogs, deep links, date range, command palette, nav pre-registration. |
