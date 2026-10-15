@@ -1,9 +1,10 @@
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 
 import { Sidebar } from "@/components/Sidebar";
+import { queryCache } from "@/lib/query-cache";
 import AdminEvaluationPage from "@/app/(app)/admin/evaluation/page";
 import EvaluationPage from "@/app/(app)/evaluation/page";
 import { DEFAULT_USAGE_TAB, USAGE_TAB_IDS, parseUsageTab } from "@/lib/usage-tabs";
@@ -20,16 +21,13 @@ vi.mock("next/navigation", () => ({
   redirect: redirectMock,
 }));
 
-vi.mock("@/lib/auth-context", () => ({
-  useAuth: () => ({
-    token: "mock-token",
-    user: { full_name: "Jane Doe", email: "jane@example.com" },
-    loading: false,
-    logout: vi.fn(),
-  }),
-}));
+vi.mock("@/lib/auth-context", async () => {
+  const { authValue, makeMe } = await import("../helpers/auth");
+  const value = authValue(makeMe("superadmin"));
+  return { useAuth: () => value };
+});
 
-// Current items (role-based filtering arrives with the auth gate, PR-18).
+// Every item a superadmin sees (role filtering is covered in Sidebar.test).
 const NAV_ITEMS: ReadonlyArray<readonly [label: string, href: string]> = [
   ["Dashboard", "/admin"],
   ["Chat", "/chat"],
@@ -39,7 +37,10 @@ const NAV_ITEMS: ReadonlyArray<readonly [label: string, href: string]> = [
   ["Conversation Logs", "/admin/conversations"],
   ["Feedback", "/admin/feedback"],
   ["Evaluation (Live)", "/admin/evaluation-live"],
-  ["Admin Governance", "/admin/governance"],
+  ["Governance", "/admin/governance"],
+  ["Analytics", "/admin/analytics"],
+  ["User Management", "/admin/user-management"],
+  ["Settings", "/admin/settings"],
 ];
 
 function navLinks(container: HTMLElement): HTMLAnchorElement[] {
@@ -52,7 +53,12 @@ describe("Navigation journey (Phase F2)", () => {
   beforeEach(() => {
     window.localStorage.clear();
     redirectMock.mockClear();
+    queryCache.clear();
+    // Pending access-request count for the User Management badge: none.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 })));
   });
+
+  afterEach(() => vi.unstubAllGlobals());
 
   describe("sidebar items", () => {
     it("lists the current items in order with their routes", () => {

@@ -33,7 +33,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("Sidebar Navigation Component (Task 4.3)", () => {
-  it("renders all 9 navigation links with text-[13px] typography", () => {
+  it("renders every admin-visible navigation link with text-[13px] typography", () => {
     render(<Sidebar />);
 
     const expectedLabels = [
@@ -45,7 +45,8 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
       "Conversation Logs",
       "Feedback",
       "Evaluation (Live)",
-      "Admin Governance",
+      "Governance",
+      "Analytics",
     ];
 
     for (const label of expectedLabels) {
@@ -149,7 +150,8 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
 
     // Shift+Tab from the first control wraps to the last link inside the drawer.
     await user.tab({ shift: true });
-    expect(within(drawer).getByRole("link", { name: /^settings$/i })).toHaveFocus();
+    // Admin's last item (no users:manage / branding:write) is Analytics.
+    expect(within(drawer).getByRole("link", { name: /^analytics$/i })).toHaveFocus();
     await user.tab();
     expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus();
 
@@ -182,7 +184,7 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
 describe("Role-aware sidebar (PR-18, F1.3)", () => {
   beforeEach(() => window.localStorage.clear());
 
-  const DASHBOARD_LINKS = ["Dashboard", "Documents", "Visitors", "Usage & Cost", "Conversation Logs", "Feedback", "Admin Governance"];
+  const DASHBOARD_LINKS = ["Dashboard", "Documents", "Visitors", "Usage & Cost", "Conversation Logs", "Feedback", "Governance", "Analytics"];
 
   const linkNames = () => screen.getAllByRole("link").map((a) => a.textContent?.trim());
 
