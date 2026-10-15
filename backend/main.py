@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     admin,
+    auth,
     documents,
     governance,
     health,
@@ -16,6 +17,7 @@ from app.api.routes import (
     metrics,
     query,
     sessions,
+    user_management,
 )
 from app.auth.mock_idp import mount_mock_idp
 from app.core.compression import SSEAwareGZipMiddleware
@@ -131,6 +133,8 @@ app.include_router(documents.router, tags=["documents"])
 app.include_router(metrics.router, tags=["metrics"])
 app.include_router(governance.router, tags=["governance"])
 app.include_router(admin.router, tags=["admin"])
+app.include_router(auth.router)
+app.include_router(user_management.router)
 # Local mock Entra IdP, only with AUTH_DEV_MOCK=true (settings refuse it
 # outside ENV=development).
 mount_mock_idp(app, settings)
