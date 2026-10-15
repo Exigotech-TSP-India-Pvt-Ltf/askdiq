@@ -1,13 +1,23 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { AudienceScopeTabs } from "@/components/admin/AudienceScopeTabs";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { HeaderUtilities } from "@/components/shell/HeaderUtilities";
 
+export interface BreadcrumbItem {
+  label: string;
+  /** Omit for the current page (last item). */
+  href?: string;
+}
+
 export interface DashboardHeaderProps {
   title: string;
   subtitle?: string;
+  /** Detail pages: trail back to the list (replaces the subtitle line). */
+  breadcrumb?: readonly BreadcrumbItem[];
   icon: React.ComponentType<{ className?: string }>;
   badgeCount?: number | string | null;
   centerSlot?: React.ReactNode;
@@ -25,6 +35,7 @@ export interface DashboardHeaderProps {
 export function DashboardHeader({
   title,
   subtitle,
+  breadcrumb,
   icon: Icon,
   badgeCount,
   centerSlot,
@@ -54,7 +65,29 @@ export function DashboardHeader({
               </span>
             ) : null}
           </div>
-          {subtitle && (
+          {breadcrumb && breadcrumb.length > 0 ? (
+            <nav aria-label="Breadcrumb">
+              <ol className="flex min-w-0 items-center gap-1 text-[11px] leading-tight text-fg-subtle">
+                {breadcrumb.map((item, i) => (
+                  <li key={`${item.label}-${i}`} className="flex min-w-0 items-center gap-1">
+                    {i > 0 ? <ChevronRight className="h-3 w-3 shrink-0" strokeWidth={1.75} aria-hidden="true" /> : null}
+                    {item.href ? (
+                      <Link
+                        href={item.href}
+                        className="truncate rounded hover:text-accent-fg hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                      >
+                        {item.label}
+                      </Link>
+                    ) : (
+                      <span aria-current="page" className="truncate text-fg-muted">
+                        {item.label}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          ) : subtitle && (
             <p className="truncate text-[11px] text-slate-500 dark:text-slate-400 font-normal leading-tight">
               {subtitle}
             </p>

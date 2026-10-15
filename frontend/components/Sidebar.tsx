@@ -66,7 +66,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/documents", label: "Documents", icon: FileText, permission: DASHBOARD },
   // Renamed from "Users" (newplan open item 6): these are chat visitors, not accounts.
-  { href: "/admin/users", label: "Visitors", icon: Users, permission: DASHBOARD, keywords: ["users", "audience"] },
+  { href: "/admin/users", label: "Visitors", icon: Users, permission: DASHBOARD, keywords: ["users", "audience", "ip", "test ip"] },
   { href: "/admin/usage", label: "Usage & Cost", icon: CircleDollarSign, permission: DASHBOARD },
   { href: "/admin/conversations", label: "Conversation Logs", icon: MessagesSquare, permission: DASHBOARD },
   { href: "/admin/feedback", label: "Feedback", icon: ThumbsUp, permission: DASHBOARD },

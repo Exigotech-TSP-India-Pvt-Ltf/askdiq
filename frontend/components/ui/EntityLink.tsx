@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { ENTITY_LABEL, entityHref, entityId, type EntityRef } from "@/lib/entity-links";
+import { useCarryHref } from "@/lib/entity-routes";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { focusRing } from "@/components/ui/styles";
 
@@ -22,6 +23,7 @@ interface EntityLinkProps {
  * button (newplan §1, §15.1). Clicks do not bubble to clickable table rows.
  */
 export function EntityLink({ entity, children, copyable, mono, className = "" }: EntityLinkProps) {
+  const carry = useCarryHref();
   const id = entityId(entity);
   const kindLabel = ENTITY_LABEL[entity.kind];
   const showCopy = (copyable ?? true) && id !== null;
@@ -31,7 +33,7 @@ export function EntityLink({ entity, children, copyable, mono, className = "" }:
   return (
     <span className={`inline-flex min-w-0 max-w-full items-center gap-1 ${className}`}>
       <Link
-        href={entityHref(entity)}
+        href={carry(entityHref(entity))}
         title={id ? `${kindLabel} ${id}` : kindLabel}
         data-entity-kind={entity.kind}
         onClick={(event) => event.stopPropagation()}

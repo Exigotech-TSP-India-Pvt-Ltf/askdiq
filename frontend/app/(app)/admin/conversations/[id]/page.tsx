@@ -1,277 +1,471 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import React, { useCallback, useEffect, useMemo } from "react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { CircleDollarSign, Clock, FlaskConical, Hash, MessagesSquare, Search, User } from "lucide-react";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { StatCard } from "@/components/admin/insights/StatCard";
+import { ChartCard } from "@/components/charts/ChartCard";
+import { StackedBar, type BarSegment } from "@/components/charts/StackedBar";
+import { Waterfall, type WaterfallStep } from "@/components/charts/Waterfall";
+import { EntityLink } from "@/components/ui/EntityLink";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { SkeletonCard } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/ToastProvider";
+import { focusRing, secondaryButton } from "@/components/ui/styles";
+import {
+  ToneChip,
+  errorMessage,
+  formatDateTime,
+  formatMs,
+  formatUsd,
+  outcomeTone,
+  ratingTone,
+} from "@/components/admin/entity/shared";
 import { useAuth } from "@/lib/auth-context";
+import { useCan } from "@/lib/use-can";
+import { useApiMutation, useApiQuery } from "@/lib/query-cache";
+import { useDeepLink } from "@/lib/use-deep-link";
+import { usePrefersReducedMotion } from "@/lib/motion";
+import { useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
+import { buildTurns, type TurnView } from "@/components/admin/entity/turns";
+import {
+  STAGES,
+  STAGE_LABELS,
+  getConversation,
+  intParam,
+  isAbsent,
+  promoteTurnToTest,
+  type ConversationDetail,
+} from "@/lib/entity-stats-api";
 
-type Message = {
-  id: string;
-  turn_index: number;
-  role: string;
-  content: string;
-  created_at?: string | null;
-  request_id?: string | null;
-  grounded?: boolean | null;
-  guardrail_flags?: string[] | null;
-  ip_address?: string | null;
-};
+const QueryInspectorDrawer = dynamic(
+  () => import("@/components/admin/usage/QueryInspectorDrawer").then((mod) => mod.QueryInspectorDrawer),
+  { ssr: false },
+);
 
-type Conversation = {
-  id: string;
-  title?: string | null;
-  created_at?: string | null;
-  last_activity_at?: string | null;
-  expires_at?: string | null;
-  created_ip?: string | null;
-  messages: Message[];
-};
+const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
 
-export default function ConversationDetailPage() {
-  const params = useParams();
-  const router = useRouter();
+type TokenRow = { turn: string; turnIndex: number; prompt: number; cached_prompt: number; completion: number; reasoning: number };
 
+function ConversationDetailContent() {
+  const params = useParams<{ id: string }>();
+  const id = decodeURIComponent(params?.id ?? "");
   const { token } = useAuth();
-  const [conversation, setConversation] =
-    useState<Conversation | null>(null);
+  const carry = useCarryHref();
+  const toast = useToast();
+  const canPromote = useCan("feedback:triage");
+  const reducedMotion = usePrefersReducedMotion();
+  const { get, set } = useDeepLink();
+  const focusTurn = intParam(get("turn"));
+  const inspect = get("inspect");
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const detailKey = useMemo(() => ["conversation", id, "detail"], [id]);
+  const detail = useApiQuery(token && id ? detailKey : null, (signal) => getConversation(token ?? "", id, focusTurn, signal), {
+    revalidateOnFocus: false,
+  });
+  const turns = useMemo(() => buildTurns(detail.data), [detail.data]);
+  const hasDetail = (detail.data?.turns?.length ?? 0) > 0;
+  const conversation = detail.data?.conversation;
 
+  const selected = useMemo(
+    () => turns.find((t) => t.turnIndex === focusTurn) ?? turns.find((t) => t.detail !== null) ?? null,
+    [focusTurn, turns],
+  );
+
+  // `?turn=` scrolls to and highlights the turn once it is rendered.
   useEffect(() => {
-    if (!params.id || !token) return;
-    const authToken = token;
+    if (focusTurn === null || turns.length === 0) return;
+    const el = document.getElementById(`turn-${focusTurn}`);
+    if (!el) return;
+    el.scrollIntoView?.({ block: "center", behavior: reducedMotion ? "auto" : "smooth" });
+    el.focus({ preventScroll: true });
+  }, [focusTurn, turns.length, reducedMotion]);
 
-    async function loadConversation() {
-      try {
-        const id = params.id as string;
-        const data = await api.adminGet<any>(authToken, `/conversations/${id}`);
+  const selectTurn = useCallback((turnIndex: number) => set({ turn: turnIndex }), [set]);
+  const openInspector = useCallback((requestId: string | null) => {
+    if (requestId) set({ inspect: requestId }, { history: "push" });
+  }, [set]);
 
-        // Backend returns:
-        // {
-        //   conversation: {...},
-        //   messages: [...]
-        // }
-        setConversation({
-          ...data.conversation,
-          messages: data.messages || [],
-        });
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load conversation"
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
+  const promote = useApiMutation<TurnView, Awaited<ReturnType<typeof promoteTurnToTest>>, ConversationDetail>({
+    mutationFn: (turn) => promoteTurnToTest(token ?? "", turn.assistantMessageId ?? ""),
+    optimistic: {
+      key: detailKey,
+      update: (current, turn) =>
+        current
+          ? {
+              ...current,
+              turns: current.turns?.map((t) =>
+                t.turn_index === turn.turnIndex ? { ...t, promoted_case_id: t.promoted_case_id ?? "pending" } : t,
+              ),
+            }
+          : (current as unknown as ConversationDetail),
+    },
+    onSuccess: (result, turn) =>
+      toast.show({ title: `Turn ${turn.turnIndex + 1} promoted to a test case`, description: result.case_id, tone: "success" }),
+    onError: (err) =>
+      toast.show({ title: "Couldn't promote this turn", description: errorMessage(err, "Please try again.") ?? undefined, tone: "error" }),
+  });
 
-    loadConversation();
-  }, [params.id, token]);
+  const stageSteps = useMemo<WaterfallStep[]>(() => {
+    const stages = selected?.detail?.stages_ms;
+    if (!stages) return [];
+    return STAGES.filter((s) => typeof stages[s] === "number").map((s) => ({ label: STAGE_LABELS[s], value: stages[s] ?? 0 }));
+  }, [selected]);
 
-  if (loading) {
+  const tokenRows = useMemo<TokenRow[]>(
+    () =>
+      turns
+        .filter((t) => t.detail?.tokens)
+        .map((t) => {
+          const tk = t.detail?.tokens;
+          const cached = tk?.cached_prompt ?? 0;
+          const reasoning = tk?.reasoning ?? 0;
+          return {
+            turn: `#${t.turnIndex + 1}`,
+            turnIndex: t.turnIndex,
+            prompt: Math.max(0, (tk?.prompt ?? 0) - cached),
+            cached_prompt: cached,
+            completion: Math.max(0, (tk?.completion ?? 0) - reasoning),
+            reasoning,
+          };
+        }),
+    [turns],
+  );
+
+  const totalCost = hasDetail ? turns.reduce((sum, t) => sum + (t.detail?.cost_usd ?? 0), 0) : null;
+  const totalTokens = hasDetail ? turns.reduce((sum, t) => sum + (t.detail?.tokens?.total ?? 0), 0) : null;
+
+  if (detail.isLoading) {
     return (
-      <div className="p-6">
-        <div className="text-sm text-fg-subtle">
-          Loading conversation...
-        </div>
+      <div className="space-y-4 p-8" aria-busy="true">
+        <SkeletonCard label="Loading conversation" />
       </div>
     );
   }
 
-  if (error || !conversation) {
+  if (!detail.data || !conversation) {
     return (
-      <div className="p-6">
-        <button
-          onClick={() => router.back()}
-          className="mb-6 text-sm text-accent-fg hover:text-brand-800 dark:hover:text-brand-200"
-        >
-          ← Back to conversations
-        </button>
-
-        <div className="rounded-xl border border-status-danger/30 bg-status-danger-bg p-4 text-sm text-status-danger-fg">
-          {error || "Conversation not found"}
-        </div>
-      </div>
-    );
-  }
-
-  const messages = conversation.messages || [];
-
-  return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <button
-          onClick={() => router.back()}
-          className="mb-4 text-sm text-accent-fg hover:text-brand-800 dark:hover:text-brand-200"
-        >
-          ← Back to conversations
-        </button>
-
-        <div>
-          <h1 className="text-2xl font-semibold text-fg">
-            {conversation.title || "Untitled Conversation"}
-          </h1>
-
-          <p className="mt-1 text-sm text-fg-subtle">
-            Conversation ID: {conversation.id}
-          </p>
-        </div>
-      </div>
-
-      {/* Conversation Information */}
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
-        <InfoCard
-          label="IP Address"
-          value={conversation.created_ip || "Not available"}
+      <div className="flex min-h-screen flex-col bg-surface-page text-fg">
+        <DashboardHeader
+          title="Conversation"
+          icon={MessagesSquare}
+          showAudienceTabs={false}
+          breadcrumb={[{ label: "Conversations", href: "/admin/conversations" }, { label: id || "Unknown" }]}
         />
-
-        <InfoCard
-          label="Created"
-          value={formatDate(conversation.created_at)}
-        />
-
-        <InfoCard
-          label="Last Activity"
-          value={formatDate(conversation.last_activity_at)}
-        />
-
-        <InfoCard
-          label="Messages"
-          value={String(conversation.messages?.length ?? 0)}
-        />
-      </div>
-
-      {/* Conversation Messages */}
-      <div className="rounded-xl border border-line bg-surface-card">
-        <div className="border-b border-line px-6 py-4">
-          <h2 className="text-base font-semibold text-fg">
-            Conversation
-          </h2>
-
-          <p className="mt-1 text-sm text-fg-subtle">
-            {messages.length} messages
-          </p>
-        </div>
-
-        <div className="space-y-5 p-6">
-          {messages.length === 0 ? (
-            <div className="py-10 text-center text-sm text-fg-subtle">
-              No messages found.
-            </div>
+        <div className="p-8">
+          {isAbsent(detail.error) ? (
+            <EmptyState
+              title="Conversation not found"
+              description="It may have expired or been deleted."
+              action={
+                <Link href="/admin/conversations" className={secondaryButton}>
+                  Back to Conversations
+                </Link>
+              }
+            />
           ) : (
-            messages.map((message) => (
-              <div
-                key={message.id}
-                className={
-                  message.role === "user"
-                    ? "flex justify-end"
-                    : "flex justify-start"
-                }
-              >
-                <div
-                  className={
-                    message.role === "user"
-                      ? "max-w-[75%] rounded-2xl rounded-br-md bg-brand-600 px-5 py-4 text-white"
-                      : "max-w-[75%] rounded-2xl rounded-bl-md border border-line bg-surface-muted px-5 py-4 text-fg"
-                  }
-                >
-                  {/* Message Header */}
-                  <div className="mb-2 flex items-center justify-between gap-6">
-                    <span
-                      className={
-                        message.role === "user"
-                          ? "text-xs font-semibold uppercase text-brand-50"
-                          : "text-xs font-semibold uppercase text-fg-subtle"
-                      }
-                    >
-                      {message.role}
-                    </span>
-
-                    <span
-                      className={
-                        message.role === "user"
-                          ? "text-xs text-brand-50"
-                          : "text-xs text-fg-subtle"
-                      }
-                    >
-                      {formatDate(message.created_at)}
-                    </span>
-                  </div>
-
-                  {/* Message Content */}
-                  <div className="whitespace-pre-wrap text-sm leading-6">
-                    {message.content}
-                  </div>
-
-                  {/* Message Metadata */}
-                  {(message.ip_address ||
-                    message.grounded !== null &&
-                      message.grounded !== undefined) && (
-                    <div
-                      className={
-                        message.role === "user"
-                          ? "mt-3 border-t border-white/30 pt-2 text-xs text-brand-50"
-                          : "mt-3 border-t border-line pt-2 text-xs text-fg-subtle"
-                      }
-                    >
-                      {message.ip_address && (
-                        <span>
-                          IP: {message.ip_address}
-                        </span>
-                      )}
-
-                      {message.grounded !== null &&
-                        message.grounded !== undefined && (
-                          <span className="ml-4">
-                            Grounded:{" "}
-                            {message.grounded ? "Yes" : "No"}
-                          </span>
-                        )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
+            <ErrorState message={errorMessage(detail.error, "Failed to load conversation.")} onRetry={() => void detail.refetch()} />
           )}
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-function InfoCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+  const title = conversation.title || "Untitled Conversation";
+
   return (
-    <div className="rounded-xl border border-line bg-surface-card px-5 py-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-fg-subtle">
-        {label}
+    <div className="flex min-h-screen flex-col bg-surface-page text-fg">
+      <DashboardHeader
+        title={title}
+        icon={MessagesSquare}
+        showAudienceTabs={false}
+        breadcrumb={[{ label: "Conversations", href: "/admin/conversations" }, { label: title }]}
+      />
+
+      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            title="Visitor"
+            value={conversation.created_ip || "—"}
+            icon={User}
+            badge={
+              conversation.created_ip ? (
+                <Link
+                  href={carry(visitorDetailHref(`client-${conversation.created_ip}`))}
+                  className={`rounded text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+                >
+                  View visitor
+                </Link>
+              ) : undefined
+            }
+          />
+          <StatCard title="Started" value={formatDateTime(conversation.created_at)} subtitle={`Last activity ${formatDateTime(conversation.last_activity_at)}`} icon={Clock} />
+          <StatCard title="Turns" value={turns.length} subtitle={`${detail.data.message_count} messages`} icon={Hash} />
+          <StatCard
+            title="Cost"
+            value={formatUsd(totalCost)}
+            subtitle={totalTokens !== null ? `${totalTokens.toLocaleString()} tokens` : "Per-turn cost not available yet"}
+            icon={CircleDollarSign}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <ChartCard
+            title={selected ? `Stage latency · turn ${selected.turnIndex + 1}` : "Stage latency"}
+            subtitle="Select a stage to open the query inspector"
+            empty={stageSteps.length === 0}
+            emptyMessage={hasDetail ? "No stage timings for this turn" : "Per-turn stage timings are not available yet"}
+            table={{
+              columns: [
+                { key: "stage", label: "Stage" },
+                { key: "ms", label: "Duration", numeric: true },
+              ],
+              rows: stageSteps.map((s) => ({ stage: s.label, ms: formatMs(s.value) })),
+            }}
+          >
+            <Waterfall
+              data={stageSteps}
+              formatValue={formatMs}
+              onSelect={() => openInspector(selected?.requestId ?? null)}
+              label="Stage latency for the selected turn"
+            />
+          </ChartCard>
+
+          <ChartCard
+            title="Tokens per turn"
+            subtitle="Select a turn to jump to it"
+            empty={tokenRows.length === 0}
+            emptyMessage={hasDetail ? "No token counts" : "Per-turn tokens are not available yet"}
+            table={{
+              columns: [
+                { key: "turn", label: "Turn" },
+                { key: "prompt", label: "Prompt", numeric: true },
+                { key: "cached_prompt", label: "Cached", numeric: true },
+                { key: "completion", label: "Completion", numeric: true },
+                { key: "reasoning", label: "Reasoning", numeric: true },
+              ],
+              rows: tokenRows,
+            }}
+          >
+            <StackedBar
+              data={tokenRows}
+              xKey="turn"
+              series={[
+                { key: "prompt", label: "Prompt" },
+                { key: "cached_prompt", label: "Cached prompt" },
+                { key: "completion", label: "Completion" },
+                { key: "reasoning", label: "Reasoning" },
+              ]}
+              onSelect={(seg: BarSegment<TokenRow>) => selectTurn(seg.row.turnIndex)}
+              label="Tokens per turn"
+            />
+          </ChartCard>
+        </div>
+
+        <section aria-label="Turns" className="space-y-4">
+          {turns.length === 0 ? (
+            <EmptyState title="No messages found" />
+          ) : (
+            turns.map((t) => (
+              <TurnCard
+                key={t.turnIndex}
+                turn={t}
+                conversationId={conversation.id}
+                highlighted={t.turnIndex === focusTurn}
+                canPromote={canPromote}
+                promoting={promote.isPending}
+                onSelect={() => selectTurn(t.turnIndex)}
+                onInspect={() => openInspector(t.requestId)}
+                onPromote={() => void promote.mutate(t)}
+              />
+            ))
+          )}
+        </section>
       </div>
 
-      <div className="mt-2 break-all text-sm font-medium text-fg">
-        {value}
-      </div>
+      {inspect && token ? (
+        <QueryInspectorDrawer requestId={inspect} token={token} onClose={() => set({ inspect: null })} />
+      ) : null}
     </div>
   );
 }
 
-function formatDate(value?: string | null) {
-  if (!value) {
-    return "—";
-  }
+interface TurnCardProps {
+  turn: TurnView;
+  conversationId: string;
+  highlighted: boolean;
+  canPromote: boolean;
+  promoting: boolean;
+  onSelect: () => void;
+  onInspect: () => void;
+  onPromote: () => void;
+}
 
-  const date = new Date(value);
+function TurnCard({ turn, conversationId, highlighted, canPromote, promoting, onSelect, onInspect, onPromote }: TurnCardProps) {
+  const d = turn.detail;
+  const promoted = Boolean(d?.promoted_case_id);
+  const labels = d?.labels;
+  return (
+    <article
+      id={`turn-${turn.turnIndex}`}
+      tabIndex={-1}
+      aria-label={`Turn ${turn.turnIndex + 1}`}
+      data-highlighted={highlighted || undefined}
+      className={`rounded-xl border bg-surface-card p-5 transition duration-150 motion-reduce:transition-none focus:outline-none ${
+        highlighted
+          ? "border-brand-500 ring-2 ring-brand-500/40 shadow-md"
+          : "border-line hover:border-brand-300 hover:shadow-md dark:hover:border-brand-700/60"
+      }`}
+    >
+      <header className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={onSelect}
+          className={`rounded text-xs font-semibold text-fg hover:text-accent-fg ${focusRing}`}
+          aria-pressed={highlighted}
+        >
+          Turn {turn.turnIndex + 1}
+        </button>
+        {d?.outcome ? <ToneChip tone={outcomeTone(d.outcome)}>{d.outcome}</ToneChip> : null}
+        {turn.grounded === false ? <ToneChip tone="warn">not grounded</ToneChip> : null}
+        {turn.guardrailFlags.map((f) => (
+          <ToneChip key={f} tone="danger">
+            {f}
+          </ToneChip>
+        ))}
+        <span className="text-[11px] text-fg-subtle">{formatDateTime(turn.createdAt)}</span>
+        {d ? (
+          <span className="text-[11px] text-fg-subtle">
+            · {formatMs(d.total_ms)} · {formatUsd(d.cost_usd)}
+          </span>
+        ) : null}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {turn.requestId ? (
+            <>
+              <button type="button" onClick={onInspect} className={secondaryButton} aria-label={`Inspect turn ${turn.turnIndex + 1}`}>
+                <Search {...ICON} />
+                Inspect
+              </button>
+              <EntityLink entity={{ kind: "trace", id: turn.requestId }} mono={false} copyable={false}>
+                Trace
+              </EntityLink>
+            </>
+          ) : null}
+          {canPromote && turn.assistantMessageId ? (
+            <button
+              type="button"
+              onClick={onPromote}
+              disabled={promoting || promoted}
+              className={secondaryButton}
+              aria-label={`Promote turn ${turn.turnIndex + 1} to test`}
+            >
+              <FlaskConical {...ICON} />
+              {promoted ? "Promoted" : "Promote to test"}
+            </button>
+          ) : null}
+        </div>
+      </header>
 
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
+      <div className="mt-4 space-y-3">
+        <div className="rounded-lg bg-brand-50 px-4 py-3 dark:bg-brand-950/40">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">User</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-fg">{turn.question ?? "—"}</p>
+        </div>
+        <div className="rounded-lg border border-line bg-surface-muted px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-fg-subtle">Assistant</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-fg">{turn.answer ?? "—"}</p>
+        </div>
+      </div>
 
-  return date.toLocaleString();
+      {d && (d.feedback.length > 0 || labels || d.sources.length > 0) ? (
+        <footer className="mt-4 grid grid-cols-1 gap-3 border-t border-line pt-3 text-[11px] md:grid-cols-3">
+          <div>
+            <p className="mb-1 font-semibold text-fg-muted">Feedback</p>
+            {d.feedback.length === 0 ? (
+              <p className="text-fg-subtle">None</p>
+            ) : (
+              <ul className="space-y-1">
+                {d.feedback.map((f) => (
+                  <li key={f.id} className="flex flex-wrap items-center gap-1.5">
+                    <ToneChip tone={ratingTone(f.rating)}>{f.rating} / 5</ToneChip>
+                    {f.reason_tags.map((r) => (
+                      <ToneChip key={r} tone="neutral">
+                        {r.replace(/_/g, " ")}
+                      </ToneChip>
+                    ))}
+                    {f.comment ? <span className="text-fg-muted">“{f.comment}”</span> : null}
+                  </li>
+                ))}
+                {turn.assistantMessageId ? (
+                  <li>
+                    <EntityLink entity={{ kind: "feedback", id: turn.assistantMessageId }} mono={false} copyable={false}>
+                      Open in Feedback
+                    </EntityLink>
+                  </li>
+                ) : null}
+              </ul>
+            )}
+          </div>
+          <div>
+            <p className="mb-1 font-semibold text-fg-muted">Insight labels</p>
+            {labels && (labels.intent || labels.quality || labels.issue) ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {labels.intent ? (
+                  <EntityLink entity={{ kind: "analytics", intent: labels.intent }} mono={false} copyable={false}>
+                    {labels.intent}
+                  </EntityLink>
+                ) : null}
+                {labels.quality ? (
+                  <EntityLink entity={{ kind: "analytics", quality: labels.quality }} mono={false} copyable={false}>
+                    {labels.quality}
+                  </EntityLink>
+                ) : null}
+                {labels.issue ? <ToneChip tone="warn">{labels.issue}</ToneChip> : null}
+              </div>
+            ) : (
+              <p className="text-fg-subtle">Not classified yet</p>
+            )}
+          </div>
+          <div>
+            <p className="mb-1 font-semibold text-fg-muted">Sources</p>
+            {d.sources.length === 0 ? (
+              <p className="text-fg-subtle">No cited sources</p>
+            ) : (
+              <ul className="space-y-1">
+                {d.sources.map((s, i) => (
+                  <li key={`${s.chunk_id ?? s.document_id ?? i}`} className="min-w-0">
+                    {s.document_id && s.chunk_id ? (
+                      <EntityLink entity={{ kind: "chunk", id: s.chunk_id, documentId: s.document_id }} mono={false} copyable={false}>
+                        {s.source_name ?? "Document"}
+                        {s.chunk_index !== null ? ` · chunk ${s.chunk_index + 1}` : ""}
+                      </EntityLink>
+                    ) : s.document_id ? (
+                      <EntityLink entity={{ kind: "document", id: s.document_id }} mono={false} copyable={false}>
+                        {s.source_name ?? "Document"}
+                      </EntityLink>
+                    ) : (
+                      <span className="text-fg-muted">{s.source_name ?? "Unknown source"}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </footer>
+      ) : null}
+      <span className="sr-only">Conversation {conversationId}</span>
+    </article>
+  );
+}
+
+export default function ConversationDetailPage() {
+  return (
+    <React.Suspense fallback={<div className="p-8 text-xs text-fg-subtle">Loading conversation…</div>}>
+      <ConversationDetailContent />
+    </React.Suspense>
+  );
 }

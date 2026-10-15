@@ -38,13 +38,11 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 |---|---|---|---|---|---|
 | `/` (redirect spinner) | Pass | Fixed (T2) | Pass | `bg-white` -> `bg-surface-page` | [ ] |
 | `/chat` | Pass | Pass | Pass | Page bg token; sample questions and product name from brand. PR-21: `chat/ChatHeader` (BrandLogo mark pair, `bg-surface-card`, `border-line`, `text-fg*`), user chip and "View trace" link on tokens | [ ] |
-| `/documents` | Pass | Fixed (T2) | Pass | Doc name `text-slate-900`, result banner, re-ingest modal tokenised | [ ] |
-| `/documents/[id]` | Pass | Fixed (T2) | Pass | Neutral type/strategy badges tokenised; coloured badges are light chips in both themes (readable) | [ ] |
+| `/documents` | Pass | Fixed (T2) | Pass | PR-22: top-cited bar (`StackedBar` horizontal), age vs citations `QuadrantScatter`, coverage `RadialGauge` from `chartTheme`; delete via `ConfirmDialog` (danger tokens); upload / delete hidden without `documents:write` | [ ] |
+| `/documents/[id]` | Pass | Pass | Pass | PR-22: `DashboardHeader` + breadcrumb; chunk cards on `surface-card` / `line`, strategy chips on `status-*` tokens; hit heatmap on the sequential ramp; highlighted chunk `ring-brand-500/40` | [ ] |
 | `/admin` (Dashboard) | Pass | Pass | Pass | PR-21 rebuild: KpiTrendCard grid, StackedArea, PercentileBand, BulletChart, RadialGauge, Treemap from `useChartTheme()`; activity feed and health pill on `status-*` / `surface-*` tokens; old teal/slate literals and the custom tooltip removed | [ ] |
-| `/admin/users` ("Visitors", PR-20) | Pass | Pass | Pass | Page bg token; header and nav label renamed to Visitors, no style change | [ ] |
-| `/admin/users/[id]` | Pass | Fixed (T2) | Pass | "User not found" card tokenised | [ ] |
-| `/admin/conversations` | Pass | Pass | Pass | Page bg token | [ ] |
-| `/admin/conversations/[id]` | Pass | Fixed (T2) | Pass | All `text-gray-*`, `bg-white`, `border-gray-*` replaced; purple accents -> brand | [ ] |
+| `/admin/conversations` | Pass | Pass | Pass | PR-22: turns `Histogram`, outcome 100 % `StackedBar`; preview `DrawerShell` (surface-elevated) | [ ] |
+| `/admin/conversations/[id]` | Pass | Pass | Pass | PR-22: `DashboardHeader` + breadcrumb; turn cards on `surface-card` / `surface-muted` / `brand-50`+`dark:brand-950/40` (no `text-gray-*`); stage `Waterfall`, token `StackedBar`; highlighted turn ring `brand-500/40` | [ ] |
 | `/admin/feedback` (PR-24 triage workspace: Overview, Review Queue, Golden Cases, Preference Data, Knowledge Gaps) | Pass | Pass | Pass | Page bg token; KPI / chart cards on `surface-card`; queue rows `border-line`, focused row `brand-50` / `dark:brand-950/40`; status and rating badges on `status-*-bg` / `status-*-fg`; spike alert `status-danger-bg` | [ ] |
 | `/admin/usage` (Overview, Users, Sessions, Queries tabs) | Pass | Fixed (T1, T2) | Fixed (T1) | Token rings, gauges, needles and legend dots from `chartTheme`; tab headings and chips tokenised. PR-20: Overview is now Live Telemetry (`InteractiveOverviewTab`, Sparkles + Live badge; active badge `bg-white/20`, inactive `bg-surface-muted text-fg-muted`) | [ ] |
 | `/admin/evaluation` = `/evaluation` | n/a | n/a | n/a | PR-20: server `redirect()` (307) to `/admin/evaluation-live`; nothing rendered. Old report kept unmounted as `admin/evaluation/LegacyEvaluationReport` | n/a |
@@ -54,6 +52,8 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/admin/governance/monitoring` -> `?tab=Monitoring` | Pass | Pass | Pass | PR-23: route redirects to the tab. Stat tiles `surface-card` / `line`; Recharts bar from `useChartTheme()`; PercentileBand, StackedArea (errors `status.danger`), RadialGauges and share bars from `chartTheme` | [ ] |
 | `/admin/governance/logs` -> `?tab=Logs` | Pass | Pass | Pass | PR-23: level badges and chips on `status-*-bg` / `status-*-fg` (replaces the emerald / rose / sky chips); JSON viewer `surface-muted` | [ ] |
 | `/admin/governance/traces` -> `?tab=Traces` | Pass | Pass | Pass | PR-23: status and latency badges on `status-*` tokens; trace drawer on `DrawerShell`; waterfall from `chartTheme` | [ ] |
+| `/admin/users` (Visitors) | Pass | Pass | Pass | PR-22: `StatCard` KPI strip, new vs returning `StackedBar`, weekday x hour `CalendarHeatmap`; filter chip `brand-50` / `dark:brand-950/60`; row actions `iconButton` | [ ] |
+| `/admin/users/[id]` (Visitor detail) | Pass | Pass | Pass | PR-22: `DashboardHeader` + breadcrumb; activity timeline `Waterfall`, cost `KpiTrendCard` sparkline; feedback chips on `status-*` tokens | [ ] |
 | `/_not-found` (`app/not-found.tsx`) | Pass | Pass | Pass | Branded 404 (PR-17): `BrandLogo` pair, `bg-surface-*` / `text-fg*` tokens | [ ] |
 | Route error boundary (`app/error.tsx`) | Pass | Pass | Pass | Branded (PR-17): reference digest + copy, retry; no error text shown | [ ] |
 | Any `(app)` route at < `md` (390 px) | Pass | Pass | Pass | PR-17: `MobileTopBar` + off-canvas sidebar; desktop aside `hidden md:flex` | [ ] |
@@ -146,6 +146,10 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `analytics/TrendChart`, `HourOfDayChart`, `FlowSankey`, `QualityDonut`, `DropoffChart`, `PeopleBubble` (new, PR-25) | Pass | Pass | Pass | Hand-drawn SVG on the chart-kit primitives; colours from `chartTheme.<theme>.insights` (the HTML's outcome, quality, handled and hour colours, lifted for dark; light Partly / Greeting moved to `status-warn` / slate for 3:1) via `useInsightsPalette()`; grid / axis / tooltip from `chartTheme`; theme flip covered by `tests/components/analytics` |
 | `analytics/TopicsTreemap` (new, PR-25) | Pass | Pass | Pass | `TreemapChart` (next/dynamic) with per-tile `color` from the handled-% scale (`mixHex(handled.low, handled.high)`) and `readableOn()` labels |
 | `analytics/ConversationsTable` (new, PR-25) | Pass | Pass | Pass | `TableCard` + `Pagination`; outcome pills on `status-*` tokens; expand panel on `surface-muted` |
+| `charts/StackedBar` (new, PR-22) | Pass | Pass | Pass | Segments from `chartTheme.categorical`, grid / axis tokens, legend hover dims to `dimOpacity`; one keyboard mark per segment |
+| `admin/DashboardHeader` breadcrumb (PR-22) | Pass | Pass | Pass | `text-fg-subtle` trail, current page `text-fg-muted`, hover `text-accent-fg` |
+| `admin/entity/ConversationPreviewDrawer` (PR-22) | Pass | Pass | Pass | `DrawerShell`; turn rail `border-brand-200` / `dark:border-brand-800`; outcome chips on `status-*` |
+| `admin/entity/shared` (`FilterChip`, `SectionCard`, `ToneChip`) (PR-22) | Pass | Pass | Pass | Chips on `brand-50`/`dark:brand-950/60` and `status-*-bg`/`-fg`; cards `surface-card` + `line`, hover brand border + `shadow-md` |
 
 ## Known follow-ups (not theme-breaking)
 

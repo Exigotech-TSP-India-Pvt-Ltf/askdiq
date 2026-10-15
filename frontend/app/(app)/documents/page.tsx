@@ -12,6 +12,16 @@ import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TableCard } from "@/components/admin/TableCard";
 import { formatNumber } from "@/components/admin/TableFormatters";
 import { FormatBadge } from "@/components/documents/FormatBadge";
+import { ChartCard } from "@/components/charts/ChartCard";
+import { StackedBar } from "@/components/charts/StackedBar";
+import { QuadrantScatter } from "@/components/charts/QuadrantScatter";
+import { RadialGauge } from "@/components/charts/RadialGauge";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { errorMessage, useRangeParams } from "@/components/admin/entity/shared";
+import { entityHref } from "@/lib/entity-links";
+import { useCan } from "@/lib/use-can";
+import { useApiQuery } from "@/lib/query-cache";
+import { getDocumentCitationStats, type CitedDocument } from "@/lib/entity-stats-api";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -27,6 +37,14 @@ import {
   Sparkles,
 } from "lucide-react";
 
+const TOP_CITED_LIMIT = 10;
+const COVERAGE_BANDS = { warn: 80, danger: 60 } as const;
+
+interface PendingDelete {
+  id: string;
+  name: string;
+}
+
 interface PendingPreview {
   file: File;
   preview: IngestResult;
@@ -35,6 +53,15 @@ interface PendingPreview {
 export default function DocumentsPage() {
   const { token } = useAuth();
   const router = useRouter();
+  const canWrite = useCan("documents:write");
+  const range = useRangeParams();
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const citations = useApiQuery(token ? ["documents", "stats", "citations", range.from, range.to] : null, (signal) =>
+    getDocumentCitationStats(token ?? "", { from: range.from, to: range.to, limit: TOP_CITED_LIMIT }, signal),
+  );
+  const citationStats = citations.data ?? null;
+  const citationsAbsent = !citations.isLoading && !citations.error && citationStats === null;
+  const citationsError = errorMessage(citations.error, "Couldn't load citation stats.");
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,14 +91,21 @@ export default function DocumentsPage() {
 
   useEffect(load, [load]);
 
-  async function handleDelete(e: React.MouseEvent, id: string, name: string) {
+  function requestDelete(e: React.MouseEvent, id: string, name: string) {
     e.stopPropagation();
-    if (!token || !window.confirm(`Delete "${name}" and all its chunks?`)) return;
+    setPendingDelete({ id, name });
+  }
+
+  async function confirmDelete() {
+    if (!token || !pendingDelete) return;
+    const { id } = pendingDelete;
     try {
       await api.deleteDocument(token, id);
       setDocuments((docs) => docs?.filter((d) => d.document_id !== id) ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't delete document.");
+    } finally {
+      setPendingDelete(null);
     }
   }
 
@@ -215,7 +249,7 @@ export default function DocumentsPage() {
     return sortedDocuments.slice(start, start + pageSize);
   }, [sortedDocuments, page, pageSize]);
 
-  const columns: ColumnDef<DocumentSummary>[] = [
+  const baseColumns: ColumnDef<DocumentSummary>[] = [
     {
       key: "source_name",
       header: "Canonical Source Document",
@@ -292,7 +326,7 @@ export default function DocumentsPage() {
       render: (doc) => (
         <button
           type="button"
-          onClick={(e) => handleDelete(e, doc.document_id, doc.source_name)}
+          onClick={(e) => requestDelete(e, doc.document_id, doc.source_name)}
           className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-rose-600 dark:hover:text-rose-400 transition"
           aria-label={`Delete ${doc.source_name}`}
         >
@@ -301,6 +335,8 @@ export default function DocumentsPage() {
       ),
     },
   ];
+
+  const columns = canWrite ? baseColumns : baseColumns.filter((c) => c.key !== "actions");
 
   return (
     <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
@@ -311,6 +347,7 @@ export default function DocumentsPage() {
         icon={FileText}
         showAudienceTabs={false}
         actions={
+          canWrite ? (
           <label
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold text-white shadow-brand-glow transition ${
               uploading
@@ -332,6 +369,7 @@ export default function DocumentsPage() {
               onChange={handleFileSelect}
             />
           </label>
+          ) : undefined
         }
       />
 
@@ -498,6 +536,94 @@ export default function DocumentsPage() {
           </div>
         </div>
 
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <ChartCard
+            title="Most cited documents"
+            subtitle="Citations in answers; select a bar to open the document"
+            window={range.label ?? undefined}
+            loading={citations.isLoading}
+            error={citationsError}
+            onRetry={() => void citations.refetch()}
+            empty={citationsAbsent || (citationStats?.top_cited.length ?? 0) === 0}
+            emptyMessage={citationsAbsent ? "Citation stats are not available yet" : undefined}
+            table={{
+              columns: [
+                { key: "source_name", label: "Document" },
+                { key: "citations", label: "Citations", numeric: true },
+              ],
+              rows: (citationStats?.top_cited ?? []).map((d) => ({ source_name: d.source_name, citations: d.citations })),
+            }}
+          >
+            <StackedBar<CitedDocument>
+              data={citationStats?.top_cited ?? []}
+              xKey="source_name"
+              series={[{ key: "citations", label: "Citations" }]}
+              orientation="horizontal"
+              onSelect={(seg) => router.push(entityHref({ kind: "document", id: seg.row.document_id }))}
+              label="Most cited documents"
+            />
+          </ChartCard>
+
+          <ChartCard
+            title="Age vs citations"
+            subtitle="Old documents nobody cites are stale content; select a dot to open it"
+            loading={citations.isLoading}
+            error={citationsError}
+            onRetry={() => void citations.refetch()}
+            empty={citationsAbsent || (citationStats?.age_vs_citations.length ?? 0) === 0}
+            emptyMessage={citationsAbsent ? "Citation stats are not available yet" : undefined}
+            table={{
+              columns: [
+                { key: "source_name", label: "Document" },
+                { key: "age_days", label: "Age (days)", numeric: true },
+                { key: "citations", label: "Citations", numeric: true },
+              ],
+              rows: (citationStats?.age_vs_citations ?? []).map((d) => ({
+                source_name: d.source_name,
+                age_days: d.age_days,
+                citations: d.citations,
+              })),
+            }}
+          >
+            <QuadrantScatter
+              data={(citationStats?.age_vs_citations ?? []).map((d) => ({
+                id: d.document_id,
+                label: d.source_name,
+                x: d.age_days,
+                y: d.citations,
+              }))}
+              xLabel="Age (days)"
+              yLabel="Citations"
+              quadrants={{ topLeft: "Fresh, cited", topRight: "Old, still cited", bottomLeft: "New", bottomRight: "Stale" }}
+              onSelect={(p) => router.push(entityHref({ kind: "document", id: p.id }))}
+              label="Document age against citations"
+            />
+          </ChartCard>
+
+          <ChartCard
+            title="Answer coverage"
+            subtitle="Answered questions that cited at least one document"
+            window={range.label ?? undefined}
+            loading={citations.isLoading}
+            error={citationsError}
+            onRetry={() => void citations.refetch()}
+            empty={citationsAbsent}
+            emptyMessage="Citation stats are not available yet"
+            bodyClassName="h-48 w-full"
+          >
+            <RadialGauge
+              label="Answer coverage"
+              value={citationStats?.coverage.coverage_pct ?? null}
+              bands={COVERAGE_BANDS}
+              caption={
+                citationStats
+                  ? `${citationStats.coverage.cited_queries.toLocaleString()} of ${citationStats.coverage.answered_queries.toLocaleString()} answers`
+                  : undefined
+              }
+            />
+          </ChartCard>
+        </div>
+
         {/* Complete Inventory Table Integrated in TableCard */}
         <TableCard
           toolbar={
@@ -578,6 +704,23 @@ export default function DocumentsPage() {
           />
         </TableCard>
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        tone="danger"
+        title="Delete document?"
+        description={
+          pendingDelete ? (
+            <>
+              <strong>{pendingDelete.name}</strong> and all of its chunks will be removed from the knowledge base.
+              Answers will no longer cite it.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Delete document"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

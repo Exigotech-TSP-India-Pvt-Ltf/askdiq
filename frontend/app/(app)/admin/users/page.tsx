@@ -1,126 +1,216 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { UserCheck, Users as UsersIcon, Activity } from "lucide-react";
+import {
+  Activity,
+  FlaskConical,
+  ListTree,
+  Repeat,
+  Settings as SettingsIcon,
+  UserCheck,
+  UserPlus,
+  Users as UsersIcon,
+} from "lucide-react";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TableCard } from "@/components/admin/TableCard";
 import { formatNumber, TableBadge } from "@/components/admin/TableFormatters";
+import { StatCard } from "@/components/admin/insights/StatCard";
+import { TestIpManager } from "@/components/admin/usage/TestIpManager";
+import { ChartCard } from "@/components/charts/ChartCard";
+import { CalendarHeatmap, type HeatCell } from "@/components/charts/CalendarHeatmap";
+import { StackedBar } from "@/components/charts/StackedBar";
+import { useToast } from "@/components/ui/ToastProvider";
+import { focusRing, iconButton, secondaryButton } from "@/components/ui/styles";
+import { FilterChip, errorMessage, formatDay, useRangeParams } from "@/components/admin/entity/shared";
 import { useTableState } from "@/lib/use-table-state";
+import { useDeepLink } from "@/lib/use-deep-link";
+import { entityHref } from "@/lib/entity-links";
+import { heatFilterLabel, useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useCan } from "@/lib/use-can";
+import { invalidate, useApiMutation, useApiQuery } from "@/lib/query-cache";
 import type { PageEnvelope } from "@/lib/types";
+import {
+  HOURS_PER_DAY,
+  VISITOR_SORTS,
+  WEEKDAYS,
+  getVisitorStats,
+  getVisitors,
+  intParam,
+  type VisitorRow,
+} from "@/lib/entity-stats-api";
 
-interface UserRow {
-  id: string;
-  ip_address: string;
-  is_test?: boolean;
-  type?: string;
-  first_seen?: string | null;
-  last_active?: string | null;
-  status?: string;
-  sessions?: number;
-  conversations?: number;
-  queries?: number;
-  feedback_count?: number;
+const ACTIVE_WINDOW_MS = 30 * 60 * 1000;
+const HOUR_LABELS = Array.from({ length: HOURS_PER_DAY }, (_, h) => String(h).padStart(2, "0"));
+const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
+
+function isActive(u: VisitorRow): boolean {
+  return (
+    u.status?.toLowerCase() === "active" ||
+    Boolean(u.last_active && Date.now() - new Date(u.last_active).getTime() < ACTIVE_WINDOW_MS)
+  );
 }
 
-function UsersContent() {
+function VisitorsContent() {
   const router = useRouter();
+  const carry = useCarryHref();
   const { token } = useAuth();
+  const toast = useToast();
+  const canWriteTestIp = useCan("testip:write");
+  const { get, set } = useDeepLink();
+  const range = useRangeParams();
+  const [configOpen, setConfigOpen] = useState(false);
 
-  const {
-    page,
-    pageSize,
-    offset,
-    sort,
-    search,
-    filters,
-    audience,
-    setPage,
-    setPageSize,
-    setSort,
-    setSearchInput,
-    setFilter,
-    getSignal,
-  } = useTableState({
-    tableKey: "users",
-    defaultSort: "last_active_desc",
-    allowedSorts: [
-      "last_active_desc",
-      "last_active_asc",
-      "queries_desc",
-      "queries_asc",
-      "sessions_desc",
-      "sessions_asc",
+  const weekday = intParam(get("weekday"), WEEKDAYS.length - 1);
+  const hour = intParam(get("hour"), HOURS_PER_DAY - 1);
+  const heat = useMemo(() => (weekday !== null && hour !== null ? { weekday, hour } : null), [weekday, hour]);
+
+  const { page, pageSize, offset, sort, search, filters, audience, setPage, setPageSize, setSort, setSearchInput, setFilter } =
+    useTableState({
+      tableKey: "users",
+      defaultSort: "last_active_desc",
+      allowedSorts: [...VISITOR_SORTS],
+      defaultFilters: { status: "all", type: "all" },
+    });
+
+  const listKey = useMemo(
+    () => [
+      "visitors",
+      "list",
+      audience,
+      search,
+      filters.status,
+      filters.type,
+      sort,
+      pageSize,
+      offset,
+      heat?.weekday,
+      heat?.hour,
+      heat ? range.from : null,
+      heat ? range.to : null,
     ],
-    defaultFilters: { status: "all", type: "all" },
+    [audience, search, filters.status, filters.type, sort, pageSize, offset, heat, range.from, range.to],
+  );
+
+  const list = useApiQuery(token ? listKey : null, (signal) =>
+    getVisitors(
+      token ?? "",
+      {
+        audience,
+        q: search || undefined,
+        status: filters.status,
+        type: filters.type,
+        sort,
+        limit: pageSize,
+        offset,
+        ...(heat ? { weekday: heat.weekday, hour: heat.hour, from: range.from, to: range.to } : {}),
+      },
+      signal,
+    ),
+  );
+
+  const stats = useApiQuery(token ? ["visitors", "stats", audience, range.from, range.to] : null, (signal) =>
+    getVisitorStats(token ?? "", { audience, from: range.from, to: range.to }, signal),
+  );
+
+  const markTestIp = useApiMutation<VisitorRow, unknown, PageEnvelope<VisitorRow>>({
+    mutationFn: (row) => api.addTestIp(token ?? "", row.ip_address, "Marked from Visitors"),
+    optimistic: {
+      key: listKey,
+      update: (current, row) =>
+        current
+          ? {
+              ...current,
+              items: current.items.map((u) => (u.ip_address === row.ip_address ? { ...u, is_test: true, type: "Test" } : u)),
+            }
+          : { items: [], total: 0, limit: pageSize, offset },
+    },
+    onError: (err, row) => {
+      toast.show({
+        title: `Couldn't mark ${row.ip_address} as a test IP`,
+        description: errorMessage(err, "Please try again.") ?? undefined,
+        tone: "error",
+      });
+    },
   });
 
-  const [data, setData] = useState<PageEnvelope<UserRow> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchUsers = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.getUsersList(
-        token,
-        {
-          audience,
-          q: search || undefined,
-          status: filters.status !== "all" ? filters.status : undefined,
-          type: filters.type !== "all" ? filters.type : undefined,
-          sort,
-          limit: pageSize,
-          offset,
-        },
-        getSignal()
-      );
-      setData(res);
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        setError(err.message || "Failed to load users list.");
+  const { undo } = markTestIp;
+  const undoMark = useCallback(
+    async (ip: string) => {
+      undo();
+      try {
+        await api.deleteTestIp(token ?? "", ip);
+        toast.show({ title: `${ip} counts as a production visitor again`, tone: "info" });
+      } catch (err) {
+        toast.show({ title: "Undo failed", description: errorMessage(err, "Please try again.") ?? undefined, tone: "error" });
+      } finally {
+        invalidate("visitors/");
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [token, audience, search, filters.status, filters.type, sort, pageSize, offset, getSignal]);
+    },
+    [undo, toast, token],
+  );
 
-  useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+  const { mutate } = markTestIp;
+  const onMarkTestIp = useCallback(
+    async (row: VisitorRow) => {
+      const result = await mutate(row);
+      if (result === undefined) return;
+      invalidate("visitors/stats");
+      toast.show({
+        title: `${row.ip_address} marked as a test IP`,
+        description: "Its traffic now counts under Testing.",
+        tone: "success",
+        onUndo: () => void undoMark(row.ip_address),
+      });
+    },
+    [mutate, toast, undoMark],
+  );
 
-  const items = data?.items || [];
-  const total = data?.total || 0;
+  const items = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
+  const statsData = stats.data ?? null;
+  const statsAbsent = !stats.isLoading && !stats.error && statsData === null;
+  const statsError = errorMessage(stats.error, "Couldn't load visitor stats.");
 
-  const activeCount = items.filter(
-    (u) =>
-      u.status?.toLowerCase() === "active" ||
-      (u.last_active &&
-        Date.now() - new Date(u.last_active).getTime() < 30 * 60 * 1000)
-  ).length;
+  const heatData = useMemo<HeatCell[]>(
+    () =>
+      (statsData?.heatmap ?? [])
+        .filter((c) => c.weekday >= 0 && c.weekday < WEEKDAYS.length && c.hour >= 0 && c.hour < HOURS_PER_DAY)
+        .map((c) => ({ row: WEEKDAYS[c.weekday], col: HOUR_LABELS[c.hour], value: c.sessions })),
+    [statsData],
+  );
 
+  const selectHeatCell = useCallback(
+    (cell: HeatCell) => {
+      setPage(1);
+      set({ weekday: WEEKDAYS.indexOf(cell.row as (typeof WEEKDAYS)[number]), hour: Number(cell.col) });
+    },
+    [set, setPage],
+  );
+
+  const activeCount = items.filter(isActive).length;
   const totalQueries = items.reduce((acc, u) => acc + (u.queries ?? 0), 0);
 
-  const columns: ColumnDef<UserRow>[] = [
+  const columns: ColumnDef<VisitorRow>[] = [
     {
       key: "ip_address",
       header: "Client IP Address",
       render: (u) => (
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs font-medium text-slate-800 dark:text-slate-200">
+          <Link
+            href={carry(visitorDetailHref(u.id))}
+            onClick={(e) => e.stopPropagation()}
+            className={`rounded font-mono text-xs font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+          >
             {u.ip_address}
-          </span>
-          <TableBadge
-            label={u.type || (u.is_test ? "Test" : "Production")}
-            variant={u.is_test ? "warning" : "success"}
-          />
+          </Link>
+          <TableBadge label={u.type || (u.is_test ? "Test" : "Production")} variant={u.is_test ? "warning" : "success"} />
         </div>
       ),
     },
@@ -128,18 +218,7 @@ function UsersContent() {
       key: "status",
       header: "Status",
       align: "center",
-      render: (u) => {
-        const isActive =
-          u.status?.toLowerCase() === "active" ||
-          (u.last_active &&
-            Date.now() - new Date(u.last_active).getTime() < 30 * 60 * 1000);
-        return (
-          <TableBadge
-            label={isActive ? "Active" : "Inactive"}
-            variant={isActive ? "success" : "neutral"}
-          />
-        );
-      },
+      render: (u) => <TableBadge label={isActive(u) ? "Active" : "Inactive"} variant={isActive(u) ? "success" : "neutral"} />,
     },
     {
       key: "sessions",
@@ -148,24 +227,13 @@ function UsersContent() {
       align: "right",
       render: (u) => formatNumber(u.sessions ?? u.conversations ?? 0),
     },
-    {
-      key: "queries",
-      header: "Queries",
-      sortable: true,
-      align: "right",
-      render: (u) => formatNumber(u.queries ?? 0),
-    },
-    {
-      key: "feedback_count",
-      header: "Feedback",
-      align: "right",
-      render: (u) => formatNumber(u.feedback_count ?? 0),
-    },
+    { key: "queries", header: "Queries", sortable: true, align: "right", render: (u) => formatNumber(u.queries ?? 0) },
+    { key: "feedback_count", header: "Feedback", align: "right", render: (u) => formatNumber(u.feedback_count ?? 0) },
     {
       key: "first_seen",
       header: "First Seen",
       render: (u) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+        <span className="whitespace-nowrap text-xs text-fg-subtle">
           {u.first_seen ? new Date(u.first_seen).toLocaleDateString() : "—"}
         </span>
       ),
@@ -175,88 +243,185 @@ function UsersContent() {
       header: "Last Active",
       sortable: true,
       render: (u) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+        <span className="whitespace-nowrap text-xs text-fg-subtle">
           {u.last_active ? new Date(u.last_active).toLocaleString() : "—"}
         </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      align: "right",
+      render: (u) => (
+        <div className="flex items-center justify-end gap-1">
+          <Link
+            href={carry(entityHref({ kind: "visitor", id: u.ip_address }))}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`View sessions for ${u.ip_address}`}
+            title="View sessions"
+            className={iconButton}
+          >
+            <ListTree {...ICON} />
+          </Link>
+          {canWriteTestIp && !u.is_test ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void onMarkTestIp(u);
+              }}
+              disabled={markTestIp.isPending}
+              aria-label={`Mark ${u.ip_address} as test IP`}
+              title="Mark as test IP"
+              className={iconButton}
+            >
+              <FlaskConical {...ICON} />
+            </button>
+          ) : null}
+        </div>
       ),
     },
   ];
 
   return (
-    <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
-      {/* Standard Universal Top Bar Line */}
+    <div className="flex min-h-screen flex-col bg-surface-page text-fg">
       <DashboardHeader
         title="Visitors"
-        subtitle="Audience-scoped telemetry by client IP address, activity history, and engagement"
+        subtitle="Audience-scoped visitors by client IP: activity, sessions and engagement"
         icon={UsersIcon}
+        showDateRange
+        actions={
+          canWriteTestIp ? (
+            <button type="button" onClick={() => setConfigOpen(true)} className={secondaryButton}>
+              <SettingsIcon {...ICON} />
+              Manage test IPs
+            </button>
+          ) : undefined
+        }
       />
 
-      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
-        {/* Hero Stat Cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Filtered Users</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{total.toLocaleString()}</p>
-            </div>
-            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-800">
-              <UsersIcon className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Active Page Users</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{activeCount.toLocaleString()}</p>
-            </div>
-            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
-              <UserCheck className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Page Queries Driven</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalQueries.toLocaleString()}</p>
-            </div>
-            <div className="rounded-lg bg-teal-50 dark:bg-teal-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-teal-100 dark:border-teal-800">
-              <Activity className="h-5 w-5" />
-            </div>
-          </div>
+      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="visitor-kpis">
+          {statsData ? (
+            <>
+              <StatCard title="Visitors" value={statsData.kpis.visitors} subtitle={range.label ?? undefined} icon={UsersIcon} />
+              <StatCard title="New visitors" value={statsData.kpis.new_visitors} icon={UserPlus} />
+              <StatCard title="Returning visitors" value={statsData.kpis.returning_visitors} icon={Repeat} />
+              <StatCard title="Active now" value={statsData.kpis.active_now} subtitle="Last 30 minutes" icon={UserCheck} />
+            </>
+          ) : (
+            <>
+              <StatCard title="Total filtered visitors" value={total} icon={UsersIcon} />
+              <StatCard title="Active on this page" value={activeCount} icon={UserCheck} />
+              <StatCard title="Queries on this page" value={totalQueries} icon={Activity} />
+            </>
+          )}
         </div>
 
-        {/* Integrated TableCard Section */}
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <ChartCard
+            title="New vs returning"
+            subtitle="Visitors per day"
+            window={range.label ?? undefined}
+            loading={stats.isLoading}
+            error={statsError}
+            onRetry={() => void stats.refetch()}
+            empty={statsAbsent || (statsData?.new_vs_returning.length ?? 0) === 0}
+            emptyMessage={statsAbsent ? "Visitor stats are not available yet" : undefined}
+            table={{
+              columns: [
+                { key: "day", label: "Day" },
+                { key: "new", label: "New", numeric: true },
+                { key: "returning", label: "Returning", numeric: true },
+              ],
+              rows: (statsData?.new_vs_returning ?? []).map((d) => ({ day: formatDay(d.day), new: d.new, returning: d.returning })),
+            }}
+          >
+            <StackedBar
+              data={statsData?.new_vs_returning ?? []}
+              xKey="day"
+              series={[
+                { key: "new", label: "New" },
+                { key: "returning", label: "Returning" },
+              ]}
+              formatLabel={formatDay}
+              label="New vs returning visitors per day"
+            />
+          </ChartCard>
+
+          <ChartCard
+            title="When visitors are active"
+            subtitle="Sessions by weekday and hour (UTC); select a cell to filter the table"
+            window={range.label ?? undefined}
+            loading={stats.isLoading}
+            error={statsError}
+            onRetry={() => void stats.refetch()}
+            empty={statsAbsent || heatData.length === 0}
+            emptyMessage={statsAbsent ? "Visitor stats are not available yet" : undefined}
+            table={{
+              columns: [
+                { key: "slot", label: "Slot" },
+                { key: "sessions", label: "Sessions", numeric: true },
+              ],
+              rows: heatData.map((c) => ({ slot: `${c.row} ${c.col}:00`, sessions: c.value })),
+            }}
+          >
+            <CalendarHeatmap
+              data={heatData}
+              rows={WEEKDAYS}
+              cols={HOUR_LABELS}
+              colLabelEvery={3}
+              onSelect={selectHeatCell}
+              label="Sessions by weekday and hour"
+            />
+          </ChartCard>
+        </div>
+
         <TableCard
           toolbar={
-            <TableToolbar
-              search={search}
-              onSearchChange={setSearchInput}
-              searchPlaceholder="Search client IP address…"
-              filters={[
-                {
-                  id: "status",
-                  label: "Status",
-                  value: filters.status,
-                  options: [
-                    { label: "All Statuses", value: "all" },
-                    { label: "Active Only", value: "active" },
-                    { label: "Inactive Only", value: "inactive" },
-                  ],
-                  onChange: (v) => setFilter("status", v),
-                },
-                {
-                  id: "type",
-                  label: "User Type",
-                  value: filters.type,
-                  options: [
-                    { label: "All Users", value: "all" },
-                    { label: "Production Users", value: "production" },
-                    { label: "Test Users", value: "test" },
-                  ],
-                  onChange: (v) => setFilter("type", v),
-                },
-              ]}
-            />
+            <div className="space-y-2">
+              <TableToolbar
+                search={search}
+                onSearchChange={setSearchInput}
+                searchPlaceholder="Search client IP address…"
+                filters={[
+                  {
+                    id: "status",
+                    label: "Status",
+                    value: filters.status,
+                    options: [
+                      { label: "All Statuses", value: "all" },
+                      { label: "Active Only", value: "active" },
+                      { label: "Inactive Only", value: "inactive" },
+                    ],
+                    onChange: (v) => setFilter("status", v),
+                  },
+                  {
+                    id: "type",
+                    label: "Visitor Type",
+                    value: filters.type,
+                    options: [
+                      { label: "All Visitors", value: "all" },
+                      { label: "Production", value: "production" },
+                      { label: "Test", value: "test" },
+                    ],
+                    onChange: (v) => setFilter("type", v),
+                  },
+                ]}
+              />
+              {heat ? (
+                <div className="flex items-center gap-2 text-[11px] text-fg-subtle">
+                  Active in
+                  <FilterChip
+                    label={heatFilterLabel(heat.weekday, heat.hour)}
+                    onClear={() => {
+                      setPage(1);
+                      set({ weekday: null, hour: null });
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
           }
           pagination={
             <Pagination
@@ -273,24 +438,33 @@ function UsersContent() {
             columns={columns}
             data={items}
             keyField="ip_address"
-            isLoading={loading}
-            error={error}
-            onRetry={fetchUsers}
+            isLoading={list.isLoading}
+            error={errorMessage(list.error, "Failed to load visitors.")}
+            onRetry={() => void list.refetch()}
             currentSort={sort}
             onSortChange={setSort}
-            onRowClick={(u) => router.push(`/admin/users/${encodeURIComponent(u.ip_address)}`)}
-            emptyMessage="No users found matching current audience and filters."
+            onRowClick={(u) => router.push(carry(visitorDetailHref(u.id)))}
+            emptyMessage="No visitors found matching current audience and filters."
           />
         </TableCard>
       </div>
+
+      {configOpen && token ? (
+        <TestIpManager
+          token={token}
+          isOpen={configOpen}
+          onClose={() => setConfigOpen(false)}
+          onConfigChanged={() => invalidate("visitors/")}
+        />
+      ) : null}
     </div>
   );
 }
 
-export default function UsersPage() {
+export default function VisitorsPage() {
   return (
-    <React.Suspense fallback={<div className="p-8 text-xs text-slate-400">Loading users...</div>}>
-      <UsersContent />
+    <React.Suspense fallback={<div className="p-8 text-xs text-fg-subtle">Loading visitors…</div>}>
+      <VisitorsContent />
     </React.Suspense>
   );
 }

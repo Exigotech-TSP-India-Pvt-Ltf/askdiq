@@ -273,7 +273,7 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
   it("renders Admin Visitors Page with DashboardHeader and TableCard", async () => {
     render(<UsersPage />);
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /^Visitors$/i })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "Visitors" })).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
   });

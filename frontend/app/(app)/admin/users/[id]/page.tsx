@@ -1,332 +1,413 @@
 "use client";
 
+import React, { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState, useMemo } from "react";
-import { api } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
+import { CircleDollarSign, Clock, ListTree, MessageSquareText, MessagesSquare, Search, ThumbsUp, User } from "lucide-react";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
 import { TableCard } from "@/components/admin/TableCard";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { formatNumber } from "@/components/admin/TableFormatters";
+import { StatCard } from "@/components/admin/insights/StatCard";
+import { ChartCard } from "@/components/charts/ChartCard";
+import { KpiTrendCard } from "@/components/charts/KpiTrendCard";
+import { Waterfall, type WaterfallStep } from "@/components/charts/Waterfall";
+import { EntityLink } from "@/components/ui/EntityLink";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { SkeletonCard } from "@/components/ui/Skeleton";
+import { secondaryButton } from "@/components/ui/styles";
+import {
+  SectionCard,
+  ToneChip,
+  errorMessage,
+  formatDateTime,
+  formatDay,
+  formatMs,
+  formatUsd,
+  outcomeTone,
+  ratingTone,
+  useRangeParams,
+} from "@/components/admin/entity/shared";
+import { useAuth } from "@/lib/auth-context";
+import { useApiQuery } from "@/lib/query-cache";
+import { useDeepLinkParam } from "@/lib/use-deep-link";
+import { entityHref } from "@/lib/entity-links";
+import { conversationsHref, useCarryHref } from "@/lib/entity-routes";
+import {
+  getVisitor,
+  getVisitorTimeline,
+  isAbsent,
+  type TimelineQuery,
+  type VisitorConversation,
+} from "@/lib/entity-stats-api";
 
-type Message = {
-  id: string;
-  role: string;
-  content: string;
-  created_at?: string;
-  grounded?: boolean | null;
-  ip_address?: string | null;
-};
+const QueryInspectorDrawer = dynamic(
+  () => import("@/components/admin/usage/QueryInspectorDrawer").then((mod) => mod.QueryInspectorDrawer),
+  { ssr: false },
+);
 
-type Conversation = {
-  id: string;
-  title?: string;
-  created_at?: string;
-  last_activity_at?: string;
-  message_count?: number;
-};
+const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
+const HOUR_MS = 60 * 60 * 1000;
+const MAX_TIMELINE_SESSIONS = 20;
+const MIN_SESSION_HOURS = 0.05;
+const TITLE_CHARS = 16;
 
-type UserDetail = {
-  id: string;
-  ip_address?: string | null;
-  first_seen?: string | null;
-  last_active?: string | null;
-  status?: string;
-  sessions?: number;
-  conversations?: number;
-  queries?: number;
-  feedback_count?: number;
-  conversations_data?: Conversation[];
-};
+function formatHours(hours: number): string {
+  if (hours < 1) return `${Math.round(hours * 60)} min`;
+  if (hours < 48) return `${hours.toFixed(1)} h`;
+  return `${(hours / 24).toFixed(1)} d`;
+}
 
-export default function UserDetailPage() {
+interface TimelineBar {
+  sessionId: string;
+  title: string;
+  startedAt: number;
+  endedAt: number;
+}
+
+function VisitorDetailContent() {
   const router = useRouter();
-  const params = useParams();
-  const id = params.id as string;
-
+  const carry = useCarryHref();
+  const params = useParams<{ id: string }>();
+  const id = decodeURIComponent(params?.id ?? "");
   const { token } = useAuth();
-  const [user, setUser] = useState<UserDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const range = useRangeParams();
+  const [inspect, setInspect] = useDeepLinkParam("inspect");
 
-  // Conversations table state
   const [convSearch, setConvSearch] = useState("");
   const [convPage, setConvPage] = useState(1);
   const [convPageSize, setConvPageSize] = useState(10);
 
-  const filteredConversations = useMemo(() => {
-    if (!user?.conversations_data) return [];
-    if (!convSearch.trim()) return user.conversations_data;
-    const needle = convSearch.toLowerCase();
-    return user.conversations_data.filter(
-      (c) =>
-        (c.title || "").toLowerCase().includes(needle) ||
-        c.id.toLowerCase().includes(needle)
-    );
-  }, [user?.conversations_data, convSearch]);
+  const visitor = useApiQuery(token && id ? ["visitor", id] : null, (signal) => getVisitor(token ?? "", id, signal));
+  const timeline = useApiQuery(token && id ? ["visitor", id, "timeline", range.from, range.to] : null, (signal) =>
+    getVisitorTimeline(token ?? "", id, { from: range.from, to: range.to }, signal),
+  );
 
+  const user = visitor.data;
+  const tl = timeline.data ?? null;
+  const timelineAbsent = !timeline.isLoading && !timeline.error && tl === null;
+  const ip = user?.ip_address ?? tl?.ip_address ?? null;
+
+  const conversations = useMemo(() => user?.conversations_data ?? [], [user]);
+  const filteredConversations = useMemo(() => {
+    const needle = convSearch.trim().toLowerCase();
+    if (!needle) return conversations;
+    return conversations.filter((c) => (c.title || "").toLowerCase().includes(needle) || c.id.toLowerCase().includes(needle));
+  }, [conversations, convSearch]);
   const pagedConversations = useMemo(() => {
     const start = (convPage - 1) * convPageSize;
     return filteredConversations.slice(start, start + convPageSize);
   }, [filteredConversations, convPage, convPageSize]);
 
-  const convColumns: ColumnDef<Conversation>[] = [
+  // Sessions as bars on a time axis: B7.2 timeline when deployed, else the
+  // sessions the existing detail endpoint already returns.
+  const bars = useMemo<TimelineBar[]>(() => {
+    const source = tl
+      ? tl.sessions.map((s) => ({ sessionId: s.session_id, title: s.title ?? "", start: s.started_at, end: s.ended_at }))
+      : conversations.map((c) => ({
+          sessionId: c.id,
+          title: c.title ?? "",
+          start: c.created_at ?? "",
+          end: c.last_activity_at ?? c.created_at ?? "",
+        }));
+    return source
+      .map((s) => ({
+        sessionId: s.sessionId,
+        title: s.title || "Untitled",
+        startedAt: new Date(s.start).getTime(),
+        endedAt: new Date(s.end).getTime(),
+      }))
+      .filter((s) => Number.isFinite(s.startedAt))
+      .sort((a, b) => a.startedAt - b.startedAt)
+      .slice(-MAX_TIMELINE_SESSIONS);
+  }, [conversations, tl]);
+
+  const steps = useMemo<(WaterfallStep & { sessionId: string })[]>(() => {
+    if (bars.length === 0) return [];
+    const t0 = bars[0].startedAt;
+    return bars.map((b) => ({
+      sessionId: b.sessionId,
+      label: b.title.length > TITLE_CHARS ? `${b.title.slice(0, TITLE_CHARS - 1)}…` : b.title,
+      start: (b.startedAt - t0) / HOUR_MS,
+      value: Math.max(MIN_SESSION_HOURS, ((Number.isFinite(b.endedAt) ? b.endedAt : b.startedAt) - b.startedAt) / HOUR_MS),
+    }));
+  }, [bars]);
+
+  const costTrend = useMemo(
+    () => (tl?.cost_series ?? []).map((d) => ({ label: formatDay(d.day), value: d.cost_usd })),
+    [tl],
+  );
+  const totalCost = tl ? tl.cost_series.reduce((sum, d) => sum + d.cost_usd, 0) : null;
+
+  const convColumns: ColumnDef<VisitorConversation>[] = [
     {
       key: "title",
-      header: "Conversation Title & ID",
+      header: "Session",
       render: (c) => (
-        <div className="flex flex-col">
-          <span className="font-medium text-brand-600 dark:text-brand-400 hover:underline">
+        <div className="flex min-w-0 flex-col">
+          <EntityLink entity={{ kind: "conversation", id: c.id }} mono={false} copyable={false}>
             {c.title || "Untitled Conversation"}
-          </span>
-          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">{c.id}</span>
+          </EntityLink>
+          <span className="font-mono text-[10px] text-fg-subtle">{c.id}</span>
         </div>
       ),
     },
-    {
-      key: "created_at",
-      header: "Created",
-      render: (c) => (
-        <span className="text-xs text-slate-600 dark:text-slate-400">
-          {formatDate(c.created_at)}
-        </span>
-      ),
-    },
+    { key: "created_at", header: "Started", render: (c) => <span className="text-xs text-fg-muted">{formatDateTime(c.created_at)}</span> },
     {
       key: "last_activity_at",
       header: "Last Activity",
-      render: (c) => (
-        <span className="text-xs text-slate-600 dark:text-slate-400">
-          {formatDate(c.last_activity_at)}
-        </span>
-      ),
+      render: (c) => <span className="text-xs text-fg-muted">{formatDateTime(c.last_activity_at)}</span>,
     },
-    {
-      key: "message_count",
-      header: "Messages",
-      sortable: true,
-      align: "right",
-      render: (c) => formatNumber(c.message_count ?? 0),
-    },
+    { key: "message_count", header: "Messages", align: "right", render: (c) => formatNumber(c.message_count ?? 0) },
   ];
 
-  useEffect(() => {
-    if (!id || !token) return;
-    const authToken = token;
+  const queryColumns: ColumnDef<TimelineQuery>[] = [
+    {
+      key: "query",
+      header: "Query",
+      render: (q) => <span className="line-clamp-2 text-xs text-fg">{q.query}</span>,
+    },
+    {
+      key: "outcome",
+      header: "Outcome",
+      render: (q) => <ToneChip tone={outcomeTone(q.outcome)}>{q.outcome ?? "unknown"}</ToneChip>,
+    },
+    {
+      key: "turn",
+      header: "Turn",
+      render: (q) => (
+        <EntityLink entity={{ kind: "turn", id: String(q.turn_index), conversationId: q.session_id }} copyable={false}>
+          #{q.turn_index + 1}
+        </EntityLink>
+      ),
+    },
+    { key: "latency_ms", header: "Latency", align: "right", render: (q) => formatMs(q.latency_ms) },
+    { key: "cost_usd", header: "Cost", align: "right", render: (q) => formatUsd(q.cost_usd) },
+    { key: "created_at", header: "When", render: (q) => <span className="text-xs text-fg-subtle">{formatDateTime(q.created_at)}</span> },
+  ];
 
-    async function loadUser() {
-      try {
-        const data = await api.adminGet<UserDetail>(authToken, `/users/${id}`);
-        setUser(data);
-      } catch {
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadUser();
-  }, [id, token]);
-
-  if (loading) {
+  if (visitor.isLoading) {
     return (
-      <div className="p-8">
-        <p className="text-sm text-slate-500">
-          Loading user...
-        </p>
+      <div className="space-y-4 p-8" aria-busy="true">
+        <SkeletonCard label="Loading visitor" />
       </div>
     );
   }
 
   if (!user) {
+    const notFound = isAbsent(visitor.error);
     return (
-      <div className="p-8">
-        <Link
-          href="/admin/users"
-          className="text-sm font-medium text-purple-700 hover:text-purple-900"
-        >
-          ← Back to Users
-        </Link>
-
-        <div className="mt-8 rounded-xl border border-line bg-surface-card p-10 text-center">
-          <h1 className="text-lg font-semibold text-fg">
-            User not found
-          </h1>
-
-          <p className="mt-2 text-sm text-fg-subtle">
-            The requested user could not be found.
-          </p>
+      <div className="flex min-h-screen flex-col bg-surface-page text-fg">
+        <DashboardHeader
+          title="Visitor"
+          icon={User}
+          showAudienceTabs={false}
+          breadcrumb={[{ label: "Visitors", href: "/admin/users" }, { label: id || "Unknown" }]}
+        />
+        <div className="p-8">
+          {notFound ? (
+            <EmptyState
+              title="Visitor not found"
+              description="The requested visitor could not be found."
+              action={
+                <Link href={carry("/admin/users")} className={secondaryButton}>
+                  Back to Visitors
+                </Link>
+              }
+            />
+          ) : (
+            <ErrorState message={errorMessage(visitor.error, "Couldn't load this visitor.")} onRetry={() => void visitor.refetch()} />
+          )}
         </div>
       </div>
     );
   }
 
+  const label = ip || `Visitor ${user.id.slice(0, 8)}`;
+
   return (
-    <div className="p-8 min-h-screen bg-surface-page text-ink dark:text-slate-100">
-      <div className="mb-6">
-        <Link
-          href="/admin/users"
-          className="text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
+    <div className="flex min-h-screen flex-col bg-surface-page text-fg">
+      <DashboardHeader
+        title={label}
+        icon={User}
+        showAudienceTabs={false}
+        showDateRange
+        breadcrumb={[{ label: "Visitors", href: "/admin/users" }, { label }]}
+        actions={
+          ip ? (
+            <>
+              <Link href={carry(entityHref({ kind: "visitor", id: ip }))} className={secondaryButton}>
+                <ListTree {...ICON} />
+                View sessions
+              </Link>
+              <Link href={carry(conversationsHref({ ip }))} className={secondaryButton}>
+                <MessagesSquare {...ICON} />
+                Conversations
+              </Link>
+            </>
+          ) : undefined
+        }
+      />
+
+      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <StatCard title="Sessions" value={user.sessions ?? 0} icon={MessagesSquare} />
+          <StatCard title="Queries" value={user.queries ?? 0} icon={Search} />
+          <StatCard title="Feedback" value={user.feedback_count ?? 0} icon={ThumbsUp} />
+          <StatCard title="First seen" value={formatDateTime(user.first_seen)} subtitle={`Last active ${formatDateTime(user.last_active)}`} icon={Clock} />
+          <KpiTrendCard
+            label="Cost"
+            value={formatUsd(totalCost)}
+            trend={costTrend}
+            icon={CircleDollarSign}
+            hint={timelineAbsent ? "Per-visitor cost is not available yet" : (range.label ?? undefined)}
+          />
+        </div>
+
+        <ChartCard
+          title="Activity timeline"
+          subtitle="Sessions on a time axis; select a bar to open the conversation"
+          loading={timeline.isLoading && conversations.length === 0}
+          empty={steps.length === 0}
+          emptyMessage="No sessions for this visitor"
+          bodyClassName="w-full"
+          table={{
+            columns: [
+              { key: "title", label: "Session" },
+              { key: "start", label: "Started" },
+              { key: "duration", label: "Duration", numeric: true },
+            ],
+            rows: bars.map((b) => ({
+              title: <EntityLink entity={{ kind: "conversation", id: b.sessionId }} mono={false} copyable={false}>{b.title}</EntityLink>,
+              start: new Date(b.startedAt).toLocaleString(),
+              duration: formatHours(Math.max(0, b.endedAt - b.startedAt) / HOUR_MS),
+            })),
+          }}
         >
-          ← Back to Users
-        </Link>
-      </div>
+          <Waterfall
+            data={steps}
+            height={Math.max(120, steps.length * 28)}
+            label="Sessions over time"
+            formatValue={formatHours}
+            onSelect={(step) => {
+              const s = steps.find((x) => x === step);
+              if (s) router.push(carry(entityHref({ kind: "conversation", id: s.sessionId })));
+            }}
+          />
+        </ChartCard>
 
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-          {user.ip_address || `User ${user.id.slice(0, 8)}`}
-        </h1>
+        <TableCard
+          title="Sessions"
+          description="Conversations started from this visitor."
+          toolbar={
+            <TableToolbar
+              search={convSearch}
+              onSearchChange={(v) => {
+                setConvSearch(v);
+                setConvPage(1);
+              }}
+              searchPlaceholder="Search sessions…"
+            />
+          }
+          pagination={
+            <Pagination
+              page={convPage}
+              pageCount={Math.ceil(filteredConversations.length / convPageSize)}
+              totalItems={filteredConversations.length}
+              pageSize={convPageSize}
+              onPageChange={setConvPage}
+              onPageSizeChange={setConvPageSize}
+            />
+          }
+        >
+          <DataTable
+            columns={convColumns}
+            data={pagedConversations}
+            keyField="id"
+            onRowClick={(c) => router.push(carry(entityHref({ kind: "conversation", id: c.id })))}
+            emptyMessage="No sessions found for this visitor."
+          />
+        </TableCard>
 
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          User details and activity
-        </p>
-      </div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <SectionCard
+            title="Queries"
+            description="Most recent first; select one to open the query inspector."
+            className="xl:col-span-2"
+          >
+            {timeline.isLoading ? (
+              <SkeletonCard label="Loading queries" />
+            ) : timeline.error ? (
+              <ErrorState compact message={errorMessage(timeline.error, "Couldn't load queries.")} onRetry={() => void timeline.refetch()} />
+            ) : !tl ? (
+              <EmptyState compact icon={Search} title="Per-visitor queries are not available yet" />
+            ) : (
+              <DataTable
+                columns={queryColumns}
+                data={tl.queries}
+                keyField="request_id"
+                onRowClick={(q) => setInspect(q.request_id)}
+                emptyMessage="No queries in this range."
+              />
+            )}
+          </SectionCard>
 
-      {/* User information */}
-      <div className="mb-6 grid grid-cols-1 gap-5 md:grid-cols-3">
-        <InfoCard
-          label="IP Address"
-          value={user.ip_address || "—"}
-        />
-
-        <InfoCard
-          label="Status"
-          value={user.status || "Active"}
-        />
-
-        <InfoCard
-          label="First Seen"
-          value={formatDate(user.first_seen)}
-        />
-      </div>
-
-      {/* Activity statistics */}
-      <div className="mb-8 grid grid-cols-2 gap-5 lg:grid-cols-4">
-        <StatCard
-          label="Sessions"
-          value={user.sessions ?? 0}
-        />
-
-        <StatCard
-          label="Conversations"
-          value={user.conversations ?? 0}
-        />
-
-        <StatCard
-          label="Queries"
-          value={user.queries ?? 0}
-        />
-
-        <StatCard
-          label="Feedback"
-          value={user.feedback_count ?? 0}
-        />
-      </div>
-
-      {/* Last activity */}
-      <div className="mb-6 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-          Activity
-        </h2>
-
-        <div className="mt-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Last Active
-          </p>
-
-          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
-            {formatDate(user.last_active)}
-          </p>
+          <SectionCard title="Feedback" description="Ratings this visitor gave.">
+            {timeline.isLoading ? (
+              <SkeletonCard label="Loading feedback" />
+            ) : !tl ? (
+              <EmptyState compact icon={MessageSquareText} title="Per-visitor feedback is not available yet" />
+            ) : tl.feedback.length === 0 ? (
+              <EmptyState compact icon={MessageSquareText} title="No feedback in this range" />
+            ) : (
+              <ul className="space-y-3" aria-label="Visitor feedback">
+                {tl.feedback.map((f) => (
+                  <li key={f.id} className="rounded-lg border border-line p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ToneChip tone={ratingTone(f.rating)}>{f.rating} / 5</ToneChip>
+                      {f.reason_tags.map((t) => (
+                        <ToneChip key={t} tone="neutral">
+                          {t.replace(/_/g, " ")}
+                        </ToneChip>
+                      ))}
+                      <span className="ml-auto text-[11px] text-fg-subtle">{formatDateTime(f.created_at)}</span>
+                    </div>
+                    {f.comment ? <p className="mt-2 text-xs text-fg-muted">{f.comment}</p> : null}
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px]">
+                      <EntityLink entity={{ kind: "feedback", id: f.message_id }} mono={false} copyable={false}>
+                        Open in Feedback
+                      </EntityLink>
+                      {f.turn_index !== null ? (
+                        <EntityLink
+                          entity={{ kind: "turn", id: String(f.turn_index), conversationId: f.session_id }}
+                          mono={false}
+                          copyable={false}
+                        >
+                          View turn #{f.turn_index + 1}
+                        </EntityLink>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SectionCard>
         </div>
       </div>
 
-      {/* Conversations */}
-      <TableCard
-        title="Conversations"
-        description="Conversations associated with this client IP address."
-        toolbar={
-          <TableToolbar
-            search={convSearch}
-            onSearchChange={(v) => {
-              setConvSearch(v);
-              setConvPage(1);
-            }}
-            searchPlaceholder="Search conversations…"
-          />
-        }
-        pagination={
-          <Pagination
-            page={convPage}
-            pageCount={Math.ceil(filteredConversations.length / convPageSize)}
-            totalItems={filteredConversations.length}
-            pageSize={convPageSize}
-            onPageChange={setConvPage}
-            onPageSizeChange={setConvPageSize}
-          />
-        }
-      >
-        <DataTable
-          columns={convColumns}
-          data={pagedConversations}
-          keyField="id"
-          isLoading={false}
-          onRowClick={(c) => router.push(`/admin/conversations/${c.id}`)}
-          emptyMessage="No conversations found for this user."
-        />
-      </TableCard>
+      {inspect && token ? <QueryInspectorDrawer requestId={inspect} token={token} onClose={() => setInspect(null)} /> : null}
     </div>
   );
 }
 
-function InfoCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+export default function VisitorDetailPage() {
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-5 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-2 break-words text-sm font-medium text-slate-900 dark:text-white">
-        {value}
-      </p>
-    </div>
+    <React.Suspense fallback={<div className="p-8 text-xs text-fg-subtle">Loading visitor…</div>}>
+      <VisitorDetailContent />
+    </React.Suspense>
   );
-}
-
-function StatCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-5 shadow-sm">
-      <p className="text-sm text-slate-500 dark:text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-
-  return date.toLocaleString();
 }
