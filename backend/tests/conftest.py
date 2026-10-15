@@ -1,10 +1,11 @@
 """Global pytest fixtures for AskDIQ backend test suite."""
 
 import asyncio
+import contextlib
 import hashlib
 import os
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from functools import cache
 from unittest.mock import patch
 
@@ -28,7 +29,7 @@ from app.auth.deps import authenticate_session
 from app.auth.permissions import Role, UserStatus
 from app.auth.principal import AuthUser
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import get_db, get_session_factory
 from app.governance.auth import sanitize_client_id
 from main import app
 from tests.insights_fixture import (  # noqa: F401 - shared pytest fixtures
@@ -163,6 +164,22 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
                 await transaction.rollback()
 
 
+def shared_session_factory(
+    session: AsyncSession,
+) -> Callable[[], contextlib.AbstractAsyncContextManager[AsyncSession]]:
+    """A ``gather_scoped`` session factory that hands out the test's
+    transactional session, one task at a time (an AsyncSession is not
+    concurrency-safe), so parallel aggregates see uncommitted test data."""
+    lock = asyncio.Lock()
+
+    @contextlib.asynccontextmanager
+    async def _factory() -> AsyncIterator[AsyncSession]:
+        async with lock:
+            yield session
+
+    return _factory
+
+
 @pytest.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Test client with database dependency override and valid default auth."""
@@ -171,6 +188,9 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_factory] = lambda: shared_session_factory(
+        db_session
+    )
     transport = ASGITransport(app=app)
     async with AsyncClient(
         transport=transport,

@@ -98,7 +98,10 @@ async def submit_feedback(
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_role_or_chat),
 ) -> UserFeedbackResponse:
-    """Submit or update satisfaction rating and optional comment for an assistant turn (Subtask 1.3.2)."""
+    """Submit or update a rating for an assistant turn; one row per (message, user).
+
+    Optional ``reason_tags`` (allow-listed) and ``corrected_answer`` (max 4,000
+    characters, PII-masked before storage) feed the RLHF review queue."""
     client_ip = get_client_ip(request)
     await aenforce_feedback_rate_limit(user.email, client_ip, limit=30)
     req_id = getattr(request.state, "request_id", None)
@@ -112,4 +115,6 @@ async def submit_feedback(
         comment=body.comment,
         client_ip=client_ip,
         request_id=req_id,
+        reason_tags=[t.value for t in body.reason_tags],
+        corrected_answer=body.corrected_answer,
     )

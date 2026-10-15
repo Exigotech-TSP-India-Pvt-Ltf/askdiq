@@ -17,12 +17,19 @@ import uuid
 from collections import deque
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.core.quota import quota_monitor
 from app.evaluation.judge import judge_answer
 from app.evaluation.quality import SECRET_PATTERNS, pii_leaked
-from app.models.db_models import AuditLog, EvaluationRecord
+from app.models.db_models import (
+    AuditLog,
+    ChatMessageRecord,
+    ChatSession,
+    EvaluationRecord,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +135,24 @@ class OnlineQualityTracker:
 quality_tracker = OnlineQualityTracker()
 
 
+async def _existing_fk_ids(
+    session: AsyncSession, message_id: str | None, session_id: str | None
+) -> tuple[uuid.UUID | None, uuid.UUID | None]:
+    """FK ids that exist right now; a missing parent row is stored as NULL.
+
+    The exchange is written in the background, so a failed write must not
+    turn into an FK violation (and a lost evaluation) here.
+    """
+    msg_uuid = uuid.UUID(message_id) if message_id else None
+    sess_uuid = uuid.UUID(session_id) if session_id else None
+    if msg_uuid is not None and await session.get(ChatMessageRecord, msg_uuid) is None:
+        logger.warning("online_eval_message_missing message_id=%s", msg_uuid)
+        msg_uuid = None
+    if sess_uuid is not None and await session.get(ChatSession, sess_uuid) is None:
+        sess_uuid = None
+    return msg_uuid, sess_uuid
+
+
 async def _run_evaluation_task(
     request_id: str,
     query: str,
@@ -144,6 +169,7 @@ async def _run_evaluation_task(
     latency_ms: float | None = None,
     audience: str = "users",
     force_llm_judge: bool = False,
+    after: asyncio.Future | None = None,
 ) -> None:
     async with _eval_semaphore:
         settings = get_settings()
@@ -250,12 +276,16 @@ async def _run_evaluation_task(
         # Record rolling tracker metrics
         quality_tracker.record(unique_flags, faithfulness=faithfulness_score)
 
-        # 5. Persist EvaluationRecord into PostgreSQL
+        # 5. Persist EvaluationRecord into PostgreSQL — only after the
+        # exchange write has committed (its message row is the FK target).
+        if after is not None:
+            await asyncio.wait({after})
         try:
             async with AsyncSessionLocal() as session:
                 rec_id = uuid.uuid4()
-                msg_uuid = uuid.UUID(message_id) if message_id else None
-                sess_uuid = uuid.UUID(session_id) if session_id else None
+                msg_uuid, sess_uuid = await _existing_fk_ids(
+                    session, message_id, session_id
+                )
 
                 eval_record = EvaluationRecord(
                     id=rec_id,
@@ -334,8 +364,13 @@ def schedule_online_evaluation(
     latency_ms: float | None = None,
     audience: str = "users",
     force: bool = False,
+    after: asyncio.Future | None = None,
 ) -> None:
-    """Schedule asynchronous quality evaluation of an exchange with database persistence."""
+    """Schedule asynchronous quality evaluation of an exchange with database persistence.
+
+    ``after``: the background exchange write; the record is persisted only
+    once it has finished, so ``message_id`` never points at an uncommitted row.
+    """
     context_chunks: list[str] = []
     raw_sources: list[dict] = []
 
@@ -391,6 +426,7 @@ def schedule_online_evaluation(
             latency_ms=latency_ms,
             audience=audience,
             force_llm_judge=force,
+            after=after,
         )
     )
     _background_tasks.add(task)

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.core.logging_config import get_logger
+from app.feedback import repository as feedback_repo
 from app.governance.audit import record_audit_event
 from app.governance.costing import compute_exchange_cost
 from app.governance.outcomes import derive_outcome
@@ -46,6 +47,13 @@ logger = get_logger(__name__)
 
 # user_email -> in-flight background exchange writes (see schedule_exchange_write).
 _pending_writes: dict[str, set[asyncio.Task]] = defaultdict(set)
+# assistant_message_id -> its in-flight exchange write (online eval waits on it).
+_writes_by_message: dict[str, asyncio.Task] = {}
+
+
+def exchange_write_task(assistant_message_id: str) -> asyncio.Task | None:
+    """The background write that will create ``assistant_message_id``, if pending."""
+    return _writes_by_message.get(assistant_message_id)
 
 
 async def drain_pending_writes(user_email: str) -> None:
@@ -362,6 +370,9 @@ def schedule_exchange_write(
     )
     _pending_writes[user_email].add(task)
     task.add_done_callback(lambda t: _forget_write(user_email, t))
+    message_key = str(assistant_message_id)
+    _writes_by_message[message_key] = task
+    task.add_done_callback(lambda _t: _writes_by_message.pop(message_key, None))
 
     return str(user_message_id), str(assistant_message_id), title
 
@@ -516,6 +527,8 @@ async def record_feedback(
     comment: str | None = None,
     client_ip: str | None = None,
     request_id: str | None = None,
+    reason_tags: list[str] | None = None,
+    corrected_answer: str | None = None,
 ) -> UserFeedbackResponse:
     """Upsert feedback for an assistant message and record an audit event (Subtasks 1.3.2 & 1.3.3)."""
     session = await _get_owned_session(db, session_id, actor)
@@ -539,34 +552,25 @@ async def record_feedback(
             detail="Assistant message not found in this session",
         )
 
-    # Check for existing feedback by this actor on this message
-    existing = await db.scalar(
-        select(MessageFeedback).where(
-            MessageFeedback.message_id == mid,
-            MessageFeedback.actor == actor,
-        )
-    )
-
     now = datetime.utcnow()
     clean_comment = comment.strip() if comment else None
     redacted_comment = redact_pii(clean_comment)[0] if clean_comment else None
+    tags = [str(t) for t in (reason_tags or [])]
+    # The "better answer" becomes training data: mask PII before it is stored.
+    masked_answer = redact_pii(corrected_answer)[0] if corrected_answer else None
 
-    if existing is not None:
-        existing.rating = rating
-        existing.comment = clean_comment
-        existing.updated_at = now
-        feedback_obj = existing
-    else:
-        feedback_obj = MessageFeedback(
-            message_id=mid,
-            session_id=session.id,
-            actor=actor,
-            rating=rating,
-            comment=clean_comment,
-            created_at=now,
-            updated_at=now,
-        )
-        db.add(feedback_obj)
+    # Atomic upsert on (message_id, actor): a resubmission updates the row.
+    feedback_row = await feedback_repo.upsert_chat_feedback(
+        db,
+        message_id=mid,
+        session_id=session.id,
+        actor=actor,
+        rating=rating,
+        comment=clean_comment,
+        reason_tags=tags,
+        corrected_answer=masked_answer,
+        now=now,
+    )
 
     # Append audit event with expected keys
     req_id = request_id or f"feedback-{uuid.uuid4().hex[:12]}"
@@ -586,6 +590,8 @@ async def record_feedback(
         detail={
             "rating": rating,
             "comment": redacted_comment,
+            "reason_tags": tags,
+            "has_corrected_answer": masked_answer is not None,
             "conversation_id": str(session.id),
             "message_id": str(mid),
         },
@@ -643,13 +649,15 @@ async def record_feedback(
             )
 
     await db.commit()
-    await db.refresh(feedback_obj)
 
     return UserFeedbackResponse(
-        message_id=str(feedback_obj.message_id),
-        session_id=str(feedback_obj.session_id),
-        rating=feedback_obj.rating,
-        comment=feedback_obj.comment,
-        created_at=feedback_obj.created_at,
-        updated_at=feedback_obj.updated_at,
+        message_id=str(feedback_row.message_id),
+        session_id=str(feedback_row.session_id),
+        rating=feedback_row.rating,
+        comment=feedback_row.comment,
+        reason_tags=list(feedback_row.reason_tags or []),
+        corrected_answer=feedback_row.corrected_answer,
+        triage_status=feedback_row.triage_status,
+        created_at=feedback_row.created_at,
+        updated_at=feedback_row.updated_at,
     )

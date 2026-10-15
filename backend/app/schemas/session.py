@@ -3,6 +3,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.feedback import (
+    MAX_CORRECTED_ANSWER_CHARS,
+    ReasonTag,
+    strip_control_chars,
+)
+
 
 class ChatMessageOut(BaseModel):
     id: str
@@ -53,6 +59,26 @@ class UserFeedbackRequest(BaseModel):
         max_length=1000,
         description="Optional user comment (max 1000 chars)",
     )
+    reason_tags: list[ReasonTag] = Field(
+        default_factory=list,
+        max_length=len(ReasonTag),
+        description="Allow-listed reasons (thumbs-down chips).",
+    )
+    corrected_answer: str | None = Field(
+        default=None,
+        max_length=MAX_CORRECTED_ANSWER_CHARS,
+        description="What the answer should have said (PII-masked before storage).",
+    )
+
+    @field_validator("reason_tags", mode="after")
+    @classmethod
+    def dedupe_tags(cls, v: list[ReasonTag]) -> list[ReasonTag]:
+        return list(dict.fromkeys(v))
+
+    @field_validator("corrected_answer", mode="after")
+    @classmethod
+    def sanitize_corrected_answer(cls, v: str | None) -> str | None:
+        return strip_control_chars(v)
 
     @field_validator("comment", mode="after")
     @classmethod
@@ -71,5 +97,8 @@ class UserFeedbackResponse(BaseModel):
     session_id: str
     rating: int
     comment: str | None = None
+    reason_tags: list[str] = Field(default_factory=list)
+    corrected_answer: str | None = None
+    triage_status: str = "new"
     created_at: datetime
     updated_at: datetime
