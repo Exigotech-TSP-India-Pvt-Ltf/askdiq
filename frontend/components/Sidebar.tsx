@@ -90,7 +90,7 @@ const PLANNED_ITEMS: NavItem[] = [
     label: "Settings",
     icon: Settings2,
     permission: "branding:write",
-    keywords: ["branding", "taxonomy"],
+    keywords: ["branding", "taxonomy", "white-label"],
   },
 ];
 

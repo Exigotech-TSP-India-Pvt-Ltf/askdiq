@@ -171,8 +171,8 @@ describe("CommandCenter shortcuts (F0.6.4)", () => {
   it("offers only enabled sidebar pages (pre-registered pages stay hidden)", () => {
     const hrefs = PALETTE_PAGES.map((p) => p.href);
     expect(hrefs).toContain("/admin/governance");
-    expect(hrefs).not.toContain("/admin/analytics");
-    expect(hrefs).not.toContain("/admin/settings");
+    expect(hrefs).toContain("/admin/analytics"); // live since PR-25
+    expect(hrefs).toContain("/admin/settings"); // live since PR-26
     // Enabled by PR-18, but only for roles with users:manage.
     expect(PALETTE_PAGES.find((p) => p.href === "/admin/user-management")?.permission).toBe("users:manage");
   });

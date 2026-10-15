@@ -61,6 +61,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | Access Required (any dashboard route, pending / rejected) (PR-18) | Pass | Pass | Pass | Card on `bg-surface-card`; stepper dots `brand-600` / `surface-card` / `status-danger-*`; rail `bg-line`; form fields `border-line bg-surface-card text-fg` | [ ] |
 | `/suspended` and suspended gate (PR-18) | Pass | Pass | Pass | Same layout as `BrandedStatusPage`; icon on `status-danger-bg` | [ ] |
 | `/admin/user-management` (Users, Access Requests, Roles & Permissions, Audit Trail tabs) (PR-19) | Pass | Pass | Pass | KPI cards and charts on `bg-surface-card` with `chartTheme` marks (bar, funnel, donut, histogram recolour on toggle, journey-tested); pending KPI `status-warn-bg` highlight; role / status / event chips on `status-*-bg` + `status-*-fg` and brand tints with `dark:` pairs | [ ] |
+| `/admin/settings` (Branding, Insights Taxonomy tabs) (PR-26) | Pass | Pass | Pass | Cards `bg-surface-card` + `border-line`; inputs, badges and table on tokens; superadmin only | [ ] |
 
 ## Shared components
 
@@ -130,6 +131,11 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `admin/feedback/FeedbackDrawer` (PR-24) | Pass | Pass | Pass | `DrawerShell` tokens; meta tiles `surface-muted`; flags `status-warn-bg` |
 | `admin/feedback` Golden job chip, Preference pair flags (PR-24) | Pass | Pass | Pass | Chips on `status-info` / `status-ok` / `status-danger` / `status-warn` bg+fg tokens |
 | `chat/FeedbackReasonPanel` (PR-24) | Pass | Pass | Pass | Panel `surface-card` + `border-line`; selected chip `brand-50` / `dark:brand-950/60`; `pop` preset |
+| `settings/BrandPreview` (PR-26) | Pass | Pass | Pass | Light and dark panes side by side, each pinned to its theme with inline semantic + draft `--brand-*` variables (independent of the page theme); `BrandLogo forceTheme` |
+| `settings/ColorField`, `ContrastBadge` (PR-26) | Pass | Pass | Pass | Badge `status-ok-bg`/`status-ok-fg` or `status-danger-*`; swatches render the chosen colour (data, not tokens) |
+| `settings/AssetDropzone` (PR-26) | Pass | Pass | Pass | Dashed `border-line-strong`, hover lift + brand border; dark artwork previewed on `bg-surface-inverse` |
+| `settings/TaxonomyTab` table and add form (PR-26) | Pass | Pass | Pass | `surface-muted` header, archived rows at 60 % opacity, status pills on `status-*` tokens |
+| `brand/BrandLogo` live update (PR-26) | Pass | Pass | Pass | Saving branding re-renders logos and rewrites every `--brand-*` variable without a reload |
 
 ## Known follow-ups (not theme-breaking)
 

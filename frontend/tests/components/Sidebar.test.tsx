@@ -91,18 +91,19 @@ describe("Sidebar nav registry, icons and active indicator (PR-17)", () => {
   // The collapse test above stores "collapsed"; start each case expanded.
   beforeEach(() => window.localStorage.clear());
 
-  it("pre-registers Analytics and Settings but does not render them yet; User Management is live (PR-18)", () => {
+  it("registers every page enabled in the combined preview, role-filtered (PR-18)", () => {
     signInAs("superadmin");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 })));
     render(<Sidebar />);
-    const planned = NAV_ITEMS.filter((item) => !isNavItemEnabled(item)).map((item) => item.label);
-    expect(planned).toEqual(["Analytics", "Settings"]);
-    for (const label of planned) expect(screen.queryByText(label)).not.toBeInTheDocument();
+    expect(NAV_ITEMS.filter((item) => !isNavItemEnabled(item))).toEqual([]);
+    expect(NAV_ITEMS.map((item) => item.href)).not.toContain("/admin/evaluation");
     const um = NAV_ITEMS.find((item) => item.label === "User Management");
     expect(um?.badgeKey).toBe("pendingAccess");
     expect(um?.permission).toBe("users:manage");
     expect(NAV_ITEMS.find((item) => item.label === "Settings")?.permission).toBe("branding:write");
     expect(screen.getByRole("link", { name: /user management/i })).toHaveAttribute("href", "/admin/user-management");
+    expect(screen.getByRole("link", { name: /^analytics$/i })).toHaveAttribute("href", "/admin/analytics");
+    expect(screen.getByRole("link", { name: /^settings$/i })).toHaveAttribute("href", "/admin/settings");
   });
 
   it("marks only the current page active, with the layoutId indicator and 18px / 1.75 icons", () => {
@@ -148,7 +149,7 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
 
     // Shift+Tab from the first control wraps to the last link inside the drawer.
     await user.tab({ shift: true });
-    expect(within(drawer).getByRole("link", { name: /user management/i })).toHaveFocus();
+    expect(within(drawer).getByRole("link", { name: /^settings$/i })).toHaveFocus();
     await user.tab();
     expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus();
 
