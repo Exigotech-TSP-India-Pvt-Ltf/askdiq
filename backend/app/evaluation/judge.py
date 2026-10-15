@@ -29,6 +29,7 @@ from functools import lru_cache
 
 from openai import AsyncAzureOpenAI
 
+from app.core.circuit import get_llm_breaker
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,7 @@ def _client_for(deployment: str) -> AsyncAzureOpenAI:
         api_version=settings.azure_openai_api_version,
         azure_deployment=deployment,
         timeout=settings.azure_openai_request_timeout,
+        max_retries=settings.azure_openai_max_retries,
     )
 
 
@@ -187,7 +189,8 @@ async def _judge(
             kwargs = dict(common)
             if use_json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
-            response = await client.chat.completions.create(**kwargs)
+            async with get_llm_breaker().guard():
+                response = await client.chat.completions.create(**kwargs)
         except Exception as exc:
             logger.warning(
                 "judge_call_failed json_mode=%s error_type=%s error=%s",

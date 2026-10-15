@@ -8,6 +8,7 @@ validate output -> post-guardrails -> structured response.
 
 import time
 
+from app.core.circuit import CircuitOpenError
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.evaluation.quality import injection_in_chunks
@@ -336,6 +337,9 @@ async def run_query(
                 type(exc).__name__,
                 exc,
             )
+            if isinstance(exc, CircuitOpenError):
+                # Breaker is open: retrying now would fail fast again.
+                break
             continue
 
         if not answer.strip():

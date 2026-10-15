@@ -185,6 +185,39 @@ class Settings(BaseSettings):
     # can each use their own database.
     test_db_suffix: str = ""
 
+    # --- Platform: security & resilience (PR-03) ---
+    # /docs, /redoc and /openapi.json are disabled when ENV=production unless
+    # this is explicitly turned on.
+    enable_api_docs: bool = False
+    # Response security headers (newplan section 12.2). HSTS is only sent when
+    # ENV=production, since TLS terminates at nginx there.
+    security_csp: str = "default-src 'none'; frame-ancestors 'none'"
+    security_hsts: str = "max-age=63072000; includeSubDomains"
+    security_referrer_policy: str = "strict-origin-when-cross-origin"
+    security_permissions_policy: str = "camera=(), microphone=(), geolocation=()"
+    security_coop: str = "same-origin"
+    security_frame_options: str = "DENY"
+    # Explicit CORS allow-lists (no wildcards).
+    cors_allow_headers: list[str] = [
+        "Content-Type",
+        "X-API-Key",
+        "X-Request-ID",
+        "X-Client-Id",
+        "If-None-Match",
+    ]
+    cors_allow_methods: list[str] = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]
+    # Default timeout (seconds) for outbound HTTP clients without a dedicated
+    # setting (embeddings, httpx). Chat-completion clients keep
+    # AZURE_OPENAI_REQUEST_TIMEOUT as their LLM-specific timeout.
+    outbound_timeout_seconds: float = 30.0
+    # LLM circuit breaker: opens after N transient failures inside the window,
+    # then lets a single half-open probe through after the reset timeout.
+    llm_breaker_failure_threshold: int = 5
+    llm_breaker_window_seconds: float = 60.0
+    llm_breaker_reset_seconds: float = 30.0
+    # Max seconds lifespan shutdown waits for supervised background tasks.
+    task_drain_timeout_seconds: float = 10.0
+
 
 @lru_cache
 def get_settings() -> Settings:

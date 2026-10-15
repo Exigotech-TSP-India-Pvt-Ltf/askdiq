@@ -6,7 +6,6 @@ that other layers (retrieval, harness, guardrails) can write into via
 so `/metrics/latency` can compute P50/P70/P100 later.
 """
 
-import asyncio
 import time
 import uuid
 from http import HTTPStatus
@@ -21,14 +20,13 @@ from app.core.logging_config import (
     get_logger,
 )
 from app.core.request_meta import get_client_ip
+from app.core.tasks import spawn
+from app.governance.pii import redact_pii
 from app.models.db_models import LatencyRecord
 from app.retrieval.embeddings import embedding_timing_sink
 from app.retrieval.reranker import rerank_timing_sink
 
 logger = get_logger(__name__)
-
-# Strong refs so fire-and-forget persist tasks aren't garbage collected mid-flight.
-_background_tasks: set[asyncio.Task] = set()
 
 # Process-local counters feeding the governance monitoring dashboard.
 METRICS = {"requests": 0, "errors": 0, "active_queries": 0}
@@ -73,7 +71,7 @@ class LatencyMiddleware(BaseHTTPMiddleware):
                 path=request.url.path,
                 latency_ms=round(total_ms, 2),
                 error_type=type(exc).__name__,
-                error=str(exc),
+                error=redact_pii(str(exc))[0],
             )
             raise
         finally:
@@ -104,15 +102,15 @@ class LatencyMiddleware(BaseHTTPMiddleware):
         # Only persist for the query endpoint — that's the one the latency
         # target and P50/P70/P100 requirement actually apply to.
         if request.url.path == "/query" and request.method == "POST":
-            task = asyncio.create_task(
+            # Supervised: strong ref, failures logged, drained on shutdown.
+            spawn(
                 self._persist(
                     request.state.request_id,
                     dict(request.state.stage_timings),
                     total_ms,
-                )
+                ),
+                name="latency_persist",
             )
-            _background_tasks.add(task)
-            task.add_done_callback(_background_tasks.discard)
 
         return response
 
