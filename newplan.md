@@ -953,6 +953,27 @@ Reviewed as a senior product designer against the logo theme, sections 1 to 8, a
 - **Typography:** keep the `text-sm font-bold` titles from planchanges3. Numbers use `tabular-nums`, so count-up animations don't jitter.
 - **Logo:** `BrandLogo` (section 14) plus the 1.7 to 1.10 fixes. The dark variant is generated from the artwork with a white wordmark and lifted teal (`brand-400`), with contrast checked against `dark-bg`.
 
+### 15.2a Light and dark theme parity audit (rev 3.2)
+
+**Reported bug:** after you switch between light and dark, parts of the dashboard don't follow the new theme. Causes found in the code:
+
+| # | Cause | Evidence | Fix |
+|---|---|---|---|
+| T1 | Charts use fixed hex colours | 50 `stroke=`/`fill=`/`color:` hex values in chart props, across 21 `.tsx` files with hex colours | Charts read colours from `chartTheme` through a `useChartTheme()` hook that re-renders when the theme changes (it observes the `dark` class) |
+| T2 | Surfaces without a dark variant | `bg-white` with no `dark:` class in `admin/conversations/[id]/page.tsx`, `governance/monitoring/MonitoringView.tsx`, `app/page.tsx` and `components/admin/insights/OutcomePillBar.tsx`, plus `text-gray-*` in `conversations/[id]` | Replace with surface and text tokens (`bg-surface`, `text-fg` and so on, defined in light and dark) |
+| T3 | Wrong theme flashes on load | `ThemeProvider` applies the `dark` class in a `useEffect`, after the first paint | Add an inline pre-paint script in `app/layout.tsx` `<head>` (with a CSP nonce) that sets the class from storage or the OS setting before paint, plus `suppressHydrationWarning` |
+| T4 | Tabs drift apart | No `storage` event listener | Sync the theme across tabs, and add a **System** mode that follows the OS setting live (`matchMedia` change event) |
+| T5 | The logo doesn't adapt | Single logo asset, `dark:brightness-110` only | `BrandLogo` light and dark variants (F0.3.4) |
+| T6 | Status colours lack contrast in dark mode | Amber `#B7791F` and red `#C0362C` on dark surfaces | Separate dark tokens (lifted amber and red), with AA contrast checked |
+
+**Acceptance (every page and component, in both themes):**
+- Text and icon contrast meets WCAG AA (4.5:1 for body text, 3:1 for large text and icons).
+- Brand colours match the logo: teal `#008080`, dark teal `#00584F`, tint `#EAF6F5` in light mode, and the lifted teal ramp in dark mode.
+- Every chart series, axis, grid, tooltip and legend changes **instantly** on toggle, with no reload.
+- Light to dark to light leaves no stuck styles.
+- No flash of the wrong theme on load.
+- A lint guard blocks new hex colours and new `bg-white`/`text-gray-*` classes without a `dark:` variant outside `lib/theme-tokens.ts`.
+
 ### 15.3 Motion
 
 "Claude motion" in your request is read as the **Motion** library already chosen in section 8. Additions:

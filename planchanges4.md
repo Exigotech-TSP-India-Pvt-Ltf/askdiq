@@ -1075,6 +1075,7 @@ Supply the backend data for every new chart in newplan §15.4 and the deep-link 
 - **Charts:** use `chartTheme` tokens. Hovering one series dims the others to 35 %. Each chart has a "View as table" fallback and works in light and dark.
 - **Motion:** use presets only, under 300 ms, with `reducedMotion="user"` and no per-row animation above 50 rows.
 - **Acceptance:** screenshots in light and dark at 1366 px and 1920 px, and keyboard-only navigation, for every touched page.
+- **Theme parity (newplan §15.2a):** every component a PR adds or touches must switch light to dark and back instantly, use only tokens, match the logo's teal palette in both themes, and pass AA contrast. The PR adds its rows to `frontend/docs/theme-audit.md`.
 
 ---
 
@@ -1160,6 +1161,22 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
   - `BrandLogo` renders the right source per theme with the size classes.
   - A unit test proves that the dark variant contrast against `dark-bg` is at least 3:1.
   - A manual screenshot shows the logo at least 160 px wide in the expanded sidebar.
+
+##### Subtask F0.3.5: Light and dark theme parity audit and fix (newplan §15.2a, T1 to T6)
+- [ ] **[Dev]**
+  - **Inventory.** Write `frontend/docs/theme-audit.md` listing every page and every shared component, with a light result, a dark result and a toggle result for each.
+  - **Fixes:**
+    - T1: add a `useChartTheme()` hook and move all 50 chart hex values onto it.
+    - T2: replace the un-themed `bg-white` and `text-gray-*` with tokens.
+    - T3: add a pre-paint theme script (with a CSP nonce).
+    - T4: add the System mode and cross-tab sync.
+    - T6: add dark status tokens.
+  - **Guard.** Add an ESLint `no-restricted-syntax` rule (or a vitest grep) that fails on new hex colours or `bg-white`/`text-gray-*` without `dark:` outside `lib/theme-tokens.ts`.
+- [ ] **[Lint]** Run LINT-FE. The guard runs in CI and is clean.
+- [ ] **[Test]**
+  - `tests/lib/theme.test.tsx`: the toggle flips the `dark` class, re-renders chart colours through `useChartTheme`, syncs through the storage event, and System mode follows `matchMedia`.
+  - A contrast unit test checks every text and status token pair in both themes (AA).
+  - Light and dark screenshots of every page are attached to the PR, and each row of the audit table is ticked.
 
 ---
 
