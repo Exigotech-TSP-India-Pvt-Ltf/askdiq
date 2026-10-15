@@ -22,7 +22,7 @@ from app.core import database
 from app.core.config import get_settings
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncEngine
+    from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
@@ -89,15 +89,42 @@ async def enqueue(
     engine: AsyncEngine | None = None,
 ) -> uuid.UUID | None:
     """Queue a job; returns its id, or None when ``dedupe_key`` is already pending."""
-    params = {
+    params = _enqueue_params(job_type, payload, dedupe_key, run_after, max_attempts)
+    async with _engine(engine).begin() as conn:
+        return await conn.scalar(_ENQUEUE_SQL, params)
+
+
+async def enqueue_in(
+    executor: AsyncSession | AsyncConnection,
+    job_type: str,
+    payload: dict[str, Any] | None = None,
+    dedupe_key: str | None = None,
+    run_after: datetime | None = None,
+    max_attempts: int | None = None,
+) -> uuid.UUID | None:
+    """Queue a job inside the caller's transaction (transactional outbox).
+
+    The job becomes visible only if the caller commits, so it exists exactly
+    when the rows it refers to do.
+    """
+    params = _enqueue_params(job_type, payload, dedupe_key, run_after, max_attempts)
+    return await executor.scalar(_ENQUEUE_SQL, params)
+
+
+def _enqueue_params(
+    job_type: str,
+    payload: dict[str, Any] | None,
+    dedupe_key: str | None,
+    run_after: datetime | None,
+    max_attempts: int | None,
+) -> dict[str, Any]:
+    return {
         "type": job_type,
         "payload": json.dumps(payload or {}),
         "dedupe_key": dedupe_key,
         "run_after": run_after or utcnow(),
         "max_attempts": max_attempts or get_settings().jobs_max_attempts,
     }
-    async with _engine(engine).begin() as conn:
-        return await conn.scalar(_ENQUEUE_SQL, params)
 
 
 _CLAIM_SQL = text(
