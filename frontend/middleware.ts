@@ -69,8 +69,7 @@ export const config = {
     {
       // Pages only: not API / auth route handlers, the dev mock IdP, public
       // brand assets (logos on /login, PR-26), Next internals or static files.
-      source:
-        "/((?!api/|auth/callback|auth/login|mock-idp/|branding/assets/|_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest|woff2?)$).*)",
+      source: "/((?!api/|auth/callback|auth/login|mock-idp/|branding/assets/|_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest|woff2?)$).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
