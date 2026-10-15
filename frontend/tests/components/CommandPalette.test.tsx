@@ -8,6 +8,9 @@ import { MotionProvider } from "@/components/providers/MotionProvider";
 import { CommandPalette, SEARCH_DEBOUNCE_MS, type PaletteItem } from "@/components/ui/CommandPalette";
 import { CommandCenter, PALETTE_PAGES } from "@/components/shell/CommandCenter";
 import { isTypingTarget } from "@/lib/shortcuts";
+import { AuthProvider } from "@/lib/auth-context";
+import type { Role } from "@/lib/permissions";
+import { makeMe } from "../helpers/auth";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -113,16 +116,18 @@ describe("CommandPalette (F0.6.4)", () => {
 });
 
 describe("CommandCenter shortcuts (F0.6.4)", () => {
-  function renderCenter() {
+  function renderCenter(role: Role = "admin") {
     render(
-      <MotionProvider>
-        <CommandCenter>
-          <label>
-            Search table
-            <input />
-          </label>
-        </CommandCenter>
-      </MotionProvider>,
+      <AuthProvider initialMe={makeMe(role)}>
+        <MotionProvider>
+          <CommandCenter>
+            <label>
+              Search table
+              <input />
+            </label>
+          </CommandCenter>
+        </MotionProvider>
+      </AuthProvider>,
     );
   }
 
@@ -167,8 +172,25 @@ describe("CommandCenter shortcuts (F0.6.4)", () => {
     const hrefs = PALETTE_PAGES.map((p) => p.href);
     expect(hrefs).toContain("/admin/governance");
     expect(hrefs).not.toContain("/admin/analytics");
-    expect(hrefs).not.toContain("/admin/user-management");
     expect(hrefs).not.toContain("/admin/settings");
+    // Enabled by PR-18, but only for roles with users:manage.
+    expect(PALETTE_PAGES.find((p) => p.href === "/admin/user-management")?.permission).toBe("users:manage");
+  });
+
+  it("filters palette pages by the signed-in role's permissions (PR-18)", async () => {
+    renderCenter("admin");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = await screen.findByRole("combobox");
+    fireEvent.change(input, { target: { value: "user management" } });
+    expect(screen.queryByRole("option", { name: /user management/i })).not.toBeInTheDocument();
+  });
+
+  it("shows User Management in the palette for a superadmin (PR-18)", async () => {
+    renderCenter("superadmin");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = await screen.findByRole("combobox");
+    fireEvent.change(input, { target: { value: "user management" } });
+    expect(await screen.findByRole("option", { name: /user management/i })).toBeInTheDocument();
   });
 
   it("isTypingTarget treats text fields as typing and buttons / checkboxes as not", () => {

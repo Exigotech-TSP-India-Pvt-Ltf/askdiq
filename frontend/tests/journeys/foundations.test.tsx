@@ -70,6 +70,10 @@ vi.mock("@/lib/auth-context", () => ({
     user: { id: "u1", full_name: "Jane Doe", email: "jane@contoso.example", created_at: "" },
     isLoading: false,
     logout: vi.fn(),
+    role: "admin",
+    status: "active",
+    // Admin role (PR-18 filters nav and palette items by permission).
+    permissions: ["dashboard:read", "documents:write", "feedback:triage", "eval:run"],
   }),
 }));
 

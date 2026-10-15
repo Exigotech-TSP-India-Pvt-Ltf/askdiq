@@ -33,11 +33,15 @@ import { useMobileNav } from "@/lib/mobile-nav-context";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { readStorage, writeStorage } from "@/lib/storage";
 import { focusRing, iconButton, overlayBackdrop } from "@/components/ui/styles";
+import { RoleBadge } from "@/components/shell/RoleBadge";
+import { hasPermission, type Permission } from "@/lib/permissions";
+import { usePendingAccessCount } from "@/lib/use-shell-notifications";
+import { pop } from "@/lib/motion";
 
 const COLLAPSED_STORAGE_KEY = "deployiq.sidebar.collapsed";
 const ADMIN_EXPANDED_STORAGE_KEY = "deployiq.sidebar.adminExpanded";
 
-/** Count badges a nav item can show (fed by PR-18's access-request data). */
+/** Count badges a nav item can show (fed by the access-request count). */
 export type NavBadgeKey = "pendingAccess";
 
 export interface NavItem {
@@ -46,22 +50,30 @@ export interface NavItem {
   icon: React.ComponentType<{ className?: string; strokeWidth?: string | number }>;
   /** False pre-registers a page that is not built yet: it is not rendered. */
   enabled?: boolean;
+  /**
+   * Permission the signed-in role needs to see the item (newplan §7.3). Items
+   * without one (Chat) are open to every signed-in, non-suspended user.
+   */
+  permission?: Permission;
   badgeKey?: NavBadgeKey;
   /** Extra palette search terms. */
   keywords?: string[];
 }
 
+const DASHBOARD: Permission = "dashboard:read";
+
 const ADMIN_ITEMS: NavItem[] = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, permission: DASHBOARD },
   { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/documents", label: "Documents", icon: FileText },
-  { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/usage", label: "Usage & Cost", icon: CircleDollarSign },
-  { href: "/admin/conversations", label: "Conversation Logs", icon: MessagesSquare },
-  { href: "/admin/feedback", label: "Feedback", icon: ThumbsUp },
-  { href: "/admin/evaluation", label: "Evaluation", icon: ClipboardCheck },
-  { href: "/admin/evaluation-live", label: "Evaluation (Live)", icon: Sparkles },
-  { href: "/admin/governance", label: "Admin Governance", icon: ShieldCheck },
+  { href: "/documents", label: "Documents", icon: FileText, permission: DASHBOARD },
+  // Renamed from "Users" (newplan open item 6): these are chat visitors, not accounts.
+  { href: "/admin/users", label: "Visitors", icon: Users, permission: DASHBOARD, keywords: ["users", "audience"] },
+  { href: "/admin/usage", label: "Usage & Cost", icon: CircleDollarSign, permission: DASHBOARD },
+  { href: "/admin/conversations", label: "Conversation Logs", icon: MessagesSquare, permission: DASHBOARD },
+  { href: "/admin/feedback", label: "Feedback", icon: ThumbsUp, permission: DASHBOARD },
+  { href: "/admin/evaluation", label: "Evaluation", icon: ClipboardCheck, permission: DASHBOARD },
+  { href: "/admin/evaluation-live", label: "Evaluation (Live)", icon: Sparkles, permission: DASHBOARD },
+  { href: "/admin/governance", label: "Admin Governance", icon: ShieldCheck, permission: DASHBOARD },
 ];
 
 /**
@@ -69,22 +81,39 @@ const ADMIN_ITEMS: NavItem[] = [
  * hidden (`enabled: false`) until their PRs land and flip the flag.
  */
 const PLANNED_ITEMS: NavItem[] = [
-  { href: "/admin/analytics", label: "Analytics", icon: ChartColumnBig, enabled: false },
+  { href: "/admin/analytics", label: "Analytics", icon: ChartColumnBig, enabled: false, permission: DASHBOARD },
   {
     href: "/admin/user-management",
     label: "User Management",
     icon: UserCog,
-    enabled: false,
+    permission: "users:manage",
     badgeKey: "pendingAccess",
     keywords: ["access requests", "roles"],
   },
-  { href: "/admin/settings", label: "Settings", icon: Settings2, enabled: false, keywords: ["branding", "taxonomy"] },
+  {
+    href: "/admin/settings",
+    label: "Settings",
+    icon: Settings2,
+    enabled: false,
+    permission: "branding:write",
+    keywords: ["branding", "taxonomy"],
+  },
 ];
 
 /** Every registered nav item, including disabled ones (used by the command palette). */
 export const NAV_ITEMS: readonly NavItem[] = [...ADMIN_ITEMS, ...PLANNED_ITEMS];
 
 export const isNavItemEnabled = (item: NavItem) => item.enabled !== false;
+
+/** Enabled and allowed for the signed-in role (deny by default). */
+export function canSeeNavItem(item: NavItem, permissions: readonly string[] | null | undefined): boolean {
+  return isNavItemEnabled(item) && (!item.permission || hasPermission(permissions, item.permission));
+}
+
+/** The items a user with `permissions` sees, in sidebar order. */
+export function visibleNavItems(permissions: readonly string[] | null | undefined): NavItem[] {
+  return NAV_ITEMS.filter((item) => canSeeNavItem(item, permissions));
+}
 
 function initials(name: string | undefined | null) {
   return (name ?? "")
@@ -111,6 +140,7 @@ interface NavListProps {
 }
 
 function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: NavListProps) {
+  const badgeVariants = useMotionVariants(pop);
   return (
     <>
       {items.filter(isNavItemEnabled).map((item) => {
@@ -145,16 +175,24 @@ function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: N
               strokeWidth={1.75}
             />
             {!collapsed && <span className="truncate">{item.label}</span>}
-            {badge ? (
-              <span
-                aria-label={`${badge} pending`}
-                className={`rounded-full bg-status-warn px-1.5 text-[10px] font-semibold leading-4 text-white dark:text-fg-inverse ${
-                  collapsed ? "absolute right-0.5 top-0" : "ml-auto"
-                }`}
-              >
-                {badge}
-              </span>
-            ) : null}
+            <AnimatePresence initial={false}>
+              {badge ? (
+                <m.span
+                  key={badge}
+                  variants={badgeVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  aria-label={`${badge} pending`}
+                  data-testid="nav-badge"
+                  className={`rounded-full bg-status-warn px-1.5 text-[10px] font-semibold leading-4 text-white dark:text-fg-inverse ${
+                    collapsed ? "absolute right-0.5 top-0" : "ml-auto"
+                  }`}
+                >
+                  {badge > 99 ? "99+" : badge}
+                </m.span>
+              ) : null}
+            </AnimatePresence>
           </Link>
         );
       })}
@@ -163,13 +201,16 @@ function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: N
 }
 
 interface SidebarProps {
-  /** Counts for nav badges, e.g. `{ pendingAccess: 3 }` (wired in PR-18). */
+  /** Overrides the nav badge counts (default: open access requests for `users:manage`). */
   badges?: Partial<Record<NavBadgeKey, number>>;
 }
 
-export function Sidebar({ badges }: SidebarProps = {}) {
+export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, logout, role, permissions } = useAuth();
+  const pendingAccess = usePendingAccessCount();
+  const badges = badgeOverride ?? { pendingAccess };
+  const items = visibleNavItems(permissions);
 
   // Read synchronously on mount (not in useState initializer) so server
   // and first client render both start expanded, avoiding a hydration
@@ -240,7 +281,7 @@ export function Sidebar({ badges }: SidebarProps = {}) {
 
         <nav aria-label="Main" className={`flex-1 space-y-0.5 overflow-y-auto py-4 ${collapsed ? "px-2" : "px-3"}`}>
           {collapsed ? (
-            <NavList items={NAV_ITEMS} pathname={pathname} collapsed badges={badges} layoutId="sidebar-active" />
+            <NavList items={items} pathname={pathname} collapsed badges={badges} layoutId="sidebar-active" />
           ) : (
             <>
               <button
@@ -258,7 +299,7 @@ export function Sidebar({ badges }: SidebarProps = {}) {
               </button>
               {adminExpanded && (
                 <NavList
-                  items={NAV_ITEMS}
+                  items={items}
                   pathname={pathname}
                   collapsed={false}
                   badges={badges}
@@ -292,11 +333,16 @@ export function Sidebar({ badges }: SidebarProps = {}) {
                   {user?.full_name ?? "Signed out"}
                 </p>
                 <p className="truncate text-xs text-ink/50 dark:text-slate-400">{user?.email}</p>
+                {role ? (
+                  <div className="mt-1">
+                    <RoleBadge role={role} />
+                  </div>
+                ) : null}
               </div>
               <div className="flex items-center gap-1">
                 <ThemeToggle size="sm" />
                 <button
-                  onClick={logout}
+                  onClick={() => void logout()}
                   title="Sign out"
                   aria-label="Sign out"
                   className={`rounded-md p-1.5 text-ink/40 dark:text-slate-400 hover:bg-ink/5 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white transition ${focusRing}`}
@@ -308,7 +354,7 @@ export function Sidebar({ badges }: SidebarProps = {}) {
           )}
         </div>
       </aside>
-      <MobileSidebar pathname={pathname} badges={badges} />
+      <MobileSidebar pathname={pathname} items={items} badges={badges} />
     </>
   );
 }
@@ -316,9 +362,11 @@ export function Sidebar({ badges }: SidebarProps = {}) {
 /** Off-canvas sidebar below `md` (newplan §15.1), opened by the header hamburger. */
 function MobileSidebar({
   pathname,
+  items,
   badges,
 }: {
   pathname: string | null;
+  items: readonly NavItem[];
   badges?: Partial<Record<NavBadgeKey, number>>;
 }) {
   const nav = useMobileNav();
@@ -371,7 +419,7 @@ function MobileSidebar({
             </div>
             <nav aria-label="Main" className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
               <NavList
-                items={NAV_ITEMS}
+                items={items}
                 pathname={pathname}
                 collapsed={false}
                 badges={badges}
