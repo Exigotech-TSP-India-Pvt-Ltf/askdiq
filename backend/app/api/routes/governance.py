@@ -7,8 +7,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.deps import require_permission
+from app.auth.permissions import Permission
+from app.auth.principal import AuthUser
 from app.core.database import get_db
-from app.governance.auth import get_current_actor
 from app.models.db_models import AuditLog
 from app.schemas.governance import AuditLogEntry
 
@@ -22,7 +24,7 @@ async def list_audit_log(
         default=None, description="Filter by action, e.g. 'query' or 'ingest'"
     ),
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> list[AuditLogEntry]:
     stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
 

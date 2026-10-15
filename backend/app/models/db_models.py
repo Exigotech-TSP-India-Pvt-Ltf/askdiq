@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models backing users, documents, chunks, latency, and audit data."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -16,6 +16,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -27,10 +29,11 @@ settings = get_settings()
 
 
 class User(Base):
-    """Account used to sign in to the Deploy IQ frontend and call the API.
+    """A person who signs in through Entra ID SSO (newplan §7.5).
 
-    `email` is the JWT `sub` claim issued by /auth/login, so it doubles as
-    the `actor` identity already threaded through audit logging.
+    Rows are keyed on the Entra object id (`entra_oid`); `email` is the
+    `actor` identity threaded through audit logging and chat ownership.
+    `password_hash` is legacy (local accounts are not used for sign-in).
     """
 
     __tablename__ = "users"
@@ -40,8 +43,39 @@ class User(Base):
     )
     full_name: Mapped[str] = mapped_column(String(256))
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(256))
+    password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # --- SSO / RBAC (PR-06) ---
+    entra_oid: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True
+    )
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending", server_default="pending"
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Bumped on every role/status change (optimistic concurrency, PR-07).
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IS NULL OR role IN ('superadmin', 'admin', 'operator')",
+            name="ck_users_role",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'active', 'rejected', 'suspended')",
+            name="ck_users_status",
+        ),
+    )
 
 
 class Document(Base):
@@ -293,3 +327,80 @@ class EvaluationRecord(Base):
     __table_args__ = (
         Index("ix_eval_records_audience_created", "audience", "created_at"),
     )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+class AccessRequest(Base):
+    """A signed-in user's request for dashboard access (one pending per user)."""
+
+    __tablename__ = "access_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    requested_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending", server_default="pending"
+    )
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')",
+            name="ck_access_requests_status",
+        ),
+        CheckConstraint(
+            "requested_role IS NULL OR requested_role IN "
+            "('superadmin', 'admin', 'operator')",
+            name="ck_access_requests_requested_role",
+        ),
+        Index(
+            "uq_access_requests_one_pending",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+
+class AuthSession(Base):
+    """Server-side sign-in session; only an HMAC-SHA256 of the id is stored."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    id_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    idle_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    __table_args__ = (Index("ix_auth_sessions_user_revoked", "user_id", "revoked_at"),)

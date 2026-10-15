@@ -6,10 +6,12 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.deps import require_permission
+from app.auth.permissions import Permission
+from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.request_meta import get_client_ip
-from app.governance.auth import get_current_actor
 from app.ingestion.docx_converter import convert_docx
 from app.ingestion.service import ingest_text
 from app.schemas.document import IngestRequest, IngestResponse
@@ -26,7 +28,7 @@ async def ingest_json(
     dry_run: bool = False,
     force: bool = False,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DOCUMENTS_WRITE)),
 ) -> IngestResponse:
     """JSON-based text ingestion endpoint (backwards compatible with CLI/scripts)."""
     req_id = getattr(request.state, "request_id", "unknown")
@@ -47,7 +49,7 @@ async def ingest_json(
             converted_from="md",
             force=effective_force,
             dry_run=effective_dry_run,
-            actor=actor,
+            actor=user.email,
             request_id=req_id,
             client_ip=client_ip,
         )
@@ -92,7 +94,7 @@ async def ingest_file(
     force: bool = Form(False),
     dry_run: bool = Form(False),
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DOCUMENTS_WRITE)),
 ) -> IngestResponse:
     """Server-side file ingestion endpoint supporting .md, .markdown, and .docx formats."""
     req_id = getattr(request.state, "request_id", "unknown")
@@ -154,7 +156,7 @@ async def ingest_file(
             quarantined=quarantined,
             force=force,
             dry_run=dry_run,
-            actor=actor,
+            actor=user.email,
             request_id=req_id,
             client_ip=client_ip,
         )
