@@ -34,7 +34,6 @@ from app.insights.analytics_repository import (
     person_salt,
     resolve_range,
 )
-from app.insights.repository import InsightsRepository
 from app.insights.taxonomy import NON_SUBSTANTIVE_INTENTS, TaxonomyKind
 from app.schemas.insights import (
     Audience,
@@ -190,7 +189,7 @@ class InsightsAnalyticsService:
             return await self.cube(session, ctx)
 
         async def pending(session: AsyncSession) -> int:
-            return await InsightsRepository(session).count_pending()
+            return await InsightsAnalyticsRepository(session).pending_count()
 
         conv, cube, pending_count = await self.runner(kpis, exchanges, pending)
         subs = list(cube.substantive())
@@ -401,8 +400,9 @@ class InsightsAnalyticsService:
         )
 
     async def pending(self) -> PendingClassification:
-        pending = await InsightsRepository(self.db).count_pending()
-        labelled = await InsightsAnalyticsRepository(self.db).labelled_count()
+        repo = InsightsAnalyticsRepository(self.db)
+        pending = await repo.pending_count()
+        labelled = await repo.labelled_count()
         total = pending + labelled
         return PendingClassification(
             pending=pending,
