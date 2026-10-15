@@ -72,7 +72,7 @@ async def test_second_request_with_etag_gets_304():
         assert first.headers["cache-control"] == "private, max-age=15"
 
         # Warm path from here on: no callback may block the loop > 50 ms.
-        with LoopBlockingDetector():
+        async with LoopBlockingDetector():
             second = await ac.get("/cached", headers={"If-None-Match": etag})
         assert second.status_code == 304
         assert second.content == b""
@@ -235,11 +235,12 @@ async def test_gather_scoped_runs_parallel_queries_on_postgres():
     engine = new_engine(pool_size=8, max_overflow=0)
     await require_postgres(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    sessions: set[int] = set()
+    # Hold references: id() of a garbage-collected session can be reused.
+    sessions: list[AsyncSession] = []
 
     def make(index: int):
         async def _query(session: AsyncSession) -> int:
-            sessions.add(id(session))
+            sessions.append(session)
             return await session.scalar(
                 text("SELECT CAST(:n AS integer)"), {"n": index}
             )
@@ -253,7 +254,7 @@ async def test_gather_scoped_runs_parallel_queries_on_postgres():
     finally:
         await engine.dispose()
     assert results == list(range(8))
-    assert len(sessions) == 8
+    assert len({id(s) for s in sessions}) == 8
 
 
 # ---------------------------------------------------------------------------

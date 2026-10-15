@@ -229,7 +229,7 @@ async def test_concurrent_mix_never_blocks_the_event_loop(conc_env):
     assert (await _dashboard(conc_env)).status_code == 200
     assert (await _query(conc_env, 0)).status_code == 200
 
-    with LoopBlockingDetector():
+    async with LoopBlockingDetector():
         responses = await asyncio.gather(
             *(_query(conc_env, i) for i in range(1, 11)),
             *(_dashboard(conc_env) for _ in range(5)),
