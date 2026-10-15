@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.deps import require_permission
+from app.auth.permissions import Permission
+from app.auth.principal import AuthUser
 from app.core.database import get_db
 from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
 from app.governance.audit import record_audit_event
-from app.governance.auth import get_current_actor
 from app.models.db_models import Chunk, Document
 from app.schemas.document import DocumentSummary
 
@@ -19,7 +21,7 @@ router = APIRouter()
 @router.get("/documents", response_model=list[DocumentSummary])
 async def list_documents(
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> list[DocumentSummary]:
     stmt = (
         select(Document, func.count(Chunk.id).label("chunk_count"))
@@ -79,7 +81,7 @@ async def delete_document(
     request: Request,
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DOCUMENTS_WRITE)),
 ) -> Response:
     """Audited document and chunk deletion in a single atomic transaction."""
     document = await db.get(Document, document_id)
@@ -105,7 +107,7 @@ async def delete_document(
     await record_audit_event(
         db,
         request_id=req_id,
-        actor=actor,
+        actor=user.email,
         action="document_delete",
         detail={
             "document_id": str(document_id),
@@ -122,7 +124,7 @@ async def delete_document(
         document_id=str(document_id),
         source_name=source_name,
         chunks_removed=chunk_count,
-        actor=actor,
+        actor=user.email,
     )
     return Response(status_code=204)
 
@@ -131,7 +133,7 @@ async def delete_document(
 async def list_document_chunks(
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> list[dict]:
     rows = (
         (

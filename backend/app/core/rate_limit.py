@@ -1,7 +1,7 @@
 """Sliding-window rate limiter for /query, feedback and heavy admin routes.
 
 Two independent limits are enforced:
-  - per user (JWT actor/email) — the original limit.
+  - per user (the signed-in user's email) — the original limit.
   - per client IP — a looser, separate cap so abuse spread across multiple
     accounts from the same source still gets throttled.
 
@@ -19,11 +19,13 @@ from collections import defaultdict, deque
 
 from fastapi import Depends, HTTPException, Request, status
 
+from app.auth.deps import require_permission, require_role_or_chat
+from app.auth.permissions import Permission
+from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
 from app.core.state import MemoryState, get_state_backend, sub_window_seconds
-from app.governance.auth import get_current_actor
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -147,14 +149,13 @@ async def aenforce_ip_rate_limit(ip: str) -> None:
 
 
 async def rate_limited_actor(
-    request: Request, actor: str = Depends(get_current_actor)
+    request: Request, user: AuthUser = Depends(require_role_or_chat)
 ) -> str:
-    """Drop-in replacement for `get_current_actor` that also enforces the
-    per-user AND per-IP rate limits — use as the auth dependency on
-    throttled routes."""
-    await aenforce_rate_limit(actor)
+    """Chat guard (any signed-in, non-suspended user) that also enforces the
+    per-user AND per-IP rate limits; returns the user's email as the actor."""
+    await aenforce_rate_limit(user.email)
     await aenforce_ip_rate_limit(get_client_ip(request))
-    return actor
+    return user.email
 
 
 def enforce_feedback_rate_limit(
@@ -194,9 +195,10 @@ async def aenforce_admin_heavy_rate_limit(
 
 
 async def rate_limited_admin_analytics(
-    request: Request, actor: str = Depends(get_current_actor)
+    request: Request,
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> str:
     """FastAPI dependency enforcing rate limits on heavy admin aggregation/export routes (OWASP A04/A07)."""
     ip = get_client_ip(request)
-    await aenforce_admin_heavy_rate_limit(actor, ip)
-    return actor
+    await aenforce_admin_heavy_rate_limit(user.email, ip)
+    return user.email

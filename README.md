@@ -79,7 +79,7 @@ OpenAI deployment — see `backend/.env.example`):
 cd backend
 python -m venv venv && venv\Scripts\activate   # or source venv/bin/activate
 pip install -r requirements.txt
-copy .env.example .env   # fill in DATABASE_URL, AZURE_OPENAI_*, API_JWT_SECRET
+copy .env.example .env   # fill in DATABASE_URL, AZURE_OPENAI_*, SESSION_SECRET, ENTRA_* (or AUTH_DEV_MOCK=true)
 alembic upgrade head
 python scripts/ingest_real_docs.py
 uvicorn main:app --reload

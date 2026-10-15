@@ -17,7 +17,7 @@ frontend) with Docker Compose.
 
 | File | Required variables |
 |---|---|
-| `backend/.env` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`, `AZURE_DEPLOYMENT_NAME`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`, `API_JWT_SECRET`, `API_KEY_NAME` |
+| `backend/.env` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`, `AZURE_DEPLOYMENT_NAME`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`, `API_KEY_NAME`, `SESSION_SECRET`, `ENTRA_*` (or `AUTH_DEV_MOCK=true` with `ENV=development`) |
 | `frontend/.env.local` | `API_KEY` (must match `backend/.env`'s `API_KEY_NAME`) |
 
 `DATABASE_URL` / `API_BASE_URL` in these files are only used for
@@ -76,6 +76,24 @@ Configure the following variables in `backend/.env` for production deployments:
 | `PRICING_PRICE_INPUT_PER_MILLION` | `0.25` | Rate card for prompt input tokens ($/1M). |
 | `PRICING_PRICE_OUTPUT_PER_MILLION` | `2.00` | Rate card for visible and reasoning completion tokens ($/1M). |
 | `PRICING_PRICE_CACHED_PER_MILLION` | `0.0625` | Rate card for cached prompt tokens ($/1M). |
+
+### Proxy contract (backend side, SSO)
+
+Since SSO, the backend only answers the Next.js proxy, and every user
+request needs a signed-in session. The proxy must send:
+
+| Header | When | Backend behaviour |
+|---|---|---|
+| `X-API-Key` | every request | Service key (`API_KEY_NAME`, equal to the frontend's `API_KEY`). Missing or wrong: **401**, even with a valid session. |
+| `X-Session` | every user request | The raw session id from the httpOnly session cookie. Missing, unknown, expired or revoked: **401**. |
+| `X-Requested-With: askdiq` and `Origin` | `POST`, `PUT`, `PATCH`, `DELETE` | CSRF defence: the marker must be present and `Origin` must equal `APP_BASE_URL`'s origin, otherwise **403**. |
+| `X-Forwarded-For` | every request | Client IP for audit and rate limits; honoured only when `TRUST_PROXY_HEADERS=true`. |
+
+Status and role are re-read from Postgres on every request: pending or
+rejected users get Chat only (403 on dashboard routes), suspended users get
+403 everywhere, and role changes apply on the next request. Public routes:
+`/health`, `/branding` and, with `AUTH_DEV_MOCK=true` in development only,
+the mock IdP under `/mock-idp/`.
 
 ## 5. API Deprecations
 

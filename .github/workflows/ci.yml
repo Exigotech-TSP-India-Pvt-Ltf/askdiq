@@ -23,7 +23,11 @@ env:
   AZURE_OPENAI_API_VERSION: 2024-12-01-preview
   AZURE_DEPLOYMENT_NAME: gpt-5-mini
   EMBEDDING_MODEL: text-embedding-3-small
-  API_JWT_SECRET: ci-only-test-secret-not-for-production
+  SESSION_SECRET: ci-only-session-secret-not-for-production-0123456789
+  AUTH_DEV_MOCK: "true"
+  SUPERADMIN_EMAILS: ci-admin@example.com
+  ENTRA_TENANT_ID: 00000000-0000-4000-8000-00000000a51d
+  ENTRA_CLIENT_ID: 00000000-0000-4000-8000-0000000c11e7
   API_KEY_NAME: ci-test-key
   ENV: development
   PYTHON_VERSION: "3.14"

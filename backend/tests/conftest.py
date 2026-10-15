@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import os
+import uuid
 from collections.abc import AsyncGenerator
 from functools import cache
 from unittest.mock import patch
@@ -11,16 +12,24 @@ from unittest.mock import patch
 # reset rate-limit windows; Postgres-backed state is exercised explicitly in
 # tests/test_shared_state.py. Must be set before the app settings load.
 os.environ.setdefault("STATE_BACKEND", "memory")
+# SSO tests run against the local mock IdP; secrets come from env, never .env.
+os.environ.setdefault("AUTH_DEV_MOCK", "true")
+os.environ.setdefault("SESSION_SECRET", "test-session-secret-0123456789abcdef")
 
 import pytest
+from fastapi import Header
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.auth.deps import authenticate_session
+from app.auth.permissions import Role, UserStatus
+from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.governance.auth import sanitize_client_id
 from main import app
 
 settings = get_settings()
@@ -97,6 +106,39 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 @pytest.fixture(scope="session")
 def anyio_backend():
     return "asyncio"
+
+
+async def _signed_in_test_user(
+    x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
+) -> AuthUser:
+    """Stand-in for a resolved SSO session: an active superadmin.
+
+    Only the session lookup is replaced; the `X-API-Key` service-key check,
+    status checks and permission guards still run for real. Tests that need
+    several users pick one per request with `X-Client-Id`.
+    """
+    email = sanitize_client_id(x_client_id)
+    return AuthUser(
+        id=uuid.uuid5(uuid.NAMESPACE_URL, f"askdiq-test:{email}"),
+        email=email,
+        name=email,
+        role=Role.SUPERADMIN,
+        status=UserStatus.ACTIVE,
+        version=1,
+    )
+
+
+@pytest.fixture(autouse=True)
+def signed_in_superadmin(request: pytest.FixtureRequest):
+    """Every API test runs as a signed-in superadmin unless marked `real_auth`
+    (which exercises the real session resolution in tests/test_auth_*.py)."""
+    if request.node.get_closest_marker("real_auth"):
+        app.dependency_overrides.pop(authenticate_session, None)
+        yield
+        return
+    app.dependency_overrides[authenticate_session] = _signed_in_test_user
+    yield
+    app.dependency_overrides.pop(authenticate_session, None)
 
 
 @pytest.fixture

@@ -34,6 +34,9 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.auth.deps import require_permission
+from app.auth.permissions import Permission
+from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
@@ -44,7 +47,6 @@ from app.governance.audience import (
     get_classified_ips,
 )
 from app.governance.audit import record_audit_event
-from app.governance.auth import get_current_actor
 from app.governance.costing import calculate_stage_costs
 from app.governance.outcomes import GENERATION_OUTCOMES
 from app.governance.usage_queries import (
@@ -90,7 +92,7 @@ def clear_usage_caches() -> None:
 @router.get("/audience-counts")
 async def get_audience_counts(
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return badge counts (queries, sessions, distinct IPs) for Overview, Users, and Testing with short-TTL cache."""
     settings = get_settings()
@@ -222,7 +224,7 @@ async def get_usage_summary(
     from_date: str | None = None,
     to_date: str | None = None,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> Response:
     """Overall Stage Economics summary separating Financial Cost from Token Volume (Task 3.2).
 
@@ -559,7 +561,7 @@ async def get_usage_users(
     limit: int = 10,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     if sort not in _ALLOWED_USER_SORTS:
         raise HTTPException(
@@ -717,7 +719,7 @@ async def get_usage_sessions(
     limit: int = 10,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2)."""
     if sort not in _ALLOWED_SESSION_SORTS:
@@ -898,7 +900,7 @@ async def get_usage_queries(
     limit: int = 10,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     if sort not in _ALLOWED_QUERY_SORTS:
         raise HTTPException(
@@ -1017,7 +1019,7 @@ async def get_usage_queries(
 async def get_query_detail(
     request_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Single-turn inspector detail exposing rates and cached prompt details (Task 3.5.3)."""
     settings = get_settings()
@@ -1147,7 +1149,7 @@ async def export_usage_csv(
     outcome: str | None = None,
     grounded: bool | None = None,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.USAGE_EXPORT)),
 ):
     """Stream CSV export with formula injection defense and cap truncation (Task 3.4)."""
     settings = get_settings()
@@ -1159,7 +1161,7 @@ async def export_usage_csv(
     await record_audit_event(
         db,
         request_id=getattr(request.state, "request_id", "admin-export"),
-        actor=actor,
+        actor=user.email,
         action="usage_export",
         detail={"tab": tab, "audience": audience},
         commit=True,
@@ -1288,7 +1290,7 @@ async def export_usage_csv(
                 limit=settings.usage_export_max_rows,
                 offset=0,
                 db=db,
-                actor=actor,
+                actor=user.email,
             )
             for item in user_res["items"]:
                 writer.writerow(
@@ -1332,7 +1334,7 @@ async def export_usage_csv(
                 limit=settings.usage_export_max_rows,
                 offset=0,
                 db=db,
-                actor=actor,
+                actor=user.email,
             )
             for item in sess_res["items"]:
                 writer.writerow(

@@ -12,6 +12,9 @@ from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.admin_usage import router as usage_router
+from app.auth.deps import require_permission
+from app.auth.permissions import Permission
+from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
@@ -25,7 +28,6 @@ from app.governance.audience import (
     get_classified_ips,
 )
 from app.governance.audit import record_audit_event
-from app.governance.auth import get_current_actor
 from app.governance.costing import compute_exchange_cost
 from app.governance.online_eval import quality_tracker
 from app.governance.test_ips import (
@@ -82,7 +84,7 @@ async def list_users(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return users grouped by client IP with activity statistics (Task 2.3.1)."""
     # Audience resolution (preserving include_test backwards-compatibility)
@@ -182,7 +184,7 @@ async def list_users(
 async def get_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return detailed information about one user."""
     feedback_counts = dict(
@@ -343,7 +345,7 @@ async def list_conversations(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return conversations for the admin dashboard (Task 2.3.2: audience-scoped, paginated, no email)."""
     aud_scope = audience_scope(audience)
@@ -424,7 +426,7 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return one conversation and all of its messages."""
 
@@ -505,7 +507,7 @@ def _pctl(values: list[float], q: float) -> float | None:
 async def governance_monitoring(
     audience: str = Query("overview"),
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     since = datetime.utcnow() - timedelta(hours=24)
     q_records = select(LatencyRecord).where(LatencyRecord.created_at >= since)
@@ -582,7 +584,7 @@ async def governance_traces(
     limit: int = 100,
     audience: str = Query("overview"),
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     q_records = (
         select(LatencyRecord)
@@ -697,7 +699,7 @@ async def governance_logs(
     limit: int = 200,
     audience: str = Query("overview"),
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     aud_log = await build_audience_filter(db, AuditLog.ip_address, audience)
     q_total = select(func.count(AuditLog.id))
@@ -1010,7 +1012,7 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
 @router.get("/usage/llm")
 async def usage_llm(
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     settings = get_settings()
 
@@ -1045,7 +1047,7 @@ async def usage_llm(
 @router.get("/usage/embedding")
 async def usage_embedding(
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     settings = get_settings()
 
@@ -1083,7 +1085,7 @@ async def usage_embedding(
 @router.get("/usage/reranker")
 async def usage_reranker(
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     settings = get_settings()
 
@@ -1121,7 +1123,9 @@ async def usage_reranker(
 
 
 @router.get("/usage/metadata")
-async def usage_metadata(actor: str = Depends(get_current_actor)):
+async def usage_metadata(
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
+):
     settings = get_settings()
 
     return {
@@ -1152,7 +1156,7 @@ async def usage_metadata(actor: str = Depends(get_current_actor)):
 @router.get("/usage/test-ips")
 async def get_test_ips_endpoint(
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return all configured test/development IPs and overrides."""
     return await get_test_ip_details(db)
@@ -1163,14 +1167,14 @@ async def add_test_ip_endpoint(
     payload: TestIpPayload,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.TESTIP_WRITE)),
 ):
     """Add a new test/development IP override (Task 2.2)."""
     return await add_or_update_test_ip(
         db,
         payload.ip_address,
         description=payload.description,
-        actor=actor,
+        actor=user.email,
         request_id=getattr(request.state, "request_id", None),
         client_ip=get_client_ip(request),
     )
@@ -1181,13 +1185,13 @@ async def delete_test_ip_endpoint(
     ip_address: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.TESTIP_WRITE)),
 ):
     """Remove a test/development IP override (Task 2.2)."""
     deleted = await delete_test_ip(
         db,
         ip_address,
-        actor=actor,
+        actor=user.email,
         request_id=getattr(request.state, "request_id", None),
         client_ip=get_client_ip(request),
     )
@@ -1205,7 +1209,7 @@ async def usage_cost_breakdown(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Multi-tier token and cost breakdown across 4 visibility levels (Task 2.5).
 
@@ -1522,7 +1526,7 @@ async def usage_cost_breakdown(
 async def get_query_usage_detail(
     request_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Subtask 2.5.5: Return full single-query record with stage tokens, pricing snapshot, and latency."""
     # 1. Fetch assistant message and session
@@ -1622,7 +1626,7 @@ async def admin_dashboard(
     request: Request,
     audience: str = Query("overview"),
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> Response:
     """Dashboard KPIs; weak ETag + `Cache-Control: private` (304 on match)."""
     return cached_response(request, await _dashboard_payload(db, audience))
@@ -1832,7 +1836,7 @@ async def list_feedback(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return feedback records with audience scoping, sorting, search, and pagination."""
     aud_scope = audience_scope(audience)
@@ -1932,7 +1936,7 @@ async def list_feedback(
 async def get_feedback_analytics(
     audience: str = Query("overview"),
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return aggregated feedback KPIs: positive/negative ratios, outcome correlations, and gap detection."""
     aud_scope = audience_scope(audience)
@@ -2011,7 +2015,7 @@ async def get_feedback_analytics(
 async def promote_feedback_to_test(
     message_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.FEEDBACK_TRIAGE)),
 ):
     """Convert a user feedback turn into a permanent regression test case."""
 
@@ -2060,7 +2064,7 @@ async def promote_feedback_to_test(
                 "expected_outcome": asst_msg.outcome or "answered",
                 "source_message_id": message_id,
                 "promoted_at": datetime.utcnow().isoformat() + "Z",
-                "promoted_by": actor,
+                "promoted_by": user.email,
             }
         )
 
@@ -2074,7 +2078,7 @@ async def promote_feedback_to_test(
     await record_audit_event(
         db,
         request_id=f"promote-{uuid.uuid4().hex[:12]}",
-        actor=actor,
+        actor=user.email,
         action="feedback_promoted_to_eval_case",
         detail={
             "message_id": message_id,

@@ -8,12 +8,14 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.auth.deps import require_permission
+from app.auth.permissions import Permission
+from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging_config import get_logger
 from app.core.stats import percentile
 from app.governance.audience import build_audience_filter
-from app.governance.auth import get_current_actor
 from app.models.db_models import (
     ChatMessageRecord,
     ChatSession,
@@ -43,7 +45,7 @@ STAGE_FIELDS = [
 @router.get("/metrics/latency", response_model=LatencyReport)
 async def latency_report(
     db: AsyncSession = Depends(get_db),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> LatencyReport:
     records = (await db.execute(select(LatencyRecord))).scalars().all()
 
@@ -139,7 +141,7 @@ def _read_latest_eval_report(prefer_rich: bool = True) -> tuple[dict, str] | Non
 @router.get("/metrics/evaluation")
 async def evaluation_report(
     audience: str = Query("overview"),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """RAG evaluation report with audience segmentation (overview | users | testing)."""
@@ -553,7 +555,7 @@ async def _build_live_user_evaluation(db: AsyncSession) -> dict:
 async def live_evaluation_report(
     audience: str = Query("users"),
     compare: bool = Query(False),
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Continuous Live RAG evaluation with real database metrics and benchmark comparison."""
@@ -687,7 +689,7 @@ async def live_evaluation_report(
 @router.get("/metrics/evaluation/record/{record_id}")
 async def get_evaluation_record_detail(
     record_id: str,
-    actor: str = Depends(get_current_actor),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Retrieve full deep inspection detail for a single evaluated query."""
