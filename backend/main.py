@@ -13,6 +13,7 @@ from app.api.routes import (
     governance,
     health,
     ingest,
+    insights,
     metrics,
     query,
     sessions,
@@ -131,6 +132,7 @@ app.include_router(documents.router, tags=["documents"])
 app.include_router(metrics.router, tags=["metrics"])
 app.include_router(governance.router, tags=["governance"])
 app.include_router(admin.router, tags=["admin"])
+app.include_router(insights.router)
 # Local mock Entra IdP, only with AUTH_DEV_MOCK=true (settings refuse it
 # outside ENV=development).
 mount_mock_idp(app, settings)
