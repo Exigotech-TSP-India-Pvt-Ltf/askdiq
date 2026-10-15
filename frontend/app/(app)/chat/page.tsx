@@ -4,13 +4,7 @@ import { useEffect, useRef, type FormEvent } from "react";
 import { useChat } from "@/lib/chat-context";
 import { MessageBubble } from "@/components/MessageBubble";
 import { ChatSessionList } from "@/components/ChatSessionList";
-
-const SUGGESTED_PROMPTS = [
-  "What is the Essential Eight and how does DeployIQ implement it?",
-  "How does DeployIQ keep humans in the loop over AI actions?",
-  "What does the Zero Trust Professional plan include?",
-  "How does DeployIQ handle customer data?",
-];
+import { useBrand } from "@/lib/brand-context";
 
 export default function ChatPage() {
   // Chat state (sessions, messages, sending, the send/delete functions)
@@ -32,6 +26,9 @@ export default function ChatPage() {
     renameSession,
     removeSession,
   } = useChat();
+  // White-label: sample questions and names come from /branding (seeded defaults otherwise).
+  const brand = useBrand();
+  const suggestedPrompts = brand.chatSampleQuestions;
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -68,14 +65,14 @@ export default function ChatPage() {
         onDelete={removeSession}
       />
 
-      <div className="flex h-full flex-1 flex-col bg-[#f4fbfb] dark:bg-dark-bg">
+      <div className="flex h-full flex-1 flex-col bg-surface-page">
       {/* =====================================================
           HEADER
       ====================================================== */}
       <header className="flex h-20 shrink-0 items-center justify-between border-b border-ink/10 dark:border-white/10 bg-white dark:bg-dark-surface px-6">
         <div>
           <h1 className="text-sm font-semibold text-ink dark:text-white">
-            Deploy IQ Assistant
+            {brand.productName} Assistant
           </h1>
 
           <p className="text-xs text-ink/50 dark:text-slate-400">
@@ -110,7 +107,7 @@ export default function ChatPage() {
             </div>
 
             <h2 className="text-base font-semibold text-ink dark:text-white">
-              Ask Deploy IQ anything
+              Ask {brand.productName} anything
             </h2>
 
             <p className="mt-1.5 text-sm text-ink/55 dark:text-slate-400">
@@ -120,7 +117,7 @@ export default function ChatPage() {
 
             {/* Suggested prompts */}
             <div className="mt-6 grid w-full gap-2 sm:grid-cols-2">
-              {SUGGESTED_PROMPTS.map((prompt) => (
+              {suggestedPrompts.map((prompt) => (
                 <button
                   key={prompt}
                   onClick={() => sendQuery(prompt)}
