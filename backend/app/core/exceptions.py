@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import get_settings
@@ -34,6 +34,7 @@ INTERNAL_DETAIL = (
     "An unexpected error occurred. Quote the request_id when contacting support."
 )
 VALIDATION_DETAIL = "Request validation failed."
+BODYLESS_STATUSES = frozenset({204, 304})
 
 
 class ProblemJSONResponse(JSONResponse):
@@ -86,7 +87,12 @@ def problem_response(
 
 async def http_exception_handler(
     request: Request, exc: StarletteHTTPException
-) -> ProblemJSONResponse:
+) -> Response:
+    if exc.status_code in BODYLESS_STATUSES:
+        # 204/304 must not carry a body (e.g. ETag revalidation).
+        return Response(
+            status_code=exc.status_code, headers=getattr(exc, "headers", None)
+        )
     if exc.status_code >= 500:
         logger.error(
             "http_exception",

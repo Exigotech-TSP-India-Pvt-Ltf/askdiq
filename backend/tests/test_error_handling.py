@@ -208,3 +208,24 @@ async def test_lifespan_drains_background_tasks_on_shutdown() -> None:
         async with main.lifespan(app):
             drain.assert_not_awaited()
     drain.assert_awaited_once_with(settings.task_drain_timeout_seconds)
+
+
+async def test_bodyless_http_exception_has_no_problem_body() -> None:
+    from fastapi import FastAPI, HTTPException
+
+    from app.core.exceptions import register_exception_handlers
+
+    mini = FastAPI()
+    register_exception_handlers(mini)
+
+    @mini.get("/etag")
+    async def etag() -> None:
+        raise HTTPException(status_code=304, headers={"ETag": '"v1"'})
+
+    async with AsyncClient(
+        transport=ASGITransport(app=mini), base_url="http://testserver"
+    ) as ac:
+        res = await ac.get("/etag")
+    assert res.status_code == 304
+    assert res.content == b""
+    assert res.headers["etag"] == '"v1"'
