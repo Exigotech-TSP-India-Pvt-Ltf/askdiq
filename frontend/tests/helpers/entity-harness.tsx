@@ -11,7 +11,9 @@ import { vi } from "vitest";
 import { render } from "@testing-library/react";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { RangeProvider } from "@/lib/range-context";
-import { PermissionsProvider, ROLE_PERMISSIONS } from "@/lib/use-can";
+import { ROLE_PERMISSIONS } from "@/lib/use-can";
+import { AuthProvider } from "@/lib/auth-context";
+import { makeMe } from "./auth";
 import { queryCache } from "@/lib/query-cache";
 
 export { history, currentParams, navigationMock } from "./router-mock";
@@ -77,11 +79,11 @@ export function renderPage(ui: React.ReactElement, { role = "superadmin", url }:
   if (url) history.reset(url);
   queryCache.clear();
   mounted = render(
-    <ToastProvider>
-      <PermissionsProvider permissions={ROLE_PERMISSIONS[role]}>
+    <AuthProvider initialMe={makeMe(role)}>
+      <ToastProvider>
         <RangeProvider>{ui}</RangeProvider>
-      </PermissionsProvider>
-    </ToastProvider>,
+      </ToastProvider>
+    </AuthProvider>,
   );
   return mounted;
 }

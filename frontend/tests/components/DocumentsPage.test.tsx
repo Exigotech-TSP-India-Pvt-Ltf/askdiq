@@ -8,6 +8,7 @@ import type { DocumentSummary } from "@/lib/types";
 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({ token: "mock-token", user: null, loading: false }),
+  usePermission: () => true,
 }));
 
 vi.mock("next/navigation", () => ({
