@@ -231,6 +231,17 @@ export const brandGradient = {
   to: "#068987",
 } as const;
 
+/**
+ * Microsoft's four-square logo colours, required unchanged by Microsoft's
+ * sign-in branding guidelines (used only by the "Sign in with Microsoft" button).
+ */
+export const microsoftLogoColors = {
+  red: "#F25022",
+  green: "#7FBA00",
+  blue: "#00A4EF",
+  yellow: "#FFB900",
+} as const;
+
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 export function isHexColor(value: unknown): value is string {

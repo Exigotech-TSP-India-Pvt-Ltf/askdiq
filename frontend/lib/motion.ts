@@ -83,6 +83,23 @@ export const crossfade: Variants = {
   exit: { opacity: 0, transition: tween(duration.fast) },
 };
 
+/**
+ * Ambient decoration loops (login brand panel, newplan §7.7): very slow,
+ * transform-only drift between 20 and 40 s. Not UI feedback, so the 300 ms
+ * cap does not apply; callers render them static under reduced motion.
+ */
+export const ambientLoopSeconds = { short: 22, medium: 30, long: 38 } as const;
+
+export function ambientLoop(loop: keyof typeof ambientLoopSeconds): Transition {
+  return { duration: ambientLoopSeconds[loop], ease: "easeInOut", repeat: Infinity, repeatType: "mirror" };
+}
+
+/** Pointer parallax smoothing for decoration layers (`useSpring`). */
+export const parallaxSpring = { stiffness: 60, damping: 20, mass: 0.6 } as const;
+
+/** Sign-in step indicator: the progress rail fills over `slow`. */
+export const progressFill: Transition = { duration: duration.slow, ease };
+
 /** Transition for number count-ups (`animate(from, to, countUp)`). */
 export const countUp: Transition = { duration: duration.slow, ease };
 

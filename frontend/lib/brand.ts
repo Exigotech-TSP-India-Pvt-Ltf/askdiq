@@ -25,6 +25,13 @@ export interface BrandLogin {
   description: string | null;
 }
 
+/** Legal / help links on the login page (each hidden when empty). */
+export interface BrandLinks {
+  privacy: string | null;
+  terms: string | null;
+  help: string | null;
+}
+
 export interface Brand {
   productName: string;
   assistantName: string;
@@ -35,6 +42,7 @@ export interface Brand {
   /** Only the shades the tenant overrides; the rest come from theme-tokens. */
   palette: Partial<Record<BrandShade, string>>;
   login: BrandLogin;
+  links: BrandLinks;
   chatSampleQuestions: string[];
 }
 
@@ -61,6 +69,7 @@ export const DEFAULT_BRAND: Brand = {
   favicon: "/favicon.svg",
   palette: {},
   login: { eyebrow: null, headline: null, subtext: null, description: null },
+  links: { privacy: null, terms: null, help: null },
   chatSampleQuestions: defaultChatSampleQuestions("DeployIQ"),
 };
 
@@ -143,6 +152,11 @@ export function normalizeBrand(payload: unknown): Brand {
       headline: text(pick(raw, "login_headline")),
       subtext: text(pick(raw, "login_subtext"), 500),
       description: text(pick(raw, "login_description"), 1000),
+    },
+    links: {
+      privacy: safeAssetUrl(pick(raw, "privacy_url")),
+      terms: safeAssetUrl(pick(raw, "terms_url")),
+      help: safeAssetUrl(pick(raw, "help_url")),
     },
     chatSampleQuestions: normalizeQuestions(pick(raw, "chat_sample_questions"), productName),
   };

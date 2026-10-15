@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cache } from "react";
+import { headers } from "next/headers";
 import { AuthProvider } from "@/lib/auth-context";
 import { ThemeProvider } from "@/lib/theme-context";
 import { BrandProvider } from "@/lib/brand-context";
@@ -26,15 +27,24 @@ export default async function RootLayout({
 }) {
   const brand = await getBrand();
   const brandCss = brandCssText(brand);
+  // Per-request CSP nonce from middleware.ts (reading headers() renders the
+  // shell per request, which a nonce needs; /branding stays in the data cache).
+  const nonce = headers().get("x-nonce") ?? undefined;
 
   return (
     // suppressHydrationWarning: the pre-paint script below changes the <html>
     // class and color-scheme before React hydrates (T3).
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* T3: apply the stored / OS theme before first paint (no flash). The
-            CSP nonce is attached here once PR-18's middleware issues one. */}
-        <script id="theme-init" dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {/* T3: apply the stored / OS theme before first paint (no flash). Carries
+            the middleware's CSP nonce; browsers hide nonce attributes after
+            parsing, hence suppressHydrationWarning. */}
+        <script
+          id="theme-init"
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
         {brandCss ? <style id="brand-palette" dangerouslySetInnerHTML={{ __html: brandCss }} /> : null}
       </head>
       <body>
