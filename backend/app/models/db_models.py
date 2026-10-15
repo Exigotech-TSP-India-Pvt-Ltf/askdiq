@@ -1,25 +1,29 @@
 """SQLAlchemy ORM models backing users, documents, chunks, latency, and audit data."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
+    Identity,
     Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
     text,
+    true,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.config import get_settings
@@ -404,3 +408,102 @@ class AuthSession(Base):
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     __table_args__ = (Index("ix_auth_sessions_user_revoked", "user_id", "revoked_at"),)
+
+
+# --- Insights (PR-12, planchanges4 B6.1) ---
+
+
+class InsightTaxonomy(Base):
+    """Editable label lists (intent, bot_quality, issue) with stable codes."""
+
+    __tablename__ = "insight_taxonomy"
+
+    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    code: Mapped[str] = mapped_column(String(32))
+    label: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    color: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Intent group used to derive a conversation's user_type (newplan 6.4).
+    group: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    substantive: Mapped[bool] = mapped_column(Boolean, server_default=true())
+    handled: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    sort_order: Mapped[int] = mapped_column(Integer, server_default="0")
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=true())
+    is_system: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("kind", "code", name="uq_insight_taxonomy_kind_code"),
+    )
+
+
+class TurnInsight(Base):
+    """Classifier labels for one exchange, keyed by its assistant message."""
+
+    __tablename__ = "turn_insights"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"), unique=True
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    intent: Mapped[str] = mapped_column(String(32), index=True)
+    bot_quality: Mapped[str] = mapped_column(String(32), index=True)
+    issue: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    substantive: Mapped[bool] = mapped_column(Boolean)
+    handled: Mapped[bool] = mapped_column(Boolean)
+    friction: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    classified_by: Mapped[str] = mapped_column(String(8))
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    classified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class InsightDailyRollup(Base):
+    """Per-day turn counts by audience, intent, quality and turn outcome."""
+
+    __tablename__ = "insight_daily_rollup"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    audience: Mapped[str] = mapped_column(String(16), primary_key=True)
+    intent: Mapped[str] = mapped_column(String(32), primary_key=True)
+    quality: Mapped[str] = mapped_column(String(32), primary_key=True)
+    outcome: Mapped[str] = mapped_column(String(24), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer)
+    handled: Mapped[int] = mapped_column(Integer)
+    substantive: Mapped[int] = mapped_column(Integer)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class InsightLlmUsage(Base):
+    """One row per classifier LLM call: tokens and cost (daily budget source)."""
+
+    __tablename__ = "insight_llm_usage"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    model: Mapped[str] = mapped_column(String(64))
+    turns: Mapped[int] = mapped_column(Integer)
+    prompt_tokens: Mapped[int] = mapped_column(Integer)
+    completion_tokens: Mapped[int] = mapped_column(Integer)
+    total_tokens: Mapped[int] = mapped_column(Integer)
+    cost_usd: Mapped[float] = mapped_column(Float)
+    token_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

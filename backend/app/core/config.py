@@ -264,6 +264,25 @@ class Settings(BaseSettings):
     jobs_retention_days: int = 7
     state_cleanup_interval_seconds: int = 60
 
+    # --- Insights (PR-12) ---
+    # Turns per classifier LLM call.
+    insights_batch_size: int = Field(default=10, ge=1, le=50)
+    # Classifier tokens allowed per local day; over budget, jobs are deferred.
+    insights_daily_token_budget: int = Field(default=200_000, ge=0)
+    # IANA zone for "day" boundaries (budget window, daily rollup).
+    insights_timezone: str = Field(
+        default="Australia/Sydney", pattern=r"^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$"
+    )
+    # Enqueue `insights.classify` after each persisted assistant message.
+    insights_classify_on_write: bool = True
+    # Truncation applied (after PII masking) before text reaches the classifier.
+    insights_user_max_chars: int = 1000
+    insights_answer_max_chars: int = 600
+    # Empty = use AZURE_DEPLOYMENT_NAME.
+    insights_model: str = ""
+    insights_reasoning_effort: str = "minimal"
+    insights_completion_tokens_per_turn: int = 120
+
     # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
     # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).
     entra_tenant_id: str | None = None

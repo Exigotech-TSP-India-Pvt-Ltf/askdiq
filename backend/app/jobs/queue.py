@@ -201,6 +201,38 @@ async def fail(
     return status
 
 
+class JobDeferredError(Exception):
+    """Raised by a handler to postpone its job without spending an attempt."""
+
+    def __init__(self, run_after: datetime, reason: str) -> None:
+        super().__init__(reason)
+        self.run_after = run_after
+        self.reason = reason
+
+
+async def defer(
+    job: Job,
+    run_after: datetime,
+    reason: str,
+    *,
+    engine: AsyncEngine | None = None,
+) -> None:
+    """Re-queue a running job for ``run_after``; the claim's attempt is refunded."""
+    async with _engine(engine).begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE jobs SET status = 'queued', run_after = :run_after, "
+                "attempts = GREATEST(attempts - 1, 0), last_error = :reason, "
+                "locked_by = NULL, locked_at = NULL WHERE id = :id"
+            ),
+            {
+                "id": job.id,
+                "run_after": run_after,
+                "reason": reason[:_MAX_ERROR_CHARS],
+            },
+        )
+
+
 _RECLAIM_SQL = text(
     """
     UPDATE jobs SET
