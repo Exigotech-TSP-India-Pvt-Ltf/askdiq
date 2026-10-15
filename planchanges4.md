@@ -673,7 +673,7 @@ Make the brand runtime-configurable (newplan §14), with safe asset handling (A0
 - [ ] **[Test]** Phase B3 complete.
 
 #### Task B3.1: Model and migration
-- [ ] **[Dev]** Add `brand_settings` (a singleton enforced by a `CHECK (id = 1)`) and `brand_assets` (with a `sha256` primary key). Seed from the current config values and the Exigo Tech teal palette.
+- [ ] **[Dev]** Add `brand_settings` (a singleton enforced by a `CHECK (id = 1)`) and `brand_assets` (with a `sha256` primary key). Seed from the current config values and the Exigo Tech teal palette. The seed also fills in the login copy fields (`login_eyebrow`, `login_headline`, `login_subtext`, `login_description`) with DeployIQ defaults, and leaves `privacy_url`, `terms_url` and `help_url` empty. The URLs are validated as `https://` or relative only, so a `javascript:` URL is impossible.
 - [ ] **[Lint]** Run LINT-BE.
 - [ ] **[Test]** Migration round-trip. The seed matches the config defaults.
 
@@ -1327,9 +1327,19 @@ Put the B2 security model into the UI (newplan §7.7, §7.8). The UI hides what 
 - [ ] **[Test]** Task F1.2: component tests pass.
 
 ##### Subtask F1.2.1: `/login`
-- [ ] **[Dev]** A split layout: brand gradient panel with `BrandLogo` and `login_headline`, and a card with a "Sign in with Microsoft" button (Microsoft logo, loading state). The error message comes from the `?error=` code (allow-listed messages only). Motion `fadeUp`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** An unknown error code shows a generic message, never reflecting raw input (XSS check).
+- [ ] **[Dev]** Build the page to the newplan §7.7 "Login page design" spec. It follows the reference ET-HUB screenshot, but in **our logo and teal palette, not purple**:
+  - **Left panel:** teal gradient, animated hexagon outlines and rings, white `BrandLogo`, eyebrow, headline, copy and © footer.
+  - **Right panel:** "Welcome to {product}", description, the Microsoft sign-in button (hover lift, sheen, focus ring, loading spinner), the SINGLE SIGN-ON divider, the access text with an `ACCESS_CONTACT_EMAIL` mailto link, and the Privacy, Terms and Help links.
+  - **Motion:** staggered `fadeUp`, slow hexagon drift with pointer parallax, and `pop` on the error banner.
+  - **Other states:** dark mode, a single column on mobile, and reduced motion is static.
+  - **Data:** every string, URL and logo comes from `useBrand()`. The error message comes from the `?error=` code, using allow-listed messages only.
+- [ ] **[Lint]** Run LINT-FE. The theme guard is clean (no hex colours, only tokens).
+- [ ] **[Test]**
+  - An unknown error code shows a generic message and never reflects raw input (XSS check).
+  - The brand strings render from a mocked `/branding`, and empty `privacy_url`, `terms_url` or `help_url` hide their links.
+  - The button shows a spinner and is disabled after a click.
+  - With reduced motion, no animation variants are applied.
+  - Manual light and dark screenshots are compared side by side with the reference in the PR.
 
 ##### Subtask F1.2.2: Access Required page and suspended page
 - [ ] **[Dev]**

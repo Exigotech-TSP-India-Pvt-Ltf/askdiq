@@ -631,6 +631,26 @@ This is the "Tiered" option you chose. Permissions are defined once in a single 
 
 ### 7.7 Frontend work
 
+- **Login page design (rev 3.2, from your reference screenshot):** a two-panel split screen. It keeps the reference's structure but uses **our logo and the teal palette, not purple**.
+  - **Left brand panel (about 53 % width, hidden below `md`):**
+    - Background: a teal gradient from `brand-600` `#008080` to `brand-800` `#00584F`, with a soft radial highlight.
+    - Decoration: thin translucent **hexagon outlines** echoing the logo's geometry, plus 2 large faint concentric rings.
+    - Logo: the white (dark-variant) logo, top left.
+    - Text: a small uppercase eyebrow (`login_eyebrow`, for example "ASKDIQ"), a large headline (`login_headline`), supporting copy (`login_subtext`), and a `© {year} {company_name}` footer.
+  - **Right panel:**
+    - Card content: the heading "Welcome to {product_name}" and a one-paragraph description.
+    - A full-width **"Sign in with Microsoft"** button: Microsoft four-square logo, 1 px border, rounded-xl, hover lift and brand-tinted border, focus ring, and a loading spinner after the click.
+    - A "SINGLE SIGN-ON" divider.
+    - The text "Access is provisioned by your {company_name} administrator. If you can't sign in, contact {ACCESS_CONTACT_EMAIL}" (a `mailto:` link in brand colour).
+    - A footer with Privacy Policy, Terms of Service and Help links (`privacy_url`, `terms_url`, `help_url` from branding, each hidden when empty).
+    - In dark mode the right panel uses `dark-bg` and the card text tokens, and the left panel keeps the teal gradient. Both pass AA contrast.
+  - **Motion (`motion` presets):**
+    - The headline, copy and card enter with a staggered `fadeUp`.
+    - The hexagons drift and rotate very slowly (20 to 40 s loops, `transform` only) and follow the pointer with a subtle parallax.
+    - The button gets a sheen sweep on hover, and the error banner uses `pop`.
+    - With reduced motion, everything is static.
+  - **White-label:** every string, URL and logo comes from `/branding` (section 14). Nothing is hard-coded to Exigo Tech.
+  - **Mobile:** a single column, with the teal header strip and logo above the card.
 - **Pages:** `/login` (brand, sign-in button), `/auth/callback` (handler), the **Access Required** page (shown in place of any dashboard route for users without an approved role: message, request form, status, `ACCESS_CONTACT_EMAIL`), and an account-suspended page. All use the shared logo and theme.
 - **`auth-context.tsx`:** replace the Guest stub with real state from `GET /auth/me` (`user`, `role`, `status`, `permissions`). `useAuth` keeps the same shape (`token`, `user`, `isLoading`, `logout`) so existing pages keep working.
 - **Route gate** in `(app)/layout.tsx`: unauthenticated goes to `/login`. Signed-in users without an approved role can use `/chat`, and every dashboard route renders the **Access Required** page (message, request button, status, `ACCESS_CONTACT_EMAIL`). Suspended users get the suspended page. Only active users with a role see the dashboard shell and full sidebar. Users without a role see a minimal sidebar (Chat only). `GET /auth/me` returns the contact email so the UI never hard-codes it.
@@ -882,7 +902,7 @@ Each row is enforced in code and proven by a test. Existing controls are kept an
 - Hard-coded in the frontend: "DeployIQ" in `app/layout.tsx` metadata and in the chat sample questions, the `/exigotech-logo.svg` and `/exigotech-mark.svg` paths in `Sidebar.tsx`, and the teal palette in `tailwind.config.ts`.
 
 **Target:**
-- **`brand_settings` table** (a singleton row, with config values as the fallback): `product_name`, `assistant_name`, `company_name`, `support_email`, `access_contact_email` (supersedes the env default), `primary_hex`, `accent_hex`, `logo_light_asset_id`, `logo_dark_asset_id`, `mark_light_asset_id`, `mark_dark_asset_id`, `favicon_asset_id`, `login_headline`, `login_subtext`, `chat_sample_questions` (JSON), `updated_by`, `updated_at`, `version`.
+- **`brand_settings` table** (a singleton row, with config values as the fallback): `product_name`, `assistant_name`, `company_name`, `support_email`, `access_contact_email` (supersedes the env default), `primary_hex`, `accent_hex`, `logo_light_asset_id`, `logo_dark_asset_id`, `mark_light_asset_id`, `mark_dark_asset_id`, `favicon_asset_id`, `login_eyebrow`, `login_headline`, `login_subtext`, `login_description`, `privacy_url`, `terms_url`, `help_url` (validated `https://` or relative URLs only), `chat_sample_questions` (JSON), `updated_by`, `updated_at`, `version`.
 - **`brand_assets` table:** content-addressed bytes (sha256), MIME type and dimensions. Upload is validated for MIME sniffing, a 512 KB cap, PNG, WebP or sanitized SVG only, and maximum dimensions. Assets are served at `GET /branding/assets/{sha}` with immutable caching.
 - **API:**
   - `GET /branding` (public, cached, ETag) returns resolved values plus a derived 50 to 950 palette.
