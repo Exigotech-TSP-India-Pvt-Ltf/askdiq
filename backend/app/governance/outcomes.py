@@ -40,7 +40,7 @@ def derive_outcome(
     guardrail_flags: list[str] | None = None,
     grounded: bool | None = None,
     prompt_tokens: int | None = None,
-    completion_tokens: int | None = None,
+    completion_tokens: int | None = None,  # noqa: ARG001 - public kwarg, callers pass it
     query: str | None = None,
     answer: str | None = None,
     token_details: dict[str, Any] | None = None,
@@ -100,7 +100,7 @@ def derive_outcome(
             return "blocked"
 
     # 4. Ungrounded check
-    if normalized_hint == "ungrounded" or normalized_hint == "fallback":
+    if normalized_hint in {"ungrounded", "fallback"}:
         return "ungrounded"
 
     if grounded is False:

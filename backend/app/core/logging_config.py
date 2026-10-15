@@ -43,7 +43,7 @@ class SafeStreamHandler(logging.StreamHandler):
 
 def configure_logging(log_level: str = "INFO") -> None:
     """Configure structlog and standard library logging with background queue processing."""
-    global _log_listener, _configured
+    global _log_listener, _configured  # noqa: PLW0603 - process-wide singleton
     if _configured:
         return
 

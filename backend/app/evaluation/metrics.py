@@ -33,7 +33,7 @@ def chunk_relevance(
     wanted_headings = [h.lower() for h in (expected_headings or [])]
 
     flags: list[bool] = []
-    for doc, heading in zip(ranked_docs, ranked_headings):
+    for doc, heading in zip(ranked_docs, ranked_headings, strict=False):
         doc_ok = (doc in wanted_docs) if wanted_docs else True
         heading_ok = (
             any(h in (heading or "").lower() for h in wanted_headings)

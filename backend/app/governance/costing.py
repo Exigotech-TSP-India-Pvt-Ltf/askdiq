@@ -146,7 +146,7 @@ def calculate_stage_costs(
     rates: dict[str, Decimal | float] | None = None,
 ) -> dict[str, float]:
     """Computes stage-by-stage token costs with 6 decimal places of precision."""
-    total_cost, details = compute_exchange_cost(
+    _total_cost, details = compute_exchange_cost(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         reasoning_tokens=reasoning_tokens,

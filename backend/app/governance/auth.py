@@ -18,6 +18,8 @@ from fastapi.security import APIKeyHeader
 
 from app.core.config import get_settings
 
+_MAX_CLIENT_ID_LENGTH = 64
+
 settings = get_settings()
 
 DEFAULT_ACTOR = "default@local"
@@ -35,7 +37,7 @@ def sanitize_client_id(client_id: str | None) -> str:
     if not client_id:
         return DEFAULT_ACTOR
     cleaned = client_id.strip()
-    if len(cleaned) <= 64 and _SAFE_CLIENT_ID_RE.match(cleaned):
+    if len(cleaned) <= _MAX_CLIENT_ID_LENGTH and _SAFE_CLIENT_ID_RE.match(cleaned):
         return cleaned
     return DEFAULT_ACTOR
 

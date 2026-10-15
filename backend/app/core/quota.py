@@ -16,6 +16,9 @@ from typing import Any
 
 from app.core.config import get_settings
 
+_HEADER_FRESHNESS_SECONDS = 60.0
+_HIGH_UTILIZATION_RATIO = 0.8
+
 
 @dataclass
 class DeploymentQuotaTracker:
@@ -113,7 +116,7 @@ class DeploymentQuotaTracker:
 
             if (
                 self.last_header_timestamp is not None
-                and (now - self.last_header_timestamp) < 60.0
+                and (now - self.last_header_timestamp) < _HEADER_FRESHNESS_SECONDS
             ):
                 header_active = True
                 if self.last_header_remaining_tokens is not None and self.tpm_limit > 0:
@@ -141,7 +144,9 @@ class DeploymentQuotaTracker:
                     rpm_headroom = min(local_rpm_headroom, header_rpm_headroom)
 
             error_rate = round(errors / rpm, 4) if rpm > 0 else 0.0
-            high_utilization = (tpm_util > 0.8) or (rpm_util > 0.8)
+            high_utilization = (tpm_util > _HIGH_UTILIZATION_RATIO) or (
+                rpm_util > _HIGH_UTILIZATION_RATIO
+            )
 
             return {
                 "deployment": self.name,

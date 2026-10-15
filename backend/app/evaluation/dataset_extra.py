@@ -5,6 +5,10 @@ a circular import with dataset.py). Robustness variants point at a clean case
 via ``variant_of`` so the evaluator can measure stability against it.
 """
 
+import json
+import logging
+import os
+
 ABOUT = "about-us.md"
 PLATFORM = "deploy-iq-platform.md"
 HOME = "home-page.md"
@@ -280,8 +284,6 @@ def build_extra_cases(EvalCase) -> list:  # noqa: N803, RUF100
 
     # Promoted test cases from real human feedback
     promoted_cases = []
-    import json
-    import os
 
     promoted_file = os.path.join("data", "promoted_test_cases.json")
     if os.path.exists(promoted_file):
@@ -298,6 +300,8 @@ def build_extra_cases(EvalCase) -> list:  # noqa: N803, RUF100
                     )
                 )
         except Exception:
-            pass
+            logging.getLogger(__name__).warning(
+                "promoted_test_cases_unreadable", exc_info=True
+            )
 
     return [*abstention, *safe, *robust, *long_conv, *promoted_cases]

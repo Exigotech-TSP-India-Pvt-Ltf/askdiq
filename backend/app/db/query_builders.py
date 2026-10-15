@@ -22,6 +22,9 @@ from app.schemas.filters import (
     UserFilterParams,
 )
 
+_POSITIVE_RATING_MIN = 4
+_NEGATIVE_RATING_MAX = 2
+
 if TYPE_CHECKING:
     from app.models.db_models import (
         AuditLog,
@@ -260,9 +263,9 @@ def build_feedback_filter_clauses(
         if filters.rating in {"1", "2", "3", "4", "5"}:
             clauses.append(feedback_model.rating == int(filters.rating))
         elif filters.rating == "positive":
-            clauses.append(feedback_model.rating >= 4)
+            clauses.append(feedback_model.rating >= _POSITIVE_RATING_MIN)
         elif filters.rating == "negative":
-            clauses.append(feedback_model.rating <= 2)
+            clauses.append(feedback_model.rating <= _NEGATIVE_RATING_MAX)
 
     return clauses
 

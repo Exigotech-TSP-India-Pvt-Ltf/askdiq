@@ -9,17 +9,18 @@ so `/metrics/latency` can compute P50/P70/P100 later.
 import asyncio
 import time
 import uuid
+from http import HTTPStatus
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from app.core.database import AsyncSessionLocal
 from app.core.logging_config import (
     bind_request_context,
     clear_request_context,
     get_logger,
 )
 from app.core.request_meta import get_client_ip
-from app.core.database import AsyncSessionLocal
 from app.models.db_models import LatencyRecord
 from app.retrieval.embeddings import embedding_timing_sink
 from app.retrieval.reranker import rerank_timing_sink
@@ -83,7 +84,7 @@ class LatencyMiddleware(BaseHTTPMiddleware):
             request.state.stage_timings["embedding"] = sum(embed_sink)
         if rerank_sink:
             request.state.stage_timings["reranker"] = sum(rerank_sink)
-        if response.status_code >= 500:
+        if response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
             METRICS["errors"] += 1
 
         total_ms = (time.perf_counter() - start) * 1000

@@ -1,10 +1,14 @@
+import asyncio
+import concurrent.futures
 import time
 from contextvars import ContextVar
+from http import HTTPStatus
 
 from openai import AsyncAzureOpenAI
 
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
+from app.core.quota import quota_monitor
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -40,14 +44,12 @@ except Exception:
 
 async def embed_texts(
     texts: list[str],
-    task_type: str | None = None,
+    task_type: str | None = None,  # noqa: ARG001 - public kwarg, callers pass it
     stage: str | None = None,
 ) -> list[list[float]]:
     """Generate embeddings using Azure OpenAI and capture stage tokens."""
     if not texts:
         return []
-
-    from app.core.quota import quota_monitor
 
     t_start = time.perf_counter()
     try:
@@ -56,7 +58,8 @@ async def embed_texts(
             input=texts,
         )
     except Exception as exc:
-        is_429 = getattr(exc, "status_code", None) == 429 or "429" in str(exc)
+        status_code = getattr(exc, "status_code", None)
+        is_429 = status_code == HTTPStatus.TOO_MANY_REQUESTS or "429" in str(exc)
         quota_monitor.record_embedding(0, is_error=True, is_429=is_429)
         if is_429:
             logger.error(
@@ -113,8 +116,6 @@ def embed_texts_sync(
     """Synchronous wrapper for embed_texts."""
     if not texts:
         return []
-    import asyncio
-    import concurrent.futures
 
     try:
         loop = asyncio.get_running_loop()

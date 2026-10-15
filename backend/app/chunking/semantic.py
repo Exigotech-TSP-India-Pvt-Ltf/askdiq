@@ -14,11 +14,13 @@ import numpy as np
 
 from app.chunking.base import ChunkingStrategy, ChunkResult
 
+_MIN_VECTORS_TO_COMPARE = 2
+
 
 def _consecutive_similarities(embeddings: list[list[float]]) -> np.ndarray:
     """Cosine similarity between each embedding and the next (0.0 for zero vectors)."""
     m = np.asarray(embeddings, dtype=np.float64)
-    if len(m) < 2:
+    if len(m) < _MIN_VECTORS_TO_COMPARE:
         return np.zeros(0)
     denom = np.linalg.norm(m[:-1], axis=1) * np.linalg.norm(m[1:], axis=1)
     dots = np.einsum("ij,ij->i", m[:-1], m[1:])
@@ -35,7 +37,8 @@ def _split_long(sentence: str) -> list[str]:
     if len(sentence) <= MAX_SENTENCE_CHARS:
         return [sentence]
     parts, current = [], ""
-    for word in sentence.split():
+    for raw_word in sentence.split():
+        word = raw_word
         while len(word) > MAX_SENTENCE_CHARS:
             if current:
                 parts.append(current)

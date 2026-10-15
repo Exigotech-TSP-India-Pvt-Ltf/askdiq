@@ -20,7 +20,10 @@ STRUCTURE_TYPES = {"markdown", "md", "html", "code"}
 _semantic_embed_fn = embed_texts
 
 
-def get_strategy(name: str, source_type: str = "text") -> ChunkingStrategy:
+def get_strategy(
+    name: str,
+    source_type: str = "text",  # noqa: ARG001 - public kwarg, callers pass it
+) -> ChunkingStrategy:
     if name == "auto":
         name = "structure_aware"
 

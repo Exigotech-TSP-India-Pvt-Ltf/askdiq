@@ -4,9 +4,11 @@ Builds index-optimized selectables pairing user questions and assistant answers
 by (session_id, turn_index), joined to chat_sessions and latency_metrics.
 """
 
+import uuid
 from datetime import datetime
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import (
     Select,
     String,
@@ -43,8 +45,6 @@ def escape_ilike_pattern(text: str) -> str:
     if not text:
         return ""
     if "\x00" in text:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=422, detail="Search query contains prohibited null characters."
         )
@@ -132,8 +132,6 @@ async def apply_usage_filters(
         query = query.where(user_alias.ip_address == ip.strip())
     if session_id:
         try:
-            import uuid
-
             s_uuid = uuid.UUID(session_id.strip())
             query = query.where(user_alias.session_id == s_uuid)
         except ValueError:

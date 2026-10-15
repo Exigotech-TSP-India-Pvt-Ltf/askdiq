@@ -11,6 +11,7 @@ from app.core.sessions import (
     schedule_exchange_write,
 )
 from app.governance.costing import compute_exchange_cost
+from app.governance.online_eval import schedule_online_evaluation
 from app.governance.pii import redact_pii
 from app.harness.orchestrator import run_query
 from app.retrieval.embeddings import embedding_tokens_sink
@@ -108,8 +109,6 @@ async def query(
             "tokens": merged_details.get("tokens", {}),
         },
     )
-
-    from app.governance.online_eval import schedule_online_evaluation
 
     schedule_online_evaluation(
         request_id=request.state.request_id,

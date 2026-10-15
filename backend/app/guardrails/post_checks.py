@@ -115,7 +115,7 @@ async def check_groundedness(
 
             if missing:
                 fresh = await embed_texts([sources[i].content for i in missing])
-                for index, embedding in zip(missing, fresh):
+                for index, embedding in zip(missing, fresh, strict=False):
                     source_embeddings[index] = embedding
         finally:
             current_embedding_stage.reset(stage_token)

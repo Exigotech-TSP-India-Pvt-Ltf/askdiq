@@ -41,7 +41,7 @@ _encoder_lock = threading.Lock()
 
 @lru_cache(maxsize=1)
 def _load_encoder():
-    from fastembed.rerank.cross_encoder import TextCrossEncoder
+    from fastembed.rerank.cross_encoder import TextCrossEncoder  # noqa: PLC0415 - heavy model dependency, loaded on first use
 
     return TextCrossEncoder(model_name=settings.reranker_model)
 

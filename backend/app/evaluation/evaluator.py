@@ -36,6 +36,8 @@ from app.retrieval.reranker import rerank_timing_sink
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn
 
+_NOISY_RETRIEVAL_RATIO = 0.5
+
 STAGES = ("guardrail_pre", "retrieval", "llm", "guardrail_post")
 
 
@@ -311,9 +313,11 @@ class EvaluationReport:
         noisy, clean = [], []
         for r in self.scored:
             if "noise_ratio" in r.retrieval_metrics:
-                (noisy if r.retrieval_metrics["noise_ratio"] >= 0.5 else clean).append(
-                    r.passed
-                )
+                (
+                    noisy
+                    if r.retrieval_metrics["noise_ratio"] >= _NOISY_RETRIEVAL_RATIO
+                    else clean
+                ).append(r.passed)
         return {
             "mean_noise_ratio": self.retrieval_means().get("noise_ratio"),
             "pass_rate_noisy_context": _rate(noisy),
@@ -527,7 +531,6 @@ class EvaluationReport:
 def _retrieval_metrics(
     case: EvalCase,
     ranked_docs: list[str | None],
-    ranked_headings: list[str | None],
     context: list[str],
     top_k: int,
 ) -> dict[str, float]:
@@ -648,9 +651,7 @@ async def evaluate_case(
     retrieval_metrics: dict[str, float] = {}
     heading_ok: bool | None = None
     if case.expected_docs and not case.expect_abstain:
-        retrieval_metrics = _retrieval_metrics(
-            case, ranked_docs, ranked_headings, context, top_k
-        )
+        retrieval_metrics = _retrieval_metrics(case, ranked_docs, context, top_k)
         if case.expected_headings:
             heading_flags = m.chunk_relevance(
                 ranked_docs, ranked_headings, case.expected_docs, case.expected_headings
@@ -689,7 +690,9 @@ async def evaluate_case(
             "content": s.content,
             "metadata": s.metadata or {},
         }
-        for doc, heading, s in zip(ranked_docs, ranked_headings, response.sources)
+        for doc, heading, s in zip(
+            ranked_docs, ranked_headings, response.sources, strict=True
+        )
     ]
     citation: dict = {}
     if has_real_answer and response.sources and case.expected_docs:
@@ -784,7 +787,7 @@ async def evaluate_case(
                 "score": round(source.score, 4),
             }
             for doc, heading, source in zip(
-                ranked_docs, ranked_headings, response.sources
+                ranked_docs, ranked_headings, response.sources, strict=True
             )
         ],
         retrieval_metrics=retrieval_metrics,

@@ -55,7 +55,7 @@ async def _startup_azure_health_check() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     if settings.env == "production" and not settings.trust_proxy_headers:
         logger.warning(
             "production_startup_warning: trust_proxy_headers is False while env=production. "

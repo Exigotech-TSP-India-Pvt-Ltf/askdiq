@@ -62,7 +62,7 @@ def _sweep(now: float) -> None:
 def _check_and_record(
     log_store: dict[str, deque[float]], key: str, limit: int, label: str
 ) -> None:
-    global _calls_since_sweep
+    global _calls_since_sweep  # noqa: PLW0603 - process-wide sweep counter
     now = time.monotonic()
 
     _calls_since_sweep += 1

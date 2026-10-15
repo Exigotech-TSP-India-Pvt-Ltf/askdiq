@@ -20,10 +20,11 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.logging_config import get_logger
 from app.core.database import AsyncSessionLocal
+from app.core.logging_config import get_logger
 from app.governance.audit import record_audit_event
 from app.governance.costing import compute_exchange_cost
+from app.governance.outcomes import derive_outcome
 from app.governance.pii import redact_pii
 from app.models.db_models import ChatMessageRecord, ChatSession, MessageFeedback
 from app.schemas.query import ChatTurn
@@ -33,6 +34,11 @@ from app.schemas.session import (
     ChatSessionSummary,
     UserFeedbackResponse,
 )
+
+# Feedback alert: enough recent ratings, and too many of them negative.
+_FEEDBACK_ALERT_MIN_SAMPLES = 5
+_NEGATIVE_RATING_MAX = 2
+_FEEDBACK_ALERT_NEGATIVE_RATE = 0.25
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -132,7 +138,7 @@ async def resolve_session_for_query(
         return session
 
     # Persisted later by schedule_exchange_write, so the id is assigned here.
-    session = ChatSession(
+    return ChatSession(
         id=uuid.uuid4(),
         user_email=user_email,
         title="New chat",
@@ -141,7 +147,6 @@ async def resolve_session_for_query(
         expires_at=now + _session_timeout(),
         created_ip=client_ip,
     )
-    return session
 
 
 async def load_recent_history(db: AsyncSession, session: ChatSession) -> list[ChatTurn]:
@@ -194,8 +199,6 @@ async def record_exchange(
 
     # Derive canonical outcome if not supplied
     if outcome is None:
-        from app.governance.outcomes import derive_outcome
-
         outcome = derive_outcome(
             outcome_hint=(token_details or {}).get("outcome"),
             guardrail_flags=guardrail_flags,
@@ -609,10 +612,10 @@ async def record_feedback(
         .all()
     )
 
-    if len(recent_ratings) >= 5:
-        neg_count = sum(1 for r in recent_ratings if r <= 2)
+    if len(recent_ratings) >= _FEEDBACK_ALERT_MIN_SAMPLES:
+        neg_count = sum(1 for r in recent_ratings if r <= _NEGATIVE_RATING_MAX)
         neg_rate = neg_count / len(recent_ratings)
-        if neg_rate > 0.25:
+        if neg_rate > _FEEDBACK_ALERT_NEGATIVE_RATE:
             await record_audit_event(
                 db,
                 request_id=req_id,
