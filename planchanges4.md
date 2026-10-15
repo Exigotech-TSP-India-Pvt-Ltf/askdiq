@@ -2053,18 +2053,37 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 
 ---
 
-## 10. Execution log (updated as work completes)
+## 10. Execution log (updated as work completes, 2026-10-15)
 
-| Time (2026-10-15) | PR | Branch | State | Notes |
-|---|---|---|---|---|
-| – | #14 | `chore/env-examples-rev3` | PR open, CI green | All new env variables documented as placeholders. Base of the stack. |
-| – | #15 | `docs/plan-theme-parity-audit` | PR open | Plan: theme parity audit, branded login design, progress ticks. |
-| – | #17 (PR-03) | `feat/platform-security-headers-errors` | PR open (base #16), CI green | B1.1 and B1.2 done (50 new tests). **Open:** B1.1.3 `nginx -t` and `curl -I` can't run locally (no Docker), so verify them in a compose environment. Chat-completion timeout kept at `AZURE_OPENAI_REQUEST_TIMEOUT` (60 s); `OUTBOUND_TIMEOUT_SECONDS` applies to embeddings and httpx. A 422 response's `detail` is now a string, and the field errors moved to `errors`. |
-| – | PR-01 | `chore/ci-hardening` | In progress | |
-| – | #16 (PR-02) | `chore/lint-scope-claude-md` | PR open (base #14), CI green | Ruff now selects E, W, F, I, UP, B, N, PL, SIM, S, ASYNC, C4, T20, RUF, ARG, RET and FAST, with zero findings. **Flagged per CLAUDE.md precedence:** FAST002 and FAST001 are ignored, because the existing code uses `Depends()` defaults and explicit `response_model`. The PLR complexity limits are ignored for about 50 handlers; refactoring them is a follow-up. `GuardrailBlocked` was renamed to `GuardrailBlockedError`. The B0.3.3 format-on-save check is manual and still to do. |
-| – | #18 (PR-04) | `feat/platform-jobs-state-http` | PR open (base #17), CI green (492 passed) | Added migrations `e7f8a9b0c1d2` (jobs) and `f8a9b0c1d2e3` (UNLOGGED rate_limit_buckets, oidc_states), plus `app/jobs`, the state backend, the LISTEN/NOTIFY bus, an SSE-safe GZip, ETag responses, `gather_scoped`, the LLM gate (429 with Retry-After), and the 60-request concurrency gate (under 3 s in CI). `requests` was removed. B1.7.2 is done: the blocking detector uses a 10 ms ticker that fails on any 250 ms stall or more than 3 stalls over 50 ms, with warm-up excluded and negative tests. CI was green twice in a row (head `927a4b2`). **Notes:** the dashboard ETag rarely returns 304 because live counters change every call. `read_only_session()` is not on any route yet. A pre-existing foreign-key race on `evaluation_records.message_id` (online-eval write before commit) is logged for B5. |
-| – | #22 (PR-09) | `fix/governance-data-correctness` | PR open (base #20), CI green | G1–G7, G9 and G11 are fixed with regression tests. New audit events: rate_limited, server_error, llm_call_failed, llm_retry, session created/rotated/expired, test_ip_updated. **Breaking:** `trace_id` is removed (the frontend is updated); `service` is now a category and the raw action is in `action`; `error_rate` is 24-hour, DB-based and audience-scoped. Deferred: no document-edit or audience-change routes exist yet. |
-| – | PR-05 | `feat/platform-load-balancing` | Code done, CI green, stacks after PR-09 | Added a `least_conn` nginx upstream across 2 replicas with an SSE location; prod compose runs api-1, api-2 and a worker; `--workers ${WEB_CONCURRENCY}`; the load test script gained budgets and `--smoke`; 25 tests. **Needs a Docker host:** `nginx -t`, `compose config`, the replica-kill test and the 2-replica smoke run. It surfaced a flaky loop-block test in PR-04, which is being fixed. |
-| – | PR-15 | `feat/ui-foundations-motion-tokens-brand` | Code done, CI green, rebasing onto #19 (PR-01) so frontend CI runs vitest and the audit gate | `motion` 14.3.0 is pinned exactly. Token system with a CSS-variable brand ramp, `useChartTheme`, a pre-paint theme script, a System mode, cross-tab sync and dark status tokens. Added `BrandProvider` and `BrandLogo` (re-cropped viewBox, aspect about 4.01, plus dark variants). Fixed light/dark causes T1–T6, plus extra dark-mode bugs: Recharts tooltips stuck white, an invisible document name, and a monitoring view that only worked in light mode. 128 vitest tests pass. **For your review:** the off-canvas "ARTIFICIAL INTELLIGENCE" tagline was removed from the logo SVG, matching the tight PNG. **Manual:** light and dark screenshots in `frontend/docs/theme-audit.md`. |
+**Owner decisions in effect:**
+- PRs are left open and unmerged for you to review and merge.
+- PRs form a dependency tree (see below).
+- Taxonomy: the proposed DeployIQ list.
+- Database tests run in GitHub CI.
+- No Redis and no Playwright.
 
-**Stack shape for review and merge: a dependency tree.** Each PR's base is the branch it depends on: #14 → {#19 PR-01, #16 PR-02 → #17 PR-03 → #18 PR-04 → {#21 PR-05, #20 PR-06 → {PR-07, PR-08, PR-09 → PR-10, PR-11, PR-12 → PR-13}}}. Merge a parent, then delete its branch, and GitHub retargets its children to `main`. Siblings may need a quick rebase on `main` when merged.
+| PR | Plan id | Branch | Base | State | Notes |
+|---|---|---|---|---|---|
+| #14 | env | `chore/env-examples-rev3` | main | Open, CI green | All new env variables documented as placeholders. |
+| #15 | plan | `docs/plan-theme-parity-audit` | main | Open | This file: the plan, theme audit, login design and progress ticks. |
+| #19 | PR-01 | `chore/ci-hardening` | #14 | Open, **all jobs green** | New CI jobs: backend-lint (ruff, format, pylint ≥ 9.26, bandit, pip-audit), backend-tests (single alembic head, downgrade round-trip, coverage ≥ 78 %), frontend-checks (vitest and audit gate) and fullstack-smoke. CI also runs on stacked PRs. Adds `TEST_DATABASE_URL`, the PR template and Dependabot. **Your decision:** Next 14.2.35 and Starlette 0.38.6 have advisories, including **2 critical Next 14 RCEs** (Windows-hosted servers, and the AVIF image optimizer). They are on an allow-list that expires 2026-12-31; the fix is Next ≥ 15.5.24 or 16, and FastAPI ≥ 0.133 with Starlette ≥ 1.3.1. CODEOWNERS is not added. |
+| #16 | PR-02 | `chore/lint-scope-claude-md` | #14 | Open, CI green | Expanded ruff rules, zero findings. **Flagged per CLAUDE.md precedence:** FAST002 and FAST001 ignored (existing `Depends()` and `response_model` style); complexity limits ignored for about 50 handlers (follow-up). `GuardrailBlocked` renamed to `GuardrailBlockedError`. |
+| #17 | PR-03 | `feat/platform-security-headers-errors` | #16 | Open, CI green | Security headers, problem+json errors, `spawn()`/`drain()`, LLM circuit breaker, timeouts, nginx hardening. 50 tests. **Needs Docker:** `nginx -t`. A 422 `detail` is now a string, with field errors in `errors`. |
+| #18 | PR-04 | `feat/platform-jobs-state-http` | #17 | Open, CI green (twice) | Migrations `e7f8a9b0c1d2` and `f8a9b0c1d2e3`. Postgres job queue, shared state, LISTEN/NOTIFY, ETag, SSE-safe gzip, `gather_scoped`, LLM gate, **60-request concurrency gate**, and a deterministic loop-block detector. `requests` removed. |
+| #21 | PR-05 | `feat/platform-load-balancing` | #18 | Open, CI green | nginx `least_conn` upstream across 2 replicas plus an SSE location, compose with api-1, api-2 and a worker, and a budgeted load script. **Needs Docker:** `nginx -t`, `compose config`, the replica-kill test and the 2-replica smoke run. |
+| #20 | PR-06 | `feat/auth-sso-sessions-rbac` | #18 | Open, CI green | Migration `a9b0c1d2e3f4`. Entra SSO with a faithful mock, hashed sessions, RBAC on all 43 route dependencies, CSRF checks, `verify_sso_config.py`. **Your `.env` now needs `SESSION_SECRET`, plus either `ENTRA_*` or `AUTH_DEV_MOCK=true` with `ENV=development`.** |
+| #22 | PR-09 | `fix/governance-data-correctness` | #20 | Open, CI green | G1–G7, G9 and G11 fixed. New audit sources (rate_limited, server_error, llm_call_failed/llm_retry, session lifecycle, test_ip_updated). **Breaking:** `trace_id` removed; `service` is now a category; `error_rate` is 24h and DB-based. |
+| #23 | PR-12 | `feat/insights-taxonomy-classifier` | #20 | Open, CI green | Migration `4c1e9a7d2b65`. Taxonomy and the hybrid classifier via the job queue (PII-masked, injection-safe, daily budget, circuit breaker). HTML parity fixture: 49/117, Served 11, Partly 14, Not 22, handled 62. |
+| – | PR-15 | `feat/ui-foundations-motion-tokens-brand` | #19 | Code done, CI green; rebasing onto PR-01 | `motion` 14.3.0. Tokens, light/dark parity fixes T1–T6 (plus tooltips, documents and monitoring dark bugs), BrandProvider and BrandLogo with dark variants. 128 vitest tests. **Your review:** the off-canvas "ARTIFICIAL INTELLIGENCE" tagline was removed from the logo SVG. **Manual:** screenshots. |
+| – | PR-07 | `feat/auth-user-management-api` | #20 | In progress | `/auth/*` routes, user management, access requests, smoke sign-in journey. |
+| – | PR-08 | `feat/branding-white-label-api` | #20 | In progress | Branding API, assets and login copy fields. |
+| – | PR-10 | `feat/governance-endpoints-stream` | #22 | In progress | Logs and traces cursors, overview, monitoring percentiles, SSE stream. |
+| – | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | In progress | Feedback triage loop, export, golden cases, online-eval FK race fix. |
+| – | PR-13 | `feat/insights-analytics-endpoints` | #23 | In progress | `/admin/insights/*` with HTML parity. |
+
+**Stack shape for review and merge: a dependency tree.** Each PR's base is the branch it depends on:
+- #14 → #19 (PR-01) → PR-15 → frontend PRs
+- #14 → #16 (PR-02) → #17 (PR-03) → #18 (PR-04) → {#21 (PR-05), #20 (PR-06)}
+- #20 (PR-06) → {PR-07, PR-08, #22 (PR-09) → PR-10, PR-11, #23 (PR-12) → PR-13}
+
+Merge a parent, then delete its branch, and GitHub retargets its children to `main`. Before the final merge, a **rebase sweep** brings PR-01's stricter CI and PR-04's flaky-test fix into every backend branch, so each one is green under the final CI.
