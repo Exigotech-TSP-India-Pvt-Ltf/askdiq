@@ -54,6 +54,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/admin/governance/logs` | Pass | Fixed (T2) | Pass | Default level badge tokenised | [ ] |
 | `/admin/governance/traces` | Pass | Pass | Pass | No change needed | [ ] |
 | `/_not-found` (Next default) | Pass | Pass | Pass | Branded 404 is F0.6.6 (PR-17) | [ ] |
+| `/admin/analytics` (new, PR-25: Guide, Overview, Trend, Flow, Topics, Drop-off, Conversations tabs) | Pass | Pass | Pass | Native port of the Chatbot Insights HTML. Filter bar, chips, KPI cards, tour and pending state on `surface-*` / `line` / `brand-*` / `status-info-*` tokens; outcome pills on `status-*-bg` / `*-fg` | [ ] |
 | `/login` | n/a | n/a | n/a | Route not built yet (F1, PR-19); must use `BrandLogo` | n/a |
 
 ## Shared components
@@ -98,6 +99,9 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `charts/QuadrantScatter`, `charts/Radar` (new) | Pass | Pass | Pass | Quadrant dots from `status`; radar series from `categorical` |
 | `charts/TreemapChart`, `charts/SankeyChart` (new, `next/dynamic`) | Pass | Pass | Pass | Recharts wrappers fed from `useChartTheme()`; skeleton while the chunk loads |
 | Chart tooltip (`charts/primitives`) | Pass | Pass | Pass | Card on `bg-surface-elevated` + `border-line` + `shadow-md`; focus ring `.chart-mark:focus-visible` uses `--brand-500` |
+| `analytics/TrendChart`, `HourOfDayChart`, `FlowSankey`, `QualityDonut`, `DropoffChart`, `PeopleBubble` (new, PR-25) | Pass | Pass | Pass | Hand-drawn SVG on the chart-kit primitives; colours from `chartTheme.<theme>.insights` (the HTML's outcome, quality, handled and hour colours, lifted for dark; light Partly / Greeting moved to `status-warn` / slate for 3:1) via `useInsightsPalette()`; grid / axis / tooltip from `chartTheme`; theme flip covered by `tests/components/analytics` |
+| `analytics/TopicsTreemap` (new, PR-25) | Pass | Pass | Pass | `TreemapChart` (next/dynamic) with per-tile `color` from the handled-% scale (`mixHex(handled.low, handled.high)`) and `readableOn()` labels |
+| `analytics/ConversationsTable` (new, PR-25) | Pass | Pass | Pass | `TableCard` + `Pagination`; outcome pills on `status-*` tokens; expand panel on `surface-muted` |
 
 ## Known follow-ups (not theme-breaking)
 
