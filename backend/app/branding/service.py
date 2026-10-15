@@ -17,7 +17,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.branding.assets import AssetError, validate_asset
+from app.branding.assets import HTTP_INVALID, AssetError, validate_asset
 from app.branding.defaults import SINGLETON_ID, default_brand_values
 from app.branding.palette import PaletteError, derive_ramp, palette_for
 from app.core.cache import TTLCache
@@ -162,7 +162,7 @@ async def _require_assets_exist(db: AsyncSession, changes: dict[str, Any]) -> No
     missing = sorted(wanted - found)
     if missing:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            HTTP_INVALID,
             detail=f"Unknown brand asset id(s): {', '.join(missing)}. Upload them first.",
         )
 
@@ -188,7 +188,7 @@ async def update_branding(
         palette_for(primary)
     except PaletteError as exc:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            HTTP_INVALID,
             detail=f"Primary colour {primary} fails WCAG AA contrast: {exc}",
         ) from exc
     await _require_assets_exist(db, changes)
