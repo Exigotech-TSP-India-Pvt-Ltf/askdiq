@@ -33,7 +33,7 @@ describe("MessageBubble Component", () => {
     expect(screen.getByRole("button", { name: /unhelpful response/i })).toBeInTheDocument();
   });
 
-  it("submits thumbs up rating (rating = 5) and opens comment dialog", async () => {
+  it("submits thumbs up rating (rating = 5) in one click without opening a dialog", async () => {
     const onFeedback = vi.fn().mockResolvedValue(undefined);
     const message: ChatMessage = {
       id: "msg-asst-2",
@@ -49,13 +49,12 @@ describe("MessageBubble Component", () => {
     await waitFor(() => {
       expect(onFeedback).toHaveBeenCalledWith("msg-asst-2", 5, undefined);
     });
-
-    // Check that optional comment dialog opened
-    expect(screen.getByRole("dialog", { name: /feedback comment dialog/i })).toBeInTheDocument();
+    expect(onFeedback).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(thumbsUpBtn).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("submits thumbs down rating (rating = 1) with comment", async () => {
+  it("submits thumbs down (rating = 1), pops the reason chips and saves an optional note", async () => {
     const onFeedback = vi.fn().mockResolvedValue(undefined);
     const message: ChatMessage = {
       id: "msg-asst-3",
@@ -71,7 +70,9 @@ describe("MessageBubble Component", () => {
     await waitFor(() => {
       expect(onFeedback).toHaveBeenCalledWith("msg-asst-3", 1, undefined);
     });
+    expect(screen.getByRole("dialog", { name: /what went wrong/i })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: /add feedback note/i }));
     const textarea = screen.getByPlaceholderText(/what went well or what could be improved/i);
     fireEvent.change(textarea, { target: { value: "Needs more detailed references." } });
 
