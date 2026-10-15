@@ -261,46 +261,46 @@ Build the security and performance platform that every later feature uses (newpl
 - [ ] **[Test]** Phase B1 complete: unit, integration and concurrency tests pass.
 
 #### Task B1.1: Security headers and misconfiguration (A02)
-- [ ] **[Dev]** Task B1.1: add the security headers middleware and production hardening.
+- [x] **[Dev]** Task B1.1: add the security headers middleware and production hardening.
 - [ ] **[Lint]** Task B1.1: LINT-BE on `app/core/security_headers.py` and `main.py`.
 - [ ] **[Test]** Task B1.1: `tests/test_security_headers.py` passes.
 
 ##### Subtask B1.1.1: `SecurityHeadersMiddleware`
-- [ ] **[Dev]** Add a pure ASGI middleware that sets `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `X-Frame-Options: DENY` and `CSP: default-src 'none'; frame-ancestors 'none'` for API JSON. It adds HSTS only when `ENV=production`. Header values come from config.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Every route, including error responses, carries the headers. HSTS is absent in development and present in production.
+- [x] **[Dev]** Add a pure ASGI middleware that sets `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `X-Frame-Options: DENY` and `CSP: default-src 'none'; frame-ancestors 'none'` for API JSON. It adds HSTS only when `ENV=production`. Header values come from config.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Every route, including error responses, carries the headers. HSTS is absent in development and present in production.
 
 ##### Subtask B1.1.2: CORS and docs hardening
-- [ ] **[Dev]** Set `allow_headers` to an explicit list (`Content-Type`, `X-API-Key`, `X-Request-ID`, `X-Client-Id`, `If-None-Match`) and `allow_methods` to an explicit list. Disable `/docs`, `/redoc` and `/openapi.json` unless `ENV != production` or `ENABLE_API_DOCS=true`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A preflight with an unknown header is rejected, and docs return 404 in production mode.
+- [x] **[Dev]** Set `allow_headers` to an explicit list (`Content-Type`, `X-API-Key`, `X-Request-ID`, `X-Client-Id`, `If-None-Match`) and `allow_methods` to an explicit list. Disable `/docs`, `/redoc` and `/openapi.json` unless `ENV != production` or `ENABLE_API_DOCS=true`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A preflight with an unknown header is rejected, and docs return 404 in production mode.
 
 ##### Subtask B1.1.3: nginx hardening (`askdiq.conf`)
-- [ ] **[Dev]** Add the same headers with `always`, set `server_tokens off`, cap `client_max_body_size` at 15m (matching the proxy), and keep `proxy_set_header X-Forwarded-For $remote_addr`.
+- [x] **[Dev]** Add the same headers with `always`, set `server_tokens off`, cap `client_max_body_size` at 15m (matching the proxy), and keep `proxy_set_header X-Forwarded-For $remote_addr`.
 - [ ] **[Lint]** `docker run --rm nginx nginx -t` passes on the config.
 - [ ] **[Test]** `curl -I` against the compose stack shows the headers.
 
 ---
 
 #### Task B1.2: Exceptional conditions (A10)
-- [ ] **[Dev]** Task B1.2: add the global problem+json errors and task supervision.
-- [ ] **[Lint]** Task B1.2: LINT-BE.
-- [ ] **[Test]** Task B1.2: `tests/test_error_handling.py` passes.
+- [x] **[Dev]** Task B1.2: add the global problem+json errors and task supervision.
+- [x] **[Lint]** Task B1.2: LINT-BE.
+- [x] **[Test]** Task B1.2: `tests/test_error_handling.py` passes.
 
 ##### Subtask B1.2.1: Global exception handlers
-- [ ] **[Dev]** Handlers for `Exception`, `HTTPException` and `RequestValidationError` return `application/problem+json` with `type`, `title`, `status`, `request_id` and no stack or internals. Log with `request_id`, PII-masked.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A forced error returns 500 with a `request_id` and no traceback text. A 422 lists field errors without echoing secrets.
+- [x] **[Dev]** Handlers for `Exception`, `HTTPException` and `RequestValidationError` return `application/problem+json` with `type`, `title`, `status`, `request_id` and no stack or internals. Log with `request_id`, PII-masked.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A forced error returns 500 with a `request_id` and no traceback text. A 422 lists field errors without echoing secrets.
 
 ##### Subtask B1.2.2: Supervised background tasks
-- [ ] **[Dev]** Add `app/core/tasks.py` with `spawn(coro, name)` that keeps a strong reference, logs exceptions, and is drained on lifespan shutdown. Replace the bare `asyncio.create_task` in the latency middleware.
-- [ ] **[Lint]** Run LINT-BE (ruff `ASYNC`, `RUF006`).
-- [ ] **[Test]** A failing task is logged, not lost, and shutdown waits for in-flight tasks (bounded timeout).
+- [x] **[Dev]** Add `app/core/tasks.py` with `spawn(coro, name)` that keeps a strong reference, logs exceptions, and is drained on lifespan shutdown. Replace the bare `asyncio.create_task` in the latency middleware.
+- [x] **[Lint]** Run LINT-BE (ruff `ASYNC`, `RUF006`).
+- [x] **[Test]** A failing task is logged, not lost, and shutdown waits for in-flight tasks (bounded timeout).
 
 ##### Subtask B1.2.3: Outbound timeouts and fail-closed defaults
-- [ ] **[Dev]** Set an explicit timeout on every `AsyncAzureOpenAI` and httpx client (`OUTBOUND_TIMEOUT_SECONDS`). Add a circuit breaker (`app/core/circuit.py`, which opens after N failures in a window) around LLM calls.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A mocked timeout returns a graceful 503 or `llm_failed` outcome. The breaker opens, then half-opens.
+- [x] **[Dev]** Set an explicit timeout on every `AsyncAzureOpenAI` and httpx client (`OUTBOUND_TIMEOUT_SECONDS`). Add a circuit breaker (`app/core/circuit.py`, which opens after N failures in a window) around LLM calls.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A mocked timeout returns a graceful 503 or `llm_failed` outcome. The breaker opens, then half-opens.
 
 ---
 
@@ -2050,3 +2050,16 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 - Run `npm ci` once per worktree. The npm cache makes it quick.
 - Watch CI with `gh pr checks --watch` rather than polling.
 - Rebase right after each merge (8.2.3), so conflicts stay small.
+
+---
+
+## 10. Execution log (updated as work completes)
+
+| Time (2026-10-15) | PR | Branch | State | Notes |
+|---|---|---|---|---|
+| – | #14 | `chore/env-examples-rev3` | PR open, CI green | All new env variables documented as placeholders. Base of the stack. |
+| – | #15 | `docs/plan-theme-parity-audit` | PR open | Plan: theme parity audit, branded login design, progress ticks. |
+| – | PR-03 | `feat/platform-security-headers-errors` | Code done, CI green, waiting to stack | B1.1 and B1.2 done (50 new tests). **Open:** B1.1.3 `nginx -t` and `curl -I` can't run locally (no Docker), so verify them in a compose environment. Chat-completion timeout kept at `AZURE_OPENAI_REQUEST_TIMEOUT` (60 s); `OUTBOUND_TIMEOUT_SECONDS` applies to embeddings and httpx. A 422 response's `detail` is now a string, and the field errors moved to `errors`. |
+| – | PR-01 | `chore/ci-hardening` | In progress | |
+| – | PR-02 | `chore/lint-scope-claude-md` | In progress | |
+| – | PR-04 | `feat/platform-jobs-state-http` | In progress | |
