@@ -1638,19 +1638,19 @@ Give the superadmin runtime control of white-labelling and the taxonomy (newplan
 - [ ] **[Test]** Phase F7 complete.
 
 #### Task F7.1: Branding tab
-- [ ] **[Dev]** A form for names, emails, the login copy and sample questions. A colour picker with a live **contrast badge**. Logo uploads (light, dark, mark and favicon) with drag-and-drop and client-side type and size pre-checks. A **live preview** of the sidebar, login card and chat bubble in light and dark side by side. Save uses version conflict handling and a toast. A "Reset to defaults" action goes through `ConfirmDialog`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A 422 contrast rejection shows the reason. A save updates the CSS variables app-wide without a reload.
+- [x] **[Dev]** A form for names, emails, the login copy and sample questions. A colour picker with a live **contrast badge**. Logo uploads (light, dark, mark and favicon) with drag-and-drop and client-side type and size pre-checks. A **live preview** of the sidebar, login card and chat bubble in light and dark side by side. Save uses version conflict handling and a toast. A "Reset to defaults" action goes through `ConfirmDialog`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A 422 contrast rejection shows the reason. A save updates the CSS variables app-wide without a reload.
 
 #### Task F7.2: Insights Taxonomy tab
-- [ ] **[Dev]** An editable table for intents (code, label, colour, group), bot quality values and issues. Codes cannot be edited after creation. Rows can be reordered. Unused items can be archived, but not deleted.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A duplicate code is rejected. An archived item disappears from the filters but historic labels still render.
+- [x] **[Dev]** An editable table for intents (code, label, colour, group), bot quality values and issues. Codes cannot be edited after creation. Rows can be reordered. Unused items can be archived, but not deleted.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A duplicate code is rejected. An archived item disappears from the filters but historic labels still render.
 
 #### Task F7.3: Phase F7 integration testing
-- [ ] **[Dev]** `tests/journeys/settings.test.tsx`: saving a brand colour updates the CSS variables, the logo upload pre-check rejects a bad type, and an admin (non-superadmin) has no nav item. `smoke_e2e.py --journey branding` updates the brand through the proxy and checks that `/branding` and `generateMetadata` reflect it, then reverts.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/settings.test.tsx`: saving a brand colour updates the CSS variables, the logo upload pre-check rejects a bad type, and an admin (non-superadmin) has no nav item. `smoke_e2e.py --journey branding` updates the brand through the proxy and checks that `/branding` and `generateMetadata` reflect it, then reverts.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F7.4: PR
 - **PR-26** `feat/ui-settings-branding-taxonomy`.
@@ -2085,7 +2085,9 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #33 | PR-25 | `feat/ui-analytics-insights` | #30 | Open, **all jobs green** (273 vitest tests) | Analytics page: a native port of the Insights HTML on the `/admin/insights` API, with URL-synced filters, cross-filtering, 6 KPIs, trend with setDay, radial hour-of-day, Sankey flow, treemap, donut, lollipop, bubbles, an expandable conversations table, a guide tour and a pending-classification state. Parity test on screen: 49 conversations, 106 questions, 48 % handled, 23 % served, 46 people, Served 11, Partly 14, Not 22. Two light-mode colours were swapped for AA contrast. **After merge:** set `enabled: true` on the Analytics nav item. **Manual:** side-by-side screenshots with the HTML. |
 | #35 | PR-19 | `feat/ui-user-management` | #32 | Open, **all 4 jobs green** (351 vitest tests) | KPI cards with sparklines, a funnel, a role donut and a histogram that drill into the Users tab. Users table and drawer with role change, suspend, revoke and invite (typed confirmation, optimistic updates, 409 toast, blocked self and last-superadmin changes). Access-request queue with bulk approve and `a`/`x` keys. Roles matrix and auth audit trail. **Note:** writes need PR-18's proxy header forwarding, and the temporary `useCan` shim is replaced by PR-18's `usePermission`. |
 | #34 | PR-24 | `feat/ui-feedback-triage-workspace` | #32 | Open, **all 4 jobs green** (349 vitest tests) | Chat reason chips and a "what should it have said?" box. Workspace tabs: Overview (every chart mark filters the queue), Review Queue (j/k/x/r/d/p keys, bulk actions, drawer, optimistic updates with 409 handling, read-only for operators), Golden Cases with Run now, Preference Data export, Knowledge Gaps. **Backend follow-ups queued for #27:** `PATCH` should accept `corrected_answer`; add reason-tag and sentiment list filters; add a golden-run job status endpoint; widen the undo transitions. |
-| – | PR-18, PR-23, PR-26 | (feature UIs) | #32 | In progress, parallel | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
+| #37 | PR-26 | `feat/ui-settings-branding-taxonomy` | #32 | Open, **all 4 jobs green** (364 vitest tests) | Branding editor: form, live contrast badge (palette matches the backend exactly), 5 logo upload slots, live light/dark preview of sidebar, login and chat, save with version and 409 handling, reset to defaults, brand changes applied app-wide without a reload. Taxonomy editor: immutable codes, reorder, archive. Public `/branding/assets/[sha]` passthrough; proxy forwards PUT. **Follow-up:** the `--journey branding` smoke step needs the backend chain. |
+| – | PR-18, PR-23 | (feature UIs) | #32 | In progress |
+| – | consolidation | – | after merges | Planned | Replace the 3 temporary permission helpers in #35, #34 and #37 with PR-18's `usePermission`/`useCan`, and flip the Analytics nav flag after #33. | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
 | #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
 
 **Stack shape for review and merge: a dependency tree.** Each PR's base is the branch it depends on:
