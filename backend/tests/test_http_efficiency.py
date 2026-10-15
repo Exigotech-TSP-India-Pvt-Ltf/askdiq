@@ -240,7 +240,9 @@ async def test_gather_scoped_runs_parallel_queries_on_postgres():
     def make(index: int):
         async def _query(session: AsyncSession) -> int:
             sessions.add(id(session))
-            return await session.scalar(text("SELECT :n"), {"n": index})
+            return await session.scalar(
+                text("SELECT CAST(:n AS integer)"), {"n": index}
+            )
 
         return _query
 

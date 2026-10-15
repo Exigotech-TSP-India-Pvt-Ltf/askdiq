@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from collections import defaultdict, deque
 from collections.abc import AsyncGenerator
 from contextlib import ExitStack
 from datetime import datetime, timedelta
@@ -23,7 +24,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core import middleware, sessions, tasks
+from app.core import middleware, rate_limit, sessions, tasks
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.governance import online_eval
@@ -111,6 +112,14 @@ async def conc_env(fake_embed, monkeypatch) -> AsyncGenerator[dict, None]:
     # the shared test-client IP gets headroom for the burst.
     monkeypatch.setattr(settings, "rate_limit_exempt_actors", query_actors)
     monkeypatch.setattr(settings, "rate_limit_per_minute_per_ip", 10_000)
+    # Fresh in-process windows so this burst does not count against later tests.
+    for log_name in (
+        "_user_request_log",
+        "_ip_request_log",
+        "_feedback_user_log",
+        "_feedback_ip_log",
+    ):
+        monkeypatch.setattr(rate_limit, log_name, defaultdict(deque))
     # Background writers use the same pool as the requests.
     monkeypatch.setattr(sessions, "AsyncSessionLocal", factory)
     monkeypatch.setattr(middleware, "AsyncSessionLocal", factory)

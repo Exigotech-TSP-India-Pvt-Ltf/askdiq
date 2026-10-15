@@ -380,7 +380,7 @@ async def test_migrations_upgrade_downgrade_upgrade(engine):
             (
                 await conn.execute(
                     text(
-                        "SELECT relname, relpersistence FROM pg_class WHERE relname "
+                        "SELECT relname, relpersistence::text FROM pg_class WHERE relname "
                         "IN ('jobs', 'rate_limit_buckets', 'oidc_states')"
                     )
                 )
