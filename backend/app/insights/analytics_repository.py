@@ -70,6 +70,57 @@ ex AS (
     WHERE TRUE {ex_where}
 )"""
 
+# Lean variants (no text, groups or feedback): used when no filter needs a
+# conversation-level field, e.g. the KPI strip and exchange counts.
+_EX_LEAN = """
+ex AS (
+    SELECT ti.session_id,
+           (u.created_at AT TIME ZONE 'UTC') AT TIME ZONE CAST(:tz AS text) AS ts,
+           ti.intent,
+           ti.bot_quality AS quality,
+           ti.handled,
+           ti.intent NOT IN ('GRE', 'ACK') AS is_sub
+    FROM turn_insights ti
+    JOIN chat_sessions cs ON cs.id = ti.session_id
+    JOIN chat_messages a ON a.id = ti.message_id
+    JOIN chat_messages u
+      ON u.session_id = a.session_id
+     AND u.turn_index = a.turn_index
+     AND u.role = 'user'
+    WHERE TRUE {ex_where}
+)"""
+
+_CONV_LEAN = """
+sess AS (
+    SELECT session_id,
+           min(ts) AS start_ts,
+           count(*) FILTER (WHERE is_sub) AS substantive,
+           count(*) FILTER (WHERE is_sub AND handled) AS handled
+    FROM ex
+    GROUP BY session_id
+),
+conv AS (
+    SELECT s.*,
+           left(encode(sha256(convert_to(
+               CAST(:salt AS text) || COALESCE(
+                   NULLIF(lower(cs.user_email), ''),
+                   'ip:' || cs.created_ip,
+                   'sid:' || CAST(cs.id AS text)),
+               'UTF8')), 'hex'), 16) AS person_key,
+           CASE WHEN s.substantive = 0 THEN 'Greeting only'
+                WHEN s.handled = s.substantive THEN 'Served'
+                WHEN s.handled = 0 THEN 'Not served'
+                ELSE 'Partly served' END AS outcome
+    FROM sess s
+    JOIN chat_sessions cs ON cs.id = s.session_id
+),
+scoped AS (
+    SELECT * FROM conv c WHERE TRUE {conv_where}
+),
+scoped_ex AS (
+    SELECT ex.* FROM ex JOIN scoped USING (session_id) WHERE TRUE {scoped_ex_where}
+)"""
+
 _CONV = """
 sess AS (
     SELECT session_id,
@@ -98,7 +149,6 @@ top_grp AS (
 fb AS (
     SELECT session_id, min(rating) AS fb_min, max(rating) AS fb_max
     FROM message_feedback
-    WHERE session_id IN (SELECT session_id FROM sess)
     GROUP BY session_id
 ),
 conv0 AS (
@@ -226,9 +276,13 @@ _LIVE_CUBE = """
     SELECT CAST(ts AS date) AS day, intent, quality,
            count(*) AS n, count(*) FILTER (WHERE handled) AS handled
     FROM scoped_ex
-    WHERE CAST(:since AS date) IS NULL OR CAST(ts AS date) >= :since
     GROUP BY 1, 2, 3
 """
+# Index-friendly lower bound on the naive-UTC column for local day ``since``.
+_EX_SINCE = (
+    " AND u.created_at >= (CAST(CAST(:since AS date) AS timestamp)"
+    " AT TIME ZONE CAST(:tz AS text)) AT TIME ZONE 'UTC'"
+)
 _HOURLY = """
     SELECT CAST(extract(hour FROM ts) AS integer) AS hour, count(*) AS n
     FROM scoped_ex WHERE is_sub GROUP BY 1
@@ -376,8 +430,14 @@ class InsightsAnalyticsRepository:
         *,
         session_id: uuid.UUID | None = None,
         person_labels: bool = False,
+        lean: bool = False,
+        since: date | None = None,
     ) -> str:
         """The CTE chain for ``ctx`` followed by the final ``tail`` SELECT.
+
+        ``lean`` skips the conversation text, user type and rating (only valid
+        without conversation-level filters); ``since`` keeps only exchanges
+        from that local day on.
 
         Only module-level SQL fragments are concatenated here; filter values
         are bind parameters and the sort column comes from ``_SORT_SQL``.
@@ -386,6 +446,8 @@ class InsightsAnalyticsRepository:
         ex_where = cls._audience_sql(f.audience)
         if session_id is not None:
             ex_where += " AND ti.session_id = :session_id"
+        if since is not None:
+            ex_where += _EX_SINCE
 
         conv_where: list[str] = []
         ex_filters: list[str] = []
@@ -412,10 +474,13 @@ class InsightsAnalyticsRepository:
         if turn_match:
             conv_where.append(_ANY_TURN.format(match=" AND ".join(turn_match)))
 
+        if lean and f.has_conversation_filters:
+            raise ValueError("lean queries cannot apply conversation filters")
+        ex_sql, conv_sql = (_EX_LEAN, _CONV_LEAN) if lean else (_EX, _CONV)
         ctes = (
-            _EX.format(ex_where=ex_where)
+            ex_sql.format(ex_where=ex_where)
             + ","
-            + _CONV.format(
+            + conv_sql.format(
                 conv_where="".join(f" AND {c}" for c in conv_where),
                 scoped_ex_where="".join(f" AND {c}" for c in ex_filters),
             )
@@ -423,6 +488,11 @@ class InsightsAnalyticsRepository:
         if person_labels:
             ctes += _PERSON_LABELS
         return "WITH " + ctes + tail
+
+    @staticmethod
+    def _lean(ctx: QueryContext) -> bool:
+        """Exchange counts and KPIs need no conversation text unless filtered on."""
+        return not ctx.filters.has_conversation_filters
 
     async def _rows(self, sql: str, params: dict[str, Any]) -> Sequence[Any]:
         return (await self.session.execute(text(sql), params)).all()
@@ -435,10 +505,18 @@ class InsightsAnalyticsRepository:
         params: dict[str, Any] | None = None,
         session_id: uuid.UUID | None = None,
         person_labels: bool = False,
+        lean: bool = False,
+        since: date | None = None,
     ) -> Sequence[Any]:
         sql = self._select(
-            ctx, tail, session_id=session_id, person_labels=person_labels
+            ctx,
+            tail,
+            session_id=session_id,
+            person_labels=person_labels,
+            lean=lean,
+            since=since,
         )
+        params = {**(params or {}), "since": since}
         return await self._rows(sql, {**self._params(ctx), **(params or {})})
 
     # -- time ---------------------------------------------------------------
@@ -452,10 +530,12 @@ class InsightsAnalyticsRepository:
     # -- conversation-level -------------------------------------------------
 
     async def conversation_kpis(self, ctx: QueryContext) -> Any:
-        return (await self._select_rows(ctx, _KPIS))[0]
+        return (await self._select_rows(ctx, _KPIS, lean=self._lean(ctx)))[0]
 
     async def conversations_per_day(self, ctx: QueryContext) -> dict[date, int]:
-        rows = await self._select_rows(ctx, _CONVERSATIONS_PER_DAY)
+        rows = await self._select_rows(
+            ctx, _CONVERSATIONS_PER_DAY, lean=self._lean(ctx)
+        )
         return {r.day: r.n for r in rows}
 
     async def data_bounds(self, ctx: QueryContext) -> tuple[date | None, date | None]:
@@ -515,7 +595,9 @@ class InsightsAnalyticsRepository:
         self, ctx: QueryContext, *, since: date | None = None
     ) -> list[CubeRow]:
         """Scoped exchanges per (day, intent, quality), optionally from ``since``."""
-        rows = await self._select_rows(ctx, _LIVE_CUBE, params={"since": since})
+        rows = await self._select_rows(
+            ctx, _LIVE_CUBE, lean=self._lean(ctx), since=since
+        )
         return [CubeRow(r.day, r.intent, r.quality, r.n, r.handled) for r in rows]
 
     async def rollup_status(self, tz: str) -> tuple[date, bool]:
@@ -542,7 +624,7 @@ class InsightsAnalyticsRepository:
         return [CubeRow(r.day, r.intent, r.quality, r.n, r.handled) for r in rows]
 
     async def hourly(self, ctx: QueryContext) -> dict[int, int]:
-        rows = await self._select_rows(ctx, _HOURLY)
+        rows = await self._select_rows(ctx, _HOURLY, lean=self._lean(ctx))
         return {r.hour: r.n for r in rows}
 
     # -- labels and progress ------------------------------------------------
