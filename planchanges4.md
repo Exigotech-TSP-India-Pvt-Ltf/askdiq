@@ -1181,46 +1181,46 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
 ---
 
 #### Task F0.4: Chart kit (`components/charts/`)
-- [ ] **[Dev]** Task F0.4: consolidate `ChartCard` and build the catalogue components (newplan §15.4).
-- [ ] **[Lint]** Task F0.4: LINT-FE.
-- [ ] **[Test]** Task F0.4: `tests/components/charts/*.test.tsx` passes.
+- [x] **[Dev]** Task F0.4: consolidate `ChartCard` and build the catalogue components (newplan §15.4).
+- [x] **[Lint]** Task F0.4: LINT-FE.
+- [x] **[Test]** Task F0.4: `tests/components/charts/*.test.tsx` passes.
 
 ##### Subtask F0.4.1: `ChartCard` consolidation
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - One `ChartCard` (title, subtitle with window, actions slot, "View as table" toggle, and skeleton, empty and error states).
   - Replace the local copies in `MonitoringView.tsx:71`, `evaluation/page.tsx:107` and `evaluation-live/page.tsx:124`, and `AuroraChartCard`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** States render. The table toggle is accessible.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** States render. The table toggle is accessible.
 
 ##### Subtask F0.4.2: Catalogue components
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `Sparkline`, `KpiTrendCard`, `StackedArea`, `PercentileBand`, `Waterfall`, `CalendarHeatmap`, `RadialGauge`, `BulletChart`, `Funnel`, `QuadrantScatter`, `Histogram` and `Radar`.
   - All take typed data plus `onSelect(datum)` for drill-down, and read `chartTheme`.
   - Heavy charts (Sankey, Treemap) are loaded via `next/dynamic`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Each renders with fixture data, an empty array and a single point. `onSelect` fires on click and on Enter (keyboard).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Each renders with fixture data, an empty array and a single point. `onSelect` fires on click and on Enter (keyboard).
 
 ---
 
 #### Task F0.5: Data layer with cache, dedupe, prefetch and parallel fetch (newplan §13.3)
 - [ ] **[Dev]** Task F0.5: add `lib/query-cache.ts`, `useApiQuery`, `prefetch`, `useApiMutation` (optimistic updates) and type sync.
-- [ ] **[Lint]** Task F0.5: LINT-FE.
-- [ ] **[Test]** Task F0.5: `tests/lib/query-cache.test.ts` passes.
+- [x] **[Lint]** Task F0.5: LINT-FE.
+- [x] **[Test]** Task F0.5: `tests/lib/query-cache.test.ts` passes.
 
 ##### Subtask F0.5.1: Cache and dedupe
-- [ ] **[Dev]** A key-to-promise map dedupes in-flight requests. Stale-while-revalidate uses `staleTime`. `AbortController` fires on unmount or key change. Data revalidates on focus. `invalidate(prefix)` is provided.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** 5 simultaneous hooks with the same key make 1 fetch. A key change aborts the previous request. A stale entry returns immediately, then refreshes.
+- [x] **[Dev]** A key-to-promise map dedupes in-flight requests. Stale-while-revalidate uses `staleTime`. `AbortController` fires on unmount or key change. Data revalidates on focus. `invalidate(prefix)` is provided.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** 5 simultaneous hooks with the same key make 1 fetch. A key change aborts the previous request. A stale entry returns immediately, then refreshes.
 
 ##### Subtask F0.5.2: Prefetch
-- [ ] **[Dev]** `usePrefetchOnIntent(key, fetcher)` fires on hover or focus after a 120 ms delay, and cancels on leave. `prefetchNextPage` runs in `requestIdleCallback`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A quick hover-out does not fetch. A dwell fetches once.
+- [x] **[Dev]** `usePrefetchOnIntent(key, fetcher)` fires on hover or focus after a 120 ms delay, and cancels on leave. `prefetchNextPage` runs in `requestIdleCallback`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A quick hover-out does not fetch. A dwell fetches once.
 
 ##### Subtask F0.5.3: Optimistic mutation and undo
-- [ ] **[Dev]** `useApiMutation({ optimistic, rollback })` integrates with the toast undo (F0.6). A 409 conflict triggers a refetch and a "changed by someone else" toast.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** On failure the update rolls back. Undo restores the previous state.
+- [x] **[Dev]** `useApiMutation({ optimistic, rollback })` integrates with the toast undo (F0.6). A 409 conflict triggers a refetch and a "changed by someone else" toast.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** On failure the update rolls back. Undo restores the previous state.
 
 ##### Subtask F0.5.4: Types and API client
 - [ ] **[Dev]** Update `lib/types.ts` and `lib/api.ts` for every B2 to B7 endpoint. A test diffs the types against `backend/tests/snapshots/openapi.json`.
@@ -2080,7 +2080,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #29 | PR-10 | `feat/governance-endpoints-stream` | #22 | Open, CI green | Migration `72125f44984d` (keyset indexes, built CONCURRENTLY). Logs and traces keyset cursors, `/traces/page` envelope (the old array is kept), trace detail with waterfall, streaming CSV export, monitoring p50/p95/p99 and hourly series, overview (at most 6 queries, ETag), SSE stream with NOTIFY fan-out. **Sibling migration** with #23, #26 and #27. |
 | #27 | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | Open, CI green (migration `5712ebd9d3c9`; sibling of #23 and #26 on `a9b0c1d2e3f4`, so re-link at merge) | Triage state machine with optimistic version, enriched one-query queue with a keyset cursor, analytics, bulk actions, promotion now stored in the DB (JSON imported), streaming JSONL preference export, golden-run job, and the online-eval FK race fix. Old response fields are kept. **Behaviour change:** promote-to-test no longer writes `data/promoted_test_cases.json`. |
 | – | PR-13 | `feat/insights-analytics-endpoints` | #23 | In progress | `/admin/insights/*` with HTML parity. |
-| – | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | In progress | Chart kit, consolidated ChartCard, cached data layer and prefetch. |
+| #30 | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | Open, **all jobs green** | One ChartCard replacing 4 copies, with a "View as table" toggle. 12 keyboard-accessible SVG catalogue charts on chart tokens. Dynamic Treemap and Sankey. `useApiQuery` with dedupe, SWR, abort and focus refetch; intent and idle prefetch; optimistic mutations with undo and 409 handling. 234 vitest tests. F0.5.4 (OpenAPI type sync) is deferred until after B7. |
 | – | PR-17 | `feat/ui-global-ux-primitives` | #24 | In progress | Drawers, toasts, dialogs, deep links, date range, command palette, nav pre-registration. |
 | #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
 
