@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.admin_usage import _sanitize_csv_cell
+from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
@@ -323,6 +324,10 @@ async def governance_traces_page(
         q=_clean_q(q),
         date_from=start,
         date_to=end,
+        # Auth events (newplan §7.5) are superadmin-only (`audit:auth:read`).
+        hidden_actions=frozenset()
+        if user.has(Permission.AUDIT_AUTH_READ)
+        else AUTH_AUDIT_ACTIONS,
     )
     cap = get_settings().governance_exact_count_cap
     (items, next_cursor), total = await runner.gather(
@@ -388,6 +393,7 @@ _LOGS_DESCRIPTION = (
 
 
 def _log_filters(
+    user: AuthUser,
     audience: str,
     level: list[LogLevel] | None,
     service: list[LogService] | None,
@@ -425,7 +431,7 @@ async def governance_logs(
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(read_guard),
 ) -> dict[str, Any]:
-    filters = _log_filters(audience, level, service, q, date_from, date_to)
+    filters = _log_filters(user, audience, level, service, q, date_from, date_to)
     position = Cursor.decode(cursor)
     cap = get_settings().governance_exact_count_cap
     (rows, next_cursor), (counts, capped, total) = await runner.gather(
@@ -490,7 +496,7 @@ async def governance_logs_export(
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(read_guard),
 ) -> StreamingResponse:
-    filters = _log_filters(audience, level, service, q, date_from, date_to)
+    filters = _log_filters(user, audience, level, service, q, date_from, date_to)
     settings = get_settings()
     await record_audit_event(
         db,

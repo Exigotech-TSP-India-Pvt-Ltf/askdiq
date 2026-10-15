@@ -93,6 +93,8 @@ class LogFilters:
     q: str | None = None
     date_from: datetime | None = None
     date_to: datetime | None = None
+    # Audit actions the caller may not see (auth events without audit:auth:read).
+    hidden_actions: frozenset[str] = frozenset()
 
     def as_audit_detail(self) -> dict[str, Any]:
         return {
@@ -116,6 +118,8 @@ async def _conditions(
         conds.append(AuditLog.created_at >= f.date_from)
     if f.date_to is not None:
         conds.append(AuditLog.created_at <= f.date_to)
+    if f.hidden_actions:
+        conds.append(AuditLog.action.not_in(f.hidden_actions))
     if f.services:
         conds.append(service_sql().in_(f.services))
     if f.q:
