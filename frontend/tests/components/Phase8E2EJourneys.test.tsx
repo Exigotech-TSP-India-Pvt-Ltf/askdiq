@@ -267,8 +267,8 @@ describe("Phase 8: End-to-End User Journeys", () => {
       });
 
       // Rapid sustained cycling of tabs
-      const overviewTabs = screen.getAllByRole("tab", { name: /^overview$/i });
-      const overviewTab = overviewTabs[overviewTabs.length - 1];
+      // Live Telemetry is the Usage "Overview" tab and carries the "Live" badge.
+      const overviewTab = screen.getByRole("tab", { name: /^overview\s*live$/i });
       const usersTab = screen.getByRole("tab", { name: /^all users$/i });
       const sessionsTab = screen.getByRole("tab", { name: /^all sessions$/i });
       const queriesTab = screen.getByRole("tab", { name: /^all queries$/i });

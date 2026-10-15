@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { useUsageSummary } from "@/lib/use-usage-data";
-import { OverviewTab } from "@/components/admin/usage/OverviewTab";
 import { InteractiveOverviewTab } from "@/components/admin/usage/InteractiveOverviewTab";
 import { UsersTab } from "@/components/admin/usage/UsersTab";
 import { SessionsTab } from "@/components/admin/usage/SessionsTab";
@@ -12,21 +11,21 @@ import { QueriesTab } from "@/components/admin/usage/QueriesTab";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
+import { DEFAULT_USAGE_TAB, parseUsageTab, type UsageTabId } from "@/lib/usage-tabs";
 import {
   CircleDollarSign,
   Settings as SettingsIcon,
-  Layers,
   Sparkles,
   Users,
   MessageSquare,
   Cpu,
 } from "lucide-react";
 
-type TabId = "overview" | "live_telemetry" | "users" | "sessions" | "queries";
+type TabId = UsageTabId;
 
+// Live Telemetry Studio is the Overview tab (newplan §3); the old Overview tab is gone.
 const USAGE_CONSOLE_TABS: TabItem<TabId>[] = [
-  { id: "overview", label: "Overview", icon: Layers },
-  { id: "live_telemetry", label: "Live Telemetry Studio", icon: Sparkles, badgeCount: "Live" },
+  { id: "overview", label: "Overview", icon: Sparkles, badgeCount: "Live" },
   { id: "users", label: "All Users", icon: Users },
   { id: "sessions", label: "All Sessions", icon: MessageSquare },
   { id: "queries", label: "All Queries", icon: Cpu },
@@ -36,7 +35,7 @@ function UsageCostContent() {
   const { token } = useAuth();
   const { audience } = useAudience();
 
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_USAGE_TAB);
   const [selectedIp, setSelectedIp] = useState<string>("");
   const [selectedSession, setSelectedSession] = useState<string>("");
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -51,12 +50,8 @@ function UsageCostContent() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
-    const tabParam = sp.get("tab") as TabId;
-    if (tabParam && USAGE_CONSOLE_TABS.some((t) => t.id === tabParam)) {
-      setActiveTab(tabParam);
-    } else if (tabParam === ("overall" as any)) {
-      setActiveTab("overview");
-    }
+    // Old bookmarks (?tab=live_telemetry, ?tab=overall) resolve to "overview".
+    setActiveTab(parseUsageTab(sp.get("tab")));
 
     if (sp.get("ip")) setSelectedIp(sp.get("ip")!);
     if (sp.get("session")) setSelectedSession(sp.get("session")!);
@@ -128,17 +123,6 @@ function UsageCostContent() {
         <div className="pt-1">
           {activeTab === "overview" && (
             <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview">
-              <OverviewTab
-                summary={summary}
-                isLoading={isLoading}
-                error={error}
-                onRetry={refresh}
-              />
-            </div>
-          )}
-
-          {activeTab === "live_telemetry" && (
-            <div role="tabpanel" id="panel-live-telemetry" aria-labelledby="tab-live-telemetry">
               <InteractiveOverviewTab
                 summary={summary}
                 isLoading={isLoading}

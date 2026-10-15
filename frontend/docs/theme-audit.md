@@ -41,13 +41,13 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/documents` | Pass | Fixed (T2) | Pass | Doc name `text-slate-900`, result banner, re-ingest modal tokenised | [ ] |
 | `/documents/[id]` | Pass | Fixed (T2) | Pass | Neutral type/strategy badges tokenised; coloured badges are light chips in both themes (readable) | [ ] |
 | `/admin` (Dashboard) | Pass | Fixed (T1) | Fixed (T1) | Query volume, engagement donut, pipeline latency, RAG stage dots and share bar all from `chartTheme`; custom tooltip uses `bg-surface-elevated` | [ ] |
-| `/admin/users` | Pass | Pass | Pass | Page bg token | [ ] |
+| `/admin/users` ("Visitors", PR-20) | Pass | Pass | Pass | Page bg token; header and nav label renamed to Visitors, no style change | [ ] |
 | `/admin/users/[id]` | Pass | Fixed (T2) | Pass | "User not found" card tokenised | [ ] |
 | `/admin/conversations` | Pass | Pass | Pass | Page bg token | [ ] |
 | `/admin/conversations/[id]` | Pass | Fixed (T2) | Pass | All `text-gray-*`, `bg-white`, `border-gray-*` replaced; purple accents -> brand | [ ] |
 | `/admin/feedback` | Pass | Pass | Pass | Page bg token | [ ] |
-| `/admin/usage` (Overview, Users, Sessions, Queries tabs) | Pass | Fixed (T1, T2) | Fixed (T1) | Token rings, gauges, needles and legend dots from `chartTheme`; tab headings and chips tokenised | [ ] |
-| `/admin/evaluation` = `/evaluation` | Pass | Fixed (T1) | Fixed (T1) | Radar, outcome pie, pass-rate and latency bars, tooltips from `chartTheme` | [ ] |
+| `/admin/usage` (Overview, Users, Sessions, Queries tabs) | Pass | Fixed (T1, T2) | Fixed (T1) | Token rings, gauges, needles and legend dots from `chartTheme`; tab headings and chips tokenised. PR-20: Overview is now Live Telemetry (`InteractiveOverviewTab`, Sparkles + Live badge; active badge `bg-white/20`, inactive `bg-surface-muted text-fg-muted`) | [ ] |
+| `/admin/evaluation` = `/evaluation` | n/a | n/a | n/a | PR-20: server `redirect()` (307) to `/admin/evaluation-live`; nothing rendered. Old report kept unmounted as `admin/evaluation/LegacyEvaluationReport` | n/a |
 | `/admin/evaluation-live` = `/evaluation-live` | Pass | Fixed (T1) | Fixed (T1) | As above; white tooltips fixed; compare matrix radar migrated | [ ] |
 | `/admin/governance` (tabs) | Pass | Pass | Pass | Page bg token | [ ] |
 | `/admin/governance/monitoring` | Pass | Fixed (T1, T2) | Fixed (T1) | Whole view was light-only; now tokens + `chartTheme` | [ ] |
@@ -60,7 +60,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 
 | Component | Light | Dark | Toggle | Notes |
 |---|---|---|---|---|
-| `Sidebar` | Pass | Fixed (T5) | Pass | `BrandLogo` in an `h-16` header (`h-10 w-auto max-w-[200px]`, ~160 px wide) |
+| `Sidebar` | Pass | Fixed (T5) | Pass | `BrandLogo` in an `h-16` header (`h-10 w-auto max-w-[200px]`, ~160 px wide). PR-20: "Evaluation" removed, "Users" -> "Visitors"; collapsed rail shows the Sparkles icon for Evaluation (Live) with its label as the `title` tooltip (same tokens in both themes) |
 | `brand/BrandLogo` (new) | Pass | Pass | Pass | CSS-only swap (`dark:hidden` / `hidden dark:block`), no flash |
 | `ThemeToggle` | Pass | Pass | Pass | Light -> Dark -> System; icon crossfade via Motion preset |
 | `providers/MotionProvider` (new) | n/a | n/a | n/a | Same motion in both themes; `reducedMotion="user"` |
@@ -77,13 +77,13 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `admin/QueryInspectorDrawer` | Pass | Pass | Pass | `bg-surface-card` |
 | `admin/usage/QueryInspectorDrawer` | Pass | Pass | Pass | Existing `dark:` pairs (duplicate removed in PR-17) |
 | `admin/EvaluationCompareMatrix` | Pass | Fixed (T1) | Fixed (T1) | Radar + tooltip from `chartTheme` |
+| `admin/evaluation/LegacyEvaluationReport` (moved, unmounted) | Pass | Fixed (T1) | Fixed (T1) | Former `/evaluation` page body, unchanged; not routed (PR-20) |
 | `admin/insights/StatCard` | Pass | Pass | Pass | `bg-surface-card` |
 | `admin/insights/HighlightCard` | Pass | Pass | Pass | `bg-surface-card` |
 | `admin/insights/AccuracyBadge` | Pass | Pass | Pass | Existing `dark:` pairs |
 | `admin/insights/OutcomePillBar` | Pass | Fixed (T2) | Pass | Pills get dark tints; "All" pill tokenised |
 | `admin/insights/TokenDistributionBar` | Pass | Fixed (T2) | Pass | Track and label tokenised |
 | `admin/usage/InteractiveOverviewTab` | Pass | Fixed (T1) | Fixed (T1) | See `/admin/usage` |
-| `admin/usage/OverviewTab` | Pass | Pass | Pass | Existing `dark:` pairs |
 | `admin/usage/UsersTab` | Pass | Fixed (T2) | Pass | Detail heading tokenised |
 | `admin/usage/SessionsTab` | Pass | Fixed (T2) | Pass | Detail heading tokenised |
 | `admin/usage/QueriesTab` | Pass | Fixed (T2) | Pass | Neutral chips tokenised |

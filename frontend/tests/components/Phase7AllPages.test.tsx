@@ -7,7 +7,7 @@ import AdminDashboard from "@/app/(app)/admin/page";
 import UsersPage from "@/app/(app)/admin/users/page";
 import ConversationsPage from "@/app/(app)/admin/conversations/page";
 import FeedbackPage from "@/app/(app)/admin/feedback/page";
-import EvaluationPage from "@/app/(app)/evaluation/page";
+import { LegacyEvaluationReport } from "@/components/admin/evaluation/LegacyEvaluationReport";
 import GovernancePage from "@/app/(app)/admin/governance/page";
 import DocumentsPage from "@/app/(app)/documents/page";
 import UsageCostPage from "@/app/(app)/admin/usage/page";
@@ -260,10 +260,10 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
     expect(screen.getByText("Total Users")).toBeInTheDocument();
   });
 
-  it("renders Admin Users Page with DashboardHeader and TableCard", async () => {
+  it("renders Admin Visitors Page with DashboardHeader and TableCard", async () => {
     render(<UsersPage />);
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /Users/i })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /^Visitors$/i })).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
   });
@@ -284,8 +284,8 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
     expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
   });
 
-  it("renders Evaluation Page with DashboardHeader and TabGroup", async () => {
-    render(<EvaluationPage />);
+  it("renders the retired (unmounted) Evaluation report with DashboardHeader and TabGroup", async () => {
+    render(<LegacyEvaluationReport />);
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: /RAG Evaluation/i })).toBeInTheDocument();
     });

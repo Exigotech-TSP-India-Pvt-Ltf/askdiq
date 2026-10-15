@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import UsageCostPage from "@/app/(app)/admin/usage/page";
 import { api } from "@/lib/api";
 import type { UsageSummary, PageEnvelope, UsageUserRow, UsageSessionRow, UsageQueryRow } from "@/lib/types";
@@ -197,6 +197,10 @@ const mockQueriesResponse: PageEnvelope<UsageQueryRow> = {
   },
 };
 
+const LIVE_TELEMETRY_HEADING = "Chatbot Live Telemetry Command Center";
+// The tab's accessible name is its label followed by the "Live" badge.
+const OVERVIEW_TAB_NAME = /^overview\s*live$/i;
+
 describe("UsageCostPage Enterprise Intelligence Console", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -214,24 +218,40 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     });
   });
 
-  it("renders 4 tabs and displays overall hero stat cards", async () => {
+  it("renders 4 tabs with Live Telemetry as the first 'Overview' tab", async () => {
     render(<UsageCostPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Total Platform Cost")).toBeInTheDocument();
+      expect(screen.getByText(LIVE_TELEMETRY_HEADING)).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Query Embeddings")).toBeInTheDocument();
-    expect(screen.getByText("Prompt Context")).toBeInTheDocument();
-    expect(screen.getByText("Reasoning Tokens")).toBeInTheDocument();
-    expect(screen.getByText("Visible Output")).toBeInTheDocument();
+    const tablist = screen.getByRole("tablist", { name: /usage console navigation/i });
+    const tabs = within(tablist).getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["OverviewLive", "All Users", "All Sessions", "All Queries"]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("tab", { name: /live telemetry studio/i })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["live_telemetry", OVERVIEW_TAB_NAME],
+    ["overall", OVERVIEW_TAB_NAME],
+    ["overview", OVERVIEW_TAB_NAME],
+    ["bogus", OVERVIEW_TAB_NAME],
+    ["users", /^all users$/i],
+  ])("resolves ?tab=%s from an old or current bookmark", async (tab, expected) => {
+    window.history.replaceState(null, "", `/admin/usage?tab=${tab}`);
+    render(<UsageCostPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: expected })).toHaveAttribute("aria-selected", "true");
+    });
   });
 
   it("navigates to All Users tab and shows user IP and test IP rows", async () => {
     render(<UsageCostPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Total Platform Cost")).toBeInTheDocument();
+      expect(screen.getByText(LIVE_TELEMETRY_HEADING)).toBeInTheDocument();
     });
 
     const usersTab = screen.getByRole("tab", { name: /all users/i });
@@ -250,7 +270,7 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     render(<UsageCostPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Total Platform Cost")).toBeInTheDocument();
+      expect(screen.getByText(LIVE_TELEMETRY_HEADING)).toBeInTheDocument();
     });
 
     const sessionsTab = screen.getByRole("tab", { name: /all sessions/i });
@@ -296,7 +316,7 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     render(<UsageCostPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Total Platform Cost")).toBeInTheDocument();
+      expect(screen.getByText(LIVE_TELEMETRY_HEADING)).toBeInTheDocument();
     });
 
     const queriesTab = screen.getByRole("tab", { name: /all queries/i });

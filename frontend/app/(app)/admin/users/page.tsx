@@ -186,7 +186,7 @@ function UsersContent() {
     <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
       {/* Standard Universal Top Bar Line */}
       <DashboardHeader
-        title="Users"
+        title="Visitors"
         subtitle="Audience-scoped telemetry by client IP address, activity history, and engagement"
         icon={UsersIcon}
       />
