@@ -958,22 +958,22 @@ Produce the labels and server-side aggregations the Analytics port needs (newpla
 ---
 
 #### Task B6.3: `/admin/insights/*` endpoints
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `summary`, `trend`, `hourly`, `flow`, `topics`, `quality`, `dropoff`, `people` and `conversations` (keyset, with per-turn detail on expand).
   - Shared params use a Pydantic model and allow-lists.
   - They read the rollups for closed days, plus live data for today.
   - Conversation-level fields are computed at query time (§6.3).
   - Also return `pending_classification` and a `taxonomy` CRUD (`taxonomy:write`) for F7.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - `tests/test_insights_endpoints.py`: each endpoint against the **49-conversation fixture** that mirrors the HTML gives the expected numbers.
   - Audience scoping applies.
   - Taxonomy edits are audited, and renaming does not break existing labels (stable codes).
 
 #### Task B6.4: Phase B6 integration testing and HTML parity
-- [ ] **[Dev]** Task B6.4: real-data integration test and parity with `ExigoTech_Chatbot_Insights_standalone.html` (newplan §6.4).
-- [ ] **[Lint]** Task B6.4: LINT-BE.
-- [ ] **[Test]** Task B6.4: both suites pass.
+- [x] **[Dev]** Task B6.4: real-data integration test and parity with `ExigoTech_Chatbot_Insights_standalone.html` (newplan §6.4).
+- [x] **[Lint]** Task B6.4: LINT-BE.
+- [x] **[Test]** Task B6.4: both suites pass.
 
 ##### Subtask B6.4.1: Parity fixture loader
 - [x] **[Dev]** `scripts/extract_insights_fixture.py` reads the root HTML, takes the `window.__EMBED__` conversations and exchanges, and writes `backend/tests/fixtures/insights_reference.json` (49 conversations and 117 exchanges, names already masked). A pytest fixture loads it into `chat_sessions`, `chat_messages` and `turn_insights`, using the HTML's own codes and labels.
@@ -981,9 +981,9 @@ Produce the labels and server-side aggregations the Analytics port needs (newpla
 - [x] **[Test]** The loader is idempotent, and the row counts are 49 sessions and 117 user turns.
 
 ##### Subtask B6.4.2: `tests/test_insights_parity.py`
-- [ ] **[Dev]** Assert that the endpoints reproduce the HTML's renderer formulas (`metrics()`, `flow()`, `treemap()`, `donut()`, `lollipop()`, `bubble()`, `trend()`, `radial()`) on the fixture.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Dev]** Assert that the endpoints reproduce the HTML's renderer formulas (`metrics()`, `flow()`, `treemap()`, `donut()`, `lollipop()`, `bubble()`, `trend()`, `radial()`) on the fixture.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Outcome counts: Served 11, Partly served 14, Not served 22, Greeting only 2.
   - Handled exchanges: 62 out of 117.
   - Top drop issue: "No live job openings", 13 conversations.
@@ -993,9 +993,9 @@ Produce the labels and server-side aggregations the Analytics port needs (newpla
   - Filter semantics match `passConv()`: the intent and quality filters keep a conversation if any turn matches.
 
 ##### Subtask B6.4.3: Live-data integration
-- [ ] **[Dev]** Create `tests/test_insights_integration.py`: seed conversations through the real `/query` pipeline (LLM mocked), run the worker (classifier mocked), roll up, query every endpoint, edit the taxonomy, and re-check.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass. The summary on 100k turns returns in under 600 ms p95 locally (recorded).
+- [x] **[Dev]** Create `tests/test_insights_integration.py`: seed conversations through the real `/query` pipeline (LLM mocked), run the worker (classifier mocked), roll up, query every endpoint, edit the taxonomy, and re-check.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass. The summary on 100k turns returns in under 600 ms p95 locally (recorded).
 
 #### Task B6.5: PRs
 - **PR-12** `feat/insights-taxonomy-classifier`: B6.1 and B6.2.
@@ -2079,7 +2079,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #26 | PR-08 | `feat/branding-white-label-api` | #20 | Open, CI green | Migration `b0c1d2e3f4a5`. Branding API with an OKLCH palette and WCAG check, hardened PNG/WebP/SVG validation (polyglot-proof, allow-list SVG rebuild), login copy and URL fields, ETag and cross-worker invalidation. **Sibling migration with #23**: whichever merges second re-links its `down_revision` (§8.3). |
 | #29 | PR-10 | `feat/governance-endpoints-stream` | #22 | Open, CI green | Migration `72125f44984d` (keyset indexes, built CONCURRENTLY). Logs and traces keyset cursors, `/traces/page` envelope (the old array is kept), trace detail with waterfall, streaming CSV export, monitoring p50/p95/p99 and hourly series, overview (at most 6 queries, ETag), SSE stream with NOTIFY fan-out. **Sibling migration** with #23, #26 and #27. |
 | #27 | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | Open, CI green (migration `5712ebd9d3c9`; sibling of #23 and #26 on `a9b0c1d2e3f4`, so re-link at merge) | Triage state machine with optimistic version, enriched one-query queue with a keyset cursor, analytics, bulk actions, promotion now stored in the DB (JSON imported), streaming JSONL preference export, golden-run job, and the online-eval FK race fix. Old response fields are kept. **Behaviour change:** promote-to-test no longer writes `data/promoted_test_cases.json`. |
-| – | PR-13 | `feat/insights-analytics-endpoints` | #23 | In progress | `/admin/insights/*` with HTML parity. |
+| #31 | PR-13 | `feat/insights-analytics-endpoints` | #23 | Open, CI green (814 backend tests) | `/admin/insights/*` endpoints match the HTML renderer exactly (13 filter cases), plus taxonomy CRUD. Summary p95 is 480 ms on 100k turns. **Your decision:** the ≥ 60 % user-type rule vs the HTML's plurality rule (conversation C10); the threshold is a constant. |
 | #30 | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | Open, **all jobs green** | One ChartCard replacing 4 copies, with a "View as table" toggle. 12 keyboard-accessible SVG catalogue charts on chart tokens. Dynamic Treemap and Sankey. `useApiQuery` with dedupe, SWR, abort and focus refetch; intent and idle prefetch; optimistic mutations with undo and 409 handling. 234 vitest tests. F0.5.4 (OpenAPI type sync) is deferred until after B7. |
 | – | PR-17 | `feat/ui-global-ux-primitives` | #24 | In progress | Drawers, toasts, dialogs, deep links, date range, command palette, nav pre-registration. |
 | #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
@@ -2090,3 +2090,5 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 - #20 (PR-06) → {PR-07, PR-08, #22 (PR-09) → PR-10, PR-11, #23 (PR-12) → PR-13}
 
 Merge a parent, then delete its branch, and GitHub retargets its children to `main`. Before the final merge, a **rebase sweep** brings PR-01's stricter CI and PR-04's flaky-test fix into every backend branch, so each one is green under the final CI.
+
+**Rebase sweep in progress:** the backend PRs are being turned into one linear chain, in this order: #19 → #16 → #17 → #18 → {#21, #20 → {#25, #23 → #31 → #26 → #27 → #22 → #29}}. This brings PR-01's stricter CI and PR-04's flaky-test fixes into every branch, and re-links the four sibling migrations into one alembic chain: `a9b0c1d2e3f4` → `4c1e9a7d2b65` → `b0c1d2e3f4a5` → `5712ebd9d3c9` → `72125f44984d`. The PR bases are being retargeted to match.
