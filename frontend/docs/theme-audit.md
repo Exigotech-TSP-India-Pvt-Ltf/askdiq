@@ -49,10 +49,11 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/admin/usage` (Overview, Users, Sessions, Queries tabs) | Pass | Fixed (T1, T2) | Fixed (T1) | Token rings, gauges, needles and legend dots from `chartTheme`; tab headings and chips tokenised | [ ] |
 | `/admin/evaluation` = `/evaluation` | Pass | Fixed (T1) | Fixed (T1) | Radar, outcome pie, pass-rate and latency bars, tooltips from `chartTheme` | [ ] |
 | `/admin/evaluation-live` = `/evaluation-live` | Pass | Fixed (T1) | Fixed (T1) | As above; white tooltips fixed; compare matrix radar migrated | [ ] |
-| `/admin/governance` (tabs) | Pass | Pass | Pass | Page bg token | [ ] |
-| `/admin/governance/monitoring` | Pass | Fixed (T1, T2) | Fixed (T1) | Whole view was light-only; now tokens + `chartTheme` | [ ] |
-| `/admin/governance/logs` | Pass | Fixed (T2) | Pass | Default level badge tokenised | [ ] |
-| `/admin/governance/traces` | Pass | Pass | Pass | No change needed | [ ] |
+| `/admin/governance` (tabs) | Pass | Pass | Pass | PR-23: tab in `?tab=`; header `bg-surface-page` / `text-fg`; DateRangePicker on Traces and Logs only | [ ] |
+| `/admin/governance` Overall (PR-23) | Pass | Pass | Pass | Health banner animates between `status-*-bg` / `status-*` token values read per theme (re-renders on toggle); KPI cards, status timeline cells (`status-*` with alpha), incident rows (`status-warn-bg` highlight) | [ ] |
+| `/admin/governance/monitoring` -> `?tab=Monitoring` | Pass | Pass | Pass | PR-23: route redirects to the tab. Stat tiles `surface-card` / `line`; Recharts bar from `useChartTheme()`; PercentileBand, StackedArea (errors `status.danger`), RadialGauges and share bars from `chartTheme` | [ ] |
+| `/admin/governance/logs` -> `?tab=Logs` | Pass | Pass | Pass | PR-23: level badges and chips on `status-*-bg` / `status-*-fg` (replaces the emerald / rose / sky chips); JSON viewer `surface-muted` | [ ] |
+| `/admin/governance/traces` -> `?tab=Traces` | Pass | Pass | Pass | PR-23: status and latency badges on `status-*` tokens; trace drawer on `DrawerShell`; waterfall from `chartTheme` | [ ] |
 | `/_not-found` (`app/not-found.tsx`) | Pass | Pass | Pass | Branded 404 (PR-17): `BrandLogo` pair, `bg-surface-*` / `text-fg*` tokens | [ ] |
 | Route error boundary (`app/error.tsx`) | Pass | Pass | Pass | Branded (PR-17): reference digest + copy, retry; no error text shown | [ ] |
 | Any `(app)` route at < `md` (390 px) | Pass | Pass | Pass | PR-17: `MobileTopBar` + off-canvas sidebar; desktop aside `hidden md:flex` | [ ] |
@@ -113,6 +114,9 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `shell/BrandedStatusPage` (PR-17) | Pass | Pass | Pass | `BrandLogo` pair on `bg-surface-card` |
 | `admin/CursorPagination` (PR-17) | Pass | Pass | Pass | Mirrors `Pagination` (existing `dark:` pairs) |
 | `admin/TableToolbar` (columns, density) (PR-17) | Pass | Pass | Pass | Column menu on `surface-elevated`; buttons reuse the existing `dark:` pairs |
+| `admin/governance/HealthBanner` (PR-23) | Pass | Pass | Pass | Motion colour transition between `semanticTokens[theme]` status values; text `status-*-fg`; asserted in light and dark in tests |
+| `admin/governance/StatusTimeline`, `IncidentList` (PR-23) | Pass | Pass | Pass | Cells `status-ok/70`, `status-warn/80`, `status-danger/80`, empty `surface-muted`; markers `status-danger` + `text-fg-inverse` |
+| `admin/governance/TraceDrawer`, `JsonViewer`, `badges` (PR-23) | Pass | Pass | Pass | `DrawerShell` chrome; fields `surface-card` / `line`; badges and live indicator on `status-*` tokens |
 
 ## Known follow-ups (not theme-breaking)
 

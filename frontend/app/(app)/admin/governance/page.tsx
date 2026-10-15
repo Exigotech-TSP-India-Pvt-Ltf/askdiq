@@ -23,7 +23,7 @@ const SUBTITLE: Record<GovernanceTab, string> = {
   Logs: "Audit, security and pipeline events",
 };
 
-export default function GovernancePage() {
+function GovernanceContent() {
   const { get, set } = useDeepLink();
   const raw = get("tab");
   const activeTab: GovernanceTab = isGovernanceTab(raw) ? raw : "Overall";
@@ -58,5 +58,13 @@ export default function GovernancePage() {
         </m.div>
       </div>
     </div>
+  );
+}
+
+export default function GovernancePage() {
+  return (
+    <React.Suspense fallback={<div className="min-h-screen bg-surface-page" aria-busy="true" />}>
+      <GovernanceContent />
+    </React.Suspense>
   );
 }

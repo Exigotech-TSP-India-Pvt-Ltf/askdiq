@@ -18,7 +18,7 @@ import {
   type GovernanceTracePage,
 } from "@/lib/governance-api";
 import { formatCount, formatDateTime, formatMs, formatUsd, humanize } from "@/lib/governance-format";
-import { parseOne } from "@/lib/governance-links";
+import { parseOne, rangeBounds } from "@/lib/governance-links";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
@@ -49,97 +49,97 @@ function shortId(id: string | null, head = 10): string {
 
 function traceColumns(open: (id: string) => void): ColumnDef<GovernanceTraceItem>[] {
   return [
-  {
-    key: "request_id",
-    header: "Request",
-    render: (t) => (
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          open(t.request_id);
-        }}
-        title={`Open trace ${t.request_id}`}
-        className={`rounded font-mono text-[11px] text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
-      >
-        {shortId(t.request_id, 12)}
-      </button>
-    ),
-  },
-  {
-    key: "timestamp",
-    header: "Time",
-    render: (t) => <span className="whitespace-nowrap text-xs text-fg-muted">{formatDateTime(t.timestamp)}</span>,
-  },
-  {
-    key: "user_id",
-    header: "User",
-    render: (t) => (
-      <span className="font-mono text-xs text-fg-muted" title={t.user_id ?? undefined}>
-        {shortId(t.user_id, 12)}
-      </span>
-    ),
-  },
-  {
-    key: "ip_address",
-    header: "IP",
-    render: (t) => <span className="font-mono text-xs text-fg-muted">{t.ip_address ?? "—"}</span>,
-  },
-  {
-    key: "query",
-    header: "Query",
-    render: (t) => (
-      <span className="block max-w-[18rem] truncate text-xs text-fg" title={t.query ?? undefined}>
-        {t.query ?? "—"}
-      </span>
-    ),
-  },
-  {
-    key: "status",
-    header: "Status / outcome",
-    render: (t) => (
-      <span className="flex flex-col items-start gap-0.5">
-        <TraceStatusBadge status={t.status} />
-        {t.outcome ? <span className="text-[10px] text-fg-subtle">{humanize(t.outcome)}</span> : null}
-      </span>
-    ),
-  },
-  {
-    key: "total_ms",
-    header: "Latency",
-    align: "right",
-    render: (t) => (
-      <span
-        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
-          LATENCY_TONE[t.latency_bucket ?? ""] ?? "bg-surface-muted text-fg-muted"
-        }`}
-      >
-        <Timer className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
-        {formatMs(t.total_ms)}
-      </span>
-    ),
-  },
-  {
-    key: "slowest_stage",
-    header: "Slowest stage",
-    render: (t) => (
-      <span className="whitespace-nowrap text-xs text-fg-muted">
-        {t.slowest_stage ? `${stageLabel(t.slowest_stage.stage)} · ${formatMs(t.slowest_stage.ms)}` : "—"}
-      </span>
-    ),
-  },
-  {
-    key: "tokens",
-    header: "Tokens",
-    align: "right",
-    render: (t) => <span className="text-xs tabular-nums text-fg-muted">{formatCount(t.tokens.total)}</span>,
-  },
-  {
-    key: "cost_usd",
-    header: "Cost",
-    align: "right",
-    render: (t) => <span className="text-xs tabular-nums text-fg-muted">{formatUsd(t.cost_usd)}</span>,
-  },
+    {
+      key: "request_id",
+      header: "Request",
+      render: (t) => (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            open(t.request_id);
+          }}
+          title={`Open trace ${t.request_id}`}
+          className={`rounded font-mono text-[11px] text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+        >
+          {shortId(t.request_id, 12)}
+        </button>
+      ),
+    },
+    {
+      key: "timestamp",
+      header: "Time",
+      render: (t) => <span className="whitespace-nowrap text-xs text-fg-muted">{formatDateTime(t.timestamp)}</span>,
+    },
+    {
+      key: "user_id",
+      header: "User",
+      render: (t) => (
+        <span className="font-mono text-xs text-fg-muted" title={t.user_id ?? undefined}>
+          {shortId(t.user_id, 12)}
+        </span>
+      ),
+    },
+    {
+      key: "ip_address",
+      header: "IP",
+      render: (t) => <span className="font-mono text-xs text-fg-muted">{t.ip_address ?? "—"}</span>,
+    },
+    {
+      key: "query",
+      header: "Query",
+      render: (t) => (
+        <span className="block max-w-[18rem] truncate text-xs text-fg" title={t.query ?? undefined}>
+          {t.query ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status / outcome",
+      render: (t) => (
+        <span className="flex flex-col items-start gap-0.5">
+          <TraceStatusBadge status={t.status} />
+          {t.outcome ? <span className="text-[10px] text-fg-subtle">{humanize(t.outcome)}</span> : null}
+        </span>
+      ),
+    },
+    {
+      key: "total_ms",
+      header: "Latency",
+      align: "right",
+      render: (t) => (
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+            LATENCY_TONE[t.latency_bucket ?? ""] ?? "bg-surface-muted text-fg-muted"
+          }`}
+        >
+          <Timer className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+          {formatMs(t.total_ms)}
+        </span>
+      ),
+    },
+    {
+      key: "slowest_stage",
+      header: "Slowest stage",
+      render: (t) => (
+        <span className="whitespace-nowrap text-xs text-fg-muted">
+          {t.slowest_stage ? `${stageLabel(t.slowest_stage.stage)} · ${formatMs(t.slowest_stage.ms)}` : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "tokens",
+      header: "Tokens",
+      align: "right",
+      render: (t) => <span className="text-xs tabular-nums text-fg-muted">{formatCount(t.tokens.total)}</span>,
+    },
+    {
+      key: "cost_usd",
+      header: "Cost",
+      align: "right",
+      render: (t) => <span className="text-xs tabular-nums text-fg-muted">{formatUsd(t.cost_usd)}</span>,
+    },
   ];
 }
 
@@ -150,8 +150,7 @@ export default function TracesView() {
   const { audience } = useAudience();
   const { get, set } = useDeepLink();
   const rangeCtx = useRange();
-  const from = rangeCtx?.range.from.toISOString();
-  const to = rangeCtx?.range.to.toISOString();
+  const { from, to } = rangeBounds(rangeCtx?.range);
 
   const status = parseOne(get("status"), TRACE_STATUSES);
   const outcome = parseOne(get("outcome"), TRACE_OUTCOMES);

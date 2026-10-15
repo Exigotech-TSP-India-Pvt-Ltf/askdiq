@@ -67,3 +67,16 @@ export function hourWindow(at: string | null): { from: string; to: string } | nu
   if (Number.isNaN(start.getTime())) return null;
   return { from: start.toISOString(), to: new Date(start.getTime() + HOUR_MS).toISOString() };
 }
+
+const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * API bounds for the global range. Presets are open-ended (no `to`), so
+ * auto-refresh keeps seeing new rows; a custom range ends after its last
+ * (inclusive) local day.
+ */
+export function rangeBounds(range: { kind: string; from: Date; to: Date } | undefined): { from?: string; to?: string } {
+  if (!range) return {};
+  if (range.kind !== "custom") return { from: range.from.toISOString() };
+  return { from: range.from.toISOString(), to: new Date(range.to.getTime() + DAY_MS).toISOString() };
+}

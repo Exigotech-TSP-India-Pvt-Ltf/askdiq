@@ -277,7 +277,7 @@ export default function OverallView() {
           </h2>
           <ul className="mt-2 divide-y divide-line">
             <InfoRow icon={FileSearch} label="Traces" detail="All recorded request journeys" value={totalLabel(traces.data)} />
-            <InfoRow icon={ScrollText} label="Logs" detail="Audit and security entries (selected range: all)" value={totalLabel(logs.data)} />
+            <InfoRow icon={ScrollText} label="Logs" detail="Audit and security entries, all time" value={totalLabel(logs.data)} />
             <InfoRow icon={AlertTriangle} label="Incidents" detail="CRITICAL / ALERT in the incident window" value={formatCount(incidents.length)} />
             <InfoRow icon={Clock} label="Health window" detail="Signals are evaluated over" value={`${data.health.window_minutes} min`} />
             <InfoRow

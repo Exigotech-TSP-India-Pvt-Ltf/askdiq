@@ -19,7 +19,7 @@ import {
   type LogLevel,
 } from "@/lib/governance-api";
 import { formatCount, formatDateTime, formatHour, humanize } from "@/lib/governance-format";
-import { hourWindow, parseList, parseOne } from "@/lib/governance-links";
+import { hourWindow, parseList, parseOne, rangeBounds } from "@/lib/governance-links";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
@@ -107,8 +107,7 @@ export default function LogsView() {
   const q = (get("q") ?? "").slice(0, 200);
   const at = get("at");
   const hour = hourWindow(at);
-  const from = hour?.from ?? rangeCtx?.range.from.toISOString();
-  const to = hour?.to ?? rangeCtx?.range.to.toISOString();
+  const { from, to } = hour ?? rangeBounds(rangeCtx?.range);
 
   const filters = useMemo(
     () => ({ level: levels, service: service ? [service] : undefined, q: q || undefined, from, to }),
