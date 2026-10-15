@@ -59,7 +59,6 @@ def new_identity(**kwargs: Any) -> MockIdentity:
 async def audit_rows(
     db: AsyncSession, action: str, user_id: uuid.UUID | None = None
 ) -> list[AuditLog]:
-    db.expire_all()
     rows = (
         (await db.execute(select(AuditLog).where(AuditLog.action == action)))
         .scalars()
@@ -71,8 +70,10 @@ async def audit_rows(
 
 
 async def user_by_email(db: AsyncSession, email: str) -> User:
-    db.expire_all()
-    return (await db.execute(select(User).where(User.email == email))).scalar_one()
+    stmt = select(User).where(User.email == email)
+    return (
+        await db.execute(stmt.execution_options(populate_existing=True))
+    ).scalar_one()
 
 
 # ---------------------------------------------------------------------------
@@ -405,8 +406,7 @@ async def test_rejected_user_can_ask_again(
     headers = await session_headers(db_session, user)
     response = await client.post("/auth/access-request", json={}, headers=headers)
     assert response.status_code == 201
-    db_session.expire_all()
-    refreshed = await db_session.get(User, user.id)
+    refreshed = await db_session.get(User, user.id, populate_existing=True)
     assert refreshed is not None
     assert refreshed.status == "pending"
 
@@ -415,19 +415,20 @@ async def test_active_user_cannot_request_access(
     client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await make_user(db_session, status="active", role="operator")
+    user_id = user.id  # the 409 rolls the session back (expires loaded rows)
     headers = await session_headers(db_session, user)
     response = await client.post("/auth/access-request", json={}, headers=headers)
     assert response.status_code == 409
-    count = (
+    rows = (
         (
             await db_session.execute(
-                select(AccessRequest).where(AccessRequest.user_id == user.id)
+                select(AccessRequest).where(AccessRequest.user_id == user_id)
             )
         )
         .scalars()
         .all()
     )
-    assert count == []
+    assert rows == []
 
 
 async def test_suspended_user_cannot_request_access(

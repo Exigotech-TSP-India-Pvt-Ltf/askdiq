@@ -61,12 +61,12 @@ async def pending_request(
 
 
 async def reload(db: AsyncSession, model: type, key: uuid.UUID) -> Any:
-    db.expire_all()
-    return await db.get(model, key)
+    # populate_existing: fresh values without expiring other objects (an
+    # expired attribute would need a lazy load, which async sessions forbid).
+    return await db.get(model, key, populate_existing=True)
 
 
 async def audit_actions(db: AsyncSession, user_id: uuid.UUID) -> list[str]:
-    db.expire_all()
     rows = (await db.execute(select(AuditLog))).scalars().all()
     return [
         r.action for r in rows if (r.detail or {}).get("target_user_id") == str(user_id)
@@ -210,23 +210,24 @@ async def test_role_change_bumps_version_and_is_audited(
 ) -> None:
     user = await make_user(db_session, status="active", role="operator")
     await db_session.commit()
+    user_id, version = user.id, user.version
     response = await client.patch(
-        f"{USERS}/{user.id}",
-        json={"version": user.version, "role": "admin"},
+        f"{USERS}/{user_id}",
+        json={"version": version, "role": "admin"},
         headers=boss_headers,
     )
     assert response.status_code == 200, response.text
     assert response.json()["role"] == "admin"
     assert response.json()["version"] == 2
-    assert AuthEvent.ROLE_CHANGED in await audit_actions(db_session, user.id)
+    assert AuthEvent.ROLE_CHANGED in await audit_actions(db_session, user_id)
 
     stale = await client.patch(
-        f"{USERS}/{user.id}",
+        f"{USERS}/{user_id}",
         json={"version": 1, "role": "operator"},
         headers=boss_headers,
     )
     assert stale.status_code == 409
-    assert (await reload(db_session, User, user.id)).role == "admin"
+    assert (await reload(db_session, User, user_id)).role == "admin"
 
 
 async def test_role_change_applies_on_the_next_request(
@@ -251,8 +252,9 @@ async def test_suspend_and_reactivate(
 ) -> None:
     user = await make_user(db_session, status="active", role="operator")
     headers = await session_headers(db_session, user)
+    user_id = user.id
     suspended = await client.patch(
-        f"{USERS}/{user.id}",
+        f"{USERS}/{user_id}",
         json={"version": 1, "status": "suspended"},
         headers=boss_headers,
     )
@@ -260,13 +262,13 @@ async def test_suspend_and_reactivate(
     # Takes effect on the very next request, Chat included.
     assert (await client.get("/sessions", headers=headers)).status_code == 403
     reactivated = await client.patch(
-        f"{USERS}/{user.id}",
+        f"{USERS}/{user_id}",
         json={"version": 2, "status": "active"},
         headers=boss_headers,
     )
     assert reactivated.status_code == 200
     assert (await client.get("/sessions", headers=headers)).status_code == 200
-    actions = await audit_actions(db_session, user.id)
+    actions = await audit_actions(db_session, user_id)
     assert AuthEvent.USER_SUSPENDED in actions
     assert AuthEvent.USER_REACTIVATED in actions
 
@@ -275,20 +277,21 @@ async def test_activating_needs_a_role_and_closes_the_open_request(
     client: httpx.AsyncClient, db_session: AsyncSession, boss_headers: dict[str, str]
 ) -> None:
     user, request = await pending_request(db_session)
+    user_id, request_id = user.id, request.id
     no_role = await client.patch(
-        f"{USERS}/{user.id}",
+        f"{USERS}/{user_id}",
         json={"version": 1, "status": "active"},
         headers=boss_headers,
     )
     assert no_role.status_code == 409
     ok = await client.patch(
-        f"{USERS}/{user.id}",
+        f"{USERS}/{user_id}",
         json={"version": 1, "status": "active", "role": "operator"},
         headers=boss_headers,
     )
     assert ok.status_code == 200
-    assert (await reload(db_session, AccessRequest, request.id)).status == "approved"
-    assert AuthEvent.ACCESS_APPROVED in await audit_actions(db_session, user.id)
+    assert (await reload(db_session, AccessRequest, request_id)).status == "approved"
+    assert AuthEvent.ACCESS_APPROVED in await audit_actions(db_session, user_id)
 
 
 @pytest.mark.parametrize(
@@ -301,12 +304,13 @@ async def test_no_self_demote_or_self_suspend(
     boss_headers: dict[str, str],
     change: dict[str, str],
 ) -> None:
+    boss_id = boss.id
     response = await client.patch(
-        f"{USERS}/{boss.id}", json={"version": 1, **change}, headers=boss_headers
+        f"{USERS}/{boss_id}", json={"version": 1, **change}, headers=boss_headers
     )
     assert response.status_code == 409
     assert response.json()["detail"] == "You cannot change your own role or status."
-    assert (await reload(db_session, User, boss.id)).role == "superadmin"
+    assert (await reload(db_session, User, boss_id)).role == "superadmin"
 
 
 async def test_last_active_superadmin_cannot_be_removed(
@@ -321,6 +325,7 @@ async def test_last_active_superadmin_cannot_be_removed(
     last = await make_user(db_session, role="superadmin", status="active")
     stale_actor_row = await make_user(db_session, role="superadmin", status="suspended")
     await db_session.commit()
+    last_id = last.id
     actor = AuthUser(
         id=stale_actor_row.id,
         email=stale_actor_row.email,
@@ -336,9 +341,9 @@ async def test_last_active_superadmin_cannot_be_removed(
         UserChange(version=1, status=UserStatus.SUSPENDED),
     ):
         with pytest.raises(ConflictError) as info:
-            await service.update_user(actor, last.id, change, ctx)
+            await service.update_user(actor, last_id, change, ctx)
         assert info.value.status_code == 409
-    refreshed = await reload(db_session, User, last.id)
+    refreshed = await reload(db_session, User, last_id)
     assert (refreshed.role, refreshed.status) == ("superadmin", "active")
 
 
@@ -399,20 +404,20 @@ async def test_revoke_sessions_signs_the_user_out(
     client: httpx.AsyncClient, db_session: AsyncSession, boss_headers: dict[str, str]
 ) -> None:
     user = await make_user(db_session, status="active", role="operator")
+    user_id = user.id
     headers = await session_headers(db_session, user)
     await session_headers(db_session, user)
     response = await client.post(
-        f"{USERS}/{user.id}/revoke-sessions", headers=boss_headers
+        f"{USERS}/{user_id}/revoke-sessions", headers=boss_headers
     )
     assert response.status_code == 200
     assert response.json() == {"revoked": 2}
     assert (await client.get("/auth/me", headers=headers)).status_code == 401
-    db_session.expire_all()
     live = (
         (
             await db_session.execute(
                 select(AuthSession).where(
-                    AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)
+                    AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None)
                 )
             )
         )
@@ -420,7 +425,7 @@ async def test_revoke_sessions_signs_the_user_out(
         .all()
     )
     assert live == []
-    assert AuthEvent.SESSION_REVOKED in await audit_actions(db_session, user.id)
+    assert AuthEvent.SESSION_REVOKED in await audit_actions(db_session, user_id)
     missing = await client.post(
         f"{USERS}/{uuid.uuid4()}/revoke-sessions", headers=boss_headers
     )
@@ -479,24 +484,25 @@ async def test_queue_approve_and_history(
     boss_headers: dict[str, str],
 ) -> None:
     user, request = await pending_request(db_session)
+    user_id, request_id, boss_id, boss_email = user.id, request.id, boss.id, boss.email
     queue = await client.get(REQUESTS, headers=boss_headers)
     assert queue.status_code == 200
-    item = next(i for i in queue.json()["items"] if i["id"] == str(request.id))
+    item = next(i for i in queue.json()["items"] if i["id"] == str(request_id))
     assert item["user_email"] == user.email
     assert item["waiting_seconds"] >= 0
 
     approved = await client.post(
-        f"{REQUESTS}/{request.id}/approve", json={"role": "admin"}, headers=boss_headers
+        f"{REQUESTS}/{request_id}/approve", json={"role": "admin"}, headers=boss_headers
     )
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "approved"
-    assert approved.json()["decided_by_email"] == boss.email
-    refreshed = await reload(db_session, User, user.id)
+    assert approved.json()["decided_by_email"] == boss_email
+    refreshed = await reload(db_session, User, user_id)
     assert (refreshed.role, refreshed.status) == ("admin", "active")
-    assert refreshed.approved_by == boss.id
+    assert refreshed.approved_by == boss_id
 
     again = await client.post(
-        f"{REQUESTS}/{request.id}/approve",
+        f"{REQUESTS}/{request_id}/approve",
         json={"role": "operator"},
         headers=boss_headers,
     )
@@ -504,33 +510,34 @@ async def test_queue_approve_and_history(
     history = await client.get(
         REQUESTS, params={"status": "approved"}, headers=boss_headers
     )
-    assert str(request.id) in {i["id"] for i in history.json()["items"]}
+    assert str(request_id) in {i["id"] for i in history.json()["items"]}
     everything = await client.get(
         REQUESTS, params={"status": "all"}, headers=boss_headers
     )
     assert everything.status_code == 200
-    assert AuthEvent.ACCESS_APPROVED in await audit_actions(db_session, user.id)
+    assert AuthEvent.ACCESS_APPROVED in await audit_actions(db_session, user_id)
 
 
 async def test_reject_with_a_note(
     client: httpx.AsyncClient, db_session: AsyncSession, boss_headers: dict[str, str]
 ) -> None:
     user, request = await pending_request(db_session)
+    user_id, request_id = user.id, request.id
     missing_note = await client.post(
-        f"{REQUESTS}/{request.id}/reject", json={}, headers=boss_headers
+        f"{REQUESTS}/{request_id}/reject", json={}, headers=boss_headers
     )
     assert missing_note.status_code == 422
     rejected = await client.post(
-        f"{REQUESTS}/{request.id}/reject",
+        f"{REQUESTS}/{request_id}/reject",
         json={"note": "Not on the project"},
         headers=boss_headers,
     )
     assert rejected.status_code == 200
     assert rejected.json()["decision_note"] == "Not on the project"
-    assert (await reload(db_session, User, user.id)).status == "rejected"
-    assert AuthEvent.ACCESS_REJECTED in await audit_actions(db_session, user.id)
+    assert (await reload(db_session, User, user_id)).status == "rejected"
+    assert AuthEvent.ACCESS_REJECTED in await audit_actions(db_session, user_id)
     late_approve = await client.post(
-        f"{REQUESTS}/{request.id}/approve",
+        f"{REQUESTS}/{request_id}/approve",
         json={"role": "operator"},
         headers=boss_headers,
     )
@@ -565,21 +572,21 @@ async def test_bulk_approve_is_all_or_nothing(
     client: httpx.AsyncClient, db_session: AsyncSession, boss_headers: dict[str, str]
 ) -> None:
     pairs = [await pending_request(db_session) for _ in range(3)]
-    _, decided = pairs[0]
+    id_pairs = [(u.id, r.id) for u, r in pairs]
     await client.post(
-        f"{REQUESTS}/{decided.id}/reject", json={"note": "no"}, headers=boss_headers
+        f"{REQUESTS}/{id_pairs[0][1]}/reject", json={"note": "no"}, headers=boss_headers
     )
-    ids = [str(r.id) for _, r in pairs]
+    ids = [str(r) for _, r in id_pairs]
     failed = await client.post(
         f"{REQUESTS}/bulk-approve",
         json={"ids": ids, "role": "operator"},
         headers=boss_headers,
     )
     assert failed.status_code == 409
-    for user, request in pairs[1:]:
-        assert (await reload(db_session, AccessRequest, request.id)).status == "pending"
-        assert (await reload(db_session, User, user.id)).status == "pending"
-        assert AuthEvent.ACCESS_APPROVED not in await audit_actions(db_session, user.id)
+    for user_id, request_id in id_pairs[1:]:
+        assert (await reload(db_session, AccessRequest, request_id)).status == "pending"
+        assert (await reload(db_session, User, user_id)).status == "pending"
+        assert AuthEvent.ACCESS_APPROVED not in await audit_actions(db_session, user_id)
 
     ok = await client.post(
         f"{REQUESTS}/bulk-approve",
@@ -588,10 +595,10 @@ async def test_bulk_approve_is_all_or_nothing(
     )
     assert ok.status_code == 200, ok.text
     assert ok.json()["approved"] == 2
-    for user, _ in pairs[1:]:
-        refreshed = await reload(db_session, User, user.id)
+    for user_id, _ in id_pairs[1:]:
+        refreshed = await reload(db_session, User, user_id)
         assert (refreshed.role, refreshed.status) == ("operator", "active")
-        assert AuthEvent.ACCESS_APPROVED in await audit_actions(db_session, user.id)
+        assert AuthEvent.ACCESS_APPROVED in await audit_actions(db_session, user_id)
 
     unknown = await client.post(
         f"{REQUESTS}/bulk-approve",
