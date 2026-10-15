@@ -1,4 +1,4 @@
-﻿"""RAG evaluation harness: dataset of test queries with expected outcomes.
+"""RAG evaluation harness: dataset of test queries with expected outcomes.
 
 The first 13 cases are the original baseline, unchanged, so pass-rate numbers
 stay comparable with earlier runs. The rest widen coverage:
@@ -30,6 +30,8 @@ known_issue                a real, currently-failing behaviour. The case still
 
 from dataclasses import dataclass, field
 from typing import Literal
+
+from app.evaluation.dataset_extra import build_extra_cases
 
 CaseType = Literal[
     "answerable",
@@ -214,7 +216,11 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         query="What are the eight controls in the Essential Eight?",
         case_type="answerable",
         expected_docs=[E8_LEARN],
-        expected_keywords=["application control", "backup", "multi‑factor|multi-factor|mfa"],
+        expected_keywords=[
+            "application control",
+            "backup",
+            "multi‑factor|multi-factor|mfa",
+        ],
     ),
     EvalCase(
         id="e8_delivery_speed",
@@ -640,7 +646,7 @@ _FOLLOWUP_CASES: list[EvalCase] = [
             ("user", "What is Zero Trust?"),
             (
                 "assistant",
-                "Zero Trust is a security model that removes implicit trust, "  # noqa: ISC004
+                "Zero Trust is a security model that removes implicit trust, "
                 "continuously verifying every access request by identity, "
                 "device, context, and risk.",
             ),
@@ -670,7 +676,7 @@ _FOLLOWUP_CASES: list[EvalCase] = [
             ("user", "What is the Essential Eight?"),
             (
                 "assistant",
-                "The ACSC Essential Eight is a set of eight mitigation "  # noqa: ISC004
+                "The ACSC Essential Eight is a set of eight mitigation "
                 "strategies that reduce the likelihood of cyber compromise.",
             ),
         ],
@@ -687,7 +693,7 @@ _FOLLOWUP_CASES: list[EvalCase] = [
             ("user", "What are the pillars of Zero Trust?"),
             (
                 "assistant",
-                "The pillars are identity, devices, applications, data, "  # noqa: ISC004
+                "The pillars are identity, devices, applications, data, "
                 "infrastructure, network, and visibility and analytics.",
             ),
         ],
@@ -704,8 +710,10 @@ _FOLLOWUP_CASES: list[EvalCase] = [
             ("user", "How does DeployIQ use AI responsibly?"),
             (
                 "assistant",
-                ("DeployIQ applies AI deliberately, securely, and with "
-                "explicit human accountability."),
+                (
+                    "DeployIQ applies AI deliberately, securely, and with "
+                    "explicit human accountability."
+                ),
             ),
         ],
         expected_docs=[RAI],
@@ -714,8 +722,6 @@ _FOLLOWUP_CASES: list[EvalCase] = [
     ),
 ]
 
-
-from app.evaluation.dataset_extra import build_extra_cases
 
 EVAL_CASES: list[EvalCase] = [
     *_ORIGINAL_CASES,

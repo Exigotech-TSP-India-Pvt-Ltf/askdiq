@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import {
   Activity,
@@ -103,6 +104,7 @@ type UsageTabKey = (typeof USAGE_TABS)[number]["key"];
 
 export default function MonitoringView({ hideHeader = false }: { hideHeader?: boolean } = {}) {
   const { token } = useAuth();
+  const { audience } = useAudience();
   const [m, setM] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -118,9 +120,10 @@ export default function MonitoringView({ hideHeader = false }: { hideHeader?: bo
 
   useEffect(() => {
     if (!token) return;
+    const qs = audience && audience !== "overview" ? `?audience=${audience}` : "";
     const load = () =>
       api
-        .adminGet(token, "/governance/monitoring")
+        .adminGet(token, `/governance/monitoring${qs}`)
         .then((d) => {
           setM(d);
           setError(null);
@@ -132,9 +135,9 @@ export default function MonitoringView({ hideHeader = false }: { hideHeader?: bo
     load();
     const timer = setInterval(load, 10000);
     return () => clearInterval(timer);
-  }, [token]);
+  }, [token, audience]);
 
-  const errorRatePct = m ? m.error_rate * 100 : 0;
+  const errorRatePct = m ? m.error_rate : 0;
   const errorAccent: AccentKey = errorRatePct >= 5 ? "rose" : errorRatePct >= 1 ? "amber" : "emerald";
 
   const latencyBars = [
@@ -147,7 +150,7 @@ export default function MonitoringView({ hideHeader = false }: { hideHeader?: bo
   return (
     <div>
       {!hideHeader && (
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-8">
+      <header className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-8">
         <div>
           <h1 className="text-sm font-semibold text-slate-900">Governance Monitoring</h1>
           <p className="text-xs text-slate-500">

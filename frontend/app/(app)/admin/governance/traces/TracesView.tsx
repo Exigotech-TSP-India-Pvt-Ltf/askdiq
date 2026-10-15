@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { Activity, Gauge, Timer, AlertTriangle } from "lucide-react";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
+import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
+import { TableCard } from "@/components/admin/TableCard";
 
 type Trace = {
   request_id: string;
@@ -19,33 +22,6 @@ type Trace = {
   total_ms?: number;
 };
 
-function HeroStat({
-  label,
-  value,
-  icon: Icon,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  icon: React.ElementType;
-  accent: string;
-}) {
-  return (
-    <div className="group relative overflow-hidden rounded-xl border border-purple-100 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
-      <div
-        className={`absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-10 transition-transform group-hover:scale-110 ${accent}`}
-      />
-      <div className="flex items-start justify-between">
-        <p className="text-sm font-medium text-slate-500">{label}</p>
-        <div className={`rounded-lg p-2 ${accent} bg-opacity-10`}>
-          <Icon className={`h-4 w-4 ${accent.replace("bg-", "text-")}`} />
-        </div>
-      </div>
-      <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
-    </div>
-  );
-}
-
 function shortId(id?: string, head = 10) {
   if (!id) return "—";
   return id.length > head ? `${id.slice(0, head)}…` : id;
@@ -53,16 +29,18 @@ function shortId(id?: string, head = 10) {
 
 function statusBadge(status?: string) {
   const s = (status || "ok").toLowerCase();
-  if (s === "ok" || s === "success") return "bg-emerald-50 text-emerald-700";
-  if (s === "error" || s === "failed") return "bg-red-50 text-red-700";
-  return "bg-amber-50 text-amber-700";
+  if (s === "ok" || s === "success")
+    return "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80";
+  if (s === "error" || s === "failed")
+    return "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/80";
+  return "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80";
 }
 
 function latencyBadge(ms?: number) {
-  if (ms == null) return "bg-slate-100 text-slate-500";
-  if (ms >= 8000) return "bg-red-50 text-red-700";
-  if (ms >= 4000) return "bg-amber-50 text-amber-700";
-  return "bg-emerald-50 text-emerald-700";
+  if (ms == null) return "bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400";
+  if (ms >= 8000) return "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300";
+  if (ms >= 4000) return "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300";
+  return "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300";
 }
 
 export default function TracesView({ hideHeader = false }: { hideHeader?: boolean } = {}) {
@@ -71,18 +49,21 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(10);
 
   const { token } = useAuth();
+  const { audience } = useAudience();
 
   useEffect(() => {
     if (!token) return;
+    setLoading(true);
+    const qs = audience && audience !== "overview" ? `?audience=${audience}` : "";
     api
-      .adminGet<Trace[]>(token, "/governance/traces")
+      .adminGet<Trace[]>(token, `/governance/traces${qs}`)
       .then(setTraces)
       .catch(() => setTraces([]))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, audience]);
 
   const avgLatency = useMemo(() => {
     const vals = traces.map((t) => t.total_ms).filter((v): v is number => v != null);
@@ -98,128 +79,188 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
     () =>
       traces.filter((t) => {
         if (statusFilter !== "all") {
-          const isOk = (t.status || "ok").toLowerCase() === "ok";
-          if (statusFilter === "ok" && !isOk) return false;
-          if (statusFilter === "error" && isOk) return false;
+          const s = (t.status || "ok").toLowerCase();
+          if (statusFilter === "ok" && s !== "ok" && s !== "success") return false;
+          if (statusFilter === "error" && s !== "error" && s !== "failed") return false;
         }
         if (!search.trim()) return true;
-        const haystack = `${t.request_id} ${t.trace_id ?? ""} ${t.ip_address ?? ""}`.toLowerCase();
-        return haystack.includes(search.trim().toLowerCase());
+        const needle = search.trim().toLowerCase();
+        return (
+          t.request_id.toLowerCase().includes(needle) ||
+          (t.trace_id ?? "").toLowerCase().includes(needle) ||
+          (t.ip_address ?? "").toLowerCase().includes(needle)
+        );
       }),
-    [traces, search, statusFilter]
+    [traces, statusFilter, search]
   );
 
-  useEffect(() => setPage(1), [search, statusFilter]);
+  const paged = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const columns: ColumnDef<Trace>[] = [
+    {
+      key: "request_id",
+      header: "Request ID",
+      render: (t) => (
+        <span className="font-mono text-xs text-slate-900 dark:text-slate-100" title={t.request_id}>
+          {shortId(t.request_id, 12)}
+        </span>
+      ),
+    },
+    {
+      key: "trace_id",
+      header: "Trace ID",
+      render: (t) => (
+        <span className="font-mono text-xs text-slate-500 dark:text-slate-400" title={t.trace_id}>
+          {shortId(t.trace_id, 12)}
+        </span>
+      ),
+    },
+    {
+      key: "ip_address",
+      header: "Client IP",
+      render: (t) => (
+        <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
+          {t.ip_address || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      align: "center",
+      render: (t) => (
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(
+            t.status
+          )}`}
+        >
+          {t.status || "ok"}
+        </span>
+      ),
+    },
+    {
+      key: "total_ms",
+      header: "Pipeline Latency",
+      sortable: true,
+      align: "right",
+      render: (t) => (
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${latencyBadge(
+            t.total_ms
+          )}`}
+        >
+          <Timer className="h-3 w-3" />
+          {t.total_ms != null ? formatLatencyMs(t.total_ms) : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "timestamp",
+      header: "Timestamp",
+      sortable: true,
+      render: (t) => (
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+          {t.timestamp ? new Date(t.timestamp).toLocaleString() : "—"}
+        </span>
+      ),
+    },
+  ];
 
   return (
-    <div>
+    <div className="space-y-6">
       {!hideHeader && (
-      <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-8">
-        <div>
-          <h1 className="text-sm font-semibold text-slate-900">Request Traces</h1>
-          <p className="text-xs text-slate-500">
-            Complete request journey across the RAG pipeline.
-          </p>
-        </div>
-      </header>
+        <header className="flex h-20 shrink-0 items-center border-b border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface px-8">
+          <div>
+            <h1 className="text-sm font-semibold text-slate-900 dark:text-white">Request Traces</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Complete request journey across the RAG pipeline.
+            </p>
+          </div>
+        </header>
       )}
 
-      <div className="p-8">
-        <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
-          <HeroStat label="Total Traces" value={traces.length} icon={Activity} accent="bg-purple-500" />
-          <HeroStat label="Average Latency" value={formatLatencyMs(avgLatency)} icon={Gauge} accent="bg-indigo-500" />
-          <HeroStat label="Errors" value={errorCount} icon={AlertTriangle} accent="bg-rose-500" />
+      <div className="p-8 space-y-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface p-4 shadow-xs flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Pipeline Traces</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{traces.length.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/60">
+              <Activity className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface p-4 shadow-xs flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Average Turn Latency</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{formatLatencyMs(avgLatency)}</p>
+            </div>
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/60">
+              <Gauge className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface p-4 shadow-xs flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Pipeline Errors</p>
+              <p className="mt-1 text-2xl font-bold text-rose-600 dark:text-rose-400">{errorCount}</p>
+            </div>
+            <div className="rounded-lg bg-rose-50 dark:bg-rose-950/60 p-2.5 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/60">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+          </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-purple-100 bg-white shadow-sm">
-          <div className="p-4 pb-0">
+        <TableCard
+          toolbar={
             <TableToolbar
               search={search}
-              onSearchChange={setSearch}
-              searchPlaceholder="Search by request ID or IP…"
-              filterOptions={[
-                { label: "All", value: "all" },
-                { label: "OK", value: "ok" },
-                { label: "Error", value: "error" },
+              onSearchChange={(v) => {
+                setSearch(v);
+                setPage(1);
+              }}
+              searchPlaceholder="Search request ID, trace ID, or IP…"
+              filters={[
+                {
+                  id: "status",
+                  label: "Trace Status",
+                  value: statusFilter,
+                  options: [
+                    { label: "All Traces", value: "all" },
+                    { label: "Successful Only", value: "ok" },
+                    { label: "Errors Only", value: "error" },
+                  ],
+                  onChange: (v) => {
+                    setStatusFilter(v);
+                    setPage(1);
+                  },
+                },
               ]}
-              filterValue={statusFilter}
-              onFilterChange={setStatusFilter}
-              countLabel={`${filtered.length} traces`}
             />
-          </div>
-
-          <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="sticky top-0 z-10">
-                <tr>
-                  {["Request ID", "Trace ID", "IP", "Status", "Latency", "Timestamp"].map((x) => (
-                    <th
-                      key={x}
-                      className="border-b border-purple-100 bg-purple-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    >
-                      {x}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-500">
-                      Loading traces...
-                    </td>
-                  </tr>
-                ) : paged.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-500">
-                      No traces found.
-                    </td>
-                  </tr>
-                ) : (
-                  paged.map((trace) => (
-                    <tr
-                      key={trace.request_id}
-                      className="border-b border-purple-50 odd:bg-white even:bg-purple-50/20 transition-colors hover:bg-purple-50/60"
-                    >
-                      <td className="px-5 py-4 font-mono text-xs text-slate-600" title={trace.request_id}>
-                        {shortId(trace.request_id)}
-                      </td>
-                      <td className="px-5 py-4 font-mono text-xs text-slate-600" title={trace.trace_id}>
-                        {shortId(trace.trace_id)}
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">{trace.ip_address || "—"}</td>
-                      <td className="px-5 py-4">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(trace.status)}`}>
-                          {trace.status || "ok"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${latencyBadge(trace.total_ms)}`}>
-                          <Timer className="h-3 w-3" />
-                          {trace.total_ms != null ? formatLatencyMs(trace.total_ms) : "—"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">
-                        {trace.timestamp ? new Date(trace.timestamp).toLocaleString() : "—"}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <Pagination
-            page={page}
-            pageCount={pageCount}
-            onPageChange={setPage}
-            totalItems={filtered.length}
-            pageSize={pageSize}
+          }
+          pagination={
+            <Pagination
+              page={page}
+              pageCount={Math.ceil(filtered.length / pageSize)}
+              totalItems={filtered.length}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <DataTable
+            columns={columns}
+            data={paged}
+            keyField="request_id"
+            isLoading={loading}
+            emptyMessage="No request traces found matching the selected filters."
           />
-        </div>
+        </TableCard>
       </div>
     </div>
   );

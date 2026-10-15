@@ -1,239 +1,248 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { MessagesSquare, Users, Clock } from "lucide-react";
+import { MessagesSquare, Users, MessageCircle } from "lucide-react";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
+import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { TableCard } from "@/components/admin/TableCard";
+import { formatNumber } from "@/components/admin/TableFormatters";
+import { useTableState } from "@/lib/use-table-state";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import type { PageEnvelope } from "@/lib/types";
 
-type Conversation = {
+interface ConversationRow {
   id: string;
   title?: string;
   created_at?: string;
   last_activity_at?: string;
   message_count?: number;
   created_ip?: string | null;
-};
+}
 
-function HeroStat({
-  label,
-  value,
-  icon: Icon,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  icon: React.ElementType;
-  accent: string;
-}) {
-  return (
-    <div className="group relative overflow-hidden rounded-xl border border-purple-100 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
-      <div
-        className={`absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-10 transition-transform group-hover:scale-110 ${accent}`}
-      />
-      <div className="flex items-start justify-between">
-        <p className="text-sm font-medium text-slate-500">{label}</p>
-        <div className={`rounded-lg p-2 ${accent} bg-opacity-10`}>
-          <Icon className={`h-4 w-4 ${accent.replace("bg-", "text-")}`} />
+function ConversationsContent() {
+  const router = useRouter();
+  const { token } = useAuth();
+
+  const {
+    page,
+    pageSize,
+    offset,
+    sort,
+    search,
+    filters,
+    audience,
+    setPage,
+    setPageSize,
+    setSort,
+    setSearchInput,
+    setFilter,
+    getSignal,
+  } = useTableState({
+    tableKey: "convs",
+    defaultSort: "created_at_desc",
+    allowedSorts: [
+      "created_at_desc",
+      "created_at_asc",
+      "last_activity_at_desc",
+      "last_activity_at_asc",
+      "message_count_desc",
+      "message_count_asc",
+    ],
+    defaultFilters: { ip: "" },
+  });
+
+  const [data, setData] = useState<PageEnvelope<ConversationRow> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchConversations = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.getConversationsList(
+        token,
+        {
+          audience,
+          q: search || undefined,
+          ip: filters.ip || undefined,
+          sort,
+          limit: pageSize,
+          offset,
+        },
+        getSignal()
+      );
+      setData(res);
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        setError(err.message || "Failed to load conversation logs.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [token, audience, search, filters.ip, sort, pageSize, offset, getSignal]);
+
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  const items = data?.items || [];
+  const total = data?.total || 0;
+
+  const totalMessages = items.reduce((sum, c) => sum + (c.message_count ?? 0), 0);
+  const uniqueIpsList = Array.from(new Set(items.map((c) => c.created_ip).filter(Boolean) as string[]));
+  const uniqueIps = uniqueIpsList.length;
+
+  const columns: ColumnDef<ConversationRow>[] = [
+    {
+      key: "title",
+      header: "Conversation Title & ID",
+      render: (c) => (
+        <div className="flex flex-col gap-0.5">
+          <span className="font-semibold text-slate-800 dark:text-slate-200">{c.title || "Untitled Session"}</span>
+          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">{c.id}</span>
         </div>
+      ),
+    },
+    {
+      key: "created_ip",
+      header: "Origin IP",
+      render: (c) => (
+        <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
+          {c.created_ip || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "message_count",
+      header: "Messages",
+      sortable: true,
+      align: "right",
+      render: (c) => formatNumber(c.message_count ?? 0),
+    },
+    {
+      key: "created_at",
+      header: "Created",
+      sortable: true,
+      render: (c) => (
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+          {c.created_at ? new Date(c.created_at).toLocaleString() : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "last_activity_at",
+      header: "Last Active",
+      sortable: true,
+      render: (c) => (
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+          {c.last_activity_at ? new Date(c.last_activity_at).toLocaleString() : "—"}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+      {/* Standard Universal Top Bar Line */}
+      <DashboardHeader
+        title="Conversations"
+        subtitle="Audience-scoped conversational sessions, message density, and turn timeline"
+        icon={MessagesSquare}
+      />
+
+      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
+        {/* Hero Stat Cards */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Filtered Sessions</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{total.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-800">
+              <MessagesSquare className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Unique Page Client IPs</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{uniqueIps.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
+              <Users className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Page Messages Processed</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalMessages.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-teal-50 dark:bg-teal-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-teal-100 dark:border-teal-800">
+              <MessageCircle className="h-5 w-5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Integrated TableCard Section */}
+        <TableCard
+          toolbar={
+            <TableToolbar
+              search={search}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Search title, ID, or created IP…"
+              filters={[
+                {
+                  id: "ip",
+                  label: "Origin IP",
+                  value: filters.ip,
+                  options: [
+                    { label: "All Origin IPs", value: "" },
+                    ...uniqueIpsList.map((ip) => ({ label: ip, value: ip })),
+                  ],
+                  onChange: (v) => setFilter("ip", v),
+                },
+              ]}
+            />
+          }
+          pagination={
+            <Pagination
+              page={page}
+              pageCount={Math.ceil(total / pageSize)}
+              totalItems={total}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <DataTable
+            columns={columns}
+            data={items}
+            keyField="id"
+            isLoading={loading}
+            error={error}
+            onRetry={fetchConversations}
+            currentSort={sort}
+            onSortChange={setSort}
+            onRowClick={(c) => router.push(`/admin/conversations/${c.id}`)}
+            emptyMessage="No conversations found matching current audience and filters."
+          />
+        </TableCard>
       </div>
-      <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
     </div>
   );
 }
 
 export default function ConversationsPage() {
-  const router = useRouter();
-
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [ipFilter, setIpFilter] = useState("all");
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-
-  useEffect(() => {
-    async function loadConversations() {
-      try {
-        const response = await fetch(
-          "http://localhost:8000/admin/conversations",
-          {
-            headers: {
-              "X-API-Key": "dep-iq-key",
-            },
-          }
-        );
-
-        if (!response.ok) {
-          setConversations([]);
-          return;
-        }
-
-        const data = await response.json();
-
-        setConversations(
-          Array.isArray(data)
-            ? data
-            : data.conversations || data.items || []
-        );
-      } catch {
-        setConversations([]);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadConversations();
-  }, []);
-
-  const totalMessages = useMemo(
-    () => conversations.reduce((sum, c) => sum + (c.message_count ?? 0), 0),
-    [conversations]
-  );
-  const uniqueIps = useMemo(
-    () => new Set(conversations.map((c) => c.created_ip).filter(Boolean)).size,
-    [conversations]
-  );
-
-  const ipOptions = useMemo(
-    () => [
-      { label: "All", value: "all" },
-      ...Array.from(new Set(conversations.map((c) => c.created_ip).filter(Boolean) as string[])).map(
-        (ip) => ({ label: ip, value: ip })
-      ),
-    ],
-    [conversations]
-  );
-
-  const filtered = useMemo(
-    () =>
-      conversations.filter((c) => {
-        if (ipFilter !== "all" && c.created_ip !== ipFilter) return false;
-        if (!search.trim()) return true;
-        const haystack = `${c.title ?? ""} ${c.created_ip ?? ""} ${c.id}`.toLowerCase();
-        return haystack.includes(search.trim().toLowerCase());
-      }),
-    [conversations, search, ipFilter]
-  );
-
-  useEffect(() => setPage(1), [search, ipFilter]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
-
   return (
-    <div>
-      <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-8">
-        <div>
-          <h1 className="text-sm font-semibold text-slate-900">Conversation Logs</h1>
-          <p className="text-xs text-slate-500">View conversations across all users.</p>
-        </div>
-      </header>
-
-      <div className="p-8">
-      <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
-        <HeroStat label="Conversations" value={conversations.length} icon={MessagesSquare} accent="bg-purple-500" />
-        <HeroStat label="Unique IPs" value={uniqueIps} icon={Users} accent="bg-indigo-500" />
-        <HeroStat label="Total Messages" value={totalMessages} icon={Clock} accent="bg-fuchsia-500" />
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-purple-100 bg-white shadow-sm">
-        <div className="p-4 pb-0">
-          <TableToolbar
-            search={search}
-            onSearchChange={setSearch}
-            searchPlaceholder="Search by title, IP or ID…"
-            filterOptions={ipOptions}
-            filterValue={ipFilter}
-            onFilterChange={setIpFilter}
-            countLabel={`${filtered.length} conversations`}
-          />
-        </div>
-
-        <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="sticky top-0 z-10">
-              <tr>
-                {["Conversation", "IP Address", "Created", "Last Activity", "Messages"].map(
-                  (item) => (
-                    <th
-                      key={item}
-                      className="border-b border-purple-100 bg-purple-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    >
-                      {item}
-                    </th>
-                  )
-                )}
-              </tr>
-            </thead>
-
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-500">
-                    Loading conversations...
-                  </td>
-                </tr>
-              ) : paged.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-500">
-                    No conversations found.
-                  </td>
-                </tr>
-              ) : (
-                paged.map((conversation) => (
-                  <tr
-                    key={conversation.id}
-                    onClick={() => router.push(`/admin/conversations/${conversation.id}`)}
-                    className="cursor-pointer border-b border-purple-50 odd:bg-white even:bg-purple-50/20 transition-colors hover:bg-purple-50/60"
-                  >
-                    <td className="px-5 py-4">
-                      <p className="font-medium text-slate-900 hover:text-purple-600">
-                        {conversation.title || "Untitled Conversation"}
-                      </p>
-                      <p className="mt-1 font-mono text-[11px] text-slate-400" title={conversation.id}>
-                        {conversation.id.length > 20 ? `${conversation.id.slice(0, 20)}…` : conversation.id}
-                      </p>
-                    </td>
-
-                    <td className="px-5 py-4 font-mono text-xs text-slate-500">
-                      {conversation.created_ip || "—"}
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      {formatDate(conversation.created_at)}
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      {formatDate(conversation.last_activity_at)}
-                    </td>
-
-                    <td className="px-5 py-4">
-                      <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
-                        {conversation.message_count ?? 0}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <Pagination
-          page={page}
-          pageCount={pageCount}
-          onPageChange={setPage}
-          totalItems={filtered.length}
-          pageSize={pageSize}
-        />
-      </div>
-      </div>
-    </div>
+    <React.Suspense fallback={<div className="p-8 text-xs text-slate-400">Loading conversations...</div>}>
+      <ConversationsContent />
+    </React.Suspense>
   );
-}
-
-function formatDate(value?: string) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString();
 }

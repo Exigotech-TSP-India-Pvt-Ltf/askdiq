@@ -1,14 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { UserCheck, Users as UsersIcon, Activity } from "lucide-react";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
+import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { TableCard } from "@/components/admin/TableCard";
+import { formatNumber, TableBadge } from "@/components/admin/TableFormatters";
+import { useTableState } from "@/lib/use-table-state";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import type { PageEnvelope } from "@/lib/types";
 
-type User = {
+interface UserRow {
   id: string;
-  ip_address?: string | null;
+  ip_address: string;
+  is_test?: boolean;
+  type?: string;
   first_seen?: string | null;
   last_active?: string | null;
   status?: string;
@@ -16,233 +26,271 @@ type User = {
   conversations?: number;
   queries?: number;
   feedback_count?: number;
-};
+}
 
-function HeroStat({
-  label,
-  value,
-  icon: Icon,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  icon: React.ElementType;
-  accent: string;
-}) {
-  return (
-    <div className="group relative overflow-hidden rounded-xl border border-purple-100 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
-      <div
-        className={`absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-10 transition-transform group-hover:scale-110 ${accent}`}
-      />
-      <div className="flex items-start justify-between">
-        <p className="text-sm font-medium text-slate-500">{label}</p>
-        <div className={`rounded-lg p-2 ${accent} bg-opacity-10`}>
-          <Icon className={`h-4 w-4 ${accent.replace("bg-", "text-")}`} />
+function UsersContent() {
+  const router = useRouter();
+  const { token } = useAuth();
+
+  const {
+    page,
+    pageSize,
+    offset,
+    sort,
+    search,
+    filters,
+    audience,
+    setPage,
+    setPageSize,
+    setSort,
+    setSearchInput,
+    setFilter,
+    getSignal,
+  } = useTableState({
+    tableKey: "users",
+    defaultSort: "last_active_desc",
+    allowedSorts: [
+      "last_active_desc",
+      "last_active_asc",
+      "queries_desc",
+      "queries_asc",
+      "sessions_desc",
+      "sessions_asc",
+    ],
+    defaultFilters: { status: "all", type: "all" },
+  });
+
+  const [data, setData] = useState<PageEnvelope<UserRow> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchUsers = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.getUsersList(
+        token,
+        {
+          audience,
+          q: search || undefined,
+          status: filters.status !== "all" ? filters.status : undefined,
+          type: filters.type !== "all" ? filters.type : undefined,
+          sort,
+          limit: pageSize,
+          offset,
+        },
+        getSignal()
+      );
+      setData(res);
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        setError(err.message || "Failed to load users list.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [token, audience, search, filters.status, filters.type, sort, pageSize, offset, getSignal]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  const items = data?.items || [];
+  const total = data?.total || 0;
+
+  const activeCount = items.filter(
+    (u) =>
+      u.status?.toLowerCase() === "active" ||
+      (u.last_active &&
+        Date.now() - new Date(u.last_active).getTime() < 30 * 60 * 1000)
+  ).length;
+
+  const totalQueries = items.reduce((acc, u) => acc + (u.queries ?? 0), 0);
+
+  const columns: ColumnDef<UserRow>[] = [
+    {
+      key: "ip_address",
+      header: "Client IP Address",
+      render: (u) => (
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs font-medium text-slate-800 dark:text-slate-200">
+            {u.ip_address}
+          </span>
+          <TableBadge
+            label={u.type || (u.is_test ? "Test" : "Production")}
+            variant={u.is_test ? "warning" : "success"}
+          />
         </div>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      align: "center",
+      render: (u) => {
+        const isActive =
+          u.status?.toLowerCase() === "active" ||
+          (u.last_active &&
+            Date.now() - new Date(u.last_active).getTime() < 30 * 60 * 1000);
+        return (
+          <TableBadge
+            label={isActive ? "Active" : "Inactive"}
+            variant={isActive ? "success" : "neutral"}
+          />
+        );
+      },
+    },
+    {
+      key: "sessions",
+      header: "Sessions",
+      sortable: true,
+      align: "right",
+      render: (u) => formatNumber(u.sessions ?? u.conversations ?? 0),
+    },
+    {
+      key: "queries",
+      header: "Queries",
+      sortable: true,
+      align: "right",
+      render: (u) => formatNumber(u.queries ?? 0),
+    },
+    {
+      key: "feedback_count",
+      header: "Feedback",
+      align: "right",
+      render: (u) => formatNumber(u.feedback_count ?? 0),
+    },
+    {
+      key: "first_seen",
+      header: "First Seen",
+      render: (u) => (
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+          {u.first_seen ? new Date(u.first_seen).toLocaleDateString() : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "last_active",
+      header: "Last Active",
+      sortable: true,
+      render: (u) => (
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+          {u.last_active ? new Date(u.last_active).toLocaleString() : "—"}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+      {/* Standard Universal Top Bar Line */}
+      <DashboardHeader
+        title="Users"
+        subtitle="Audience-scoped telemetry by client IP address, activity history, and engagement"
+        icon={UsersIcon}
+      />
+
+      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
+        {/* Hero Stat Cards */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Filtered Users</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{total.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-800">
+              <UsersIcon className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Active Page Users</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{activeCount.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
+              <UserCheck className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Page Queries Driven</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalQueries.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-teal-50 dark:bg-teal-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-teal-100 dark:border-teal-800">
+              <Activity className="h-5 w-5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Integrated TableCard Section */}
+        <TableCard
+          toolbar={
+            <TableToolbar
+              search={search}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Search client IP address…"
+              filters={[
+                {
+                  id: "status",
+                  label: "Status",
+                  value: filters.status,
+                  options: [
+                    { label: "All Statuses", value: "all" },
+                    { label: "Active Only", value: "active" },
+                    { label: "Inactive Only", value: "inactive" },
+                  ],
+                  onChange: (v) => setFilter("status", v),
+                },
+                {
+                  id: "type",
+                  label: "User Type",
+                  value: filters.type,
+                  options: [
+                    { label: "All Users", value: "all" },
+                    { label: "Production Users", value: "production" },
+                    { label: "Test Users", value: "test" },
+                  ],
+                  onChange: (v) => setFilter("type", v),
+                },
+              ]}
+            />
+          }
+          pagination={
+            <Pagination
+              page={page}
+              pageCount={Math.ceil(total / pageSize)}
+              totalItems={total}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <DataTable
+            columns={columns}
+            data={items}
+            keyField="ip_address"
+            isLoading={loading}
+            error={error}
+            onRetry={fetchUsers}
+            currentSort={sort}
+            onSortChange={setSort}
+            onRowClick={(u) => router.push(`/admin/users/${encodeURIComponent(u.ip_address)}`)}
+            emptyMessage="No users found matching current audience and filters."
+          />
+        </TableCard>
       </div>
-      <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
     </div>
   );
 }
 
 export default function UsersPage() {
-  const router = useRouter();
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-
-  useEffect(() => {
-    async function loadUsers() {
-      try {
-        const response = await fetch("http://localhost:8000/admin/users", {
-          headers: {
-            "X-API-Key": "dep-iq-key",
-          },
-        });
-
-        if (!response.ok) {
-          setUsers([]);
-          return;
-        }
-
-        const data = await response.json();
-
-        setUsers(Array.isArray(data) ? data : data.users || data.items || []);
-      } catch {
-        setUsers([]);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadUsers();
-  }, []);
-
-  const activeCount = useMemo(
-    () => users.filter((u) => (u.status || "Active").toLowerCase() === "active").length,
-    [users]
-  );
-  const totalQueries = useMemo(
-    () => users.reduce((sum, u) => sum + (u.queries ?? 0), 0),
-    [users]
-  );
-
-  const filtered = useMemo(
-    () =>
-      users.filter((u) => {
-        if (statusFilter !== "all") {
-          const isActive = (u.status || "Active").toLowerCase() === "active";
-          if (statusFilter === "active" && !isActive) return false;
-          if (statusFilter === "inactive" && isActive) return false;
-        }
-        if (!search.trim()) return true;
-        return (u.ip_address ?? "").toLowerCase().includes(search.trim().toLowerCase());
-      }),
-    [users, search, statusFilter]
-  );
-
-  useEffect(() => setPage(1), [search, statusFilter]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
-
   return (
-    <div>
-      <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-8">
-        <div>
-          <h1 className="text-sm font-semibold text-slate-900">Users</h1>
-          <p className="text-xs text-slate-500">
-            Monitor user activity, engagement and access history.
-          </p>
-        </div>
-      </header>
-
-      <div className="p-8">
-      <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
-        <HeroStat label="Total Users" value={users.length} icon={UsersIcon} accent="bg-purple-500" />
-        <HeroStat label="Active Users" value={activeCount} icon={UserCheck} accent="bg-emerald-500" />
-        <HeroStat label="Total Queries" value={totalQueries} icon={Activity} accent="bg-indigo-500" />
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-purple-100 bg-white shadow-sm">
-        <div className="p-4 pb-0">
-          <TableToolbar
-            search={search}
-            onSearchChange={setSearch}
-            searchPlaceholder="Search by IP address…"
-            filterOptions={[
-              { label: "All", value: "all" },
-              { label: "Active", value: "active" },
-              { label: "Inactive", value: "inactive" },
-            ]}
-            filterValue={statusFilter}
-            onFilterChange={setStatusFilter}
-            countLabel={`${filtered.length} users`}
-          />
-        </div>
-
-        <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="sticky top-0 z-10">
-              <tr>
-                {[
-                  "IP Address",
-                  "First Seen",
-                  "Last Active",
-                  "Status",
-                  "Sessions",
-                  "Conversations",
-                  "Queries",
-                  "Feedback",
-                ].map((header) => (
-                  <th
-                    key={header}
-                    className="border-b border-purple-100 bg-purple-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                  >
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-500">
-                    Loading users...
-                  </td>
-                </tr>
-              ) : paged.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-500">
-                    No users found.
-                  </td>
-                </tr>
-              ) : (
-                paged.map((user) => {
-                  const isActive = (user.status || "Active").toLowerCase() === "active";
-                  return (
-                    <tr
-                      key={user.id}
-                      onClick={() => router.push(`/admin/users/${user.id}`)}
-                      className="cursor-pointer border-b border-purple-50 odd:bg-white even:bg-purple-50/20 transition-colors hover:bg-purple-50/60"
-                    >
-                      <td className="px-5 py-4 font-mono text-xs text-slate-500">
-                        {user.ip_address || "—"}
-                      </td>
-
-                      <td className="px-5 py-4 text-sm text-slate-600">{formatDate(user.first_seen)}</td>
-
-                      <td className="px-5 py-4 text-sm text-slate-600">{formatDate(user.last_active)}</td>
-
-                      <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                            isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
-                          }`}
-                        >
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-500" : "bg-slate-400"}`}
-                          />
-                          {user.status || "Active"}
-                        </span>
-                      </td>
-
-                      <td className="px-5 py-4 text-sm text-slate-600">{user.sessions ?? 0}</td>
-                      <td className="px-5 py-4 text-sm text-slate-600">{user.conversations ?? 0}</td>
-                      <td className="px-5 py-4">
-                        <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
-                          {user.queries ?? 0}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">{user.feedback_count ?? 0}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <Pagination
-          page={page}
-          pageCount={pageCount}
-          onPageChange={setPage}
-          totalItems={filtered.length}
-          pageSize={pageSize}
-        />
-      </div>
-      </div>
-    </div>
+    <React.Suspense fallback={<div className="p-8 text-xs text-slate-400">Loading users...</div>}>
+      <UsersContent />
+    </React.Suspense>
   );
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString();
 }

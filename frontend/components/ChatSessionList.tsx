@@ -78,11 +78,11 @@ export function ChatSessionList({
   }
 
   return (
-    <div className="flex w-64 shrink-0 flex-col border-r border-ink/10 bg-ink/[0.015]">
+    <div className="flex w-64 shrink-0 flex-col border-r border-ink/10 dark:border-white/10 bg-ink/[0.015] dark:bg-dark-surface/60">
       <div className="p-3">
         <button
           onClick={onNew}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-brand-700"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white shadow-brand-glow transition hover:bg-brand-700"
         >
           <PlusIcon />
           New chat
@@ -91,7 +91,7 @@ export function ChatSessionList({
 
       <div className="scrollbar-thin flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
         {sessions.length === 0 && (
-          <p className="px-2 py-3 text-center text-xs text-ink/40">
+          <p className="px-2 py-3 text-center text-xs text-ink/40 dark:text-slate-400">
             No chats yet — start one above.
           </p>
         )}
@@ -103,7 +103,9 @@ export function ChatSessionList({
               key={session.id}
               onClick={() => editingId !== session.id && onSelect(session.id)}
               className={`group flex cursor-pointer items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs transition ${
-                active ? "bg-brand-50 text-brand-700" : "text-ink/70 hover:bg-ink/5"
+                active
+                  ? "bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-semibold"
+                  : "text-ink/70 dark:text-slate-300 hover:bg-ink/5 dark:hover:bg-white/5"
               }`}
             >
               <div className="min-w-0 flex-1">
@@ -115,12 +117,12 @@ export function ChatSessionList({
                     onBlur={() => commitRename(session.id)}
                     onKeyDown={(e) => onRenameKeyDown(e, session.id)}
                     onClick={(e) => e.stopPropagation()}
-                    className="w-full rounded border border-brand-300 bg-white px-1 py-0.5 text-xs outline-none"
+                    className="w-full rounded border border-brand-300 dark:border-brand-600 bg-white dark:bg-dark-card text-ink dark:text-white px-1 py-0.5 text-xs outline-none"
                   />
                 ) : (
                   <p className="truncate font-medium">{session.title}</p>
                 )}
-                <p className="mt-0.5 truncate text-[10px] text-ink/40">
+                <p className="mt-0.5 truncate text-[10px] text-ink/40 dark:text-slate-400">
                   {relativeTime(session.last_activity_at)}
                   {session.is_expired ? " · expired" : ""}
                 </p>
@@ -133,7 +135,7 @@ export function ChatSessionList({
                     startRename(session.id, session.title);
                   }}
                   title="Rename"
-                  className="rounded p-1 text-ink/40 hover:bg-ink/10 hover:text-ink"
+                  className="rounded p-1 text-ink/40 dark:text-slate-400 hover:bg-ink/10 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white"
                 >
                   <PencilIcon />
                 </button>
@@ -145,7 +147,7 @@ export function ChatSessionList({
                     }
                   }}
                   title="Delete"
-                  className="rounded p-1 text-ink/40 hover:bg-red-50 hover:text-red-600"
+                  className="rounded p-1 text-ink/40 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400"
                 >
                   <TrashIcon />
                 </button>

@@ -3,6 +3,7 @@
 import math
 
 import pytest
+
 from app.evaluation import metrics as m
 from app.evaluation.judge import build_judge_prompt, parse_judge_output
 
@@ -134,6 +135,40 @@ def test_parse_judge_output_rejects_unusable_replies(bad):
 
 
 def test_build_judge_prompt_includes_all_parts():
-    prompt = build_judge_prompt("Q?", ["chunk one", "chunk two"], "An answer", ["fact a"])
+    prompt = build_judge_prompt(
+        "Q?", ["chunk one", "chunk two"], "An answer", ["fact a"]
+    )
     for expected in ("Q?", "[1] chunk one", "[2] chunk two", "An answer", "- fact a"):
         assert expected in prompt
+
+
+async def test_judge_omits_temperature_and_max_completion_tokens(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from app.evaluation import judge
+
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(
+            message=MagicMock(
+                content='{"faithfulness": 5, "relevance": 5, "completeness": 5, "unsupported_claims": [], "reason": "ok"}'
+            )
+        )
+    ]
+    captured_kwargs = {}
+
+    async def fake_create(**kwargs):
+        captured_kwargs.update(kwargs)
+        return mock_response
+
+    mock_client.chat.completions.create = fake_create
+    monkeypatch.setattr(judge, "_client_for", lambda deployment: mock_client)
+
+    scores = await judge._judge("Test question?", ["Test context"], "Test answer", None)
+
+    assert scores is not None
+    assert scores.faithfulness == 5
+    assert "temperature" not in captured_kwargs
+    assert "max_completion_tokens" not in captured_kwargs
+    assert "reasoning_effort" in captured_kwargs

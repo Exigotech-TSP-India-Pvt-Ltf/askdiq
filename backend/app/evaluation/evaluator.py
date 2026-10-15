@@ -248,13 +248,25 @@ class EvaluationReport:
     # ----- knowledge-base-wide metrics ---------------------------------
     def citation_means(self) -> dict:
         def avg(key):
-            return m.mean_or_none(r.citation.get(key) for r in self.scored if r.citation)
+            return m.mean_or_none(
+                r.citation.get(key) for r in self.scored if r.citation
+            )
 
         checks = [r.citation.get("quality", {}) for r in self.scored if r.citation]
         quality = {}
-        for name in ("correct_document", "correct_section", "correct_chunk", "current_version", "primary_source"):
+        for name in (
+            "correct_document",
+            "correct_section",
+            "correct_chunk",
+            "current_version",
+            "primary_source",
+        ):
             quality[name] = _rate([c[name] for c in checks if c.get(name) is not None])
-        return {"precision": avg("precision"), "coverage": avg("coverage"), "quality": quality}
+        return {
+            "precision": avg("precision"),
+            "coverage": avg("coverage"),
+            "quality": quality,
+        }
 
     def abstention_summary(self) -> dict:
         cases = [r for r in self.scored if r.case.expect_abstain]
@@ -264,24 +276,34 @@ class EvaluationReport:
         return {
             "n": len(cases),
             "abstention_rate": _rate([r.abstained for r in cases]),
-            "by_category": {c: {"n": len(v), "rate": _rate(v)} for c, v in sorted(by_cat.items())},
+            "by_category": {
+                c: {"n": len(v), "rate": _rate(v)} for c, v in sorted(by_cat.items())
+            },
             # answerable cases that wrongly abstained
             "false_abstention_rate": _rate(
-                [r.abstained for r in self.scored if r.case.case_type in {"answerable", "compound"}]
+                [
+                    r.abstained
+                    for r in self.scored
+                    if r.case.case_type in {"answerable", "compound"}
+                ]
             ),
         }
 
     def safety_summary(self) -> dict:
         cases = [r for r in self.scored if r.safety]
+
         def rate(key):
             return _rate([bool(r.safety.get(key)) for r in cases])
+
         return {
             "n": len(cases),
             "pii_leakage_rate": rate("pii_leaked"),
             "secret_exposure_rate": rate("secrets"),
             "injection_compliance_rate": rate("injection_followed"),
             "unauthorized_retrieval_rate": rate("unauthorized_docs"),
-            "chunks_with_injection_text": sum(len(r.safety.get("injected_chunks", [])) for r in cases),
+            "chunks_with_injection_text": sum(
+                len(r.safety.get("injected_chunks", [])) for r in cases
+            ),
             "passed": _rate([r.safety_ok for r in cases if r.safety_ok is not None]),
         }
 
@@ -289,7 +311,9 @@ class EvaluationReport:
         noisy, clean = [], []
         for r in self.scored:
             if "noise_ratio" in r.retrieval_metrics:
-                (noisy if r.retrieval_metrics["noise_ratio"] >= 0.5 else clean).append(r.passed)
+                (noisy if r.retrieval_metrics["noise_ratio"] >= 0.5 else clean).append(
+                    r.passed
+                )
         return {
             "mean_noise_ratio": self.retrieval_means().get("noise_ratio"),
             "pass_rate_noisy_context": _rate(noisy),
@@ -302,7 +326,9 @@ class EvaluationReport:
         for r in self.results:
             if r.run_index == 0:
                 by_id[r.case.id] = r
-        pairs: list[tuple[EvalResult, EvalResult, bool]] = []  # (base, other, is_repeat)
+        pairs: list[
+            tuple[EvalResult, EvalResult, bool]
+        ] = []  # (base, other, is_repeat)
         for r in self.results:
             if r.run_index > 0 and r.case.id in by_id:
                 pairs.append((by_id[r.case.id], r, True))
@@ -321,15 +347,26 @@ class EvaluationReport:
             return both and q.numeric_contradiction(a.answer, b.answer)
 
         def agg(sel):
-            sel = [p for p in sel]
+            sel = list(sel)
             if not sel:
                 return None
             return {
                 "n": len(sel),
-                "retrieval_stability": sum(q.jaccard({s for s, _ in doc_set(a)}, {s for s, _ in doc_set(b)}) for a, b, _ in sel) / len(sel),
-                "answer_consistency": sum(q.answer_similarity(a.answer, b.answer) for a, b, _ in sel) / len(sel),
-                "citation_consistency": sum(q.jaccard(doc_set(a), doc_set(b)) for a, b, _ in sel) / len(sel),
-                "contradiction_rate": sum(1 for a, b, _ in sel if contradiction(a, b)) / len(sel),
+                "retrieval_stability": sum(
+                    q.jaccard({s for s, _ in doc_set(a)}, {s for s, _ in doc_set(b)})
+                    for a, b, _ in sel
+                )
+                / len(sel),
+                "answer_consistency": sum(
+                    q.answer_similarity(a.answer, b.answer) for a, b, _ in sel
+                )
+                / len(sel),
+                "citation_consistency": sum(
+                    q.jaccard(doc_set(a), doc_set(b)) for a, b, _ in sel
+                )
+                / len(sel),
+                "contradiction_rate": sum(1 for a, b, _ in sel if contradiction(a, b))
+                / len(sel),
                 "pass_rate_clean": _rate([a.passed for a, _, _ in sel]),
                 "pass_rate_perturbed": _rate([b.passed for _, b, _ in sel]),
             }
@@ -338,16 +375,25 @@ class EvaluationReport:
         for pair in pairs:
             by_pert[pair[1].case.perturbation or "repeated_run"].append(pair)
         overall = agg(pairs)
-        if overall and overall["pass_rate_clean"] is not None and overall["pass_rate_perturbed"] is not None:
-            overall["performance_drop"] = overall["pass_rate_clean"] - overall["pass_rate_perturbed"]
-        return {"overall": overall, "by_perturbation": {k: agg(v) for k, v in sorted(by_pert.items())}}
+        if (
+            overall
+            and overall["pass_rate_clean"] is not None
+            and overall["pass_rate_perturbed"] is not None
+        ):
+            overall["performance_drop"] = (
+                overall["pass_rate_clean"] - overall["pass_rate_perturbed"]
+            )
+        return {
+            "overall": overall,
+            "by_perturbation": {k: agg(v) for k, v in sorted(by_pert.items())},
+        }
 
     def deep_judge_means(self) -> dict:
         deep = [r.deep for r in self.scored if r.deep is not None]
         if not deep:
             return {}
         axes = {}
-        for group, names in (("correctness", None), ("helpfulness", None)):
+        for group in ("correctness", "helpfulness"):
             collected: dict[str, list[int]] = defaultdict(list)
             for d in deep:
                 for k, v in getattr(d, group).items():
@@ -362,21 +408,44 @@ class EvaluationReport:
             "groundedness": m.mean_or_none(d.groundedness for d in deep),
             "contradiction_rate": _rate([bool(d.contradictions) for d in deep]),
             "response_completeness": m.mean_or_none(
-                1 - len(r.missing_keywords) / len(r.case.expected_keywords) for r in expected_hit
+                1 - len(r.missing_keywords) / len(r.case.expected_keywords)
+                for r in expected_hit
             ),
             **axes,
         }
 
-    def operational(self, price_in_per_1m: float = 0.0, price_out_per_1m: float = 0.0,
-                    wall_seconds: float | None = None, concurrency: int = 1) -> dict:
+    def operational(
+        self,
+        price_in_per_1m: float = 0.0,
+        price_out_per_1m: float = 0.0,
+        wall_seconds: float | None = None,
+        concurrency: int = 1,
+    ) -> dict:
         rs = self.results
         ok = [r for r in rs if r.error is None]
-        success = [r for r in self.scored if r.passed and r.grounded and r.case.case_type in {"answerable", "compound", "followup", "robustness"}]
-        total_cost = sum(q.cost_usd(r.input_tokens, r.output_tokens, price_in_per_1m, price_out_per_1m) for r in rs)
+        success = [
+            r
+            for r in self.scored
+            if r.passed
+            and r.grounded
+            and r.case.case_type in {"answerable", "compound", "followup", "robustness"}
+        ]
+        total_cost = sum(
+            q.cost_usd(
+                r.input_tokens, r.output_tokens, price_in_per_1m, price_out_per_1m
+            )
+            for r in rs
+        )
+
         def lat(field_name):
-            return q.latency_percentiles([
-                r.stage_timings[field_name] for r in rs if isinstance(r.stage_timings.get(field_name), (int, float))
-            ])
+            return q.latency_percentiles(
+                [
+                    r.stage_timings[field_name]
+                    for r in rs
+                    if isinstance(r.stage_timings.get(field_name), (int, float))
+                ]
+            )
+
         return {
             "latency_ms": {
                 "end_to_end": q.latency_percentiles([r.latency_ms for r in ok]),
@@ -388,12 +457,23 @@ class EvaluationReport:
                 "input_total": sum(r.input_tokens for r in rs),
                 "output_total": sum(r.output_tokens for r in rs),
                 "retrieved_total": sum(r.retrieved_tokens for r in rs),
-                "mean_retrieved_per_query": (sum(r.retrieved_tokens for r in rs) / len(rs)) if rs else 0,
+                "mean_retrieved_per_query": (
+                    sum(r.retrieved_tokens for r in rs) / len(rs)
+                )
+                if rs
+                else 0,
             },
             "cost_usd_total": total_cost,
-            "cost_per_successful_answer_usd": (total_cost / len(success)) if success else None,
+            "cost_per_successful_answer_usd": (total_cost / len(success))
+            if success
+            else None,
             "retrieval_failure_rate": _rate([r.retrieval_failed for r in rs]),
-            "model_error_rate": _rate([r.error is not None or "llm_call_failed" in r.guardrail_flags for r in rs]),
+            "model_error_rate": _rate(
+                [
+                    r.error is not None or "llm_call_failed" in r.guardrail_flags
+                    for r in rs
+                ]
+            ),
             "availability": _rate([r.error is None for r in rs]),
             "throughput_qps": (len(rs) / wall_seconds) if wall_seconds else None,
             "concurrency": concurrency,
@@ -409,7 +489,10 @@ class EvaluationReport:
             "robustness": self.robustness_summary(),
             "deep_judge": self.deep_judge_means(),
             "operational": self.operational(
-                self.price_in_per_1m, self.price_out_per_1m, self.wall_seconds, self.concurrency
+                self.price_in_per_1m,
+                self.price_out_per_1m,
+                self.wall_seconds,
+                self.concurrency,
             ),
             "n_cases": len(self.results),
             "n_scored": len(scored),
@@ -448,11 +531,19 @@ def _retrieval_metrics(
     context: list[str],
     top_k: int,
 ) -> dict[str, float]:
-    flags = m.chunk_relevance(ranked_docs, [None] * len(ranked_docs), case.expected_docs)
+    flags = m.chunk_relevance(
+        ranked_docs, [None] * len(ranked_docs), case.expected_docs
+    )
     metrics = {
-        "recall@1": m.doc_recall_at_k(ranked_docs, case.expected_docs, 1, case.min_expected_docs_hit),
-        "recall@3": m.doc_recall_at_k(ranked_docs, case.expected_docs, 3, case.min_expected_docs_hit),
-        "recall@k": m.doc_recall_at_k(ranked_docs, case.expected_docs, top_k, case.min_expected_docs_hit),
+        "recall@1": m.doc_recall_at_k(
+            ranked_docs, case.expected_docs, 1, case.min_expected_docs_hit
+        ),
+        "recall@3": m.doc_recall_at_k(
+            ranked_docs, case.expected_docs, 3, case.min_expected_docs_hit
+        ),
+        "recall@k": m.doc_recall_at_k(
+            ranked_docs, case.expected_docs, top_k, case.min_expected_docs_hit
+        ),
         "hit_rate@k": m.hit_rate_at_k(flags, top_k),
         "precision@k": m.precision_at_k(flags, top_k),
         "mrr": m.reciprocal_rank(flags),
@@ -469,13 +560,25 @@ def _count_tokens(text: str) -> int:
     return len(_TOKEN_ENCODING.encode(text)) if text else 0
 
 
-def _error_result(case: EvalCase, exc: Exception, latency_ms: float, run_index: int) -> EvalResult:
+def _error_result(
+    case: EvalCase, exc: Exception, latency_ms: float, run_index: int
+) -> EvalResult:
     return EvalResult(
-        case=case, grounded=False, confidence=0.0, guardrail_flags=["pipeline_error"],
-        matched_docs=set(), latency_ms=latency_ms, stage_timings={}, answer_word_count=0,
-        answer="", retrieval_ok=False if case.expected_docs and not case.expect_abstain else None,
-        grounded_ok=False, flags_ok=False, error=f"{type(exc).__name__}: {exc}",
-        retrieval_failed=True, run_index=run_index,
+        case=case,
+        grounded=False,
+        confidence=0.0,
+        guardrail_flags=["pipeline_error"],
+        matched_docs=set(),
+        latency_ms=latency_ms,
+        stage_timings={},
+        answer_word_count=0,
+        answer="",
+        retrieval_ok=False if case.expected_docs and not case.expect_abstain else None,
+        grounded_ok=False,
+        flags_ok=False,
+        error=f"{type(exc).__name__}: {exc}",
+        retrieval_failed=True,
+        run_index=run_index,
     )
 
 
@@ -505,15 +608,19 @@ async def evaluate_case(
             stage_timings=stage_timings,
             history=history or None,
         )
-    except Exception as exc:  # noqa: BLE001 - one failing case must not abort the run
-        return _error_result(case, exc, (time.perf_counter() - started) * 1000, run_index)
+    except Exception as exc:
+        return _error_result(
+            case, exc, (time.perf_counter() - started) * 1000, run_index
+        )
     finally:
         rerank_timing_sink.reset(token)
     if rerank_sink:
         stage_timings["rerank"] = sum(rerank_sink)
 
     ranked_docs = [(s.metadata or {}).get("source_name") for s in response.sources]
-    ranked_headings = [(s.metadata or {}).get("section_heading") for s in response.sources]
+    ranked_headings = [
+        (s.metadata or {}).get("section_heading") for s in response.sources
+    ]
     context = [s.content for s in response.sources]
 
     matched_docs = set(ranked_docs) & set(case.expected_docs)
@@ -527,7 +634,9 @@ async def evaluate_case(
     did_abstain = q.abstained(response.grounded, response.answer)
     abstain_ok = (did_abstain == case.expect_abstain) if case.expect_abstain else None
     grounded_ok = (
-        bool(abstain_ok) if case.expect_abstain else response.grounded == case.expect_grounded
+        bool(abstain_ok)
+        if case.expect_abstain
+        else response.grounded == case.expect_grounded
     )
     flags_ok = (
         any(flag in response.guardrail_flags for flag in case.expect_flags_any)
@@ -539,7 +648,9 @@ async def evaluate_case(
     retrieval_metrics: dict[str, float] = {}
     heading_ok: bool | None = None
     if case.expected_docs and not case.expect_abstain:
-        retrieval_metrics = _retrieval_metrics(case, ranked_docs, ranked_headings, context, top_k)
+        retrieval_metrics = _retrieval_metrics(
+            case, ranked_docs, ranked_headings, context, top_k
+        )
         if case.expected_headings:
             heading_flags = m.chunk_relevance(
                 ranked_docs, ranked_headings, case.expected_docs, case.expected_headings
@@ -583,10 +694,17 @@ async def evaluate_case(
     citation: dict = {}
     if has_real_answer and response.sources and case.expected_docs:
         citation = {
-            "precision": q.citation_precision(source_dicts, case.expected_docs, case.expected_headings),
-            "coverage": q.citation_coverage(response.answer, context, case.expected_keywords),
+            "precision": q.citation_precision(
+                source_dicts, case.expected_docs, case.expected_headings
+            ),
+            "coverage": q.citation_coverage(
+                response.answer, context, case.expected_keywords
+            ),
             "quality": q.citation_quality(
-                source_dicts, case.expected_docs, case.expected_headings, case.expected_keywords
+                source_dicts,
+                case.expected_docs,
+                case.expected_headings,
+                case.expected_keywords,
             ),
         }
 
@@ -598,12 +716,16 @@ async def evaluate_case(
             "pii_leaked": q.pii_leaked(response.answer, case.query),
             "secrets": q.secrets_found(response.answer),
             "injection_followed": forbidden,
-            "unauthorized_docs": q.unauthorized_sources(source_dicts, case.forbidden_docs),
+            "unauthorized_docs": q.unauthorized_sources(
+                source_dicts, case.forbidden_docs
+            ),
             "injected_chunks": q.injection_in_chunks(context),
         }
         # Forbidden keywords are only evaluated above for grounded answers; a
         # refusal can't comply, so also check them against the raw answer.
-        safety["injection_followed"] = m.forbidden_found(response.answer, case.forbidden_keywords)
+        safety["injection_followed"] = m.forbidden_found(
+            response.answer, case.forbidden_keywords
+        )
         safety_ok = not (
             safety["pii_leaked"]
             or safety["secrets"]
@@ -613,19 +735,31 @@ async def evaluate_case(
 
     # --- operational counters -----------------------------------------------
     retrieved_tokens = sum(_count_tokens(c) for c in context)
-    input_tokens = _count_tokens(case.query) + retrieved_tokens + sum(_count_tokens(c) for _, c in case.history)
+    input_tokens = (
+        _count_tokens(case.query)
+        + retrieved_tokens
+        + sum(_count_tokens(c) for _, c in case.history)
+    )
     output_tokens = _count_tokens(response.answer) if has_real_answer else 0
-    expects_evidence = bool(case.expected_docs) and not case.expect_abstain and not case.expect_flags_any
+    expects_evidence = (
+        bool(case.expected_docs)
+        and not case.expect_abstain
+        and not case.expect_flags_any
+    )
     retrieval_failed = expects_evidence and not response.sources
 
     # --- optional LLM-as-judge (skips canned/fallback replies) -------------
     judge: JudgeScores | None = None
     judge_ok: bool | None = None
     deep: DeepJudgeScores | None = None
-    judgeable = use_judge and has_real_answer and response.sources and case.expect_grounded
+    judgeable = (
+        use_judge and has_real_answer and response.sources and case.expect_grounded
+    )
     if judgeable:
         key_facts = [k.replace("|", " / ") for k in case.expected_keywords] or None
-        judge = await judge_answer(case.query, context, response.answer, key_facts=key_facts)
+        judge = await judge_answer(
+            case.query, context, response.answer, key_facts=key_facts
+        )
         if judge is not None:
             judge_ok = judge.faithfulness >= judge_min_faithfulness
         deep = await deep_judge(case.query, context, response.answer, key_facts)
@@ -649,7 +783,9 @@ async def evaluate_case(
                 "section_heading": heading,
                 "score": round(source.score, 4),
             }
-            for doc, heading, source in zip(ranked_docs, ranked_headings, response.sources)
+            for doc, heading, source in zip(
+                ranked_docs, ranked_headings, response.sources
+            )
         ],
         retrieval_metrics=retrieval_metrics,
         heading_ok=heading_ok,
@@ -697,7 +833,9 @@ async def run_evaluation(
     each case then gets its own session."""
 
     if concurrency > 1 and session_factory is None:
-        raise ValueError("concurrency > 1 requires session_factory (one DB session per task)")
+        raise ValueError(
+            "concurrency > 1 requires session_factory (one DB session per task)"
+        )
 
     report = EvaluationReport(
         top_k=top_k,
@@ -712,8 +850,10 @@ async def run_evaluation(
     async def worker(i: int, case: EvalCase, run: int) -> None:
         async with semaphore:
             kwargs = dict(  # noqa: C408
-                top_k=top_k, use_judge=use_judge,
-                judge_min_faithfulness=judge_min_faithfulness, run_index=run,
+                top_k=top_k,
+                use_judge=use_judge,
+                judge_min_faithfulness=judge_min_faithfulness,
+                run_index=run,
             )
             if session_factory is not None:
                 async with session_factory() as db:

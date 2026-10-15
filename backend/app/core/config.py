@@ -1,10 +1,6 @@
 """Centralized application configuration."""
 
-import atexit
-import logging
-import queue
 from functools import lru_cache
-from logging.handlers import QueueHandler, QueueListener
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -187,30 +183,9 @@ def get_settings() -> Settings:
     return Settings()
 
 
-_log_listener: QueueListener | None = None
-
-
 def configure_logging() -> None:
-    """Configure root logging once at process startup (STEP 9).
-
-    Records are only enqueued on the calling thread; a background listener
-    thread does the formatting and the (blocking) stream write.
-    """
-    global _log_listener
-    if _log_listener is not None:
-        return
+    """Configure root logging and structlog with background QueueListener."""
+    from app.core.logging_config import configure_logging as _cfg
 
     settings = get_settings()
-    handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    )
-
-    log_queue: queue.SimpleQueue = queue.SimpleQueue()
-    root = logging.getLogger()
-    root.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
-    root.addHandler(QueueHandler(log_queue))
-
-    _log_listener = QueueListener(log_queue, handler)
-    _log_listener.start()
-    atexit.register(_log_listener.stop)
+    _cfg(settings.log_level)

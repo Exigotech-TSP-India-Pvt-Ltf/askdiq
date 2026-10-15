@@ -220,15 +220,15 @@ export function MessageBubble({
   return (
     <div className="flex justify-start">
       <div className="relative max-w-[80%] space-y-2">
-        <div className="rounded-2xl rounded-tl-sm border border-ink/10 bg-ink/[0.02] px-4 py-3 text-sm text-ink">
+        <div className="rounded-2xl rounded-tl-sm border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-sm">
           {message.pending ? (
-            <span className="inline-flex items-center gap-1.5 text-ink/50" role="status" aria-label="Thinking">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink/30 [animation-delay:-0.3s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink/30 [animation-delay:-0.15s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink/30" />
+            <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400" role="status" aria-label="Thinking">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 dark:bg-slate-500 [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 dark:bg-slate-500 [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 dark:bg-slate-500" />
             </span>
           ) : message.error ? (
-            <span className="text-red-600">{message.error}</span>
+            <span className="text-red-600 dark:text-red-400">{message.error}</span>
           ) : (
             renderFormattedText(message.content)
           )}
@@ -245,8 +245,8 @@ export function MessageBubble({
               disabled={savingFeedback}
               className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition focus:outline-none focus:ring-1 focus:ring-brand-500 ${
                 activeRating === 5
-                  ? "bg-emerald-50 font-medium text-emerald-700 ring-1 ring-emerald-300"
-                  : "text-ink/40 hover:text-ink/80"
+                  ? "bg-emerald-50 dark:bg-emerald-950/40 font-medium text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-300 dark:ring-emerald-700"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
               }`}
             >
               <ThumbsUpIcon filled={activeRating === 5} />
@@ -262,8 +262,8 @@ export function MessageBubble({
               disabled={savingFeedback}
               className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition focus:outline-none focus:ring-1 focus:ring-brand-500 ${
                 activeRating === 1
-                  ? "bg-rose-50 font-medium text-rose-700 ring-1 ring-rose-300"
-                  : "text-ink/40 hover:text-ink/80"
+                  ? "bg-rose-50 dark:bg-rose-950/40 font-medium text-rose-700 dark:text-rose-300 ring-1 ring-rose-300 dark:ring-rose-700"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
               }`}
             >
               <ThumbsDownIcon filled={activeRating === 1} />
@@ -277,19 +277,19 @@ export function MessageBubble({
                 onClick={() => setCommentOpen(!commentOpen)}
                 aria-label="Add feedback note"
                 aria-expanded={commentOpen}
-                className="inline-flex items-center gap-1 text-ink/40 transition hover:text-ink/80 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-500"
               >
                 <MessageSquareIcon />
                 <span>{commentText ? "Edit note" : "Add note"}</span>
               </button>
             )}
 
-            <div className="ml-auto flex items-center gap-2 text-ink/35">
+            <div className="ml-auto flex items-center gap-2 text-slate-400 dark:text-slate-500">
               {/* Copy */}
               <button
                 type="button"
                 onClick={handleCopy}
-                className="inline-flex items-center gap-1 transition hover:text-ink/70 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="inline-flex items-center gap-1 transition hover:text-slate-700 dark:hover:text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 aria-label="Copy message"
               >
                 {copied ? <CheckIcon /> : <CopyIcon />}
@@ -301,7 +301,7 @@ export function MessageBubble({
                 <button
                   type="button"
                   onClick={onDelete}
-                  className="inline-flex items-center gap-1 transition hover:text-ink/70 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="inline-flex items-center gap-1 transition hover:text-slate-700 dark:hover:text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   aria-label="Delete this exchange"
                 >
                   <TrashIcon />
@@ -314,7 +314,7 @@ export function MessageBubble({
 
         {/* Feedback Error Notice */}
         {feedbackError && (
-          <p className="text-[11px] text-rose-600" role="alert">
+          <p className="text-[11px] text-rose-600 dark:text-rose-400" role="alert">
             {feedbackError}
           </p>
         )}
@@ -325,12 +325,12 @@ export function MessageBubble({
             ref={popoverRef}
             role="dialog"
             aria-label="Feedback comment dialog"
-            className="mt-2 w-full rounded-xl border border-ink/10 bg-white p-3 shadow-md"
+            className="mt-2 w-full rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-3 shadow-md"
           >
             <form onSubmit={handleCommentSubmit} className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-ink/60">
+              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
                 <span>Why was this answer {activeRating === 5 ? "helpful" : "unhelpful"}?</span>
-                <span className="text-[10px] text-ink/40">{commentText.length}/1000</span>
+                <span className="text-[10px] text-slate-400">{commentText.length}/1000</span>
               </div>
               <textarea
                 ref={textareaRef}
@@ -339,13 +339,13 @@ export function MessageBubble({
                 rows={2}
                 maxLength={1000}
                 placeholder="Optional: Tell us what went well or what could be improved. Do not include personal information."
-                className="w-full resize-none rounded-lg border border-ink/15 bg-ink/[0.01] p-2 text-xs text-ink placeholder-ink/35 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                className="w-full resize-none rounded-lg border border-slate-200 dark:border-dark-border bg-slate-50/50 dark:bg-dark-surface p-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
               />
               <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setCommentOpen(false)}
-                  className="rounded px-2.5 py-1 text-xs text-ink/60 hover:text-ink"
+                  className="rounded px-2.5 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                 >
                   Cancel
                 </button>

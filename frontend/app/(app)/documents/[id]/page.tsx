@@ -41,28 +41,28 @@ function ChunkCard({ chunk }: { chunk: DocChunk }) {
   const shown = !isLong || expanded ? chunk.content : `${chunk.content.slice(0, PREVIEW_CHAR_LIMIT)}…`;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-ink/10 bg-white">
-      <div className="flex flex-wrap items-center gap-2 border-b border-ink/10 bg-ink/[0.02] px-4 py-2.5">
-        <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">
+    <div className="overflow-hidden rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 dark:border-dark-border bg-slate-50/50 dark:bg-dark-surface/50 px-4 py-2.5">
+        <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 dark:bg-brand-950/40 px-2 py-0.5 text-[11px] font-semibold text-brand-700 dark:text-brand-300">
           <Hash className="h-3 w-3" /> Chunk {chunk.chunk_index + 1}
         </span>
-        <span className="text-[11px] text-ink/40">{chunk.char_count.toLocaleString()} chars</span>
+        <span className="text-[11px] text-slate-500 dark:text-slate-400">{chunk.char_count.toLocaleString()} chars</span>
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${strategyBadge(chunk.strategy)}`}>
           {chunk.strategy.replace(/_/g, " ")}
         </span>
         {chunk.section_heading && (
-          <span className="truncate text-[11px] text-ink/50" title={chunk.section_heading}>
+          <span className="truncate text-[11px] text-slate-500 dark:text-slate-400" title={chunk.section_heading}>
             · {chunk.section_heading}
           </span>
         )}
       </div>
 
-      <div className="px-4 py-4 text-sm text-ink/80">
+      <div className="px-4 py-4 text-sm text-slate-800 dark:text-slate-200">
         {renderFormattedText(shown)}
         {isLong && (
           <button
             onClick={() => setExpanded((v) => !v)}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:text-brand-800"
+            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
           >
             {expanded ? "Show less" : "Show full chunk"}
             <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
@@ -100,21 +100,21 @@ export default function DocumentChunksPage() {
   );
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6">
+    <div className="h-full overflow-y-auto px-6 py-6 bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
       <Link
         href="/documents"
-        className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
+        className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Back to documents
       </Link>
 
-      <header className="mb-6 mt-4 rounded-xl border border-ink/10 bg-white p-5">
+      <header className="mb-6 mt-4 rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-5 shadow-sm">
         <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-brand-50 p-2.5">
-            <FileText className="h-5 w-5 text-brand-700" />
+          <div className="rounded-lg bg-brand-50 dark:bg-brand-950/40 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/40">
+            <FileText className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold text-ink">
+            <h1 className="truncate text-base font-semibold text-slate-900 dark:text-white">
               {doc?.source_name ?? "Document"}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -125,17 +125,17 @@ export default function DocumentChunksPage() {
                   originalSha256={doc.original_sha256}
                 />
               )}
-              <span className="inline-flex items-center gap-1 text-xs text-ink/50">
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                 <Layers className="h-3.5 w-3.5" />
                 {chunks ? `${chunks.length} chunk${chunks.length === 1 ? "" : "s"}` : "…"}
               </span>
               {chunks && (
-                <span className="text-xs text-ink/40">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
                   · {totalChars.toLocaleString()} total chars
                 </span>
               )}
               {doc && (
-                <span className="text-xs text-ink/40">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
                   · ingested {new Date(doc.created_at).toLocaleString()}
                 </span>
               )}

@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, useMemo } from "react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
+import { TableToolbar } from "@/components/admin/TableToolbar";
+import { Pagination } from "@/components/admin/Pagination";
+import { TableCard } from "@/components/admin/TableCard";
+import { formatNumber } from "@/components/admin/TableFormatters";
 
 type Message = {
   id: string;
@@ -35,32 +42,82 @@ type UserDetail = {
 };
 
 export default function UserDetailPage() {
+  const router = useRouter();
   const params = useParams();
   const id = params.id as string;
 
+  const { token } = useAuth();
   const [user, setUser] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Conversations table state
+  const [convSearch, setConvSearch] = useState("");
+  const [convPage, setConvPage] = useState(1);
+  const [convPageSize, setConvPageSize] = useState(10);
+
+  const filteredConversations = useMemo(() => {
+    if (!user?.conversations_data) return [];
+    if (!convSearch.trim()) return user.conversations_data;
+    const needle = convSearch.toLowerCase();
+    return user.conversations_data.filter(
+      (c) =>
+        (c.title || "").toLowerCase().includes(needle) ||
+        c.id.toLowerCase().includes(needle)
+    );
+  }, [user?.conversations_data, convSearch]);
+
+  const pagedConversations = useMemo(() => {
+    const start = (convPage - 1) * convPageSize;
+    return filteredConversations.slice(start, start + convPageSize);
+  }, [filteredConversations, convPage, convPageSize]);
+
+  const convColumns: ColumnDef<Conversation>[] = [
+    {
+      key: "title",
+      header: "Conversation Title & ID",
+      render: (c) => (
+        <div className="flex flex-col">
+          <span className="font-medium text-brand-600 dark:text-brand-400 hover:underline">
+            {c.title || "Untitled Conversation"}
+          </span>
+          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">{c.id}</span>
+        </div>
+      ),
+    },
+    {
+      key: "created_at",
+      header: "Created",
+      render: (c) => (
+        <span className="text-xs text-slate-600 dark:text-slate-400">
+          {formatDate(c.created_at)}
+        </span>
+      ),
+    },
+    {
+      key: "last_activity_at",
+      header: "Last Activity",
+      render: (c) => (
+        <span className="text-xs text-slate-600 dark:text-slate-400">
+          {formatDate(c.last_activity_at)}
+        </span>
+      ),
+    },
+    {
+      key: "message_count",
+      header: "Messages",
+      sortable: true,
+      align: "right",
+      render: (c) => formatNumber(c.message_count ?? 0),
+    },
+  ];
+
   useEffect(() => {
-    if (!id) return;
+    if (!id || !token) return;
+    const authToken = token;
 
     async function loadUser() {
       try {
-        const response = await fetch(
-          `http://localhost:8000/admin/users/${id}`,
-          {
-            headers: {
-              "X-API-Key": "dep-iq-key",
-            },
-          }
-        );
-
-        if (!response.ok) {
-          setUser(null);
-          return;
-        }
-
-        const data = await response.json();
+        const data = await api.adminGet<UserDetail>(authToken, `/users/${id}`);
         setUser(data);
       } catch {
         setUser(null);
@@ -70,7 +127,7 @@ export default function UserDetailPage() {
     }
 
     loadUser();
-  }, [id]);
+  }, [id, token]);
 
   if (loading) {
     return (
@@ -106,22 +163,22 @@ export default function UserDetailPage() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-8 min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
       <div className="mb-6">
         <Link
           href="/admin/users"
-          className="text-sm font-medium text-purple-700 hover:text-purple-900"
+          className="text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
         >
           ← Back to Users
         </Link>
       </div>
 
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-slate-900">
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
           {user.ip_address || `User ${user.id.slice(0, 8)}`}
         </h1>
 
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           User details and activity
         </p>
       </div>
@@ -168,95 +225,56 @@ export default function UserDetailPage() {
       </div>
 
       {/* Last activity */}
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-6">
-        <h2 className="text-base font-semibold text-slate-900">
+      <div className="mb-6 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-6 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900 dark:text-white">
           Activity
         </h2>
 
         <div className="mt-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
             Last Active
           </p>
 
-          <p className="mt-1 text-sm text-slate-700">
+          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
             {formatDate(user.last_active)}
           </p>
         </div>
       </div>
 
       {/* Conversations */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <h2 className="text-base font-semibold text-slate-900">
-            Conversations
-          </h2>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Conversations associated with this user.
-          </p>
-        </div>
-
-        {user.conversations_data &&
-        user.conversations_data.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="border-b border-slate-200 bg-slate-50">
-                <tr>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Conversation
-                  </th>
-
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Created
-                  </th>
-
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Last Activity
-                  </th>
-
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Messages
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {user.conversations_data.map((conversation) => (
-                  <tr
-                    key={conversation.id}
-                    className="border-b border-slate-100 last:border-0"
-                  >
-                    <td className="px-5 py-4">
-                      <Link
-                        href={`/admin/conversations/${conversation.id}`}
-                        className="font-medium text-purple-700 hover:text-purple-900"
-                      >
-                        {conversation.title || "Untitled Conversation"}
-                      </Link>
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      {formatDate(conversation.created_at)}
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      {formatDate(conversation.last_activity_at)}
-                    </td>
-
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      {conversation.message_count ?? 0}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="p-8 text-center text-sm text-slate-500">
-            No conversations found for this user.
-          </div>
-        )}
-      </div>
+      <TableCard
+        title="Conversations"
+        description="Conversations associated with this client IP address."
+        toolbar={
+          <TableToolbar
+            search={convSearch}
+            onSearchChange={(v) => {
+              setConvSearch(v);
+              setConvPage(1);
+            }}
+            searchPlaceholder="Search conversations…"
+          />
+        }
+        pagination={
+          <Pagination
+            page={convPage}
+            pageCount={Math.ceil(filteredConversations.length / convPageSize)}
+            totalItems={filteredConversations.length}
+            pageSize={convPageSize}
+            onPageChange={setConvPage}
+            onPageSizeChange={setConvPageSize}
+          />
+        }
+      >
+        <DataTable
+          columns={convColumns}
+          data={pagedConversations}
+          keyField="id"
+          isLoading={false}
+          onRowClick={(c) => router.push(`/admin/conversations/${c.id}`)}
+          emptyMessage="No conversations found for this user."
+        />
+      </TableCard>
     </div>
   );
 }
@@ -269,12 +287,12 @@ function InfoCard({
   value: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+    <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-5 shadow-sm">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </p>
 
-      <p className="mt-2 break-words text-sm font-medium text-slate-900">
+      <p className="mt-2 break-words text-sm font-medium text-slate-900 dark:text-white">
         {value}
       </p>
     </div>
@@ -289,12 +307,12 @@ function StatCard({
   value: number;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <p className="text-sm text-slate-500">
+    <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-5 shadow-sm">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
         {label}
       </p>
 
-      <p className="mt-2 text-2xl font-semibold text-slate-900">
+      <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
         {value}
       </p>
     </div>

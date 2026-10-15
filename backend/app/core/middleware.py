@@ -7,19 +7,24 @@ so `/metrics/latency` can compute P50/P70/P100 later.
 """
 
 import asyncio
-import logging
 import time
 import uuid
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from app.core.logging_config import (
+    bind_request_context,
+    clear_request_context,
+    get_logger,
+)
+from app.core.request_meta import get_client_ip
 from app.core.database import AsyncSessionLocal
 from app.models.db_models import LatencyRecord
 from app.retrieval.embeddings import embedding_timing_sink
 from app.retrieval.reranker import rerank_timing_sink
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Strong refs so fire-and-forget persist tasks aren't garbage collected mid-flight.
 _background_tasks: set[asyncio.Task] = set()
@@ -30,8 +35,14 @@ METRICS = {"requests": 0, "errors": 0, "active_queries": 0}
 
 class LatencyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        request.state.request_id = str(uuid.uuid4())
+        request_id = str(uuid.uuid4())
+        client_ip = get_client_ip(request)
+        request.state.request_id = request_id
+        request.state.client_ip = client_ip
         request.state.stage_timings = {}  # populated by downstream layers
+
+        clear_request_context()
+        bind_request_context(request_id=request_id, client_ip=client_ip)
 
         rerank_sink: list[float] = []
         rerank_timing_sink.set(rerank_sink)
@@ -42,21 +53,49 @@ class LatencyMiddleware(BaseHTTPMiddleware):
         METRICS["requests"] += 1
         if is_query:
             METRICS["active_queries"] += 1
+
+        logger.info(
+            "http_request_start",
+            method=request.method,
+            path=request.url.path,
+            client_ip=client_ip,
+        )
+
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as exc:
             METRICS["errors"] += 1
+            total_ms = (time.perf_counter() - start) * 1000
+            logger.error(
+                "http_request_unhandled_exception",
+                method=request.method,
+                path=request.url.path,
+                latency_ms=round(total_ms, 2),
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
             raise
         finally:
             if is_query:
                 METRICS["active_queries"] -= 1
+
         if embed_sink:
             request.state.stage_timings["embedding"] = sum(embed_sink)
         if rerank_sink:
             request.state.stage_timings["reranker"] = sum(rerank_sink)
         if response.status_code >= 500:
             METRICS["errors"] += 1
+
         total_ms = (time.perf_counter() - start) * 1000
+
+        logger.info(
+            "http_request_finished",
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            latency_ms=round(total_ms, 2),
+            client_ip=client_ip,
+        )
 
         response.headers["X-Request-ID"] = request.state.request_id
         response.headers["X-Latency-MS"] = f"{total_ms:.2f}"

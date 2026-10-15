@@ -1,16 +1,16 @@
 """Azure OpenAI generation wrapper used by the RAG harness."""
 
 import asyncio
-import logging
 
 import tiktoken
 from openai import AsyncAzureOpenAI
 
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
 from app.retrieval.retriever import needs_conversation_context
 from app.schemas.query import ChatTurn, SourceChunk
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 settings = get_settings()
 
@@ -225,7 +225,9 @@ async def call_llm(
         _build_prompt, query, context_chunks, history
     )
     from app.core.quota import quota_monitor
+    import time
 
+    t_start = time.perf_counter()
     try:
         response = await _client.chat.completions.create(
             model=settings.azure_deployment_name,
@@ -236,16 +238,20 @@ async def call_llm(
                     "content": prompt,
                 },
             ],
-            # Main latency lever for a reasoning model — lower effort means
-            # fewer reasoning tokens spent before the visible answer.
-            # temperature and max_completion_tokens are omitted as gpt-5-mini rejects them.
             reasoning_effort=settings.llm_reasoning_effort,
         )
     except Exception as exc:
         is_429 = getattr(exc, "status_code", None) == 429 or "429" in str(exc)
         quota_monitor.record_chat(0, is_error=True, is_429=is_429)
+        if is_429:
+            logger.error(
+                "llm_throttle_429",
+                model=settings.azure_deployment_name,
+                error=str(exc),
+            )
         raise
 
+    llm_latency_ms = (time.perf_counter() - t_start) * 1000
     usage_obj = getattr(response, "usage", None)
     content = response.choices[0].message.content if response.choices else None
 
@@ -291,14 +297,15 @@ async def call_llm(
         quota_monitor.record_chat(0)
 
     logger.info(
-        "llm_call model=%s non_empty=%s prompt_tokens=%s completion_tokens=%s reasoning_tokens=%s cached_tokens=%s context_tokens=%d",
-        settings.azure_deployment_name,
-        bool(content and content.strip()),
-        usage["prompt_tokens"] if usage else None,
-        usage["completion_tokens"] if usage else None,
-        usage["reasoning_tokens"] if usage else None,
-        usage["cached_tokens"] if usage else None,
-        context_tokens,
+        "llm_call_completed",
+        model=settings.azure_deployment_name,
+        latency_ms=round(llm_latency_ms, 2),
+        non_empty=bool(content and content.strip()),
+        prompt_tok=usage["prompt_tokens"] if usage else 0,
+        comp_tok=usage["completion_tokens"] if usage else 0,
+        reasoning_tok=usage["reasoning_tokens"] if usage else 0,
+        cached_tok=usage["cached_tokens"] if usage else 0,
+        context_tok=context_tokens,
     )
 
     return content or "", usage

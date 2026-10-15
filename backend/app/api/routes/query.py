@@ -118,6 +118,11 @@ async def query(
         sources=response.sources,
         guardrail_flags=response.guardrail_flags,
         ip_address=client_ip,
+        session_id=str(session.id),
+        message_id=str(assistant_message_id) if assistant_message_id else None,
+        outcome=response.outcome,
+        grounded=response.grounded,
+        confidence=response.confidence,
     )
 
     response.session_id = str(session.id)

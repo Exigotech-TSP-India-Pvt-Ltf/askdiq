@@ -2,13 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
+:root {
+  --brand-primary: #068987;
+  --brand-surface: #ffffff;
+  --brand-accent: #40e0d0;
+  --brand-gradient-from: #40e0d0; /* Light turquoise */
+  --brand-gradient-via: #14b8a6;  /* Mid teal */
+  --brand-gradient-to: #068987;    /* Deep teal (Light to Dark) */
+  --brand-glow: rgba(6, 137, 135, 0.28);
+  --brand-bg: #f4fbfb;
+}
+
+html {
+  height: 100%;
+  scrollbar-gutter: stable;
+}
+
 body {
   height: 100%;
 }
 
 body {
-  @apply bg-white text-ink antialiased;
+  @apply bg-[#f4fbfb] text-ink antialiased;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #090d11;
+  color: #f1f5f9;
+}
+
+/* Ensure any legacy bg-[#f4fbfb] background seamlessly maps to deep black in dark mode */
+html.dark [class*="bg-[#f4fbfb]"] {
+  background-color: #090d11 !important;
 }
 
 /* Renders the transparent-background Exigo Tech PNG marks as flat white,
@@ -18,14 +47,23 @@ body {
 }
 
 ::selection {
-  background: #c3baff;
-  color: #12083a;
+  background: #99f6e4;
+  color: #042f2e;
+}
+
+html.dark ::selection {
+  background: #068987;
+  color: #f0fdfa;
 }
 
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #e4e0ff;
+  background: #ccfbf1;
   border-radius: 9999px;
 }
+html.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #1e293b;
+}
+

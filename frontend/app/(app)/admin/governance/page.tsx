@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, AlertTriangle, FileSearch, Gauge, ScrollText } from "lucide-react";
+import { Activity, AlertTriangle, FileSearch, Gauge, ScrollText, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { TabGroup, GOVERNANCE_TABS } from "@/components/admin/TabGroup";
 import MonitoringView from "./monitoring/MonitoringView";
 import TracesView from "./traces/TracesView";
 import LogsView from "./logs/LogsView";
 
-const TABS = ["Overall", "Monitoring", "Traces", "Logs"] as const;
-type Tab = (typeof TABS)[number];
+type Tab = "Overall" | "Monitoring" | "Traces" | "Logs";
 
 function InfoRow({
   icon: Icon,
@@ -24,15 +26,15 @@ function InfoRow({
   detail?: string;
 }) {
   return (
-    <div className="flex items-center gap-4 border-b border-purple-50 py-3 last:border-0">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+    <div className="flex items-center gap-4 border-b border-slate-100 dark:border-dark-border py-3.5 last:border-0">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-950/60 border border-brand-100 dark:border-brand-800 text-brand-600 dark:text-brand-400">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-900">{label}</p>
-        {detail && <p className="text-xs text-slate-500">{detail}</p>}
+        <p className="text-sm font-semibold text-slate-900 dark:text-white">{label}</p>
+        {detail && <p className="text-xs text-slate-500 dark:text-slate-400">{detail}</p>}
       </div>
-      <p className="shrink-0 text-sm font-semibold text-slate-900">{value}</p>
+      <p className="shrink-0 text-sm font-bold text-slate-900 dark:text-white font-mono">{value}</p>
     </div>
   );
 }
@@ -42,6 +44,7 @@ function InfoRow({
  * their full dashboards. */
 function OverallSummary() {
   const { token } = useAuth();
+  const { audience } = useAudience();
   const [monitoring, setMonitoring] = useState<any>(null);
   const [traceCount, setTraceCount] = useState<number | null>(null);
   const [traceErrors, setTraceErrors] = useState<number | null>(null);
@@ -49,29 +52,30 @@ function OverallSummary() {
 
   useEffect(() => {
     if (!token) return;
-    api.adminGet<any>(token, "/governance/monitoring").then(setMonitoring).catch(() => {});
+    const qs = audience && audience !== "overview" ? `?audience=${audience}` : "";
+    api.adminGet<any>(token, `/governance/monitoring${qs}`).then(setMonitoring).catch(() => {});
     api
-      .adminGet<any[]>(token, "/governance/traces")
+      .adminGet<any[]>(token, `/governance/traces${qs}`)
       .then((traces) => {
         setTraceCount(traces.length);
         setTraceErrors(traces.filter((t) => (t.status || "ok").toLowerCase() !== "ok").length);
       })
       .catch(() => {});
     api
-      .adminGet<{ total: number }>(token, "/governance/logs?limit=1")
+      .adminGet<{ total: number }>(token, `/governance/logs?limit=1${audience && audience !== "overview" ? `&audience=${audience}` : ""}`)
       .then((data) => setLogTotal(data.total))
       .catch(() => {});
-  }, [token]);
+  }, [token, audience]);
 
   return (
-    <section className="rounded-2xl border border-purple-100 bg-white p-6 shadow-sm">
+    <section className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-6 shadow-sm">
       <InfoRow
         icon={Activity}
         label="Monitoring"
         detail="Infrastructure, application and RAG pipeline health"
         value={
-          monitoring
-            ? `${(monitoring.error_rate * 100).toFixed(1)}% error rate`
+          monitoring?.error_rate != null
+            ? `${Number(monitoring.error_rate).toFixed(1)}% error rate`
             : "Loading…"
         }
       />
@@ -79,7 +83,7 @@ function OverallSummary() {
         icon={Gauge}
         label="Latency"
         detail="LLM response time, end to end"
-        value={monitoring ? formatLatencyMs(monitoring.llm_latency_ms) : "Loading…"}
+        value={monitoring?.llm_latency_ms != null ? formatLatencyMs(monitoring.llm_latency_ms) : "Loading…"}
       />
       <InfoRow
         icon={FileSearch}
@@ -107,49 +111,39 @@ export default function GovernancePage() {
   const [activeTab, setActiveTab] = useState<Tab>("Overall");
 
   return (
-    <div>
-      <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-8">
-        <div>
-          <h1 className="text-sm font-semibold text-slate-900">Governance</h1>
-          <p className="text-xs text-slate-500">
-            Monitor system health, request traces and governance activity.
-          </p>
-        </div>
-      </header>
+    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+      <DashboardHeader
+        title="Admin Governance"
+        subtitle="System health monitoring, request tracing, and security audit log streams"
+        icon={ShieldCheck}
+      />
 
-      <div className="min-h-[calc(100%-4rem)] bg-gradient-to-b from-[#f3f0ff] to-[#f7f6ff] p-8">
-        <div className="mb-6 flex flex-wrap gap-1 rounded-xl border border-purple-100 bg-white p-1.5 shadow-sm">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setActiveTab(t)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeTab === t
-                  ? "bg-purple-600 text-white shadow-sm"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
+      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
+        <div className="flex items-center justify-between">
+          <TabGroup
+            tabs={GOVERNANCE_TABS}
+            activeTab={activeTab}
+            onChange={(t) => setActiveTab(t as Tab)}
+            ariaLabel="Governance sub-tabs"
+          />
         </div>
 
         {activeTab === "Overall" && <OverallSummary />}
 
         {activeTab === "Monitoring" && (
-          <div className="-m-8 mt-0">
+          <div>
             <MonitoringView hideHeader />
           </div>
         )}
 
         {activeTab === "Traces" && (
-          <div className="-m-8 mt-0">
+          <div>
             <TracesView hideHeader />
           </div>
         )}
 
         {activeTab === "Logs" && (
-          <div className="-m-8 mt-0">
+          <div>
             <LogsView hideHeader />
           </div>
         )}

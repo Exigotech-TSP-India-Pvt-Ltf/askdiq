@@ -6,10 +6,11 @@ build prompt -> call LLM (with retry) ->
 validate output -> post-guardrails -> structured response.
 """
 
-import logging
 import time
 
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
+from app.evaluation.quality import injection_in_chunks
 from app.guardrails.conversational import detect_conversational_intent
 from app.guardrails.post_checks import run_post_checks
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
@@ -18,7 +19,7 @@ from app.retrieval.retriever import needs_conversation_context, retrieve
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, QueryResponse, SourceChunk
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 settings = get_settings()
 
@@ -141,13 +142,19 @@ async def run_query(
     conversational_reply = detect_conversational_intent(query)
 
     if conversational_reply is not None:
+        latency_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "conversational_intercept",
+            query_len=len(query),
+            latency_ms=round(latency_ms, 2),
+        )
         return QueryResponse(
             answer=conversational_reply,
             sources=[],
             grounded=True,
             confidence=1.0,
             request_id=request_id,
-            latency_ms=(time.perf_counter() - start) * 1000,
+            latency_ms=latency_ms,
             guardrail_flags=[],
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
@@ -162,20 +169,36 @@ async def run_query(
 
     pre_flags = run_pre_checks(query, settings.max_query_length)
     if pre_flags:
+        latency_ms = (time.perf_counter() - start) * 1000
+        logger.warning(
+            "guardrail_blocked",
+            stage="pre_checks",
+            flags=pre_flags,
+            query_snippet=query[:60],
+            latency_ms=round(latency_ms, 2),
+        )
         return _fallback_response(
             request_id=request_id,
             flags=pre_flags,
-            latency_ms=(time.perf_counter() - start) * 1000,
+            latency_ms=latency_ms,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
         )
 
     effective_query, sanitize_flags = sanitize_query(query)
     if sanitize_flags:
+        latency_ms = (time.perf_counter() - start) * 1000
+        logger.warning(
+            "guardrail_blocked",
+            stage="sanitize_query",
+            flags=sanitize_flags,
+            query_snippet=query[:60],
+            latency_ms=round(latency_ms, 2),
+        )
         return _fallback_response(
             request_id=request_id,
             flags=sanitize_flags,
-            latency_ms=(time.perf_counter() - start) * 1000,
+            latency_ms=latency_ms,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
         )
@@ -199,52 +222,71 @@ async def run_query(
     stage_timings["retrieval"] = (time.perf_counter() - t0) * 1000
 
     # ---------------------------------------------------------
-    # 3. RETRIEVAL RELEVANCE CHECK
+    # 3. RETRIEVAL RELEVANCE & INDIRECT INJECTION CHECK
     # ---------------------------------------------------------
 
     if not sources:
+        latency_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "retrieval_empty",
+            reason="no_sources_returned",
+            query_len=len(query),
+            latency_ms=round(latency_ms, 2),
+        )
         return _fallback_response(
             request_id=request_id,
             flags=["off_topic"],
-            latency_ms=(time.perf_counter() - start) * 1000,
+            latency_ms=latency_ms,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
         )
 
     max_retrieval_score = max(source.score for source in sources)
-
     stage_timings["retrieval_relevance_score"] = max_retrieval_score
 
     if max_retrieval_score < settings.min_retrieval_score:
+        latency_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "retrieval_low_confidence",
+            max_score=round(max_retrieval_score, 4),
+            threshold=settings.min_retrieval_score,
+            query_len=len(query),
+            latency_ms=round(latency_ms, 2),
+        )
         return _fallback_response(
             request_id=request_id,
             flags=["off_topic"],
-            latency_ms=(time.perf_counter() - start) * 1000,
+            latency_ms=latency_ms,
             sources=sources,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
         )
 
+    # Live Indirect Prompt Injection Defense (OWASP Top 10 LLM01)
+    poisoned_indices = injection_in_chunks([s.content for s in sources])
+    if poisoned_indices:
+        logger.warning(
+            "indirect_injection_detected",
+            poisoned_count=len(poisoned_indices),
+            poisoned_documents=[sources[i].document_id for i in poisoned_indices],
+        )
+        sources = [s for i, s in enumerate(sources) if i not in set(poisoned_indices)]
+        if not sources:
+            latency_ms = (time.perf_counter() - start) * 1000
+            return _fallback_response(
+                request_id=request_id,
+                flags=["unsafe_input_detected"],
+                latency_ms=latency_ms,
+                follow_up_detected=follow_up_detected,
+                history_turns_sent=history_turns_sent,
+            )
+
     logger.info(
-        "retrieval request_id=%s query_len=%d sources=%d max_score=%.4f documents=%s",
-        request_id,
-        len(query),
-        len(sources),
-        max_retrieval_score,
-        sorted({s.document_id for s in sources}),
-    )
-    logger.debug(
-        "retrieval_detail request_id=%s sources=%s",
-        request_id,
-        [
-            {
-                "chunk_id": s.chunk_id,
-                "score": s.score,
-                "heading": (s.metadata or {}).get("section_heading"),
-                "content": s.content,
-            }
-            for s in sources
-        ],
+        "retrieval_success",
+        query_len=len(query),
+        sources=len(sources),
+        max_score=round(max_retrieval_score, 4),
+        documents=sorted({s.document_id for s in sources}),
     )
 
     # ---------------------------------------------------------
@@ -384,6 +426,14 @@ async def run_query(
     if not grounded:
         outcome = "ungrounded"
         token_details["outcome"] = outcome
+        logger.warning(
+            "groundedness_failed",
+            outcome=outcome,
+            flags=post_flags,
+            confidence=round(confidence, 4),
+            latency_ms=round(total_ms, 2),
+            sources=len(sources),
+        )
         return _fallback_response(
             request_id=request_id,
             flags=post_flags,
@@ -401,6 +451,17 @@ async def run_query(
 
     outcome = "answered"
     token_details["outcome"] = outcome
+    logger.info(
+        "query_completed",
+        outcome=outcome,
+        grounded=True,
+        confidence=round(confidence, 4),
+        latency_ms=round(total_ms, 2),
+        sources=len(sources),
+        prompt_tok=prompt_tokens or 0,
+        comp_tok=completion_tokens or 0,
+        reasoning_tok=reasoning_tokens or 0,
+    )
 
     return QueryResponse(
         answer=answer,

@@ -3,8 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
-import { CheckCircle2, Target, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Target, ShieldCheck, ClipboardCheck, Sparkles } from "lucide-react";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { TabGroup, EVALUATION_TABS } from "@/components/admin/TabGroup";
+import { TableCard } from "@/components/admin/TableCard";
+import { TableToolbar } from "@/components/admin/TableToolbar";
+import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import {
   Bar,
   BarChart,
@@ -25,7 +31,7 @@ import {
 } from "recharts";
 
 const PIE_COLORS = ["#10b981", "#ef4444", "#f59e0b"];
-const BAR_COLORS = ["#6366f1", "#06b6d4", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6"];
+const BAR_COLORS = ["#068987", "#40e0d0", "#0284c7", "#10b981", "#f59e0b", "#0d9488"];
 
 const pct = (v: unknown) =>
   typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—";
@@ -35,12 +41,12 @@ const ms = formatLatencyMs;
 const label = (k: string) => k.replace(/[_@]/g, " ").replace(/^./, (c) => c.toUpperCase());
 
 function statusColor(value: string): string {
-  if (!value.endsWith("%")) return "text-ink";
+  if (!value.endsWith("%")) return "text-ink dark:text-slate-100";
   const n = parseFloat(value);
-  if (Number.isNaN(n)) return "text-ink";
-  if (n >= 80) return "text-emerald-600";
-  if (n >= 50) return "text-amber-600";
-  return "text-red-600";
+  if (Number.isNaN(n)) return "text-ink dark:text-slate-100";
+  if (n >= 80) return "text-emerald-600 dark:text-emerald-400";
+  if (n >= 50) return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
 }
 
 function statusBar(value: string): string {
@@ -56,13 +62,13 @@ function Stat({ label, value }: { label: string; value: string }) {
   const isPct = value.endsWith("%");
   const pctNum = isPct ? Math.min(Math.max(parseFloat(value) || 0, 0), 100) : null;
   return (
-    <div className="rounded-xl border border-ink/10 bg-white px-4 py-3.5 transition-shadow hover:shadow-sm">
-      <p className="text-[11px] uppercase tracking-wide text-ink/40">{label}</p>
-      <p className={`mt-1 text-xl font-semibold ${isPct ? statusColor(value) : "text-ink"}`}>
+    <div className="rounded-xl border border-ink/10 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3.5 transition-shadow hover:shadow-sm">
+      <p className="text-[11px] uppercase tracking-wide text-ink/40 dark:text-slate-500">{label}</p>
+      <p className={`mt-1 text-xl font-semibold ${isPct ? statusColor(value) : "text-ink dark:text-white"}`}>
         {value}
       </p>
       {pctNum !== null && (
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-ink/5">
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-ink/5 dark:bg-dark-surface">
           <div
             className={`h-full rounded-full ${statusBar(value)}`}
             style={{ width: `${pctNum}%` }}
@@ -85,15 +91,15 @@ function HeroStat({
   accent: string;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-ink/10 bg-white p-5 transition-shadow hover:shadow-md">
+    <div className="group relative overflow-hidden rounded-xl border border-ink/10 dark:border-dark-border bg-white dark:bg-dark-card p-5 transition-shadow hover:shadow-md">
       <div
         className={`absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-10 transition-transform group-hover:scale-110 ${accent}`}
       />
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-ink/50">{label}</p>
-        <Icon className="h-4 w-4 text-ink/40" />
+        <p className="text-sm font-medium text-ink/50 dark:text-slate-400">{label}</p>
+        <Icon className="h-4 w-4 text-ink/40 dark:text-slate-500" />
       </div>
-      <p className="mt-2 text-2xl font-semibold text-ink">{value}</p>
+      <p className="mt-2 text-2xl font-semibold text-ink dark:text-white">{value}</p>
     </div>
   );
 }
@@ -108,9 +114,9 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-ink/10 bg-white p-6">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-ink/50">{title}</h2>
-      {subtitle && <p className="mt-1 text-[11px] text-ink/40">{subtitle}</p>}
+    <section className="rounded-xl border border-ink/10 dark:border-dark-border bg-white dark:bg-dark-card p-6">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-ink/50 dark:text-slate-400">{title}</h2>
+      {subtitle && <p className="mt-1 text-[11px] text-ink/40 dark:text-slate-500">{subtitle}</p>}
       <div className="mt-4 h-64 w-full">{children}</div>
     </section>
   );
@@ -124,8 +130,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mb-6 rounded-xl border border-ink/10 bg-white p-5">
-      <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink/50">
+    <section className="mb-6 rounded-xl border border-ink/10 dark:border-dark-border bg-white dark:bg-dark-card p-5">
+      <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink/50 dark:text-slate-400">
         <span className="h-3 w-1 rounded-full bg-brand-500" />
         {title}
       </h2>
@@ -145,30 +151,55 @@ function Table({
 }) {
   if (!rows.length) return null;
   return (
-    <section className="mb-6 rounded-xl border border-ink/10 bg-white p-5">
-      <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink/50">
+    <section className="mb-6 rounded-xl border border-ink/10 dark:border-dark-border bg-white dark:bg-dark-card p-5">
+      <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink/50 dark:text-slate-400">
         <span className="h-3 w-1 rounded-full bg-brand-500" />
         {title}
       </h2>
-      <div className="overflow-x-auto rounded-lg border border-ink/10">
+      <div className="overflow-x-auto rounded-lg border border-ink/10 dark:border-white/10">
         <table className="w-full text-left text-xs">
-          <thead className="bg-ink/5 text-ink/60">
+          <thead className="bg-ink/5 dark:bg-dark-surface text-ink/60 dark:text-slate-400 border-b border-ink/5 dark:border-white/10">
             <tr>
-              {head.map((h) => (
-                <th key={h} className="px-3 py-2 font-medium">
-                  {h}
-                </th>
-              ))}
+              {head.map((h, idx) => {
+                const isNumericCol = rows.some((row) => {
+                  const cell = row[idx];
+                  return (
+                    typeof cell === "number" ||
+                    (typeof cell === "string" && (cell.endsWith("%") || /^\d+(\.\d+)?$/.test(cell.trim())))
+                  );
+                });
+                return (
+                  <th
+                    key={h}
+                    className={`px-3 py-2 font-medium ${isNumericCol ? "text-right" : "text-left"}`}
+                  >
+                    {h}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-ink/5 dark:divide-white/5">
             {rows.map((row, i) => (
-              <tr key={i} className="border-t border-ink/5 odd:bg-white even:bg-ink/[0.02] hover:bg-brand-50/40">
-                {row.map((cell, j) => (
-                  <td key={j} className="px-3 py-2 text-ink/80">
-                    {cell}
-                  </td>
-                ))}
+              <tr
+                key={i}
+                className="odd:bg-white dark:odd:bg-dark-card even:bg-ink/[0.02] dark:even:bg-dark-surface/40 hover:bg-brand-50/40 dark:hover:bg-brand-950/30 transition-colors"
+              >
+                {row.map((cell, j) => {
+                  const isNum =
+                    typeof cell === "number" ||
+                    (typeof cell === "string" && (cell.endsWith("%") || /^\d+(\.\d+)?$/.test(cell.trim())));
+                  return (
+                    <td
+                      key={j}
+                      className={`px-3 py-2 text-ink/80 dark:text-slate-200 ${
+                        isNum ? "text-right font-mono tabular-nums" : ""
+                      }`}
+                    >
+                      {cell}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -201,35 +232,164 @@ type Tab = (typeof TABS)[number];
 
 export default function EvaluationPage() {
   const { token } = useAuth();
+  const { audience } = useAudience();
   const [r, setR] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "failed">("all");
+  const [caseSearch, setCaseSearch] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("Overall");
 
   useEffect(() => {
     if (!token) return;
     api
-      .evaluationReport(token)
+      .evaluationReport(token, audience)
       .then(setR)
       .catch((err) =>
         setError(
           err instanceof ApiError ? err.message : "Couldn't load evaluation report."
         )
       );
-  }, [token]);
+  }, [token, audience]);
 
-  const lat = r?.operational?.latency_ms ?? {};
-  const cases: any[] = r?.cases ?? [];
-  const shown = cases.filter((c) => (filter === "failed" ? !c.passed : true));
+  const shown = useMemo(
+    () => (r?.cases ?? []).filter((c: any) => (filter === "failed" ? !c.passed : true)),
+    [r?.cases, filter]
+  );
+
+  const displayedCases = useMemo(() => {
+    if (!caseSearch.trim()) return shown;
+    const q = caseSearch.toLowerCase();
+    return shown.filter((c: any) => {
+      const matchId = String(c.id ?? "").toLowerCase().includes(q);
+      const matchQuery = String(c.query ?? "").toLowerCase().includes(q);
+      const matchType = String(c.type ?? "").toLowerCase().includes(q);
+      const matchNotes = (c.flags ?? []).join(" ").toLowerCase().includes(q);
+      return matchId || matchQuery || matchType || matchNotes;
+    });
+  }, [shown, caseSearch]);
+
+  const caseColumns: ColumnDef<any>[] = [
+    {
+      key: "passed",
+      header: "Status",
+      align: "center",
+      render: (c) => (
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border ${
+            c.passed
+              ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+              : "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800"
+          }`}
+        >
+          {c.passed ? "Pass" : "Fail"}
+        </span>
+      ),
+    },
+    {
+      key: "id",
+      header: "ID",
+      render: (c) => (
+        <span className="font-mono text-xs font-medium text-slate-900 dark:text-white">
+          {c.id}
+        </span>
+      ),
+    },
+    {
+      key: "type",
+      header: "Type",
+      render: (c) => (
+        <span className="text-xs text-slate-600 dark:text-slate-300">
+          {c.type}
+        </span>
+      ),
+    },
+    {
+      key: "query",
+      header: "Query",
+      render: (c) => (
+        <span className="text-xs text-slate-800 dark:text-slate-200 max-w-xs block line-clamp-2" title={c.query}>
+          {c.query}
+        </span>
+      ),
+    },
+    {
+      key: "confidence",
+      header: "Conf.",
+      align: "right",
+      render: (c) => (
+        <span className="font-mono text-xs tabular-nums text-slate-800 dark:text-slate-200">
+          {num(c.confidence)}
+        </span>
+      ),
+    },
+    {
+      key: "recall",
+      header: "Recall",
+      align: "right",
+      render: (c) => (
+        <span className="font-mono text-xs tabular-nums text-slate-800 dark:text-slate-200">
+          {pct(c.recall)}
+        </span>
+      ),
+    },
+    {
+      key: "citation_precision",
+      header: "Cit. Prec.",
+      align: "right",
+      render: (c) => (
+        <span className="font-mono text-xs tabular-nums text-slate-800 dark:text-slate-200">
+          {pct(c.citation_precision)}
+        </span>
+      ),
+    },
+    {
+      key: "faithfulness",
+      header: "Faithfulness",
+      align: "right",
+      render: (c) => (
+        <span className="font-mono text-xs tabular-nums text-slate-800 dark:text-slate-200">
+          {c.faithfulness != null ? num(c.faithfulness) : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "latency_ms",
+      header: "Latency",
+      align: "right",
+      render: (c) => (
+        <span className="font-mono text-xs tabular-nums text-slate-600 dark:text-slate-400">
+          {ms(c.latency_ms)}
+        </span>
+      ),
+    },
+    {
+      key: "flags",
+      header: "Flags & Notes",
+      render: (c) => {
+        const notes = [
+          ...(c.flags ?? []),
+          c.abstained ? "abstained" : "",
+          ...(c.missing_keywords ?? []).map((k: string) => `missing: ${k}`),
+          c.error ?? "",
+        ].filter(Boolean);
+        return (
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            {notes.length ? notes.join(", ") : "—"}
+          </span>
+        );
+      },
+    },
+  ];
 
   const passBreakdown = useMemo(() => {
-    const passed = cases.filter((c) => c.passed && !c.known_issue).length;
-    const failed = cases.filter((c) => !c.passed && !c.known_issue).length;
+    const casesList: any[] = r?.cases ?? [];
+    const passed = casesList.filter((c) => c.passed && !c.known_issue).length;
+    const failed = casesList.filter((c) => !c.passed && !c.known_issue).length;
     return [
       { name: "Passed", value: passed },
       { name: "Failed", value: failed },
     ].filter((d) => d.value > 0);
-  }, [cases]);
+  }, [r?.cases]);
 
   const qualityRadar = useMemo(
     () => [
@@ -252,65 +412,48 @@ export default function EvaluationPage() {
     [r]
   );
 
-  const latencyBars = useMemo(
-    () =>
-      Object.entries(lat).map(([k, v]: [string, any]) => ({
-        stage: label(k),
-        p50: (v.p50 ?? 0) / 1000,
-        p95: (v.p95 ?? 0) / 1000,
-        p99: (v.p99 ?? 0) / 1000,
-      })),
-    [lat]
-  );
+  const latencyBars = useMemo(() => {
+    const stageMap: Record<string, any> = r?.operational?.latency_ms ?? {};
+    return Object.entries(stageMap).map(([k, v]: [string, any]) => ({
+      stage: label(k),
+      p50: (v.p50 ?? 0) / 1000,
+      p95: (v.p95 ?? 0) / 1000,
+      p99: (v.p99 ?? 0) / 1000,
+    }));
+  }, [r?.operational?.latency_ms]);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <header className="flex h-16 shrink-0 items-center border-b border-ink/10 bg-white px-6">
-        <div>
-          <h1 className="text-sm font-semibold text-ink">RAG Evaluation</h1>
-          {/* <p className="text-xs text-ink/50">
-            Latest report{r?.report_file ? `: ${r.report_file}` : ""}. Generate a new
-            one with <code className="rounded bg-ink/5 px-1 py-0.5">python scripts/run_evaluation.py --judge --json eval_report.json</code>.
-          </p> */}
-        </div>
-      </header>
-      <div className="px-6 py-6">
+    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+      <DashboardHeader
+        title="RAG Evaluation"
+        subtitle="Systematic evaluation metrics, benchmark pass rates, and turn-level quality scorecard"
+        icon={ClipboardCheck}
+      />
+      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
       {error && <p className="text-sm text-red-600">{error}</p>}
       {!r && !error && <p className="text-sm text-ink/50">Loading…</p>}
 
       {r && (
         <>
-          <div className="mb-6 flex flex-wrap gap-1 rounded-xl border border-ink/10 bg-white p-1.5">
-            {TABS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setActiveTab(t)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeTab === t
-                    ? "bg-brand-600 text-white shadow-sm"
-                    : "text-ink/55 hover:bg-ink/5 hover:text-ink"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
+          <div className="flex items-center justify-between overflow-x-auto pb-1">
+            <TabGroup
+              tabs={EVALUATION_TABS}
+              activeTab={activeTab}
+              onChange={(t) => setActiveTab(t as Tab)}
+              ariaLabel="Evaluation sub-tabs"
+            />
           </div>
 
           {activeTab === "Overall" && (
           <>
-          <Section title="Overall">
-            <Stat label="Pass rate" value={pct(r.pass_rate)} />
-            <Stat label="Cases total" value={String(r.n_cases ?? "—")} />
-            <Stat label="Cases scored" value={String(r.n_scored ?? "—")} />
-            <Stat label="Retrieval recall" value={pct(r.retrieval_recall)} />
-            <Stat label="Groundedness accuracy" value={pct(r.groundedness_accuracy)} />
-            <Stat label="Follow-up accuracy" value={pct(r.follow_up_accuracy)} />
-          </Section>
-
-          <div className="mb-7 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {/* Unified 6-stat hero grid consolidating redundant rows */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <HeroStat label="Pass rate" value={pct(r.pass_rate)} icon={CheckCircle2} accent="bg-emerald-500" />
+            <HeroStat label="Cases total" value={String(r.n_cases ?? "—")} icon={Target} accent="bg-slate-500" />
             <HeroStat label="Cases scored" value={String(r.n_scored ?? "—")} icon={Target} accent="bg-indigo-500" />
             <HeroStat label="Retrieval recall" value={pct(r.retrieval_recall)} icon={ShieldCheck} accent="bg-cyan-500" />
+            <HeroStat label="Groundedness" value={pct(r.groundedness_accuracy)} icon={CheckCircle2} accent="bg-purple-500" />
+            <HeroStat label="Follow-up acc." value={pct(r.follow_up_accuracy)} icon={Sparkles} accent="bg-amber-500" />
           </div>
 
           <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -511,12 +654,12 @@ export default function EvaluationPage() {
             <Stat label="Avg retrieved / query" value={num(r.operational?.tokens?.mean_retrieved_per_query, 0)} />
           </Section>
           {r.kb && (
-            <section className="mb-7 rounded-xl border border-ink/10 bg-white p-5">
-              <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink/50">
+            <section className="mb-7 rounded-xl border border-ink/10 dark:border-dark-border bg-white dark:bg-dark-card p-5">
+              <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink/50 dark:text-slate-400">
                 <span className="h-3 w-1 rounded-full bg-brand-500" />
                 Knowledge-base evaluation
               </h2>
-              <pre className="max-h-80 overflow-auto rounded-lg border border-ink/10 bg-ink/[0.03] p-3 text-[11px] text-ink/70">
+              <pre className="max-h-80 overflow-auto rounded-lg border border-ink/10 dark:border-white/10 bg-ink/[0.03] dark:bg-dark-surface p-3 text-[11px] text-ink/70 dark:text-slate-300">
                 {JSON.stringify(r.kb, null, 2)}
               </pre>
             </section>
@@ -525,77 +668,35 @@ export default function EvaluationPage() {
           )}
 
           {activeTab === "All test cases" && (
-          <section className="mb-10 rounded-xl border border-ink/10 bg-white p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink/50">
-                <span className="h-3 w-1 rounded-full bg-brand-500" />
-                All test cases ({shown.length})
-              </h2>
-              <div className="flex gap-1 rounded-lg bg-ink/5 p-1 text-xs">
-                {(["all", "failed"] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className={`rounded-md px-2.5 py-1 transition-colors ${
-                      filter === f
-                        ? "bg-white text-brand-700 shadow-sm"
-                        : "text-ink/50 hover:text-ink/80"
-                    }`}
-                  >
-                    {label(f)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="overflow-x-auto rounded-lg border border-ink/10">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-ink/5 text-ink/60">
-                  <tr>
-                    {["Status", "ID", "Type", "Query", "Conf.", "Recall", "Cit. prec.", "Faith.", "Latency", "Flags / notes"].map((h) => (
-                      <th key={h} className="px-3 py-2 font-medium">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map((c) => (
-                    <tr key={c.id} className="border-t border-ink/5 align-top odd:bg-white even:bg-ink/[0.02] hover:bg-brand-50/40">
-                      <td className="px-3 py-2">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                            c.passed
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-red-50 text-red-700"
-                          }`}
-                        >
-                          {c.passed ? "✅ pass" : "❌ fail"}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 font-medium text-ink">{c.id}</td>
-                      <td className="px-3 py-2">{c.type}</td>
-                      <td className="max-w-xs px-3 py-2">{c.query}</td>
-                      <td className="px-3 py-2">{num(c.confidence)}</td>
-                      <td className="px-3 py-2">{pct(c.recall)}</td>
-                      <td className="px-3 py-2">{pct(c.citation_precision)}</td>
-                      <td className="px-3 py-2">{c.faithfulness ?? "—"}</td>
-                      <td className="px-3 py-2">{ms(c.latency_ms)}</td>
-                      <td className="px-3 py-2">
-                        {[
-                          ...(c.flags ?? []),
-                          c.abstained ? "abstained" : "",
-                          ...(c.missing_keywords ?? []).map((k: string) => `missing: ${k}`),
-                          c.error ?? "",
-                        ]
-                          .filter(Boolean)
-                          .join(", ")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <TableCard
+            title={`All test cases (${displayedCases.length})`}
+            toolbar={
+              <TableToolbar
+                search={caseSearch}
+                onSearchChange={setCaseSearch}
+                searchPlaceholder="Search query, ID, type, or notes…"
+                filters={[
+                  {
+                    id: "outcome",
+                    label: "Case Outcome",
+                    value: filter,
+                    options: [
+                      { label: "All Cases", value: "all" },
+                      { label: "Failed Only", value: "failed" },
+                    ],
+                    onChange: (v) => setFilter(v as "all" | "failed"),
+                  },
+                ]}
+              />
+            }
+          >
+            <DataTable
+              columns={caseColumns}
+              data={displayedCases}
+              keyField="id"
+              emptyMessage="No test cases match the selected filters."
+            />
+          </TableCard>
           )}
         </>
       )}

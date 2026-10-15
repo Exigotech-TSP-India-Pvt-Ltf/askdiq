@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 type Message = {
   id: string;
@@ -29,6 +31,7 @@ export default function ConversationDetailPage() {
   const params = useParams();
   const router = useRouter();
 
+  const { token } = useAuth();
   const [conversation, setConversation] =
     useState<Conversation | null>(null);
 
@@ -36,32 +39,13 @@ export default function ConversationDetailPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!params.id || !token) return;
+    const authToken = token;
+
     async function loadConversation() {
       try {
         const id = params.id as string;
-
-        const response = await fetch(
-          `http://localhost:8000/admin/conversations/${id}`,
-          {
-            headers: {
-              "X-API-Key": "dep-iq-key",
-            },
-          }
-        );
-
-        if (!response.ok) {
-          const errorText = await response.text();
-
-          throw new Error(
-            `Failed to load conversation (${response.status})${
-              errorText ? `: ${errorText}` : ""
-            }`
-          );
-        }
-
-        const data = await response.json();
-
-        console.log("Conversation detail response:", data);
+        const data = await api.adminGet<any>(authToken, `/conversations/${id}`);
 
         // Backend returns:
         // {
@@ -83,10 +67,8 @@ export default function ConversationDetailPage() {
       }
     }
 
-    if (params.id) {
-      loadConversation();
-    }
-  }, [params.id]);
+    loadConversation();
+  }, [params.id, token]);
 
   if (loading) {
     return (

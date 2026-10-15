@@ -1,0 +1,356 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import type { PageEnvelope, UsageSessionRow } from "@/lib/types";
+import { api } from "@/lib/api";
+import { useTableState } from "@/lib/use-table-state";
+import { DataTable, type ColumnDef } from "../DataTable";
+import { TableToolbar } from "../TableToolbar";
+import { Pagination } from "../Pagination";
+import { TableCard } from "../TableCard";
+import { StatCard, HighlightCard } from "../insights";
+import {
+  MessageSquare,
+  Clock,
+  CircleDollarSign,
+  Layers,
+  Download,
+  ArrowRight,
+} from "lucide-react";
+import {
+  formatNumber,
+  formatCurrency,
+  formatTokens,
+} from "../TableFormatters";
+
+interface SessionsTabProps {
+  token: string;
+  initialIp?: string;
+  onSelectSession?: (sessionId: string) => void;
+  onSelectIp?: (ip: string) => void;
+}
+
+export function SessionsTab({
+  token,
+  initialIp,
+  onSelectSession,
+  onSelectIp,
+}: SessionsTabProps) {
+  const {
+    page,
+    pageSize,
+    offset,
+    sort,
+    search,
+    filters,
+    audience,
+    setPage,
+    setPageSize,
+    setSort,
+    setSearchInput,
+    setFilter,
+    getSignal,
+  } = useTableState({
+    tableKey: "sessions",
+    defaultSort: "cost_desc",
+    allowedSorts: [
+      "cost_desc",
+      "cost_asc",
+      "queries_desc",
+      "queries_asc",
+      "tokens_desc",
+      "tokens_asc",
+      "last_active_desc",
+      "last_active_asc",
+    ],
+    defaultFilters: { ip: initialIp || "" },
+  });
+
+  const [data, setData] = useState<PageEnvelope<UsageSessionRow> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sync initialIp prop if passed dynamically
+  useEffect(() => {
+    if (initialIp !== undefined && initialIp !== filters.ip) {
+      setFilter("ip", initialIp);
+    }
+  }, [initialIp, filters.ip, setFilter]);
+
+  const fetchData = React.useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await api.getUsageSessions(
+        token,
+        {
+          audience,
+          q: search || undefined,
+          ip: filters.ip || undefined,
+          sort,
+          limit: pageSize,
+          offset,
+        },
+        getSignal()
+      );
+      setData(res);
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        setError(err.message || "Failed to load session analytics.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token, audience, search, filters.ip, sort, pageSize, offset, getSignal]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const stats = data?.stats || {};
+  const topSessions = (stats.top_3_sessions || []) as Array<{
+    id: string;
+    title: string;
+    ip_address: string;
+    queries: number;
+    cost_usd: number;
+    tokens: number;
+  }>;
+
+  const columns: ColumnDef<UsageSessionRow>[] = [
+    {
+      key: "title",
+      header: "Session Title & ID",
+      sortable: false,
+      render: (r) => (
+        <div className="flex flex-col">
+          <span className="font-medium text-slate-800 dark:text-slate-200 line-clamp-1" title={r.title}>
+            {r.title || "Untitled Session"}
+          </span>
+          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+            {r.id}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: "ip_address",
+      header: "Client IP",
+      sortable: false,
+      render: (r) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectIp?.(r.ip_address);
+          }}
+          className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline text-left"
+        >
+          {r.ip_address}
+        </button>
+      ),
+    },
+    {
+      key: "queries",
+      header: "Turns",
+      sortable: true,
+      align: "right",
+      render: (r) => formatNumber(r.queries),
+    },
+    {
+      key: "embed_tokens",
+      header: "Embed Tokens",
+      align: "right",
+      render: (r) => formatTokens(r.embed_tokens, "muted"),
+    },
+    {
+      key: "prompt_tokens",
+      header: "Input Tokens",
+      align: "right",
+      render: (r) => formatTokens(r.prompt_tokens, "input"),
+    },
+    {
+      key: "reasoning_tokens",
+      header: "Reasoning Tokens",
+      align: "right",
+      render: (r) => formatTokens(r.reasoning_tokens, "reasoning"),
+    },
+    {
+      key: "output_tokens",
+      header: "Output Tokens",
+      align: "right",
+      render: (r) => formatTokens(r.output_tokens, "output"),
+    },
+    {
+      key: "tokens",
+      header: "Total Tokens",
+      sortable: true,
+      align: "right",
+      render: (r) => formatTokens(r.total_tokens, "total"),
+    },
+    {
+      key: "cost",
+      header: "Cost (USD)",
+      sortable: true,
+      align: "right",
+      render: (r) => formatCurrency(r.cost_usd, 4),
+    },
+    {
+      key: "last_active",
+      header: "Last Active",
+      sortable: true,
+      render: (r) => (
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+          {r.last_active ? new Date(r.last_active).toLocaleString() : "—"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "Inspect",
+      align: "right",
+      render: (r) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectSession?.(r.id);
+          }}
+          className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 transition"
+        >
+          <span>Queries</span>
+          <ArrowRight className="w-3 h-3" />
+        </button>
+      ),
+    },
+  ];
+
+  const exportUrl = `/api/proxy/admin/usage/export?tab=sessions&audience=${audience}&q=${encodeURIComponent(
+    search
+  )}${filters.ip ? `&ip=${encodeURIComponent(filters.ip)}` : ""}`;
+
+  return (
+    <div className="space-y-6">
+      {/* ========================================================================= */}
+      {/* PRE-TABLE INTELLIGENCE HEADER */}
+      {/* ========================================================================= */}
+      <section className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            title="Total Sessions"
+            value={stats.total_sessions ?? data?.total ?? 0}
+            subtitle={`Audience: ${audience}`}
+            icon={MessageSquare}
+          />
+
+          <StatCard
+            title="Avg Turns / Session"
+            value={stats.avg_turns_per_session ? Number(stats.avg_turns_per_session).toFixed(1) : "—"}
+            subtitle="Conversation depth"
+            icon={Layers}
+          />
+
+          <StatCard
+            title="Avg Cost / Session"
+            value={stats.avg_cost_per_session_usd ? `$${Number(stats.avg_cost_per_session_usd).toFixed(4)}` : "—"}
+            subtitle="Blended execution cost"
+            icon={CircleDollarSign}
+          />
+
+          <StatCard
+            title="Max Depth (Turns)"
+            value={stats.max_session_turns ?? 0}
+            subtitle="Deepest conversation thread"
+            icon={Clock}
+          />
+        </div>
+
+        {/* Top 3 High-Spend Sessions Highlight Cards */}
+        {topSessions.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-xs font-semibold text-slate-700">
+              Top Sessions by Financial Cost (1-Click Drilldown)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {topSessions.map((s, i) => (
+                <HighlightCard
+                  key={s.id}
+                  rank={i + 1}
+                  title={s.title || "Untitled Session"}
+                  subtitle={`Client IP: ${s.ip_address}`}
+                  metricLabel="Total Cost"
+                  metricValue={`$${s.cost_usd.toFixed(4)}`}
+                  secondaryMetric={`${s.queries.toLocaleString()} turns • ${s.tokens.toLocaleString()} tokens`}
+                  onClick={() => onSelectSession?.(s.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ========================================================================= */}
+      {/* TABLE CONTROLS & DATA TABLE (Integrated TableCard) */}
+      {/* ========================================================================= */}
+      <section>
+        <TableCard
+          toolbar={
+            <TableToolbar
+              search={search}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Search session title, ID, or IP..."
+              filters={
+                filters.ip
+                  ? [
+                      {
+                        id: "ip",
+                        label: `Filtered IP: ${filters.ip}`,
+                        value: filters.ip,
+                        options: [
+                          { label: `IP: ${filters.ip}`, value: filters.ip },
+                          { label: "Clear IP Filter", value: "" },
+                        ],
+                        onChange: (val) => setFilter("ip", val),
+                      },
+                    ]
+                  : []
+              }
+              extraActions={
+                <a
+                  href={exportUrl}
+                  download
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 transition"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                  <span>Export CSV</span>
+                </a>
+              }
+            />
+          }
+          pagination={
+            <Pagination
+              page={page}
+              pageCount={Math.ceil((data?.total || 0) / pageSize)}
+              totalItems={data?.total || 0}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          }
+        >
+          <DataTable
+            columns={columns}
+            data={data?.items || []}
+            keyField="id"
+            isLoading={isLoading}
+            error={error}
+            onRetry={fetchData}
+            currentSort={sort}
+            onSortChange={setSort}
+            onRowClick={(r) => onSelectSession?.(r.id)}
+          />
+        </TableCard>
+      </section>
+    </div>
+  );
+}

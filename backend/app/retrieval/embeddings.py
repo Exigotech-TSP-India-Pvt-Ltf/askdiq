@@ -1,11 +1,12 @@
-"""Azure OpenAI text embedding wrapper (async only)."""
-
+import time
 from contextvars import ContextVar
 
 from openai import AsyncAzureOpenAI
 
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
 
+logger = get_logger(__name__)
 settings = get_settings()
 
 _embedding_client = AsyncAzureOpenAI(
@@ -48,6 +49,7 @@ async def embed_texts(
 
     from app.core.quota import quota_monitor
 
+    t_start = time.perf_counter()
     try:
         response = await _embedding_client.embeddings.create(
             model=settings.embedding_model,
@@ -56,8 +58,16 @@ async def embed_texts(
     except Exception as exc:
         is_429 = getattr(exc, "status_code", None) == 429 or "429" in str(exc)
         quota_monitor.record_embedding(0, is_error=True, is_429=is_429)
+        if is_429:
+            logger.error(
+                "embedding_throttle_429",
+                model=settings.embedding_model,
+                texts_count=len(texts),
+                error=str(exc),
+            )
         raise
 
+    embed_ms = (time.perf_counter() - t_start) * 1000
     usage = getattr(response, "usage", None)
     prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
     if prompt_tokens is None:
@@ -73,6 +83,14 @@ async def embed_texts(
     sink = embedding_tokens_sink.get()
     if sink is not None:
         sink.append((effective_stage, tok_int))
+
+    logger.info(
+        "embedding_batch_complete",
+        stage=effective_stage,
+        texts_count=len(texts),
+        tokens=tok_int,
+        latency_ms=round(embed_ms, 2),
+    )
 
     return [item.embedding for item in response.data]
 
@@ -118,4 +136,3 @@ def embed_text_sync(
 ) -> list[float]:
     """Synchronous wrapper for embed_text."""
     return embed_texts_sync([text], task_type=task_type, stage=stage)[0]
-

@@ -202,3 +202,66 @@ async def test_feedback_rate_limit(client, db_session):
     )
     assert res_429.status_code == 429
     assert "Rate limit exceeded" in res_429.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_feedback_analytics_and_promote_to_test(client, db_session):
+    """Test closed-loop feedback: analytics calculation and golden test case promotion."""
+    from app.core.rate_limit import _feedback_ip_log, _feedback_user_log
+
+    _feedback_user_log.clear()
+    _feedback_ip_log.clear()
+
+    actor = "admin_user@example.com"
+    client.headers["X-Client-Id"] = actor
+
+    sess = await session_service.create_session(
+        db_session,
+        user_email=actor,
+        title="Regression Session",
+        client_ip="192.168.1.50",
+    )
+    user_msg = ChatMessageRecord(
+        session_id=uuid.UUID(sess.id),
+        turn_index=1,
+        role="user",
+        content="How do I configure mTLS for Zero Trust?",
+        ip_address="192.168.1.50",
+    )
+    asst_msg = ChatMessageRecord(
+        session_id=uuid.UUID(sess.id),
+        turn_index=1,
+        role="assistant",
+        content="I could not find information about mTLS configuration in the provided documents.",
+        ip_address="192.168.1.50",
+        grounded=False,
+        outcome="ungrounded",
+    )
+    db_session.add_all([user_msg, asst_msg])
+    await db_session.commit()
+
+    asst_mid = str(asst_msg.id)
+
+    # Submit negative feedback rating
+    fb_res = await client.post(
+        f"/sessions/{sess.id}/messages/{asst_mid}/feedback",
+        json={"rating": 1, "comment": "Missing documentation on mTLS setup."},
+    )
+    assert fb_res.status_code == 200
+
+    # 1. Test GET /admin/feedback/analytics
+    analytics_res = await client.get("/admin/feedback/analytics")
+    assert analytics_res.status_code == 200
+    analytics_data = analytics_res.json()
+    assert analytics_data["total_feedback"] >= 1
+    assert analytics_data["negative_count"] >= 1
+    assert "negative_ratio" in analytics_data
+    assert "feedback_by_outcome" in analytics_data
+
+    # 2. Test POST /admin/feedback/{mid}/promote-to-test
+    promote_res = await client.post(f"/admin/feedback/{asst_mid}/promote-to-test")
+    assert promote_res.status_code == 200
+    promote_data = promote_res.json()
+    assert promote_data["status"] == "promoted"
+    assert "case_id" in promote_data
+    assert promote_data["query"] == "How do I configure mTLS for Zero Trust?"

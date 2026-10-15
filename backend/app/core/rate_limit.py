@@ -22,9 +22,11 @@ from collections import defaultdict, deque
 from fastapi import Depends, HTTPException, Request, status
 
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
 from app.governance.auth import get_current_actor
 
+logger = get_logger(__name__)
 settings = get_settings()
 
 _WINDOW_SECONDS = 60.0
@@ -35,6 +37,8 @@ _user_request_log: dict[str, deque[float]] = defaultdict(deque)
 _ip_request_log: dict[str, deque[float]] = defaultdict(deque)
 _feedback_user_log: dict[str, deque[float]] = defaultdict(deque)
 _feedback_ip_log: dict[str, deque[float]] = defaultdict(deque)
+_admin_user_log: dict[str, deque[float]] = defaultdict(deque)
+_admin_ip_log: dict[str, deque[float]] = defaultdict(deque)
 _calls_since_sweep = 0
 
 
@@ -45,6 +49,8 @@ def _sweep(now: float) -> None:
         _ip_request_log,
         _feedback_user_log,
         _feedback_ip_log,
+        _admin_user_log,
+        _admin_ip_log,
     ):
         idle = [
             k for k, log in store.items() if not log or now - log[-1] > _WINDOW_SECONDS
@@ -71,6 +77,14 @@ def _check_and_record(
 
     if len(log) >= limit:
         retry_after = int(_WINDOW_SECONDS - (now - log[0])) + 1
+        logger.warning(
+            "rate_limit_exceeded",
+            key=key,
+            limit=limit,
+            label=label,
+            retry_after_s=retry_after,
+            window_count=len(log),
+        )
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
@@ -115,3 +129,21 @@ def enforce_feedback_rate_limit(
     _check_and_record(_feedback_user_log, actor, limit, "feedback per user")
     if ip:
         _check_and_record(_feedback_ip_log, ip, limit, "feedback per IP")
+
+
+def enforce_admin_heavy_rate_limit(
+    actor: str, ip: str | None = None, limit: int = 60
+) -> None:
+    """Enforce sliding-window rate limit for heavy admin analytics/aggregations (default 60/min per actor and per IP)."""
+    _check_and_record(_admin_user_log, actor, limit, "admin analytics per user")
+    if ip:
+        _check_and_record(_admin_ip_log, ip, limit, "admin analytics per IP")
+
+
+async def rate_limited_admin_analytics(
+    request: Request, actor: str = Depends(get_current_actor)
+) -> str:
+    """FastAPI dependency enforcing rate limits on heavy admin aggregation/export routes (OWASP A04/A07)."""
+    ip = get_client_ip(request)
+    enforce_admin_heavy_rate_limit(actor, ip)
+    return actor
