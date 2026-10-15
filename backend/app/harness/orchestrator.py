@@ -6,14 +6,13 @@ build prompt -> call LLM (with retry) ->
 validate output -> post-guardrails -> structured response.
 """
 
-import asyncio
 import logging
 import time
 
 from app.core.config import get_settings
 from app.guardrails.conversational import detect_conversational_intent
 from app.guardrails.post_checks import run_post_checks
-from app.guardrails.pre_checks import run_pre_checks
+from app.guardrails.pre_checks import run_pre_checks, sanitize_query
 from app.harness.prompts import _MAX_HISTORY_TURNS, call_llm
 from app.retrieval.retriever import needs_conversation_context, retrieve
 from app.retrieval.vector_store import VectorStore
@@ -38,23 +37,47 @@ def _fallback_response(
     sources: list[SourceChunk] | None = None,
     follow_up_detected: bool = False,
     history_turns_sent: int = 0,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
+    outcome: str = "blocked",
+    token_details: dict | None = None,
 ) -> QueryResponse:
-    """Return a safe fallback response.
+    """Return a safe, polite fallback response.
 
-    Spam/unsafe input is blocked with a terse, dedicated message and never
-    carries retrieval evidence — there's nothing useful (or safe) to expose
-    for junk input. Genuine off-topic/low-confidence cases still surface
-    whatever sources were considered, for transparency.
+    Spam/unsafe input is blocked with dedicated polite guidance and never
+    carries retrieval evidence. Genuine off-topic/low-confidence cases still
+    surface whatever sources were considered, for transparency.
     """
 
-    if "spam_detected" in flags:
-        answer = "That doesn't look like a genuine question, so I can't help with it."
+    brand = settings.brand_name
+    if "unclear_input" in flags:
+        answer = (
+            "Your question appears too short or incomplete. Could you please provide "
+            f"a bit more detail or ask a specific question about {brand}?"
+        )
+    elif "spam_detected" in flags:
+        answer = (
+            "I couldn't quite understand your question. Could you please rephrase "
+            f"or ask a question regarding {brand}'s platform, Zero Trust architecture, "
+            "or Essential Eight compliance?"
+        )
     elif "unsafe_input_detected" in flags:
-        answer = "I can't process that request."
+        answer = (
+            "I am unable to process that request. Please feel free to ask questions "
+            f"regarding {brand}'s security platform and compliance features."
+        )
+    elif "off_topic" in flags:
+        answer = (
+            f"I couldn't find relevant information in the {brand} knowledge base to answer that. "
+            f"I can help with questions about the {brand} platform, Zero Trust, "
+            "Essential Eight, Responsible AI, governance, and data handling."
+        )
     else:
         answer = (
-            "I can\u2019t find this information in the DeployIQ knowledge base. "
-            "I can help with questions about the DeployIQ platform, Zero Trust, "
+            "Seems like you have made a typo, could you please rephrase your question? "
+            f"I can help with questions about the {brand} platform, Zero Trust, "
             "Essential Eight, Responsible AI, governance, and data handling."
         )
 
@@ -68,6 +91,12 @@ def _fallback_response(
         guardrail_flags=flags,
         follow_up_detected=follow_up_detected,
         history_turns_sent=history_turns_sent,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        reasoning_tokens=reasoning_tokens,
+        outcome=outcome,
+        token_details=token_details,
     )
 
 
@@ -122,21 +151,16 @@ async def run_query(
             guardrail_flags=[],
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
+            outcome="conversational",
         )
 
     # ---------------------------------------------------------
-    # 1. PRE-GUARDRAILS
+    # 1. PRE-GUARDRAILS & SANITATION
     # ---------------------------------------------------------
 
     t0 = time.perf_counter()
 
-    pre_flags = run_pre_checks(
-        query,
-        settings.max_query_length,
-    )
-
-    stage_timings["guardrail_pre"] = (time.perf_counter() - t0) * 1000
-
+    pre_flags = run_pre_checks(query, settings.max_query_length)
     if pre_flags:
         return _fallback_response(
             request_id=request_id,
@@ -146,6 +170,18 @@ async def run_query(
             history_turns_sent=history_turns_sent,
         )
 
+    effective_query, sanitize_flags = sanitize_query(query)
+    if sanitize_flags:
+        return _fallback_response(
+            request_id=request_id,
+            flags=sanitize_flags,
+            latency_ms=(time.perf_counter() - start) * 1000,
+            follow_up_detected=follow_up_detected,
+            history_turns_sent=history_turns_sent,
+        )
+
+    stage_timings["guardrail_pre"] = (time.perf_counter() - t0) * 1000
+
     # ---------------------------------------------------------
     # 2. VECTOR RETRIEVAL
     # ---------------------------------------------------------
@@ -154,7 +190,7 @@ async def run_query(
 
     sources: list[SourceChunk] = await retrieve(
         vector_store,
-        query,
+        effective_query,
         top_k=top_k,
         filters=filters,
         history=history,
@@ -190,9 +226,9 @@ async def run_query(
         )
 
     logger.info(
-        "retrieval request_id=%s query=%r sources=%d max_score=%.4f documents=%s",
+        "retrieval request_id=%s query_len=%d sources=%d max_score=%.4f documents=%s",
         request_id,
-        query,
+        len(query),
         len(sources),
         max_retrieval_score,
         sorted({s.document_id for s in sources}),
@@ -215,11 +251,8 @@ async def run_query(
     # 4. LLM GENERATION (+ POST-GENERATION GROUNDEDNESS CHECK)
     # ---------------------------------------------------------
     #
-    # gpt-5-mini must run at temperature=1.0 (its only supported value), so
-    # phrasing — and therefore the semantic groundedness score — varies
-    # sample to sample for the exact same question. Retrying generation on a
-    # failed groundedness check (not just on empty/error) lets a fresh
-    # sample succeed instead of surfacing the fallback on one unlucky draw.
+    # Retries cover only LLM errors/empty output; an ungrounded answer is not
+    # re-sampled (saves a full LLM call + embedding on those requests).
     # ---------------------------------------------------------
 
     t0 = time.perf_counter()
@@ -230,16 +263,26 @@ async def run_query(
     confidence = 0.0
     post_flags: list[str] = []
     guardrail_post_ms = 0.0
-    usage: dict[str, int] | None = None
+    attempts_usage: list[dict] = []
+    tot_prompt = 0
+    tot_completion = 0
+    tot_reasoning = 0
+    tot_cached = 0
 
     for attempt in range(settings.max_llm_retries + 1):
         try:
-            answer, usage = await asyncio.to_thread(
-                call_llm,
+            attempt_answer, usage = await call_llm(
                 query,
-                [source.content for source in sources],
+                sources,
                 history,
             )
+            if usage:
+                attempts_usage.append({"attempt": attempt + 1, "usage": usage})
+                tot_prompt += usage.get("prompt_tokens", 0)
+                tot_completion += usage.get("completion_tokens", 0)
+                tot_reasoning += usage.get("reasoning_tokens", 0)
+                tot_cached += usage.get("cached_tokens", 0)
+            answer = attempt_answer
         except Exception as exc:
             last_error = exc
             answer = ""
@@ -257,10 +300,7 @@ async def run_query(
             continue
 
         t_post = time.perf_counter()
-        # Blocking Azure embedding call inside run_post_checks — off the
-        # event loop so it doesn't stall every other concurrent request.
-        grounded, confidence, post_flags = await asyncio.to_thread(
-            run_post_checks,
+        grounded, confidence, post_flags = await run_post_checks(
             answer,
             sources,
             settings.groundedness_threshold,
@@ -277,11 +317,27 @@ async def run_query(
             post_flags,
         )
 
-        if grounded:
-            break
+        break
 
     stage_timings["llm"] = (time.perf_counter() - t0) * 1000 - guardrail_post_ms
     stage_timings["guardrail_post"] = guardrail_post_ms
+
+    tot_total = tot_prompt + tot_completion
+    has_llm_usage = len(attempts_usage) > 0
+    prompt_tokens = tot_prompt if has_llm_usage else None
+    completion_tokens = tot_completion if has_llm_usage else None
+    total_tokens = tot_total if has_llm_usage else None
+    reasoning_tokens = tot_reasoning if has_llm_usage else None
+
+    token_details: dict[str, object] = (
+        {
+            "llm_attempts": len(attempts_usage),
+            "attempts": attempts_usage,
+            "cached_tokens": tot_cached,
+        }
+        if has_llm_usage
+        else {}
+    )
 
     # ---------------------------------------------------------
     # 5. LLM FAILURE / EMPTY RESPONSE
@@ -289,6 +345,8 @@ async def run_query(
 
     if not answer.strip():
         flags = ["llm_call_failed"] if last_error else ["empty_llm_output"]
+        outcome = "llm_failed" if last_error else "empty_llm_output"
+        token_details["outcome"] = outcome
 
         logger.warning(
             "llm_empty_or_failed request_id=%s flags=%s",
@@ -303,6 +361,12 @@ async def run_query(
             sources=sources,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
+            outcome=outcome,
+            token_details=token_details or None,
         )
 
     logger.debug(
@@ -318,6 +382,8 @@ async def run_query(
     total_ms = (time.perf_counter() - start) * 1000
 
     if not grounded:
+        outcome = "ungrounded"
+        token_details["outcome"] = outcome
         return _fallback_response(
             request_id=request_id,
             flags=post_flags,
@@ -325,7 +391,16 @@ async def run_query(
             sources=sources,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
+            outcome=outcome,
+            token_details=token_details or None,
         )
+
+    outcome = "answered"
+    token_details["outcome"] = outcome
 
     return QueryResponse(
         answer=answer,
@@ -337,7 +412,10 @@ async def run_query(
         guardrail_flags=post_flags,
         follow_up_detected=follow_up_detected,
         history_turns_sent=history_turns_sent,
-        prompt_tokens=(usage or {}).get("prompt_tokens"),
-        completion_tokens=(usage or {}).get("completion_tokens"),
-        total_tokens=(usage or {}).get("total_tokens"),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        reasoning_tokens=reasoning_tokens,
+        outcome=outcome,
+        token_details=token_details or None,
     )

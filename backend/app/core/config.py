@@ -1,7 +1,10 @@
 """Centralized application configuration."""
 
+import atexit
 import logging
+import queue
 from functools import lru_cache
+from logging.handlers import QueueHandler, QueueListener
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +23,8 @@ class Settings(BaseSettings):
     # free connection instead of getting an answer.
     db_pool_size: int = 20
     db_max_overflow: int = 10
+    # SQL statement logging (incl. 1536-float vector params) — off by default.
+    db_echo: bool = False
 
     # Azure OpenAI
     azure_openai_api_key: str
@@ -75,8 +80,8 @@ class Settings(BaseSettings):
     # Kept small on purpose — the cross-encoder reranker is CPU-bound and its
     # cost scales with candidate count; this was the single largest
     # contributor to /query latency (~9.7s p50 at multiplier=5/min=25).
-    retrieval_candidate_multiplier: int = 3
-    retrieval_candidate_min: int = 12
+    retrieval_candidate_multiplier: int = 1
+    retrieval_candidate_min: int = 8
     # Cross-document quota: round-robin across at most this many top-scoring documents.
     cross_doc_quota_max_documents: int = 3
     # Below this raw cosine score, retrieval is treated as off-topic. Kept
@@ -89,6 +94,17 @@ class Settings(BaseSettings):
     # Each retry is a full LLM call (~5-8s) — capped at 1 (not 2) so a run of
     # bad luck can't stack 3 LLM calls into one request's tail latency.
     max_llm_retries: int = 1
+
+    # Concurrency: every blocking call (embedding, LLM, rerank, post-checks) runs
+    # in asyncio's default thread pool, whose stock size (cpu+4) is exhausted by
+    # a few slow LLM calls and starves everything else.
+    thread_pool_workers: int = 100
+    # CPU-bound ONNX reranks run at most this many at once; more only
+    # oversubscribes cores and raises every request's latency.
+    rerank_max_concurrency: int = 4
+    # Pairs scored per ONNX call. 1 avoids padding every pair to the longest
+    # one in the batch: measured 983 -> 601 ms for 12 chunks (i7-10510U).
+    rerank_batch_size: int = 1
 
     # Chat sessions — history is stored per-session in the database (see
     # app.core.sessions) so different sessions never see each other's history.
@@ -114,13 +130,56 @@ class Settings(BaseSettings):
     # address is used. Flip to True only when deployed behind such a proxy.
     trust_proxy_headers: bool = False
 
-    # App
+    # App & Environment
     env: str = "development"
     log_level: str = "info"
+    # Testing & development IP addresses (excluded from user analytics, manageable via dashboard)
+    dev_test_ips: str = "127.0.0.1,::1,localhost,0.0.0.0"
     # Applies to the retrieval + guardrail pipeline only (see
     # /metrics/latency's `pipeline_ex_llm`) — a real LLM call regularly
     # takes multiple seconds, so it's excluded and reported separately.
     latency_budget_ms: int = 200
+
+    # CORS configuration
+    cors_allowed_origins: list[str] = ["http://localhost:3000"]
+
+    # Feature Rollout Flags
+    ingest_server_conversion: bool = True
+    online_eval_enabled: bool = False
+    online_eval_sample_rate: float = 0.10
+
+    # White-labelling & Branding Defaults
+    brand_name: str = "DeployIQ"
+    brand_assistant_name: str = "AskDIQ"
+    brand_support_email: str = "support@deployiq.com"
+
+    # Token Pricing Defaults (USD per million tokens)
+    price_embed_per_million: float = 0.02
+    price_prompt_per_million: float = 0.25
+    price_output_per_million: float = 2.00
+    # Real Azure cached-input rate is 50% discount ($0.125/1M vs $0.25/1M prompt)
+    price_cached_per_million: float = 0.125
+
+    # Audience & Usage Analytics Settings
+    audience_cache_ttl_seconds: int = 30
+    usage_summary_cache_ttl_seconds: int = 15
+    usage_page_max_limit: int = 200
+    usage_max_offset: int = 10_000
+    usage_export_max_rows: int = 10_000
+    usage_max_range_days: int = 400
+    usage_agg_max_concurrency: int = 4
+    test_ip_max_entries: int = 500
+
+    # Azure Quota Limits (Verified from live Azure headers: 1M TPM, 1,000 RPM)
+    azure_openai_tpm_limit: int = 1_000_000
+    azure_openai_rpm_limit: int = 1_000
+    azure_openai_embedding_tpm_limit: int = 1_000_000
+    azure_openai_embedding_rpm_limit: int = 1_000
+    azure_openai_max_retries: int = 2
+    ingest_max_file_bytes: int = 10 * 1024 * 1024  # 10 MB
+    ingest_convert_concurrency: int = 4
+    ingest_max_chars: int = 500_000
+    pii_allowlist: list[str] = []
 
 
 @lru_cache
@@ -128,10 +187,30 @@ def get_settings() -> Settings:
     return Settings()
 
 
+_log_listener: QueueListener | None = None
+
+
 def configure_logging() -> None:
-    """Configure root logging once at process startup (STEP 9)."""
+    """Configure root logging once at process startup (STEP 9).
+
+    Records are only enqueued on the calling thread; a background listener
+    thread does the formatting and the (blocking) stream write.
+    """
+    global _log_listener
+    if _log_listener is not None:
+        return
+
     settings = get_settings()
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     )
+
+    log_queue: queue.SimpleQueue = queue.SimpleQueue()
+    root = logging.getLogger()
+    root.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
+    root.addHandler(QueueHandler(log_queue))
+
+    _log_listener = QueueListener(log_queue, handler)
+    _log_listener.start()
+    atexit.register(_log_listener.stop)

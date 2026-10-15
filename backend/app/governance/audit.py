@@ -18,6 +18,7 @@ async def record_audit_event(
     action: str,
     detail: dict,
     ip_address: str | None = None,
+    commit: bool = True,
 ) -> None:
     session.add(
         AuditLog(
@@ -28,4 +29,5 @@ async def record_audit_event(
             ip_address=ip_address,
         )
     )
-    await session.commit()
+    if commit:
+        await session.commit()

@@ -382,9 +382,17 @@ async def governance_monitoring(
     except Exception:  # noqa: BLE001, S110
         pass
 
+    from app.core.quota import quota_monitor
+    from app.governance.online_eval import quality_tracker
+
+    quota_data = quota_monitor.get_summary()
+    online_kpis = quality_tracker.get_kpis()
+
     requests_total = METRICS["requests"]
     return {
         "window_hours": 24,
+        "azure_quota_telemetry": quota_data,
+        "online_quality_kpis": online_kpis,
         "api_requests": requests_total,
         "queries_24h": len(records),
         "active_users": active_users or 0,
@@ -444,8 +452,17 @@ async def governance_traces(
 
 # Guardrail flag -> log severity, from most to least severe. Anything not
 # listed here (e.g. a normal, unflagged, grounded query) is INFO.
-_CRITICAL_FLAGS = {"llm_call_failed", "groundedness_check_failed"}
-_ALERT_FLAGS = {"unsafe_input_detected", "spam_detected"}
+_CRITICAL_FLAGS = {
+    "llm_call_failed",
+    "groundedness_check_failed",
+    "secret_leak_detected",
+}
+_ALERT_FLAGS = {
+    "unsafe_input_detected",
+    "spam_detected",
+    "pii_leak_detected",
+    "online_unfaithful",
+}
 _ERROR_FLAGS = {"empty_llm_output", "empty_answer", "no_retrieved_sources", "unsupported_numeric_claim"}
 _WARNING_FLAGS = {"low_retrieval_confidence", "possible_hallucination", "query_too_long", "empty_query"}
 

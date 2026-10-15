@@ -91,3 +91,19 @@ def test_user_and_ip_limits_are_tracked_independently(monkeypatch):
         rate_limit.enforce_rate_limit("user@example.com")
 
     rate_limit.enforce_ip_rate_limit("203.0.113.5")
+
+
+def test_idle_keys_are_swept_so_memory_does_not_grow(monkeypatch):
+    _reset()
+    fake_now = [1000.0]
+    monkeypatch.setattr(rate_limit.time, "monotonic", lambda: fake_now[0])
+    monkeypatch.setattr(rate_limit, "_SWEEP_EVERY", 3)
+    monkeypatch.setattr(rate_limit, "_calls_since_sweep", 0)
+    monkeypatch.setattr(rate_limit.settings, "rate_limit_per_minute", 5)
+
+    rate_limit.enforce_rate_limit("old-client")
+    fake_now[0] += 120
+    rate_limit.enforce_rate_limit("b")
+    rate_limit.enforce_rate_limit("c")
+
+    assert "old-client" not in rate_limit._user_request_log

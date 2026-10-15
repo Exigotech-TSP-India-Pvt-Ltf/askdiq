@@ -16,6 +16,7 @@ off-topic / low-confidence gates in orchestrator.py well-calibrated.
 """
 
 import logging
+import threading
 import time
 from contextvars import ContextVar
 from functools import lru_cache
@@ -34,11 +35,21 @@ rerank_timing_sink: ContextVar[list[float] | None] = ContextVar(
 )
 
 
+_rerank_slots = threading.BoundedSemaphore(max(1, settings.rerank_max_concurrency))
+_encoder_lock = threading.Lock()
+
+
 @lru_cache(maxsize=1)
-def _get_encoder():
+def _load_encoder():
     from fastembed.rerank.cross_encoder import TextCrossEncoder
 
     return TextCrossEncoder(model_name=settings.reranker_model)
+
+
+def _get_encoder():
+    # Lock so concurrent first callers don't each load the model / race imports.
+    with _encoder_lock:
+        return _load_encoder()
 
 
 def preload_reranker() -> None:
@@ -61,6 +72,11 @@ def preload_reranker() -> None:
         logger.error("reranker_preload status=failed error=%s", exc)
 
 
+def is_reranker_loaded() -> bool:
+    """Return True if the reranker model weights are loaded in memory."""
+    return _load_encoder.cache_info().currsize > 0
+
+
 def rerank(
     query: str,
     candidates: list[tuple[Chunk, float]],
@@ -78,11 +94,16 @@ def rerank(
     try:
         encoder = _get_encoder()
         documents = [chunk.content for chunk, _ in candidates]
-        started = time.perf_counter()
-        raw_scores = list(encoder.rerank(query, documents))
+        with _rerank_slots:
+            # Timed inside the slot: pure compute, excluding queue wait.
+            started = time.perf_counter()
+            raw_scores = list(
+                encoder.rerank(query, documents, batch_size=settings.rerank_batch_size)
+            )
+            compute_ms = (time.perf_counter() - started) * 1000
         sink = rerank_timing_sink.get()
         if sink is not None:
-            sink.append((time.perf_counter() - started) * 1000)
+            sink.append(compute_ms)
     except Exception:
         logger.warning(
             "Reranker unavailable, falling back to cosine order", exc_info=True

@@ -12,10 +12,8 @@ already slow (a real LLM call), and holding a DB connection an extra beat
 per request to check a counter is exactly the kind of overhead that would
 make concurrent users queue behind each other.
 
-Caveat: these limits are per-process. If the app is ever run with multiple
-worker processes/replicas, they become per-worker, not truly global — fine
-for the current single-worker deployment, but worth flagging before
-scaling out.
+Caveat: these limits are per-process, so the app must run a single uvicorn
+worker (Dockerfile.prod does) for them to be global.
 """
 
 import time
@@ -30,16 +28,42 @@ from app.governance.auth import get_current_actor
 settings = get_settings()
 
 _WINDOW_SECONDS = 60.0
+_SWEEP_EVERY = 500
 
 # key (actor email, or IP) -> monotonic timestamps of requests in the window.
 _user_request_log: dict[str, deque[float]] = defaultdict(deque)
 _ip_request_log: dict[str, deque[float]] = defaultdict(deque)
+_feedback_user_log: dict[str, deque[float]] = defaultdict(deque)
+_feedback_ip_log: dict[str, deque[float]] = defaultdict(deque)
+_calls_since_sweep = 0
+
+
+def _sweep(now: float) -> None:
+    """Drop keys with no request in the window so rotating client ids can't grow memory."""
+    for store in (
+        _user_request_log,
+        _ip_request_log,
+        _feedback_user_log,
+        _feedback_ip_log,
+    ):
+        idle = [
+            k for k, log in store.items() if not log or now - log[-1] > _WINDOW_SECONDS
+        ]
+        for key in idle:
+            del store[key]
 
 
 def _check_and_record(
     log_store: dict[str, deque[float]], key: str, limit: int, label: str
 ) -> None:
+    global _calls_since_sweep
     now = time.monotonic()
+
+    _calls_since_sweep += 1
+    if _calls_since_sweep >= _SWEEP_EVERY:
+        _calls_since_sweep = 0
+        _sweep(now)
+
     log = log_store[key]
 
     while log and now - log[0] > _WINDOW_SECONDS:
@@ -82,3 +106,12 @@ async def rate_limited_actor(
     enforce_rate_limit(actor)
     enforce_ip_rate_limit(get_client_ip(request))
     return actor
+
+
+def enforce_feedback_rate_limit(
+    actor: str, ip: str | None = None, limit: int = 30
+) -> None:
+    """Enforce Subtask 1.3.2 rate limit (default 30/min per actor and per IP)."""
+    _check_and_record(_feedback_user_log, actor, limit, "feedback per user")
+    if ip:
+        _check_and_record(_feedback_ip_log, ip, limit, "feedback per IP")

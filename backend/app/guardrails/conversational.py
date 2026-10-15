@@ -7,6 +7,8 @@ Handled here with canned, deterministic replies instead.
 
 import re
 
+from app.core.config import get_settings
+
 _GREETING_WORD = (
     r"(?:hi+|hello+|hey+|hiya|yo|howdy|greetings|sup|what'?s\s*up|"
     r"good\s*(?:morning|afternoon|evening|day)|there|again|team|guys|"
@@ -37,24 +39,38 @@ _CAPABILITY_RE = re.compile(
     re.IGNORECASE,
 )
 
-GREETING_RESPONSE = (
-    "Hello! I'm the DeployIQ assistant. Ask me anything about DeployIQ's "
-    "platform, Essential Eight, Zero Trust, governance."
-)
 
-THANKS_RESPONSE = (
-    "You're welcome! Let me know if you have any other questions about DeployIQ."
-)
+def get_greeting_response() -> str:
+    brand = get_settings().brand_name
+    return (
+        f"Hello! I'm the {brand} assistant. Ask me anything about {brand}'s "
+        "platform, Essential Eight, Zero Trust, governance."
+    )
 
-FAREWELL_RESPONSE = (
-    "Goodbye! Feel free to come back anytime you have questions about DeployIQ."
-)
 
-CAPABILITY_RESPONSE = (
-    "I can answer questions about DeployIQ — its platform, Essential Eight "
-    "and Zero Trust compliance, governance features, and plans. "
-    "Just ask a question and I'll find the relevant information."
-)
+def get_thanks_response() -> str:
+    brand = get_settings().brand_name
+    return f"You're welcome! Let me know if you have any other questions about {brand}."
+
+
+def get_farewell_response() -> str:
+    brand = get_settings().brand_name
+    return f"Goodbye! Feel free to come back anytime you have questions about {brand}."
+
+
+def get_capability_response() -> str:
+    brand = get_settings().brand_name
+    return (
+        f"I can answer questions about {brand} — its platform, Essential Eight "
+        "and Zero Trust compliance, governance features, and plans. "
+        "Just ask a question and I'll find the relevant information."
+    )
+
+
+GREETING_RESPONSE = get_greeting_response()
+THANKS_RESPONSE = get_thanks_response()
+FAREWELL_RESPONSE = get_farewell_response()
+CAPABILITY_RESPONSE = get_capability_response()
 
 
 def detect_conversational_intent(query: str) -> str | None:
@@ -68,15 +84,15 @@ def detect_conversational_intent(query: str) -> str | None:
         return None
 
     if _GREETING_RE.match(text):
-        return GREETING_RESPONSE
+        return get_greeting_response()
 
     if _THANKS_RE.match(text):
-        return THANKS_RESPONSE
+        return get_thanks_response()
 
     if _FAREWELL_RE.match(text):
-        return FAREWELL_RESPONSE
+        return get_farewell_response()
 
     if _CAPABILITY_RE.match(text):
-        return CAPABILITY_RESPONSE
+        return get_capability_response()
 
     return None

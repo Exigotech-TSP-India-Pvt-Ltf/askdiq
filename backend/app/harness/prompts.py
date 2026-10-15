@@ -1,19 +1,20 @@
 """Azure OpenAI generation wrapper used by the RAG harness."""
 
+import asyncio
 import logging
 
 import tiktoken
-from openai import AzureOpenAI
+from openai import AsyncAzureOpenAI
 
 from app.core.config import get_settings
 from app.retrieval.retriever import needs_conversation_context
-from app.schemas.query import ChatTurn
+from app.schemas.query import ChatTurn, SourceChunk
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-_client = AzureOpenAI(
+_client = AsyncAzureOpenAI(
     api_key=settings.azure_openai_api_key,
     azure_endpoint=settings.azure_openai_endpoint,
     api_version=settings.azure_openai_api_version,
@@ -26,16 +27,22 @@ _TOKEN_ENCODING = tiktoken.get_encoding("o200k_base")
 _MAX_HISTORY_TURNS = 6
 
 
-SYSTEM_PROMPT = (
-    "You are DeployIQ's website assistant. Answer only from the supplied "
-    "context; never guess or add unsupported facts, estimates, or advice. "
-    "Silently omit unsupported parts, but report an absence when the context "
-    "explicitly states it. Use conversation history only to resolve "
-    "references, never as evidence. Answer every supported part, lead with "
-    "the direct answer, and keep DeployIQ as the active subject where "
-    f"supported. Use concise wording and at most {settings.answer_max_words} "
-    "words."
-)
+def get_system_prompt() -> str:
+    brand = settings.brand_name
+    return (
+        f"You are {brand}'s website assistant. Answer only from the supplied "
+        "context; never guess or add unsupported facts, estimates, or advice. "
+        "Each context item includes its source document and section metadata for reference. "
+        "Silently omit unsupported parts, but report an absence when the context "
+        "explicitly states it. Use conversation history only to resolve "
+        "references, never as evidence. Answer every supported part, lead with "
+        f"the direct answer, and keep {brand} as the active subject where "
+        "supported. Use concise wording and at most "
+        f"{settings.answer_max_words} words."
+    )
+
+
+SYSTEM_PROMPT = get_system_prompt()
 
 
 def _format_history(query: str, history: list[ChatTurn] | None) -> str:
@@ -44,8 +51,8 @@ def _format_history(query: str, history: list[ChatTurn] | None) -> str:
     # history block at all, so it's never nudged by an unrelated prior turn.
     if not history or not needs_conversation_context(query):
         logger.info(
-            "history_check query=%r follow_up=False turns_available=%d turns_sent=0",
-            query,
+            "history_check query_len=%d follow_up=False turns_available=%d turns_sent=0",
+            len(query),
             len(history or []),
         )
         return ""
@@ -60,8 +67,7 @@ def _format_history(query: str, history: list[ChatTurn] | None) -> str:
 
     while (
         lines
-        and len(_TOKEN_ENCODING.encode(history_block))
-        > settings.llm_history_max_tokens
+        and len(_TOKEN_ENCODING.encode(history_block)) > settings.llm_history_max_tokens
     ):
         if len(lines) > 1:
             lines.pop(0)
@@ -87,9 +93,7 @@ def _format_history(query: str, history: list[ChatTurn] | None) -> str:
                     lines.clear()
                     history_block = ""
                     break
-                content = _TOKEN_ENCODING.decode(
-                    content_tokens[:-1], errors="ignore"
-                )
+                content = _TOKEN_ENCODING.decode(content_tokens[:-1], errors="ignore")
                 lines[0] = prefix + ": " + content
                 history_block = header + "\n".join(lines) + "\n\n"
             break
@@ -100,8 +104,8 @@ def _format_history(query: str, history: list[ChatTurn] | None) -> str:
     history_tokens = len(_TOKEN_ENCODING.encode(history_block)) if lines else 0
 
     logger.info(
-        "history_check query=%r follow_up=True turns_available=%d turns_sent=%d history_tokens=%d",
-        query,
+        "history_check query_len=%d follow_up=True turns_available=%d turns_sent=%d history_tokens=%d",
+        len(query),
         len(history),
         turns_sent,
         history_tokens,
@@ -110,11 +114,39 @@ def _format_history(query: str, history: list[ChatTurn] | None) -> str:
     return history_block if lines else ""
 
 
-def _format_context(context_chunks: list[str]) -> str:
+def _chunk_to_text(chunk: str | SourceChunk | dict) -> str:
+    if isinstance(chunk, str):
+        return chunk
+    if isinstance(chunk, dict):
+        content = chunk.get("content", "")
+        metadata = chunk.get("metadata", {})
+    else:
+        content = getattr(chunk, "content", str(chunk))
+        metadata = getattr(chunk, "metadata", {}) or {}
+
+    source_name = metadata.get("source_name") or metadata.get("file_name") or ""
+    section = metadata.get("section_heading") or metadata.get("heading") or ""
+
+    parts = []
+    if source_name:
+        parts.append(f"Document: {source_name}")
+    if section:
+        parts.append(f"Section: {section}")
+
+    if parts:
+        header = f"[{' | '.join(parts)}]\n"
+        return f"{header}{content}"
+    return content
+
+
+def _format_context(context_chunks: list[str | SourceChunk]) -> str:
     chunks: list[str] = []
 
-    for chunk in context_chunks:
-        if not chunk:
+    for raw_chunk in context_chunks:
+        if not raw_chunk:
+            continue
+        chunk = _chunk_to_text(raw_chunk)
+        if not chunk.strip():
             continue
         separator = "\n\n---\n\n" if chunks else ""
         existing = "\n\n---\n\n".join(chunks)
@@ -132,13 +164,10 @@ def _format_context(context_chunks: list[str]) -> str:
         combined = "\n\n---\n\n".join([*chunks, candidate])
         while (
             candidate
-            and len(_TOKEN_ENCODING.encode(combined))
-            > settings.llm_context_max_tokens
+            and len(_TOKEN_ENCODING.encode(combined)) > settings.llm_context_max_tokens
         ):
             chunk_tokens = _TOKEN_ENCODING.encode(candidate)
-            candidate = _TOKEN_ENCODING.decode(
-                chunk_tokens[:-1], errors="ignore"
-            )
+            candidate = _TOKEN_ENCODING.decode(chunk_tokens[:-1], errors="ignore")
             combined = "\n\n---\n\n".join([*chunks, candidate])
         if candidate:
             chunks.append(candidate)
@@ -148,15 +177,16 @@ def _format_context(context_chunks: list[str]) -> str:
     return "\n\n---\n\n".join(chunks)
 
 
-def build_prompt(
+def _build_prompt(
     query: str,
-    context_chunks: list[str],
+    context_chunks: list[str | SourceChunk],
     history: list[ChatTurn] | None = None,
-) -> str:
+) -> tuple[str, int]:
+    """Return (prompt, context_token_count) from a single context pass."""
     context = _format_context(context_chunks)
     history_block = _format_history(query, history)
 
-    return (
+    prompt = (
         "Answer the question using only the context. Silently omit "
         "unsupported parts.\n\n"
         f"{history_block}"
@@ -164,11 +194,20 @@ def build_prompt(
         f"Question: {query}\n\n"
         "Answer:"
     )
+    return prompt, len(_TOKEN_ENCODING.encode(context))
 
 
-def call_llm(
+def build_prompt(
     query: str,
-    context_chunks: list[str],
+    context_chunks: list[str | SourceChunk],
+    history: list[ChatTurn] | None = None,
+) -> str:
+    return _build_prompt(query, context_chunks, history)[0]
+
+
+async def call_llm(
+    query: str,
+    context_chunks: list[str | SourceChunk],
     history: list[ChatTurn] | None = None,
 ) -> tuple[str, dict[str, int] | None]:
     """Generate a grounded RAG answer with the configured Azure deployment.
@@ -181,45 +220,85 @@ def call_llm(
     happen, but defensive).
     """
 
-    prompt = build_prompt(query, context_chunks, history)
-    response = _client.chat.completions.create(
-        model=settings.azure_deployment_name,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
-        temperature=settings.azure_openai_temperature,
-        # gpt-5-mini uses max_completion_tokens (not max_tokens); reasoning
-        # tokens are spent before visible text, so this must stay generous.
-        max_completion_tokens=settings.llm_max_completion_tokens,
-        # Main latency lever for a reasoning model — lower effort means
-        # fewer reasoning tokens spent before the visible answer.
-        reasoning_effort=settings.llm_reasoning_effort,
+    # Tokenizing is CPU work — keep it off the event loop.
+    prompt, context_tokens = await asyncio.to_thread(
+        _build_prompt, query, context_chunks, history
     )
+    from app.core.quota import quota_monitor
+
+    try:
+        response = await _client.chat.completions.create(
+            model=settings.azure_deployment_name,
+            messages=[
+                {"role": "system", "content": get_system_prompt()},
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            # Main latency lever for a reasoning model — lower effort means
+            # fewer reasoning tokens spent before the visible answer.
+            # temperature and max_completion_tokens are omitted as gpt-5-mini rejects them.
+            reasoning_effort=settings.llm_reasoning_effort,
+        )
+    except Exception as exc:
+        is_429 = getattr(exc, "status_code", None) == 429 or "429" in str(exc)
+        quota_monitor.record_chat(0, is_error=True, is_429=is_429)
+        raise
 
     usage_obj = getattr(response, "usage", None)
     content = response.choices[0].message.content if response.choices else None
 
-    usage = (
-        {
-            "prompt_tokens": getattr(usage_obj, "prompt_tokens", None),
-            "completion_tokens": getattr(usage_obj, "completion_tokens", None),
-            "total_tokens": getattr(usage_obj, "total_tokens", None),
+    if usage_obj is not None:
+
+        def _safe_int(val: object) -> int:
+            if isinstance(val, (int, float)):
+                return int(val)
+            if isinstance(val, str) and val.isdigit():
+                return int(val)
+            return 0
+
+        p_tok = _safe_int(getattr(usage_obj, "prompt_tokens", 0))
+        c_tok = _safe_int(getattr(usage_obj, "completion_tokens", 0))
+        t_tok = _safe_int(getattr(usage_obj, "total_tokens", 0)) or (p_tok + c_tok)
+
+        c_details = getattr(usage_obj, "completion_tokens_details", None)
+        reasoning_tokens = (
+            _safe_int(getattr(c_details, "reasoning_tokens", 0))
+            if c_details is not None
+            else 0
+        )
+        visible_tokens = max(0, c_tok - reasoning_tokens)
+
+        p_details = getattr(usage_obj, "prompt_tokens_details", None)
+        cached_tokens = (
+            _safe_int(getattr(p_details, "cached_tokens", 0))
+            if p_details is not None
+            else 0
+        )
+
+        usage = {
+            "prompt_tokens": p_tok,
+            "completion_tokens": c_tok,
+            "total_tokens": t_tok,
+            "reasoning_tokens": reasoning_tokens,
+            "visible_tokens": visible_tokens,
+            "cached_tokens": cached_tokens,
         }
-        if usage_obj is not None
-        else None
-    )
+        quota_monitor.record_chat(t_tok)
+    else:
+        usage = None
+        quota_monitor.record_chat(0)
 
     logger.info(
-        "llm_call model=%s non_empty=%s prompt_tokens=%s completion_tokens=%s context_tokens=%d",
+        "llm_call model=%s non_empty=%s prompt_tokens=%s completion_tokens=%s reasoning_tokens=%s cached_tokens=%s context_tokens=%d",
         settings.azure_deployment_name,
         bool(content and content.strip()),
-        getattr(usage_obj, "prompt_tokens", None),
-        getattr(usage_obj, "completion_tokens", None),
-        len(_TOKEN_ENCODING.encode(_format_context(context_chunks))),
+        usage["prompt_tokens"] if usage else None,
+        usage["completion_tokens"] if usage else None,
+        usage["reasoning_tokens"] if usage else None,
+        usage["cached_tokens"] if usage else None,
+        context_tokens,
     )
 
     return content or "", usage
