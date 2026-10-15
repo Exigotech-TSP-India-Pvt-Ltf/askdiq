@@ -12,6 +12,7 @@ import { TabGroup, EVALUATION_TABS } from "@/components/admin/TabGroup";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
+import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
 import {
   Bar,
   BarChart,
@@ -100,24 +101,6 @@ function HeroStat({
       </div>
       <p className="mt-2 text-2xl font-semibold text-ink dark:text-white">{value}</p>
     </div>
-  );
-}
-
-function ChartCard({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-ink/10 dark:border-dark-border bg-white dark:bg-dark-card p-6">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-ink/50 dark:text-slate-400">{title}</h2>
-      {subtitle && <p className="mt-1 text-[11px] text-ink/40 dark:text-slate-500">{subtitle}</p>}
-      <div className="mt-4 h-64 w-full">{children}</div>
-    </section>
   );
 }
 
@@ -461,7 +444,15 @@ export default function EvaluationPage() {
 
           <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
             <div className="xl:col-span-2">
-              <ChartCard title="Quality scorecard" subtitle="Key evaluation metrics (%)">
+              <ChartCard
+                title="Quality scorecard"
+                subtitle="Key evaluation metrics (%)"
+                titleStyle="eyebrow"
+                table={toChartTable(qualityRadar, [
+                  { key: "metric", label: "Metric" },
+                  { key: "score", label: "Score", numeric: true, format: (v) => `${Number(v).toFixed(1)}%` },
+                ])}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart data={qualityRadar} outerRadius="75%">
                     <PolarGrid stroke={ct.grid} />
@@ -483,7 +474,17 @@ export default function EvaluationPage() {
               </ChartCard>
             </div>
 
-            <ChartCard title="Case outcomes" subtitle="Pass / fail split">
+            <ChartCard
+              title="Case outcomes"
+              subtitle="Pass / fail split"
+              titleStyle="eyebrow"
+              empty={passBreakdown.length === 0}
+              emptyMessage="No scored cases yet"
+              table={toChartTable(passBreakdown, [
+                { key: "name", label: "Outcome" },
+                { key: "value", label: "Cases", numeric: true },
+              ])}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -506,7 +507,15 @@ export default function EvaluationPage() {
           </div>
 
           <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <ChartCard title="Pass rate by case type" subtitle="Share of cases passing, per category">
+            <ChartCard
+              title="Pass rate by case type"
+              subtitle="Share of cases passing, per category"
+              titleStyle="eyebrow"
+              table={toChartTable(caseTypeBars, [
+                { key: "type", label: "Case type" },
+                { key: "passRate", label: "Pass rate", numeric: true, format: (v) => `${String(v)}%` },
+              ])}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={caseTypeBars}>
                   <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
@@ -531,7 +540,17 @@ export default function EvaluationPage() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Latency by stage" subtitle="p50 / p95 / p99 (seconds)">
+            <ChartCard
+              title="Latency by stage"
+              subtitle="p50 / p95 / p99 (seconds)"
+              titleStyle="eyebrow"
+              table={toChartTable(latencyBars, [
+                { key: "stage", label: "Stage" },
+                { key: "p50", label: "p50", numeric: true, format: (v) => `${Number(v).toFixed(2)} s` },
+                { key: "p95", label: "p95", numeric: true, format: (v) => `${Number(v).toFixed(2)} s` },
+                { key: "p99", label: "p99", numeric: true, format: (v) => `${Number(v).toFixed(2)} s` },
+              ])}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={latencyBars}>
                   <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />

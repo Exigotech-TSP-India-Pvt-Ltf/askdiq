@@ -89,6 +89,15 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `admin/usage/QueriesTab` | Pass | Fixed (T2) | Pass | Neutral chips tokenised |
 | `admin/usage/TestIpManager` | Pass | Fixed (T2) | Pass | Cancel button tokenised |
 | `documents/FormatBadge` | Pass | Fixed (T2) | Pass | Default badge tokenised |
+| `charts/ChartCard` (new, PR-16) | Pass | Pass | Pass | Replaces the local cards in Dashboard (`AuroraChartCard`), Monitoring, Evaluation and Evaluation Live; `plain` / `aurora` variants on `surface-*`, `line`, `brand-*` tokens; skeleton, error, empty and "View as table" states use tokens |
+| `charts/Sparkline`, `charts/KpiTrendCard` (new) | Pass | Pass | Pass | SVG colours from `useChartTheme()`; delta badge on `status-*-bg` / `status-*-fg` |
+| `charts/StackedArea`, `PercentileBand`, `Histogram` (new) | Pass | Pass | Pass | Series `chartTheme.categorical`, grid `chartTheme.grid`, axis `chartTheme.axis`; legend hover dims to `dimOpacity` |
+| `charts/Waterfall`, `BulletChart`, `Funnel` (new) | Pass | Pass | Pass | Bars from `categorical` / `status` / `sequential`; ranges on `chartTheme.track` |
+| `charts/CalendarHeatmap` (new) | Pass | Pass | Pass | Cells on the sequential ramp (separate light and dark ramps) |
+| `charts/RadialGauge` (new) | Pass | Pass | Pass | Track `chartTheme.track`; value tone from `chartTheme.status` (lifted dark values, T6) |
+| `charts/QuadrantScatter`, `charts/Radar` (new) | Pass | Pass | Pass | Quadrant dots from `status`; radar series from `categorical` |
+| `charts/TreemapChart`, `charts/SankeyChart` (new, `next/dynamic`) | Pass | Pass | Pass | Recharts wrappers fed from `useChartTheme()`; skeleton while the chunk loads |
+| Chart tooltip (`charts/primitives`) | Pass | Pass | Pass | Card on `bg-surface-elevated` + `border-line` + `shadow-md`; focus ring `.chart-mark:focus-visible` uses `--brand-500` |
 
 ## Known follow-ups (not theme-breaking)
 
