@@ -1407,23 +1407,23 @@ Make the quick structural changes from newplan §2 and §3.
 - [ ] **[Test]** Phase F2 complete.
 
 #### Task F2.1: Evaluation
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Remove "Evaluation" from `ADMIN_ITEMS`. `/admin/evaluation` and `/evaluation` call `redirect('/admin/evaluation-live')`.
   - `rg '/admin/evaluation"'` and update any deep-links.
   - Confirm that `EvaluationCompareMatrix` and benchmark features are reachable from Live, **or flag them in the PR before deleting anything**.
   - The `Sparkles` icon and tooltip show in the collapsed rail.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** `Sidebar.test.tsx` is updated. A vitest test asserts that the page modules call `redirect('/admin/evaluation-live')`. `smoke_e2e.py` asserts a 307 or 308 from `/admin/evaluation`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** `Sidebar.test.tsx` is updated. A vitest test asserts that the page modules call `redirect('/admin/evaluation-live')`. `smoke_e2e.py` asserts a 307 or 308 from `/admin/evaluation`.
 
 #### Task F2.2: Usage & Cost
-- [ ] **[Dev]** Remove the `overview` / `OverviewTab`. Live Telemetry becomes the first tab, renamed **Overview**, with `Sparkles` and the `Live` badge. The URL parser maps `live_telemetry` and `overall` to `overview`. Delete `OverviewTab.tsx` after an importer check.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Old bookmarks resolve. Tests referencing the old ids are updated.
+- [x] **[Dev]** Remove the `overview` / `OverviewTab`. Live Telemetry becomes the first tab, renamed **Overview**, with `Sparkles` and the `Live` badge. The URL parser maps `live_telemetry` and `overall` to `overview`. Delete `OverviewTab.tsx` after an importer check.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Old bookmarks resolve. Tests referencing the old ids are updated.
 
 #### Task F2.3: Phase F2 integration testing
-- [ ] **[Dev]** `tests/journeys/navigation.test.tsx` covers every sidebar item for each role, the collapsed rail tooltips and the Usage URL alias parsing. `smoke_e2e.py` covers the legacy URL redirects on the real server.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/navigation.test.tsx` covers every sidebar item for each role, the collapsed rail tooltips and the Usage URL alias parsing. `smoke_e2e.py` covers the legacy URL redirects on the real server.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F2.4: PR
 - **PR-20** `feat/ui-nav-eval-usage-cleanup`.
@@ -2082,7 +2082,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | – | PR-13 | `feat/insights-analytics-endpoints` | #23 | In progress | `/admin/insights/*` with HTML parity. |
 | – | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | In progress | Chart kit, consolidated ChartCard, cached data layer and prefetch. |
 | – | PR-17 | `feat/ui-global-ux-primitives` | #24 | In progress | Drawers, toasts, dialogs, deep links, date range, command palette, nav pre-registration. |
-| – | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | In progress | Evaluation redirect, Usage Overview swap, Users renamed to Visitors. |
+| #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
 
 **Stack shape for review and merge: a dependency tree.** Each PR's base is the branch it depends on:
 - #14 → #19 (PR-01) → PR-15 → frontend PRs
