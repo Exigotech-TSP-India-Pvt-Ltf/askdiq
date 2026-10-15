@@ -15,10 +15,11 @@ type Log = {
   level?: string;
   service?: string;
   message?: string;
+  summary?: string;
+  action?: string;
   user_id?: string;
   ip_address?: string;
   request_id?: string;
-  trace_id?: string;
 };
 
 const LEVEL_STYLES: Record<string, string> = {
@@ -109,7 +110,7 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
           return false;
         }
         if (!search.trim()) return true;
-        const haystack = `${log.message ?? ""} ${log.service ?? ""} ${log.ip_address ?? ""}`.toLowerCase();
+        const haystack = `${log.summary ?? ""} ${log.message ?? ""} ${log.service ?? ""} ${log.action ?? ""} ${log.ip_address ?? ""}`.toLowerCase();
         return haystack.includes(search.trim().toLowerCase());
       }),
     [logs, levelFilter, search]
@@ -157,7 +158,9 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
       key: "message",
       header: "Event Summary & Traces",
       render: (log) => {
-        const { text, badges } = summarize(log.message);
+        const parsed = summarize(log.message);
+        const text = log.summary || parsed.text;
+        const { badges } = parsed;
         return (
           <div className="flex flex-col gap-1 max-w-md">
             <span className="text-xs text-slate-800 dark:text-slate-200 line-clamp-1">{text}</span>

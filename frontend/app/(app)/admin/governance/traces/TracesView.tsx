@@ -13,12 +13,12 @@ import { TableCard } from "@/components/admin/TableCard";
 
 type Trace = {
   request_id: string;
-  trace_id?: string;
   user_id?: string;
   conversation_id?: string;
   ip_address?: string;
   timestamp?: string;
   status?: string;
+  outcome?: string | null;
   total_ms?: number;
 };
 
@@ -71,7 +71,7 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
   }, [traces]);
 
   const errorCount = useMemo(
-    () => traces.filter((t) => (t.status || "ok").toLowerCase() !== "ok").length,
+    () => traces.filter((t) => (t.status || "").toLowerCase() === "failed").length,
     [traces]
   );
 
@@ -87,7 +87,6 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
         const needle = search.trim().toLowerCase();
         return (
           t.request_id.toLowerCase().includes(needle) ||
-          (t.trace_id ?? "").toLowerCase().includes(needle) ||
           (t.ip_address ?? "").toLowerCase().includes(needle)
         );
       }),
@@ -106,15 +105,6 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
       render: (t) => (
         <span className="font-mono text-xs text-slate-900 dark:text-slate-100" title={t.request_id}>
           {shortId(t.request_id, 12)}
-        </span>
-      ),
-    },
-    {
-      key: "trace_id",
-      header: "Trace ID",
-      render: (t) => (
-        <span className="font-mono text-xs text-slate-500 dark:text-slate-400" title={t.trace_id}>
-          {shortId(t.trace_id, 12)}
         </span>
       ),
     },
@@ -223,7 +213,7 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
                 setSearch(v);
                 setPage(1);
               }}
-              searchPlaceholder="Search request ID, trace ID, or IP…"
+              searchPlaceholder="Search request ID or IP…"
               filters={[
                 {
                   id: "status",
