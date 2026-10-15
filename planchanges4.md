@@ -190,7 +190,7 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 - [ ] **[Test]** Task B0.3: the full suite still passes, so the fixes changed no behaviour.
 
 ##### Subtask B0.3.1: Ruff config
-- [ ] **[Dev]** In `backend/pyproject.toml`:
+- [x] **[Dev]** In `backend/pyproject.toml`:
   - Add `venv` to `exclude`.
   - Add `I`, `S`, `ASYNC`, `T20`, `N`, `PL`, `ARG`, `RET`, `FAST`.
   - Ignore `PLR0913` globally.
@@ -204,8 +204,8 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 - [ ] **[Test]** TEST-BE passes.
 
 ##### Subtask B0.3.3: VS Code workspace settings
-- [ ] **[Dev]** Create `.vscode/settings.json`: interpreter `backend/venv/Scripts/python.exe`, Ruff as the formatter, Pylint extension enabled, `ruff.path` pointing at the venv.
-- [ ] **[Lint]** JSON is valid.
+- [x] **[Dev]** Create `.vscode/settings.json`: interpreter `backend/venv/Scripts/python.exe`, Ruff as the formatter, Pylint extension enabled, `ruff.path` pointing at the venv.
+- [x] **[Lint]** JSON is valid.
 - [ ] **[Test]** Format-on-save works in VS Code (manual check).
 
 ---
@@ -2061,5 +2061,5 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | – | #15 | `docs/plan-theme-parity-audit` | PR open | Plan: theme parity audit, branded login design, progress ticks. |
 | – | PR-03 | `feat/platform-security-headers-errors` | Code done, CI green, waiting to stack | B1.1 and B1.2 done (50 new tests). **Open:** B1.1.3 `nginx -t` and `curl -I` can't run locally (no Docker), so verify them in a compose environment. Chat-completion timeout kept at `AZURE_OPENAI_REQUEST_TIMEOUT` (60 s); `OUTBOUND_TIMEOUT_SECONDS` applies to embeddings and httpx. A 422 response's `detail` is now a string, and the field errors moved to `errors`. |
 | – | PR-01 | `chore/ci-hardening` | In progress | |
-| – | PR-02 | `chore/lint-scope-claude-md` | In progress | |
+| – | PR-02 | `chore/lint-scope-claude-md` | Code done, CI green, waiting to stack | Ruff now selects E, W, F, I, UP, B, N, PL, SIM, S, ASYNC, C4, T20, RUF, ARG, RET and FAST, with zero findings. **Flagged per CLAUDE.md precedence:** FAST002 and FAST001 are ignored, because the existing code uses `Depends()` defaults and explicit `response_model`. The PLR complexity limits are ignored for about 50 handlers; refactoring them is a follow-up. `GuardrailBlocked` was renamed to `GuardrailBlockedError`. The B0.3.3 format-on-save check is manual and still to do. |
 | – | PR-04 | `feat/platform-jobs-state-http` | In progress | |
