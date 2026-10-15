@@ -94,8 +94,9 @@ indent-style = "space"
 [tool.pylint.main]
 py-version = "3.14"
 ignore-paths = ['^alembic[/\\]versions[/\\].*$', '^\.?venv[/\\].*$']
-# Ratchet: `pylint app` score measured on the CI runner (Linux) after PR-02. Only ever raise it.
-fail-under = 9.35
+# Ratchet: `pylint app` score on the CI runner (Linux) after PR-02 (9.35 shown,
+# 9.34x unrounded). Only ever raise it.
+fail-under = 9.34
 
 [tool.pylint.format]
 max-line-length = 88
