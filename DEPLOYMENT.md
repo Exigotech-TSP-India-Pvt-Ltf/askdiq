@@ -144,6 +144,11 @@ docker compose -f docker-compose.prod.yml ps        # api-1 / api-2 "healthy"
 nginx -t && nginx -s reload                         # inside the et-platform nginx container
 ```
 
+nginx resolves `askdiq-api-1` / `askdiq-api-2` when it loads the config, so
+both containers must exist on the shared network before `nginx -t` or a
+reload (otherwise: `host not found in upstream`). Once loaded, a stopped
+replica is just marked failed and skipped.
+
 Run migrations before starting the replicas, so several processes never race
 on first-time schema setup. For a rolling update restart one replica at a
 time (`restart api-1`, wait for healthy, then `api-2`); nginx routes around
