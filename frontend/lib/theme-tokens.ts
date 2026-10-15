@@ -167,7 +167,58 @@ export interface ChartTheme {
   tooltip: { background: string; border: string; text: string };
   /** Opacity applied to non-hovered series. */
   dimOpacity: number;
+  /** Analytics (Chatbot Insights port, newplan 6.4): the reference HTML's colours, lifted for dark. */
+  insights: InsightsChartColors;
 }
+
+export type InsightsOutcome = "Served" | "Partly served" | "Not served" | "Greeting only";
+
+export interface InsightsChartColors {
+  /** Conversation outcome (flow, bubbles, pills). */
+  outcome: Record<InsightsOutcome, string>;
+  /** Bot-quality code (donut); unknown codes fall back to `categorical`. */
+  quality: Readonly<Record<string, string>>;
+  /** Topic shading: 0 % handled (low) to 100 % handled (high). */
+  handled: { low: string; high: string };
+  /** Hour-of-day ramp ends (radial). */
+  hours: { low: string; high: string };
+}
+
+// The HTML used #C8A039 (Partly) and #B7C4C5 (Greeting / Closing); both are under 3:1 on a
+// white card, so light mode uses status-warn and slate instead (asserted in the token tests).
+const insightsLight: InsightsChartColors = {
+  outcome: { Served: "#008080", "Partly served": "#B7791F", "Not served": "#C0362C", "Greeting only": "#64748B" },
+  quality: {
+    OK: "#008080",
+    CORR: "#2E8B8B",
+    SCOPE: "#6E7C7D",
+    PART: "#B7791F",
+    FB: "#8A8F73",
+    CLAR: "#5B8FA8",
+    OFF: "#C0362C",
+    FALSE: "#9A3B45",
+    ACK: "#64748B",
+  },
+  handled: { low: "#C0362C", high: "#008080" },
+  hours: { low: "#CFE9E6", high: "#008080" },
+};
+
+const insightsDark: InsightsChartColors = {
+  outcome: { Served: "#2DA9A0", "Partly served": "#F2B84B", "Not served": "#F87171", "Greeting only": "#64748B" },
+  quality: {
+    OK: "#2DA9A0",
+    CORR: "#5FC3BB",
+    SCOPE: "#94A3B8",
+    PART: "#F2B84B",
+    FB: "#B5B98F",
+    CLAR: "#7DB8D6",
+    OFF: "#F87171",
+    FALSE: "#E07A86",
+    ACK: "#64748B",
+  },
+  handled: { low: "#F87171", high: "#2DA9A0" },
+  hours: { low: "#0F3B38", high: "#5FC3BB" },
+};
 
 export const chartTheme: Record<ThemeName, ChartTheme> = {
   light: {
@@ -189,6 +240,7 @@ export const chartTheme: Record<ThemeName, ChartTheme> = {
       text: semanticTokens.light.fg,
     },
     dimOpacity: 0.35,
+    insights: insightsLight,
   },
   dark: {
     categorical: ["#2DA9A0", "#5FC3BB", "#F2B84B", "#94A3B8", "#F87171", "#818CF8"],
@@ -209,6 +261,7 @@ export const chartTheme: Record<ThemeName, ChartTheme> = {
       text: semanticTokens.dark.fg,
     },
     dimOpacity: 0.35,
+    insights: insightsDark,
   },
 };
 
@@ -266,6 +319,22 @@ export function contrastRatio(a: string, b: string): number {
   const lb = relativeLuminance(b);
   const [hi, lo] = la > lb ? [la, lb] : [lb, la];
   return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Linear blend of two hex colours (`t` in 0..1), e.g. the topic handled-% scale. */
+export function mixHex(from: string, to: string, t: number): string {
+  const k = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
+  const a = hexToRgb(from);
+  const b = hexToRgb(to);
+  const out = a.map((c, i) => Math.round(c + (b[i] - c) * k).toString(16).padStart(2, "0"));
+  return `#${out.join("")}`.toUpperCase();
+}
+
+/** Text colour (`fg` or `fg-inverse` of the theme) with the higher contrast on a mark fill. */
+export function readableOn(fill: string, theme: ThemeName): string {
+  const a = semanticTokens[theme].fg;
+  const b = semanticTokens[theme]["fg-inverse"];
+  return contrastRatio(a, fill) >= contrastRatio(b, fill) ? a : b;
 }
 
 /** Tailwind colour value backed by a CSS variable holding an "r g b" triplet. */

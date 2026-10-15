@@ -3,6 +3,14 @@ import type { SelectHandler } from "./primitives";
 export interface TreemapDatum {
   name: string;
   value: number;
+  /** Tile fill; defaults to the categorical palette. */
+  color?: string;
+  /** Label colour on a custom fill (e.g. from `readableOn`). */
+  labelColor?: string;
+  /** Second line on large tiles, also appended to the accessible name. */
+  detail?: string;
+  /** Marks the tile as selected (`aria-pressed`). */
+  selected?: boolean;
 }
 
 export interface TreemapChartProps {

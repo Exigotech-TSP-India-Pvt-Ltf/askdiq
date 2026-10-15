@@ -8,6 +8,7 @@ import type { TreemapChartProps, TreemapDatum } from "../types";
 
 const MIN_LABEL_WIDTH = 48;
 const MIN_LABEL_HEIGHT = 22;
+const MIN_DETAIL_HEIGHT = 40;
 
 /** Loaded through `next/dynamic` (see `TreemapChart`); do not import directly. */
 export default function TreemapImpl({ data, onSelect, label = "Treemap", height }: TreemapChartProps) {
@@ -18,13 +19,15 @@ export default function TreemapImpl({ data, onSelect, label = "Treemap", height 
   const Tile = (node: TreemapNode): React.ReactElement => {
     const datum = byName.get(String(node.name));
     if (node.depth !== 1 || !datum) return <g />;
-    const color = ct.categorical[node.index % ct.categorical.length];
+    const color = datum.color ?? ct.categorical[node.index % ct.categorical.length];
+    const labelColor = datum.labelColor ?? ct.tooltip.background;
     const select = onSelect ? () => onSelect(datum) : undefined;
     return (
       <g
         role={select ? "button" : "img"}
         tabIndex={select ? 0 : undefined}
-        aria-label={`${datum.name}: ${datum.value}`}
+        aria-label={`${datum.name}: ${datum.value}${datum.detail ? `, ${datum.detail}` : ""}`}
+        aria-pressed={select && datum.selected !== undefined ? datum.selected : undefined}
         className="chart-mark"
         style={select ? { cursor: "pointer" } : undefined}
         onClick={select}
@@ -35,10 +38,15 @@ export default function TreemapImpl({ data, onSelect, label = "Treemap", height 
           }
         }}
       >
-        <rect x={node.x} y={node.y} width={node.width} height={node.height} rx={4} fill={color} stroke={ct.tooltip.background} strokeWidth={2} />
+        <rect x={node.x} y={node.y} width={node.width} height={node.height} rx={4} fill={color} stroke={ct.tooltip.background} strokeWidth={datum.selected ? 3 : 2} />
         {node.width > MIN_LABEL_WIDTH && node.height > MIN_LABEL_HEIGHT && (
-          <text x={node.x + 6} y={node.y + 16} fontSize={11} fontWeight={600} fill={ct.tooltip.background}>
+          <text x={node.x + 6} y={node.y + 16} fontSize={11} fontWeight={600} fill={labelColor}>
             {datum.name}
+          </text>
+        )}
+        {datum.detail && node.width > MIN_LABEL_WIDTH && node.height > MIN_DETAIL_HEIGHT && (
+          <text x={node.x + 6} y={node.y + node.height - 8} fontSize={10.5} fill={labelColor} opacity={0.9}>
+            {datum.detail}
           </text>
         )}
       </g>

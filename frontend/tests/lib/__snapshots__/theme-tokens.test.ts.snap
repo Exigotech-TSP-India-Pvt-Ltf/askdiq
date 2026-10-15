@@ -37,6 +37,33 @@ exports[`theme tokens: values (snapshot) > matches the light and dark token snap
         "#F87171",
       ],
       "grid": "#1E293B",
+      "insights": {
+        "handled": {
+          "high": "#2DA9A0",
+          "low": "#F87171",
+        },
+        "hours": {
+          "high": "#5FC3BB",
+          "low": "#0F3B38",
+        },
+        "outcome": {
+          "Greeting only": "#64748B",
+          "Not served": "#F87171",
+          "Partly served": "#F2B84B",
+          "Served": "#2DA9A0",
+        },
+        "quality": {
+          "ACK": "#64748B",
+          "CLAR": "#7DB8D6",
+          "CORR": "#5FC3BB",
+          "FALSE": "#E07A86",
+          "FB": "#B5B98F",
+          "OFF": "#F87171",
+          "OK": "#2DA9A0",
+          "PART": "#F2B84B",
+          "SCOPE": "#94A3B8",
+        },
+      },
       "sequential": [
         "#00433D",
         "#006B68",
@@ -79,6 +106,33 @@ exports[`theme tokens: values (snapshot) > matches the light and dark token snap
         "#C0362C",
       ],
       "grid": "#E2E8F0",
+      "insights": {
+        "handled": {
+          "high": "#008080",
+          "low": "#C0362C",
+        },
+        "hours": {
+          "high": "#008080",
+          "low": "#CFE9E6",
+        },
+        "outcome": {
+          "Greeting only": "#64748B",
+          "Not served": "#C0362C",
+          "Partly served": "#B7791F",
+          "Served": "#008080",
+        },
+        "quality": {
+          "ACK": "#64748B",
+          "CLAR": "#5B8FA8",
+          "CORR": "#2E8B8B",
+          "FALSE": "#9A3B45",
+          "FB": "#8A8F73",
+          "OFF": "#C0362C",
+          "OK": "#008080",
+          "PART": "#B7791F",
+          "SCOPE": "#6E7C7D",
+        },
+      },
       "sequential": [
         "#CCEDEA",
         "#99DBD5",
