@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import gc
 from types import TracebackType
 
 TICK_SECONDS = 0.01
@@ -54,6 +55,9 @@ class LoopBlockingDetector:
                 self.stalls.append(lag)
 
     async def __aenter__(self) -> LoopBlockingDetector:
+        # Collect garbage left by earlier tests now, so a full GC pass does
+        # not land inside the measured window and pass for app blocking.
+        gc.collect()
         self._task = asyncio.create_task(self._tick(), name="loop-block-detector")
         await asyncio.sleep(0)
         return self

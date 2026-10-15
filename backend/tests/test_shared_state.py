@@ -331,6 +331,7 @@ async def test_expired_state_cannot_be_taken_and_is_cleaned_up(two_instances):
     assert expired == 0
 
 
+@pytest.mark.perf
 async def test_rate_limit_check_adds_under_3ms_p95():
     engine = new_engine(pool_size=2, max_overflow=0)
     await require_postgres(engine)

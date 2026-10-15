@@ -36,6 +36,9 @@ from tests.pg_helpers import new_engine, require_postgres
 
 settings = get_settings()
 
+# Timing gates: CI runs them without coverage tracing (see ci.yml).
+pytestmark = pytest.mark.perf
+
 QUERY_COUNT = 30
 DASHBOARD_COUNT = 20
 FEEDBACK_COUNT = 10
