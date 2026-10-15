@@ -340,6 +340,11 @@ class Settings(BaseSettings):
     auth_dev_mock: bool = False
     # Mock IdP authority base; empty = APP_BASE_URL + "/mock-idp".
     auth_mock_base_url: str = ""
+    # Optional explicit discovery document URL, e.g.
+    # https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration
+    # Empty = built from ENTRA_AUTHORITY_HOST + ENTRA_TENANT_ID. Ignored when AUTH_DEV_MOCK=true.
+    # The issuer in the document is still pinned to ENTRA_TENANT_ID.
+    oidc_discovery_url: str = ""
     oidc_http_timeout_seconds: float = Field(default=10.0, gt=0)
     oidc_state_ttl_seconds: int = Field(default=600, ge=60)
     oidc_metadata_cache_seconds: int = Field(default=3600, ge=60)

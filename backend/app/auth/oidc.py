@@ -92,6 +92,12 @@ class IdentityClaims:
 
 
 def discovery_url(settings: Settings) -> str:
+    """Discovery document URL: explicit OIDC_DISCOVERY_URL (real Entra only) or built."""
+    explicit = settings.oidc_discovery_url.strip()
+    if explicit and not settings.auth_dev_mock:
+        if not explicit.startswith("https://"):
+            raise OidcError("OIDC_DISCOVERY_URL must use https://")
+        return explicit
     return (
         f"{settings.oidc_authority}/{settings.entra_tenant_id}"
         "/v2.0/.well-known/openid-configuration"

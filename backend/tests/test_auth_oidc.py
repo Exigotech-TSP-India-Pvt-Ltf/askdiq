@@ -44,7 +44,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "entra_discovery_v2.json"
 def settings() -> Settings:
     cfg = get_settings()
     assert cfg.auth_dev_mock, "OIDC tests run against the mock IdP"
-    return cfg
+    # Never let a developer's real OIDC_DISCOVERY_URL (.env) leak into the tests.
+    return cfg.model_copy(update={"oidc_discovery_url": ""})
 
 
 @pytest.fixture(autouse=True)
@@ -141,6 +142,29 @@ async def test_endpoints_come_from_the_discovery_document(
 ) -> None:
     await oidc.build_authorize_url()
     assert urlsplit(discovery_url(settings)).path in http.recorded  # type: ignore[attr-defined]
+
+
+def test_explicit_discovery_url_is_used_for_real_entra(settings: Settings) -> None:
+    url = "https://login.microsoftonline.com/tenant-x/v2.0/.well-known/openid-configuration"
+    real = settings.model_copy(
+        update={"auth_dev_mock": False, "oidc_discovery_url": url}
+    )
+    assert discovery_url(real) == url
+
+
+def test_explicit_discovery_url_is_ignored_with_the_mock(settings: Settings) -> None:
+    mock = settings.model_copy(
+        update={"auth_dev_mock": True, "oidc_discovery_url": "https://example.com/x"}
+    )
+    assert discovery_url(mock).startswith(mock.oidc_authority)
+
+
+def test_explicit_discovery_url_must_be_https(settings: Settings) -> None:
+    real = settings.model_copy(
+        update={"auth_dev_mock": False, "oidc_discovery_url": "http://evil.example/x"}
+    )
+    with pytest.raises(OidcError):
+        discovery_url(real)
 
 
 async def test_state_is_single_use(oidc: OidcClient, http: httpx.AsyncClient) -> None:
