@@ -24,6 +24,7 @@ function toChatMessage(m: ChatMessageOut): ChatMessage {
     role: m.role,
     content: m.content,
     createdAt: parseServerDate(m.created_at).getTime(),
+    feedbackRating: m.feedback_rating,
   };
 }
 
@@ -36,6 +37,7 @@ interface ChatContextValue {
   sending: boolean;
   loadingMessages: boolean;
   sendQuery: (text: string) => Promise<void>;
+  submitFeedback: (messageId: string, rating: number, comment?: string) => Promise<void>;
   deleteExchange: (messageId: string) => void;
   selectSession: (sessionId: string) => Promise<void>;
   startNewSession: () => Promise<void>;
@@ -254,6 +256,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const submitFeedback = useCallback(
+    async (messageId: string, rating: number, comment?: string) => {
+      if (!token || !activeSessionId) return;
+      const prevRating = messages.find((m) => m.id === messageId)?.feedbackRating;
+      // Optimistic update
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, feedbackRating: rating } : m))
+      );
+      try {
+        await api.submitFeedback(token, activeSessionId, messageId, rating, comment);
+      } catch (err) {
+        // Rollback on failure
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, feedbackRating: prevRating } : m))
+        );
+        throw err;
+      }
+    },
+    [token, activeSessionId, messages]
+  );
+
   const value = useMemo<ChatContextValue>(
     () => ({
       sessions,
@@ -264,6 +287,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sending,
       loadingMessages,
       sendQuery,
+      submitFeedback,
       deleteExchange,
       selectSession,
       startNewSession,
@@ -271,7 +295,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       removeSession,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessions, activeSessionId, messages, input, sending, loadingMessages, token]
+    [sessions, activeSessionId, messages, input, sending, loadingMessages, token, submitFeedback]
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

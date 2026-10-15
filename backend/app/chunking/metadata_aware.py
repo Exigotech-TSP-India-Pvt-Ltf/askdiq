@@ -21,10 +21,10 @@ class MetadataAwareChunker(ChunkingStrategy):
     def __init__(self, base_strategy: ChunkingStrategy):
         self.base_strategy = base_strategy
 
-    def chunk(
+    async def chunk(
         self, text: str, source_metadata: dict | None = None
     ) -> list[ChunkResult]:
-        children = self.base_strategy.chunk(text, source_metadata)
+        children = await self.base_strategy.chunk(text, source_metadata)
 
         for child in children:
             child.metadata.update(

@@ -4,6 +4,7 @@ This is the "naive" strategy the requirements explicitly say NOT to submit
 alone — kept here as the baseline/fallback and for A/B comparison against
 the smarter strategies.
 """
+
 from app.chunking.base import ChunkingStrategy, ChunkResult
 
 
@@ -15,7 +16,9 @@ class FixedSizeChunker(ChunkingStrategy):
         self.chunk_size = chunk_size
         self.overlap = overlap
 
-    def chunk(self, text: str, source_metadata: dict | None = None) -> list[ChunkResult]:
+    def chunk_sync(
+        self, text: str, source_metadata: dict | None = None
+    ) -> list[ChunkResult]:
         words = text.split()
         step = max(self.chunk_size - self.overlap, 1)
         results = []

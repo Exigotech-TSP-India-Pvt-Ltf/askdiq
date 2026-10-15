@@ -1,77 +1,191 @@
-﻿"""Document ingestion endpoint (incremental: only new/changed chunks are embedded)."""
+"""Document ingestion endpoints (incremental: only new/changed chunks are embedded)."""
 
-import time
+import hashlib
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
-from app.evaluation.kb_eval import KBChunk, evaluate_kb
+from app.core.request_meta import get_client_ip
 from app.governance.auth import get_current_actor
-from app.governance.pii import redact_pii
+from app.ingestion.docx_converter import convert_docx
 from app.ingestion.service import ingest_text
 from app.schemas.document import IngestRequest, IngestResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+settings = get_settings()
 
 
 @router.post("/ingest", response_model=IngestResponse)
-async def ingest(
+async def ingest_json(
+    request: Request,
     body: IngestRequest,
+    dry_run: bool = False,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
     actor: str = Depends(get_current_actor),
 ) -> IngestResponse:
-    redacted_content, pii_found = redact_pii(body.content)
+    """JSON-based text ingestion endpoint (backwards compatible with CLI/scripts)."""
+    req_id = getattr(request.state, "request_id", "unknown")
+    client_ip = get_client_ip(request)
+
+    effective_dry_run = dry_run or body.dry_run
+    effective_force = force or body.force
 
     try:
         result = await ingest_text(
             db,
             source_name=body.source_name,
             source_type=body.source_type,
-            content=redacted_content,
+            content=body.content,
             chunking_strategy=body.chunking_strategy,
-            metadata={**body.metadata, "pii_redacted": pii_found},
+            metadata=body.metadata,
+            original_filename=body.source_name,
+            converted_from="md",
+            force=effective_force,
+            dry_run=effective_dry_run,
+            actor=actor,
+            request_id=req_id,
+            client_ip=client_ip,
         )
+    except ValueError as val_err:
+        raise HTTPException(status_code=422, detail=str(val_err)) from val_err
     except Exception as exc:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {exc}") from exc
-
-    document = result["document"]
-    chunk_results = result["chunk_results"]
-    stored = result["added"] + result["kept"]
-
-    quality = None
-    if chunk_results:
-        try:
-            kb_chunks = [
-                KBChunk(body.source_name, cr.chunk_index, cr.content, dict(cr.metadata))
-                for cr in chunk_results
-            ]
-            quality = evaluate_kb(
-                {body.source_name: redacted_content},
-                {body.source_name: kb_chunks},
-                expected_docs=[body.source_name],
-                timings_ms={body.source_name: result["chunk_ms"]},
-            )
-            quality["pii_redacted"] = pii_found
-        except Exception:
-            quality = None
-    if quality is not None:
-        quality["timings_ms"] = {
-            "chunking": round(result["chunk_ms"], 1),
-            "embedding": round(result["embed_ms"], 1),
-            "total": round((time.perf_counter() - result["started"]) * 1000, 1),
-        }
+        logger.error(
+            "ingestion_failed request_id=%s error=%s", req_id, exc, exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ingestion failed. Reference Request ID: {req_id}",
+        ) from exc
 
     return IngestResponse(
-        document_id=str(document.id),
-        chunk_count=stored,
-        strategy_used=(
-            chunk_results[0].metadata.get("strategy") if chunk_results else body.chunking_strategy
-        ),
+        document_id=result["document_id"],
+        source_name=result["source_name"],
+        original_filename=result["original_filename"],
+        converted_from=result["converted_from"],
         status=result["status"],
-        chunks_added=result["added"],
-        chunks_kept=result["kept"],
-        chunks_removed=result["removed"],
-        quality=quality,
+        content_hash=result["content_hash"],
+        previous_content_hash=result["previous_content_hash"],
+        chunk_count=result["chunk_count"],
+        chunks_added=result["chunks_added"],
+        chunks_kept=result["chunks_kept"],
+        chunks_removed=result["chunks_removed"],
+        embedding_tokens=result["embedding_tokens"],
+        embedding_cost_usd=result["embedding_cost_usd"],
+        strategy_used=result["strategy_used"],
+        warnings=result["warnings"],
+        quarantined=result["quarantined"],
+        dry_run=result["dry_run"],
+    )
+
+
+@router.post("/ingest/file", response_model=IngestResponse)
+async def ingest_file(
+    request: Request,
+    file: UploadFile = File(...),
+    chunking_strategy: str = Form("auto"),
+    force: bool = Form(False),
+    dry_run: bool = Form(False),
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+) -> IngestResponse:
+    """Server-side file ingestion endpoint supporting .md, .markdown, and .docx formats."""
+    req_id = getattr(request.state, "request_id", "unknown")
+    client_ip = get_client_ip(request)
+    filename = file.filename or "uploaded_document.md"
+
+    # Stream file into memory enforcing ingest_max_file_bytes cap
+    contents = await file.read()
+    if len(contents) > settings.ingest_max_file_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds maximum allowed size limit of {settings.ingest_max_file_bytes} bytes",
+        )
+
+    raw_sha256 = hashlib.sha256(contents).hexdigest()
+    lower_name = filename.lower()
+    warnings: list[str] = []
+    quarantined = False
+
+    if lower_name.endswith(".docx"):
+        converted_from = "docx"
+        try:
+            conv_result = await convert_docx(contents)
+            text_content = conv_result.markdown
+            warnings.extend(conv_result.warnings)
+            quarantined = conv_result.quarantined
+        except ValueError as val_err:
+            msg = str(val_err)
+            if "ZIP signature" in msg or "Macro-enabled" in msg:
+                raise HTTPException(status_code=415, detail=msg) from val_err
+            if "exceeds limit" in msg:
+                raise HTTPException(status_code=413, detail=msg) from val_err
+            raise HTTPException(status_code=422, detail=msg) from val_err
+    elif lower_name.endswith((".md", ".markdown")):
+        converted_from = "md"
+        try:
+            text_content = contents.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=422, detail="File is not valid UTF-8 text"
+            ) from exc
+    else:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file format for '{filename}'. Only .docx and .md are supported.",
+        )
+
+    try:
+        result = await ingest_text(
+            db,
+            source_name=filename,
+            source_type="markdown",
+            content=text_content,
+            chunking_strategy=chunking_strategy,
+            original_filename=filename,
+            converted_from=converted_from,
+            original_sha256=raw_sha256,
+            warnings=warnings,
+            quarantined=quarantined,
+            force=force,
+            dry_run=dry_run,
+            actor=actor,
+            request_id=req_id,
+            client_ip=client_ip,
+        )
+    except ValueError as val_err:
+        raise HTTPException(status_code=422, detail=str(val_err)) from val_err
+    except Exception as exc:
+        await db.rollback()
+        logger.error(
+            "ingestion_failed request_id=%s error=%s", req_id, exc, exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ingestion failed. Reference Request ID: {req_id}",
+        ) from exc
+
+    return IngestResponse(
+        document_id=result["document_id"],
+        source_name=result["source_name"],
+        original_filename=result["original_filename"],
+        converted_from=result["converted_from"],
+        status=result["status"],
+        content_hash=result["content_hash"],
+        previous_content_hash=result["previous_content_hash"],
+        chunk_count=result["chunk_count"],
+        chunks_added=result["chunks_added"],
+        chunks_kept=result["chunks_kept"],
+        chunks_removed=result["chunks_removed"],
+        embedding_tokens=result["embedding_tokens"],
+        embedding_cost_usd=result["embedding_cost_usd"],
+        strategy_used=result["strategy_used"],
+        warnings=result["warnings"],
+        quarantined=result["quarantined"],
+        dry_run=result["dry_run"],
     )

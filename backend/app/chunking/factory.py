@@ -5,20 +5,19 @@ structure-aware, prose goes semantic — giving a sensible default while
 still letting callers force a specific strategy for comparison/testing.
 """
 
-
 from app.chunking.base import ChunkingStrategy
 from app.chunking.fixed_size import FixedSizeChunker
 from app.chunking.metadata_aware import MetadataAwareChunker
 from app.chunking.semantic import SemanticChunker
 from app.chunking.structure_aware import StructureAwareChunker
-from app.retrieval.embeddings import embed_texts_sync
+from app.retrieval.embeddings import embed_texts
 
 STRUCTURE_TYPES = {"markdown", "md", "html", "code"}
 
 # Semantic chunking embeds sentences to find topic-shift breakpoints — this
 # is a *document-side* embedding (its output is compared sentence-to-sentence,
 # not against a query), so RETRIEVAL_DOCUMENT is the right task type here.
-_semantic_embed_fn = embed_texts_sync
+_semantic_embed_fn = embed_texts
 
 
 def get_strategy(name: str, source_type: str = "text") -> ChunkingStrategy:

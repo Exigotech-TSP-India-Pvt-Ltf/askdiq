@@ -1,4 +1,5 @@
 """SQLAlchemy ORM models backing users, documents, chunks, latency, and audit data."""
+
 import uuid
 from datetime import datetime
 
@@ -6,6 +7,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -13,6 +15,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -50,7 +53,10 @@ class Document(Base):
     source_name: Mapped[str] = mapped_column(String(512))
     source_type: Mapped[str] = mapped_column(String(64))  # pdf, markdown, html, etc.
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True) 
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     doc_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
 
     chunks: Mapped[list["Chunk"]] = relationship(
@@ -60,7 +66,7 @@ class Document(Base):
 
 class Chunk(Base):
     __tablename__ = "chunks"
-    __table_args__ = (                                                           # <-- NEW
+    __table_args__ = (  # <-- NEW
         Index("ix_chunks_document_hash", "document_id", "content_hash"),
     )
 
@@ -87,7 +93,7 @@ class LatencyRecord(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    request_id: Mapped[str] = mapped_column(String(64))
+    request_id: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     total_ms: Mapped[float] = mapped_column(Float)
@@ -114,6 +120,11 @@ class AuditLog(Base):
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    __table_args__ = (
+        Index("ix_audit_log_ip_created", "ip_address", "created_at"),
+        Index("ix_audit_log_created_action", "created_at", "action"),
+    )
+
 
 class ChatSession(Base):
     """A user's chat conversation thread.
@@ -138,7 +149,9 @@ class ChatSession(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     # IP address that created the session (governance/audit trail).
-    created_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_ip: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
 
     messages: Mapped[list["ChatMessageRecord"]] = relationship(
         back_populates="session",
@@ -166,6 +179,7 @@ class ChatMessageRecord(Base):
     guardrail_flags: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # IP address that sent this turn (governance/audit trail).
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
     # Actual token usage from the Azure OpenAI response for this exchange's
     # LLM call (see app.harness.prompts.call_llm) — populated on the
     # assistant row only, straight from the API's own `usage` field, never
@@ -176,4 +190,63 @@ class ChatMessageRecord(Base):
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Stage-by-stage token and cost accounting (Task 2.4.1)
+    reasoning_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    embedding_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    guardrail_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    token_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     session: Mapped["ChatSession"] = relationship(back_populates="messages")
+
+    __table_args__ = (
+        Index("ix_chat_messages_session_turn", "session_id", "turn_index"),
+        Index("ix_chat_messages_created_at", "created_at"),
+        Index("ix_chat_messages_ip_created", "ip_address", "created_at"),
+    )
+
+
+class MessageFeedback(Base):
+    """User feedback ratings and comments on assistant responses (Subtask 1.3.3)."""
+
+    __tablename__ = "message_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    actor: Mapped[str] = mapped_column(String(256), index=True)
+    rating: Mapped[int] = mapped_column(Integer)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "rating >= 1 AND rating <= 5", name="ck_message_feedback_rating_range"
+        ),
+        UniqueConstraint(
+            "message_id", "actor", name="uq_message_feedback_message_actor"
+        ),
+    )
+
+
+class TestIpConfig(Base):
+    """Test and development IP addresses excluded from user metrics and manageable via dashboard."""
+
+    __tablename__ = "test_ip_configs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    ip_address: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
