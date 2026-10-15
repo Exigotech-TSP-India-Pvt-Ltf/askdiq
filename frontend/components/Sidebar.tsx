@@ -55,7 +55,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/documents", label: "Documents", icon: FileText },
-  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/users", label: "Visitors", icon: Users, keywords: ["users", "ip", "test ip"] },
   { href: "/admin/usage", label: "Usage & Cost", icon: CircleDollarSign },
   { href: "/admin/conversations", label: "Conversation Logs", icon: MessagesSquare },
   { href: "/admin/feedback", label: "Feedback", icon: ThumbsUp },

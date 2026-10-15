@@ -1,214 +1,318 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { MessagesSquare, Users, MessageCircle } from "lucide-react";
+import React, { useCallback, useMemo } from "react";
+import Link from "next/link";
+import { Eye, MessageCircle, MessagesSquare, Repeat, Users } from "lucide-react";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TableCard } from "@/components/admin/TableCard";
 import { formatNumber } from "@/components/admin/TableFormatters";
+import { StatCard } from "@/components/admin/insights/StatCard";
+import { ChartCard } from "@/components/charts/ChartCard";
+import { Histogram, type HistogramBin } from "@/components/charts/Histogram";
+import { StackedBar, type BarSegment } from "@/components/charts/StackedBar";
+import { EntityLink } from "@/components/ui/EntityLink";
+import { focusRing, iconButton } from "@/components/ui/styles";
+import { FilterChip, errorMessage, formatDay, useRangeParams } from "@/components/admin/entity/shared";
+import { ConversationPreviewDrawer } from "@/components/admin/entity/ConversationPreviewDrawer";
 import { useTableState } from "@/lib/use-table-state";
-import { api } from "@/lib/api";
+import { useDeepLink } from "@/lib/use-deep-link";
+import { turnsFilterLabel, useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
 import { useAuth } from "@/lib/auth-context";
-import type { PageEnvelope } from "@/lib/types";
+import { useApiQuery } from "@/lib/query-cache";
+import {
+  OUTCOMES,
+  OUTCOME_LABELS,
+  dayParam,
+  getConversationStats,
+  getConversations,
+  intParam,
+  isOutcome,
+  turnsOf,
+  type ConversationRow,
+  type OutcomeDay,
+} from "@/lib/entity-stats-api";
 
-interface ConversationRow {
-  id: string;
-  title?: string;
-  created_at?: string;
-  last_activity_at?: string;
-  message_count?: number;
-  created_ip?: string | null;
+const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
+
+type OutcomeRow = { day: string } & Record<string, number | string>;
+
+function toOutcomeRows(days: readonly OutcomeDay[]): OutcomeRow[] {
+  return days.map((d) => {
+    const row: OutcomeRow = { day: d.day };
+    for (const o of OUTCOMES) row[o] = d.counts[o] ?? 0;
+    return row;
+  });
 }
 
 function ConversationsContent() {
-  const router = useRouter();
   const { token } = useAuth();
+  const carry = useCarryHref();
+  const { get, set } = useDeepLink();
+  const range = useRangeParams();
 
-  const {
-    page,
-    pageSize,
-    offset,
-    sort,
-    search,
-    filters,
-    audience,
-    setPage,
-    setPageSize,
-    setSort,
-    setSearchInput,
-    setFilter,
-    getSignal,
-  } = useTableState({
+  const ip = get("ip") || null;
+  const minTurns = intParam(get("min_turns"));
+  const maxTurns = intParam(get("max_turns"));
+  const outcomeRaw = get("outcome");
+  const outcome = isOutcome(outcomeRaw) ? outcomeRaw : null;
+  const day = dayParam(get("day"));
+  const preview = get("preview");
+
+  const { page, pageSize, offset, sort, search, audience, setPage, setPageSize, setSort, setSearchInput } = useTableState({
     tableKey: "convs",
-    defaultSort: "created_at_desc",
-    allowedSorts: [
-      "created_at_desc",
-      "created_at_asc",
-      "last_activity_at_desc",
-      "last_activity_at_asc",
-      "message_count_desc",
-      "message_count_asc",
-    ],
-    defaultFilters: { ip: "" },
+    defaultSort: "last_activity_desc",
+    allowedSorts: ["last_activity_desc", "last_activity_asc"],
   });
 
-  const [data, setData] = useState<PageEnvelope<ConversationRow> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchConversations = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.getConversationsList(
-        token,
+  const list = useApiQuery(
+    token
+      ? ["conversations", "list", audience, search, ip, minTurns, maxTurns, outcome, day, sort, pageSize, offset]
+      : null,
+    (signal) =>
+      getConversations(
+        token ?? "",
         {
           audience,
           q: search || undefined,
-          ip: filters.ip || undefined,
+          ip: ip ?? undefined,
+          min_turns: minTurns,
+          max_turns: maxTurns,
+          outcome,
+          day,
           sort,
           limit: pageSize,
           offset,
         },
-        getSignal()
-      );
-      setData(res);
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        setError(err.message || "Failed to load conversation logs.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [token, audience, search, filters.ip, sort, pageSize, offset, getSignal]);
+        signal,
+      ),
+  );
 
-  useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
+  const stats = useApiQuery(
+    token ? ["conversations", "stats", audience, ip, search, range.from, range.to] : null,
+    (signal) =>
+      getConversationStats(
+        token ?? "",
+        { audience, ip: ip ?? undefined, q: search || undefined, from: range.from, to: range.to },
+        signal,
+      ),
+  );
 
-  const items = data?.items || [];
-  const total = data?.total || 0;
+  const items = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
+  const statsData = stats.data ?? null;
+  const statsAbsent = !stats.isLoading && !stats.error && statsData === null;
+  const statsError = errorMessage(stats.error, "Couldn't load conversation stats.");
 
+  const bins = useMemo(() => statsData?.turns_histogram ?? [], [statsData]);
+  const openMin = bins.find((b) => b.max_turns === null)?.min_turns ?? null;
+  const histogram = useMemo<HistogramBin[]>(
+    () => bins.map((b) => ({ x0: b.min_turns, x1: b.max_turns ?? b.min_turns, count: b.conversations })),
+    [bins],
+  );
+  const formatEdge = useCallback((v: number) => (v === openMin ? `${v}+` : String(v)), [openMin]);
+  const outcomeRows = useMemo(() => toOutcomeRows(statsData?.outcome_by_day ?? []), [statsData]);
+
+  const filter = useCallback(
+    (update: Record<string, string | number | null>) => {
+      setPage(1);
+      set({ ...update, preview: null }, { history: "push" });
+    },
+    [set, setPage],
+  );
+
+  const selectBin = useCallback(
+    (bin: HistogramBin) => {
+      const source = bins.find((b) => b.min_turns === bin.x0);
+      if (source) filter({ min_turns: source.min_turns, max_turns: source.max_turns });
+    },
+    [bins, filter],
+  );
+
+  const selectOutcome = useCallback(
+    (seg: BarSegment<OutcomeRow>) => filter({ outcome: seg.series, day: String(seg.row.day) }),
+    [filter],
+  );
+
+  const previewIndex = preview ? items.findIndex((c) => c.id === preview) : -1;
+  const openPreview = useCallback((id: string | null) => set({ preview: id }, { history: id ? "push" : "replace" }), [set]);
+
+  const uniqueIps = Array.from(new Set(items.map((c) => c.created_ip).filter((v): v is string => Boolean(v))));
+  if (ip && !uniqueIps.includes(ip)) uniqueIps.unshift(ip);
   const totalMessages = items.reduce((sum, c) => sum + (c.message_count ?? 0), 0);
-  const uniqueIpsList = Array.from(new Set(items.map((c) => c.created_ip).filter(Boolean) as string[]));
-  const uniqueIps = uniqueIpsList.length;
+
+  const chips: { label: string; clear: Record<string, null> }[] = [];
+  if (ip) chips.push({ label: `Visitor ${ip}`, clear: { ip: null } });
+  if (minTurns !== null)
+    chips.push({ label: turnsFilterLabel({ min_turns: minTurns, max_turns: maxTurns }), clear: { min_turns: null, max_turns: null } });
+  if (outcome)
+    chips.push({ label: `${OUTCOME_LABELS[outcome]}${day ? ` on ${formatDay(day)}` : ""}`, clear: { outcome: null, day: null } });
 
   const columns: ColumnDef<ConversationRow>[] = [
     {
       key: "title",
-      header: "Conversation Title & ID",
+      header: "Conversation",
       render: (c) => (
-        <div className="flex flex-col gap-0.5">
-          <span className="font-semibold text-slate-800 dark:text-slate-200">{c.title || "Untitled Session"}</span>
-          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">{c.id}</span>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="font-semibold text-fg">{c.title || "Untitled Session"}</span>
+          <EntityLink entity={{ kind: "conversation", id: c.id }} />
         </div>
       ),
     },
     {
       key: "created_ip",
       header: "Origin IP",
-      render: (c) => (
-        <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
-          {c.created_ip || "—"}
-        </span>
-      ),
+      render: (c) =>
+        c.created_ip && c.created_ip !== "Unknown" ? (
+          <Link
+            href={carry(visitorDetailHref(`client-${c.created_ip}`))}
+            onClick={(e) => e.stopPropagation()}
+            className={`rounded font-mono text-xs text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+          >
+            {c.created_ip}
+          </Link>
+        ) : (
+          <span className="font-mono text-xs text-fg-subtle">—</span>
+        ),
     },
-    {
-      key: "message_count",
-      header: "Messages",
-      sortable: true,
-      align: "right",
-      render: (c) => formatNumber(c.message_count ?? 0),
-    },
+    { key: "turns", header: "Turns", align: "right", render: (c) => formatNumber(turnsOf(c)) },
+    { key: "message_count", header: "Messages", align: "right", render: (c) => formatNumber(c.message_count ?? 0) },
     {
       key: "created_at",
       header: "Created",
+      render: (c) => (
+        <span className="whitespace-nowrap text-xs text-fg-subtle">{c.created_at ? new Date(c.created_at).toLocaleString() : "—"}</span>
+      ),
+    },
+    {
+      key: "last_activity",
+      header: "Last Active",
       sortable: true,
       render: (c) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-          {c.created_at ? new Date(c.created_at).toLocaleString() : "—"}
+        <span className="whitespace-nowrap text-xs text-fg-subtle">
+          {c.last_activity_at ? new Date(c.last_activity_at).toLocaleString() : "—"}
         </span>
       ),
     },
     {
-      key: "last_activity_at",
-      header: "Last Active",
-      sortable: true,
+      key: "preview",
+      header: "",
+      align: "right",
       render: (c) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-          {c.last_activity_at ? new Date(c.last_activity_at).toLocaleString() : "—"}
-        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openPreview(c.id);
+          }}
+          aria-label={`Preview ${c.title || c.id}`}
+          title="Preview"
+          className={iconButton}
+        >
+          <Eye {...ICON} />
+        </button>
       ),
     },
   ];
 
   return (
-    <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
-      {/* Standard Universal Top Bar Line */}
+    <div className="flex min-h-screen flex-col bg-surface-page text-fg">
       <DashboardHeader
         title="Conversations"
-        subtitle="Audience-scoped conversational sessions, message density, and turn timeline"
+        subtitle="Audience-scoped conversations, turn counts and outcomes"
         icon={MessagesSquare}
+        showDateRange
       />
 
-      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
-        {/* Hero Stat Cards */}
+      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Filtered Sessions</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{total.toLocaleString()}</p>
-            </div>
-            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-800">
-              <MessagesSquare className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Unique Page Client IPs</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{uniqueIps.toLocaleString()}</p>
-            </div>
-            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
-              <Users className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Page Messages Processed</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalMessages.toLocaleString()}</p>
-            </div>
-            <div className="rounded-lg bg-teal-50 dark:bg-teal-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-teal-100 dark:border-teal-800">
-              <MessageCircle className="h-5 w-5" />
-            </div>
-          </div>
+          <StatCard title="Conversations" value={statsData?.totals.conversations ?? total} subtitle={statsData ? (range.label ?? undefined) : "Matching filters"} icon={MessagesSquare} />
+          <StatCard
+            title="Avg turns per conversation"
+            value={statsData?.totals.avg_turns != null ? statsData.totals.avg_turns.toFixed(1) : "—"}
+            icon={Repeat}
+          />
+          {statsData ? (
+            <StatCard title="Turns" value={statsData.totals.turns} icon={MessageCircle} />
+          ) : (
+            <StatCard title="Messages on this page" value={totalMessages} icon={Users} />
+          )}
         </div>
 
-        {/* Integrated TableCard Section */}
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <ChartCard
+            title="Conversation length"
+            subtitle="Conversations by number of turns; select a bar to filter"
+            window={range.label ?? undefined}
+            loading={stats.isLoading}
+            error={statsError}
+            onRetry={() => void stats.refetch()}
+            empty={statsAbsent || histogram.length === 0}
+            emptyMessage={statsAbsent ? "Conversation stats are not available yet" : undefined}
+            table={{
+              columns: [
+                { key: "turns", label: "Turns" },
+                { key: "conversations", label: "Conversations", numeric: true },
+              ],
+              rows: bins.map((b) => ({ turns: turnsFilterLabel(b), conversations: b.conversations })),
+            }}
+          >
+            <Histogram data={histogram} onSelect={selectBin} formatEdge={formatEdge} label="Conversations by number of turns" />
+          </ChartCard>
+
+          <ChartCard
+            title="Outcomes by day"
+            subtitle="Share of turns per outcome; select a segment to filter"
+            window={range.label ?? undefined}
+            loading={stats.isLoading}
+            error={statsError}
+            onRetry={() => void stats.refetch()}
+            empty={statsAbsent || outcomeRows.length === 0}
+            emptyMessage={statsAbsent ? "Conversation stats are not available yet" : undefined}
+            table={{
+              columns: [{ key: "day", label: "Day" }, ...OUTCOMES.map((o) => ({ key: o, label: OUTCOME_LABELS[o], numeric: true }))],
+              rows: outcomeRows.map((r) => ({ ...r, day: formatDay(String(r.day)) })),
+            }}
+          >
+            <StackedBar
+              data={outcomeRows}
+              xKey="day"
+              series={OUTCOMES.map((o) => ({ key: o, label: OUTCOME_LABELS[o] }))}
+              percent
+              formatLabel={formatDay}
+              onSelect={selectOutcome}
+              label="Outcome share per day"
+            />
+          </ChartCard>
+        </div>
+
         <TableCard
           toolbar={
-            <TableToolbar
-              search={search}
-              onSearchChange={setSearchInput}
-              searchPlaceholder="Search title, ID, or created IP…"
-              filters={[
-                {
-                  id: "ip",
-                  label: "Origin IP",
-                  value: filters.ip,
-                  options: [
-                    { label: "All Origin IPs", value: "" },
-                    ...uniqueIpsList.map((ip) => ({ label: ip, value: ip })),
-                  ],
-                  onChange: (v) => setFilter("ip", v),
-                },
-              ]}
-            />
+            <div className="space-y-2">
+              <TableToolbar
+                search={search}
+                onSearchChange={setSearchInput}
+                searchPlaceholder="Search title, ID, or origin IP…"
+                filters={[
+                  {
+                    id: "ip",
+                    label: "Origin IP",
+                    value: ip ?? "",
+                    options: [{ label: "All Origin IPs", value: "" }, ...uniqueIps.map((v) => ({ label: v, value: v }))],
+                    onChange: (v) => filter({ ip: v || null }),
+                  },
+                ]}
+              />
+              {chips.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-subtle" aria-label="Active filters">
+                  {chips.map((c) => (
+                    <FilterChip key={c.label} label={c.label} onClear={() => filter(c.clear)} />
+                  ))}
+                </div>
+              ) : null}
+            </div>
           }
           pagination={
             <Pagination
@@ -225,23 +329,33 @@ function ConversationsContent() {
             columns={columns}
             data={items}
             keyField="id"
-            isLoading={loading}
-            error={error}
-            onRetry={fetchConversations}
+            isLoading={list.isLoading}
+            error={errorMessage(list.error, "Failed to load conversations.")}
+            onRetry={() => void list.refetch()}
             currentSort={sort}
             onSortChange={setSort}
-            onRowClick={(c) => router.push(`/admin/conversations/${c.id}`)}
+            onRowClick={(c) => openPreview(c.id)}
             emptyMessage="No conversations found matching current audience and filters."
           />
         </TableCard>
       </div>
+
+      {token ? (
+        <ConversationPreviewDrawer
+          token={token}
+          conversationId={preview}
+          onClose={() => openPreview(null)}
+          onPrev={previewIndex > 0 ? () => set({ preview: items[previewIndex - 1].id }) : undefined}
+          onNext={previewIndex >= 0 && previewIndex < items.length - 1 ? () => set({ preview: items[previewIndex + 1].id }) : undefined}
+        />
+      ) : null}
     </div>
   );
 }
 
 export default function ConversationsPage() {
   return (
-    <React.Suspense fallback={<div className="p-8 text-xs text-slate-400">Loading conversations...</div>}>
+    <React.Suspense fallback={<div className="p-8 text-xs text-fg-subtle">Loading conversations…</div>}>
       <ConversationsContent />
     </React.Suspense>
   );

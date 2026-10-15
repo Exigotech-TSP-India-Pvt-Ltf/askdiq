@@ -38,13 +38,13 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 |---|---|---|---|---|---|
 | `/` (redirect spinner) | Pass | Fixed (T2) | Pass | `bg-white` -> `bg-surface-page` | [ ] |
 | `/chat` | Pass | Pass | Pass | Page bg token; sample questions and product name from brand | [ ] |
-| `/documents` | Pass | Fixed (T2) | Pass | Doc name `text-slate-900`, result banner, re-ingest modal tokenised | [ ] |
-| `/documents/[id]` | Pass | Fixed (T2) | Pass | Neutral type/strategy badges tokenised; coloured badges are light chips in both themes (readable) | [ ] |
+| `/documents` | Pass | Fixed (T2) | Pass | PR-22: top-cited bar (`StackedBar` horizontal), age vs citations `QuadrantScatter`, coverage `RadialGauge` from `chartTheme`; delete via `ConfirmDialog` (danger tokens); upload / delete hidden without `documents:write` | [ ] |
+| `/documents/[id]` | Pass | Pass | Pass | PR-22: `DashboardHeader` + breadcrumb; chunk cards on `surface-card` / `line`, strategy chips on `status-*` tokens; hit heatmap on the sequential ramp; highlighted chunk `ring-brand-500/40` | [ ] |
 | `/admin` (Dashboard) | Pass | Fixed (T1) | Fixed (T1) | Query volume, engagement donut, pipeline latency, RAG stage dots and share bar all from `chartTheme`; custom tooltip uses `bg-surface-elevated` | [ ] |
-| `/admin/users` | Pass | Pass | Pass | Page bg token | [ ] |
-| `/admin/users/[id]` | Pass | Fixed (T2) | Pass | "User not found" card tokenised | [ ] |
-| `/admin/conversations` | Pass | Pass | Pass | Page bg token | [ ] |
-| `/admin/conversations/[id]` | Pass | Fixed (T2) | Pass | All `text-gray-*`, `bg-white`, `border-gray-*` replaced; purple accents -> brand | [ ] |
+| `/admin/users` (Visitors) | Pass | Pass | Pass | PR-22: `StatCard` KPI strip, new vs returning `StackedBar`, weekday x hour `CalendarHeatmap`; filter chip `brand-50` / `dark:brand-950/60`; row actions `iconButton` | [ ] |
+| `/admin/users/[id]` (Visitor detail) | Pass | Pass | Pass | PR-22: `DashboardHeader` + breadcrumb; activity timeline `Waterfall`, cost `KpiTrendCard` sparkline; feedback chips on `status-*` tokens | [ ] |
+| `/admin/conversations` | Pass | Pass | Pass | PR-22: turns `Histogram`, outcome 100 % `StackedBar`; preview `DrawerShell` (surface-elevated) | [ ] |
+| `/admin/conversations/[id]` | Pass | Pass | Pass | PR-22: `DashboardHeader` + breadcrumb; turn cards on `surface-card` / `surface-muted` / `brand-50`+`dark:brand-950/40` (no `text-gray-*`); stage `Waterfall`, token `StackedBar`; highlighted turn ring `brand-500/40` | [ ] |
 | `/admin/feedback` | Pass | Pass | Pass | Page bg token | [ ] |
 | `/admin/usage` (Overview, Users, Sessions, Queries tabs) | Pass | Fixed (T1, T2) | Fixed (T1) | Token rings, gauges, needles and legend dots from `chartTheme`; tab headings and chips tokenised | [ ] |
 | `/admin/evaluation` = `/evaluation` | Pass | Fixed (T1) | Fixed (T1) | Radar, outcome pie, pass-rate and latency bars, tooltips from `chartTheme` | [ ] |
@@ -113,6 +113,10 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `shell/BrandedStatusPage` (PR-17) | Pass | Pass | Pass | `BrandLogo` pair on `bg-surface-card` |
 | `admin/CursorPagination` (PR-17) | Pass | Pass | Pass | Mirrors `Pagination` (existing `dark:` pairs) |
 | `admin/TableToolbar` (columns, density) (PR-17) | Pass | Pass | Pass | Column menu on `surface-elevated`; buttons reuse the existing `dark:` pairs |
+| `charts/StackedBar` (new, PR-22) | Pass | Pass | Pass | Segments from `chartTheme.categorical`, grid / axis tokens, legend hover dims to `dimOpacity`; one keyboard mark per segment |
+| `admin/DashboardHeader` breadcrumb (PR-22) | Pass | Pass | Pass | `text-fg-subtle` trail, current page `text-fg-muted`, hover `text-accent-fg` |
+| `admin/entity/ConversationPreviewDrawer` (PR-22) | Pass | Pass | Pass | `DrawerShell`; turn rail `border-brand-200` / `dark:border-brand-800`; outcome chips on `status-*` |
+| `admin/entity/shared` (`FilterChip`, `SectionCard`, `ToneChip`) (PR-22) | Pass | Pass | Pass | Chips on `brand-50`/`dark:brand-950/60` and `status-*-bg`/`-fg`; cards `surface-card` + `line`, hover brand border + `shadow-md` |
 
 ## Known follow-ups (not theme-breaking)
 

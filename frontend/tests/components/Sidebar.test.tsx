@@ -29,7 +29,7 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
       "Dashboard",
       "Chat",
       "Documents",
-      "Users",
+      "Visitors",
       "Usage & Cost",
       "Conversation Logs",
       "Feedback",
