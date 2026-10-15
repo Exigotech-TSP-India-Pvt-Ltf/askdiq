@@ -1,6 +1,7 @@
 """Missing log sources (newplan §4.3, OWASP A09): every new trigger writes
 exactly one insert-only, PII-masked audit row without blocking the caller."""
 
+import gc
 import json
 import uuid
 from collections import defaultdict, deque
@@ -21,6 +22,15 @@ from app.governance.pii import redact_pii
 from app.harness import orchestrator
 from app.models.db_models import AuditLog, ChatSession
 from tests.test_orchestrator import _run
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _collect_garbage_after_module():
+    """This module builds ad-hoc apps and MagicMock sessions (cyclic garbage).
+    Collect it here so a later gen-2 GC pass does not land inside another
+    test's event-loop blocking gate."""
+    yield
+    gc.collect()
 
 
 @pytest.fixture
