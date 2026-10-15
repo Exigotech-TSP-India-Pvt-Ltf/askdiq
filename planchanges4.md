@@ -1230,50 +1230,50 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
 ---
 
 #### Task F0.6: Global UX primitives (newplan §15.1)
-- [ ] **[Dev]** Task F0.6: build the shared interaction components.
-- [ ] **[Lint]** Task F0.6: LINT-FE.
-- [ ] **[Test]** Task F0.6: one component test file each passes.
+- [x] **[Dev]** Task F0.6: build the shared interaction components.
+- [x] **[Lint]** Task F0.6: LINT-FE.
+- [x] **[Test]** Task F0.6: one component test file each passes.
 
 ##### Subtask F0.6.1: `EntityLink`, `useDeepLink` and `DrawerShell`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `EntityLink` has typed kinds (visitor, session, conversation, turn, trace, feedback, document, chunk, analytics), maps each to the §1 paths, and includes a copy-id button.
   - `useDeepLink` reads and writes URL params with `router.replace` and `scroll: false`.
   - `DrawerShell` provides Motion slide, backdrop, a focus trap, Esc to close, previous and next navigation, and an "Open full view" link.
   - Consolidate the two `QueryInspectorDrawer`s onto `DrawerShell`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Each kind gives the right href. Back and forward restore the state. Focus is trapped and then returned.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Each kind gives the right href. Back and forward restore the state. Focus is trapped and then returned.
 
 ##### Subtask F0.6.2: Toasts, `ConfirmDialog` and state components
-- [ ] **[Dev]** `ToastProvider` (`role="status"`, undo, pause on hover), `ConfirmDialog` (typed confirmation for destructive superadmin actions), `EmptyState`, `ErrorState` and `Skeleton`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Screen-reader announcements work. Typed confirmation blocks a mismatch.
+- [x] **[Dev]** `ToastProvider` (`role="status"`, undo, pause on hover), `ConfirmDialog` (typed confirmation for destructive superadmin actions), `EmptyState`, `ErrorState` and `Skeleton`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Screen-reader announcements work. Typed confirmation blocks a mismatch.
 
 ##### Subtask F0.6.3: `DateRangePicker` and `RangeProvider`
-- [ ] **[Dev]** Presets 24h, 7d, 30d and 90d, plus a custom range synced to `?from=&to=`. Placed in `DashboardHeader` next to the audience tabs.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The URL round-trips. Invalid ranges are clamped.
+- [x] **[Dev]** Presets 24h, 7d, 30d and 90d, plus a custom range synced to `?from=&to=`. Placed in `DashboardHeader` next to the audience tabs.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The URL round-trips. Invalid ranges are clamped.
 
 ##### Subtask F0.6.4: Command palette and shortcuts sheet
-- [ ] **[Dev]** `Ctrl/Cmd+K` opens the palette (pages plus `/admin/search` results, debounced 200 ms, arrow keys and Enter). `?` opens the shortcuts sheet. Shortcuts are disabled inside inputs.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Keyboard flow. Results are filtered by permission.
+- [x] **[Dev]** `Ctrl/Cmd+K` opens the palette (pages plus `/admin/search` results, debounced 200 ms, arrow keys and Enter). `?` opens the shortcuts sheet. Shortcuts are disabled inside inputs.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Keyboard flow. Results are filtered by permission.
 
 ##### Subtask F0.6.5: Table upgrades
-- [ ] **[Dev]** `TableToolbar` gets a column-visibility toggle, a density toggle (both kept in `localStorage`, wrapped in try/catch) and an export action. `TableCard` gets a cursor-pagination variant.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Preferences persist. The app works with storage blocked.
+- [x] **[Dev]** `TableToolbar` gets a column-visibility toggle, a density toggle (both kept in `localStorage`, wrapped in try/catch) and an export action. `TableCard` gets a cursor-pagination variant.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Preferences persist. The app works with storage blocked.
 
 ##### Subtask F0.6.6: Branded error pages and mobile sidebar
-- [ ] **[Dev]** `not-found.tsx` and `error.tsx` use `BrandLogo`. Below `md`, the sidebar becomes an off-canvas drawer with a hamburger in the header.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** `not-found.tsx` and `error.tsx` use `BrandLogo`. Below `md`, the sidebar becomes an off-canvas drawer with a hamburger in the header.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Render tests (the drawer opens and closes, focus is trapped), and a manual check at 390 px width (browser device toolbar) with no horizontal scroll, screenshot in the PR.
 
 ---
 
 #### Task F0.7: Phase F0 integration testing
-- [ ] **[Dev]** Create `tests/journeys/foundations.test.tsx` (vitest and Testing Library, `fetch` mocked). It checks: the brand loads and changes the CSS variables, `BrandLogo` swaps with the theme, the palette navigates by keyboard, a toast with undo works, and the deep-link round-trips (`useDeepLink` with a mocked router history).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass. `next build` shows the route JS delta within the §13.4 budget (recorded).
+- [x] **[Dev]** Create `tests/journeys/foundations.test.tsx` (vitest and Testing Library, `fetch` mocked). It checks: the brand loads and changes the CSS variables, `BrandLogo` swaps with the theme, the palette navigates by keyboard, a toast with undo works, and the deep-link round-trips (`useDeepLink` with a mocked router history).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass. `next build` shows the route JS delta within the §13.4 budget (recorded).
 
 #### Task F0.8: PRs
 - **PR-15** `feat/ui-foundations-motion-tokens-brand`: F0.1, F0.2 and F0.3.
@@ -2081,7 +2081,8 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #27 | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | Open, CI green (migration `5712ebd9d3c9`; sibling of #23 and #26 on `a9b0c1d2e3f4`, so re-link at merge) | Triage state machine with optimistic version, enriched one-query queue with a keyset cursor, analytics, bulk actions, promotion now stored in the DB (JSON imported), streaming JSONL preference export, golden-run job, and the online-eval FK race fix. Old response fields are kept. **Behaviour change:** promote-to-test no longer writes `data/promoted_test_cases.json`. |
 | #31 | PR-13 | `feat/insights-analytics-endpoints` | #23 | Open, CI green (814 backend tests) | `/admin/insights/*` endpoints match the HTML renderer exactly (13 filter cases), plus taxonomy CRUD. Summary p95 is 480 ms on 100k turns. **Your decision:** the ≥ 60 % user-type rule vs the HTML's plurality rule (conversation C10); the threshold is a constant. |
 | #30 | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | Open, **all jobs green** | One ChartCard replacing 4 copies, with a "View as table" toggle. 12 keyboard-accessible SVG catalogue charts on chart tokens. Dynamic Treemap and Sankey. `useApiQuery` with dedupe, SWR, abort and focus refetch; intent and idle prefetch; optimistic mutations with undo and 409 handling. 234 vitest tests. F0.5.4 (OpenAPI type sync) is deferred until after B7. |
-| – | PR-17 | `feat/ui-global-ux-primitives` | #24 | In progress | Drawers, toasts, dialogs, deep links, date range, command palette, nav pre-registration. |
+| #32 | PR-17 | `feat/ui-global-ux-primitives` | #30 | Open, **all jobs green** (317 vitest tests) | EntityLink and useDeepLink, DrawerShell (both QueryInspectorDrawers consolidated), toasts with undo, a typed ConfirmDialog, state components, DateRangePicker (opt-in), Ctrl+K palette, `?` shortcuts sheet, table column and density preferences, cursor pagination, branded 404 and error pages, mobile off-canvas sidebar, profile menu and bell shells, nav pre-registration, layoutId pills. The route JS increase is at most 27 KB (budget 60). **Manual:** screenshots and a 390 px check. |
+| – | PR-18, PR-19, PR-23, PR-24, PR-26 | (feature UIs) | #32 | In progress, parallel | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
 | #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
 
 **Stack shape for review and merge: a dependency tree.** Each PR's base is the branch it depends on:
