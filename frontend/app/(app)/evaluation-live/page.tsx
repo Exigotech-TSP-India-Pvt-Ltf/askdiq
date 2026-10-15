@@ -29,6 +29,7 @@ import { TableToolbar } from "@/components/admin/TableToolbar";
 import { QueryInspectorDrawer } from "@/components/admin/QueryInspectorDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
+import { PassRateTrendCard, QualityRadarCard } from "@/components/admin/evaluation/QualityCharts";
 import {
   Bar,
   BarChart,
@@ -37,11 +38,6 @@ import {
   Legend,
   Pie,
   PieChart,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -189,18 +185,6 @@ export default function EvaluationLivePage() {
     ].filter((d) => d.value > 0);
   }, [allCases]);
 
-  const qualityRadar = useMemo(
-    () => [
-      { metric: "Retrieval recall", score: (r?.retrieval_recall ?? 0.95) * 100 },
-      { metric: "Groundedness", score: (r?.groundedness_accuracy ?? 0.92) * 100 },
-      { metric: "Faithfulness", score: (((r?.judge?.faithfulness ?? 4.6) / 5) * 100) },
-      { metric: "Citation prec.", score: (r?.citation?.precision ?? 0.92) * 100 },
-      { metric: "Safety check", score: (r?.safety?.passed ?? 1.0) * 100 },
-      { metric: "Pass rate", score: (r?.pass_rate ?? 0.88) * 100 },
-    ],
-    [r]
-  );
-
   const caseTypeBars = useMemo(
     () =>
       Object.entries(r?.by_case_type ?? {}).map(([k, v]: [string, any]) => ({
@@ -287,35 +271,7 @@ export default function EvaluationLivePage() {
             {/* Radar and Outcomes */}
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
               <div className="xl:col-span-2">
-                <ChartCard
-                  title="Quality scorecard"
-                  subtitle="Continuous evaluation performance (%)"
-                  variant="aurora"
-                  titleStyle="eyebrow"
-                  table={toChartTable(qualityRadar, [
-                  { key: "metric", label: "Metric" },
-                  { key: "score", label: "Score", numeric: true, format: (v) => `${Number(v).toFixed(1)}%` },
-                ])}
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={qualityRadar} outerRadius="75%">
-                      <PolarGrid stroke={ct.grid} />
-                      <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: ct.axis }} />
-                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: ct.axis }} />
-                      <Radar
-                        name="Score"
-                        dataKey="score"
-                        stroke={ct.categorical[0]}
-                        fill={ct.categorical[0]}
-                        fillOpacity={0.35}
-                      />
-                      <Tooltip
-                        contentStyle={tooltipStyle}
-                        formatter={(v) => [`${Number(v).toFixed(1)}%`, "Score"]}
-                      />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </ChartCard>
+                <QualityRadarCard report={r} loading={loading} />
               </div>
 
               <ChartCard
@@ -352,6 +308,8 @@ export default function EvaluationLivePage() {
                 </ResponsiveContainer>
               </ChartCard>
             </div>
+
+            <PassRateTrendCard report={r} loading={loading} />
 
             {/* Category breakdown & Stage Latency */}
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
