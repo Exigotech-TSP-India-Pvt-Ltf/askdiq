@@ -177,6 +177,14 @@ class Settings(BaseSettings):
     ingest_max_chars: int = 500_000
     pii_allowlist: list[str] = []
 
+    # --- Testing ---
+    # Used only by the pytest suite (tests/conftest.py). When set, tests run
+    # against this database instead of `database_url`.
+    test_database_url: str | None = None
+    # Appended as `_<suffix>` to the test database name so parallel workers
+    # can each use their own database.
+    test_db_suffix: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

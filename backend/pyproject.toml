@@ -55,3 +55,21 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pylint.main]
+py-version = "3.14"
+ignore-paths = ['^alembic[/\\]versions[/\\].*$', '^\.?venv[/\\].*$']
+# Ratchet: the current measured score. PR-02 raises it towards 10.00.
+fail-under = 9.38
+
+[tool.pylint.format]
+max-line-length = 88
+
+[tool.pylint."messages control"]
+# Checks already enforced by ruff (format / E501) or deferred to PR-02.
+disable = [
+    "line-too-long",
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+]

@@ -1,11 +1,16 @@
 """Global pytest fixtures for AskDIQ backend test suite."""
 
+import asyncio
 import hashlib
+import os
 from collections.abc import AsyncGenerator
+from functools import cache
 from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text as sql_text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -15,8 +20,23 @@ from main import app
 
 settings = get_settings()
 
+DB_PROBE_TIMEOUT_SECONDS = 5.0
+DB_FIXTURES = frozenset({"db_session", "client"})
+
+
+def resolve_test_database_url() -> str:
+    """TEST_DATABASE_URL wins over DATABASE_URL; TEST_DB_SUFFIX renames the DB."""
+    url = settings.test_database_url or settings.database_url
+    if not settings.test_db_suffix:
+        return url
+    parsed = make_url(url)
+    return parsed.set(
+        database=f"{parsed.database}_{settings.test_db_suffix}"
+    ).render_as_string(hide_password=False)
+
+
 test_engine = create_async_engine(
-    settings.database_url,
+    resolve_test_database_url(),
     poolclass=NullPool,
 )
 
@@ -25,6 +45,48 @@ TestingSessionLocal = async_sessionmaker(
     expire_on_commit=False,
     class_=AsyncSession,
 )
+
+
+async def _probe_database() -> None:
+    async with test_engine.connect() as connection:
+        await connection.execute(sql_text("SELECT 1"))
+
+
+@cache
+def db_skip_reason() -> str | None:
+    """Reason to skip DB tests, or None when they must run.
+
+    Only an explicit local opt-in (ALLOW_DB_SKIP=1) together with an
+    unreachable database yields a skip. CI never sets ALLOW_DB_SKIP, so a
+    missing database there fails loudly instead of skipping.
+    """
+    if os.environ.get("ALLOW_DB_SKIP") != "1":
+        return None
+    try:
+        asyncio.run(asyncio.wait_for(_probe_database(), DB_PROBE_TIMEOUT_SECONDS))
+    except Exception as exc:  # any connect failure means "unreachable"
+        return f"test database unreachable and ALLOW_DB_SKIP=1 ({type(exc).__name__})"
+    return None
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "db: test needs the database without using the db fixtures"
+    )
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Skip tests that need the database when it is unreachable (opt-in)."""
+    reason = db_skip_reason()
+    if reason is None:
+        return
+    marker = pytest.mark.skip(reason=reason)
+    for item in items:
+        needs_db = item.get_closest_marker("db") is not None or bool(
+            DB_FIXTURES.intersection(getattr(item, "fixturenames", ()))
+        )
+        if needs_db:
+            item.add_marker(marker)
 
 
 @pytest.fixture(scope="session")

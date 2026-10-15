@@ -1,15 +1,85 @@
 name: CI
 
 on:
-  push:
+  # No branch filter: stacked PRs (base != main) must get CI too.
   pull_request:
+  push:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
+# Test-only values. Nothing here is a real secret.
+env:
+  DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:5432/ci
+  TEST_DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:5432/ci
+  AZURE_OPENAI_API_KEY: ci-test-key
+  AZURE_OPENAI_ENDPOINT: https://ci-test-resource.openai.azure.com/
+  AZURE_OPENAI_API_VERSION: 2024-12-01-preview
+  AZURE_DEPLOYMENT_NAME: gpt-5-mini
+  EMBEDDING_MODEL: text-embedding-3-small
+  API_JWT_SECRET: ci-only-test-secret-not-for-production
+  API_KEY_NAME: ci-test-key
+  ENV: development
+  PYTHON_VERSION: "3.14"
+  NODE_VERSION: "20"
+  # Coverage ratchet: measured baseline, rounded down. Raise towards 80 by phase V.
+  COV_FAIL_UNDER: "0"
+
 jobs:
+  backend-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Pylint
+        run: pylint app
+      - name: Security scan (bandit)
+        run: bandit -r app -ll
+      - name: Dependency audit (pip-audit with reviewed allow-list)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ignore_file=../.github/audit/pip-audit-ignore.txt
+          today=$(date -u +%F)
+          args=()
+          while IFS= read -r line || [ -n "$line" ]; do
+            id=$(printf '%s' "${line%%#*}" | xargs)
+            [ -z "$id" ] && continue
+            expires=$(printf '%s' "$line" | grep -oE 'expires [0-9]{4}-[0-9]{2}-[0-9]{2}' | cut -d' ' -f2 || true)
+            if [ -z "$expires" ]; then
+              echo "::error::pip-audit allow-list entry $id has no 'expires YYYY-MM-DD'"
+              exit 1
+            fi
+            if [[ "$expires" < "$today" ]]; then
+              echo "::error::pip-audit allow-list entry $id expired on $expires"
+              exit 1
+            fi
+            echo "Allow-listed: $id (expires $expires)"
+            args+=(--ignore-vuln "$id")
+          done < "$ignore_file"
+          pip-audit -r requirements.txt "${args[@]}"
+
   backend-tests:
     runs-on: ubuntu-latest
     services:
@@ -26,16 +96,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    env:
-      DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:5432/ci
-      AZURE_OPENAI_API_KEY: ci-test-key
-      AZURE_OPENAI_ENDPOINT: https://ci-test-resource.openai.azure.com/
-      AZURE_OPENAI_API_VERSION: 2024-12-01-preview
-      AZURE_DEPLOYMENT_NAME: gpt-5-mini
-      EMBEDDING_MODEL: text-embedding-3-small
-      API_JWT_SECRET: ci-only-test-secret-not-for-production
-      API_KEY_NAME: ci-test-key
-      ENV: development
     defaults:
       run:
         working-directory: backend
@@ -43,21 +103,36 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-      - name: Lint check (ruff)
-        run: ruff check .
-      - name: Security scan (bandit)
-        run: bandit -r app -ll
       - name: Run database migrations
         run: alembic upgrade head
-      - name: Run backend tests
-        run: python -m pytest -q
+      - name: Assert a single alembic head
+        shell: bash
+        run: |
+          set -euo pipefail
+          alembic heads
+          heads=$(alembic heads | grep -c '(head)' || true)
+          if [ "$heads" -ne 1 ]; then
+            echo "::error::Expected exactly 1 alembic head, found $heads"
+            exit 1
+          fi
+      - name: Migration downgrade round-trip
+        run: alembic downgrade -1 && alembic upgrade head
+      - name: Run backend tests with coverage
+        run: python -m pytest -q --cov=app --cov-report=xml --cov-report=term --cov-fail-under=${{ env.COV_FAIL_UNDER }}
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: warn
 
   frontend-checks:
     runs-on: ubuntu-latest
@@ -68,7 +143,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
@@ -76,6 +151,157 @@ jobs:
       - name: Lint frontend
         run: npm run lint
       - name: TypeScript type-check
-        run: npx tsc --noEmit
+        run: npm run typecheck
+      - name: Unit tests (vitest)
+        run: npm test
       - name: Build frontend
         run: npm run build
+      - name: Dependency audit (npm audit, high+ with reviewed allow-list)
+        run: npm run audit:gate
+
+  fullstack-smoke:
+    needs: [backend-lint, backend-tests, frontend-checks]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --legacy-peer-deps
+      - name: Run database migrations
+        working-directory: backend
+        run: alembic upgrade head
+      - name: Start backend (uvicorn)
+        working-directory: backend
+        run: nohup python -m uvicorn main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/backend.log" 2>&1 &
+      - name: Build and start frontend (next start)
+        working-directory: frontend
+        env:
+          API_BASE_URL: http://127.0.0.1:8000
+          API_KEY: ${{ env.API_KEY_NAME }}
+        run: |
+          npm run build
+          nohup npx next start -p 3000 > "$RUNNER_TEMP/frontend.log" 2>&1 &
+      - name: Wait for backend and frontend health
+        shell: bash
+        run: |
+          set -euo pipefail
+          wait_for() {
+            local url=$1
+            for _ in $(seq 1 90); do
+              if curl -fsS -o /dev/null "$url"; then echo "ready: $url"; return 0; fi
+              sleep 2
+            done
+            echo "::error::timed out waiting for $url"
+            return 1
+          }
+          wait_for http://127.0.0.1:8000/health
+          wait_for http://localhost:3000/
+      - name: Full-stack smoke (httpx, no browser)
+        working-directory: backend
+        run: python scripts/smoke_e2e.py --frontend-url http://localhost:3000 --backend-url http://127.0.0.1:8000
+      - name: Upload server logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fullstack-smoke-logs
+          path: |
+            ${{ runner.temp }}/backend.log
+            ${{ runner.temp }}/frontend.log
+          if-no-files-found: warn
+
+  perf-smoke:
+    # Manual dispatch, or PRs carrying the `perf` label (applies from the next push).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'perf'))
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check load test supports --smoke
+        id: guard
+        run: |
+          if grep -q -- '--smoke' scripts/run_admin_load_test.py; then
+            echo "supported=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "supported=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::run_admin_load_test.py has no --smoke flag yet (added in B1.6); skipping perf smoke."
+          fi
+      - uses: actions/setup-python@v6
+        if: steps.guard.outputs.supported == 'true'
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        if: steps.guard.outputs.supported == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Migrate and start backend
+        if: steps.guard.outputs.supported == 'true'
+        run: |
+          alembic upgrade head
+          nohup python -m uvicorn main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/backend.log" 2>&1 &
+          for _ in $(seq 1 90); do
+            curl -fsS -o /dev/null http://127.0.0.1:8000/health && exit 0
+            sleep 2
+          done
+          echo "::error::backend did not become healthy"
+          exit 1
+      - name: Perf smoke
+        if: steps.guard.outputs.supported == 'true'
+        run: python scripts/run_admin_load_test.py --smoke
+      - name: Upload backend log
+        if: failure() && steps.guard.outputs.supported == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke-logs
+          path: ${{ runner.temp }}/backend.log
+          if-no-files-found: warn
