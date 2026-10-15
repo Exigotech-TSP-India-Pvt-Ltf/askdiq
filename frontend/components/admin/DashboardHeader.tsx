@@ -2,7 +2,8 @@
 
 import React from "react";
 import { AudienceScopeTabs } from "@/components/admin/AudienceScopeTabs";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { DateRangePicker } from "@/components/ui/DateRangePicker";
+import { HeaderUtilities } from "@/components/shell/HeaderUtilities";
 
 export interface DashboardHeaderProps {
   title: string;
@@ -11,6 +12,11 @@ export interface DashboardHeaderProps {
   badgeCount?: number | string | null;
   centerSlot?: React.ReactNode;
   showAudienceTabs?: boolean;
+  /**
+   * Shows the global DateRangePicker beside the audience tabs. Opt-in until a
+   * page reads `useRange()`, so the control never appears without effect.
+   */
+  showDateRange?: boolean;
   actions?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
@@ -23,6 +29,7 @@ export function DashboardHeader({
   badgeCount,
   centerSlot,
   showAudienceTabs = true,
+  showDateRange = false,
   actions,
   children,
   className = "",
@@ -56,18 +63,22 @@ export function DashboardHeader({
       </div>
 
       {/* Center Column: Centered AudienceScopeTabs or custom slot */}
-      <div className="flex-1 hidden md:flex items-center justify-center">
+      <div className="flex-1 hidden md:flex items-center justify-center gap-2">
         {centerSlot !== undefined ? (
           centerSlot
         ) : showAudienceTabs ? (
           <AudienceScopeTabs />
         ) : null}
+        {showDateRange ? <DateRangePicker /> : null}
       </div>
 
-      {/* Right Column: Actions + ThemeToggle */}
+      {/* Right Column: Actions + palette, notifications and profile (theme
+          lives in the profile menu). Below md the MobileTopBar carries them. */}
       <div className="flex items-center gap-2.5 min-w-0 sm:min-w-[200px] justify-end">
         {actions ?? children}
-        <ThemeToggle size="sm" />
+        <div className="hidden md:block">
+          <HeaderUtilities />
+        </div>
       </div>
     </header>
   );

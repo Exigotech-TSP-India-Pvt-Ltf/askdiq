@@ -7,6 +7,7 @@ import { brandCssText, buildMetadata, type Brand } from "@/lib/brand";
 import { fetchBrand } from "@/lib/brand-server";
 import { THEME_INIT_SCRIPT } from "@/lib/theme-script";
 import { MotionProvider } from "@/components/providers/MotionProvider";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 import "./globals.css";
 
 // Branding is cached and re-fetched at most every 5 minutes (ISR).
@@ -40,7 +41,9 @@ export default async function RootLayout({
         <ThemeProvider>
           <BrandProvider brand={brand}>
             <MotionProvider>
-              <AuthProvider>{children}</AuthProvider>
+              <ToastProvider>
+                <AuthProvider>{children}</AuthProvider>
+              </ToastProvider>
             </MotionProvider>
           </BrandProvider>
         </ThemeProvider>

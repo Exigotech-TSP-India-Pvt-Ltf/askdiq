@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import {
   TabGroup,
@@ -58,8 +58,12 @@ describe("AudienceScopeTabs (Task 5.1)", () => {
     expect(screen.getByText("Users")).toBeInTheDocument();
     expect(screen.getByText("Testing")).toBeInTheDocument();
 
+    // The brand gradient now lives on the sliding layoutId pill inside the active tab (PR-17).
     const overviewTab = screen.getByRole("tab", { name: /overview/i });
-    expect(overviewTab.className).toContain("bg-brand-gradient");
+    expect(within(overviewTab).getByTestId("tab-active-pill").className).toContain("bg-brand-gradient");
+    expect(overviewTab.className).toContain("text-white");
+    const usersTab = screen.getByRole("tab", { name: /users/i });
+    expect(within(usersTab).queryByTestId("tab-active-pill")).toBeNull();
   });
 });
 
@@ -75,11 +79,12 @@ describe("TabGroup Component & 20-Tab Icon Audit (Task 5.3)", () => {
     );
 
     const activeBtn = screen.getByRole("tab", { name: /overview/i });
-    expect(activeBtn.className).toContain("bg-brand-gradient");
+    expect(within(activeBtn).getByTestId("tab-active-pill").className).toContain("bg-brand-gradient");
     expect(activeBtn.className).toContain("text-white");
 
     const usersBtn = screen.getByRole("tab", { name: /all users/i });
     expect(usersBtn.className).toContain("text-slate-600");
+    expect(within(usersBtn).queryByTestId("tab-active-pill")).toBeNull();
 
     fireEvent.click(usersBtn);
     expect(handleChange).toHaveBeenCalledWith("users");

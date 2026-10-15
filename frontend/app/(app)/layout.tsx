@@ -6,6 +6,9 @@ import { Sidebar } from "@/components/Sidebar";
 import { useAuth } from "@/lib/auth-context";
 import { ChatProvider } from "@/lib/chat-context";
 import { AudienceProvider } from "@/lib/audience-context";
+import { MobileNavProvider } from "@/lib/mobile-nav-context";
+import { CommandCenter } from "@/components/shell/CommandCenter";
+import { MobileTopBar } from "@/components/shell/MobileTopBar";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { token, isLoading } = useAuth();
@@ -24,18 +27,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white dark:bg-dark-bg">
-      <Sidebar />
-      {/* ChatProvider lives here (not inside the chat page) so an in-flight
-          query keeps running and its answer isn't lost when navigating to
-          Documents/Metrics and back — only this layout, not the page, stays
-          mounted across those route changes. */}
-      <AudienceProvider>
-        <ChatProvider>
-          <main className="flex-1 overflow-hidden bg-surface-page">{children}</main>
-        </ChatProvider>
-      </AudienceProvider>
-    </div>
+    <MobileNavProvider>
+      <CommandCenter>
+        <div className="flex h-screen overflow-hidden bg-white dark:bg-dark-bg">
+          <Sidebar />
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Below md the sidebar is off-canvas; this bar holds the hamburger. */}
+            <MobileTopBar />
+            {/* ChatProvider lives here (not inside the chat page) so an in-flight
+                query keeps running and its answer isn't lost when navigating to
+                Documents/Metrics and back — only this layout, not the page, stays
+                mounted across those route changes. */}
+            <AudienceProvider>
+              <ChatProvider>
+                <main className="min-h-0 flex-1 overflow-hidden bg-surface-page">{children}</main>
+              </ChatProvider>
+            </AudienceProvider>
+          </div>
+        </div>
+      </CommandCenter>
+    </MobileNavProvider>
   );
 }
 

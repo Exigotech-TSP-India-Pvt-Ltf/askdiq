@@ -49,6 +49,16 @@ export const drawer: Variants = {
   exit: { x: "100%", transition: tween(duration.base) },
 };
 
+/** Off-canvas navigation drawer entering from the left (mobile sidebar). */
+export const drawerLeft: Variants = {
+  hidden: { x: "-100%" },
+  visible: { x: 0, transition: spring },
+  exit: { x: "-100%", transition: tween(duration.base) },
+};
+
+/** Shared-layout transition for `layoutId` indicators (active nav bar, tab pills). */
+export const layoutSpring: Transition = spring;
+
 export const toast: Variants = {
   hidden: { opacity: 0, y: 12, scale: 0.98 },
   visible: { opacity: 1, y: 0, scale: 1, transition: spring },
