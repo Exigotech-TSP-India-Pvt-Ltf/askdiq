@@ -1,7 +1,7 @@
 import React from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   DEFAULT_BRAND,
   brandCssText,
@@ -12,7 +12,7 @@ import {
   safeAssetUrl,
 } from "@/lib/brand";
 import { BRANDING_REVALIDATE_SECONDS, fetchBrand } from "@/lib/brand-server";
-import { BrandProvider, useBrand } from "@/lib/brand-context";
+import { BrandProvider, useBrand, useBrandUpdater } from "@/lib/brand-context";
 
 const sendQuery = vi.fn();
 vi.mock("@/lib/chat-context", () => ({
@@ -216,5 +216,46 @@ describe("chat sample questions come from the brand", () => {
     expect(
       screen.getByText("What is the Essential Eight and how does DeployIQ implement it?"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("BrandProvider runtime updates (Settings save, PR-26)", () => {
+  function Refresher() {
+    const { refresh, setBrand } = useBrandUpdater();
+    const brand = useBrand();
+    return (
+      <div>
+        <span data-testid="product">{brand.productName}</span>
+        <button type="button" onClick={() => void refresh()}>
+          refresh
+        </button>
+        <button type="button" onClick={() => setBrand(DEFAULT_BRAND)}>
+          defaults
+        </button>
+      </div>
+    );
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("refresh() re-reads /branding through the proxy and applies names and every --brand-* variable", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(FUTURE_PAYLOAD));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <BrandProvider brand={normalizeBrand(CURRENT_PAYLOAD)}>
+        <Refresher />
+      </BrandProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+    await waitFor(() => expect(screen.getByTestId("product")).toHaveTextContent("Contoso IQ"));
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/proxy/branding");
+    const style = document.documentElement.style;
+    expect(style.getPropertyValue("--brand-600")).toBe("51 85 204");
+    // Unchanged shades are written too, so they beat the server-rendered <style>.
+    expect(style.getPropertyValue("--brand-800")).toBe("0 88 79");
+
+    // Going back to the defaults still overrides a stale server palette.
+    fireEvent.click(screen.getByRole("button", { name: "defaults" }));
+    await waitFor(() => expect(style.getPropertyValue("--brand-600")).toBe("0 128 128"));
   });
 });

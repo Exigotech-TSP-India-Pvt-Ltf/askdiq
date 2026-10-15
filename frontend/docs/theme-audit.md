@@ -56,6 +56,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/_not-found` (`app/not-found.tsx`) | Pass | Pass | Pass | Branded 404 (PR-17): `BrandLogo` pair, `bg-surface-*` / `text-fg*` tokens | [ ] |
 | Route error boundary (`app/error.tsx`) | Pass | Pass | Pass | Branded (PR-17): reference digest + copy, retry; no error text shown | [ ] |
 | Any `(app)` route at < `md` (390 px) | Pass | Pass | Pass | PR-17: `MobileTopBar` + off-canvas sidebar; desktop aside `hidden md:flex` | [ ] |
+| `/admin/settings` (Branding, Insights Taxonomy tabs) (PR-26) | Pass | Pass | Pass | Cards `bg-surface-card` + `border-line`; inputs, badges and table on tokens; superadmin only | [ ] |
 | `/login` | n/a | n/a | n/a | Route not built yet (F1, PR-19); must use `BrandLogo` | n/a |
 
 ## Shared components
@@ -113,6 +114,11 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `shell/BrandedStatusPage` (PR-17) | Pass | Pass | Pass | `BrandLogo` pair on `bg-surface-card` |
 | `admin/CursorPagination` (PR-17) | Pass | Pass | Pass | Mirrors `Pagination` (existing `dark:` pairs) |
 | `admin/TableToolbar` (columns, density) (PR-17) | Pass | Pass | Pass | Column menu on `surface-elevated`; buttons reuse the existing `dark:` pairs |
+| `settings/BrandPreview` (PR-26) | Pass | Pass | Pass | Light and dark panes side by side, each pinned to its theme with inline semantic + draft `--brand-*` variables (independent of the page theme); `BrandLogo forceTheme` |
+| `settings/ColorField`, `ContrastBadge` (PR-26) | Pass | Pass | Pass | Badge `status-ok-bg`/`status-ok-fg` or `status-danger-*`; swatches render the chosen colour (data, not tokens) |
+| `settings/AssetDropzone` (PR-26) | Pass | Pass | Pass | Dashed `border-line-strong`, hover lift + brand border; dark artwork previewed on `bg-surface-inverse` |
+| `settings/TaxonomyTab` table and add form (PR-26) | Pass | Pass | Pass | `surface-muted` header, archived rows at 60 % opacity, status pills on `status-*` tokens |
+| `brand/BrandLogo` live update (PR-26) | Pass | Pass | Pass | Saving branding re-renders logos and rewrites every `--brand-*` variable without a reload |
 
 ## Known follow-ups (not theme-breaking)
 

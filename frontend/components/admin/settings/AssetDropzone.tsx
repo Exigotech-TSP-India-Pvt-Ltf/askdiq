@@ -66,7 +66,7 @@ export function AssetDropzone({ label, hint, src, custom, tone, busy, error, onF
           accept(e.dataTransfer.files?.[0]);
         }}
         data-testid={`dropzone-${label}`}
-        className={`group flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-3 text-center transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md dark:hover:border-brand-700/60 ${
+        className={`group flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-3 text-center transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 motion-reduce:hover:translate-y-0 hover:border-brand-300 hover:shadow-md dark:hover:border-brand-700/60 ${
           dragging ? "border-brand-500 shadow-md" : "border-line-strong"
         } ${error ? "border-status-danger" : ""} ${focusRing}`}
       >
