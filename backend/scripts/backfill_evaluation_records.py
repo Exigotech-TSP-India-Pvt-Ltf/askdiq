@@ -9,16 +9,17 @@ from pathlib import Path
 # Add backend to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import aliased
+
 from app.core.database import AsyncSessionLocal, engine
+from app.evaluation.quality import SECRET_PATTERNS, pii_leaked
+from app.governance.online_eval import compute_attribution_metrics
 from app.models.db_models import (
     ChatMessageRecord,
-    LatencyRecord,
     EvaluationRecord,
+    LatencyRecord,
 )
-from app.governance.online_eval import compute_attribution_metrics
-from app.evaluation.quality import SECRET_PATTERNS, pii_leaked
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("backfill_eval")

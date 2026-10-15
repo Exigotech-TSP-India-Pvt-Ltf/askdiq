@@ -1,6 +1,7 @@
 """Unit tests for Multi-Dimension Filter Request Schemas (OWASP A03/A04)."""
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 

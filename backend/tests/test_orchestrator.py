@@ -20,7 +20,9 @@ async def _run(
     llm_side_effect=None,
     post_checks_side_effect=None,
 ):
-    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *a, **k: pre_flags or [])
+    monkeypatch.setattr(
+        orchestrator, "run_pre_checks", lambda *_a, **_k: pre_flags or []
+    )
 
     async def fake_retrieve(*_a, **_k):
         return sources if sources is not None else [_source()]
@@ -62,7 +64,7 @@ async def _run(
 
 async def test_pre_guardrail_blocks_before_any_retrieval_or_llm_call(monkeypatch):
     monkeypatch.setattr(
-        orchestrator, "run_pre_checks", lambda *a, **k: ["unsafe_input_detected"]
+        orchestrator, "run_pre_checks", lambda *_a, **_k: ["unsafe_input_detected"]
     )
 
     def _fail_retrieve(*_a, **_k):

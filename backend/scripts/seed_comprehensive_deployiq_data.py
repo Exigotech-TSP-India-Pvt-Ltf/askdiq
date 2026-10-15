@@ -602,7 +602,7 @@ async def seed_comprehensive_dataset(
         total_sessions_created = 0
 
         # Progress tracking
-        for sess_idx in range(target_sessions):
+        for _ in range(target_sessions):
             # Select User Persona
             user_obj = rng.choice(seeded_users)
             user_email = user_obj.email
@@ -946,7 +946,7 @@ async def seed_comprehensive_dataset(
 
                 # Continuous Evaluation Record (on ~60% of turns to create 1,000+ benchmark entries)
                 if rng.random() < 0.62:
-                    is_pass = outcome == "answered" or outcome == "conversational"
+                    is_pass = outcome in {"answered", "conversational"}
                     faithfulness = (
                         round(rng.uniform(0.88, 1.0), 3)
                         if is_pass

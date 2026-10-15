@@ -227,7 +227,7 @@ def test_unsupported_figures_flags_invented_dollar_amount():
 def test_unsupported_figures_allows_amount_present_in_source():
     result = _unsupported_figures(
         "The Zero Trust Starter plan is $0 (free).",
-        "Zero Trust – Starter (Free) plan: $0 self-service tier.",
+        "Zero Trust \u2013 Starter (Free) plan: $0 self-service tier.",
     )
     assert result == []
 

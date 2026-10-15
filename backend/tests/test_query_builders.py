@@ -1,8 +1,9 @@
 """Unit tests for Parameterized Safe SQL Query Builders & Allow-List Sorting (OWASP A03)."""
 
 from datetime import UTC, datetime
-from fastapi import HTTPException
+
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.db.query_builders import (

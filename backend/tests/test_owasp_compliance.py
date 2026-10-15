@@ -1,11 +1,11 @@
 """OWASP Top 10 Security Audit & Penetration Benchmark Suite (Task 8.3)."""
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-from main import app
 from app.core.serialization import sanitize_csv_cell
-from app.governance.auth import sanitize_client_id, DEFAULT_ACTOR
+from app.governance.auth import DEFAULT_ACTOR, sanitize_client_id
+from main import app
 
 
 @pytest.mark.asyncio

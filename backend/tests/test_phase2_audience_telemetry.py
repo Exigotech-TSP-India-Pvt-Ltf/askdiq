@@ -2,8 +2,9 @@
 
 import asyncio
 from decimal import Decimal
-from fastapi import HTTPException
+
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.core.rate_limit import _admin_user_log, enforce_admin_heavy_rate_limit

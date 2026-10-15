@@ -1,6 +1,7 @@
 """Phase 3 Integration Test: Streaming Serialization, CSV Neutralization & Composite Index Audit."""
 
 import time
+
 import pytest
 from sqlalchemy import select
 

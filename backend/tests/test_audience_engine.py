@@ -1,6 +1,7 @@
 """Unit tests and benchmark for Dynamic Audience Scope Engine (Task 2.1)."""
 
 import time
+
 from sqlalchemy import select
 
 from app.governance.test_ips import (

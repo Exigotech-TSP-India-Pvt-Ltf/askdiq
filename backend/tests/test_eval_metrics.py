@@ -163,7 +163,7 @@ async def test_judge_omits_temperature_and_max_completion_tokens(monkeypatch):
         return mock_response
 
     mock_client.chat.completions.create = fake_create
-    monkeypatch.setattr(judge, "_client_for", lambda deployment: mock_client)
+    monkeypatch.setattr(judge, "_client_for", lambda _deployment: mock_client)
 
     scores = await judge._judge("Test question?", ["Test context"], "Test answer", None)
 
