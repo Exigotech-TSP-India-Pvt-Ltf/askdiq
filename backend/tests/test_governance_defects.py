@@ -272,6 +272,8 @@ async def test_g6_error_rate_is_audience_scoped(client, db_session):
             )
         )
         await db_session.flush()
+        # The classification only knows IPs already present in the DB.
+        invalidate_audience_cache()
 
         testing = (await _monitoring(client, "testing"))["error_counts"]
         users = (await _monitoring(client, "users"))["error_counts"]
