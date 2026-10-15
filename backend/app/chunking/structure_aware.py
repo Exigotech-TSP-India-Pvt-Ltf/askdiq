@@ -5,7 +5,6 @@ from collections import Counter
 
 from app.chunking.base import ChunkingStrategy, ChunkResult
 
-
 # Markdown ATX headings only: # .. ######
 # Standalone bold lines (numbered items, UI labels, CTAs) are NOT headings —
 # they are noise in this corpus and must never create a section boundary.
@@ -46,7 +45,7 @@ class StructureAwareChunker(ChunkingStrategy):
     def __init__(self, max_chunk_chars: int = 2000):
         self.max_chunk_chars = max_chunk_chars
 
-    def chunk(
+    def chunk_sync(
         self,
         text: str,
         source_metadata: dict | None = None,
@@ -245,7 +244,9 @@ class StructureAwareChunker(ChunkingStrategy):
         pseudo section heading. Returns [] if fewer than two such lines are
         found (not enough structure to justify splitting)."""
         matches = [
-            m for m in BOLD_HEADING_RE.finditer(text) if cls._is_pure_bold_line(m.group(0).strip())
+            m
+            for m in BOLD_HEADING_RE.finditer(text)
+            if cls._is_pure_bold_line(m.group(0).strip())
         ]
         if len(matches) < 2:
             return []
@@ -259,7 +260,9 @@ class StructureAwareChunker(ChunkingStrategy):
         for index, match in enumerate(matches):
             heading = _clean_heading_text(match.group(1))
             body_start = match.end()
-            body_end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            body_end = (
+                matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            )
             sections.append((heading, text[body_start:body_end]))
 
         return sections

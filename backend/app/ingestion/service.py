@@ -1,141 +1,382 @@
-﻿"""Incremental document ingestion shared by the /ingest API and the CLI script.
+"""Atomic, concurrency-safe document ingestion service (Tasks 1.4.5 & 1.4.6).
 
-Re-ingesting a document whose content hash is unchanged is a no-op; for a
-changed document only chunks whose hash is new are embedded, and chunks whose
-content no longer exists are deleted.
+Implements the three-phase ingestion architecture:
+- Phase A: Short read transaction (detects document identity, checks hash, fetches existing chunk hashes)
+- Phase B: No DB connection held (text normalization, structure chunking, batched embeddings 16-32)
+- Phase C: Short write transaction under advisory lock pg_advisory_xact_lock(hashtext(lower(name)))
+  with atomic audit logging.
 """
 
-import asyncio
-import hashlib
 import time
+import uuid
+from datetime import datetime
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, text, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chunking.cleaning import strip_boilerplate_lines
 from app.chunking.factory import get_strategy
+from app.core.config import get_settings
+from app.governance.audit import record_audit_event
+from app.ingestion.naming import canonical_source_name
+from app.ingestion.normalizer import (
+    chunk_content_hash,
+    doc_content_hash,
+    normalize_markdown,
+)
 from app.models.db_models import Chunk, Document
-from app.retrieval.embeddings import embed_texts_sync
+from app.retrieval.embeddings import embed_texts
 
-# Bump when the chunker output format or embedding model changes: it is folded
-# into every hash, so a bump forces a full re-embed.
-PIPELINE_VERSION = "v3"
-
-
-def sha256(text: str) -> str:
-    return hashlib.sha256((PIPELINE_VERSION + text).encode("utf-8")).hexdigest()
+settings = get_settings()
 
 
 async def ingest_text(
-    db,
+    db: AsyncSession,
     *,
     source_name: str,
-    source_type: str,
+    source_type: str = "markdown",
     content: str,
     chunking_strategy: str = "auto",
     metadata: dict | None = None,
+    original_filename: str | None = None,
+    converted_from: str = "md",
+    original_sha256: str | None = None,
+    warnings: list[str] | None = None,
+    quarantined: bool = False,
+    force: bool = False,
+    dry_run: bool = False,
+    actor: str = "system",
+    request_id: str | None = None,
+    client_ip: str | None = None,
 ) -> dict:
-    """Upsert a document by source_name. Returns stats plus the chunk results."""
-
+    """Upsert document by canonical source name with 3-phase concurrency safety."""
     started = time.perf_counter()
-    metadata = metadata or {}
-    content = strip_boilerplate_lines(content)
-    doc_hash = sha256(content)
-    existing = await db.scalar(select(Document).where(Document.source_name == source_name))
+    request_id = request_id or f"ingest-{uuid.uuid4().hex[:12]}"
+    warnings_list = list(warnings or [])
 
-    if existing is not None and existing.content_hash == doc_hash:
-        total = await db.scalar(
-            select(Chunk.id).where(Chunk.document_id == existing.id).limit(1)
+    # 1. Canonical naming
+    canonical_name = canonical_source_name(source_name)
+
+    # 2. Deterministic normalization
+    normalized_content, pii_found = normalize_markdown(content)
+    new_doc_hash = doc_content_hash(normalized_content)
+
+    # -------------------------------------------------------------------------
+    # PHASE A: Short Read Transaction
+    # -------------------------------------------------------------------------
+    existing = await db.scalar(
+        select(Document).where(
+            func.lower(Document.source_name) == func.lower(canonical_name)
         )
-        if total is not None:
-            return {"status": "unchanged", "document": existing, "added": 0, "kept": 0,
-                    "removed": 0, "chunk_results": [], "chunk_ms": 0.0, "embed_ms": 0.0,
-                    "started": started}
-
-    if existing is None:
-        document = Document(
-            source_name=source_name,
-            source_type=source_type,
-            content_hash=doc_hash,
-            doc_metadata=metadata,
-        )
-        db.add(document)
-        await db.flush()
-        status = "new"
-    else:
-        document = existing
-        document.content_hash = doc_hash
-        document.source_type = source_type
-        document.doc_metadata = {**(document.doc_metadata or {}), **metadata}
-        status = "updated"
-
-    chunk_started = time.perf_counter()
-    strategy = get_strategy(chunking_strategy, source_type=source_type)
-    chunk_results = await asyncio.to_thread(
-        strategy.chunk,
-        content,
-        {"document_id": str(document.id), "source_name": source_name, "source_type": source_type},
     )
-    chunk_ms = (time.perf_counter() - chunk_started) * 1000
+
+    existing_chunk_rows = []
+    if existing is not None:
+        existing_chunk_rows = (
+            await db.execute(
+                select(Chunk.id, Chunk.content_hash).where(
+                    Chunk.document_id == existing.id
+                )
+            )
+        ).all()
+
+    existing_chunks_by_hash: dict[str, list[uuid.UUID]] = {}
+    for cid, chash in existing_chunk_rows:
+        if chash:
+            existing_chunks_by_hash.setdefault(chash, []).append(cid)
+
+    # Check for unchanged condition
+    if (
+        existing is not None
+        and not force
+        and existing.content_hash == new_doc_hash
+        and len(existing_chunk_rows) > 0
+    ):
+        if not dry_run:
+            existing.doc_metadata = {
+                **(existing.doc_metadata or {}),
+                "last_checked_at": datetime.utcnow().isoformat(),
+            }
+            await record_audit_event(
+                db,
+                request_id=request_id,
+                actor=actor,
+                action="ingest",
+                detail={
+                    "source_name": canonical_name,
+                    "original_filename": original_filename or canonical_name,
+                    "converted_from": converted_from,
+                    "status": "unchanged",
+                    "content_hash": new_doc_hash[:12],
+                    "chunks_added": 0,
+                    "chunks_kept": len(existing_chunk_rows),
+                    "chunks_removed": 0,
+                    "pii_redacted": pii_found,
+                    "warnings": warnings_list,
+                    "quarantined": quarantined,
+                    "embedding_tokens": 0,
+                },
+                ip_address=client_ip,
+                commit=True,
+            )
+
+        return {
+            "status": "unchanged",
+            "document": existing,
+            "document_id": str(existing.id),
+            "source_name": canonical_name,
+            "original_filename": original_filename or canonical_name,
+            "converted_from": converted_from,
+            "content_hash": new_doc_hash,
+            "previous_content_hash": existing.content_hash,
+            "chunk_count": len(existing_chunk_rows),
+            "chunks_added": 0,
+            "chunks_kept": len(existing_chunk_rows),
+            "chunks_removed": 0,
+            "embedding_tokens": 0,
+            "embedding_cost_usd": 0.0,
+            "strategy_used": chunking_strategy,
+            "warnings": warnings_list,
+            "quarantined": quarantined,
+            "dry_run": dry_run,
+            "started": started,
+            "chunk_ms": 0.0,
+            "embed_ms": 0.0,
+        }
+
+    # -------------------------------------------------------------------------
+    # PHASE B: CPU Chunking & Network Embedding (NO DB Connection held)
+    # -------------------------------------------------------------------------
+    chunk_start = time.perf_counter()
+    strategy = get_strategy(chunking_strategy, source_type=source_type)
+    chunk_results = await strategy.chunk(
+        normalized_content,
+        {
+            "source_name": canonical_name,
+            "source_type": source_type,
+        },
+    )
+    chunk_ms = (time.perf_counter() - chunk_start) * 1000
 
     new_chunks: dict[str, object] = {}
     for cr in chunk_results:
-        new_chunks.setdefault(sha256(cr.content), cr)
+        new_chunks.setdefault(chunk_content_hash(cr.content), cr)
 
-    rows = (
-        await db.execute(
-            select(Chunk.id, Chunk.content_hash).where(Chunk.document_id == document.id)
-        )
-    ).all()
-    existing_ids_by_hash: dict[str | None, list] = {}
-    for chunk_id, h in rows:
-        existing_ids_by_hash.setdefault(h, []).append(chunk_id)
+    # Determine status & diff
+    if existing is None:
+        status = "new"
+        to_add_hashes = list(new_chunks.keys())
+        kept_hashes: list[str] = []
+        stale_chunk_ids: list[uuid.UUID] = []
+    elif force:
+        status = "forced"
+        to_add_hashes = list(new_chunks.keys())
+        kept_hashes = []
+        stale_chunk_ids = [
+            cid for ids in existing_chunks_by_hash.values() for cid in ids
+        ]
+    elif not existing_chunk_rows and existing.content_hash == new_doc_hash:
+        status = "repaired"
+        to_add_hashes = list(new_chunks.keys())
+        kept_hashes = []
+        stale_chunk_ids = []
+    else:
+        status = "updated"
+        to_add_hashes = [h for h in new_chunks if h not in existing_chunks_by_hash]
+        kept_hashes = [h for h in new_chunks if h in existing_chunks_by_hash]
+        stale_chunk_ids = []
+        for h, ids in existing_chunks_by_hash.items():
+            if h not in new_chunks:
+                stale_chunk_ids.extend(ids)
+            else:
+                stale_chunk_ids.extend(ids[1:])  # deduplicate if extra copies exist
 
-    stale_ids = []
-    for h, ids in existing_ids_by_hash.items():
-        if h not in new_chunks:
-            stale_ids.extend(ids)
-        else:
-            stale_ids.extend(ids[1:])
-    if stale_ids:
-        await db.execute(delete(Chunk).where(Chunk.id.in_(stale_ids)))
+    # Compute estimated tokens
+    est_embed_tokens = sum(
+        len(getattr(new_chunks[h], "content", "").split()) for h in to_add_hashes
+    )
+    est_cost = (est_embed_tokens / 1_000_000) * settings.price_embed_per_million
 
-    to_add = [(h, cr) for h, cr in new_chunks.items() if h not in existing_ids_by_hash]
-    embed_started = time.perf_counter()
-    if to_add:
-        embeddings = await asyncio.to_thread(
-            embed_texts_sync, [cr.content for _, cr in to_add], "RETRIEVAL_DOCUMENT"
-        )
-        for (h, cr), embedding in zip(to_add, embeddings):
-            db.add(
-                Chunk(
-                    document_id=document.id,
-                    content=cr.content,
-                    content_hash=h,
-                    embedding=embedding,
-                    strategy=cr.metadata.get("base_strategy", cr.metadata.get("strategy", chunking_strategy)),
-                    chunk_index=cr.chunk_index,
-                    chunk_metadata=cr.metadata,
-                )
+    if dry_run:
+        return {
+            "status": status,
+            "document": existing,
+            "document_id": str(existing.id) if existing else "",
+            "source_name": canonical_name,
+            "original_filename": original_filename or canonical_name,
+            "converted_from": converted_from,
+            "content_hash": new_doc_hash,
+            "previous_content_hash": existing.content_hash if existing else None,
+            "chunk_count": len(chunk_results),
+            "chunks_added": len(to_add_hashes),
+            "chunks_kept": len(kept_hashes),
+            "chunks_removed": len(stale_chunk_ids),
+            "embedding_tokens": est_embed_tokens,
+            "embedding_cost_usd": est_cost,
+            "strategy_used": getattr(strategy, "name", chunking_strategy),
+            "warnings": warnings_list,
+            "quarantined": quarantined,
+            "dry_run": True,
+            "started": started,
+            "chunk_ms": chunk_ms,
+            "embed_ms": 0.0,
+        }
+
+    # Embed only new chunk hashes in batches of 32
+    embed_start = time.perf_counter()
+    embeddings_map: dict[str, list[float]] = {}
+    if to_add_hashes:
+        texts_to_embed = [getattr(new_chunks[h], "content", "") for h in to_add_hashes]
+        batch_size = 32
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts_to_embed), batch_size):
+            batch = texts_to_embed[i : i + batch_size]
+            batch_vectors = await embed_texts(
+                batch, "RETRIEVAL_DOCUMENT", stage="ingest"
             )
-    embed_ms = (time.perf_counter() - embed_started) * 1000
+            all_embeddings.extend(batch_vectors)
+        for h, vec in zip(to_add_hashes, all_embeddings):
+            embeddings_map[h] = vec
+    embed_ms = (time.perf_counter() - embed_start) * 1000
 
-    kept = [(h, cr) for h, cr in new_chunks.items() if h in existing_ids_by_hash]
-    for h, cr in kept:
+    # -------------------------------------------------------------------------
+    # PHASE C: Short Write Transaction Under Advisory Lock
+    # -------------------------------------------------------------------------
+    # Advisory lock automatically releases when transaction ends
+    await db.scalar(
+        text("SELECT pg_advisory_xact_lock(hashtext(lower(:name)))"),
+        {"name": canonical_name},
+    )
+
+    # Re-fetch document inside lock to verify concurrency
+    current_doc = await db.scalar(
+        select(Document).where(
+            func.lower(Document.source_name) == func.lower(canonical_name)
+        )
+    )
+
+    provenance = {
+        **(current_doc.doc_metadata if current_doc else (metadata or {})),
+        "original_filename": original_filename or canonical_name,
+        "original_format": converted_from,
+        "original_sha256": original_sha256 or "",
+        "converter_version": "v1",
+        "previous_content_hash": existing.content_hash if existing else None,
+        "ingest_count": (
+            (
+                current_doc.doc_metadata.get("ingest_count", 0)
+                if current_doc and current_doc.doc_metadata
+                else 0
+            )
+            + 1
+        ),
+        "last_ingested_at": datetime.utcnow().isoformat(),
+        "last_ingested_by": actor,
+        "warnings": warnings_list,
+        "quarantined": quarantined,
+    }
+
+    if current_doc is None:
+        document = Document(
+            source_name=canonical_name,
+            source_type=source_type,
+            content_hash=new_doc_hash,
+            doc_metadata=provenance,
+        )
+        db.add(document)
+        await db.flush()
+    else:
+        document = current_doc
+        document.content_hash = new_doc_hash
+        document.updated_at = datetime.utcnow()
+        document.source_type = source_type
+        document.doc_metadata = provenance
+
+    # Delete stale chunks
+    if stale_chunk_ids:
+        await db.execute(delete(Chunk).where(Chunk.id.in_(stale_chunk_ids)))
+
+    # Insert new chunks
+    for h in to_add_hashes:
+        cr = new_chunks[h]
+        db.add(
+            Chunk(
+                document_id=document.id,
+                content=getattr(cr, "content", ""),
+                content_hash=h,
+                embedding=embeddings_map[h],
+                strategy=getattr(cr, "metadata", {}).get(
+                    "base_strategy",
+                    getattr(cr, "metadata", {}).get("strategy", chunking_strategy),
+                ),
+                chunk_index=getattr(cr, "chunk_index", 0),
+                chunk_metadata=getattr(cr, "metadata", {}),
+            )
+        )
+
+    # Update kept chunks index & metadata
+    for h in kept_hashes:
+        cr = new_chunks[h]
         await db.execute(
             update(Chunk)
             .where(Chunk.document_id == document.id, Chunk.content_hash == h)
-            .values(chunk_index=cr.chunk_index, chunk_metadata=cr.metadata)
+            .values(
+                chunk_index=getattr(cr, "chunk_index", 0),
+                chunk_metadata=getattr(cr, "metadata", {}),
+            )
         )
 
+    # Record mutation audit event in the SAME transaction (fail closed)
+    await record_audit_event(
+        db,
+        request_id=request_id,
+        actor=actor,
+        action="ingest",
+        detail={
+            "source_name": canonical_name,
+            "original_filename": original_filename or canonical_name,
+            "converted_from": converted_from,
+            "status": status,
+            "previous_content_hash": (
+                existing.content_hash[:12]
+                if existing and existing.content_hash
+                else None
+            ),
+            "content_hash": new_doc_hash[:12],
+            "chunks_added": len(to_add_hashes),
+            "chunks_kept": len(kept_hashes),
+            "chunks_removed": len(stale_chunk_ids),
+            "pii_redacted": pii_found,
+            "warnings": warnings_list,
+            "quarantined": quarantined,
+            "embedding_tokens": est_embed_tokens,
+            "embedding_cost_usd": est_cost,
+        },
+        ip_address=client_ip,
+        commit=False,
+    )
+
     await db.commit()
+
     return {
         "status": status,
         "document": document,
-        "added": len(to_add),
-        "kept": len(kept),
-        "removed": len(stale_ids),
-        "chunk_results": chunk_results,
+        "document_id": str(document.id),
+        "source_name": canonical_name,
+        "original_filename": original_filename or canonical_name,
+        "converted_from": converted_from,
+        "content_hash": new_doc_hash,
+        "previous_content_hash": existing.content_hash if existing else None,
+        "chunk_count": len(chunk_results),
+        "chunks_added": len(to_add_hashes),
+        "chunks_kept": len(kept_hashes),
+        "chunks_removed": len(stale_chunk_ids),
+        "embedding_tokens": est_embed_tokens,
+        "embedding_cost_usd": est_cost,
+        "strategy_used": getattr(strategy, "name", chunking_strategy),
+        "warnings": warnings_list,
+        "quarantined": quarantined,
+        "dry_run": False,
+        "started": started,
         "chunk_ms": chunk_ms,
         "embed_ms": embed_ms,
-        "started": started,
     }

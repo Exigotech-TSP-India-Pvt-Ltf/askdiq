@@ -5,6 +5,15 @@ import type {
   AuditLogEntry,
   ChatSessionSummary,
   ChatSessionDetail,
+  IngestResult,
+  Audience,
+  PageEnvelope,
+  AudienceCounts,
+  UsageSummary,
+  UsageUserRow,
+  UsageSessionRow,
+  UsageQueryRow,
+  QueryInspectorDetail,
 } from "./types";
 
 // Requests go through our own /api/proxy route so the real backend API key
@@ -39,12 +48,14 @@ async function request<T>(
   path: string,
   options: RequestInit & { token?: string | null } = {}
 ): Promise<T> {
-  const { token, headers, ...rest } = options;
+  const { token, headers, body, ...rest } = options;
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...rest,
+    body,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       "X-Client-Id": getClientId(),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
@@ -54,8 +65,8 @@ async function request<T>(
   if (!res.ok) {
     let detail = res.statusText;
     try {
-      const body = await res.json();
-      detail = body.detail ?? detail;
+      const respBody = await res.json();
+      detail = respBody.detail ?? detail;
     } catch {
       // response had no JSON body
     }
@@ -135,8 +146,23 @@ export const api = {
   adminGet: <T = any>(token: string, path: string) =>
     request<T>(`/admin${path}`, { token }),
 
-  evaluationReport: (token: string) =>
-    request<Record<string, any>>("/metrics/evaluation", { token }),
+  adminPost: <T = any>(token: string, path: string, body?: any) =>
+    request<T>(`/admin${path}`, {
+      method: "POST",
+      token,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
+
+  adminDelete: <T = any>(token: string, path: string) =>
+    request<T>(`/admin${path}`, {
+      method: "DELETE",
+      token,
+    }),
+
+  evaluationReport: (token: string, audience?: Audience, signal?: AbortSignal) => {
+    const qs = audience && audience !== "overview" ? `?audience=${audience}` : "";
+    return request<Record<string, any>>(`/metrics/evaluation${qs}`, { token, signal });
+  },
 
   ingest: (
     token: string,
@@ -170,6 +196,271 @@ export const api = {
     const qs = search.toString();
     return request<AuditLogEntry[]>(`/governance/audit-log${qs ? `?${qs}` : ""}`, {
       token,
+    });
+  },
+
+  submitFeedback: (
+    token: string,
+    sessionId: string,
+    messageId: string,
+    rating: number,
+    comment?: string
+  ) =>
+    request<{
+      id: string;
+      message_id: string;
+      actor: string;
+      rating: number;
+      comment: string | null;
+      created_at: string;
+      updated_at: string;
+    }>(`/sessions/${sessionId}/messages/${messageId}/feedback`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ rating, comment: comment ?? null }),
+    }),
+
+  ingestFile: (
+    token: string,
+    file: File,
+    options?: { dryRun?: boolean; force?: boolean }
+  ) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const qs = new URLSearchParams();
+    if (options?.dryRun) qs.set("dry_run", "true");
+    if (options?.force) qs.set("force", "true");
+    const queryStr = qs.toString();
+    return request<IngestResult>(`/ingest/file${queryStr ? `?${queryStr}` : ""}`, {
+      method: "POST",
+      token,
+      body: formData,
+    });
+  },
+
+  getAudienceCounts: (token: string, signal?: AbortSignal) =>
+    request<AudienceCounts>("/admin/usage/audience-counts", { token, signal }),
+
+  getUsageSummary: (
+    token: string,
+    params: { audience?: Audience; from_date?: string; to_date?: string } = {},
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.audience) qs.set("audience", params.audience);
+    if (params.from_date) qs.set("from_date", params.from_date);
+    if (params.to_date) qs.set("to_date", params.to_date);
+    const queryStr = qs.toString();
+    return request<UsageSummary>(`/admin/usage/summary${queryStr ? `?${queryStr}` : ""}`, {
+      token,
+      signal,
+    });
+  },
+
+  getUsageUsers: (
+    token: string,
+    params: {
+      audience?: Audience;
+      q?: string;
+      type?: string;
+      sort?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.audience) qs.set("audience", params.audience);
+    if (params.q) qs.set("q", params.q);
+    if (params.type) qs.set("type", params.type);
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.offset !== undefined) qs.set("offset", String(params.offset));
+    const queryStr = qs.toString();
+    return request<PageEnvelope<UsageUserRow>>(
+      `/admin/usage/users${queryStr ? `?${queryStr}` : ""}`,
+      { token, signal }
+    );
+  },
+
+  getUsageSessions: (
+    token: string,
+    params: {
+      audience?: Audience;
+      q?: string;
+      ip?: string;
+      sort?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.audience) qs.set("audience", params.audience);
+    if (params.q) qs.set("q", params.q);
+    if (params.ip) qs.set("ip", params.ip);
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.offset !== undefined) qs.set("offset", String(params.offset));
+    const queryStr = qs.toString();
+    return request<PageEnvelope<UsageSessionRow>>(
+      `/admin/usage/sessions${queryStr ? `?${queryStr}` : ""}`,
+      { token, signal }
+    );
+  },
+
+  getUsageQueries: (
+    token: string,
+    params: {
+      audience?: Audience;
+      q?: string;
+      ip?: string;
+      session_id?: string;
+      outcome?: string;
+      grounded?: boolean;
+      sort?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.audience) qs.set("audience", params.audience);
+    if (params.q) qs.set("q", params.q);
+    if (params.ip) qs.set("ip", params.ip);
+    if (params.session_id) qs.set("session_id", params.session_id);
+    if (params.outcome) qs.set("outcome", params.outcome);
+    if (params.grounded !== undefined) qs.set("grounded", String(params.grounded));
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.offset !== undefined) qs.set("offset", String(params.offset));
+    const queryStr = qs.toString();
+    return request<PageEnvelope<UsageQueryRow>>(
+      `/admin/usage/queries${queryStr ? `?${queryStr}` : ""}`,
+      { token, signal }
+    );
+  },
+
+  getBranding: () =>
+    request<{
+      brand_name: string;
+      brand_assistant_name: string;
+      brand_support_email: string;
+    }>("/branding"),
+
+  getQueryDetail: (token: string, requestId: string, signal?: AbortSignal) =>
+    request<any>(`/admin/usage/queries/${requestId}`, { token, signal }),
+
+  getTestIps: (token: string) =>
+    request<{
+      default_ips: string[];
+      custom_ips: Array<{
+        id: string;
+        ip_address: string;
+        description: string | null;
+        is_active: boolean;
+        created_at: string | null;
+      }>;
+      effective_ips: string[];
+      classification_note?: string;
+    }>("/admin/usage/test-ips", { token }),
+
+  addTestIp: (token: string, ipAddress: string, description?: string) =>
+    request<{
+      id: string;
+      ip_address: string;
+      description: string | null;
+      is_active: boolean;
+      created_at: string | null;
+    }>("/admin/usage/test-ips", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ ip_address: ipAddress, description: description ?? null }),
+    }),
+
+  deleteTestIp: (token: string, ipAddress: string) =>
+    request<{ deleted: boolean; ip_address: string }>(
+      `/admin/usage/test-ips/${encodeURIComponent(ipAddress)}`,
+      { method: "DELETE", token }
+    ),
+
+  getUsersList: (
+    token: string,
+    params: {
+      audience?: Audience;
+      q?: string;
+      status?: string;
+      type?: string;
+      sort?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.audience) qs.set("audience", params.audience);
+    if (params.q) qs.set("q", params.q);
+    if (params.status && params.status !== "all") qs.set("status", params.status);
+    if (params.type && params.type !== "all") qs.set("type", params.type);
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.offset !== undefined) qs.set("offset", String(params.offset));
+    const queryStr = qs.toString();
+    return request<PageEnvelope<any>>(`/admin/users${queryStr ? `?${queryStr}` : ""}`, {
+      token,
+      signal,
+    });
+  },
+
+  getConversationsList: (
+    token: string,
+    params: {
+      audience?: Audience;
+      q?: string;
+      ip?: string;
+      sort?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.audience) qs.set("audience", params.audience);
+    if (params.q) qs.set("q", params.q);
+    if (params.ip) qs.set("ip", params.ip);
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.offset !== undefined) qs.set("offset", String(params.offset));
+    const queryStr = qs.toString();
+    return request<PageEnvelope<any>>(`/admin/conversations${queryStr ? `?${queryStr}` : ""}`, {
+      token,
+      signal,
+    });
+  },
+
+  getFeedbackList: (
+    token: string,
+    params: {
+      audience?: Audience;
+      q?: string;
+      rating?: number;
+      sort?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.audience) qs.set("audience", params.audience);
+    if (params.q) qs.set("q", params.q);
+    if (params.rating !== undefined) qs.set("rating", String(params.rating));
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.offset !== undefined) qs.set("offset", String(params.offset));
+    const queryStr = qs.toString();
+    return request<PageEnvelope<any>>(`/admin/feedback${queryStr ? `?${queryStr}` : ""}`, {
+      token,
+      signal,
     });
   },
 };
