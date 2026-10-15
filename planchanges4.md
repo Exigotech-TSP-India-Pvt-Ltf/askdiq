@@ -1596,29 +1596,29 @@ Port the HTML's design (newplan §6) onto the B6 endpoints in light and dark.
 - [ ] **[Test]** Phase F6 complete.
 
 #### Task F6.1: Route, nav and filter bar
-- [ ] **[Dev]** Add `admin/analytics` with a sidebar item (`ChartColumnBig`) and `ANALYTICS_TABS` (Guide, Overview, Trend, Flow, Topics, Drop-off, Conversations) in `TabGroup` with the `layoutId` pill. The filter bar (period, user type, outcome, rating, search) is synced to the URL.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The URL round-trips.
+- [x] **[Dev]** Add `admin/analytics` with a sidebar item (`ChartColumnBig`) and `ANALYTICS_TABS` (Guide, Overview, Trend, Flow, Topics, Drop-off, Conversations) in `TabGroup` with the `layoutId` pill. The filter bar (period, user type, outcome, rating, search) is synced to the URL.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The URL round-trips.
 
 #### Task F6.2: Charts and KPIs
-- [ ] **[Dev]** KPI strip, `TrendChart`, `HourOfDayChart`, `FlowSankey`, `TopicsTreemap` (sized by volume, shaded by handled %), `QualityDonut`, `DropoffChart` (lollipop) and `PeopleBubble`. Charts are loaded with `next/dynamic`. Clicking a topic or drop-off filters Conversations.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Each chart renders the 49-conversation fixture and matches the reference numbers.
+- [x] **[Dev]** KPI strip, `TrendChart`, `HourOfDayChart`, `FlowSankey`, `TopicsTreemap` (sized by volume, shaded by handled %), `QualityDonut`, `DropoffChart` (lollipop) and `PeopleBubble`. Charts are loaded with `next/dynamic`. Clicking a topic or drop-off filters Conversations.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Each chart renders the 49-conversation fixture and matches the reference numbers.
 
 #### Task F6.3: Conversations tab, Guide tab and empty state
-- [ ] **[Dev]** Conversations uses a cursor `TableCard` with per-turn expand (height animation) and rows linking to `conversations/[id]`. The Guide tab has static metric definitions. The empty state reads "N turns pending classification" with a progress bar.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Expand and collapse are keyboard-accessible. The pending state renders.
+- [x] **[Dev]** Conversations uses a cursor `TableCard` with per-turn expand (height animation) and rows linking to `conversations/[id]`. The Guide tab has static metric definitions. The empty state reads "N turns pending classification" with a progress bar.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Expand and collapse are keyboard-accessible. The pending state renders.
 
 #### Task F6.4: Reference HTML and visual check
-- [ ] **[Dev]** Save the sanitized HTML to `frontend/tests/fixtures/analytics/` (newplan open item 1). Add `tests/journeys/analytics-parity.test.tsx`: render the page with API responses recorded from the backend parity fixture (B6.4) and assert the HTML's KPI values and chart totals (newplan §6.4). Put manual side-by-side screenshots (HTML vs port, light and dark) in the PR.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** Save the sanitized HTML to `frontend/tests/fixtures/analytics/` (newplan open item 1). Add `tests/journeys/analytics-parity.test.tsx`: render the page with API responses recorded from the backend parity fixture (B6.4) and assert the HTML's KPI values and chart totals (newplan §6.4). Put manual side-by-side screenshots (HTML vs port, light and dark) in the PR.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F6.5: Phase F6 integration testing
-- [ ] **[Dev]** `tests/journeys/analytics.test.tsx`: a filter change, then a topic click, then the Conversations tab filtered (URL params), then the row link targets `/admin/conversations/{id}`. Clicking a trend day toggles from = to = that day, as in the HTML's `setDay()`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/analytics.test.tsx`: a filter change, then a topic click, then the Conversations tab filtered (URL params), then the row link targets `/admin/conversations/{id}`. Clicking a trend day toggles from = to = that day, as in the HTML's `setDay()`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F6.6: PR
 - **PR-25** `feat/ui-analytics-insights`.
@@ -2082,6 +2082,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #31 | PR-13 | `feat/insights-analytics-endpoints` | #23 | Open, CI green (814 backend tests) | `/admin/insights/*` endpoints match the HTML renderer exactly (13 filter cases), plus taxonomy CRUD. Summary p95 is 480 ms on 100k turns. **Your decision:** the ≥ 60 % user-type rule vs the HTML's plurality rule (conversation C10); the threshold is a constant. |
 | #30 | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | Open, **all jobs green** | One ChartCard replacing 4 copies, with a "View as table" toggle. 12 keyboard-accessible SVG catalogue charts on chart tokens. Dynamic Treemap and Sankey. `useApiQuery` with dedupe, SWR, abort and focus refetch; intent and idle prefetch; optimistic mutations with undo and 409 handling. 234 vitest tests. F0.5.4 (OpenAPI type sync) is deferred until after B7. |
 | #32 | PR-17 | `feat/ui-global-ux-primitives` | #30 | Open, **all jobs green** (317 vitest tests) | EntityLink and useDeepLink, DrawerShell (both QueryInspectorDrawers consolidated), toasts with undo, a typed ConfirmDialog, state components, DateRangePicker (opt-in), Ctrl+K palette, `?` shortcuts sheet, table column and density preferences, cursor pagination, branded 404 and error pages, mobile off-canvas sidebar, profile menu and bell shells, nav pre-registration, layoutId pills. The route JS increase is at most 27 KB (budget 60). **Manual:** screenshots and a 390 px check. |
+| #33 | PR-25 | `feat/ui-analytics-insights` | #30 | Open, **all jobs green** (273 vitest tests) | Analytics page: a native port of the Insights HTML on the `/admin/insights` API, with URL-synced filters, cross-filtering, 6 KPIs, trend with setDay, radial hour-of-day, Sankey flow, treemap, donut, lollipop, bubbles, an expandable conversations table, a guide tour and a pending-classification state. Parity test on screen: 49 conversations, 106 questions, 48 % handled, 23 % served, 46 people, Served 11, Partly 14, Not 22. Two light-mode colours were swapped for AA contrast. **After merge:** set `enabled: true` on the Analytics nav item. **Manual:** side-by-side screenshots with the HTML. |
 | – | PR-18, PR-19, PR-23, PR-24, PR-26 | (feature UIs) | #32 | In progress, parallel | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
 | #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
 
