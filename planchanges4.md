@@ -1295,46 +1295,46 @@ Put the B2 security model into the UI (newplan §7.7, §7.8). The UI hides what 
 - [ ] **[Test]** Phase F1 complete.
 
 #### Task F1.1: Session plumbing
-- [ ] **[Dev]** Task F1.1: add `middleware.ts`, the callback route, proxy changes and the real `auth-context`.
-- [ ] **[Lint]** Task F1.1: LINT-FE.
-- [ ] **[Test]** Task F1.1: `tests/lib/auth-context.test.tsx` and `tests/lib/proxy.test.ts` pass.
+- [x] **[Dev]** Task F1.1: add `middleware.ts`, the callback route, proxy changes and the real `auth-context`.
+- [x] **[Lint]** Task F1.1: LINT-FE.
+- [x] **[Test]** Task F1.1: `tests/lib/auth-context.test.tsx` and `tests/lib/proxy.test.ts` pass.
 
 ##### Subtask F1.1.1: `app/auth/callback/route.ts`
-- [ ] **[Dev]** Forward `code` and `state` to `POST /auth/sso/callback`. Set the httpOnly session cookie (`SESSION_COOKIE_NAME`, SameSite=Lax, `Secure` from env, Path=/). Redirect to the `next` param only if it is same-origin (blocks open redirects).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** An external `next` URL is ignored. The cookie flags are correct.
+- [x] **[Dev]** Forward `code` and `state` to `POST /auth/sso/callback`. Set the httpOnly session cookie (`SESSION_COOKIE_NAME`, SameSite=Lax, `Secure` from env, Path=/). Redirect to the `next` param only if it is same-origin (blocks open redirects).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** An external `next` URL is ignored. The cookie flags are correct.
 
 ##### Subtask F1.1.2: Proxy forwards the session
-- [ ] **[Dev]** `app/api/proxy/[...path]/route.ts` reads the cookie and sends `X-Session`, `X-Requested-With: askdiq` and the service key. It never exposes cookies to the client. A 401 from the backend clears the cookie.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The headers are forwarded. Path traversal is still blocked (existing test kept).
+- [x] **[Dev]** `app/api/proxy/[...path]/route.ts` reads the cookie and sends `X-Session`, `X-Requested-With: askdiq` and the service key. It never exposes cookies to the client. A 401 from the backend clears the cookie.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The headers are forwarded. Path traversal is still blocked (existing test kept).
 
 ##### Subtask F1.1.3: `middleware.ts`
-- [ ] **[Dev]** With no cookie, a page request redirects to `/login?next=`. This is UX only. It also sets the CSP nonce (F0.1.2).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Redirects work. Static assets and `/login` are excluded.
+- [x] **[Dev]** With no cookie, a page request redirects to `/login?next=`. This is UX only. It also sets the CSP nonce (F0.1.2).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Redirects work. Static assets and `/login` are excluded.
 
 ##### Subtask F1.1.4: `auth-context.tsx`
-- [ ] **[Dev]** Replace the Guest stub with `GET /auth/me`, exposing `user`, `role`, `status`, `permissions` and `accessContactEmail`. The shape stays compatible (`token`, `user`, `isLoading`, `logout`). Add `usePermission(p)` and `<RequirePermission>`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Each status renders correctly. Logout calls the API, then redirects.
+- [x] **[Dev]** Replace the Guest stub with `GET /auth/me`, exposing `user`, `role`, `status`, `permissions` and `accessContactEmail`. The shape stays compatible (`token`, `user`, `isLoading`, `logout`). Add `usePermission(p)` and `<RequirePermission>`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Each status renders correctly. Logout calls the API, then redirects.
 
 ---
 
 #### Task F1.2: Auth pages
-- [ ] **[Dev]** Task F1.2: build the login, Access Required and suspended pages.
-- [ ] **[Lint]** Task F1.2: LINT-FE.
-- [ ] **[Test]** Task F1.2: component tests pass.
+- [x] **[Dev]** Task F1.2: build the login, Access Required and suspended pages.
+- [x] **[Lint]** Task F1.2: LINT-FE.
+- [x] **[Test]** Task F1.2: component tests pass.
 
 ##### Subtask F1.2.1: `/login`
-- [ ] **[Dev]** Build the page to the newplan §7.7 "Login page design" spec. It follows the reference ET-HUB screenshot, but in **our logo and teal palette, not purple**:
+- [x] **[Dev]** Build the page to the newplan §7.7 "Login page design" spec. It follows the reference ET-HUB screenshot, but in **our logo and teal palette, not purple**:
   - **Left panel:** teal gradient, animated hexagon outlines and rings, white `BrandLogo`, eyebrow, headline, copy and © footer.
   - **Right panel:** "Welcome to {product}", description, the Microsoft sign-in button (hover lift, sheen, focus ring, loading spinner), the SINGLE SIGN-ON divider, the access text with an `ACCESS_CONTACT_EMAIL` mailto link, and the Privacy, Terms and Help links.
   - **Motion:** staggered `fadeUp`, slow hexagon drift with pointer parallax, and `pop` on the error banner.
   - **Other states:** dark mode, a single column on mobile, and reduced motion is static.
   - **Data:** every string, URL and logo comes from `useBrand()`. The error message comes from the `?error=` code, using allow-listed messages only.
-- [ ] **[Lint]** Run LINT-FE. The theme guard is clean (no hex colours, only tokens).
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-FE. The theme guard is clean (no hex colours, only tokens).
+- [x] **[Test]**
   - An unknown error code shows a generic message and never reflects raw input (XSS check).
   - The brand strings render from a mocked `/branding`, and empty `privacy_url`, `terms_url` or `help_url` hide their links.
   - The button shows a spinner and is disabled after a click.
@@ -1342,24 +1342,24 @@ Put the B2 security model into the UI (newplan §7.7, §7.8). The UI hides what 
   - Manual light and dark screenshots are compared side by side with the reference in the PR.
 
 ##### Subtask F1.2.2: Access Required page and suspended page
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - A stepper (requested, under review, approved) animated with Motion, and a request form (role and justification, max 500 characters).
   - The status polls `/auth/me` every 15 s (paused when the tab is hidden). On approval it transitions into the dashboard without a re-login.
   - The suspended page shows the contact email.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** An approval flip triggers the transition. Reduced motion disables the animation.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** An approval flip triggers the transition. Reduced motion disables the animation.
 
 ##### Subtask F1.2.3: Route gate in `(app)/layout.tsx`
-- [ ] **[Dev]** Pending or rejected users can use `/chat` and see the Access Required page on dashboard routes. Suspended users see the suspended page. Active users get the full shell.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A table-driven test covers each status x route pair.
+- [x] **[Dev]** Pending or rejected users can use `/chat` and see the Access Required page on dashboard routes. Suspended users see the suspended page. Active users get the full shell.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A table-driven test covers each status x route pair.
 
 ---
 
 #### Task F1.3: Sidebar and header
-- [ ] **[Dev]** Filter items by permission. Rename Users to **Visitors**. Add a **User Management** item (`UserCog`) with an animated pending badge, and a Settings item (`Settings2`, superadmin). Add a profile menu (avatar, name, email, role badge, theme light/dark/system, sign out) and a notification bell (SSE: access requests, incidents, feedback spikes).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Update `Sidebar.test.tsx` for each role. The badge count shows. The collapsed rail shows tooltips.
+- [x] **[Dev]** Filter items by permission. Rename Users to **Visitors**. Add a **User Management** item (`UserCog`) with an animated pending badge, and a Settings item (`Settings2`, superadmin). Add a profile menu (avatar, name, email, role badge, theme light/dark/system, sign out) and a notification bell (SSE: access requests, incidents, feedback spikes).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Update `Sidebar.test.tsx` for each role. The badge count shows. The collapsed rail shows tooltips.
 
 #### Task F1.4: User Management page (`/admin/user-management`)
 - [x] **[Dev]** Task F1.4: build the KPI strip, charts and four tabs (newplan §7.8, §15.4).
@@ -1382,11 +1382,11 @@ Put the B2 security model into the UI (newplan §7.7, §7.8). The UI hides what 
 - [x] **[Test]** Bulk approve. An approved row animates out (`AnimatePresence`).
 
 #### Task F1.5: Phase F1 integration and E2E
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `tests/journeys/auth.test.tsx` (vitest, `/auth/me` mocked through each state): a new user sees Chat, then Access Required, submits a request, the status flips to approved, and the dashboard renders. A suspended user sees the suspended page.
   - `smoke_e2e.py --journey access`, against the real stack and mock IdP through port 3000: a new user requests access, the superadmin approves through the API, the user's next `/auth/me` is active, and a dashboard API returns 200. Then the user is suspended, and the next call returns 403.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass in CI.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass in CI.
 
 #### Task F1.6: PRs
 - **PR-18** `feat/ui-auth-gate-login`: F1.1, F1.2 and F1.3.
@@ -2087,7 +2087,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #34 | PR-24 | `feat/ui-feedback-triage-workspace` | #32 | Open, **all 4 jobs green** (349 vitest tests) | Chat reason chips and a "what should it have said?" box. Workspace tabs: Overview (every chart mark filters the queue), Review Queue (j/k/x/r/d/p keys, bulk actions, drawer, optimistic updates with 409 handling, read-only for operators), Golden Cases with Run now, Preference Data export, Knowledge Gaps. **Backend follow-ups queued for #27:** `PATCH` should accept `corrected_answer`; add reason-tag and sentiment list filters; add a golden-run job status endpoint; widen the undo transitions. |
 | #37 | PR-26 | `feat/ui-settings-branding-taxonomy` | #32 | Open, **all 4 jobs green** (364 vitest tests) | Branding editor: form, live contrast badge (palette matches the backend exactly), 5 logo upload slots, live light/dark preview of sidebar, login and chat, save with version and 409 handling, reset to defaults, brand changes applied app-wide without a reload. Taxonomy editor: immutable codes, reorder, archive. Public `/branding/assets/[sha]` passthrough; proxy forwards PUT. **Follow-up:** the `--journey branding` smoke step needs the backend chain. |
 | #36 | PR-23 | `feat/ui-governance-revamp` | #32 | Open, **all 4 jobs green** (358 vitest tests) | Overall: animated health banner, 8 KPI sparkline cards, status timeline with incident markers that open Logs, live incident list. Monitoring: G1 (ms/s axis), G2 (no data), G7 (window/source labels), G8 (4×2 grid), stage percentiles, gauges, SSE live updates with backoff and pause on hidden (G13). Traces: cursor table and waterfall drawer, `?request_id=` deep link. Logs: server paging (G12), level chips, JSON viewer, CSV, auto-refresh. **Note:** SSE and CSV rely on the cookie session from PR-18. `/admin/governance` first-load JS is 317 kB; check it against the §13.4 budget in phase V. |
-| – | PR-18 | `feat/ui-auth-gate-login` | #32 | In progress | |
+| #38 | PR-18 | `feat/ui-auth-gate-login` | #32 | Open, **all 4 jobs green** (491 vitest tests) | Server-side OIDC start and callback (state cookie, HttpOnly session, 8-step contract). Proxy forwards X-Session, X-Requested-With and Origin, handles every method and never exposes the session id. Nonce CSP middleware. Real auth context with fail-closed `usePermission`, `useCan` and `<RequirePermission>`. Branded teal split-screen `/login` (§7.7). Access Required stepper with polling, `/suspended` page, route gate, role-filtered sidebar and palette, pending-request badge and bell. **After the merge into the backend chain:** turn on the `--journey signin` smoke step in CI. The CSP `img-src` blocks external logo hosts. |
 | – | consolidation | – | after merges | Planned | Replace the 3 temporary permission helpers in #35, #34 and #37 with PR-18's `usePermission`/`useCan`, and flip the Analytics nav flag after #33. | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
 | #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
 
@@ -2099,3 +2099,5 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 Merge a parent, then delete its branch, and GitHub retargets its children to `main`. Before the final merge, a **rebase sweep** brings PR-01's stricter CI and PR-04's flaky-test fix into every backend branch, so each one is green under the final CI.
 
 **Rebase sweep in progress:** the backend PRs are being turned into one linear chain, in this order: #19 → #16 → #17 → #18 → {#21, #20 → {#25, #23 → #31 → #26 → #27 → #22 → #29}}. This brings PR-01's stricter CI and PR-04's flaky-test fixes into every branch, and re-links the four sibling migrations into one alembic chain: `a9b0c1d2e3f4` → `4c1e9a7d2b65` → `b0c1d2e3f4a5` → `5712ebd9d3c9` → `72125f44984d`. The PR bases are being retargeted to match.
+
+**2026-10-16: local CI gate.** At your request, nothing is pushed unless `ci_local.ps1` (a full mirror of `ci.yml`, including a fresh Postgres DB per worktree and the full-stack smoke test) passes locally first. **Pushes are on hold until you set the `ASKDIQ_TEST_DB_ADMIN_URL` user environment variable.** Workers keep committing locally in the meantime.
