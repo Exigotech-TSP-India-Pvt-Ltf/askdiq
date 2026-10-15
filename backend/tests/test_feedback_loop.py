@@ -1076,7 +1076,12 @@ async def test_analytics_exact_counts_and_unfiltered_total(client, db_session):
     day_a = next(d for d in after["daily_trend"] if d["day"] == today)
     day_b = next((d for d in before["daily_trend"] if d["day"] == today), {"total": 0})
     assert day_a["total"] - day_b["total"] == 6
-    assert "by_intent" not in after  # B6 turn_insights not present yet
+    # The insights migration (turn_insights) is below this one in the stack,
+    # so by_intent is reported; the seeded feedback has no turn labels, so
+    # the per-intent counts do not move.
+    intents_before = {r["key"]: r["count"] for r in before["by_intent"]}
+    intents_after = {r["key"]: r["count"] for r in after["by_intent"]}
+    assert intents_after == intents_before
 
     # F3: the analytics total ignores list filters entirely.
     filtered = await client.get(f"/admin/feedback?q={mk}&rating=1")
