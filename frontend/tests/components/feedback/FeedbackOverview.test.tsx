@@ -56,7 +56,8 @@ const CASES: { chart: string; mark: RegExp; param: [string, string]; chip: strin
 describe("Feedback Overview", () => {
   it("uses the unfiltered analytics total for the KPI and shows the spike alert", async () => {
     await renderOverview();
-    const card = screen.getByText("Total feedback").closest("div")!.parentElement!;
+    // PR-21's KpiTrendCard wraps the label (window label slot): climb to the tile.
+    const card = screen.getByText("Total feedback").closest("div")!.parentElement!.parentElement!;
     expect(card).toHaveTextContent("42");
     expect(screen.getByRole("alert")).toHaveTextContent(/negative feedback spike/i);
     // KPIs come from /analytics; the list endpoint is not even called on Overview.
