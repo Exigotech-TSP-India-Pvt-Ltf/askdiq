@@ -69,12 +69,12 @@ export function OverviewTab({
   return (
     <div className="space-y-8">
       {/* As of banner */}
-      <div className="flex items-center justify-between text-xs text-slate-500 bg-white/70 backdrop-blur-sm border border-slate-200/60 px-4 py-2 rounded-lg">
+      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-dark-surface/70 backdrop-blur-sm border border-slate-200/60 dark:border-dark-border px-4 py-2 rounded-lg">
         <div className="flex items-center gap-2">
-          <Clock className="w-3.5 h-3.5 text-slate-400" />
+          <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
           <span>
             Telemetry as of:{" "}
-            <span className="font-medium text-slate-700">
+            <span className="font-medium text-slate-700 dark:text-slate-200">
               {as_of ? new Date(as_of).toLocaleTimeString() : "Just now"}
             </span>
           </span>
@@ -90,13 +90,13 @@ export function OverviewTab({
       {/* BLOCK 1: FINANCIAL COST ECONOMICS ($ USD) */}
       {/* ========================================================================= */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-dark-border pb-2">
           <div>
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-emerald-600" />
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               Financial Cost Economics (USD)
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Net expenditure across LLM generation, vector embeddings, and ingestion platform operations.
             </p>
           </div>
@@ -109,7 +109,7 @@ export function OverviewTab({
             value={`$${financial.total_cost_usd.toFixed(4)}`}
             subtitle={`Avg $${financial.avg_cost_per_query_usd.toFixed(4)} / turn`}
             icon={DollarSign}
-            className="border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/20"
+            className="border-emerald-200/80 dark:border-emerald-800/40 bg-gradient-to-br from-white to-emerald-50/20 dark:from-dark-card dark:to-emerald-950/20"
           />
 
           <StatCard
@@ -138,15 +138,15 @@ export function OverviewTab({
         </div>
 
         {/* Financial Stage Breakdown Table */}
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-200 text-xs font-semibold text-slate-700 flex justify-between items-center">
+        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card shadow-sm">
+          <div className="bg-slate-50/80 dark:bg-dark-surface px-4 py-3 border-b border-slate-200 dark:border-dark-border text-xs font-semibold text-slate-700 dark:text-slate-200 flex justify-between items-center">
             <span>Granular Cost Accounting by Pipeline Stage</span>
-            <span className="text-slate-400 font-normal text-[11px]">Pricing Rate Card Active</span>
+            <span className="text-slate-400 dark:text-slate-500 font-normal text-[11px]">Pricing Rate Card Active</span>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50/50 text-slate-500 font-medium border-b border-slate-100">
+              <thead className="bg-slate-50/50 dark:bg-dark-surface/50 text-slate-500 dark:text-slate-400 font-medium border-b border-slate-100 dark:border-dark-border">
                 <tr>
                   <th className="px-4 py-2.5">Pipeline Stage</th>
                   <th className="px-4 py-2.5">Token Type</th>
@@ -155,122 +155,122 @@ export function OverviewTab({
                   <th className="px-4 py-2.5 text-right">Total Cost (USD)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
+              <tbody className="divide-y divide-slate-100 dark:divide-dark-border text-slate-700 dark:text-slate-200">
                 <tr>
-                  <td className="px-4 py-2.5 font-medium flex items-center gap-2">
+                  <td className="px-4 py-2.5 font-medium flex items-center gap-2 text-slate-900 dark:text-white">
                     <span className="w-2 h-2 rounded-full bg-cyan-500" />
                     Query Embeddings
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500">Vector Embeddings</td>
-                  <td className="px-4 py-2.5 text-right font-mono">
+                  <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">Vector Embeddings</td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                     {tokens.embeddings_tokens.query_embed_tokens.toLocaleString()}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-slate-500">
+                  <td className="px-4 py-2.5 text-right font-mono text-slate-500 dark:text-slate-400">
                     ${pricing.price_embed_per_million.toFixed(3)}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900">
+                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900 dark:text-white">
                     ${financial.stage_costs.query_embed_cost.toFixed(5)}
                   </td>
                 </tr>
 
                 <tr>
-                  <td className="px-4 py-2.5 font-medium flex items-center gap-2">
+                  <td className="px-4 py-2.5 font-medium flex items-center gap-2 text-slate-900 dark:text-white">
                     <span className="w-2 h-2 rounded-full bg-cyan-600" />
                     Guardrail Embeddings
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500">Vector Embeddings</td>
-                  <td className="px-4 py-2.5 text-right font-mono">
+                  <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">Vector Embeddings</td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                     {tokens.embeddings_tokens.guardrail_embed_tokens.toLocaleString()}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-slate-500">
+                  <td className="px-4 py-2.5 text-right font-mono text-slate-500 dark:text-slate-400">
                     ${pricing.price_embed_per_million.toFixed(3)}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900">
+                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900 dark:text-white">
                     ${financial.stage_costs.guardrail_embed_cost.toFixed(5)}
                   </td>
                 </tr>
 
                 <tr>
-                  <td className="px-4 py-2.5 font-medium flex items-center gap-2">
+                  <td className="px-4 py-2.5 font-medium flex items-center gap-2 text-slate-900 dark:text-white">
                     <span className="w-2 h-2 rounded-full bg-indigo-500" />
                     Prompt Context
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500">LLM Prompt (Uncached)</td>
-                  <td className="px-4 py-2.5 text-right font-mono">
+                  <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">LLM Prompt (Uncached)</td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                     {tokens.llm_tokens.prompt_context_tokens.toLocaleString()}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-slate-500">
+                  <td className="px-4 py-2.5 text-right font-mono text-slate-500 dark:text-slate-400">
                     ${pricing.price_prompt_per_million.toFixed(3)}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900">
+                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900 dark:text-white">
                     ${financial.stage_costs.prompt_uncached_cost.toFixed(5)}
                   </td>
                 </tr>
 
                 <tr>
-                  <td className="px-4 py-2.5 font-medium flex items-center gap-2">
+                  <td className="px-4 py-2.5 font-medium flex items-center gap-2 text-slate-900 dark:text-white">
                     <span className="w-2 h-2 rounded-full bg-teal-400" />
                     Cached Prompt Context
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500">LLM Cached Context</td>
-                  <td className="px-4 py-2.5 text-right font-mono">
+                  <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">LLM Cached Context</td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                     {tokens.llm_tokens.cached_prompt_tokens.toLocaleString()}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-slate-500">
+                  <td className="px-4 py-2.5 text-right font-mono text-slate-500 dark:text-slate-400">
                     ${pricing.price_cached_per_million.toFixed(3)}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900">
+                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900 dark:text-white">
                     ${financial.stage_costs.cached_prompt_cost.toFixed(5)}
                   </td>
                 </tr>
 
                 <tr>
-                  <td className="px-4 py-2.5 font-medium flex items-center gap-2">
+                  <td className="px-4 py-2.5 font-medium flex items-center gap-2 text-slate-900 dark:text-white">
                     <span className="w-2 h-2 rounded-full bg-purple-500" />
                     Reasoning Tokens
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500">LLM Thinking / Chain</td>
-                  <td className="px-4 py-2.5 text-right font-mono">
+                  <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">LLM Thinking / Chain</td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                     {tokens.llm_tokens.reasoning_tokens.toLocaleString()}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-slate-500">
+                  <td className="px-4 py-2.5 text-right font-mono text-slate-500 dark:text-slate-400">
                     ${pricing.price_output_per_million.toFixed(3)}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900">
+                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900 dark:text-white">
                     ${financial.stage_costs.reasoning_cost.toFixed(5)}
                   </td>
                 </tr>
 
                 <tr>
-                  <td className="px-4 py-2.5 font-medium flex items-center gap-2">
+                  <td className="px-4 py-2.5 font-medium flex items-center gap-2 text-slate-900 dark:text-white">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
                     Visible Output
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500">LLM Rendered Output</td>
-                  <td className="px-4 py-2.5 text-right font-mono">
+                  <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">LLM Rendered Output</td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                     {tokens.llm_tokens.visible_output_tokens.toLocaleString()}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-slate-500">
+                  <td className="px-4 py-2.5 text-right font-mono text-slate-500 dark:text-slate-400">
                     ${pricing.price_output_per_million.toFixed(3)}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900">
+                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900 dark:text-white">
                     ${financial.stage_costs.visible_cost.toFixed(5)}
                   </td>
                 </tr>
 
-                <tr className="bg-slate-50/30">
-                  <td className="px-4 py-2.5 font-medium flex items-center gap-2">
+                <tr className="bg-slate-50/30 dark:bg-dark-surface/30">
+                  <td className="px-4 py-2.5 font-medium flex items-center gap-2 text-slate-900 dark:text-white">
                     <span className="w-2 h-2 rounded-full bg-slate-400" />
                     Document Ingestion Overhead
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500">Platform Indexing</td>
-                  <td className="px-4 py-2.5 text-right font-mono">
+                  <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">Platform Indexing</td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums">
                     {tokens.embeddings_tokens.ingestion_embed_tokens.toLocaleString()}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-slate-500">
+                  <td className="px-4 py-2.5 text-right font-mono text-slate-500 dark:text-slate-400">
                     ${pricing.price_embed_per_million.toFixed(3)}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900">
+                  <td className="px-4 py-2.5 text-right font-semibold font-mono text-slate-900 dark:text-white">
                     ${financial.stage_costs.ingestion_overhead_cost.toFixed(5)}
                   </td>
                 </tr>
@@ -284,13 +284,13 @@ export function OverviewTab({
       {/* BLOCK 2: TOKEN VOLUME BREAKDOWN */}
       {/* ========================================================================= */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-dark-border pb-2">
           <div>
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Zap className="w-5 h-5 text-brand-600" />
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Zap className="w-5 h-5 text-brand-600 dark:text-brand-400" />
               Token Volume Telemetry
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Comprehensive volume of input prompt context, reasoning steps, visible response tokens, and vector embeddings.
             </p>
           </div>
@@ -303,7 +303,7 @@ export function OverviewTab({
             value={tokens.total_billed_tokens}
             subtitle={`Avg ${quality.avg_billed_tokens_per_turn} / turn`}
             icon={Zap}
-            className="border-brand-200/80 bg-gradient-to-br from-white to-brand-50/20"
+            className="border-brand-200/80 dark:border-brand-800/40 bg-gradient-to-br from-white to-brand-50/20 dark:from-dark-card dark:to-brand-950/20"
           />
 
           <StatCard
@@ -329,12 +329,12 @@ export function OverviewTab({
         </div>
 
         {/* Interactive Visual Token Distribution Bar */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+        <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-semibold text-slate-800">
+            <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-100">
               Token Distribution Across Pipeline Stages
             </h4>
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-slate-400 dark:text-slate-500">
               {tokens.total_billed_tokens.toLocaleString()} Total Tokens
             </span>
           </div>
@@ -355,9 +355,9 @@ export function OverviewTab({
 
       {/* Quality & Latency Summary Block */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-purple-600" />
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-dark-border pb-2">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
             Generation Quality & Latency Performance
           </h3>
         </div>

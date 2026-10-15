@@ -8,6 +8,8 @@ import { useAuth } from "@/lib/auth-context";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
+import { TableCard } from "@/components/admin/TableCard";
+import { formatNumber } from "@/components/admin/TableFormatters";
 
 type Message = {
   id: string;
@@ -75,10 +77,10 @@ export default function UserDetailPage() {
       header: "Conversation Title & ID",
       render: (c) => (
         <div className="flex flex-col">
-          <span className="font-medium text-brand-indigo hover:underline">
+          <span className="font-medium text-brand-600 dark:text-brand-400 hover:underline">
             {c.title || "Untitled Conversation"}
           </span>
-          <span className="font-mono text-[10px] text-slate-400">{c.id}</span>
+          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">{c.id}</span>
         </div>
       ),
     },
@@ -86,7 +88,7 @@ export default function UserDetailPage() {
       key: "created_at",
       header: "Created",
       render: (c) => (
-        <span className="text-xs text-slate-600">
+        <span className="text-xs text-slate-600 dark:text-slate-400">
           {formatDate(c.created_at)}
         </span>
       ),
@@ -95,7 +97,7 @@ export default function UserDetailPage() {
       key: "last_activity_at",
       header: "Last Activity",
       render: (c) => (
-        <span className="text-xs text-slate-600">
+        <span className="text-xs text-slate-600 dark:text-slate-400">
           {formatDate(c.last_activity_at)}
         </span>
       ),
@@ -103,12 +105,9 @@ export default function UserDetailPage() {
     {
       key: "message_count",
       header: "Messages",
-      align: "center",
-      render: (c) => (
-        <span className="font-medium text-slate-900">
-          {c.message_count ?? 0}
-        </span>
-      ),
+      sortable: true,
+      align: "right",
+      render: (c) => formatNumber(c.message_count ?? 0),
     },
   ];
 
@@ -164,22 +163,22 @@ export default function UserDetailPage() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-8 min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
       <div className="mb-6">
         <Link
           href="/admin/users"
-          className="text-sm font-medium text-purple-700 hover:text-purple-900"
+          className="text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
         >
           ← Back to Users
         </Link>
       </div>
 
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-slate-900">
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
           {user.ip_address || `User ${user.id.slice(0, 8)}`}
         </h1>
 
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           User details and activity
         </p>
       </div>
@@ -226,42 +225,47 @@ export default function UserDetailPage() {
       </div>
 
       {/* Last activity */}
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-6">
-        <h2 className="text-base font-semibold text-slate-900">
+      <div className="mb-6 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-6 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900 dark:text-white">
           Activity
         </h2>
 
         <div className="mt-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
             Last Active
           </p>
 
-          <p className="mt-1 text-sm text-slate-700">
+          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
             {formatDate(user.last_active)}
           </p>
         </div>
       </div>
 
       {/* Conversations */}
-      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900">
-            Conversations
-          </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Conversations associated with this client IP address.
-          </p>
-        </div>
-
-        <TableToolbar
-          search={convSearch}
-          onSearchChange={(v) => {
-            setConvSearch(v);
-            setConvPage(1);
-          }}
-          searchPlaceholder="Search conversations…"
-        />
-
+      <TableCard
+        title="Conversations"
+        description="Conversations associated with this client IP address."
+        toolbar={
+          <TableToolbar
+            search={convSearch}
+            onSearchChange={(v) => {
+              setConvSearch(v);
+              setConvPage(1);
+            }}
+            searchPlaceholder="Search conversations…"
+          />
+        }
+        pagination={
+          <Pagination
+            page={convPage}
+            pageCount={Math.ceil(filteredConversations.length / convPageSize)}
+            totalItems={filteredConversations.length}
+            pageSize={convPageSize}
+            onPageChange={setConvPage}
+            onPageSizeChange={setConvPageSize}
+          />
+        }
+      >
         <DataTable
           columns={convColumns}
           data={pagedConversations}
@@ -270,16 +274,7 @@ export default function UserDetailPage() {
           onRowClick={(c) => router.push(`/admin/conversations/${c.id}`)}
           emptyMessage="No conversations found for this user."
         />
-
-        <Pagination
-          page={convPage}
-          pageCount={Math.ceil(filteredConversations.length / convPageSize)}
-          totalItems={filteredConversations.length}
-          pageSize={convPageSize}
-          onPageChange={setConvPage}
-          onPageSizeChange={setConvPageSize}
-        />
-      </div>
+      </TableCard>
     </div>
   );
 }
@@ -292,12 +287,12 @@ function InfoCard({
   value: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+    <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-5 shadow-sm">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </p>
 
-      <p className="mt-2 break-words text-sm font-medium text-slate-900">
+      <p className="mt-2 break-words text-sm font-medium text-slate-900 dark:text-white">
         {value}
       </p>
     </div>
@@ -312,12 +307,12 @@ function StatCard({
   value: number;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <p className="text-sm text-slate-500">
+    <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-card p-5 shadow-sm">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
         {label}
       </p>
 
-      <p className="mt-2 text-2xl font-semibold text-slate-900">
+      <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
         {value}
       </p>
     </div>

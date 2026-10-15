@@ -10,6 +10,7 @@ import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TableCard } from "@/components/admin/TableCard";
+import { formatNumber } from "@/components/admin/TableFormatters";
 import { FormatBadge } from "@/components/documents/FormatBadge";
 import {
   AlertTriangle,
@@ -237,7 +238,7 @@ export default function DocumentsPage() {
               </span>
             )}
           </div>
-          <span className="font-mono text-[10px] text-slate-400">{doc.document_id}</span>
+          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">{doc.document_id}</span>
         </div>
       ),
     },
@@ -256,28 +257,20 @@ export default function DocumentsPage() {
       key: "chunk_count",
       header: "Chunks",
       sortable: true,
-      align: "center",
-      render: (doc) => (
-        <span className="font-mono font-medium text-slate-700">
-          {doc.chunk_count.toLocaleString()}
-        </span>
-      ),
+      align: "right",
+      render: (doc) => formatNumber(doc.chunk_count),
     },
     {
       key: "ingest_count",
       header: "Ingests",
-      align: "center",
-      render: (doc) => (
-        <span className="font-mono text-xs text-slate-500">
-          {(doc.ingest_count ?? 1).toLocaleString()}
-        </span>
-      ),
+      align: "right",
+      render: (doc) => formatNumber(doc.ingest_count ?? 1),
     },
     {
       key: "content_hash",
       header: "SHA-256 Hash",
       render: (doc) => (
-        <span className="font-mono text-[11px] text-slate-400">
+        <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">
           {doc.content_hash ? `${doc.content_hash.slice(0, 12)}…` : "—"}
         </span>
       ),
@@ -287,7 +280,7 @@ export default function DocumentsPage() {
       header: "Last Updated",
       sortable: true,
       render: (doc) => (
-        <span className="text-xs text-slate-500 whitespace-nowrap">
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
           {new Date(doc.updated_at || doc.created_at).toLocaleString()}
         </span>
       ),
@@ -300,7 +293,7 @@ export default function DocumentsPage() {
         <button
           type="button"
           onClick={(e) => handleDelete(e, doc.document_id, doc.source_name)}
-          className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600 transition"
+          className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-rose-600 dark:hover:text-rose-400 transition"
           aria-label={`Delete ${doc.source_name}`}
         >
           <Trash2 className="w-4 h-4" />
@@ -310,7 +303,7 @@ export default function DocumentsPage() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50/50">
+    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
       {/* Standard Top Bar Line */}
       <DashboardHeader
         title="Knowledge Base Documents"
@@ -321,7 +314,7 @@ export default function DocumentsPage() {
           <label
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold text-white shadow-brand-glow transition ${
               uploading
-                ? "cursor-not-allowed bg-brand-indigo/60"
+                ? "cursor-not-allowed bg-brand-600/60"
                 : "cursor-pointer bg-brand-gradient hover:opacity-90"
             }`}
           >
@@ -423,7 +416,7 @@ export default function DocumentsPage() {
 
         {/* Confirmation Modal */}
         {pendingPreview && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
             <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
               <h3 className="text-sm font-bold text-slate-900">Confirm Document Re-ingest</h3>
               <p className="mt-1 text-xs text-slate-500">
@@ -472,33 +465,33 @@ export default function DocumentsPage() {
 
         {/* Overview Hero Stat Cards (Permanently Merged at Top) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo border border-indigo-100">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm">
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/40 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/40">
               <FileText className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Total Canonical Documents</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{totalDocuments}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Canonical Documents</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalDocuments}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo border border-indigo-100">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm">
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/40 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/40">
               <Layers className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Total Indexed Chunks</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{totalChunks.toLocaleString()}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Indexed Chunks</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalChunks.toLocaleString()}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo border border-indigo-100">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm">
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/40 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/40">
               <Clock className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Last Ingestion Event</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Last Ingestion Event</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                 {lastIngested ? new Date(lastIngested).toLocaleString() : "—"}
               </p>
             </div>

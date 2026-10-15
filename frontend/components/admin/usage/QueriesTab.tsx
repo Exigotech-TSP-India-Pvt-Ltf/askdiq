@@ -27,6 +27,13 @@ import {
   XCircle,
   HelpCircle,
 } from "lucide-react";
+import {
+  formatNumber,
+  formatCurrency,
+  formatTokens,
+  formatLatency,
+  OutcomeBadge,
+} from "../TableFormatters";
 
 interface QueriesTabProps {
   token: string;
@@ -202,12 +209,12 @@ export function QueriesTab({
       render: (r) => (
         <div className="flex flex-col max-w-xs sm:max-w-md">
           <span
-            className="font-medium text-slate-800 line-clamp-2 text-xs"
+            className="font-medium text-slate-800 dark:text-slate-200 line-clamp-2 text-xs"
             title={r.query}
           >
             {r.query}
           </span>
-          <span className="font-mono text-[10px] text-slate-400 truncate">
+          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500 truncate">
             {r.request_id}
           </span>
         </div>
@@ -223,7 +230,7 @@ export function QueriesTab({
             e.stopPropagation();
             onSelectIp?.(r.ip_address);
           }}
-          className="font-mono text-xs text-brand-indigo hover:underline text-left"
+          className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline text-left"
         >
           {r.ip_address}
         </button>
@@ -239,7 +246,7 @@ export function QueriesTab({
             e.stopPropagation();
             onSelectSession?.(r.session_id);
           }}
-          className="text-xs text-slate-600 hover:text-brand-indigo text-left truncate max-w-[140px] block"
+          className="text-xs text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 text-left truncate max-w-[140px] block"
           title={r.session_title}
         >
           {r.session_title || r.session_id.slice(0, 8)}
@@ -250,59 +257,39 @@ export function QueriesTab({
       key: "outcome",
       header: "Status / Outcome",
       align: "center",
-      render: (r) => getOutcomeBadge(r.outcome),
+      render: (r) => <OutcomeBadge outcome={r.outcome} />,
     },
     {
       key: "prompt_tokens",
-      header: "Input Tok",
+      header: "Input Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-xs text-slate-600">
-          {(r.prompt_tokens ?? 0).toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.prompt_tokens, "input"),
     },
     {
       key: "reasoning_tokens",
-      header: "Reasoning",
+      header: "Reasoning Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-xs text-purple-600">
-          {(r.reasoning_tokens ?? 0).toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.reasoning_tokens, "reasoning"),
     },
     {
       key: "output_tokens",
-      header: "Output Tok",
+      header: "Output Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-xs text-emerald-600">
-          {(r.output_tokens ?? 0).toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.output_tokens, "output"),
     },
     {
       key: "cost",
       header: "Cost (USD)",
       sortable: true,
       align: "right",
-      render: (r) => (
-        <span className="font-mono font-bold text-xs text-slate-900">
-          ${r.cost_usd.toFixed(4)}
-        </span>
-      ),
+      render: (r) => formatCurrency(r.cost_usd, 4),
     },
     {
       key: "latency_ms",
       header: "Latency",
       sortable: true,
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-xs text-slate-500 whitespace-nowrap">
-          {r.latency_ms !== null ? `${r.latency_ms} ms` : "—"}
-        </span>
-      ),
+      render: (r) => formatLatency(r.latency_ms),
     },
     {
       key: "actions",
@@ -315,10 +302,10 @@ export function QueriesTab({
             e.stopPropagation();
             setInspectRequestId(r.request_id);
           }}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-xs hover:bg-slate-50 transition"
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-200 shadow-xs hover:bg-slate-50 dark:hover:bg-white/5 transition"
           aria-label={`Inspect query ${r.request_id}`}
         >
-          <Eye className="w-3 h-3 text-brand-indigo" />
+          <Eye className="w-3 h-3 text-brand-600 dark:text-brand-400" />
           <span>Inspect</span>
         </button>
       ),
@@ -445,9 +432,9 @@ export function QueriesTab({
                 <a
                   href={exportUrl}
                   download
-                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition"
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 transition"
                 >
-                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                   <span>Export CSV</span>
                 </a>
               }

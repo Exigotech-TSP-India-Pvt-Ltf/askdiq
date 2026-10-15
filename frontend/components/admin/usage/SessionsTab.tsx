@@ -17,6 +17,11 @@ import {
   Download,
   ArrowRight,
 } from "lucide-react";
+import {
+  formatNumber,
+  formatCurrency,
+  formatTokens,
+} from "../TableFormatters";
 
 interface SessionsTabProps {
   token: string;
@@ -119,10 +124,10 @@ export function SessionsTab({
       sortable: false,
       render: (r) => (
         <div className="flex flex-col">
-          <span className="font-medium text-slate-800 line-clamp-1" title={r.title}>
+          <span className="font-medium text-slate-800 dark:text-slate-200 line-clamp-1" title={r.title}>
             {r.title || "Untitled Session"}
           </span>
-          <span className="font-mono text-[10px] text-slate-400">
+          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
             {r.id}
           </span>
         </div>
@@ -139,7 +144,7 @@ export function SessionsTab({
             e.stopPropagation();
             onSelectIp?.(r.ip_address);
           }}
-          className="font-mono text-xs text-brand-indigo hover:underline text-left"
+          className="font-mono text-xs text-brand-600 dark:text-brand-400 hover:underline text-left"
         >
           {r.ip_address}
         </button>
@@ -149,77 +154,53 @@ export function SessionsTab({
       key: "queries",
       header: "Turns",
       sortable: true,
-      align: "center",
-      render: (r) => <span className="font-semibold">{r.queries.toLocaleString()}</span>,
+      align: "right",
+      render: (r) => formatNumber(r.queries),
     },
     {
       key: "embed_tokens",
-      header: "Embed Tok",
+      header: "Embed Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-slate-500">
-          {r.embed_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.embed_tokens, "muted"),
     },
     {
       key: "prompt_tokens",
-      header: "Input Tok",
+      header: "Input Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-slate-600">
-          {r.prompt_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.prompt_tokens, "input"),
     },
     {
       key: "reasoning_tokens",
-      header: "Reasoning",
+      header: "Reasoning Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-purple-600">
-          {r.reasoning_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.reasoning_tokens, "reasoning"),
     },
     {
       key: "output_tokens",
-      header: "Output Tok",
+      header: "Output Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-emerald-600">
-          {r.output_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.output_tokens, "output"),
     },
     {
       key: "tokens",
       header: "Total Tokens",
       sortable: true,
       align: "right",
-      render: (r) => (
-        <span className="font-mono font-semibold text-slate-900">
-          {r.total_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.total_tokens, "total"),
     },
     {
       key: "cost",
       header: "Cost (USD)",
       sortable: true,
       align: "right",
-      render: (r) => (
-        <span className="font-mono font-bold text-slate-900">
-          ${r.cost_usd.toFixed(4)}
-        </span>
-      ),
+      render: (r) => formatCurrency(r.cost_usd, 4),
     },
     {
       key: "last_active",
       header: "Last Active",
       sortable: true,
       render: (r) => (
-        <span className="text-xs text-slate-500 whitespace-nowrap">
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
           {r.last_active ? new Date(r.last_active).toLocaleString() : "—"}
         </span>
       ),
@@ -235,7 +216,7 @@ export function SessionsTab({
             e.stopPropagation();
             onSelectSession?.(r.id);
           }}
-          className="inline-flex items-center gap-1 text-xs font-medium text-brand-indigo hover:text-brand-indigo-dark transition"
+          className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 transition"
         >
           <span>Queries</span>
           <ArrowRight className="w-3 h-3" />
@@ -338,9 +319,9 @@ export function SessionsTab({
                 <a
                   href={exportUrl}
                   download
-                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition"
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 transition"
                 >
-                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                   <span>Export CSV</span>
                 </a>
               }

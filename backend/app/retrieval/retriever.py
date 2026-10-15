@@ -12,10 +12,13 @@ import uuid
 from functools import lru_cache
 
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
 from app.guardrails.pre_checks import is_gibberish_token
 from app.retrieval.embeddings import embed_text, embedding_timing_sink
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, SourceChunk
+
+logger = get_logger(__name__)
 
 _AND_SPLIT_RE = re.compile(r"\band\b", re.IGNORECASE)
 
@@ -178,11 +181,24 @@ async def retrieve(
     is_compound = len(sub_queries) > 1
 
     if is_compound:
+        logger.info(
+            "subquery_decomposition",
+            original_query=query,
+            subqueries_count=len(sub_queries),
+            subqueries=sub_queries,
+        )
         # Each half still gets history folded in independently, so a
         # follow-up reference inside one clause can still be resolved.
         sub_queries = [contextualize_query(sq, history) for sq in sub_queries]
     else:
-        sub_queries = [contextualize_query(query, history)]
+        ctx_query = contextualize_query(query, history)
+        if ctx_query != query:
+            logger.info(
+                "history_contextualized",
+                original=query,
+                contextualized=ctx_query,
+            )
+        sub_queries = [ctx_query]
 
     # Compound questions need enough budget to hold evidence for both parts.
     final_top_k = (

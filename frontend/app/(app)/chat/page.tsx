@@ -68,17 +68,17 @@ export default function ChatPage() {
         onDelete={removeSession}
       />
 
-      <div className="flex h-full flex-1 flex-col">
+      <div className="flex h-full flex-1 flex-col bg-[#f4fbfb] dark:bg-dark-bg">
       {/* =====================================================
           HEADER
       ====================================================== */}
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 px-6">
+      <header className="flex h-20 shrink-0 items-center justify-between border-b border-ink/10 dark:border-white/10 bg-white dark:bg-dark-surface px-6">
         <div>
-          <h1 className="text-sm font-semibold text-ink">
+          <h1 className="text-sm font-semibold text-ink dark:text-white">
             Deploy IQ Assistant
           </h1>
 
-          <p className="text-xs text-ink/50">
+          <p className="text-xs text-ink/50 dark:text-slate-400">
             Answers are grounded in your knowledge base and checked
             before delivery.
           </p>
@@ -95,7 +95,7 @@ export default function ChatPage() {
         {messages.length === 0 ? (
           <div className="mx-auto flex h-full max-w-lg flex-col items-center justify-center text-center">
             {/* Chat icon */}
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 dark:bg-brand-950/40 border border-brand-100 dark:border-brand-900/40">
               <svg
                 width="22"
                 height="22"
@@ -103,17 +103,17 @@ export default function ChatPage() {
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.8"
-                className="text-brand-600"
+                className="text-brand-600 dark:text-brand-400"
               >
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
             </div>
 
-            <h2 className="text-base font-semibold text-ink">
+            <h2 className="text-base font-semibold text-ink dark:text-white">
               Ask Deploy IQ anything
             </h2>
 
-            <p className="mt-1.5 text-sm text-ink/55">
+            <p className="mt-1.5 text-sm text-ink/55 dark:text-slate-400">
               Try a question about Essential Eight, Zero Trust,
               governance, or how the platform works.
             </p>
@@ -124,7 +124,7 @@ export default function ChatPage() {
                 <button
                   key={prompt}
                   onClick={() => sendQuery(prompt)}
-                  className="rounded-lg border border-ink/10 px-3.5 py-2.5 text-left text-xs text-ink/70 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                  className="rounded-lg border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card px-3.5 py-2.5 text-left text-xs text-ink/70 dark:text-slate-200 shadow-xs transition hover:border-brand-300 dark:hover:border-brand-600 hover:bg-brand-50/50 dark:hover:bg-brand-950/40 hover:text-brand-700 dark:hover:text-brand-300"
                 >
                   {prompt}
                 </button>
@@ -149,7 +149,7 @@ export default function ChatPage() {
       ====================================================== */}
       <form
         onSubmit={onSubmit}
-        className="border-t border-ink/10 px-6 py-4"
+        className="border-t border-ink/10 dark:border-white/10 bg-white dark:bg-dark-surface px-6 py-4"
       >
         <div className="mx-auto flex max-w-2xl items-end gap-2">
           <textarea
@@ -163,13 +163,13 @@ export default function ChatPage() {
             }}
             rows={1}
             placeholder="Ask about your security and compliance posture…"
-            className="max-h-36 flex-1 resize-none rounded-xl border border-ink/10 bg-ink/[0.03] px-3.5 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-100"
+            className="max-h-36 flex-1 resize-none rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50/50 dark:bg-dark-card px-3.5 py-2.5 text-sm text-ink dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition focus:border-brand-500 focus:bg-white dark:focus:bg-dark-card focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-950"
           />
 
           <button
             type="submit"
             disabled={sending || !input.trim()}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-brand-glow transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Send"
           >
             <svg

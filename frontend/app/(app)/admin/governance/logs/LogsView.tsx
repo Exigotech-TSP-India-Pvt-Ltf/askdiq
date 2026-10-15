@@ -22,13 +22,13 @@ type Log = {
 };
 
 const LEVEL_STYLES: Record<string, string> = {
-  CRITICAL: "bg-red-100 text-red-800 border-red-200",
-  ALERT: "bg-orange-50 text-orange-700 border-orange-200",
-  ERROR: "bg-red-50 text-red-700 border-red-200",
-  WARN: "bg-amber-50 text-amber-700 border-amber-200",
-  WARNING: "bg-amber-50 text-amber-700 border-amber-200",
-  INFO: "bg-sky-50 text-sky-700 border-sky-200",
-  DEBUG: "bg-slate-100 text-slate-600 border-slate-200",
+  CRITICAL: "bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-800",
+  ALERT: "bg-orange-50 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800",
+  ERROR: "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/80",
+  WARN: "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/80",
+  WARNING: "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/80",
+  INFO: "bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800/80",
+  DEBUG: "bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10",
 };
 
 const KNOWN_LEVELS = ["CRITICAL", "ALERT", "ERROR", "WARNING", "INFO"];
@@ -125,7 +125,7 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
       key: "created_at",
       header: "Timestamp",
       render: (log) => (
-        <span className="whitespace-nowrap text-xs text-slate-500 font-mono">
+        <span className="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 font-mono">
           {log.created_at ? new Date(log.created_at).toLocaleTimeString() : "—"}
         </span>
       ),
@@ -148,7 +148,7 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
       key: "service",
       header: "Service",
       render: (log) => (
-        <span className="text-xs font-mono font-medium text-slate-700">
+        <span className="text-xs font-mono font-medium text-slate-700 dark:text-slate-300">
           {log.service || "app"}
         </span>
       ),
@@ -160,13 +160,13 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
         const { text, badges } = summarize(log.message);
         return (
           <div className="flex flex-col gap-1 max-w-md">
-            <span className="text-xs text-slate-800 line-clamp-1">{text}</span>
+            <span className="text-xs text-slate-800 dark:text-slate-200 line-clamp-1">{text}</span>
             {badges.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {badges.map((b, i) => (
                   <span
                     key={i}
-                    className="rounded bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 text-[10px] font-medium text-indigo-700"
+                    className="rounded bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-100 dark:border-indigo-800/60 px-1.5 py-0.2 text-[10px] font-medium text-indigo-700 dark:text-indigo-300"
                   >
                     {b}
                   </span>
@@ -181,7 +181,7 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
       key: "ip_address",
       header: "Client IP",
       render: (log) => (
-        <span className="font-mono text-xs text-slate-600">
+        <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
           {log.ip_address || "—"}
         </span>
       ),
@@ -190,7 +190,7 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
       key: "request_id",
       header: "Request ID",
       render: (log) => (
-        <span className="font-mono text-[10px] text-slate-400" title={log.request_id}>
+        <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500" title={log.request_id}>
           {shortId(log.request_id)}
         </span>
       ),
@@ -200,14 +200,14 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
   return (
     <div className="space-y-6">
       {!hideHeader && (
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-8">
+        <header className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface px-8">
           <div>
-            <h1 className="text-sm font-semibold text-slate-900">Governance Logs</h1>
-            <p className="text-xs text-slate-500">
+            <h1 className="text-sm font-semibold text-slate-900 dark:text-white">Governance Logs</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Audit trails, system operations, and security events.
             </p>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-500">
+          <div className="flex items-center gap-2 rounded-full border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />

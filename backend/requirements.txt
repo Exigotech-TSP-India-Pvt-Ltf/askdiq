@@ -78,3 +78,4 @@ pytest-httpx==0.36.2
 asgi-lifespan==2.1.0
 mammoth==1.13.0
 defusedxml==0.7.1
+structlog==26.1.0

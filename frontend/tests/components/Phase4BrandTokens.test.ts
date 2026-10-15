@@ -7,10 +7,10 @@ describe("Phase 4: Brand Tokens & White-Labelling CSS Variables", () => {
     const cssPath = path.resolve(__dirname, "../../app/globals.css");
     const cssContent = fs.readFileSync(cssPath, "utf-8");
 
-    expect(cssContent).toContain("--brand-gradient-from: #4c48e3;");
-    expect(cssContent).toContain("--brand-gradient-via: #6745d7;");
-    expect(cssContent).toContain("--brand-gradient-to: #8242cc;");
-    expect(cssContent).toContain("--brand-glow: rgba(76, 72, 227, 0.35);");
+    expect(cssContent).toContain("--brand-gradient-from: #40e0d0;");
+    expect(cssContent).toContain("--brand-gradient-via: #14b8a6;");
+    expect(cssContent).toContain("--brand-gradient-to: #068987;");
+    expect(cssContent).toContain("--brand-glow: rgba(6, 137, 135, 0.28);");
   });
 
   it("extends Tailwind config with brand-gradient and brand-glow utilities", () => {

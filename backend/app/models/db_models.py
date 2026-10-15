@@ -250,3 +250,46 @@ class TestIpConfig(Base):
     description: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class EvaluationRecord(Base):
+    """Continuous production evaluation record per query turn."""
+
+    __tablename__ = "evaluation_records"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    request_id: Mapped[str] = mapped_column(String(64), index=True)
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    audience: Mapped[str] = mapped_column(String(32), default="users", index=True)
+    query: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    passed: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    grounded: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    faithfulness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    relevance: Mapped[float | None] = mapped_column(Float, nullable=True)
+    completeness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    citation_precision: Mapped[float | None] = mapped_column(Float, nullable=True)
+    citation_coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    retrieval_recall: Mapped[float | None] = mapped_column(Float, nullable=True)
+    safety_passed: Mapped[bool] = mapped_column(Boolean, default=True)
+    guardrail_flags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    retrieved_chunks: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    judge_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unsupported_claims: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )
+
+    __table_args__ = (
+        Index("ix_eval_records_audience_created", "audience", "created_at"),
+    )

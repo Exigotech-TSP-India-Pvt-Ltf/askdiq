@@ -82,7 +82,7 @@ export function TabGroup<T extends string = string>({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={`inline-flex p-1 bg-slate-100/90 rounded-xl border border-slate-200/90 shadow-inner gap-1 flex-wrap select-none ${className}`}
+      className={`inline-flex p-1 bg-slate-100/90 dark:bg-dark-surface rounded-xl border border-slate-200/90 dark:border-dark-border shadow-inner gap-1 flex-wrap select-none ${className}`}
     >
       {tabs.map((tab, idx) => {
         const isActive = activeTab === tab.id;
@@ -103,13 +103,13 @@ export function TabGroup<T extends string = string>({
             className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-lg transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
               isActive
                 ? "bg-brand-gradient text-white shadow-brand-glow font-semibold"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-medium"
+                : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 font-medium"
             }`}
           >
             {Icon && (
               <Icon
                 className={`w-3.5 h-3.5 flex-shrink-0 ${
-                  isActive ? "text-white" : "text-slate-500"
+                  isActive ? "text-white" : "text-slate-500 dark:text-slate-400"
                 }`}
               />
             )}
@@ -159,6 +159,14 @@ export const EVALUATION_TABS: TabItem[] = [
   { id: "All test cases", label: "All test cases", icon: ListChecks },
   { id: "Other", label: "Other", icon: MoreHorizontal },
 ];
+
+export const EVALUATION_LIVE_TABS: TabItem[] = [
+  { id: "overview", label: "Quality & Retrieval", icon: Layers },
+  { id: "judge", label: "Semantic Quality & Citations", icon: Sparkles },
+  { id: "safety", label: "Safety & Robustness", icon: ShieldCheck },
+  { id: "explorer", label: "Query & Case Explorer", icon: Search },
+];
+
 
 export const GOVERNANCE_TABS: TabItem[] = [
   { id: "Overall", label: "Overall", icon: Activity },

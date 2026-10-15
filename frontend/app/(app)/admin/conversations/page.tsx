@@ -8,6 +8,7 @@ import { Pagination } from "@/components/admin/Pagination";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TableCard } from "@/components/admin/TableCard";
+import { formatNumber } from "@/components/admin/TableFormatters";
 import { useTableState } from "@/lib/use-table-state";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -102,8 +103,8 @@ function ConversationsContent() {
       header: "Conversation Title & ID",
       render: (c) => (
         <div className="flex flex-col gap-0.5">
-          <span className="font-semibold text-slate-800">{c.title || "Untitled Session"}</span>
-          <span className="font-mono text-[10px] text-slate-400">{c.id}</span>
+          <span className="font-semibold text-slate-800 dark:text-slate-200">{c.title || "Untitled Session"}</span>
+          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">{c.id}</span>
         </div>
       ),
     },
@@ -111,7 +112,7 @@ function ConversationsContent() {
       key: "created_ip",
       header: "Origin IP",
       render: (c) => (
-        <span className="font-mono text-xs text-slate-600">
+        <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
           {c.created_ip || "—"}
         </span>
       ),
@@ -120,19 +121,15 @@ function ConversationsContent() {
       key: "message_count",
       header: "Messages",
       sortable: true,
-      align: "center",
-      render: (c) => (
-        <span className="font-mono text-xs font-semibold text-slate-800">
-          {(c.message_count ?? 0).toLocaleString()}
-        </span>
-      ),
+      align: "right",
+      render: (c) => formatNumber(c.message_count ?? 0),
     },
     {
       key: "created_at",
       header: "Created",
       sortable: true,
       render: (c) => (
-        <span className="text-xs text-slate-500 whitespace-nowrap">
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
           {c.created_at ? new Date(c.created_at).toLocaleString() : "—"}
         </span>
       ),
@@ -142,7 +139,7 @@ function ConversationsContent() {
       header: "Last Active",
       sortable: true,
       render: (c) => (
-        <span className="text-xs text-slate-500 whitespace-nowrap">
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
           {c.last_activity_at ? new Date(c.last_activity_at).toLocaleString() : "—"}
         </span>
       ),
@@ -150,7 +147,7 @@ function ConversationsContent() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50/50">
+    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
       {/* Standard Universal Top Bar Line */}
       <DashboardHeader
         title="Conversations"
@@ -161,32 +158,32 @@ function ConversationsContent() {
       <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
         {/* Hero Stat Cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm flex items-center justify-between">
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Total Filtered Sessions</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{total.toLocaleString()}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Filtered Sessions</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{total.toLocaleString()}</p>
             </div>
-            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo border border-indigo-100">
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-800">
               <MessagesSquare className="h-5 w-5" />
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm flex items-center justify-between">
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Unique Page Client IPs</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-600">{uniqueIps.toLocaleString()}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Unique Page Client IPs</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{uniqueIps.toLocaleString()}</p>
             </div>
-            <div className="rounded-lg bg-emerald-50 p-2.5 text-emerald-600 border border-emerald-100">
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
               <Users className="h-5 w-5" />
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm flex items-center justify-between">
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Page Messages Processed</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{totalMessages.toLocaleString()}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Page Messages Processed</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalMessages.toLocaleString()}</p>
             </div>
-            <div className="rounded-lg bg-purple-50 p-2.5 text-purple-600 border border-purple-100">
+            <div className="rounded-lg bg-teal-50 dark:bg-teal-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-teal-100 dark:border-teal-800">
               <MessageCircle className="h-5 w-5" />
             </div>
           </div>

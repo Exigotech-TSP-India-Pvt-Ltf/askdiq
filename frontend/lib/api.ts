@@ -164,6 +164,19 @@ export const api = {
     return request<Record<string, any>>(`/metrics/evaluation${qs}`, { token, signal });
   },
 
+  evaluationReportLive: (token: string, audience?: Audience, compare?: boolean, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (audience) params.set("audience", audience);
+    if (compare) params.set("compare", "true");
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return request<Record<string, any>>(`/metrics/evaluation/live${qs}`, { token, signal });
+  },
+
+  evaluationRecordDetail: (token: string, recordId: string, signal?: AbortSignal) => {
+    return request<Record<string, any>>(`/metrics/evaluation/record/${recordId}`, { token, signal });
+  },
+
+
   ingest: (
     token: string,
     body: {
@@ -461,6 +474,35 @@ export const api = {
     return request<PageEnvelope<any>>(`/admin/feedback${queryStr ? `?${queryStr}` : ""}`, {
       token,
       signal,
+    });
+  },
+
+  getFeedbackAnalytics: (
+    token: string,
+    audience?: Audience,
+    signal?: AbortSignal
+  ) => {
+    const qs = audience ? `?audience=${audience}` : "";
+    return request<{
+      total_feedback: number;
+      positive_count: number;
+      negative_count: number;
+      neutral_count: number;
+      positive_ratio: number;
+      negative_ratio: number;
+      feedback_rate: number;
+      feedback_by_outcome: Record<string, { positive: number; negative: number; total: number }>;
+    }>(`/admin/feedback/analytics${qs}`, { token, signal });
+  },
+
+  promoteFeedbackToTest: (token: string, messageId: string) => {
+    return request<{
+      status: string;
+      case_id: string;
+      query: string;
+    }>(`/admin/feedback/${messageId}/promote-to-test`, {
+      method: "POST",
+      token,
     });
   },
 };

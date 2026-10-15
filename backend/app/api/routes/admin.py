@@ -39,6 +39,7 @@ from app.models.db_models import (
     ChatMessageRecord,
     ChatSession,
     LatencyRecord,
+    MessageFeedback,
     User,
 )
 
@@ -1812,73 +1813,271 @@ async def _governance_status(db: AsyncSession, since: datetime) -> dict:
 async def list_feedback(
     audience: str = Query("overview"),
     rating: int | None = None,
+    sort: str = "created_at_desc",
     q: str | None = None,
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     actor: str = Depends(get_current_actor),
 ):
-    """Return feedback records with audience scoping and pagination (Task 2.3.3)."""
+    """Return feedback records with audience scoping, sorting, search, and pagination."""
     aud_scope = audience_scope(audience)
-
-    query = (
-        select(AuditLog)
-        .where(AuditLog.action.ilike("%feedback%"))
-        .order_by(AuditLog.created_at.desc())
+    client_ip_expr = func.coalesce(
+        ChatSession.created_ip, ChatMessageRecord.ip_address, "Unknown"
     )
 
-    aud_cond = await build_audience_filter(db, AuditLog.ip_address, aud_scope)
-    if aud_cond is not None:
-        query = query.where(aud_cond)
-
-    rows = (await db.execute(query)).scalars().all()
-
-    seen_messages: set[str] = set()
-    filtered = []
-    for a in rows:
-        detail = a.detail if isinstance(a.detail, dict) else {}
-        mid = detail.get("message_id")
-        if mid:
-            if mid in seen_messages:
-                continue
-            seen_messages.add(mid)
-
-        item_rating = detail.get("rating")
-        if rating is not None and item_rating != rating:
-            continue
-
-        comment = detail.get("comment") or ""
-        conv_id = detail.get("conversation_id") or ""
-        ip_addr = a.ip_address or "Unknown"
-
-        if q and q.strip():
-            needle = q.strip().lower()
-            if not (
-                needle in comment.lower()
-                or needle in ip_addr.lower()
-                or needle in conv_id.lower()
-                or needle in (mid or "").lower()
-            ):
-                continue
-
-        filtered.append(
-            {
-                "id": str(a.id),
-                "rating": item_rating,
-                "comment": comment,
-                "ip_address": ip_addr,
-                "conversation_id": conv_id,
-                "message_id": mid,
-                "created_at": a.created_at.isoformat() + "Z" if a.created_at else None,
-            }
+    base_query = (
+        select(
+            MessageFeedback.id,
+            MessageFeedback.rating,
+            MessageFeedback.comment,
+            MessageFeedback.session_id,
+            MessageFeedback.message_id,
+            MessageFeedback.actor,
+            MessageFeedback.created_at,
+            client_ip_expr.label("ip_address"),
         )
+        .outerjoin(ChatSession, MessageFeedback.session_id == ChatSession.id)
+        .outerjoin(
+            ChatMessageRecord, MessageFeedback.message_id == ChatMessageRecord.id
+        )
+    )
 
-    total_count = len(filtered)
-    paged = filtered[offset : offset + limit]
+    count_query = (
+        select(func.count(MessageFeedback.id))
+        .outerjoin(ChatSession, MessageFeedback.session_id == ChatSession.id)
+        .outerjoin(
+            ChatMessageRecord, MessageFeedback.message_id == ChatMessageRecord.id
+        )
+    )
+
+    # 1. Audience Filter
+    aud_cond = await build_audience_filter(db, client_ip_expr, aud_scope)
+    if aud_cond is not None:
+        base_query = base_query.where(aud_cond)
+        count_query = count_query.where(aud_cond)
+
+    # 2. Rating Filter
+    if rating is not None:
+        base_query = base_query.where(MessageFeedback.rating == rating)
+        count_query = count_query.where(MessageFeedback.rating == rating)
+
+    # 3. Search Filter
+    if q and q.strip():
+        escaped = escape_ilike_pattern(q.strip())
+        pattern = f"%{escaped}%"
+        search_cond = or_(
+            MessageFeedback.comment.ilike(pattern),
+            MessageFeedback.actor.ilike(pattern),
+            client_ip_expr.ilike(pattern),
+            cast(MessageFeedback.session_id, String).ilike(pattern),
+            cast(MessageFeedback.message_id, String).ilike(pattern),
+        )
+        base_query = base_query.where(search_cond)
+        count_query = count_query.where(search_cond)
+
+    # 4. Sorting
+    if sort == "created_at_asc":
+        base_query = base_query.order_by(MessageFeedback.created_at.asc())
+    elif sort == "rating_desc":
+        base_query = base_query.order_by(
+            MessageFeedback.rating.desc(), MessageFeedback.created_at.desc()
+        )
+    elif sort == "rating_asc":
+        base_query = base_query.order_by(
+            MessageFeedback.rating.asc(), MessageFeedback.created_at.desc()
+        )
+    else:
+        base_query = base_query.order_by(MessageFeedback.created_at.desc())
+
+    total_count = (await db.scalar(count_query)) or 0
+    rows = (await db.execute(base_query.offset(offset).limit(limit))).all()
+
+    items = [
+        {
+            "id": str(r.id),
+            "rating": r.rating,
+            "comment": r.comment or "",
+            "ip_address": r.ip_address or "Unknown",
+            "conversation_id": str(r.session_id) if r.session_id else "",
+            "message_id": str(r.message_id) if r.message_id else "",
+            "created_at": r.created_at.isoformat() + "Z" if r.created_at else None,
+        }
+        for r in rows
+    ]
 
     return {
-        "items": paged,
+        "items": items,
         "total": total_count,
         "limit": limit,
         "offset": offset,
+    }
+
+
+@router.get("/feedback/analytics")
+async def get_feedback_analytics(
+    audience: str = Query("overview"),
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+):
+    """Return aggregated feedback KPIs: positive/negative ratios, outcome correlations, and gap detection."""
+    aud_scope = audience_scope(audience)
+    client_ip_expr = func.coalesce(
+        ChatSession.created_ip, ChatMessageRecord.ip_address, "Unknown"
+    )
+    aud_cond = await build_audience_filter(db, client_ip_expr, aud_scope)
+
+    fb_query = (
+        select(
+            MessageFeedback.id,
+            MessageFeedback.rating,
+            MessageFeedback.message_id,
+            ChatMessageRecord.outcome,
+        )
+        .outerjoin(ChatSession, MessageFeedback.session_id == ChatSession.id)
+        .outerjoin(
+            ChatMessageRecord, MessageFeedback.message_id == ChatMessageRecord.id
+        )
+    )
+    if aud_cond is not None:
+        fb_query = fb_query.where(aud_cond)
+
+    rows = (await db.execute(fb_query)).all()
+
+    total_feedback = len(rows)
+    pos_count = sum(1 for r in rows if r.rating in (4, 5))
+    neg_count = sum(1 for r in rows if r.rating in (1, 2))
+    neu_count = sum(1 for r in rows if r.rating == 3)
+    pos_ratio = round((pos_count / total_feedback) * 100, 1) if total_feedback else 0.0
+    neg_ratio = round((neg_count / total_feedback) * 100, 1) if total_feedback else 0.0
+
+    # Total assistant queries for coverage
+    asst_query = (
+        select(func.count(ChatMessageRecord.id))
+        .select_from(ChatMessageRecord)
+        .join(ChatSession, ChatMessageRecord.session_id == ChatSession.id)
+        .where(ChatMessageRecord.role == "assistant")
+    )
+    q_aud_cond = await build_audience_filter(
+        db, ChatMessageRecord.ip_address, aud_scope
+    )
+    if q_aud_cond is not None:
+        asst_query = asst_query.where(q_aud_cond)
+
+    total_queries = (await db.scalar(asst_query)) or 0
+    feedback_rate = (
+        round((total_feedback / total_queries) * 100, 1) if total_queries else 0.0
+    )
+
+    outcome_stats: dict[str, dict[str, int]] = {}
+    for r in rows:
+        outcome = r.outcome or "answered"
+        bucket = outcome_stats.setdefault(
+            outcome, {"positive": 0, "negative": 0, "total": 0}
+        )
+        bucket["total"] += 1
+        if r.rating in (4, 5):
+            bucket["positive"] += 1
+        elif r.rating in (1, 2):
+            bucket["negative"] += 1
+
+    return {
+        "total_feedback": total_feedback,
+        "positive_count": pos_count,
+        "negative_count": neg_count,
+        "neutral_count": neu_count,
+        "positive_ratio": pos_ratio,
+        "negative_ratio": neg_ratio,
+        "feedback_rate": feedback_rate,
+        "feedback_by_outcome": outcome_stats,
+    }
+
+
+@router.post("/feedback/{message_id}/promote-to-test")
+async def promote_feedback_to_test(
+    message_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor: str = Depends(get_current_actor),
+):
+    """Convert a user feedback turn into a permanent regression test case."""
+    import json
+    import os
+    import uuid
+
+    try:
+        mid = uuid.UUID(message_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Invalid message ID format"
+        ) from None
+
+    asst_msg = await db.get(ChatMessageRecord, mid)
+    if asst_msg is None:
+        raise HTTPException(status_code=404, detail="Assistant message not found")
+
+    user_msg = await db.scalar(
+        select(ChatMessageRecord).where(
+            ChatMessageRecord.session_id == asst_msg.session_id,
+            ChatMessageRecord.turn_index == asst_msg.turn_index,
+            ChatMessageRecord.role == "user",
+        )
+    )
+    query_text = user_msg.content if user_msg else "Unknown user query"
+
+    promoted_file = os.path.join("data", "promoted_test_cases.json")
+    os.makedirs("data", exist_ok=True)
+
+    def _sync_save() -> str:
+        cases = []
+        if os.path.exists(promoted_file):
+            try:
+                with open(promoted_file, encoding="utf-8") as f:
+                    cases = json.load(f)
+            except Exception:
+                cases = []
+
+        case_id = f"promoted_{message_id[:8]}"
+        if any(c.get("id") == case_id for c in cases):
+            return case_id
+
+        cases.append(
+            {
+                "id": case_id,
+                "query": query_text,
+                "case_type": "robustness" if asst_msg.grounded else "negative",
+                "expect_grounded": bool(asst_msg.grounded),
+                "expected_outcome": asst_msg.outcome or "answered",
+                "source_message_id": message_id,
+                "promoted_at": datetime.utcnow().isoformat() + "Z",
+                "promoted_by": actor,
+            }
+        )
+
+        with open(promoted_file, "w", encoding="utf-8") as f:
+            json.dump(cases, f, indent=2)
+
+        return case_id
+
+    case_id = await asyncio.to_thread(_sync_save)
+
+    from app.governance.audit import record_audit_event
+
+    await record_audit_event(
+        db,
+        request_id=f"promote-{uuid.uuid4().hex[:12]}",
+        actor=actor,
+        action="feedback_promoted_to_eval_case",
+        detail={
+            "message_id": message_id,
+            "case_id": case_id,
+            "query": query_text,
+            "outcome": asst_msg.outcome,
+        },
+        commit=True,
+    )
+
+    return {
+        "status": "promoted",
+        "case_id": case_id,
+        "query": query_text,
     }

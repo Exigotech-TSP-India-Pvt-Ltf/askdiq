@@ -5,18 +5,32 @@ import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { useUsageSummary } from "@/lib/use-usage-data";
 import { OverviewTab } from "@/components/admin/usage/OverviewTab";
+import { InteractiveOverviewTab } from "@/components/admin/usage/InteractiveOverviewTab";
 import { UsersTab } from "@/components/admin/usage/UsersTab";
 import { SessionsTab } from "@/components/admin/usage/SessionsTab";
 import { QueriesTab } from "@/components/admin/usage/QueriesTab";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
-import { TabGroup, USAGE_TABS } from "@/components/admin/TabGroup";
+import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import {
   CircleDollarSign,
   Settings as SettingsIcon,
+  Layers,
+  Sparkles,
+  Users,
+  MessageSquare,
+  Cpu,
 } from "lucide-react";
 
-type TabId = "overview" | "users" | "sessions" | "queries";
+type TabId = "overview" | "live_telemetry" | "users" | "sessions" | "queries";
+
+const USAGE_CONSOLE_TABS: TabItem<TabId>[] = [
+  { id: "overview", label: "Overview", icon: Layers },
+  { id: "live_telemetry", label: "Live Telemetry Studio", icon: Sparkles, badgeCount: "Live" },
+  { id: "users", label: "All Users", icon: Users },
+  { id: "sessions", label: "All Sessions", icon: MessageSquare },
+  { id: "queries", label: "All Queries", icon: Cpu },
+];
 
 function UsageCostContent() {
   const { token } = useAuth();
@@ -38,7 +52,7 @@ function UsageCostContent() {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
     const tabParam = sp.get("tab") as TabId;
-    if (tabParam && USAGE_TABS.some((t) => t.id === tabParam)) {
+    if (tabParam && USAGE_CONSOLE_TABS.some((t) => t.id === tabParam)) {
       setActiveTab(tabParam);
     } else if (tabParam === ("overall" as any)) {
       setActiveTab("overview");
@@ -80,7 +94,7 @@ function UsageCostContent() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50/50">
+    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
       {/* Standard Universal Top Bar Line */}
       <DashboardHeader
         title="Usage & Financial Economics"
@@ -90,9 +104,9 @@ function UsageCostContent() {
           <button
             type="button"
             onClick={() => setIsConfigOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 hover:text-slate-900 transition"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-surface px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-xs hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition"
           >
-            <SettingsIcon className="w-3.5 h-3.5 text-slate-500" />
+            <SettingsIcon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
             <span>Configure Test IPs</span>
           </button>
         }
@@ -103,7 +117,7 @@ function UsageCostContent() {
         {/* Boxed Tab Navigation Strip */}
         <div className="flex items-center justify-between">
           <TabGroup
-            tabs={USAGE_TABS}
+            tabs={USAGE_CONSOLE_TABS}
             activeTab={activeTab}
             onChange={handleTabChange}
             ariaLabel="Usage console navigation"
@@ -119,6 +133,19 @@ function UsageCostContent() {
                 isLoading={isLoading}
                 error={error}
                 onRetry={refresh}
+              />
+            </div>
+          )}
+
+          {activeTab === "live_telemetry" && (
+            <div role="tabpanel" id="panel-live-telemetry" aria-labelledby="tab-live-telemetry">
+              <InteractiveOverviewTab
+                summary={summary}
+                isLoading={isLoading}
+                error={error}
+                onRetry={refresh}
+                token={token || ""}
+                audience={audience}
               />
             </div>
           )}

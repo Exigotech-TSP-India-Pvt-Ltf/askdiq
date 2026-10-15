@@ -36,9 +36,9 @@ export function FormatBadge({
       {isConverted && (
         <span
           title={provenanceTooltip}
-          className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 cursor-help"
+          className="inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 cursor-help"
         >
-          <Sparkles className="w-3 h-3 text-brand-indigo" />
+          <Sparkles className="w-3 h-3 text-brand-600" />
           <span>Standardized from .docx</span>
         </span>
       )}

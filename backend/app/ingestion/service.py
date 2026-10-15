@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chunking.factory import get_strategy
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
 from app.governance.audit import record_audit_event
+
 from app.ingestion.naming import canonical_source_name
 from app.ingestion.normalizer import (
     chunk_content_hash,
@@ -26,6 +28,7 @@ from app.ingestion.normalizer import (
 from app.models.db_models import Chunk, Document
 from app.retrieval.embeddings import embed_texts
 
+logger = get_logger(__name__)
 settings = get_settings()
 
 
@@ -55,10 +58,15 @@ async def ingest_text(
 
     # 1. Canonical naming
     canonical_name = canonical_source_name(source_name)
+    logger.info(
+        "ingest_started", source=canonical_name, char_len=len(content), force=force
+    )
 
     # 2. Deterministic normalization
     normalized_content, pii_found = normalize_markdown(content)
     new_doc_hash = doc_content_hash(normalized_content)
+    if pii_found:
+        logger.info("ingest_pii_detected", source=canonical_name, pii_types=pii_found)
 
     # -------------------------------------------------------------------------
     # PHASE A: Short Read Transaction
@@ -91,6 +99,9 @@ async def ingest_text(
         and existing.content_hash == new_doc_hash
         and len(existing_chunk_rows) > 0
     ):
+        logger.info(
+            "ingest_skipped_unchanged", source=canonical_name, hash=new_doc_hash[:12]
+        )
         if not dry_run:
             existing.doc_metadata = {
                 **(existing.doc_metadata or {}),
@@ -356,6 +367,18 @@ async def ingest_text(
     )
 
     await db.commit()
+
+    total_duration_ms = (time.perf_counter() - started) * 1000
+    logger.info(
+        "ingest_completed",
+        source=canonical_name,
+        status=status,
+        chunks_added=len(to_add_hashes),
+        chunks_kept=len(kept_hashes),
+        chunks_removed=len(stale_chunk_ids),
+        tokens=est_embed_tokens,
+        duration_ms=round(total_duration_ms, 2),
+    )
 
     return {
         "status": status,

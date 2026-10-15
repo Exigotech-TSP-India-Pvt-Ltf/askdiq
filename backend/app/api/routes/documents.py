@@ -5,12 +5,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
 from app.governance.audit import record_audit_event
 from app.governance.auth import get_current_actor
 from app.models.db_models import Chunk, Document
 from app.schemas.document import DocumentSummary
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -115,6 +117,13 @@ async def delete_document(
     )
 
     await db.commit()
+    logger.info(
+        "document_deleted",
+        document_id=str(document_id),
+        source_name=source_name,
+        chunks_removed=chunk_count,
+        actor=actor,
+    )
     return Response(status_code=204)
 
 

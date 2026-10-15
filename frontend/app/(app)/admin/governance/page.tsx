@@ -26,15 +26,15 @@ function InfoRow({
   detail?: string;
 }) {
   return (
-    <div className="flex items-center gap-4 border-b border-slate-100 py-3.5 last:border-0">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 text-brand-indigo">
+    <div className="flex items-center gap-4 border-b border-slate-100 dark:border-dark-border py-3.5 last:border-0">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-950/60 border border-brand-100 dark:border-brand-800 text-brand-600 dark:text-brand-400">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-slate-900">{label}</p>
-        {detail && <p className="text-xs text-slate-500">{detail}</p>}
+        <p className="text-sm font-semibold text-slate-900 dark:text-white">{label}</p>
+        {detail && <p className="text-xs text-slate-500 dark:text-slate-400">{detail}</p>}
       </div>
-      <p className="shrink-0 text-sm font-bold text-slate-900 font-mono">{value}</p>
+      <p className="shrink-0 text-sm font-bold text-slate-900 dark:text-white font-mono">{value}</p>
     </div>
   );
 }
@@ -68,7 +68,7 @@ function OverallSummary() {
   }, [token, audience]);
 
   return (
-    <section className="rounded-xl border border-slate-200/90 bg-white p-6 shadow-sm">
+    <section className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-6 shadow-sm">
       <InfoRow
         icon={Activity}
         label="Monitoring"
@@ -111,7 +111,7 @@ export default function GovernancePage() {
   const [activeTab, setActiveTab] = useState<Tab>("Overall");
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50/50">
+    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
       <DashboardHeader
         title="Admin Governance"
         subtitle="System health monitoring, request tracing, and security audit log streams"

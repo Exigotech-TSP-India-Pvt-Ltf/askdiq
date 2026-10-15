@@ -277,4 +277,27 @@ def build_extra_cases(EvalCase) -> list:  # noqa: N803, RUF100
             perturbation="long_conversation_history",
         )
     ]
-    return [*abstention, *safe, *robust, *long_conv]
+
+    # Promoted test cases from real human feedback
+    promoted_cases = []
+    import json
+    import os
+
+    promoted_file = os.path.join("data", "promoted_test_cases.json")
+    if os.path.exists(promoted_file):
+        try:
+            with open(promoted_file, encoding="utf-8") as f:
+                raw_cases = json.load(f)
+            for c in raw_cases:
+                promoted_cases.append(
+                    EvalCase(
+                        id=c["id"],
+                        query=c["query"],
+                        case_type=c.get("case_type", "robustness"),
+                        expect_grounded=c.get("expect_grounded", True),
+                    )
+                )
+        except Exception:
+            pass
+
+    return [*abstention, *safe, *robust, *long_conv, *promoted_cases]

@@ -11,6 +11,13 @@ import { TableCard } from "../TableCard";
 import { StatCard, HighlightCard } from "../insights";
 import { Users, Shield, Cpu, Download, Sparkles } from "lucide-react";
 
+import {
+  formatNumber,
+  formatCurrency,
+  formatTokens,
+  TableBadge,
+} from "../TableFormatters";
+
 interface UsersTabProps {
   token: string;
   onSelectUserIp?: (ip: string) => void;
@@ -95,16 +102,14 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       header: "Client IP Address",
       render: (r) => (
         <div className="flex items-center gap-2">
-          <span className="font-mono font-medium text-slate-800">{r.ip_address}</span>
-          <span
-            className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
-              r.is_test
-                ? "bg-amber-100 text-amber-800"
-                : "bg-emerald-100 text-emerald-800"
-            }`}
-          >
-            {r.type}
+          <span className="font-mono text-xs font-medium text-slate-800 dark:text-slate-200">
+            {r.ip_address}
           </span>
+          <TableBadge
+            label={r.type}
+            variant={r.is_test ? "warning" : "success"}
+            title={r.is_test ? "Internal developer/test IP" : "Production user traffic"}
+          />
         </div>
       ),
     },
@@ -112,77 +117,53 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       key: "sessions",
       header: "Sessions",
       sortable: true,
-      align: "center",
-      render: (r) => <span className="font-medium">{r.sessions.toLocaleString()}</span>,
+      align: "right",
+      render: (r) => formatNumber(r.sessions),
     },
     {
       key: "queries",
       header: "Queries",
       sortable: true,
-      align: "center",
-      render: (r) => <span className="font-semibold">{r.queries.toLocaleString()}</span>,
+      align: "right",
+      render: (r) => formatNumber(r.queries),
     },
     {
       key: "embed_tokens",
       header: "Embed Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-slate-500">
-          {r.embed_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.embed_tokens, "muted"),
     },
     {
       key: "prompt_tokens",
       header: "Input Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-slate-600">
-          {r.prompt_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.prompt_tokens, "input"),
     },
     {
       key: "reasoning_tokens",
-      header: "Reasoning",
+      header: "Reasoning Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-purple-600">
-          {r.reasoning_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.reasoning_tokens, "reasoning"),
     },
     {
       key: "output_tokens",
       header: "Output Tokens",
       align: "right",
-      render: (r) => (
-        <span className="font-mono text-emerald-600">
-          {r.output_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.output_tokens, "output"),
     },
     {
       key: "tokens",
       header: "Total Tokens",
       sortable: true,
       align: "right",
-      render: (r) => (
-        <span className="font-mono font-semibold text-slate-900">
-          {r.total_tokens.toLocaleString()}
-        </span>
-      ),
+      render: (r) => formatTokens(r.total_tokens, "total"),
     },
     {
       key: "cost",
       header: "Cost (USD)",
       sortable: true,
       align: "right",
-      render: (r) => (
-        <span className="font-mono font-bold text-slate-900">
-          ${r.cost_usd.toFixed(4)}
-        </span>
-      ),
+      render: (r) => formatCurrency(r.cost_usd, 4),
     },
   ];
 
@@ -280,9 +261,9 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
                 <a
                   href={exportUrl}
                   download
-                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition"
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 transition"
                 >
-                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                   <span>Export CSV</span>
                 </a>
               }

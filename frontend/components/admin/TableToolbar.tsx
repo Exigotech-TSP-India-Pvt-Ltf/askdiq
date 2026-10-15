@@ -128,7 +128,7 @@ export function TableToolbar({
     <div className="flex flex-col gap-2.5" ref={containerRef}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         {countLabel ? (
-          <span className="text-xs font-medium text-slate-500">{countLabel}</span>
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{countLabel}</span>
         ) : (
           <div />
         )}
@@ -139,7 +139,7 @@ export function TableToolbar({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {/* Integrated Search Input with Clear Button */}
           <div className="relative w-full max-w-xs sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
               type="text"
               value={debounceMs > 0 ? internalSearch : search}
@@ -152,7 +152,7 @@ export function TableToolbar({
                 }
               }}
               placeholder={searchPlaceholder}
-              className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-xs text-slate-700 placeholder:text-slate-400 shadow-sm transition focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card py-1.5 pl-8 pr-7 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 shadow-sm transition focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
             {(debounceMs > 0 ? internalSearch : search) ? (
               <button
@@ -165,7 +165,7 @@ export function TableToolbar({
                 }}
                 aria-label="Clear search"
                 title="Clear search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 focus:outline-none"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -182,14 +182,14 @@ export function TableToolbar({
                 onClick={() => setIsOpen(!isOpen)}
                 className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 ${
                   activeCount > 0
-                    ? "border-brand-500 bg-brand-50/70 text-brand-700 font-semibold shadow-brand-glow/20"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                    ? "border-brand-500 bg-brand-50/70 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold shadow-brand-glow/20"
+                    : "border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white"
                 }`}
               >
-                <SlidersHorizontal className="h-3.5 w-3.5 text-brand-600" />
+                <SlidersHorizontal className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
                 <span>Filters</span>
                 {activeCount > 0 && (
-                  <span className="rounded-full bg-brand-600 px-1.5 py-0.2 text-[10px] font-semibold text-white leading-none">
+                  <span className="rounded-full bg-brand-600 dark:bg-brand-500 px-1.5 py-0.2 text-[10px] font-semibold text-white leading-none">
                     {activeCount}
                   </span>
                 )}
@@ -201,15 +201,15 @@ export function TableToolbar({
                   ref={popoverRef}
                   role="dialog"
                   aria-label="Filter Options"
-                  className="absolute right-0 z-50 mt-2 w-72 rounded-xl border border-slate-200/90 bg-white p-3 shadow-xl animate-in fade-in zoom-in-95 duration-100"
+                  className="absolute right-0 z-50 mt-2 w-72 rounded-xl border border-slate-200/90 dark:border-white/15 bg-white dark:bg-dark-card p-3 shadow-xl animate-in fade-in zoom-in-95 duration-100"
                 >
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
-                    <span className="text-xs font-semibold text-slate-800">Filter Options</span>
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2 mb-2">
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">Filter Options</span>
                     {activeCount > 0 && (
                       <button
                         type="button"
                         onClick={() => allFilterGroups.forEach((g) => g.onChange("all"))}
-                        className="text-[11px] font-medium text-brand-600 hover:text-brand-700 hover:underline"
+                        className="text-[11px] font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 hover:underline"
                       >
                         Reset all
                       </button>
@@ -219,7 +219,7 @@ export function TableToolbar({
                   <div className="max-h-72 overflow-y-auto space-y-3 pr-1">
                     {allFilterGroups.map((group) => (
                       <div key={group.id} className="space-y-1.5">
-                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                           {group.label}
                         </label>
                         <div className="space-y-0.5">
@@ -233,12 +233,12 @@ export function TableToolbar({
                                 onClick={() => group.onChange(opt.value)}
                                 className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition ${
                                   isSelected
-                                    ? "bg-brand-50 text-brand-700 font-semibold"
-                                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                    ? "bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold"
+                                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white"
                                 }`}
                               >
                                 <span>{opt.label}</span>
-                                {isSelected && <Check className="h-3.5 w-3.5 text-brand-600 shrink-0" />}
+                                {isSelected && <Check className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400 shrink-0" />}
                               </button>
                             );
                           })}
@@ -247,11 +247,11 @@ export function TableToolbar({
                     ))}
                   </div>
 
-                  <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-100 pt-2.5">
+                  <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-white/10 pt-2.5">
                     <button
                       type="button"
                       onClick={() => setIsOpen(false)}
-                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800 transition"
+                      className="rounded-lg bg-slate-900 dark:bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800 dark:hover:bg-brand-700 transition"
                     >
                       Done
                     </button>
@@ -270,7 +270,7 @@ export function TableToolbar({
               type="button"
               onClick={handleResetAll}
               title="Reset all filters and search"
-              className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
+              className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-700 dark:hover:text-slate-200 transition"
             >
               <RotateCcw className="h-3 w-3" />
               <span>Reset</span>
@@ -282,11 +282,11 @@ export function TableToolbar({
       {/* Active Filter Pills Strip */}
       {activePills.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <span className="text-[11px] font-medium text-slate-400">Active filters:</span>
+          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">Active filters:</span>
           {activePills.map((pill) => (
             <span
               key={`${pill.groupId}-${pill.value}`}
-              className="inline-flex items-center gap-1 rounded-md bg-brand-50 border border-brand-200/80 px-2 py-0.5 text-[11px] font-medium text-brand-700 shadow-xs"
+              className="inline-flex items-center gap-1 rounded-md bg-brand-50 dark:bg-brand-950/60 border border-brand-200/80 dark:border-brand-800/80 px-2 py-0.5 text-[11px] font-medium text-brand-700 dark:text-brand-300 shadow-xs"
             >
               <span>
                 {pill.groupLabel}: {pill.label}
@@ -295,7 +295,7 @@ export function TableToolbar({
                 type="button"
                 onClick={pill.onClear}
                 aria-label={`Remove filter ${pill.label}`}
-                className="hover:text-brand-900 focus:outline-none"
+                className="hover:text-brand-900 dark:hover:text-brand-100 focus:outline-none"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -305,7 +305,7 @@ export function TableToolbar({
             <button
               type="button"
               onClick={() => allFilterGroups.forEach((g) => g.onChange("all"))}
-              className="text-[11px] font-medium text-brand-600 hover:text-brand-800 hover:underline pl-1"
+              className="text-[11px] font-medium text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-200 hover:underline pl-1"
             >
               Clear all
             </button>

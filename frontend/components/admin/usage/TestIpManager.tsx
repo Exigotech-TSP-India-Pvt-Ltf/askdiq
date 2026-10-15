@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   Shield,
   Plus,
@@ -144,7 +145,7 @@ export function TestIpManager({
       key: "ip_address",
       header: "IP / CIDR Rule",
       render: (r) => (
-        <span className="font-mono font-medium text-slate-800 text-xs">
+        <span className="font-mono font-medium text-slate-800 dark:text-slate-200 text-xs">
           {r.ip_address}
         </span>
       ),
@@ -153,7 +154,7 @@ export function TestIpManager({
       key: "description",
       header: "Description & Purpose",
       render: (r) => (
-        <span className="text-xs text-slate-600 line-clamp-1">
+        <span className="text-xs text-slate-600 dark:text-slate-300 line-clamp-1">
           {r.description || "—"}
         </span>
       ),
@@ -162,7 +163,7 @@ export function TestIpManager({
       key: "created_at",
       header: "Configured At",
       render: (r) => (
-        <span className="text-xs text-slate-500 whitespace-nowrap">
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
           {r.created_at ? new Date(r.created_at).toLocaleDateString() : "—"}
         </span>
       ),
@@ -175,7 +176,7 @@ export function TestIpManager({
         <button
           type="button"
           onClick={() => setConfirmDeleteIp(r.ip_address)}
-          className="p-1 text-slate-400 hover:text-rose-600 transition"
+          className="p-1 text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition"
           aria-label={`Delete ${r.ip_address}`}
         >
           <Trash2 className="w-4 h-4" />
@@ -186,30 +187,30 @@ export function TestIpManager({
 
   if (!isOpen) return null;
 
-  return (
+  const content = (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="test-ip-manager-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden my-8"
+        className="w-full max-w-3xl rounded-2xl bg-white dark:bg-dark-surface shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden my-8"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-6 py-4 bg-slate-50 dark:bg-dark-card">
           <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-brand-indigo" />
-            <h2 id="test-ip-manager-title" className="text-base font-semibold text-slate-900">
+            <Shield className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+            <h2 id="test-ip-manager-title" className="text-base font-semibold text-slate-900 dark:text-white">
               Manage Test IP Rules & Audience Segmentation
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/50 hover:text-slate-700 transition"
+            className="rounded-lg p-1.5 text-slate-400 dark:text-slate-500 hover:bg-slate-200/50 dark:hover:bg-white/10 hover:text-slate-700 dark:hover:text-slate-200 transition"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
@@ -219,13 +220,13 @@ export function TestIpManager({
         {/* Modal Body */}
         <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
           {/* Classification note banner */}
-          <div className="flex items-start gap-3 rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 text-xs text-indigo-900">
-            <Info className="w-4 h-4 text-brand-indigo shrink-0 mt-0.5" />
+          <div className="flex items-start gap-3 rounded-xl border border-teal-100 dark:border-teal-900/60 bg-teal-50/50 dark:bg-teal-950/40 p-4 text-xs text-teal-900 dark:text-teal-200">
+            <Info className="w-4 h-4 text-brand-600 dark:text-brand-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <p className="font-semibold text-indigo-950">
+              <p className="font-semibold text-teal-950 dark:text-teal-100">
                 Audience Re-classification Guarantee
               </p>
-              <p className="text-indigo-800">
+              <p className="text-teal-800 dark:text-teal-300">
                 {data?.classification_note ||
                   "Historical telemetry is dynamically re-classified whenever test IPs are updated. All analytics, session threads, and query records immediately reflect new CIDR rules."}
               </p>
@@ -235,15 +236,15 @@ export function TestIpManager({
           {/* Add IP Form */}
           <form
             onSubmit={handleAddIp}
-            className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3"
+            className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/60 dark:bg-dark-card p-4 space-y-3"
           >
-            <h3 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
+            <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
               Add New Test IP / CIDR Subnet Rule
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
                   IP / CIDR / Prefix *
                 </label>
                 <input
@@ -253,12 +254,12 @@ export function TestIpManager({
                   value={newIp}
                   onChange={(e) => setNewIp(e.target.value)}
                   placeholder="e.g. 192.168.1.0/24 or 10.0.0.1"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-mono text-slate-900 placeholder:text-slate-400 focus:border-brand-indigo focus:ring-1 focus:ring-brand-indigo"
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-dark-surface px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
                 />
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
                   Description / Team Purpose
                 </label>
                 <div className="flex gap-2">
@@ -268,7 +269,7 @@ export function TestIpManager({
                     value={newDesc}
                     onChange={(e) => setNewDesc(e.target.value)}
                     placeholder="e.g. QA team automated runner or Office VPN"
-                    className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand-indigo focus:ring-1 focus:ring-brand-indigo"
+                    className="flex-1 rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-dark-surface px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
                   />
                   <button
                     type="submit"
@@ -333,7 +334,7 @@ export function TestIpManager({
           {/* Custom IPs Table */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
+              <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                 Active Custom Rules ({data?.custom_ips?.length || 0})
               </h3>
             </div>
@@ -365,15 +366,15 @@ export function TestIpManager({
           </div>
 
           {/* Default System IPs Strip */}
-          <div className="space-y-2 border-t border-slate-100 pt-4">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
+          <div className="space-y-2 border-t border-slate-100 dark:border-white/10 pt-4">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
               Default System Loopbacks & Non-Removable Test Subnets
             </span>
             <div className="flex flex-wrap gap-1.5">
               {(data?.default_ips || ["127.0.0.1", "::1", "localhost"]).map((ip) => (
                 <span
                   key={ip}
-                  className="rounded-md bg-slate-100 border border-slate-200 px-2 py-0.5 text-[11px] font-mono text-slate-600"
+                  className="rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2 py-0.5 text-[11px] font-mono text-slate-600 dark:text-slate-300"
                 >
                   {ip}
                 </span>
@@ -383,11 +384,11 @@ export function TestIpManager({
         </div>
 
         {/* Modal Footer */}
-        <div className="border-t border-slate-200 px-6 py-3 bg-slate-50 flex justify-end">
+        <div className="border-t border-slate-200 dark:border-white/10 px-6 py-3 bg-slate-50 dark:bg-dark-card flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition"
+            className="rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-dark-surface px-4 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition"
           >
             Close
           </button>
@@ -395,4 +396,10 @@ export function TestIpManager({
       </div>
     </div>
   );
+
+  if (typeof document !== "undefined") {
+    return createPortal(content, document.body);
+  }
+
+  return content;
 }

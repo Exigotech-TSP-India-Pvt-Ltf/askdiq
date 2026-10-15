@@ -35,13 +35,8 @@ export function AudienceProvider({ children }: { children: React.ReactNode }) {
   // If nested inside another AudienceProvider, inherit existing context
   const parent = useContext(AudienceContext);
 
-  let token = "";
-  try {
-    const auth = useAuth();
-    token = auth?.token || "";
-  } catch {
-    // AuthProvider not mounted in test environments
-  }
+  const auth = useAuth();
+  const token = auth?.token || "";
 
   // 1. Initialize audience from URL query -> localStorage -> default 'overview'
   const [audience, setAudienceState] = useState<Audience>(() => {

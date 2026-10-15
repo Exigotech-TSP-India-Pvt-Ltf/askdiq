@@ -8,6 +8,7 @@ import { Pagination } from "@/components/admin/Pagination";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TableCard } from "@/components/admin/TableCard";
+import { formatNumber, TableBadge } from "@/components/admin/TableFormatters";
 import { useTableState } from "@/lib/use-table-state";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -113,16 +114,13 @@ function UsersContent() {
       header: "Client IP Address",
       render: (u) => (
         <div className="flex items-center gap-2">
-          <span className="font-mono font-medium text-slate-800">{u.ip_address}</span>
-          <span
-            className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
-              u.is_test
-                ? "bg-amber-100 text-amber-800"
-                : "bg-emerald-100 text-emerald-800"
-            }`}
-          >
-            {u.type || (u.is_test ? "Test IP" : "Production")}
+          <span className="font-mono text-xs font-medium text-slate-800 dark:text-slate-200">
+            {u.ip_address}
           </span>
+          <TableBadge
+            label={u.type || (u.is_test ? "Test" : "Production")}
+            variant={u.is_test ? "warning" : "success"}
+          />
         </div>
       ),
     },
@@ -136,18 +134,10 @@ function UsersContent() {
           (u.last_active &&
             Date.now() - new Date(u.last_active).getTime() < 30 * 60 * 1000);
         return (
-          <span
-            className={`inline-flex items-center gap-1.5 text-xs font-medium ${
-              isActive ? "text-emerald-700" : "text-slate-400"
-            }`}
-          >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                isActive ? "bg-emerald-500 animate-pulse" : "bg-slate-300"
-              }`}
-            />
-            {isActive ? "Active" : "Inactive"}
-          </span>
+          <TableBadge
+            label={isActive ? "Active" : "Inactive"}
+            variant={isActive ? "success" : "neutral"}
+          />
         );
       },
     },
@@ -155,39 +145,27 @@ function UsersContent() {
       key: "sessions",
       header: "Sessions",
       sortable: true,
-      align: "center",
-      render: (u) => (
-        <span className="font-mono text-xs font-medium text-slate-700">
-          {(u.sessions ?? u.conversations ?? 0).toLocaleString()}
-        </span>
-      ),
+      align: "right",
+      render: (u) => formatNumber(u.sessions ?? u.conversations ?? 0),
     },
     {
       key: "queries",
       header: "Queries",
       sortable: true,
-      align: "center",
-      render: (u) => (
-        <span className="font-mono text-xs font-semibold text-slate-900">
-          {(u.queries ?? 0).toLocaleString()}
-        </span>
-      ),
+      align: "right",
+      render: (u) => formatNumber(u.queries ?? 0),
     },
     {
       key: "feedback_count",
       header: "Feedback",
-      align: "center",
-      render: (u) => (
-        <span className="font-mono text-xs text-slate-500">
-          {(u.feedback_count ?? 0).toLocaleString()}
-        </span>
-      ),
+      align: "right",
+      render: (u) => formatNumber(u.feedback_count ?? 0),
     },
     {
       key: "first_seen",
       header: "First Seen",
       render: (u) => (
-        <span className="text-xs text-slate-500 whitespace-nowrap">
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
           {u.first_seen ? new Date(u.first_seen).toLocaleDateString() : "—"}
         </span>
       ),
@@ -197,7 +175,7 @@ function UsersContent() {
       header: "Last Active",
       sortable: true,
       render: (u) => (
-        <span className="text-xs text-slate-500 whitespace-nowrap">
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
           {u.last_active ? new Date(u.last_active).toLocaleString() : "—"}
         </span>
       ),
@@ -205,7 +183,7 @@ function UsersContent() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50/50">
+    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
       {/* Standard Universal Top Bar Line */}
       <DashboardHeader
         title="Users"
@@ -216,32 +194,32 @@ function UsersContent() {
       <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
         {/* Hero Stat Cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm flex items-center justify-between">
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Total Filtered Users</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{total.toLocaleString()}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Filtered Users</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{total.toLocaleString()}</p>
             </div>
-            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo border border-indigo-100">
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-800">
               <UsersIcon className="h-5 w-5" />
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm flex items-center justify-between">
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Active Page Users</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-600">{activeCount.toLocaleString()}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Active Page Users</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{activeCount.toLocaleString()}</p>
             </div>
-            <div className="rounded-lg bg-emerald-50 p-2.5 text-emerald-600 border border-emerald-100">
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
               <UserCheck className="h-5 w-5" />
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm flex items-center justify-between">
+          <div className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm flex items-center justify-between">
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Page Queries Driven</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{totalQueries.toLocaleString()}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Page Queries Driven</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalQueries.toLocaleString()}</p>
             </div>
-            <div className="rounded-lg bg-purple-50 p-2.5 text-purple-600 border border-purple-100">
+            <div className="rounded-lg bg-teal-50 dark:bg-teal-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-teal-100 dark:border-teal-800">
               <Activity className="h-5 w-5" />
             </div>
           </div>

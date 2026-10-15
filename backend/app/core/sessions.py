@@ -10,7 +10,6 @@ client — so:
 """
 
 import asyncio
-import logging
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -21,6 +20,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
 from app.core.database import AsyncSessionLocal
 from app.governance.audit import record_audit_event
 from app.governance.costing import compute_exchange_cost
@@ -35,7 +35,7 @@ from app.schemas.session import (
 )
 
 settings = get_settings()
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # user_email -> in-flight background exchange writes (see schedule_exchange_write).
 _pending_writes: dict[str, set[asyncio.Task]] = defaultdict(set)
@@ -586,6 +586,55 @@ async def record_feedback(
         ip_address=effective_ip,
         commit=False,
     )
+
+    logger.info(
+        "user_feedback_recorded",
+        actor=actor,
+        rating=rating,
+        session_id=str(session.id),
+        message_id=str(mid),
+    )
+
+    # Check for negative feedback spike in the last 1 hour
+    one_hour_ago = now - timedelta(hours=1)
+    recent_ratings = (
+        (
+            await db.execute(
+                select(MessageFeedback.rating).where(
+                    MessageFeedback.created_at >= one_hour_ago
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if len(recent_ratings) >= 5:
+        neg_count = sum(1 for r in recent_ratings if r <= 2)
+        neg_rate = neg_count / len(recent_ratings)
+        if neg_rate > 0.25:
+            await record_audit_event(
+                db,
+                request_id=req_id,
+                actor="system",
+                action="negative_feedback_spike",
+                detail={
+                    "negative_rate": round(neg_rate, 3),
+                    "threshold": 0.25,
+                    "total_1h": len(recent_ratings),
+                    "negative_count": neg_count,
+                    "trigger_message_id": str(mid),
+                },
+                ip_address=effective_ip,
+                commit=False,
+            )
+            logger.warning(
+                "negative_feedback_spike",
+                negative_rate=round(neg_rate, 3),
+                threshold=0.25,
+                total_1h=len(recent_ratings),
+                negative_count=neg_count,
+            )
 
     await db.commit()
     await db.refresh(feedback_obj)

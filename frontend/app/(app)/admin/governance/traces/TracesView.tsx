@@ -29,16 +29,18 @@ function shortId(id?: string, head = 10) {
 
 function statusBadge(status?: string) {
   const s = (status || "ok").toLowerCase();
-  if (s === "ok" || s === "success") return "bg-emerald-50 text-emerald-700 border border-emerald-200";
-  if (s === "error" || s === "failed") return "bg-red-50 text-red-700 border border-red-200";
-  return "bg-amber-50 text-amber-700 border border-amber-200";
+  if (s === "ok" || s === "success")
+    return "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80";
+  if (s === "error" || s === "failed")
+    return "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/80";
+  return "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/80";
 }
 
 function latencyBadge(ms?: number) {
-  if (ms == null) return "bg-slate-100 text-slate-500";
-  if (ms >= 8000) return "bg-red-50 text-red-700";
-  if (ms >= 4000) return "bg-amber-50 text-amber-700";
-  return "bg-emerald-50 text-emerald-700";
+  if (ms == null) return "bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400";
+  if (ms >= 8000) return "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300";
+  if (ms >= 4000) return "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300";
+  return "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300";
 }
 
 export default function TracesView({ hideHeader = false }: { hideHeader?: boolean } = {}) {
@@ -102,7 +104,7 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
       key: "request_id",
       header: "Request ID",
       render: (t) => (
-        <span className="font-mono text-xs text-slate-900" title={t.request_id}>
+        <span className="font-mono text-xs text-slate-900 dark:text-slate-100" title={t.request_id}>
           {shortId(t.request_id, 12)}
         </span>
       ),
@@ -111,7 +113,7 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
       key: "trace_id",
       header: "Trace ID",
       render: (t) => (
-        <span className="font-mono text-xs text-slate-500" title={t.trace_id}>
+        <span className="font-mono text-xs text-slate-500 dark:text-slate-400" title={t.trace_id}>
           {shortId(t.trace_id, 12)}
         </span>
       ),
@@ -120,7 +122,7 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
       key: "ip_address",
       header: "Client IP",
       render: (t) => (
-        <span className="font-mono text-xs text-slate-600">
+        <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
           {t.ip_address || "—"}
         </span>
       ),
@@ -160,7 +162,7 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
       header: "Timestamp",
       sortable: true,
       render: (t) => (
-        <span className="text-xs text-slate-500 whitespace-nowrap">
+        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
           {t.timestamp ? new Date(t.timestamp).toLocaleString() : "—"}
         </span>
       ),
@@ -170,10 +172,10 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
   return (
     <div className="space-y-6">
       {!hideHeader && (
-        <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-8">
+        <header className="flex h-20 shrink-0 items-center border-b border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface px-8">
           <div>
-            <h1 className="text-sm font-semibold text-slate-900">Request Traces</h1>
-            <p className="text-xs text-slate-500">
+            <h1 className="text-sm font-semibold text-slate-900 dark:text-white">Request Traces</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Complete request journey across the RAG pipeline.
             </p>
           </div>
@@ -182,32 +184,32 @@ export default function TracesView({ hideHeader = false }: { hideHeader?: boolea
 
       <div className="p-8 space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs flex items-center justify-between">
+          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface p-4 shadow-xs flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-slate-500">Total Pipeline Traces</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{traces.length.toLocaleString()}</p>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Pipeline Traces</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{traces.length.toLocaleString()}</p>
             </div>
-            <div className="rounded-lg bg-indigo-50 p-2.5 text-brand-indigo">
+            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/60 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/60">
               <Activity className="h-5 w-5" />
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs flex items-center justify-between">
+          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface p-4 shadow-xs flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-slate-500">Average Turn Latency</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{formatLatencyMs(avgLatency)}</p>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Average Turn Latency</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">{formatLatencyMs(avgLatency)}</p>
             </div>
-            <div className="rounded-lg bg-emerald-50 p-2.5 text-emerald-600">
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/60 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/60">
               <Gauge className="h-5 w-5" />
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs flex items-center justify-between">
+          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface p-4 shadow-xs flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-slate-500">Pipeline Errors</p>
-              <p className="mt-1 text-2xl font-bold text-rose-600">{errorCount}</p>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Pipeline Errors</p>
+              <p className="mt-1 text-2xl font-bold text-rose-600 dark:text-rose-400">{errorCount}</p>
             </div>
-            <div className="rounded-lg bg-rose-50 p-2.5 text-rose-600">
+            <div className="rounded-lg bg-rose-50 dark:bg-rose-950/60 p-2.5 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-900/60">
               <AlertTriangle className="h-5 w-5" />
             </div>
           </div>

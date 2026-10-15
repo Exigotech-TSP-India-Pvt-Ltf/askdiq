@@ -28,22 +28,22 @@ export function TableCard({
   return (
     <div
       data-testid="table-card"
-      className={`overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm transition-all duration-200 ${className}`}
+      className={`overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white dark:bg-[#0c0d10] shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 ${className}`}
     >
       {/* Optional Top Card Header (Title / Subtitle / Header Actions) */}
       {hasCardHeader && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 bg-white px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-teal-100 dark:border-teal-500/20 bg-white dark:bg-[#0c0d10] px-5 py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
               {typeof title === "string" ? (
-                <h2 className="text-sm font-bold text-slate-900 tracking-tight">{title}</h2>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">{title}</h2>
               ) : (
                 title
               )}
               {badge}
             </div>
             {description && (
-              <p className="mt-0.5 text-xs text-slate-500">{description}</p>
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{description}</p>
             )}
           </div>
           {headerActions && (
@@ -54,7 +54,7 @@ export function TableCard({
 
       {/* Toolbar Slot (Integrated Search & Single Filters Popover) */}
       {toolbar && (
-        <div className="border-b border-slate-200/90 bg-slate-50/50 px-4 py-3 sm:px-5">
+        <div className="border-b border-teal-100 dark:border-teal-500/20 bg-teal-50/20 dark:bg-white/[0.02] px-4 py-3 sm:px-5">
           {toolbar}
         </div>
       )}
@@ -66,7 +66,7 @@ export function TableCard({
 
       {/* Bottom Pagination Slot */}
       {pagination && (
-        <div className="border-t border-slate-200/90 bg-slate-50/30 px-4 py-2 sm:px-5">
+        <div>
           {pagination}
         </div>
       )}

@@ -22,9 +22,11 @@ from collections import defaultdict, deque
 from fastapi import Depends, HTTPException, Request, status
 
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
 from app.governance.auth import get_current_actor
 
+logger = get_logger(__name__)
 settings = get_settings()
 
 _WINDOW_SECONDS = 60.0
@@ -75,6 +77,14 @@ def _check_and_record(
 
     if len(log) >= limit:
         retry_after = int(_WINDOW_SECONDS - (now - log[0])) + 1
+        logger.warning(
+            "rate_limit_exceeded",
+            key=key,
+            limit=limit,
+            label=label,
+            retry_after_s=retry_after,
+            window_count=len(log),
+        )
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(

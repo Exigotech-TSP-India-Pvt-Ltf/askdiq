@@ -1,0 +1,22 @@
+[
+  {
+    "id": "promoted_d7ed5d84",
+    "query": "How do I configure mTLS for Zero Trust?",
+    "case_type": "negative",
+    "expect_grounded": false,
+    "expected_outcome": "ungrounded",
+    "source_message_id": "d7ed5d84-447b-4b5a-808a-717140b262ba",
+    "promoted_at": "2026-10-15T04:24:37.161833Z",
+    "promoted_by": "admin_user@example.com"
+  },
+  {
+    "id": "promoted_b85b31e1",
+    "query": "How do I configure mTLS for Zero Trust?",
+    "case_type": "negative",
+    "expect_grounded": false,
+    "expected_outcome": "ungrounded",
+    "source_message_id": "b85b31e1-978d-4d3a-80da-5c1df7ad3c0c",
+    "promoted_at": "2026-10-15T10:07:05.516696Z",
+    "promoted_by": "admin_user@example.com"
+  }
+]

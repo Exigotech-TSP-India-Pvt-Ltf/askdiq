@@ -26,6 +26,7 @@ export interface DataTableProps<T> {
   currentSort?: string;
   onSortChange?: (sortKey: string) => void;
   onRowClick?: (row: T) => void;
+  nested?: boolean;
   className?: string;
 }
 
@@ -41,6 +42,7 @@ export function DataTable<T extends Record<string, any>>({
   currentSort,
   onSortChange,
   onRowClick,
+  nested = true,
   className = "",
 }: DataTableProps<T>) {
   const getRowKey = (row: T, idx: number): string => {
@@ -63,12 +65,12 @@ export function DataTable<T extends Record<string, any>>({
     if (!col.sortable) return null;
     const baseKey = col.key;
     if (currentSort === `${baseKey}_desc`) {
-      return <ArrowDown className="w-3.5 h-3.5 text-brand-600" />;
+      return <ArrowDown className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />;
     }
     if (currentSort === `${baseKey}_asc`) {
-      return <ArrowUp className="w-3.5 h-3.5 text-brand-600" />;
+      return <ArrowUp className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />;
     }
-    return <ArrowUpDown className="w-3 h-3 text-slate-300 group-hover:text-slate-500 transition" />;
+    return <ArrowUpDown className="w-3 h-3 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-300 transition" />;
   };
 
   const getAriaSort = (col: ColumnDef<T>): "ascending" | "descending" | "none" => {
@@ -78,11 +80,15 @@ export function DataTable<T extends Record<string, any>>({
     return "none";
   };
 
+  const containerClasses = nested
+    ? `relative w-full bg-transparent ${className}`
+    : `relative w-full overflow-hidden rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-dark-surface shadow-sm ${className}`;
+
   return (
-    <div className={`relative w-full overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm ${className}`}>
+    <div className={containerClasses}>
       {/* Subtle indeterminate progress bar when refreshing existing records */}
       {isLoading && data.length > 0 && (
-        <div className="absolute top-0 left-0 right-0 z-20 h-0.5 w-full bg-slate-100 overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 z-20 h-0.5 w-full bg-slate-100 dark:bg-white/10 overflow-hidden">
           <div className="h-full bg-brand-gradient animate-pulse w-full" />
         </div>
       )}
@@ -90,7 +96,7 @@ export function DataTable<T extends Record<string, any>>({
       <div className="overflow-x-auto min-h-[280px]">
         <table className="w-full text-left text-xs border-collapse">
           {/* Header */}
-          <thead className="bg-slate-50/80 border-b border-slate-200/90 text-slate-500 font-medium">
+          <thead className="bg-slate-50/80 dark:bg-dark-surface/90 border-b border-slate-200/90 dark:border-white/10 text-slate-500 dark:text-slate-400 font-medium">
             <tr>
               {columns.map((col) => {
                 const Icon = col.icon;
@@ -109,7 +115,7 @@ export function DataTable<T extends Record<string, any>>({
                     style={col.width ? { width: col.width } : undefined}
                     onClick={() => handleHeaderClick(col)}
                     className={`px-4 py-3 font-semibold select-none ${alignClass} ${
-                      col.sortable ? "cursor-pointer group hover:bg-slate-100/70 transition" : ""
+                      col.sortable ? "cursor-pointer group hover:bg-slate-100/70 dark:hover:bg-white/5 transition" : ""
                     }`}
                   >
                     <div
@@ -121,8 +127,8 @@ export function DataTable<T extends Record<string, any>>({
                           : "justify-start"
                       }`}
                     >
-                      {Icon && <Icon className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />}
-                      <span className="group-hover:text-slate-800 transition">{col.header}</span>
+                      {Icon && <Icon className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300" />}
+                      <span className="group-hover:text-slate-800 dark:group-hover:text-slate-200 transition">{col.header}</span>
                       {getSortIcon(col)}
                     </div>
                   </th>
@@ -133,7 +139,7 @@ export function DataTable<T extends Record<string, any>>({
 
           {/* Body */}
           <tbody
-            className={`divide-y divide-slate-100 text-slate-700 transition-opacity duration-200 ${
+            className={`divide-y divide-slate-100 dark:divide-white/5 text-slate-700 dark:text-slate-300 transition-opacity duration-200 ${
               isLoading && data.length > 0 ? "opacity-60 pointer-events-none" : ""
             }`}
           >
@@ -143,7 +149,7 @@ export function DataTable<T extends Record<string, any>>({
                 <tr key={`skeleton-${i}`} className="animate-pulse">
                   {columns.map((col) => (
                     <td key={`skeleton-cell-${col.key}`} className="px-4 py-3">
-                      <div className="h-3.5 bg-slate-200/60 rounded-md w-3/4" />
+                      <div className="h-3.5 bg-slate-200/60 dark:bg-white/10 rounded-md w-3/4" />
                     </td>
                   ))}
                 </tr>
@@ -154,12 +160,12 @@ export function DataTable<T extends Record<string, any>>({
                 <td colSpan={columns.length} className="px-6 py-12 text-center">
                   <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
                     <AlertCircle className="w-7 h-7 text-red-500" />
-                    <p className="text-xs font-semibold text-slate-800">Failed to load table records</p>
-                    <p className="text-[11px] text-slate-500 text-center">{error}</p>
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">Failed to load table records</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">{error}</p>
                     {onRetry && (
                       <button
                         onClick={onRetry}
-                        className="mt-2 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg transition"
+                        className="mt-2 px-3 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 text-xs font-medium rounded-lg transition"
                       >
                         Try Again
                       </button>
@@ -172,9 +178,9 @@ export function DataTable<T extends Record<string, any>>({
               <tr>
                 <td colSpan={columns.length} className="px-6 py-12 text-center">
                   <div className="flex flex-col items-center justify-center gap-1.5 max-w-sm mx-auto">
-                    <Inbox className="w-8 h-8 text-slate-300 mb-1" />
-                    <p className="text-xs font-semibold text-slate-800">{emptyMessage}</p>
-                    <p className="text-[11px] text-slate-500 text-center">{emptySubMessage}</p>
+                    <Inbox className="w-8 h-8 text-slate-300 dark:text-slate-600 mb-1" />
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{emptyMessage}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">{emptySubMessage}</p>
                   </div>
                 </td>
               </tr>
@@ -190,8 +196,8 @@ export function DataTable<T extends Record<string, any>>({
                     onClick={() => isClickable && onRowClick?.(row)}
                     className={`transition-colors duration-150 ${
                       isClickable
-                        ? "cursor-pointer hover:bg-brand-50/40"
-                        : "hover:bg-slate-50/70"
+                        ? "cursor-pointer hover:bg-brand-50/40 dark:hover:bg-brand-950/40"
+                        : "hover:bg-slate-50/70 dark:hover:bg-white/5"
                     }`}
                   >
                     {columns.map((col) => {
