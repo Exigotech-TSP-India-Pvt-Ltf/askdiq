@@ -180,6 +180,87 @@ Nothing else changes in code: real Entra is switched on by `.env` alone.
 - Frontend: `http://localhost:3000`
 - `docker compose logs -f backend` — confirm no startup errors
 
+## 7. Production topology: replicas, workers and pool sizing
+
+[docker-compose.prod.yml](docker-compose.prod.yml) runs three containers from
+the `askdiq-api:latest` image ([backend/Dockerfile.prod](backend/Dockerfile.prod)):
+
+| Service | Container | Runs | Notes |
+|---|---|---|---|
+| `api-1` | `askdiq-api-1` | `uvicorn --workers ${WEB_CONCURRENCY}` | `/health` healthcheck, host port `127.0.0.1:5500` |
+| `api-2` | `askdiq-api-2` | same | `/health` healthcheck, host port `127.0.0.1:5501` |
+| `worker` | `askdiq-worker` | `python -m app.jobs.worker` | Postgres job queue (`SKIP LOCKED`); no HTTP |
+
+- **Load balancing:** nginx ([askdiq.conf](askdiq.conf)) proxies to
+  `upstream askdiq_api` (`least_conn`, `max_fails=3 fail_timeout=10s`,
+  `keepalive 32`) and fails over on `error timeout http_502 http_503`. POSTs
+  are never replayed once sent. SSE paths (`.../stream`, `.../events`) are
+  unbuffered with a 1 h read timeout. No sticky sessions are needed:
+  rate limits, OIDC state, jobs and live events are shared through Postgres.
+- **Workers:** `WEB_CONCURRENCY` (default `2` in compose, `1` in the image)
+  sets uvicorn workers per replica. Each worker holds its own DB pool, one
+  `LISTEN` connection for the event bus, and its own reranker model in memory,
+  so budget RAM per worker too.
+- **Jobs:** the API replicas run with `JOBS_WORKER_ENABLED=false`; only the
+  `worker` service claims jobs. Any number of workers is safe; to scale with
+  `--scale worker=N`, remove its `container_name` first.
+- **Overrides:** `WEB_CONCURRENCY`, `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`,
+  `WORKER_DB_POOL_SIZE` and `WORKER_DB_MAX_OVERFLOW` are set in the compose
+  file's `environment:` (which wins over `backend/.env`). Change them from the
+  shell or a project-root `.env` read by compose interpolation.
+
+### Pool sizing rule
+
+```
+replicas × workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) ≤ max_connections − 20
+```
+
+Defaults: `2 × 2 × (10 + 5) = 60`. Also count the job worker's pool
+(`5 + 5 = 10`) and one `LISTEN` connection per process (`2 × 2 + 1 = 5`):
+**75 in total**, within the `100 − 20 = 80` budget of a stock Postgres. Check
+the server with `SHOW max_connections;` and, before adding replicas or
+workers, lower `DB_POOL_SIZE` or raise `max_connections`.
+
+### Rollout
+
+```bash
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml run --rm api-1 alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml ps        # api-1 / api-2 "healthy"
+nginx -t && nginx -s reload                         # inside the et-platform nginx container
+```
+
+nginx resolves `askdiq-api-1` / `askdiq-api-2` when it loads the config, so
+both containers must exist on the shared network before `nginx -t` or a
+reload (otherwise: `host not found in upstream`). Once loaded, a stopped
+replica is just marked failed and skipped.
+
+Run migrations before starting the replicas, so several processes never race
+on first-time schema setup. For a rolling update restart one replica at a
+time (`restart api-1`, wait for healthy, then `api-2`); nginx routes around
+the replica that is down. To see which replica served a request, log
+`$upstream_addr` in the nginx access log (an `add_header` inside a location
+block would drop the server-level security headers).
+
+### Load test
+
+```bash
+# From backend/ (venv python). CI-sized smoke: 50 users for 15 s; exits 1 on a breach.
+python scripts/run_admin_load_test.py --smoke --base-url https://askdiq.ethub.co
+# Full admin profile (newplan §13.5): 50, then 100 users for 10 minutes.
+python scripts/run_admin_load_test.py --profile admin --concurrency 100 --duration 600
+# Chat profile against a fake-LLM stack; add loadtest-<n> to RATE_LIMIT_EXEMPT_ACTORS.
+python scripts/run_admin_load_test.py --profile chat --concurrency 50 --duration 120
+```
+
+The API key comes from `--api-key` or `API_KEY_NAME`. The JSON report
+(`backend/reports/admin_load_report.json`, or `--output`) lists p50/p70/p95/p99,
+error % and 429s per route, plus every newplan §13.4 budget check: aggregation
+GETs p95 < 600 ms, paginated lists p95 < 250 ms, and an error rate below 0.5 %
+(429s excluded). `--report-only` always exits 0; `--profile usage` reproduces
+the original `/admin/usage/*` mix.
+
 ## Notes / gotchas
 
 - `fastembed`'s cross-encoder reranker downloads its ONNX model from
