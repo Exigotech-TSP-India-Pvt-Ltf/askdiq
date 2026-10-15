@@ -397,17 +397,17 @@ Build the security and performance platform that every later feature uses (newpl
 ---
 
 #### Task B1.6: Load-balanced deployment topology
-- [ ] **[Dev]** Task B1.6: add the multi-replica compose, the nginx upstream and the worker count.
+- [x] **[Dev]** Task B1.6: add the multi-replica compose, the nginx upstream and the worker count.
 - [ ] **[Lint]** Task B1.6: `nginx -t` and `docker compose config` are both clean.
 - [ ] **[Test]** Task B1.6: the 2-replica stack passes the smoke load test.
 
 ##### Subtask B1.6.1: nginx upstream
-- [ ] **[Dev]** Add `upstream askdiq_api { least_conn; server askdiq-api-1:8000 max_fails=3 fail_timeout=10s; server askdiq-api-2:8000 max_fails=3 fail_timeout=10s; keepalive 32; }` and `proxy_next_upstream error timeout http_502 http_503`. Set `proxy_buffering off` on SSE paths.
+- [x] **[Dev]** Add `upstream askdiq_api { least_conn; server askdiq-api-1:8000 max_fails=3 fail_timeout=10s; server askdiq-api-2:8000 max_fails=3 fail_timeout=10s; keepalive 32; }` and `proxy_next_upstream error timeout http_502 http_503`. Set `proxy_buffering off` on SSE paths.
 - [ ] **[Lint]** Run `nginx -t`.
 - [ ] **[Test]** Killing one replica does not interrupt service. Requests are spread across both (check via `X-Upstream` in debug).
 
 ##### Subtask B1.6.2: Workers and replicas
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - In `Dockerfile.prod`, run `uvicorn --workers ${WEB_CONCURRENCY:-2}`, and update the comment there: the rate limiter is now shared through Postgres (B1.4).
   - Compose prod gets `api-1`, `api-2` and `worker`.
   - Size the pool: `replicas × workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) ≤ max_connections − 20`, with defaults of 2 × 2 × (10 + 5) = 60. Document this in `DEPLOYMENT.md`.
@@ -415,8 +415,8 @@ Build the security and performance platform that every later feature uses (newpl
 - [ ] **[Test]** The compose stack is healthy. The rate limit is enforced across both replicas (`smoke_e2e.py --rate-limit-check`).
 
 ##### Subtask B1.6.3: Load script upgrade
-- [ ] **[Dev]** Add `--smoke`, `--profile admin|chat`, `--concurrency` and `--duration` to `scripts/run_admin_load_test.py`. It writes a JSON report with p50, p95, p99 and error % per route, and exits non-zero if a §13.4 budget is breached.
-- [ ] **[Lint]** Run LINT-BE (`T20` is allowed in scripts).
+- [x] **[Dev]** Add `--smoke`, `--profile admin|chat`, `--concurrency` and `--duration` to `scripts/run_admin_load_test.py`. It writes a JSON report with p50, p95, p99 and error % per route, and exits non-zero if a §13.4 budget is breached.
+- [x] **[Lint]** Run LINT-BE (`T20` is allowed in scripts).
 - [ ] **[Test]** The smoke run passes locally.
 
 ---
@@ -2064,6 +2064,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | – | #16 (PR-02) | `chore/lint-scope-claude-md` | PR open (base #14), CI green | Ruff now selects E, W, F, I, UP, B, N, PL, SIM, S, ASYNC, C4, T20, RUF, ARG, RET and FAST, with zero findings. **Flagged per CLAUDE.md precedence:** FAST002 and FAST001 are ignored, because the existing code uses `Depends()` defaults and explicit `response_model`. The PLR complexity limits are ignored for about 50 handlers; refactoring them is a follow-up. `GuardrailBlocked` was renamed to `GuardrailBlockedError`. The B0.3.3 format-on-save check is manual and still to do. |
 | – | #18 (PR-04) | `feat/platform-jobs-state-http` | PR open (base #17), CI green (492 passed) | Added migrations `e7f8a9b0c1d2` (jobs) and `f8a9b0c1d2e3` (UNLOGGED rate_limit_buckets, oidc_states), plus `app/jobs`, the state backend, the LISTEN/NOTIFY bus, an SSE-safe GZip, ETag responses, `gather_scoped`, the LLM gate (429 with Retry-After), and the 60-request concurrency gate (under 3 s in CI). `requests` was removed. **Partial:** B1.7.2 the event-loop blocking detector covers only the hot-path tests, not the whole suite. **Notes:** the dashboard ETag rarely returns 304 because live counters change every call. `read_only_session()` is not on any route yet. A pre-existing foreign-key race on `evaluation_records.message_id` (online-eval write before commit) is logged for B5. |
 | – | PR-09 | `fix/governance-data-correctness` | Code done, CI green, rebasing onto #18 | G1–G7, G9 and G11 are fixed with regression tests. New audit events: rate_limited, server_error, llm_call_failed, llm_retry, session created/rotated/expired, test_ip_updated. **Breaking:** `trace_id` is removed (the frontend is updated); `service` is now a category and the raw action is in `action`; `error_rate` is 24-hour, DB-based and audience-scoped. Deferred: no document-edit or audience-change routes exist yet. |
-| – | PR-05, PR-06, PR-12, PR-15, PR-01 | – | In progress, parallel | PR-01 was told to keep Next 14 and FastAPI 0.115; advisories that need a major upgrade go to an expiring allow-list for your decision. |
+| – | PR-05 | `feat/platform-load-balancing` | Code done, CI green, stacks after PR-09 | Added a `least_conn` nginx upstream across 2 replicas with an SSE location; prod compose runs api-1, api-2 and a worker; `--workers ${WEB_CONCURRENCY}`; the load test script gained budgets and `--smoke`; 25 tests. **Needs a Docker host:** `nginx -t`, `compose config`, the replica-kill test and the 2-replica smoke run. It surfaced a flaky loop-block test in PR-04, which is being fixed. |
+| – | PR-06, PR-12, PR-15, PR-01 | – | In progress, parallel | PR-01 was told to keep Next 14 and FastAPI 0.115; advisories that need a major upgrade go to an expiring allow-list for your decision. |
 
 **Stack order for review and merge** (each PR's base is the one before it): #14 → #16 → #17 → #18 → then PR-09, PR-06, … in the order they complete, as long as their dependencies are met. Merge from the bottom up. After each merge, GitHub retargets the next PR to `main`.
