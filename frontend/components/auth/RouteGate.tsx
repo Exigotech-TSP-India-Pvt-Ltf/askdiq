@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AnimatePresence, m } from "motion/react";
+import { m } from "motion/react";
 import { useAuth } from "@/lib/auth-context";
 import { gateDecision, type GateDecision } from "@/lib/auth-gate";
 import { crossfade, fadeUp, useMotionVariants } from "@/lib/motion";
@@ -79,24 +79,30 @@ export function useRouteGate(): RouteGate {
 
 /**
  * Page area inside the shell: the route, or Access Required in its place.
- * On approval the Access Required screen hands over to the dashboard with a
- * crossfade (no re-login, no navigation).
+ * On approval the dashboard replaces Access Required at once (no re-login,
+ * no navigation) and fades in; the keyed wrapper re-runs the entrance. No
+ * exit hold, so the swap never waits on an animation.
  */
 export function GateContent({ decision, children }: { decision: GateDecision; children: React.ReactNode }) {
   const enter = useMotionVariants(fadeUp);
   const fade = useMotionVariants(crossfade);
-  const blocked = decision === "access-required";
+  // Fade the dashboard in only when it replaces Access Required (approval),
+  // not on ordinary page loads.
+  const wasBlocked = useRef(false);
+  const handOver = wasBlocked.current && decision !== "access-required";
+  useEffect(() => {
+    wasBlocked.current = decision === "access-required";
+  }, [decision]);
+  if (decision === "access-required") {
+    return (
+      <m.div key="access-required" className="h-full" variants={fade} initial="hidden" animate="visible">
+        <AccessRequiredView />
+      </m.div>
+    );
+  }
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      {blocked ? (
-        <m.div key="access-required" className="h-full" variants={fade} initial="hidden" animate="visible" exit="exit">
-          <AccessRequiredView />
-        </m.div>
-      ) : (
-        <m.div key="app" className="h-full" variants={enter} initial="hidden" animate="visible" exit="exit">
-          {children}
-        </m.div>
-      )}
-    </AnimatePresence>
+    <m.div key="app" className="h-full" variants={enter} initial={handOver ? "hidden" : false} animate="visible">
+      {children}
+    </m.div>
   );
 }
