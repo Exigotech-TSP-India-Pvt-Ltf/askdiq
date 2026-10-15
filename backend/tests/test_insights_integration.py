@@ -17,8 +17,9 @@ import hashlib
 import os
 import time
 import uuid
+import warnings
 from collections.abc import AsyncIterator
-from datetime import date, timedelta
+from datetime import timedelta
 from functools import partial
 from typing import Any
 
@@ -35,7 +36,10 @@ from app.core.database import get_db, read_only_session
 from app.governance import online_eval
 from app.harness import orchestrator
 from app.insights import jobs as insights_jobs
-from app.insights.analytics_repository import person_salt
+from app.insights.analytics_repository import (
+    InsightsAnalyticsRepository,
+    person_salt,
+)
 from app.insights.repository import InsightsRepository
 from app.insights.service import InsightsService
 from app.insights.triggers import CLASSIFY_JOB, classify_dedupe_key
@@ -332,7 +336,7 @@ async def test_summary_p95_on_100k_turns(
     await db.execute(
         text("UPDATE turn_insights SET classified_at = now() - interval '1 day'")
     )
-    today = date.today()
+    today = await InsightsAnalyticsRepository(db).today(settings.insights_timezone)
     days = [today - timedelta(days=i) for i in range(1, 400)]
     await InsightsRepository(db).recompute_days(days, settings.insights_timezone, [])
 
@@ -348,5 +352,10 @@ async def test_summary_p95_on_100k_turns(
     timings.sort()
     p95 = timings[int(0.95 * len(timings)) - 1]
     record_property("insights_summary_p95_ms", round(p95, 1))
-    print(f"insights summary p95 over {turns} turns: {p95:.1f} ms")  # noqa: T201 - recorded benchmark
+    # Surfaces in the CI log's warnings summary, so every run records the value.
+    warnings.warn(
+        f"insights summary p95 over {turns} turns: {p95:.1f} ms",
+        UserWarning,
+        stacklevel=1,
+    )
     assert p95 < PERF_BUDGET_MS, f"summary p95 {p95:.1f} ms"
