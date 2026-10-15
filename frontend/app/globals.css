@@ -2,6 +2,91 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme tokens. Values mirror lib/theme-tokens.ts (single source of truth);
+ * tests/lib/theme-tokens.test.ts fails if the two drift. Variables hold
+ * "r g b" triplets so Tailwind can apply opacity: rgb(var(--x) / <alpha-value>).
+ */
+:root {
+  /* Brand ramp (seeded Exigo Tech teal; BrandProvider may override). */
+  --brand-50: 234 246 245;
+  --brand-100: 204 237 234;
+  --brand-200: 153 219 213;
+  --brand-300: 95 195 187;
+  --brand-400: 45 169 160;
+  --brand-500: 19 149 143;
+  --brand-600: 0 128 128;
+  --brand-700: 0 107 104;
+  --brand-800: 0 88 79;
+  --brand-900: 0 67 61;
+  --brand-950: 0 38 35;
+
+  /* Semantic tokens (light). */
+  --surface-page: 244 251 251;
+  --surface-card: 255 255 255;
+  --surface-muted: 241 245 249;
+  --surface-elevated: 255 255 255;
+  --surface-inverse: 10 28 26;
+  --line: 226 232 240;
+  --line-strong: 203 213 225;
+  --line-brand: 153 219 213;
+  --fg: 10 28 26;
+  --fg-muted: 71 85 105;
+  --fg-subtle: 91 107 127;
+  --fg-inverse: 255 255 255;
+  --accent: 0 128 128;
+  --accent-fg: 0 107 104;
+  --status-ok: 4 120 87;
+  --status-ok-fg: 6 95 70;
+  --status-ok-bg: 236 253 245;
+  --status-warn: 183 121 31;
+  --status-warn-fg: 124 74 3;
+  --status-warn-bg: 253 246 231;
+  --status-danger: 192 54 44;
+  --status-danger-fg: 159 42 34;
+  --status-danger-bg: 253 238 236;
+  --status-info: 3 105 161;
+  --status-info-fg: 7 89 133;
+  --status-info-bg: 234 244 251;
+  --chart-grid: 226 232 240;
+  --chart-axis: 91 107 127;
+  --chart-track: 226 232 240;
+}
+
+.dark {
+  /* Semantic tokens (dark). Brand ramp is shared; dark uses the lifted 300/400 steps. */
+  --surface-page: 9 13 17;
+  --surface-card: 12 13 16;
+  --surface-muted: 15 23 32;
+  --surface-elevated: 19 29 39;
+  --surface-inverse: 241 245 249;
+  --line: 30 41 59;
+  --line-strong: 51 65 85;
+  --line-brand: 15 74 70;
+  --fg: 241 245 249;
+  --fg-muted: 163 177 194;
+  --fg-subtle: 132 148 167;
+  --fg-inverse: 10 28 26;
+  --accent: 45 169 160;
+  --accent-fg: 95 195 187;
+  --status-ok: 52 211 153;
+  --status-ok-fg: 110 231 183;
+  --status-ok-bg: 6 42 30;
+  --status-warn: 242 184 75;
+  --status-warn-fg: 246 203 116;
+  --status-warn-bg: 43 31 7;
+  --status-danger: 248 113 113;
+  --status-danger-fg: 252 165 165;
+  --status-danger-bg: 44 15 14;
+  --status-info: 56 189 248;
+  --status-info-fg: 125 211 252;
+  --status-info-bg: 8 34 52;
+  --chart-grid: 30 41 59;
+  --chart-axis: 132 148 167;
+  --chart-track: 8 48 56;
+}
+
+
 :root {
   --brand-primary: #068987;
   --brand-surface: #ffffff;
@@ -10,7 +95,8 @@
   --brand-gradient-via: #14b8a6;  /* Mid teal */
   --brand-gradient-to: #068987;    /* Deep teal (Light to Dark) */
   --brand-glow: rgba(6, 137, 135, 0.28);
-  --brand-bg: #f4fbfb;
+  --brand-bg: rgb(var(--surface-page));
+  color-scheme: light;
 }
 
 html {
@@ -20,24 +106,14 @@ html {
 
 body {
   height: 100%;
-}
-
-body {
-  @apply bg-[#f4fbfb] text-ink antialiased;
+  background-color: rgb(var(--surface-page));
+  color: rgb(var(--fg));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 html.dark {
   color-scheme: dark;
-}
-
-html.dark body {
-  background-color: #090d11;
-  color: #f1f5f9;
-}
-
-/* Ensure any legacy bg-[#f4fbfb] background seamlessly maps to deep black in dark mode */
-html.dark [class*="bg-[#f4fbfb]"] {
-  background-color: #090d11 !important;
 }
 
 /* Renders the transparent-background Exigo Tech PNG marks as flat white,
@@ -47,23 +123,22 @@ html.dark [class*="bg-[#f4fbfb]"] {
 }
 
 ::selection {
-  background: #99f6e4;
-  color: #042f2e;
+  background: rgb(var(--brand-200));
+  color: rgb(var(--brand-950));
 }
 
 html.dark ::selection {
-  background: #068987;
-  color: #f0fdfa;
+  background: rgb(var(--brand-600));
+  color: rgb(var(--brand-50));
 }
 
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #ccfbf1;
+  background: rgb(var(--brand-100));
   border-radius: 9999px;
 }
 html.dark .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: rgb(var(--line));
 }
-

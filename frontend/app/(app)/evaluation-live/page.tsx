@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import {
@@ -46,8 +47,6 @@ import {
   YAxis,
 } from "recharts";
 
-const PIE_COLORS = ["#10b981", "#ef4444", "#f59e0b"];
-const BAR_COLORS = ["#068987", "#40e0d0", "#0284c7", "#10b981", "#f59e0b", "#0d9488"];
 
 const pct = (v: unknown) =>
   typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—";
@@ -78,7 +77,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   const isPct = value.endsWith("%");
   const pctNum = isPct ? Math.min(Math.max(parseFloat(value) || 0, 0), 100) : null;
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md px-4 py-3.5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
+    <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md px-4 py-3.5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
       <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">{label}</p>
       <p className={`mt-1 text-xl font-black font-mono tracking-tight tabular-nums ${isPct ? statusColor(value) : "text-slate-900 dark:text-white"}`}>
@@ -108,7 +107,7 @@ function HeroStat({
   accent?: string;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md p-5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
+    <div className="group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
       <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl transition-transform group-hover:scale-125" />
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">{label}</p>
@@ -131,7 +130,7 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+    <section className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
       <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-2xl" />
       <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
         <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90 flex items-center gap-2">
@@ -146,6 +145,10 @@ function ChartCard({
 
 export default function EvaluationLivePage() {
   const { token } = useAuth();
+  const ct = useChartTheme();
+  const tooltipStyle = chartTooltipStyle(ct);
+  // Pass / fail / partial outcome colours.
+  const pieColors = [ct.status.ok, ct.status.danger, ct.status.warn];
   const { audience } = useAudience();
   const [r, setR] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -245,7 +248,7 @@ export default function EvaluationLivePage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+    <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
       <DashboardHeader
         title="RAG Evaluation (Live)"
         subtitle="Continuous production evaluation, live query audit, and benchmark comparative scorecard"
@@ -309,24 +312,18 @@ export default function EvaluationLivePage() {
                 <ChartCard title="Quality scorecard" subtitle="Continuous evaluation performance (%)">
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart data={qualityRadar} outerRadius="75%">
-                      <PolarGrid stroke="rgba(20, 184, 166, 0.25)" />
-                      <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: "#64748b" }} />
-                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                      <PolarGrid stroke={ct.grid} />
+                      <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: ct.axis }} />
+                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: ct.axis }} />
                       <Radar
                         name="Score"
                         dataKey="score"
-                        stroke="#0d9488"
-                        fill="#14b8a6"
+                        stroke={ct.categorical[0]}
+                        fill={ct.categorical[0]}
                         fillOpacity={0.35}
                       />
                       <Tooltip
-                        contentStyle={{
-                          borderRadius: 12,
-                          border: "1px solid rgba(45, 212, 191, 0.4)",
-                          backgroundColor: "rgba(255, 255, 255, 0.95)",
-                          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
-                          fontSize: 12,
-                        }}
+                        contentStyle={tooltipStyle}
                         formatter={(v) => [`${Number(v).toFixed(1)}%`, "Score"]}
                       />
                     </RadarChart>
@@ -346,18 +343,12 @@ export default function EvaluationLivePage() {
                       paddingAngle={3}
                     >
                       {passBreakdown.map((_, idx) => (
-                        <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                        <Cell key={idx} fill={pieColors[idx % pieColors.length]} />
                       ))}
                     </Pie>
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <Tooltip
-                      contentStyle={{
-                        borderRadius: 12,
-                        border: "1px solid rgba(45, 212, 191, 0.4)",
-                        backgroundColor: "rgba(255, 255, 255, 0.95)",
-                        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
-                        fontSize: 12,
-                      }}
+                      contentStyle={tooltipStyle}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -369,28 +360,22 @@ export default function EvaluationLivePage() {
               <ChartCard title="Pass rate by query type" subtitle="Distribution of passing answers per intent">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={caseTypeBars}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(20, 184, 166, 0.15)" vertical={false} />
-                    <XAxis dataKey="type" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                    <XAxis dataKey="type" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
                     <YAxis
-                      tick={{ fontSize: 11, fill: "#64748b" }}
+                      tick={{ fontSize: 11, fill: ct.axis }}
                       axisLine={false}
                       tickLine={false}
                       width={30}
                       domain={[0, 100]}
                     />
                     <Tooltip
-                      contentStyle={{
-                        borderRadius: 12,
-                        border: "1px solid rgba(45, 212, 191, 0.4)",
-                        backgroundColor: "rgba(255, 255, 255, 0.95)",
-                        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
-                        fontSize: 12,
-                      }}
+                      contentStyle={tooltipStyle}
                       formatter={(v) => [`${v}%`, "Pass rate"]}
                     />
                     <Bar dataKey="passRate" radius={[6, 6, 0, 0]}>
                       {caseTypeBars.map((_, idx) => (
-                        <Cell key={idx} fill={BAR_COLORS[idx % BAR_COLORS.length]} />
+                        <Cell key={idx} fill={ct.categorical[idx % ct.categorical.length]} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -400,30 +385,24 @@ export default function EvaluationLivePage() {
               <ChartCard title="Latency by pipeline stage" subtitle="p50 / p95 / p99 across stages (seconds)">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={latencyBars}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(20, 184, 166, 0.15)" vertical={false} />
-                    <XAxis dataKey="stage" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} width={40} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                    <XAxis dataKey="stage" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} width={40} />
                     <Tooltip
-                      contentStyle={{
-                        borderRadius: 12,
-                        border: "1px solid rgba(45, 212, 191, 0.4)",
-                        backgroundColor: "rgba(255, 255, 255, 0.95)",
-                        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
-                        fontSize: 12,
-                      }}
+                      contentStyle={tooltipStyle}
                       formatter={(v) => [`${v} s`, ""]}
                     />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="p50" name="p50" fill="#0d9488" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="p95" name="p95" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="p99" name="p99" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="p50" name="p50" fill={ct.categorical[0]} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="p95" name="p95" fill={ct.status.warn} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="p99" name="p99" fill={ct.status.danger} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
             </div>
 
             {/* Retrieval Detailed Performance Grid */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Retrieval Ranking Metrics</h3>
@@ -464,7 +443,7 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Citation & Attribution Matrix */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <div>
@@ -510,7 +489,7 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Robustness by Perturbation */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Adversarial Robustness & Stability</h3>
@@ -546,7 +525,7 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Abstention Analysis */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Abstention & Refusal Quality</h3>

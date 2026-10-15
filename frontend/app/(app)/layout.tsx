@@ -32,7 +32,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           mounted across those route changes. */}
       <AudienceProvider>
         <ChatProvider>
-          <main className="flex-1 overflow-hidden bg-[#f4fbfb] dark:bg-dark-bg">{children}</main>
+          <main className="flex-1 overflow-hidden bg-surface-page">{children}</main>
         </ChatProvider>
       </AudienceProvider>
     </div>

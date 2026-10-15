@@ -30,6 +30,11 @@ DEFAULT_BACKEND_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT_SECONDS = 15.0
 HTTP_OK = 200
 HTTP_SERVER_ERROR = 500
+HTTP_TEMPORARY_REDIRECT = 307
+HTTP_PERMANENT_REDIRECT = 308
+EVALUATION_LIVE_PATH = "/admin/evaluation-live"
+# Retired routes that must redirect to Evaluation (Live) (newplan §2.3).
+LEGACY_EVALUATION_PATHS = ("/admin/evaluation", "/evaluation")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger("smoke_e2e")
@@ -98,10 +103,44 @@ async def check_backend_health(ctx: SmokeContext) -> CheckResult:
     )
 
 
+async def _expect_redirect(ctx: SmokeContext, path: str, target: str) -> CheckResult:
+    """GET ``path`` without following redirects; expect 307/308 to ``target``."""
+    name = f"legacy redirect {path} -> {target}"
+    url = f"{ctx.frontend_url}{path}"
+    try:
+        response = await ctx.client.get(url, follow_redirects=False)
+    except httpx.HTTPError as exc:
+        return CheckResult(name, False, f"GET {url} failed: {exc!r}")
+    location = response.headers.get("location", "")
+    ok = (
+        response.status_code in {HTTP_TEMPORARY_REDIRECT, HTTP_PERMANENT_REDIRECT}
+        and httpx.URL(location).path == target
+    )
+    detail = (
+        f"GET {url} -> {response.status_code} location={location!r} "
+        f"(expected {HTTP_TEMPORARY_REDIRECT}/{HTTP_PERMANENT_REDIRECT} to {target})"
+    )
+    return CheckResult(name, ok, detail)
+
+
+async def check_legacy_evaluation_redirects(ctx: SmokeContext) -> CheckResult:
+    results = [
+        await _expect_redirect(ctx, path, EVALUATION_LIVE_PATH)
+        for path in LEGACY_EVALUATION_PATHS
+    ]
+    failed = [r for r in results if not r.ok]
+    return CheckResult(
+        "legacy evaluation redirects",
+        not failed,
+        "; ".join(r.detail for r in (failed or results)),
+    )
+
+
 BASE_CHECKS: tuple[Step, ...] = (
     check_backend_health,
     check_frontend_home,
     check_proxy_health,
+    check_legacy_evaluation_redirects,
 )
 
 # Named journeys added by later PRs, e.g. {"sign-in": (step1, step2, ...)}.

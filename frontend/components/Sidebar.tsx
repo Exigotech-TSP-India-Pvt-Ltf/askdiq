@@ -15,13 +15,13 @@ import {
   Users,
   MessagesSquare,
   ThumbsUp,
-  ClipboardCheck,
   Shield,
   ShieldCheck,
   CircleDollarSign,
   Sparkles,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 
 const COLLAPSED_STORAGE_KEY = "deployiq.sidebar.collapsed";
 const ADMIN_EXPANDED_STORAGE_KEY = "deployiq.sidebar.adminExpanded";
@@ -30,11 +30,10 @@ const ADMIN_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/documents", label: "Documents", icon: FileText },
-  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/users", label: "Visitors", icon: Users },
   { href: "/admin/usage", label: "Usage & Cost", icon: CircleDollarSign },
   { href: "/admin/conversations", label: "Conversation Logs", icon: MessagesSquare },
   { href: "/admin/feedback", label: "Feedback", icon: ThumbsUp },
-  { href: "/admin/evaluation", label: "Evaluation", icon: ClipboardCheck },
   { href: "/admin/evaluation-live", label: "Evaluation (Live)", icon: Sparkles },
   { href: "/admin/governance", label: "Admin Governance", icon: ShieldCheck },
 ];
@@ -127,18 +126,14 @@ export function Sidebar() {
       }`}
     >
       <div
-        className={`flex h-20 items-center border-b border-ink/10 dark:border-white/10 ${
+        className={`flex h-16 shrink-0 items-center border-b border-ink/10 dark:border-white/10 ${
           collapsed ? "justify-center px-1" : "justify-between pl-4 pr-3"
         }`}
       >
         {!collapsed ? (
           <>
-            <div className="flex flex-1 items-center min-w-0 h-full py-2">
-              <img
-                src="/exigotech-logo.svg"
-                alt="Exigo Tech"
-                className="h-[64px] max-h-[66px] w-auto max-w-[191px] object-contain object-left dark:brightness-110 transition-all"
-              />
+            <div className="flex flex-1 items-center min-w-0 h-full">
+              <BrandLogo variant="full" />
             </div>
             <button
               onClick={toggleCollapsed}
@@ -154,7 +149,7 @@ export function Sidebar() {
             title="Expand sidebar"
             className="group flex h-10 w-10 items-center justify-center rounded-lg p-1 transition hover:bg-ink/5 dark:hover:bg-white/10"
           >
-            <img src="/exigotech-mark.svg" alt="Exigo Tech" className="h-7 w-7 object-contain" />
+            <BrandLogo variant="mark" />
           </button>
         )}
       </div>

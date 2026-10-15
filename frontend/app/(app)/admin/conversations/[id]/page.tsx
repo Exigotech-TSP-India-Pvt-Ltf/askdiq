@@ -73,7 +73,7 @@ export default function ConversationDetailPage() {
   if (loading) {
     return (
       <div className="p-6">
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-fg-subtle">
           Loading conversation...
         </div>
       </div>
@@ -85,12 +85,12 @@ export default function ConversationDetailPage() {
       <div className="p-6">
         <button
           onClick={() => router.back()}
-          className="mb-6 text-sm text-purple-600 hover:text-purple-800"
+          className="mb-6 text-sm text-accent-fg hover:text-brand-800 dark:hover:text-brand-200"
         >
           ← Back to conversations
         </button>
 
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+        <div className="rounded-xl border border-status-danger/30 bg-status-danger-bg p-4 text-sm text-status-danger-fg">
           {error || "Conversation not found"}
         </div>
       </div>
@@ -105,17 +105,17 @@ export default function ConversationDetailPage() {
       <div className="mb-6">
         <button
           onClick={() => router.back()}
-          className="mb-4 text-sm text-purple-600 hover:text-purple-800"
+          className="mb-4 text-sm text-accent-fg hover:text-brand-800 dark:hover:text-brand-200"
         >
           ← Back to conversations
         </button>
 
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">
+          <h1 className="text-2xl font-semibold text-fg">
             {conversation.title || "Untitled Conversation"}
           </h1>
 
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-fg-subtle">
             Conversation ID: {conversation.id}
           </p>
         </div>
@@ -145,20 +145,20 @@ export default function ConversationDetailPage() {
       </div>
 
       {/* Conversation Messages */}
-      <div className="rounded-xl border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-6 py-4">
-          <h2 className="text-base font-semibold text-gray-900">
+      <div className="rounded-xl border border-line bg-surface-card">
+        <div className="border-b border-line px-6 py-4">
+          <h2 className="text-base font-semibold text-fg">
             Conversation
           </h2>
 
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-fg-subtle">
             {messages.length} messages
           </p>
         </div>
 
         <div className="space-y-5 p-6">
           {messages.length === 0 ? (
-            <div className="py-10 text-center text-sm text-gray-500">
+            <div className="py-10 text-center text-sm text-fg-subtle">
               No messages found.
             </div>
           ) : (
@@ -174,8 +174,8 @@ export default function ConversationDetailPage() {
                 <div
                   className={
                     message.role === "user"
-                      ? "max-w-[75%] rounded-2xl rounded-br-md bg-purple-600 px-5 py-4 text-white"
-                      : "max-w-[75%] rounded-2xl rounded-bl-md border border-gray-200 bg-gray-50 px-5 py-4 text-gray-900"
+                      ? "max-w-[75%] rounded-2xl rounded-br-md bg-brand-600 px-5 py-4 text-white"
+                      : "max-w-[75%] rounded-2xl rounded-bl-md border border-line bg-surface-muted px-5 py-4 text-fg"
                   }
                 >
                   {/* Message Header */}
@@ -183,8 +183,8 @@ export default function ConversationDetailPage() {
                     <span
                       className={
                         message.role === "user"
-                          ? "text-xs font-semibold uppercase text-purple-100"
-                          : "text-xs font-semibold uppercase text-gray-500"
+                          ? "text-xs font-semibold uppercase text-brand-50"
+                          : "text-xs font-semibold uppercase text-fg-subtle"
                       }
                     >
                       {message.role}
@@ -193,8 +193,8 @@ export default function ConversationDetailPage() {
                     <span
                       className={
                         message.role === "user"
-                          ? "text-xs text-purple-100"
-                          : "text-xs text-gray-400"
+                          ? "text-xs text-brand-50"
+                          : "text-xs text-fg-subtle"
                       }
                     >
                       {formatDate(message.created_at)}
@@ -213,8 +213,8 @@ export default function ConversationDetailPage() {
                     <div
                       className={
                         message.role === "user"
-                          ? "mt-3 border-t border-purple-400/40 pt-2 text-xs text-purple-100"
-                          : "mt-3 border-t border-gray-200 pt-2 text-xs text-gray-400"
+                          ? "mt-3 border-t border-white/30 pt-2 text-xs text-brand-50"
+                          : "mt-3 border-t border-line pt-2 text-xs text-fg-subtle"
                       }
                     >
                       {message.ip_address && (
@@ -250,12 +250,12 @@ function InfoCard({
   value: string;
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white px-5 py-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+    <div className="rounded-xl border border-line bg-surface-card px-5 py-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-fg-subtle">
         {label}
       </div>
 
-      <div className="mt-2 break-all text-sm font-medium text-gray-900">
+      <div className="mt-2 break-all text-sm font-medium text-fg">
         {value}
       </div>
     </div>

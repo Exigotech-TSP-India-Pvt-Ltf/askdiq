@@ -80,7 +80,7 @@ export function TokenDistributionBar({
   return (
     <div className={`flex flex-col gap-2.5 ${className}`}>
       {/* Progress Bar */}
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 shadow-inner">
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-muted shadow-inner">
         {total === 0 ? (
           <div className="h-full w-full bg-slate-200" />
         ) : (
@@ -104,7 +104,7 @@ export function TokenDistributionBar({
             <div key={s.id} className="flex items-center gap-1.5">
               <span className={`h-2.5 w-2.5 rounded-full ${s.color}`} />
               <span className="text-slate-500">{s.label}:</span>
-              <span className="font-semibold text-slate-800">
+              <span className="font-semibold text-fg">
                 {s.tokens.toLocaleString()}
               </span>
               <span className="text-[10px] text-slate-400">({s.pct.toFixed(1)}%)</span>

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
 import {
   TrendingUp,
   TrendingDown,
@@ -30,6 +31,7 @@ interface CompareMatrixProps {
 }
 
 export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) {
+  const ct = useChartTheme();
   const deltas = comparisonData?.deltas || {};
   const radarData = comparisonData?.dual_radar || [
     { metric: "Retrieval recall", benchmark: 98.1, live: 95.0 },
@@ -69,7 +71,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Banner */}
-      <div className="relative overflow-hidden p-5 rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md shadow-card dark:shadow-xl flex flex-wrap items-center justify-between gap-4">
+      <div className="relative overflow-hidden p-5 rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md shadow-card dark:shadow-xl flex flex-wrap items-center justify-between gap-4">
         <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center justify-center shadow-xs">
@@ -95,7 +97,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
       {/* KPI Comparison Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Pass Rate */}
-        <div className="relative overflow-hidden p-5 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
+        <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Overall Pass Rate</span>
@@ -114,7 +116,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
         </div>
 
         {/* Faithfulness */}
-        <div className="relative overflow-hidden p-5 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
+        <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Faithfulness (1–5)</span>
@@ -133,7 +135,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
         </div>
 
         {/* Retrieval Recall */}
-        <div className="relative overflow-hidden p-5 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
+        <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Retrieval Recall</span>
@@ -152,7 +154,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
         </div>
 
         {/* Citation Precision */}
-        <div className="relative overflow-hidden p-5 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
+        <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Citation Precision</span>
@@ -174,7 +176,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
       {/* Visual Chart & Drift Matrix */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Dual Radar Chart */}
-        <div className="relative overflow-hidden p-6 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+        <div className="relative overflow-hidden p-6 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
           <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90 mb-1">Dual-Overlay Quality Radar</h4>
@@ -183,32 +185,26 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={radarData} outerRadius="75%">
-                <PolarGrid stroke="rgba(20, 184, 166, 0.25)" />
-                <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: "#64748b" }} />
-                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                <PolarGrid stroke={ct.grid} />
+                <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: ct.axis }} />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: ct.axis }} />
                 <Radar
                   name="Benchmark"
                   dataKey="benchmark"
-                  stroke="#0d9488"
-                  fill="#0d9488"
+                  stroke={ct.categorical[0]}
+                  fill={ct.categorical[0]}
                   fillOpacity={0.25}
                 />
                 <Radar
                   name="Live Users"
                   dataKey="live"
-                  stroke="#10b981"
-                  fill="#10b981"
+                  stroke={ct.status.ok}
+                  fill={ct.status.ok}
                   fillOpacity={0.35}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Tooltip
-                  contentStyle={{
-                    borderRadius: 12,
-                    border: "1px solid rgba(45, 212, 191, 0.4)",
-                    backgroundColor: "rgba(255, 255, 255, 0.95)",
-                    boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
-                    fontSize: 12,
-                  }}
+                  contentStyle={chartTooltipStyle(ct)}
                   formatter={(v, name) => [`${Number(v).toFixed(1)}%`, name]}
                 />
               </RadarChart>
@@ -217,7 +213,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
         </div>
 
         {/* Drift & Health Analysis Table */}
-        <div className="relative overflow-hidden p-6 bg-white/90 dark:bg-[#0c0d10]/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 flex flex-col justify-between">
+        <div className="relative overflow-hidden p-6 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 flex flex-col justify-between">
           <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div>
             <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">

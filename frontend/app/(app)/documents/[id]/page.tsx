@@ -20,9 +20,9 @@ function sourceTypeBadge(type: string) {
     markdown: "bg-indigo-50 text-indigo-700",
     pdf: "bg-red-50 text-red-700",
     html: "bg-amber-50 text-amber-700",
-    text: "bg-slate-100 text-slate-600",
+    text: "bg-surface-muted text-fg-muted",
   };
-  return styles[t] ?? "bg-slate-100 text-slate-600";
+  return styles[t] ?? "bg-surface-muted text-fg-muted";
 }
 
 function strategyBadge(strategy: string) {
@@ -30,9 +30,9 @@ function strategyBadge(strategy: string) {
   const styles: Record<string, string> = {
     structure_aware: "bg-emerald-50 text-emerald-700",
     semantic: "bg-cyan-50 text-cyan-700",
-    fixed: "bg-slate-100 text-slate-600",
+    fixed: "bg-surface-muted text-fg-muted",
   };
-  return styles[s] ?? "bg-slate-100 text-slate-600";
+  return styles[s] ?? "bg-surface-muted text-fg-muted";
 }
 
 function ChunkCard({ chunk }: { chunk: DocChunk }) {
@@ -100,7 +100,7 @@ export default function DocumentChunksPage() {
   );
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6 bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+    <div className="h-full overflow-y-auto px-6 py-6 bg-surface-page text-ink dark:text-slate-100">
       <Link
         href="/documents"
         className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline"

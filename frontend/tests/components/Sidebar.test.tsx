@@ -18,18 +18,18 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("Sidebar Navigation Component (Task 4.3)", () => {
-  it("renders all 9 admin navigation links with text-[13px] typography", () => {
+  it("renders all 9 navigation links with text-[13px] typography", () => {
     render(<Sidebar />);
 
     const expectedLabels = [
       "Dashboard",
       "Chat",
       "Documents",
-      "Users",
+      "Visitors",
       "Usage & Cost",
       "Conversation Logs",
       "Feedback",
-      "Evaluation",
+      "Evaluation (Live)",
       "Admin Governance",
     ];
 
@@ -40,6 +40,15 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
       expect(anchor?.className).toContain("text-[13px]");
       expect(anchor?.className).toContain("py-1.5");
     }
+  });
+
+  it("no longer lists the retired Evaluation page or the old Users label", () => {
+    render(<Sidebar />);
+
+    expect(screen.queryByText("Evaluation")).not.toBeInTheDocument();
+    expect(screen.queryByText("Users")).not.toBeInTheDocument();
+    expect(document.querySelector('a[href="/admin/evaluation"]')).toBeNull();
+    expect(screen.getByText("Visitors").closest("a")).toHaveAttribute("href", "/admin/users");
   });
 
   it("renders the Admin accordion button with uppercase tracking and text-[11px]", () => {

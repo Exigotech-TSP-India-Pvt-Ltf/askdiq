@@ -1,37 +1,48 @@
 import type { Config } from "tailwindcss";
+import {
+  BRAND_SHADES,
+  cssVarColor,
+  inkColor,
+  legacyDarkPalette,
+  semanticTokens,
+} from "./lib/theme-tokens";
+
+// Every colour comes from lib/theme-tokens.ts. Brand and semantic colours are
+// CSS variables (app/globals.css), so `brand-*`, `surface-*`, `fg-*`, `line-*`
+// and `status-*` classes follow the theme and the runtime brand (BrandProvider)
+// while still supporting opacity modifiers such as `bg-brand-600/20`.
+const brand = Object.fromEntries(
+  BRAND_SHADES.map((shade) => [shade, cssVarColor(`brand-${shade}`)]),
+);
+
+const semantic = (prefix: string) =>
+  Object.fromEntries(
+    Object.keys(semanticTokens.light)
+      .filter((key) => key === prefix || key.startsWith(`${prefix}-`))
+      .map((key) => [key === prefix ? "DEFAULT" : key.slice(prefix.length + 1), cssVarColor(key)]),
+  );
 
 const config: Config = {
   darkMode: "class",
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
+    "./lib/**/*.{ts,tsx}",
   ],
   theme: {
     extend: {
       colors: {
-        dark: {
-          bg: "#090d11",
-          surface: "#0f1720",
-          card: "#131d27",
-          border: "#1e293b",
-          text: "#f1f5f9",
-          muted: "#94a3b8",
-        },
-        // Drawn from the Exigo Tech AI mark (Teal → Turquoise sweep).
-        brand: {
-          50: "#f0fdfa",
-          100: "#ccfbf1",
-          200: "#99f6e4",
-          300: "#5eead4",
-          400: "#2dd4bf",
-          500: "#14b8a6",
-          600: "#068987", // Exigo Tech Signature Deep Teal
-          700: "#057472",
-          800: "#0f5957",
-          900: "#0c4342",
-          950: "#042322",
-        },
-        ink: "#0a1c1a",
+        // Legacy fixed dark palette (dark:bg-dark-bg etc.) kept for existing classes.
+        dark: { ...legacyDarkPalette },
+        // Drawn from the Exigo Tech AI mark (Teal -> Turquoise sweep).
+        brand,
+        ink: inkColor,
+        surface: semantic("surface"),
+        fg: semantic("fg"),
+        line: semantic("line"),
+        accent: semantic("accent"),
+        status: semantic("status"),
+        chart: semantic("chart"),
       },
       fontFamily: {
         sans: [
@@ -45,7 +56,7 @@ const config: Config = {
       },
       backgroundImage: {
         "brand-panel":
-          "linear-gradient(135deg, #042322 0%, #0c4342 48%, #068987 100%)",
+          "linear-gradient(135deg, rgb(var(--brand-950)) 0%, rgb(var(--brand-900)) 48%, rgb(var(--brand-600)) 100%)",
         "brand-gradient":
           "linear-gradient(135deg, var(--brand-gradient-from) 0%, var(--brand-gradient-via) 50%, var(--brand-gradient-to) 100%)",
       },
