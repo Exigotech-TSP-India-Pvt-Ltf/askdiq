@@ -31,6 +31,10 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.governance.auth import sanitize_client_id
 from main import app
+from tests.insights_fixture import (  # noqa: F401 - shared pytest fixtures
+    insights_client,
+    insights_reference_db,
+)
 
 settings = get_settings()
 
