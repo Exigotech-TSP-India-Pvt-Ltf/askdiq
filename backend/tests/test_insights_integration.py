@@ -359,3 +359,17 @@ async def test_summary_p95_on_100k_turns(
         stacklevel=1,
     )
     assert p95 < PERF_BUDGET_MS, f"summary p95 {p95:.1f} ms"
+
+
+async def test_session_turn_statistics_exist(db_session):
+    """Migration bd75f2033c21: the planner has multi-column ndistinct
+    statistics for the user-turn join used by every insights query."""
+    kinds = await db_session.scalar(
+        text(
+            "SELECT stxkind FROM pg_statistic_ext "
+            "WHERE stxname = 'stx_chat_messages_session_turn' "
+            "AND stxrelid = 'chat_messages'::regclass"
+        )
+    )
+    assert kinds is not None
+    assert "d" in kinds  # ndistinct
