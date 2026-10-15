@@ -66,7 +66,8 @@ async def test_forced_error_returns_500_problem_without_internals(
     api: AsyncClient,
 ) -> None:
     with patch("app.core.exceptions.logger") as log:
-        res = await api.get("/admin/usage/summary")
+        # Uncached route: always queries the (exploding) DB session.
+        res = await api.get("/documents")
     body = _assert_problem(res, 500)
     assert body["title"] == "Internal Server Error"
     text = res.text

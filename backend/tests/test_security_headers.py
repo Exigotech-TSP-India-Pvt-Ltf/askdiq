@@ -122,7 +122,7 @@ async def test_every_route_carries_security_headers(
         ),
         (
             "GET",
-            "/admin/usage/summary",
+            "/documents",  # uncached, always queries the (broken) DB
             {"X-API-Key": settings.api_key_name or "ci-test-key"},
             500,
         ),
