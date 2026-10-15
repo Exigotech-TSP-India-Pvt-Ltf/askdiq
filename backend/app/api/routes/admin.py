@@ -6,7 +6,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.routes.admin_usage import router as usage_router
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
 from app.core.quota import quota_monitor
@@ -536,10 +537,15 @@ async def governance_monitoring(
     try:
         import psutil  # noqa: PLC0415 - optional at runtime; import failure is tolerated
 
-        proc = psutil.Process()
-        cpu = await asyncio.to_thread(psutil.cpu_percent, None)
-        ram_mb = proc.memory_info().rss / 1024 / 1024
-        ram_pct = proc.memory_percent()
+        def _sample() -> tuple[float, float, float]:
+            proc = psutil.Process()
+            return (
+                psutil.cpu_percent(None),
+                proc.memory_info().rss / 1024 / 1024,
+                proc.memory_percent(),
+            )
+
+        cpu, ram_mb, ram_pct = await asyncio.to_thread(_sample)
     except Exception:
         logger.debug("psutil_metrics_unavailable", exc_info=True)
 
@@ -1091,8 +1097,11 @@ async def usage_reranker(
     try:
         import psutil  # noqa: PLC0415 - optional at runtime; import failure is tolerated
 
-        cpu = await asyncio.to_thread(psutil.cpu_percent, None)
-        ram = round(psutil.Process().memory_info().rss / 1024 / 1024)
+        def _sample() -> tuple[float, int]:
+            rss = psutil.Process().memory_info().rss
+            return psutil.cpu_percent(None), round(rss / 1024 / 1024)
+
+        cpu, ram = await asyncio.to_thread(_sample)
     except Exception:
         logger.debug("psutil_metrics_unavailable", exc_info=True)
     return {
@@ -1610,10 +1619,16 @@ async def get_query_usage_detail(
 
 @router.get("/dashboard")
 async def admin_dashboard(
+    request: Request,
     audience: str = Query("overview"),
     db: AsyncSession = Depends(get_db),
     actor: str = Depends(get_current_actor),
-):
+) -> Response:
+    """Dashboard KPIs; weak ETag + `Cache-Control: private` (304 on match)."""
+    return cached_response(request, await _dashboard_payload(db, audience))
+
+
+async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
     since = datetime.utcnow() - timedelta(hours=24)
     aud_sess = await build_audience_filter(db, ChatSession.created_ip, audience)
 

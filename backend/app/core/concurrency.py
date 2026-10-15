@@ -1,13 +1,24 @@
-"""Event-loop thread pool sizing and concurrency control (Single-Flight deduplication)."""
+"""Event-loop thread pool sizing and concurrency control.
+
+- ``SingleFlight``: collapses duplicate concurrent reads.
+- ``gather_scoped``: parallel DB work, one ``AsyncSession`` per task.
+- ``LLMGate`` / ``llm_capacity``: global LLM back-pressure (429 + Retry-After).
+"""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
+from fastapi import HTTPException, status
+
+from app.core import database
 from app.core.config import get_settings
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 T = TypeVar("T")
 
@@ -70,3 +81,82 @@ class SingleFlight(Generic[T]):
 
 # Default singleton instance for dashboard and analytical queries
 single_flight: SingleFlight[Any] = SingleFlight()
+
+
+async def gather_scoped(
+    *factories: Callable[[AsyncSession], Awaitable[Any]],
+    limit: int | None = None,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+) -> list[Any]:
+    """Run ``factories`` in parallel, each with its **own** short-lived session.
+
+    An ``AsyncSession`` is not concurrency-safe, so every task opens one from
+    ``session_factory``; at most ``limit`` (default ``AGG_MAX_CONCURRENCY``) run
+    at once. Results keep the input order. The first error is re-raised and
+    the remaining tasks are cancelled (``asyncio.TaskGroup`` semantics).
+    """
+    if session_factory is None:
+        session_factory = database.AsyncSessionLocal
+    semaphore = asyncio.Semaphore(max(1, limit or get_settings().agg_max_concurrency))
+    results: list[Any] = [None] * len(factories)
+
+    async def _run(index: int, factory: Callable[[AsyncSession], Awaitable[Any]]):
+        async with semaphore, session_factory() as session:
+            results[index] = await factory(session)
+
+    try:
+        async with asyncio.TaskGroup() as tg:
+            for index, factory in enumerate(factories):
+                tg.create_task(_run(index, factory))
+    except BaseExceptionGroup as group:
+        raise group.exceptions[0] from None
+    return results
+
+
+class LLMGate:
+    """Non-blocking global cap on concurrent LLM-bound requests."""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = max(1, limit)
+        self.in_use = 0
+
+    def try_acquire(self) -> bool:
+        if self.in_use >= self.limit:
+            return False
+        self.in_use += 1
+        return True
+
+    def release(self) -> None:
+        self.in_use = max(0, self.in_use - 1)
+
+
+_llm_gate: LLMGate | None = None
+
+
+def get_llm_gate() -> LLMGate:
+    global _llm_gate  # noqa: PLW0603 - process-wide gate
+    if _llm_gate is None:
+        _llm_gate = LLMGate(get_settings().llm_max_concurrency)
+    return _llm_gate
+
+
+def reset_llm_gate() -> None:
+    """Rebuild the gate from settings on next use (tests / config reload)."""
+    global _llm_gate  # noqa: PLW0603 - process-wide gate
+    _llm_gate = None
+
+
+async def llm_capacity() -> AsyncIterator[None]:
+    """FastAPI dependency: hold one LLM slot for the request, or 429 if full."""
+    gate = get_llm_gate()
+    if not gate.try_acquire():
+        retry_after = get_settings().llm_saturated_retry_after_seconds
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="The assistant is at capacity. Please retry shortly.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    try:
+        yield
+    finally:
+        gate.release()

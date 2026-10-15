@@ -1,5 +1,3 @@
-import asyncio
-import concurrent.futures
 import time
 from contextvars import ContextVar
 from http import HTTPStatus
@@ -108,34 +106,3 @@ async def embed_text(
     """Generate a single embedding using Azure OpenAI."""
     embeddings = await embed_texts([text], task_type=task_type, stage=stage)
     return embeddings[0]
-
-
-def embed_texts_sync(
-    texts: list[str],
-    task_type: str | None = None,
-    stage: str | None = None,
-) -> list[list[float]]:
-    """Synchronous wrapper for embed_texts."""
-    if not texts:
-        return []
-
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(
-                asyncio.run, embed_texts(texts, task_type=task_type, stage=stage)
-            ).result()
-    return asyncio.run(embed_texts(texts, task_type=task_type, stage=stage))
-
-
-def embed_text_sync(
-    text: str,
-    task_type: str | None = None,
-    stage: str | None = None,
-) -> list[float]:
-    """Synchronous wrapper for embed_text."""
-    return embed_texts_sync([text], task_type=task_type, stage=stage)[0]

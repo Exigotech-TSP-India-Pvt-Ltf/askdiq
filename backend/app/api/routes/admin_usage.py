@@ -19,7 +19,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import (
     String,
@@ -36,6 +36,7 @@ from sqlalchemy.orm import aliased
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.http_cache import cached_response
 from app.governance.audience import (
     Audience,
     audience_scope,
@@ -68,7 +69,7 @@ __all__ = ["calculate_stage_costs", "router"]
 
 
 # Concurrency semaphore for heavy aggregations (Task 5.1.2)
-_agg_semaphore = asyncio.Semaphore(4)
+_agg_semaphore = asyncio.Semaphore(max(1, get_settings().usage_agg_max_concurrency))
 _summary_cache: dict[tuple, tuple[float, dict]] = {}
 _summary_cache_lock = asyncio.Lock()
 _counts_cache: dict[str, tuple[float, dict]] = {}
@@ -216,13 +217,28 @@ async def get_audience_counts(
 
 @router.get("/summary")
 async def get_usage_summary(
+    request: Request,
     audience: Audience = Depends(audience_scope),
     from_date: str | None = None,
     to_date: str | None = None,
     db: AsyncSession = Depends(get_db),
     actor: str = Depends(get_current_actor),
-):
-    """Overall Stage Economics summary separating Financial Cost from Token Volume (Task 3.2)."""
+) -> Response:
+    """Overall Stage Economics summary separating Financial Cost from Token Volume (Task 3.2).
+
+    Sends a weak ETag and `Cache-Control: private`; a matching
+    `If-None-Match` gets `304 Not Modified`.
+    """
+    payload = await _usage_summary_payload(audience, from_date, to_date, db)
+    return cached_response(request, payload)
+
+
+async def _usage_summary_payload(
+    audience: Audience,
+    from_date: str | None,
+    to_date: str | None,
+    db: AsyncSession,
+) -> dict:
     settings = get_settings()
 
     # Parse and validate dates

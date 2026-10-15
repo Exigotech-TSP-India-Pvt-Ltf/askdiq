@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Retain strong references to background evaluation tasks to avoid GC termination
 _background_tasks: set[asyncio.Task] = set()
-_eval_semaphore = asyncio.Semaphore(4)
+_eval_semaphore = asyncio.Semaphore(max(1, get_settings().online_eval_max_concurrency))
 
 
 def compute_attribution_metrics(

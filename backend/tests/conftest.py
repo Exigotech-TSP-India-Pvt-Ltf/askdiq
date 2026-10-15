@@ -7,6 +7,11 @@ from collections.abc import AsyncGenerator
 from functools import cache
 from unittest.mock import patch
 
+# Unit/API tests use the in-process shared-state backend so each test can
+# reset rate-limit windows; Postgres-backed state is exercised explicitly in
+# tests/test_shared_state.py. Must be set before the app settings load.
+os.environ.setdefault("STATE_BACKEND", "memory")
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sql_text

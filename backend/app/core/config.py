@@ -218,6 +218,44 @@ class Settings(BaseSettings):
     # Max seconds lifespan shutdown waits for supervised background tasks.
     task_drain_timeout_seconds: float = 10.0
 
+    # --- Platform: jobs, shared state & HTTP (PR-04) ---
+    # Uvicorn workers per replica; the shared state below makes N > 1 safe.
+    web_concurrency: int = 1
+    # Validate pooled connections on checkout (stale sockets behind LBs/NAT).
+    db_pool_pre_ping: bool = True
+    db_pool_recycle_seconds: int = 1800
+    # `SET LOCAL statement_timeout` applied by `read_only_session()`.
+    dashboard_statement_timeout_ms: int = 5000
+    # Global back-pressure on the LLM path: 429 + Retry-After when saturated.
+    llm_max_concurrency: int = 64
+    llm_saturated_retry_after_seconds: int = 2
+    online_eval_max_concurrency: int = 4
+    # Default bound for `gather_scoped()` parallel aggregation.
+    agg_max_concurrency: int = 4
+    # Shared state: "auto" = memory when ENV=test, otherwise postgres.
+    state_backend: str = "auto"
+    # Actors exempt from the per-user /query limit (load tests only).
+    rate_limit_exempt_actors: list[str] = []
+    # LISTEN/NOTIFY channel for cross-worker events (cache invalidation, SSE).
+    events_channel: str = "askdiq_events"
+    events_reconnect_max_seconds: float = 30.0
+    # HTTP efficiency.
+    gzip_minimum_size: int = 1024
+    http_cache_max_age_seconds: int = 15
+    sse_heartbeat_seconds: float = 15.0
+    sse_retry_ms: int = 3000
+    # Background jobs (Postgres SKIP LOCKED queue).
+    jobs_worker_enabled: bool = True
+    jobs_max_concurrency: int = 4
+    jobs_lock_timeout_seconds: int = 300
+    jobs_poll_interval_seconds: float = 1.0
+    jobs_max_attempts: int = 5
+    jobs_backoff_base_seconds: float = 2.0
+    jobs_backoff_max_seconds: float = 600.0
+    jobs_shutdown_timeout_seconds: float = 30.0
+    jobs_retention_days: int = 7
+    state_cleanup_interval_seconds: int = 60
+
 
 @lru_cache
 def get_settings() -> Settings:
