@@ -10,36 +10,55 @@ target-version = "py311"
 exclude = [
     ".git",
     ".venv",
+    "venv",
     "__pycache__",
     "alembic/versions",
 ]
 
 [tool.ruff.lint]
 select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # pyflakes
-    "B",    # flake8-bugbear
-    "C4",   # flake8-comprehensions
-    "UP",   # pyupgrade
-    "SIM",  # flake8-simplify
-    "RUF",  # Ruff-specific rules
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "N",      # pep8-naming
+    "PL",     # pylint rules
+    "SIM",    # flake8-simplify
+    "S",      # flake8-bandit (security)
+    "ASYNC",  # flake8-async
+    "C4",     # flake8-comprehensions
+    "T20",    # flake8-print
+    "RUF",    # Ruff-specific rules
+    "ARG",    # flake8-unused-arguments
+    "RET",    # flake8-return
+    "FAST",   # FastAPI
 ]
 ignore = [
     "E501",    # line too long (managed by ruff format)
-    "B007",    # loop control variable not used
     "B008",    # do not perform function call `Depends` in argument defaults (standard FastAPI pattern)
-    "B905",    # zip() without an explicit strict= parameter
-    "RUF001",  # ambiguous unicode character (intentional quotes / dashes in domain strings and tests)
+    "PLR0913", # too many arguments (settings / constructors / FastAPI handlers) - CLAUDE.md
+    # Existing-convention flags (CLAUDE.md "Rule Precedence"): the codebase
+    # consistently uses `x: T = Depends(...)` defaults and explicit
+    # `response_model=` on routes. Rewriting 115 dependencies to `Annotated`
+    # (FAST002) or dropping the explicit response models (FAST001) is a
+    # style migration with no behavioural gain, so both are ignored here.
+    "FAST001", # redundant response_model (explicit response_model is the project convention)
+    "FAST002", # non-Annotated dependency (Depends-default is the project convention)
+    # Function-complexity budgets (pylint design checks). Existing long
+    # handlers/evaluators exceed them; refactoring ~50 functions in a lint PR
+    # would risk behaviour changes. Tracked as follow-up, not enforced yet.
+    "PLR0911", # too many return statements
+    "PLR0912", # too many branches
+    "PLR0915", # too many statements
+    "PLR0917", # too many positional arguments
     "RUF002",  # ambiguous unicode character in docstrings
     "RUF003",  # ambiguous unicode character in comments
     "RUF007",  # prefer itertools.pairwise over zip
     "RUF043",  # regex metacharacters in test match
     "RUF046",  # redundant int cast
-    "RUF059",  # unused unpacked variables
     "RUF100",  # unused noqa directives
-    "W291",    # trailing whitespace
-    "W292",    # no newline at end of file
     "C402",    # unnecessary generator (dict comprehension)
     "C408",    # unnecessary dict() call
     "C416",    # unnecessary list comprehension
@@ -49,8 +68,24 @@ ignore = [
 extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends"]
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/*" = ["E402"]
+# Route handlers take auth dependencies (e.g. `actor = Depends(require_admin)`)
+# purely for their side effect of enforcing authorisation.
+"app/api/routes/**" = ["ARG001"]
 "app/evaluation/dataset.py" = ["E402"]
+# Modules whose numeric literals are published specs or documented scoring
+# heuristics (checksum digit counts, IP octets/prefixes, control-char ranges,
+# gibberish/grounding thresholds). Naming every literal would hurt readability.
+"app/governance/pii.py" = ["PLR2004"]
+"app/governance/test_ips.py" = ["PLR2004"]
+"app/ingestion/naming.py" = ["PLR2004"]
+"app/guardrails/pre_checks.py" = ["PLR2004"]
+"app/governance/online_eval.py" = ["PLR2004"]
+"alembic/versions/**" = ["F401", "F403", "E501", "N999"]
+# CLI scripts: print to stdout, use ad-hoc thresholds and seeded test data.
+"scripts/**" = ["E402", "T201", "PLR2004", "S311", "PLC0415"]
+# Tests: asserts, literal expectations, fixture-only args, local imports
+# for monkeypatch/reload isolation.
+"tests/**" = ["S101", "PLR2004", "ARG001", "ARG002", "PLC0415"]
 
 [tool.ruff.format]
 quote-style = "double"
