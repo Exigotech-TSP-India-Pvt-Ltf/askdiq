@@ -422,7 +422,7 @@ Build the security and performance platform that every later feature uses (newpl
 ---
 
 #### Task B1.7: Async-only audit and the 50-concurrency gate (newplan §13.5, §13.6)
-- [ ] **[Dev]** Task B1.7: remove every blocking call from async paths, and add the permanent 50+ concurrency test.
+- [x] **[Dev]** Task B1.7: remove every blocking call from async paths, and add the permanent 50+ concurrency test.
 - [x] **[Lint]** Task B1.7: ruff `ASYNC` rules (ASYNC210, ASYNC230, ASYNC251 and others) report zero findings in `app/`.
 - [x] **[Test]** Task B1.7: `tests/test_async_only.py` and `tests/test_concurrency_50.py` pass on every PR.
 
@@ -436,9 +436,9 @@ Build the security and performance platform that every later feature uses (newpl
 - [x] **[Test]** The full TEST-BE suite passes.
 
 ##### Subtask B1.7.2: Event-loop blocking detector
-- [ ] **[Dev]** Add a test fixture that enables `loop.slow_callback_duration = 0.05` and asyncio debug mode, and fails the test if any callback blocks the loop for more than 50 ms during the API test suite.
+- [x] **[Dev]** Add a test fixture that enables `loop.slow_callback_duration = 0.05` and asyncio debug mode, and fails the test if any callback blocks the loop for more than 50 ms during the API test suite.
 - [x] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** It passes on the full API test set, or the offenders are fixed.
+- [x] **[Test]** It passes on the full API test set, or the offenders are fixed.
 
 ##### Subtask B1.7.3: `tests/test_concurrency_50.py` (CI gate)
 - [x] **[Dev]** Fire 60 simultaneous requests through `asyncio.gather` at the ASGI app (real Postgres, `fake_llm` with a 1 s delay, `fake_embed`). The mix is 30 `/query`, 20 admin dashboard GETs and 10 feedback POSTs. Test users are exempted from the per-user limit through settings injection.
@@ -2062,7 +2062,7 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | – | #17 (PR-03) | `feat/platform-security-headers-errors` | PR open (base #16), CI green | B1.1 and B1.2 done (50 new tests). **Open:** B1.1.3 `nginx -t` and `curl -I` can't run locally (no Docker), so verify them in a compose environment. Chat-completion timeout kept at `AZURE_OPENAI_REQUEST_TIMEOUT` (60 s); `OUTBOUND_TIMEOUT_SECONDS` applies to embeddings and httpx. A 422 response's `detail` is now a string, and the field errors moved to `errors`. |
 | – | PR-01 | `chore/ci-hardening` | In progress | |
 | – | #16 (PR-02) | `chore/lint-scope-claude-md` | PR open (base #14), CI green | Ruff now selects E, W, F, I, UP, B, N, PL, SIM, S, ASYNC, C4, T20, RUF, ARG, RET and FAST, with zero findings. **Flagged per CLAUDE.md precedence:** FAST002 and FAST001 are ignored, because the existing code uses `Depends()` defaults and explicit `response_model`. The PLR complexity limits are ignored for about 50 handlers; refactoring them is a follow-up. `GuardrailBlocked` was renamed to `GuardrailBlockedError`. The B0.3.3 format-on-save check is manual and still to do. |
-| – | #18 (PR-04) | `feat/platform-jobs-state-http` | PR open (base #17), CI green (492 passed) | Added migrations `e7f8a9b0c1d2` (jobs) and `f8a9b0c1d2e3` (UNLOGGED rate_limit_buckets, oidc_states), plus `app/jobs`, the state backend, the LISTEN/NOTIFY bus, an SSE-safe GZip, ETag responses, `gather_scoped`, the LLM gate (429 with Retry-After), and the 60-request concurrency gate (under 3 s in CI). `requests` was removed. **Partial:** B1.7.2 the event-loop blocking detector covers only the hot-path tests, not the whole suite. **Notes:** the dashboard ETag rarely returns 304 because live counters change every call. `read_only_session()` is not on any route yet. A pre-existing foreign-key race on `evaluation_records.message_id` (online-eval write before commit) is logged for B5. |
+| – | #18 (PR-04) | `feat/platform-jobs-state-http` | PR open (base #17), CI green (492 passed) | Added migrations `e7f8a9b0c1d2` (jobs) and `f8a9b0c1d2e3` (UNLOGGED rate_limit_buckets, oidc_states), plus `app/jobs`, the state backend, the LISTEN/NOTIFY bus, an SSE-safe GZip, ETag responses, `gather_scoped`, the LLM gate (429 with Retry-After), and the 60-request concurrency gate (under 3 s in CI). `requests` was removed. B1.7.2 is done: the blocking detector uses a 10 ms ticker that fails on any 250 ms stall or more than 3 stalls over 50 ms, with warm-up excluded and negative tests. CI was green twice in a row (head `927a4b2`). **Notes:** the dashboard ETag rarely returns 304 because live counters change every call. `read_only_session()` is not on any route yet. A pre-existing foreign-key race on `evaluation_records.message_id` (online-eval write before commit) is logged for B5. |
 | – | #22 (PR-09) | `fix/governance-data-correctness` | PR open (base #20), CI green | G1–G7, G9 and G11 are fixed with regression tests. New audit events: rate_limited, server_error, llm_call_failed, llm_retry, session created/rotated/expired, test_ip_updated. **Breaking:** `trace_id` is removed (the frontend is updated); `service` is now a category and the raw action is in `action`; `error_rate` is 24-hour, DB-based and audience-scoped. Deferred: no document-edit or audience-change routes exist yet. |
 | – | PR-05 | `feat/platform-load-balancing` | Code done, CI green, stacks after PR-09 | Added a `least_conn` nginx upstream across 2 replicas with an SSE location; prod compose runs api-1, api-2 and a worker; `--workers ${WEB_CONCURRENCY}`; the load test script gained budgets and `--smoke`; 25 tests. **Needs a Docker host:** `nginx -t`, `compose config`, the replica-kill test and the 2-replica smoke run. It surfaced a flaky loop-block test in PR-04, which is being fixed. |
 | – | PR-06, PR-12, PR-15, PR-01 | – | In progress, parallel | PR-01 was told to keep Next 14 and FastAPI 0.115; advisories that need a major upgrade go to an expiring allow-list for your decision. |
