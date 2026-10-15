@@ -23,7 +23,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,7 +60,6 @@ ex AS (
            ti.intent NOT IN ('GRE', 'ACK') AS is_sub,
            COALESCE(tx."group", 'Other') AS grp
     FROM turn_insights ti
-    JOIN chat_sessions cs ON cs.id = ti.session_id
     JOIN chat_messages a ON a.id = ti.message_id
     JOIN chat_messages u
       ON u.session_id = a.session_id
@@ -81,7 +80,6 @@ ex AS (
            ti.handled,
            ti.intent NOT IN ('GRE', 'ACK') AS is_sub
     FROM turn_insights ti
-    JOIN chat_sessions cs ON cs.id = ti.session_id
     JOIN chat_messages a ON a.id = ti.message_id
     JOIN chat_messages u
       ON u.session_id = a.session_id
@@ -278,6 +276,23 @@ _LIVE_CUBE = """
     FROM scoped_ex
     GROUP BY 1, 2, 3
 """
+_AUDIENCE_SQL = {
+    Audience.TESTING: (
+        " AND EXISTS (SELECT 1 FROM chat_sessions aud WHERE aud.id = {session_col}"
+        " AND (aud.created_ip IS NULL"
+        " OR aud.created_ip = ANY(CAST(:test_ips AS text[]))))"
+    ),
+    Audience.USERS: (
+        " AND EXISTS (SELECT 1 FROM chat_sessions aud WHERE aud.id = {session_col}"
+        " AND aud.created_ip IS NOT NULL"
+        " AND NOT (aud.created_ip = ANY(CAST(:test_ips AS text[]))))"
+    ),
+}
+_PENDING_SQL = """
+    SELECT count(*) FROM chat_messages a
+    WHERE a.role = 'assistant'
+      AND NOT EXISTS (SELECT 1 FROM turn_insights ti WHERE ti.message_id = a.id)
+"""
 # Index-friendly lower bound on the naive-UTC column for local day ``since``.
 _EX_SINCE = (
     " AND u.created_at >= (CAST(CAST(:since AS date) AS timestamp)"
@@ -324,7 +339,6 @@ _TURNS_SQL = """
            ti.intent, ti.bot_quality AS quality, ti.issue, ti.handled,
            ti.friction, ti.classified_by
     FROM chat_messages u
-    JOIN chat_sessions cs ON cs.id = u.session_id
     LEFT JOIN chat_messages a
       ON a.session_id = u.session_id
      AND a.turn_index = u.turn_index
@@ -409,18 +423,12 @@ class InsightsAnalyticsRepository:
         return params
 
     @staticmethod
-    def _audience_sql(audience: Audience) -> str:
-        if audience is Audience.TESTING:
-            return (
-                " AND (cs.created_ip IS NULL"
-                " OR cs.created_ip = ANY(CAST(:test_ips AS text[])))"
-            )
-        if audience is Audience.USERS:
-            return (
-                " AND cs.created_ip IS NOT NULL"
-                " AND NOT (cs.created_ip = ANY(CAST(:test_ips AS text[])))"
-            )
-        return ""
+    def _audience_sql(
+        audience: Audience,
+        session_col: Literal["ti.session_id", "u.session_id"] = "ti.session_id",
+    ) -> str:
+        template = _AUDIENCE_SQL.get(audience)
+        return template.format(session_col=session_col) if template else ""
 
     @classmethod
     def _select(
@@ -581,7 +589,9 @@ class InsightsAnalyticsRepository:
         return rows[0] if rows else None
 
     async def turns(self, ctx: QueryContext, session_id: uuid.UUID) -> Sequence[Any]:
-        sql = _TURNS_SQL.format(audience=self._audience_sql(ctx.filters.audience))
+        sql = _TURNS_SQL.format(
+            audience=self._audience_sql(ctx.filters.audience, "u.session_id")
+        )
         params = {
             "tz": ctx.filters.tz,
             "session_id": session_id,
@@ -637,6 +647,10 @@ class InsightsAnalyticsRepository:
             )
         )
         return list(result.scalars())
+
+    async def pending_count(self) -> int:
+        """Assistant replies without labels yet (anti-join on the unique key)."""
+        return int(await self.session.scalar(text(_PENDING_SQL)) or 0)
 
     async def labelled_count(self) -> int:
         return int(await self.session.scalar(select(func.count(TurnInsight.id))) or 0)
