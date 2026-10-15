@@ -29,7 +29,7 @@ export function HighlightCard({
   return (
     <div
       onClick={onClick}
-      className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white dark:bg-[#0c0d10] p-4 shadow-card dark:shadow-xl transition-all hover:border-teal-400 dark:hover:border-teal-400/60 ${
+      className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-4 shadow-card dark:shadow-xl transition-all hover:border-teal-400 dark:hover:border-teal-400/60 ${
         isClickable ? "cursor-pointer hover:shadow-md" : ""
       } ${className}`}
     >

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { CheckCircle2, Target, ShieldCheck, ClipboardCheck, Sparkles } from "lucide-react";
@@ -30,8 +31,6 @@ import {
   YAxis,
 } from "recharts";
 
-const PIE_COLORS = ["#10b981", "#ef4444", "#f59e0b"];
-const BAR_COLORS = ["#068987", "#40e0d0", "#0284c7", "#10b981", "#f59e0b", "#0d9488"];
 
 const pct = (v: unknown) =>
   typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—";
@@ -232,6 +231,10 @@ type Tab = (typeof TABS)[number];
 
 export default function EvaluationPage() {
   const { token } = useAuth();
+  const ct = useChartTheme();
+  const tooltipStyle = chartTooltipStyle(ct);
+  // Pass / fail / partial outcome colours.
+  const pieColors = [ct.status.ok, ct.status.danger, ct.status.warn];
   const { audience } = useAudience();
   const [r, setR] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -423,7 +426,7 @@ export default function EvaluationPage() {
   }, [r?.operational?.latency_ms]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+    <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
       <DashboardHeader
         title="RAG Evaluation"
         subtitle="Systematic evaluation metrics, benchmark pass rates, and turn-level quality scorecard"
@@ -461,18 +464,18 @@ export default function EvaluationPage() {
               <ChartCard title="Quality scorecard" subtitle="Key evaluation metrics (%)">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart data={qualityRadar} outerRadius="75%">
-                    <PolarGrid stroke="#e2e8f0" />
-                    <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: "#64748b" }} />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                    <PolarGrid stroke={ct.grid} />
+                    <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: ct.axis }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: ct.axis }} />
                     <Radar
                       name="Score"
                       dataKey="score"
-                      stroke="#6366f1"
-                      fill="#6366f1"
+                      stroke={ct.categorical[5]}
+                      fill={ct.categorical[5]}
                       fillOpacity={0.35}
                     />
                     <Tooltip
-                      contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                      contentStyle={tooltipStyle}
                       formatter={(v) => [`${Number(v).toFixed(1)}%`, "Score"]}
                     />
                   </RadarChart>
@@ -492,11 +495,11 @@ export default function EvaluationPage() {
                     paddingAngle={3}
                   >
                     {passBreakdown.map((_, idx) => (
-                      <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                      <Cell key={idx} fill={pieColors[idx % pieColors.length]} />
                     ))}
                   </Pie>
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
+                  <Tooltip contentStyle={tooltipStyle} />
                 </PieChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -506,22 +509,22 @@ export default function EvaluationPage() {
             <ChartCard title="Pass rate by case type" subtitle="Share of cases passing, per category">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={caseTypeBars}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="type" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                  <XAxis dataKey="type" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
                   <YAxis
-                    tick={{ fontSize: 11, fill: "#64748b" }}
+                    tick={{ fontSize: 11, fill: ct.axis }}
                     axisLine={false}
                     tickLine={false}
                     width={30}
                     domain={[0, 100]}
                   />
                   <Tooltip
-                    contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                    contentStyle={tooltipStyle}
                     formatter={(v) => [`${v}%`, "Pass rate"]}
                   />
                   <Bar dataKey="passRate" radius={[6, 6, 0, 0]}>
                     {caseTypeBars.map((_, idx) => (
-                      <Cell key={idx} fill={BAR_COLORS[idx % BAR_COLORS.length]} />
+                      <Cell key={idx} fill={ct.categorical[idx % ct.categorical.length]} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -531,17 +534,17 @@ export default function EvaluationPage() {
             <ChartCard title="Latency by stage" subtitle="p50 / p95 / p99 (seconds)">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={latencyBars}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="stage" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} width={40} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                  <XAxis dataKey="stage" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} width={40} />
                   <Tooltip
-                    contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                    contentStyle={tooltipStyle}
                     formatter={(v) => [`${Number(v).toFixed(2)} s`, ""]}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="p50" name="p50" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="p95" name="p95" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="p99" name="p99" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="p50" name="p50" fill={ct.categorical[5]} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="p95" name="p95" fill={ct.status.warn} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="p99" name="p99" fill={ct.status.danger} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>

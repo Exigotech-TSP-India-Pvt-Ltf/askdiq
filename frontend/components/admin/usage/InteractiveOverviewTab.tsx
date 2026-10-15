@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ExternalLink,
 } from "lucide-react";
+import { useChartTheme } from "@/lib/use-chart-theme";
 import {
   OutcomeBadge,
   formatTokens,
@@ -54,6 +55,11 @@ export function InteractiveOverviewTab({
   token = "",
   audience = "overview",
 }: InteractiveOverviewTabProps) {
+  // Token pipeline colours (prompt, reasoning, output) from the chart theme.
+  const ct = useChartTheme();
+  const [promptColor, reasoningColor, outputColor] = [ct.categorical[0], ct.categorical[1], ct.status.ok];
+  const dot = (color: string, blur = 6) => ({ backgroundColor: color, boxShadow: `0 0 ${blur}px ${color}` });
+  const glow = (color: string) => ({ filter: `drop-shadow(0 0 4px ${color})` });
   // Navigation & Drilldown State
   const [activeDomainFilter, setActiveDomainFilter] = useState<"all" | "costs" | "tokens" | "quality">("all");
   const [selectedOutcome, setSelectedOutcome] = useState<string>("all");
@@ -160,7 +166,7 @@ export function InteractiveOverviewTab({
       {/* ========================================================================= */}
       {/* 1. CHATBOT LIVE TELEMETRY COMMAND BAR (Signature Command Center) */}
       {/* ========================================================================= */}
-      <div className="relative overflow-hidden rounded-2xl border border-teal-500/30 bg-gradient-to-r from-[#068987] via-[#045250] to-[#022120] p-6 text-white shadow-xl transition-all">
+      <div className="relative overflow-hidden rounded-2xl border border-teal-500/30 bg-gradient-to-r from-brand-600 via-brand-800 to-brand-950 p-6 text-white shadow-xl transition-all">
         {/* Ambient Glow Orbs */}
         <div className="absolute right-0 top-0 -mt-12 -mr-12 h-64 w-64 rounded-full bg-teal-400/20 blur-3xl pointer-events-none" />
         <div className="absolute left-1/4 bottom-0 -mb-12 h-40 w-40 rounded-full bg-cyan-400/20 blur-2xl pointer-events-none" />
@@ -289,7 +295,7 @@ export function InteractiveOverviewTab({
                   onClick={() => setActiveDomainFilter(tab.id as any)}
                   className={`px-3 py-1 text-xs rounded-lg font-medium transition ${
                     activeDomainFilter === tab.id
-                      ? "bg-white text-teal-950 font-bold shadow-sm"
+                      ? "bg-brand-50 text-brand-950 font-bold shadow-sm"
                       : "text-teal-200 hover:text-white hover:bg-white/10"
                   }`}
                 >
@@ -310,7 +316,7 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 1: FINANCIAL COST ECONOMICS — LIVE FINANCIAL ACCOUNTING */}
         {/* ----------------------------------------------------------------------- */}
         <div
-          className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white p-6 text-slate-900 shadow-card dark:bg-[#0c0d10] dark:text-white dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
+          className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white p-6 text-slate-900 shadow-card dark:bg-surface-card dark:text-white dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
             activeDomainFilter === "costs"
               ? "ring-2 ring-teal-500 border-teal-500 dark:ring-teal-400/80 dark:border-teal-400/60"
               : ""
@@ -357,7 +363,7 @@ export function InteractiveOverviewTab({
               >
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_6px_#06b6d4]" />
+                    <span className="w-2 h-2 rounded-full animate-pulse" style={dot(promptColor)} />
                     <span>LLM Generation Pipeline</span>
                   </div>
                   <span className="font-mono font-black text-slate-900 dark:text-white">
@@ -367,9 +373,9 @@ export function InteractiveOverviewTab({
 
                 {/* Aurora Multi-stage Jewel Gradient Bar */}
                 <div className="mt-2.5 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex border border-black/5 dark:border-white/5">
-                  <div style={{ width: `${promptPct}%` }} className="bg-cyan-500 h-full" title={`Prompt: ${promptPct}%`} />
-                  <div style={{ width: `${reasoningPct}%` }} className="bg-teal-500 h-full" title={`Reasoning: ${reasoningPct}%`} />
-                  <div style={{ width: `${outputPct}%` }} className="bg-emerald-500 h-full" title={`Output: ${outputPct}%`} />
+                  <div style={{ width: `${promptPct}%`, backgroundColor: promptColor }} className="h-full" title={`Prompt: ${promptPct}%`} />
+                  <div style={{ width: `${reasoningPct}%`, backgroundColor: reasoningColor }} className="h-full" title={`Reasoning: ${reasoningPct}%`} />
+                  <div style={{ width: `${outputPct}%`, backgroundColor: outputColor }} className="h-full" title={`Output: ${outputPct}%`} />
                 </div>
                 <div className="mt-1.5 flex justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                   <span>Prompt: {promptPct}%</span>
@@ -390,7 +396,7 @@ export function InteractiveOverviewTab({
               >
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-teal-500 shadow-[0_0_6px_#0d9488]" />
+                    <span className="w-2 h-2 rounded-full" style={dot(reasoningColor)} />
                     <span>Vector & Guardrails Embeddings</span>
                   </div>
                   <span className="font-mono font-black text-slate-900 dark:text-white">
@@ -428,7 +434,7 @@ export function InteractiveOverviewTab({
 
             {/* Expandable Granular Breakdown when a channel is clicked */}
             {selectedStageDetail && (
-              <div className="mt-3 p-3 rounded-xl bg-slate-900 text-white dark:bg-[#03171b] border border-teal-500/30 text-xs animate-in fade-in duration-200">
+              <div className="mt-3 p-3 rounded-xl bg-slate-900 text-white dark:bg-surface-muted border border-teal-500/30 text-xs animate-in fade-in duration-200">
                 <div className="flex items-center justify-between font-bold text-teal-200 mb-2">
                   <span>Stage Detail Breakdown</span>
                   <button
@@ -490,7 +496,7 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 2: TOKEN VOLUME TELEMETRY — COGNITIVE PIPELINE */}
         {/* ----------------------------------------------------------------------- */}
         <div
-          className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white p-6 text-slate-900 shadow-card dark:border-teal-500/25 dark:bg-gradient-to-br dark:from-[#042024]/95 dark:via-[#03171b]/98 dark:to-[#020d10] dark:text-white dark:shadow-2xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
+          className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 shadow-card dark:border-teal-500/25 dark:bg-gradient-to-br dark:from-brand-950/95 dark:via-surface-muted/98 dark:to-surface-page dark:text-white dark:shadow-2xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
             activeDomainFilter === "tokens"
               ? "ring-2 ring-teal-500 border-teal-500 dark:ring-teal-400/80 dark:border-teal-400/60"
               : "dark:shadow-[0_0_30px_rgba(20,184,166,0.12),inset_0_1px_0_0_rgba(45,212,191,0.25)]"
@@ -518,7 +524,7 @@ export function InteractiveOverviewTab({
               </div>
 
               {/* View Toggle (Frosted Glass Pill) */}
-              <div className="flex bg-slate-100 dark:bg-[#021013]/80 p-0.5 rounded-lg text-[10px] border border-slate-200/80 dark:border-teal-500/25">
+              <div className="flex bg-slate-100 dark:bg-surface-muted/80 p-0.5 rounded-lg text-[10px] border border-slate-200/80 dark:border-teal-500/25">
                 <button
                   type="button"
                   onClick={() => setTokenViewMode("absolute")}
@@ -550,46 +556,46 @@ export function InteractiveOverviewTab({
               <div className="relative w-28 h-28 flex-shrink-0 flex items-center justify-center">
                 <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
                   {/* Outer Ring: Prompt */}
-                  <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" className="text-slate-100 dark:text-[#083038]" strokeWidth="6" />
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" className="text-chart-track" strokeWidth="6" />
                   <circle
                     cx="50"
                     cy="50"
                     r="42"
                     fill="none"
-                    stroke="#06b6d4"
+                    stroke={promptColor}
                     strokeWidth="6"
                     strokeDasharray={2 * Math.PI * 42}
                     strokeDashoffset={2 * Math.PI * 42 * (1 - (promptTokens / totalTokens))}
                     strokeLinecap="round"
-                    style={{ filter: "drop-shadow(0 0 4px rgba(6, 182, 212, 0.6))" }}
+                    style={glow(promptColor)}
                   />
                   {/* Middle Ring: Reasoning */}
-                  <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" className="text-slate-100 dark:text-[#083038]" strokeWidth="6" />
+                  <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" className="text-chart-track" strokeWidth="6" />
                   <circle
                     cx="50"
                     cy="50"
                     r="32"
                     fill="none"
-                    stroke="#0d9488"
+                    stroke={reasoningColor}
                     strokeWidth="6"
                     strokeDasharray={2 * Math.PI * 32}
                     strokeDashoffset={2 * Math.PI * 32 * (1 - (reasoningTokens / totalTokens))}
                     strokeLinecap="round"
-                    style={{ filter: "drop-shadow(0 0 4px rgba(13, 148, 136, 0.6))" }}
+                    style={glow(reasoningColor)}
                   />
                   {/* Inner Ring: Output */}
-                  <circle cx="50" cy="50" r="22" fill="none" stroke="currentColor" className="text-slate-100 dark:text-[#083038]" strokeWidth="6" />
+                  <circle cx="50" cy="50" r="22" fill="none" stroke="currentColor" className="text-chart-track" strokeWidth="6" />
                   <circle
                     cx="50"
                     cy="50"
                     r="22"
                     fill="none"
-                    stroke="#10b981"
+                    stroke={outputColor}
                     strokeWidth="6"
                     strokeDasharray={2 * Math.PI * 22}
                     strokeDashoffset={2 * Math.PI * 22 * (1 - (outputTokens / totalTokens))}
                     strokeLinecap="round"
-                    style={{ filter: "drop-shadow(0 0 4px rgba(16, 185, 129, 0.6))" }}
+                    style={glow(outputColor)}
                   />
                 </svg>
                 {/* Center Core Badge */}
@@ -606,7 +612,7 @@ export function InteractiveOverviewTab({
                 {/* 1. Prompt Context */}
                 <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50/70 hover:bg-slate-100/70 border border-slate-200/60 dark:bg-teal-950/40 dark:border-teal-500/20 dark:hover:border-teal-400/80 transition shadow-2xs">
                   <span className="flex items-center gap-1.5 text-slate-800 dark:text-cyan-200 font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_8px_#06b6d4]" />
+                    <span className="w-2 h-2 rounded-full" style={dot(promptColor, 8)} />
                     Prompt Context
                   </span>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">
@@ -617,7 +623,7 @@ export function InteractiveOverviewTab({
                 {/* 2. Reasoning */}
                 <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50/70 hover:bg-slate-100/70 border border-slate-200/60 dark:bg-teal-950/40 dark:border-teal-500/20 dark:hover:border-teal-400/80 transition shadow-2xs">
                   <span className="flex items-center gap-1.5 text-slate-800 dark:text-teal-200 font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-teal-500 shadow-[0_0_8px_#14b8a6]" />
+                    <span className="w-2 h-2 rounded-full" style={dot(reasoningColor, 8)} />
                     Reasoning Trace
                   </span>
                   <span className="font-mono font-bold text-teal-700 dark:text-teal-200">
@@ -628,7 +634,7 @@ export function InteractiveOverviewTab({
                 {/* 3. Visible Output */}
                 <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50/70 hover:bg-slate-100/70 border border-slate-200/60 dark:bg-teal-950/40 dark:border-teal-500/20 dark:hover:border-teal-400/80 transition shadow-2xs">
                   <span className="flex items-center gap-1.5 text-slate-800 dark:text-emerald-200 font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />
+                    <span className="w-2 h-2 rounded-full" style={dot(outputColor, 8)} />
                     Visible Output
                   </span>
                   <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
@@ -639,7 +645,7 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Compression Ratio Callout */}
-            <div className="mt-4 p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 dark:bg-[#021417]/80 dark:border-teal-500/20 shadow-2xs flex items-center justify-between text-xs">
+            <div className="mt-4 p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 dark:bg-surface-muted/80 dark:border-teal-500/20 shadow-2xs flex items-center justify-between text-xs">
               <span className="text-slate-700 dark:text-teal-200/90 font-medium flex items-center gap-1.5">
                 <Zap className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 drop-shadow-[0_0_4px_rgba(245,158,11,0.6)]" />
                 Context-to-Answer Synthesis:
@@ -660,7 +666,7 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 3: GENERATION QUALITY & LATENCY — TELEMETRY COCKPIT */}
         {/* ----------------------------------------------------------------------- */}
         <div
-          className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white dark:bg-[#0c0d10] p-6 text-slate-900 dark:text-white shadow-card dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
+          className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 dark:text-white shadow-card dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
             activeDomainFilter === "quality"
               ? "ring-2 ring-cyan-500 border-cyan-500 dark:ring-cyan-400/80 dark:border-cyan-400/60"
               : ""
@@ -692,9 +698,9 @@ export function InteractiveOverviewTab({
               <div className="flex flex-col items-center">
                 <div className="relative w-32 h-20 overflow-hidden flex items-end justify-center">
                   <svg className="w-32 h-32 absolute top-0" viewBox="0 0 120 120">
-                    <path d="M 20 80 A 40 40 0 0 1 50 40" fill="none" stroke="#10b981" strokeWidth="8" strokeLinecap="round" />
-                    <path d="M 50 40 A 40 40 0 0 1 80 45" fill="none" stroke="#f59e0b" strokeWidth="8" />
-                    <path d="M 80 45 A 40 40 0 0 1 100 80" fill="none" stroke="#ef4444" strokeWidth="8" strokeLinecap="round" />
+                    <path d="M 20 80 A 40 40 0 0 1 50 40" fill="none" stroke={ct.status.ok} strokeWidth="8" strokeLinecap="round" />
+                    <path d="M 50 40 A 40 40 0 0 1 80 45" fill="none" stroke={ct.status.warn} strokeWidth="8" />
+                    <path d="M 80 45 A 40 40 0 0 1 100 80" fill="none" stroke={ct.status.danger} strokeWidth="8" strokeLinecap="round" />
 
                     {/* Needle 1: P50 (Teal) */}
                     <line
@@ -702,7 +708,7 @@ export function InteractiveOverviewTab({
                       y1="75"
                       x2="60"
                       y2="42"
-                      stroke="#06b6d4"
+                      stroke={ct.categorical[0]}
                       strokeWidth="2.5"
                       strokeLinecap="round"
                       transform={`rotate(${p50Angle} 60 75)`}
@@ -715,7 +721,7 @@ export function InteractiveOverviewTab({
                       y1="75"
                       x2="60"
                       y2="38"
-                      stroke="#f59e0b"
+                      stroke={ct.status.warn}
                       strokeWidth="2.5"
                       strokeLinecap="round"
                       transform={`rotate(${p95Angle} 60 75)`}
@@ -745,7 +751,7 @@ export function InteractiveOverviewTab({
                       cy="50"
                       r="40"
                       fill="none"
-                      stroke="#10b981"
+                      stroke={ct.status.ok}
                       strokeWidth="8"
                       strokeDasharray={groundedCircumference}
                       strokeDashoffset={groundedCircumference - groundedStrokeDash}
@@ -852,7 +858,7 @@ export function InteractiveOverviewTab({
       {/* ========================================================================= */}
       {/* 3. REAL CHATBOT CONVERSATIONAL QUERY STREAM (Option 2 Aurora Glass) */}
       {/* ========================================================================= */}
-      <div className="rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white dark:bg-[#0c0d10] p-6 shadow-card dark:shadow-xl space-y-4 transition-all hover:border-teal-400 dark:hover:border-teal-400/60">
+      <div className="rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl space-y-4 transition-all hover:border-teal-400 dark:hover:border-teal-400/60">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-teal-100 dark:border-teal-500/20 pb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">

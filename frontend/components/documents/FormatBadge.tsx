@@ -27,7 +27,7 @@ export function FormatBadge({
   return (
     <div className={`inline-flex items-center gap-1.5 flex-wrap ${className}`}>
       {/* Canonical active format */}
-      <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-mono font-semibold text-slate-800">
+      <span className="inline-flex items-center gap-1 rounded-md border border-line bg-surface-muted px-2 py-0.5 text-[11px] font-mono font-semibold text-fg">
         <FileCode className="w-3 h-3 text-slate-500" />
         MARKDOWN (.md)
       </span>

@@ -188,14 +188,14 @@ export function QueriesTab({
         );
       case "llm_failed":
         return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 border border-slate-300">
+          <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-fg-muted border border-line-strong">
             <XCircle className="w-3 h-3" />
             Failed
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+          <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-fg-muted">
             {outcome || "Unknown"}
           </span>
         );
@@ -366,7 +366,7 @@ export function QueriesTab({
 
         {/* Outcome Filter Pill Bar */}
         <div className="space-y-1.5">
-          <span className="text-xs font-semibold text-slate-700 block">
+          <span className="text-xs font-semibold text-fg-muted block">
             Filter by Execution Outcome
           </span>
           <OutcomePillBar

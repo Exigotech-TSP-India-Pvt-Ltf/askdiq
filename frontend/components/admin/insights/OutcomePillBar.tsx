@@ -15,32 +15,32 @@ const OUTCOME_CONFIG: Record<
 > = {
   answered: {
     label: "Answered",
-    bg: "bg-emerald-50",
-    text: "text-emerald-700",
+    bg: "bg-emerald-50 dark:bg-emerald-500/15",
+    text: "text-emerald-700 dark:text-emerald-300",
     activeBorder: "border-emerald-500 ring-2 ring-emerald-200",
   },
   ungrounded: {
     label: "Ungrounded",
-    bg: "bg-amber-50",
-    text: "text-amber-700",
+    bg: "bg-amber-50 dark:bg-amber-500/15",
+    text: "text-amber-700 dark:text-amber-300",
     activeBorder: "border-amber-500 ring-2 ring-amber-200",
   },
   blocked: {
     label: "Blocked",
-    bg: "bg-rose-50",
-    text: "text-rose-700",
+    bg: "bg-rose-50 dark:bg-rose-500/15",
+    text: "text-rose-700 dark:text-rose-300",
     activeBorder: "border-rose-500 ring-2 ring-rose-200",
   },
   conversational: {
     label: "Conversational",
-    bg: "bg-blue-50",
-    text: "text-blue-700",
+    bg: "bg-blue-50 dark:bg-blue-500/15",
+    text: "text-blue-700 dark:text-blue-300",
     activeBorder: "border-blue-500 ring-2 ring-blue-200",
   },
   llm_failed: {
     label: "LLM Failed",
-    bg: "bg-purple-50",
-    text: "text-purple-700",
+    bg: "bg-purple-50 dark:bg-purple-500/15",
+    text: "text-purple-700 dark:text-purple-300",
     activeBorder: "border-purple-500 ring-2 ring-purple-200",
   },
 };
@@ -61,8 +61,8 @@ export function OutcomePillBar({
         onClick={() => onSelectOutcome?.("all")}
         className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
           !selectedOutcome || selectedOutcome === "all"
-            ? "border-slate-800 bg-slate-800 text-white shadow-sm"
-            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            ? "border-slate-800 bg-slate-800 text-white shadow-sm dark:border-brand-400 dark:bg-brand-600"
+            : "border-line bg-surface-card text-fg-muted hover:bg-surface-muted"
         }`}
       >
         <span>All</span>
@@ -70,7 +70,7 @@ export function OutcomePillBar({
           className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
             !selectedOutcome || selectedOutcome === "all"
               ? "bg-white/20 text-white"
-              : "bg-slate-100 text-slate-600"
+              : "bg-surface-muted text-fg-muted"
           }`}
         >
           {total.toLocaleString()}
@@ -96,7 +96,7 @@ export function OutcomePillBar({
             <span>{config.label}</span>
             <span
               className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                isSelected ? "bg-white/40" : "bg-black/5"
+                isSelected ? "bg-white/40 dark:bg-white/10" : "bg-black/5 dark:bg-white/10"
               }`}
             >
               {count.toLocaleString()}

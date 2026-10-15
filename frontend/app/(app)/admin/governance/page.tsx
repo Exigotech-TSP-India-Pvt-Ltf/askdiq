@@ -111,7 +111,7 @@ export default function GovernancePage() {
   const [activeTab, setActiveTab] = useState<Tab>("Overall");
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+    <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
       <DashboardHeader
         title="Admin Governance"
         subtitle="System health monitoring, request tracing, and security audit log streams"

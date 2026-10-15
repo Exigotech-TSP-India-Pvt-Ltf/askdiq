@@ -119,7 +119,7 @@ export function TabGroup<T extends string = string>({
                 className={`text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
                   isActive
                     ? "bg-white/20 text-white"
-                    : "bg-slate-200/80 text-slate-600"
+                    : "bg-surface-muted text-fg-muted"
                 }`}
               >
                 {typeof tab.badgeCount === "number"

@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { useChartTheme } from "@/lib/use-chart-theme";
 import {
   LayoutDashboard,
   Users,
@@ -82,8 +83,7 @@ const emptyData: DashboardData = {
 // =============================================================================
 // OPTION 2: AURORA GLASS JEWEL PALETTES
 // =============================================================================
-const PIE_COLORS = ["#06b6d4", "#e2e8f0"]; // Active (Cyan), Other (Slate track)
-const STAGE_BAR_COLORS = ["#06b6d4", "#0d9488", "#8b5cf6", "#10b981"]; // Embedding, Retrieval, Reranker, LLM
+// Chart colours come from chartTheme via useChartTheme() (light/dark aware).
 
 type AccentKey = "teal" | "emerald" | "cyan" | "violet" | "rose" | "amber";
 
@@ -163,7 +163,7 @@ function AuroraMetricCard({
 
   return (
     <div
-      className={`group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white dark:bg-[#0c0d10] p-5 shadow-card dark:shadow-xl transition-all hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md ${styles.border}`}
+      className={`group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-5 shadow-card dark:shadow-xl transition-all hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md ${styles.border}`}
     >
       {/* Ambient Aurora Corner Glow */}
       <div
@@ -219,7 +219,7 @@ function AuroraChartCard({
 }) {
   return (
     <section
-      className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white dark:bg-[#0c0d10] p-6 shadow-card dark:shadow-xl transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${className}`}
+      className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${className}`}
     >
       {/* Ambient Aurora Glow in top right */}
       <div className="absolute -top-12 -right-12 w-36 h-36 bg-teal-400/10 dark:bg-teal-500/15 rounded-full blur-2xl pointer-events-none" />
@@ -249,7 +249,7 @@ function AuroraChartCard({
 function CustomChartTooltip({ active, payload, label, unit = "" }: any) {
   if (!active || !payload || !payload.length) return null;
   return (
-    <div className="rounded-xl border border-teal-200/80 dark:border-teal-500/30 bg-white/95 dark:bg-[#041d21]/95 p-3 shadow-lg backdrop-blur-md text-xs">
+    <div className="rounded-xl border border-teal-200/80 dark:border-teal-500/30 bg-surface-elevated/95 p-3 shadow-lg backdrop-blur-md text-xs">
       <p className="font-semibold text-slate-500 dark:text-teal-200/80 mb-1">{label}</p>
       {payload.map((entry: any, index: number) => (
         <div
@@ -275,6 +275,10 @@ function CustomChartTooltip({ active, payload, label, unit = "" }: any) {
 // =============================================================================
 export default function AdminDashboard() {
   const { token } = useAuth();
+  const ct = useChartTheme();
+  // Embedding, Retrieval, Reranker, LLM
+  const stageColors = [ct.categorical[0], ct.categorical[1], ct.categorical[5], ct.categorical[2]];
+  const dot = (color: string) => ({ backgroundColor: color, boxShadow: `0 0 6px ${color}` });
   const { audience } = useAudience();
   const [data, setData] = useState<DashboardData>(emptyData);
 
@@ -336,7 +340,7 @@ export default function AdminDashboard() {
   }, [data.pipeline]);
 
   return (
-    <div className="min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-slate-900 dark:text-slate-100">
+    <div className="min-h-screen bg-surface-page text-slate-900 dark:text-slate-100">
       {/* Standardized Admin Header with Audience Scope Tabs & Theme Toggle */}
       <DashboardHeader
         title="Dashboard"
@@ -421,24 +425,24 @@ export default function AdminDashboard() {
                 <AreaChart data={trend}>
                   <defs>
                     <linearGradient id="auroraQueryFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#068987" stopOpacity={0.02} />
+                      <stop offset="5%" stopColor={ct.categorical[0]} stopOpacity={0.4} />
+                      <stop offset="95%" stopColor={ct.categorical[1]} stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid
                     strokeDasharray="3 3"
-                    className="stroke-slate-100 dark:stroke-[#27272a]"
+                    stroke={ct.grid}
                     vertical={false}
                   />
                   <XAxis
                     dataKey="label"
-                    tick={{ fontSize: 11, fill: "#64748b" }}
+                    tick={{ fontSize: 11, fill: ct.axis }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <YAxis
                     allowDecimals={false}
-                    tick={{ fontSize: 11, fill: "#64748b" }}
+                    tick={{ fontSize: 11, fill: ct.axis }}
                     axisLine={false}
                     tickLine={false}
                     width={32}
@@ -447,7 +451,7 @@ export default function AdminDashboard() {
                   <Area
                     type="monotone"
                     dataKey="queries"
-                    stroke="#068987"
+                    stroke={ct.categorical[0]}
                     strokeWidth={2.5}
                     fill="url(#auroraQueryFill)"
                   />
@@ -477,8 +481,8 @@ export default function AdminDashboard() {
                     outerRadius={84}
                     paddingAngle={3}
                   >
-                    <Cell fill="#06b6d4" />
-                    <Cell fill="#cbd5e1" className="dark:fill-[#083038]" />
+                    <Cell fill={ct.categorical[0]} />
+                    <Cell fill={ct.track} />
                   </Pie>
                   <Tooltip content={<CustomChartTooltip unit="users" />} />
                 </PieChart>
@@ -499,7 +503,7 @@ export default function AdminDashboard() {
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
               <div className="flex items-center justify-between p-2 rounded-xl bg-teal-50/40 dark:bg-white/[0.04] border border-teal-200/70 dark:border-teal-500/25">
                 <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_6px_#06b6d4]" />
+                  <span className="w-2 h-2 rounded-full" style={dot(ct.categorical[0])} />
                   Active
                 </span>
                 <span className="font-mono font-bold text-slate-900 dark:text-white">
@@ -509,7 +513,7 @@ export default function AdminDashboard() {
 
               <div className="flex items-center justify-between p-2 rounded-xl bg-teal-50/40 dark:bg-white/[0.04] border border-teal-200/70 dark:border-teal-500/25">
                 <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-slate-400 dark:bg-[#083038]" />
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ct.track }} />
                   Other
                 </span>
                 <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
@@ -538,17 +542,17 @@ export default function AdminDashboard() {
               <BarChart data={latency}>
                 <CartesianGrid
                   strokeDasharray="3 3"
-                  className="stroke-slate-100 dark:stroke-[#27272a]"
+                  stroke={ct.grid}
                   vertical={false}
                 />
                 <XAxis
                   dataKey="stage"
-                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  tick={{ fontSize: 11, fill: ct.axis }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  tick={{ fontSize: 11, fill: ct.axis }}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={(val) => `${val}ms`}
@@ -557,7 +561,7 @@ export default function AdminDashboard() {
                 <Tooltip content={<CustomChartTooltip unit="ms" />} />
                 <Bar dataKey="ms" radius={[6, 6, 0, 0]}>
                   {latency.map((_, idx) => (
-                    <Cell key={idx} fill={STAGE_BAR_COLORS[idx % STAGE_BAR_COLORS.length]} />
+                    <Cell key={idx} fill={stageColors[idx % stageColors.length]} />
                   ))}
                 </Bar>
               </BarChart>
@@ -565,7 +569,7 @@ export default function AdminDashboard() {
           </AuroraChartCard>
 
           {/* RAG Pipeline Execution Health Visualizer (xl:col-span-1) */}
-          <section className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white dark:bg-[#0c0d10] p-6 shadow-card dark:shadow-xl transition-all overflow-hidden flex flex-col justify-between hover:border-teal-400 dark:hover:border-teal-400/60">
+          <section className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl transition-all overflow-hidden flex flex-col justify-between hover:border-teal-400 dark:hover:border-teal-400/60">
             <div className="absolute -top-12 -right-12 w-36 h-36 bg-teal-400/10 dark:bg-teal-500/15 rounded-full blur-2xl pointer-events-none" />
 
             <div className="relative z-10">
@@ -589,7 +593,7 @@ export default function AdminDashboard() {
                 {/* Stage 1: Embedding */}
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-teal-50/30 dark:bg-white/[0.03] border border-teal-100/90 dark:border-teal-500/20 hover:border-teal-300/80 dark:hover:border-teal-400/50 transition">
                   <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_6px_#06b6d4]" />
+                    <span className="w-2 h-2 rounded-full" style={dot(stageColors[0])} />
                     <span>Embedding</span>
                   </span>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">
@@ -602,7 +606,7 @@ export default function AdminDashboard() {
                 {/* Stage 2: Retrieval */}
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-teal-50/30 dark:bg-white/[0.03] border border-teal-100/90 dark:border-teal-500/20 hover:border-teal-300/80 dark:hover:border-teal-400/50 transition">
                   <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-teal-500 shadow-[0_0_6px_#0d9488]" />
+                    <span className="w-2 h-2 rounded-full" style={dot(stageColors[1])} />
                     <span>Retrieval</span>
                   </span>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">
@@ -615,7 +619,7 @@ export default function AdminDashboard() {
                 {/* Stage 3: Reranker */}
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-teal-50/30 dark:bg-white/[0.03] border border-teal-100/90 dark:border-teal-500/20 hover:border-teal-300/80 dark:hover:border-teal-400/50 transition">
                   <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-violet-500 shadow-[0_0_6px_#8b5cf6]" />
+                    <span className="w-2 h-2 rounded-full" style={dot(stageColors[2])} />
                     <span>Reranker</span>
                   </span>
                   <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold text-slate-900 dark:text-white">
@@ -637,7 +641,7 @@ export default function AdminDashboard() {
                 {/* Stage 4: LLM Generation */}
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-teal-50/30 dark:bg-white/[0.03] border border-teal-100/90 dark:border-teal-500/20 hover:border-teal-300/80 dark:hover:border-teal-400/50 transition">
                   <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" />
+                    <span className="w-2 h-2 rounded-full" style={dot(stageColors[3])} />
                     <span>LLM Synthesis</span>
                   </span>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">
@@ -659,29 +663,33 @@ export default function AdminDashboard() {
                 <div
                   style={{
                     width: `${((data.pipeline?.embedding_ms || 0) / totalRagMs) * 100}%`,
+                    backgroundColor: stageColors[0],
                   }}
-                  className="bg-cyan-500 h-full"
+                  className="h-full"
                   title="Embedding"
                 />
                 <div
                   style={{
                     width: `${((data.pipeline?.retrieval_ms || 0) / totalRagMs) * 100}%`,
+                    backgroundColor: stageColors[1],
                   }}
-                  className="bg-teal-500 h-full"
+                  className="h-full"
                   title="Retrieval"
                 />
                 <div
                   style={{
                     width: `${((data.pipeline?.reranker_ms || 0) / totalRagMs) * 100}%`,
+                    backgroundColor: stageColors[2],
                   }}
-                  className="bg-violet-500 h-full"
+                  className="h-full"
                   title="Reranker"
                 />
                 <div
                   style={{
                     width: `${((data.pipeline?.llm_ms || 0) / totalRagMs) * 100}%`,
+                    backgroundColor: stageColors[3],
                   }}
-                  className="bg-emerald-500 h-full"
+                  className="h-full"
                   title="LLM"
                 />
               </div>
@@ -689,7 +697,7 @@ export default function AdminDashboard() {
           </section>
 
           {/* AI Governance & Security Cockpit (xl:col-span-1) */}
-          <section className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white dark:bg-[#0c0d10] p-6 shadow-card dark:shadow-xl transition-all overflow-hidden flex flex-col justify-between hover:border-teal-400 dark:hover:border-teal-400/60">
+          <section className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl transition-all overflow-hidden flex flex-col justify-between hover:border-teal-400 dark:hover:border-teal-400/60">
             <div className="absolute -top-12 -right-12 w-36 h-36 bg-emerald-400/10 dark:bg-emerald-500/15 rounded-full blur-2xl pointer-events-none" />
 
             <div className="relative z-10">
@@ -716,7 +724,7 @@ export default function AdminDashboard() {
                   className="flex items-center justify-between p-2.5 rounded-xl bg-teal-50/30 dark:bg-white/[0.03] border border-teal-100/90 dark:border-teal-500/20 hover:border-emerald-300/80 dark:hover:border-emerald-500/40 hover:bg-teal-50/50 transition group"
                 >
                   <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_#10b981]" />
+                    <span className="w-2 h-2 rounded-full bg-status-ok shadow-[0_0_6px_rgb(var(--status-ok))]" />
                     <span>Monitoring Status</span>
                   </span>
                   <span className="flex items-center gap-1 font-mono font-bold text-slate-900 dark:text-white">
@@ -731,7 +739,7 @@ export default function AdminDashboard() {
                   className="flex items-center justify-between p-2.5 rounded-xl bg-teal-50/30 dark:bg-white/[0.03] border border-teal-100/90 dark:border-teal-500/20 hover:border-cyan-300/80 dark:hover:border-cyan-500/40 hover:bg-teal-50/50 transition group"
                 >
                   <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_6px_#06b6d4]" />
+                    <span className="w-2 h-2 rounded-full bg-status-info shadow-[0_0_6px_rgb(var(--status-info))]" />
                     <span>Distributed Tracing</span>
                   </span>
                   <span className="flex items-center gap-1 font-mono font-bold text-slate-900 dark:text-white">
@@ -746,7 +754,7 @@ export default function AdminDashboard() {
                   className="flex items-center justify-between p-2.5 rounded-xl bg-teal-50/30 dark:bg-white/[0.03] border border-teal-100/90 dark:border-teal-500/20 hover:border-teal-300/80 dark:hover:border-teal-500/40 hover:bg-teal-50/50 transition group"
                 >
                   <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-teal-500 shadow-[0_0_6px_#0d9488]" />
+                    <span className="w-2 h-2 rounded-full bg-accent shadow-[0_0_6px_rgb(var(--accent))]" />
                     <span>Audit Trail Logs</span>
                   </span>
                   <span className="flex items-center gap-1 font-mono font-bold text-slate-900 dark:text-white">
@@ -758,7 +766,7 @@ export default function AdminDashboard() {
                 {/* 4. Guardrail Flags */}
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-teal-50/30 dark:bg-white/[0.03] border border-teal-100/90 dark:border-teal-500/20">
                   <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_6px_#f59e0b]" />
+                    <span className="w-2 h-2 rounded-full bg-status-warn shadow-[0_0_6px_rgb(var(--status-warn))]" />
                     <span>Guardrail Flags</span>
                   </span>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">

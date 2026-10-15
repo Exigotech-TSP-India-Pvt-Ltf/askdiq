@@ -210,7 +210,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
         {/* Top 3 Users Highlight Cards */}
         {topUsers.length > 0 && (
           <div className="space-y-2">
-            <h4 className="text-xs font-semibold text-slate-700">
+            <h4 className="text-xs font-semibold text-fg-muted">
               Top Consumers by Financial Cost (1-Click Drilldown)
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

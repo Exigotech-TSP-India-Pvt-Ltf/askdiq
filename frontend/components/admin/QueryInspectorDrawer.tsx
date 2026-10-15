@@ -79,7 +79,7 @@ export function QueryInspectorDrawer({
 
   const content = (
     <div className="fixed inset-0 z-[100] flex justify-end bg-slate-900/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl bg-white/95 dark:bg-[#0c0d10]/95 backdrop-blur-xl h-full shadow-2xl flex flex-col border-l border-teal-300/80 dark:border-teal-500/25 animate-in slide-in-from-right duration-300">
+      <div className="w-full max-w-2xl bg-surface-card/95 backdrop-blur-xl h-full shadow-2xl flex flex-col border-l border-teal-300/80 dark:border-teal-500/25 animate-in slide-in-from-right duration-300">
         {/* Top Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-teal-100 dark:border-teal-500/20 bg-teal-50/20 dark:bg-white/[0.02]">
           <div className="flex items-center gap-3">
@@ -106,7 +106,7 @@ export function QueryInspectorDrawer({
         </div>
 
         {/* Navigation Sub-tabs */}
-        <div className="flex border-b border-teal-100 dark:border-teal-500/20 px-6 gap-6 bg-white dark:bg-[#0c0d10] text-xs font-medium">
+        <div className="flex border-b border-teal-100 dark:border-teal-500/20 px-6 gap-6 bg-surface-card text-xs font-medium">
           <button
             onClick={() => setActiveTab("overview")}
             className={`py-3 border-b-2 transition-colors ${

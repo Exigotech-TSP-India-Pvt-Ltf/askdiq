@@ -268,7 +268,7 @@ export function SessionsTab({
         {/* Top 3 High-Spend Sessions Highlight Cards */}
         {topSessions.length > 0 && (
           <div className="space-y-2">
-            <h4 className="text-xs font-semibold text-slate-700">
+            <h4 className="text-xs font-semibold text-fg-muted">
               Top Sessions by Financial Cost (1-Click Drilldown)
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

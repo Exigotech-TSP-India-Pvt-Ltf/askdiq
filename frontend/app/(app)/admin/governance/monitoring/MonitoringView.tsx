@@ -5,6 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
+import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
 import {
   Activity,
   AlertTriangle,
@@ -28,14 +29,12 @@ import {
 const pct = (v: unknown, d = 1) =>
   typeof v === "number" ? `${v.toFixed(d)}%` : "—";
 
-const BAR_COLORS = ["#6366f1", "#06b6d4", "#f59e0b", "#10b981"];
-
 const ACCENTS = {
-  indigo: { bg: "bg-indigo-500", soft: "bg-indigo-50", text: "text-indigo-500" },
-  cyan: { bg: "bg-cyan-500", soft: "bg-cyan-50", text: "text-cyan-500" },
-  amber: { bg: "bg-amber-500", soft: "bg-amber-50", text: "text-amber-500" },
-  emerald: { bg: "bg-emerald-500", soft: "bg-emerald-50", text: "text-emerald-500" },
-  rose: { bg: "bg-rose-500", soft: "bg-rose-50", text: "text-rose-500" },
+  indigo: { bg: "bg-indigo-500", soft: "bg-indigo-50 dark:bg-indigo-500/15", text: "text-indigo-500" },
+  cyan: { bg: "bg-cyan-500", soft: "bg-cyan-50 dark:bg-cyan-500/15", text: "text-cyan-500" },
+  amber: { bg: "bg-amber-500", soft: "bg-amber-50 dark:bg-amber-500/15", text: "text-amber-500" },
+  emerald: { bg: "bg-emerald-500", soft: "bg-emerald-50 dark:bg-emerald-500/15", text: "text-emerald-500" },
+  rose: { bg: "bg-rose-500", soft: "bg-rose-50 dark:bg-rose-500/15", text: "text-rose-500" },
 } as const;
 
 type AccentKey = keyof typeof ACCENTS;
@@ -53,17 +52,17 @@ function HeroStat({
 }) {
   const colors = ACCENTS[accent];
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
+    <div className="group relative overflow-hidden rounded-xl border border-line bg-surface-card p-5 transition-shadow hover:shadow-md">
       <div
         className={`absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-10 transition-transform group-hover:scale-110 ${colors.bg}`}
       />
       <div className="flex items-start justify-between">
-        <p className="text-sm font-medium text-slate-500">{label}</p>
+        <p className="text-sm font-medium text-fg-subtle">{label}</p>
         <div className={`rounded-lg p-2 ${colors.soft}`}>
           <Icon className={`h-4 w-4 ${colors.text}`} />
         </div>
       </div>
-      <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-3 text-2xl font-semibold text-fg">{value}</p>
     </div>
   );
 }
@@ -78,9 +77,9 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-6">
-      <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-      {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
+    <section className="rounded-xl border border-line bg-surface-card p-6">
+      <h2 className="text-base font-semibold text-fg">{title}</h2>
+      {subtitle && <p className="mt-1 text-xs text-fg-subtle">{subtitle}</p>}
       <div className="mt-5 h-64 w-full">{children}</div>
     </section>
   );
@@ -88,9 +87,9 @@ function ChartCard({
 
 function MiniStat({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-slate-900">{value ?? "—"}</p>
+    <div className="rounded-lg border border-line bg-surface-card px-4 py-3">
+      <p className="text-[11px] uppercase tracking-wide text-fg-subtle">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-fg">{value ?? "—"}</p>
     </div>
   );
 }
@@ -105,6 +104,7 @@ type UsageTabKey = (typeof USAGE_TABS)[number]["key"];
 export default function MonitoringView({ hideHeader = false }: { hideHeader?: boolean } = {}) {
   const { token } = useAuth();
   const { audience } = useAudience();
+  const ct = useChartTheme();
   const [m, setM] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -150,14 +150,14 @@ export default function MonitoringView({ hideHeader = false }: { hideHeader?: bo
   return (
     <div>
       {!hideHeader && (
-      <header className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-8">
+      <header className="flex h-20 shrink-0 items-center justify-between border-b border-line bg-surface-card px-8">
         <div>
-          <h1 className="text-sm font-semibold text-slate-900">Governance Monitoring</h1>
-          <p className="text-xs text-slate-500">
+          <h1 className="text-sm font-semibold text-fg">Governance Monitoring</h1>
+          <p className="text-xs text-fg-subtle">
             Infrastructure, application and RAG pipeline health, refreshed every 10 seconds.
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-500">
+        <div className="flex items-center gap-2 rounded-full border border-line bg-surface-card px-3 py-1.5 text-xs text-fg-subtle">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
@@ -169,7 +169,7 @@ export default function MonitoringView({ hideHeader = false }: { hideHeader?: bo
 
       <div className="p-8">
       {error && (
-        <p className="mb-6 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        <p className="mb-6 rounded-lg bg-status-danger-bg px-3 py-2 text-sm text-status-danger-fg">{error}</p>
       )}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
@@ -208,16 +208,16 @@ export default function MonitoringView({ hideHeader = false }: { hideHeader?: bo
           <ChartCard title="Pipeline Latency" subtitle="Current measurement per stage (seconds)">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={latencyBars}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="stage" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} width={40} />
+                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                <XAxis dataKey="stage" tick={{ fontSize: 12, fill: ct.axis }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 12, fill: ct.axis }} axisLine={false} tickLine={false} width={40} />
                 <Tooltip
-                  contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
+                  contentStyle={chartTooltipStyle(ct)}
                 formatter={(v) => [`${Number(v).toFixed(2)} s`, "Latency"]}
                 />
                 <Bar dataKey="seconds" radius={[6, 6, 0, 0]}>
                   {latencyBars.map((_, idx) => (
-                    <Cell key={idx} fill={BAR_COLORS[idx % BAR_COLORS.length]} />
+                    <Cell key={idx} fill={ct.categorical[idx % ct.categorical.length]} />
                   ))}
                 </Bar>
               </BarChart>
@@ -226,15 +226,15 @@ export default function MonitoringView({ hideHeader = false }: { hideHeader?: bo
         </div>
       </div>
 
-      <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6">
+      <section className="mt-8 rounded-xl border border-line bg-surface-card p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">AI Usage</h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <h2 className="text-base font-semibold text-fg">AI Usage</h2>
+            <p className="mt-1 text-xs text-fg-subtle">
               Model usage, resource consumption and pipeline configuration.
             </p>
           </div>
-          <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
+          <div className="flex flex-wrap gap-1 rounded-lg bg-surface-muted p-1">
             {USAGE_TABS.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -243,8 +243,8 @@ export default function MonitoringView({ hideHeader = false }: { hideHeader?: bo
                   onClick={() => setUsageTab(tab.key)}
                   className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
                     usageTab === tab.key
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-500 hover:text-slate-800"
+                      ? "bg-surface-card text-fg shadow-sm"
+                      : "text-fg-subtle hover:text-fg"
                   }`}
                 >
                   <Icon className="h-3.5 w-3.5" />

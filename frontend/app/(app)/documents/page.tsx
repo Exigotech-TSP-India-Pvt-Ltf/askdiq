@@ -223,7 +223,7 @@ export default function DocumentsPage() {
       render: (doc) => (
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-900 line-clamp-1">{doc.source_name}</span>
+            <span className="font-medium text-fg line-clamp-1">{doc.source_name}</span>
             {doc.quarantined && (
               <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-800">
                 Quarantined
@@ -303,7 +303,7 @@ export default function DocumentsPage() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+    <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
       {/* Standard Top Bar Line */}
       <DashboardHeader
         title="Knowledge Base Documents"
@@ -359,16 +359,16 @@ export default function DocumentsPage() {
           <div
             className={`rounded-xl border p-4 text-xs ${
               result.status === "unchanged"
-                ? "border-slate-200 bg-slate-50 text-slate-800"
+                ? "border-line bg-surface-muted text-fg"
                 : result.quarantined
-                ? "border-amber-200 bg-amber-50 text-amber-900"
-                : "border-emerald-200 bg-emerald-50/70 text-emerald-900"
+                ? "border-status-warn/40 bg-status-warn-bg text-status-warn-fg"
+                : "border-status-ok/40 bg-status-ok-bg text-status-ok-fg"
             }`}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-2.5">
                 {result.status === "unchanged" ? (
-                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-fg-muted" />
                 ) : result.quarantined ? (
                   <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 ) : (
@@ -376,7 +376,7 @@ export default function DocumentsPage() {
                 )}
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-slate-900">{result.source_name}</span>
+                    <span className="font-semibold text-fg">{result.source_name}</span>
                     {result.original_filename && result.original_filename !== result.source_name && (
                       <span className="text-[11px] text-slate-500">
                         (standardized from {result.original_filename})
@@ -389,14 +389,14 @@ export default function DocumentsPage() {
                           : result.status === "updated"
                           ? "bg-blue-100 text-blue-800"
                           : result.status === "unchanged"
-                          ? "bg-slate-200 text-slate-700"
+                          ? "bg-surface-muted text-fg-muted"
                           : "bg-amber-100 text-amber-800"
                       }`}
                     >
                       {result.status}
                     </span>
                   </div>
-                  <p className="text-slate-600">
+                  <p className="text-fg-muted">
                     {result.chunks_added} chunks added, {result.chunks_kept} kept unchanged,{" "}
                     {result.chunks_removed} removed. Embeddings cost: ${result.embedding_cost_usd.toFixed(4)}.
                   </p>
@@ -405,7 +405,7 @@ export default function DocumentsPage() {
               <button
                 type="button"
                 onClick={() => setResult(null)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-fg-subtle hover:text-fg-muted"
                 aria-label="Dismiss result"
               >
                 <X className="h-4 w-4" />
@@ -417,28 +417,28 @@ export default function DocumentsPage() {
         {/* Confirmation Modal */}
         {pendingPreview && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200">
-              <h3 className="text-sm font-bold text-slate-900">Confirm Document Re-ingest</h3>
-              <p className="mt-1 text-xs text-slate-500">
+            <div className="w-full max-w-md rounded-2xl bg-surface-card p-6 shadow-2xl border border-line">
+              <h3 className="text-sm font-bold text-fg">Confirm Document Re-ingest</h3>
+              <p className="mt-1 text-xs text-fg-subtle">
                 Re-ingesting <strong>{pendingPreview.preview.source_name}</strong> will update changed
                 chunks and reuse unchanged embeddings.
               </p>
-              <div className="my-4 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs space-y-1.5">
+              <div className="my-4 rounded-xl border border-line bg-surface-muted p-3 text-xs space-y-1.5">
                 <div className="flex justify-between">
-                  <span className="text-slate-500">New chunks:</span>
-                  <span className="font-semibold text-emerald-600">
+                  <span className="text-fg-subtle">New chunks:</span>
+                  <span className="font-semibold text-status-ok-fg">
                     +{pendingPreview.preview.chunks_added}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Unchanged:</span>
-                  <span className="font-semibold text-slate-700">
+                  <span className="text-fg-subtle">Unchanged:</span>
+                  <span className="font-semibold text-fg-muted">
                     {pendingPreview.preview.chunks_kept}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Removed:</span>
-                  <span className="font-semibold text-rose-600">
+                  <span className="text-fg-subtle">Removed:</span>
+                  <span className="font-semibold text-status-danger-fg">
                     -{pendingPreview.preview.chunks_removed}
                   </span>
                 </div>
@@ -447,7 +447,7 @@ export default function DocumentsPage() {
                 <button
                   type="button"
                   onClick={() => setPendingPreview(null)}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-line px-3 py-1.5 text-xs text-fg-muted hover:bg-surface-muted"
                 >
                   Cancel
                 </button>

@@ -34,7 +34,7 @@ const LEVEL_STYLES: Record<string, string> = {
 const KNOWN_LEVELS = ["CRITICAL", "ALERT", "ERROR", "WARNING", "INFO"];
 
 function levelClass(level?: string) {
-  return LEVEL_STYLES[(level || "INFO").toUpperCase()] ?? "bg-slate-100 text-slate-600";
+  return LEVEL_STYLES[(level || "INFO").toUpperCase()] ?? "bg-surface-muted text-fg-muted";
 }
 
 function shortId(id?: string, head = 8) {
