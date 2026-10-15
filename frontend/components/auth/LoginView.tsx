@@ -100,7 +100,7 @@ export function LoginView({ errorCode, next, contactEmail, year }: LoginViewProp
     <div className="flex min-h-screen flex-col bg-surface-page text-fg md:flex-row" data-motion={reduced ? "static" : "animated"}>
       {/* Mobile: teal header strip with the logo above the card. */}
       <header className="relative overflow-hidden bg-gradient-to-br from-brand-600 to-brand-800 px-6 py-5 md:hidden">
-        <BrandLogo tone="onDark" className="h-8" />
+        <BrandLogo tone="onDark" className="h-12 max-w-none drop-shadow-[0_2px_6px_rgba(0,0,0,0.25)]" />
       </header>
 
       <aside
@@ -114,7 +114,8 @@ export function LoginView({ errorCode, next, contactEmail, year }: LoginViewProp
         <BrandPanelDecor pointerX={pointerX} pointerY={pointerY} reduced={reduced} />
 
         <div className="relative">
-          <BrandLogo tone="onDark" />
+          {/* Prominent transparent logo (same artwork as the dashboard, incl. the tagline), light-on-teal variant. */}
+          <BrandLogo tone="onDark" className="h-20 max-w-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)] lg:h-24" />
         </div>
 
         <m.div className="relative max-w-xl" {...motionProps}>

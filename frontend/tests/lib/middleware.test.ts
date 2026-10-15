@@ -71,7 +71,7 @@ describe("middleware: nonce CSP (F0.1.2)", () => {
   });
 
   it("excludes API, auth handlers, the dev mock IdP, Next internals and static files", () => {
-    const source = new RegExp(`^${config.matcher[0].source}$`);
+    const source = new RegExp(`^${config.matcher[0]}$`);
     for (const path of ["/admin", "/login", "/chat", "/documents/d1", "/suspended"]) expect(source.test(path)).toBe(true);
     for (const path of [
       "/api/proxy/auth/me",

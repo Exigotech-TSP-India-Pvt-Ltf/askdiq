@@ -250,7 +250,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
           {!collapsed ? (
             <>
               <div className="flex flex-1 items-center min-w-0 h-full">
-                <BrandLogo variant="full" />
+                <BrandLogo variant="full" className="h-12 max-w-[230px]" />
               </div>
               <button
                 onClick={toggleCollapsed}
