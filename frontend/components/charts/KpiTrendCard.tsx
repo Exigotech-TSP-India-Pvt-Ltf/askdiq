@@ -24,6 +24,8 @@ export interface KpiTrendCardProps {
   icon?: LucideIcon;
   tone?: SparkTone;
   hint?: string;
+  /** Time window of the value, e.g. "Last 7 days" (shown under the label). */
+  windowLabel?: string;
   className?: string;
 }
 
@@ -68,11 +70,15 @@ export function KpiTrendCard({
   icon: Icon,
   tone = "brand",
   hint,
+  windowLabel,
   className = "",
 }: KpiTrendCardProps) {
   const header = (
     <div className="flex items-center justify-between gap-2">
-      <p className="text-sm font-medium text-fg-subtle">{label}</p>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-fg-subtle">{label}</p>
+        {windowLabel && <p className="text-[11px] text-fg-subtle">{windowLabel}</p>}
+      </div>
       {href ? (
         <ArrowUpRight
           className="h-4 w-4 text-fg-subtle transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-accent-fg motion-reduce:transition-none"

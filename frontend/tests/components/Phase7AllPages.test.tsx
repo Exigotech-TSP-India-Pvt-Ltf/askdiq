@@ -253,11 +253,20 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
   });
 
   it("renders Admin Dashboard with DashboardHeader and metric cards", async () => {
+    // The dashboard reads through lib/dashboard-api (fetch + query cache), not api.adminGet.
+    const payload = await api.adminGet("mock-token", "/dashboard");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith("/api/proxy/admin/dashboard?") || url === "/api/proxy/admin/dashboard") {
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
+      return new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 });
+    });
     render(<AdminDashboard />);
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
     });
-    expect(screen.getByText("Total Users")).toBeInTheDocument();
+    expect(await screen.findByText("Total Users")).toBeInTheDocument();
   });
 
   it("renders Admin Visitors Page with DashboardHeader and TableCard", async () => {

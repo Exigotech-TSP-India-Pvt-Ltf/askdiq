@@ -9,6 +9,7 @@ import { UsersTab } from "@/components/admin/usage/UsersTab";
 import { SessionsTab } from "@/components/admin/usage/SessionsTab";
 import { QueriesTab } from "@/components/admin/usage/QueriesTab";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
+import { CostInsights } from "@/components/admin/usage/CostInsights";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import { DEFAULT_USAGE_TAB, parseUsageTab, type UsageTabId } from "@/lib/usage-tabs";
@@ -122,7 +123,8 @@ function UsageCostContent() {
         {/* Tab Panels */}
         <div className="pt-1">
           {activeTab === "overview" && (
-            <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview">
+            <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" className="space-y-6">
+              <CostInsights summary={summary} isLoading={isLoading} error={error} onRetry={refresh} />
               <InteractiveOverviewTab
                 summary={summary}
                 isLoading={isLoading}

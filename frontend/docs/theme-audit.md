@@ -37,10 +37,10 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | Route | Light | Dark | Toggle | Notes | Screenshot L/D |
 |---|---|---|---|---|---|
 | `/` (redirect spinner) | Pass | Fixed (T2) | Pass | `bg-white` -> `bg-surface-page` | [ ] |
-| `/chat` | Pass | Pass | Pass | Page bg token; sample questions and product name from brand | [ ] |
+| `/chat` | Pass | Pass | Pass | Page bg token; sample questions and product name from brand. PR-21: `chat/ChatHeader` (BrandLogo mark pair, `bg-surface-card`, `border-line`, `text-fg*`), user chip and "View trace" link on tokens | [ ] |
 | `/documents` | Pass | Fixed (T2) | Pass | Doc name `text-slate-900`, result banner, re-ingest modal tokenised | [ ] |
 | `/documents/[id]` | Pass | Fixed (T2) | Pass | Neutral type/strategy badges tokenised; coloured badges are light chips in both themes (readable) | [ ] |
-| `/admin` (Dashboard) | Pass | Fixed (T1) | Fixed (T1) | Query volume, engagement donut, pipeline latency, RAG stage dots and share bar all from `chartTheme`; custom tooltip uses `bg-surface-elevated` | [ ] |
+| `/admin` (Dashboard) | Pass | Pass | Pass | PR-21 rebuild: KpiTrendCard grid, StackedArea, PercentileBand, BulletChart, RadialGauge, Treemap from `useChartTheme()`; activity feed and health pill on `status-*` / `surface-*` tokens; old teal/slate literals and the custom tooltip removed | [ ] |
 | `/admin/users` ("Visitors", PR-20) | Pass | Pass | Pass | Page bg token; header and nav label renamed to Visitors, no style change | [ ] |
 | `/admin/users/[id]` | Pass | Fixed (T2) | Pass | "User not found" card tokenised | [ ] |
 | `/admin/conversations` | Pass | Pass | Pass | Page bg token | [ ] |
@@ -48,7 +48,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/admin/feedback` (PR-24 triage workspace: Overview, Review Queue, Golden Cases, Preference Data, Knowledge Gaps) | Pass | Pass | Pass | Page bg token; KPI / chart cards on `surface-card`; queue rows `border-line`, focused row `brand-50` / `dark:brand-950/40`; status and rating badges on `status-*-bg` / `status-*-fg`; spike alert `status-danger-bg` | [ ] |
 | `/admin/usage` (Overview, Users, Sessions, Queries tabs) | Pass | Fixed (T1, T2) | Fixed (T1) | Token rings, gauges, needles and legend dots from `chartTheme`; tab headings and chips tokenised. PR-20: Overview is now Live Telemetry (`InteractiveOverviewTab`, Sparkles + Live badge; active badge `bg-white/20`, inactive `bg-surface-muted text-fg-muted`) | [ ] |
 | `/admin/evaluation` = `/evaluation` | n/a | n/a | n/a | PR-20: server `redirect()` (307) to `/admin/evaluation-live`; nothing rendered. Old report kept unmounted as `admin/evaluation/LegacyEvaluationReport` | n/a |
-| `/admin/evaluation-live` = `/evaluation-live` | Pass | Fixed (T1) | Fixed (T1) | As above; white tooltips fixed; compare matrix radar migrated | [ ] |
+| `/admin/evaluation-live` = `/evaluation-live` | Pass | Fixed (T1) | Fixed (T1) | As above; white tooltips fixed; compare matrix radar migrated. PR-21: quality Radar (current vs previous) and pass-rate LineTrend from `chartTheme` | [ ] |
 | `/admin/governance` (tabs) | Pass | Pass | Pass | PR-23: tab in `?tab=`; header `bg-surface-page` / `text-fg`; DateRangePicker on Traces and Logs only | [ ] |
 | `/admin/governance` Overall (PR-23) | Pass | Pass | Pass | Health banner animates between `status-*-bg` / `status-*` token values read per theme (re-renders on toggle); KPI cards, status timeline cells (`status-*` with alpha), incident rows (`status-warn-bg` highlight) | [ ] |
 | `/admin/governance/monitoring` -> `?tab=Monitoring` | Pass | Pass | Pass | PR-23: route redirects to the tab. Stat tiles `surface-card` / `line`; Recharts bar from `useChartTheme()`; PercentileBand, StackedArea (errors `status.danger`), RadialGauges and share bars from `chartTheme` | [ ] |
@@ -86,6 +86,12 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `admin/usage/QueryInspectorDrawer` | Pass | Pass | Pass | PR-17: chrome now from `ui/DrawerShell` (shared with the evaluation inspector); body keeps its `dark:` pairs; errors use `ErrorState` |
 | `admin/EvaluationCompareMatrix` | Pass | Fixed (T1) | Fixed (T1) | Radar + tooltip from `chartTheme` |
 | `admin/evaluation/LegacyEvaluationReport` (moved, unmounted) | Pass | Fixed (T1) | Fixed (T1) | Former `/evaluation` page body, unchanged; not routed (PR-20) |
+| `admin/dashboard/*` (DashboardKpis, DashboardCharts, ActivityFeed, HealthPill) (PR-21) | Pass | Pass | Pass | Cards `bg-surface-card` / `border-line`; event and health tones `status-*-bg` / `status-*-fg`; charts via `useChartTheme()` (toggle covered in tests/journeys/dashboard.test.tsx) |
+| `charts/LineTrend` (PR-21) | Pass | Pass | Pass | Series, grid, axis, budget line from `chartTheme`; dashed forecast series |
+| `charts/KpiTrendCard` window label (PR-21) | Pass | Pass | Pass | `text-fg-subtle` |
+| `ui/CountUp` (PR-21) | n/a | n/a | n/a | Inherits colour; `countUp` preset, instant under reduced motion |
+| `admin/evaluation/QualityCharts` (PR-21) | Pass | Pass | Pass | Catalogue Radar + LineTrend in `ChartCard` |
+| `chat/ChatHeader`, `chat/TraceLink` (PR-21) | Pass | Pass | Pass | Tokens only; initials chip `brand-50` / `dark:brand-950/60` |
 | `admin/insights/StatCard` | Pass | Pass | Pass | `bg-surface-card` |
 | `admin/insights/HighlightCard` | Pass | Pass | Pass | `bg-surface-card` |
 | `admin/insights/AccuracyBadge` | Pass | Pass | Pass | Existing `dark:` pairs |

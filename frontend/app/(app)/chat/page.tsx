@@ -5,6 +5,8 @@ import { useChat } from "@/lib/chat-context";
 import { MessageBubble } from "@/components/MessageBubble";
 import { ChatSessionList } from "@/components/ChatSessionList";
 import { useBrand } from "@/lib/brand-context";
+import { ChatHeader } from "@/components/chat/ChatHeader";
+import { TraceLink } from "@/components/chat/TraceLink";
 
 export default function ChatPage() {
   // Chat state (sessions, messages, sending, the send/delete functions)
@@ -69,18 +71,7 @@ export default function ChatPage() {
       {/* =====================================================
           HEADER
       ====================================================== */}
-      <header className="flex h-20 shrink-0 items-center justify-between border-b border-ink/10 dark:border-white/10 bg-white dark:bg-dark-surface px-6">
-        <div>
-          <h1 className="text-sm font-semibold text-ink dark:text-white">
-            {brand.productName} Assistant
-          </h1>
-
-          <p className="text-xs text-ink/50 dark:text-slate-400">
-            Answers are grounded in your knowledge base and checked
-            before delivery.
-          </p>
-        </div>
-      </header>
+      <ChatHeader />
 
       {/* =====================================================
           CHAT AREA
@@ -131,11 +122,17 @@ export default function ChatPage() {
         ) : (
           <div className="mx-auto max-w-2xl space-y-5">
             {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                onDelete={() => deleteExchange(message.id)}
-              />
+              <div key={message.id}>
+                <MessageBubble
+                  message={message}
+                  onDelete={() => deleteExchange(message.id)}
+                />
+                {message.role === "assistant" && (
+                  <div className="mt-1 pl-1">
+                    <TraceLink requestId={message.response?.request_id} />
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
