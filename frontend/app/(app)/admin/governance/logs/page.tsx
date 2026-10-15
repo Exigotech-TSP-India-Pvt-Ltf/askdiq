@@ -1,7 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import LogsView from "./LogsView";
-
-export default function LogsPage() {
-  return <LogsView />;
+/** The Logs view lives in a tab of /admin/governance (deep-linkable via ?tab=). */
+export default function GovernanceLogsPage() {
+  redirect("/admin/governance?tab=Logs");
 }

@@ -1,269 +1,245 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
-import { api } from "@/lib/api";
+import React, { useMemo, useState } from "react";
+import { Clock, Download, RefreshCw, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
-import { TableToolbar } from "@/components/admin/TableToolbar";
-import { Pagination } from "@/components/admin/Pagination";
+import { useApiQuery } from "@/lib/query-cache";
+import { useDeepLink } from "@/lib/use-deep-link";
+import { useRange } from "@/lib/range-context";
+import { useCursorStack } from "@/lib/use-cursor-stack";
+import { useAutoRefresh } from "@/lib/use-governance-stream";
+import {
+  LOG_LEVELS,
+  LOG_SERVICES,
+  governanceApi,
+  logsExportUrl,
+  type GovernanceLogItem,
+  type GovernanceLogPage,
+  type LogLevel,
+} from "@/lib/governance-api";
+import { formatCount, formatDateTime, formatHour, humanize } from "@/lib/governance-format";
+import { hourWindow, parseList, parseOne } from "@/lib/governance-links";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
-import { ChevronDown, ChevronRight, Activity, Terminal } from "lucide-react";
+import { TableToolbar } from "@/components/admin/TableToolbar";
+import { EntityLink } from "@/components/ui/EntityLink";
+import { focusRing, secondaryButton } from "@/components/ui/styles";
+import { LEVEL_TONE, LevelBadge } from "@/components/admin/governance/badges";
+import { JsonViewer } from "@/components/admin/governance/JsonViewer";
 
-type Log = {
-  created_at?: string;
-  level?: string;
-  service?: string;
-  message?: string;
-  user_id?: string;
-  ip_address?: string;
-  request_id?: string;
-  trace_id?: string;
+export const LOGS_PAGE_SIZE = 50;
+
+const SERVICE_LABEL: Record<string, string> = {
+  auth: "Authentication",
+  query: "Query pipeline",
+  ingest: "Ingestion",
+  feedback: "Feedback",
+  admin: "Admin",
+  system: "System",
 };
 
-const LEVEL_STYLES: Record<string, string> = {
-  CRITICAL: "bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-800",
-  ALERT: "bg-orange-50 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800",
-  ERROR: "bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/80",
-  WARN: "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/80",
-  WARNING: "bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/80",
-  INFO: "bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800/80",
-  DEBUG: "bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10",
-};
+const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
+  {
+    key: "created_at",
+    header: "Time",
+    render: (log) => <span className="whitespace-nowrap font-mono text-[11px] text-fg-muted">{formatDateTime(log.created_at)}</span>,
+  },
+  {
+    key: "level",
+    header: "Level",
+    align: "center",
+    render: (log) => <LevelBadge level={log.level} />,
+  },
+  {
+    key: "service",
+    header: "Service",
+    render: (log) => (
+      <span className="whitespace-nowrap text-xs font-medium text-fg-muted" title={log.service}>
+        {SERVICE_LABEL[log.service] ?? humanize(log.service)}
+      </span>
+    ),
+  },
+  {
+    key: "summary",
+    header: "Event",
+    render: (log) => (
+      <div className="flex min-w-[16rem] max-w-xl flex-col gap-1">
+        <span className="text-xs text-fg">{log.summary}</span>
+        <span className="font-mono text-[10px] text-fg-subtle">{log.action}</span>
+        {Object.keys(log.detail ?? {}).length > 0 ? <JsonViewer value={log.detail} /> : null}
+      </div>
+    ),
+  },
+  {
+    key: "user_id",
+    header: "User",
+    render: (log) => <span className="font-mono text-[11px] text-fg-muted">{log.user_id ?? "—"}</span>,
+  },
+  {
+    key: "ip_address",
+    header: "Client IP",
+    render: (log) => <span className="font-mono text-[11px] text-fg-muted">{log.ip_address ?? "—"}</span>,
+  },
+  {
+    key: "request_id",
+    header: "Request",
+    render: (log) =>
+      log.request_id ? (
+        <EntityLink entity={{ kind: "trace", id: log.request_id }}>{log.request_id.slice(0, 8)}…</EntityLink>
+      ) : (
+        <span className="text-fg-subtle">—</span>
+      ),
+  },
+];
 
-const KNOWN_LEVELS = ["CRITICAL", "ALERT", "ERROR", "WARNING", "INFO"];
+const option = (value: string, label: string) => ({ value, label });
 
-function levelClass(level?: string) {
-  return LEVEL_STYLES[(level || "INFO").toUpperCase()] ?? "bg-surface-muted text-fg-muted";
-}
-
-function shortId(id?: string, head = 8) {
-  if (!id) return "—";
-  return id.length > head ? `${id.slice(0, head)}…` : id;
-}
-
-function summarize(message?: string): { text: string; badges: string[] } {
-  if (!message) return { text: "—", badges: [] };
-  try {
-    const parsed = JSON.parse(message);
-    if (parsed && typeof parsed === "object") {
-      const badges: string[] = [];
-      let text = "";
-      if (typeof parsed.query === "string") text = `Query: "${parsed.query}"`;
-      else if (typeof parsed.action === "string") text = parsed.action;
-      else text = Object.keys(parsed)[0] ? `${Object.keys(parsed)[0]} event` : "Event";
-
-      if (typeof parsed.grounded === "boolean") {
-        badges.push(parsed.grounded ? "Grounded" : "Not grounded");
-      }
-      if (Array.isArray(parsed.source_ids)) {
-        badges.push(`${parsed.source_ids.length} source${parsed.source_ids.length === 1 ? "" : "s"}`);
-      }
-      if (Array.isArray(parsed.guardrail_flags) && parsed.guardrail_flags.length > 0) {
-        badges.push(`${parsed.guardrail_flags.length} flag${parsed.guardrail_flags.length === 1 ? "" : "s"}`);
-      }
-      return { text, badges };
-    }
-  } catch {
-    // Plain text
-  }
-  return { text: message, badges: [] };
-}
-
-export default function LogsView({ hideHeader = false }: { hideHeader?: boolean } = {}) {
-  const [logs, setLogs] = useState<Log[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
+export default function LogsView() {
   const { token } = useAuth();
   const { audience } = useAudience();
+  const { get, set } = useDeepLink();
+  const rangeCtx = useRange();
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
-  useEffect(() => {
-    if (!token) return;
-    setLoading(true);
-    const qs = audience && audience !== "overview" ? `&audience=${audience}` : "";
-    api
-      .adminGet<{ total: number; items: Log[] }>(token, `/governance/logs?limit=2000${qs}`)
-      .then((data) => {
-        setLogs(data.items);
-        setLastUpdated(new Date());
-      })
-      .catch(() => setLogs([]))
-      .finally(() => setLoading(false));
-  }, [token, audience]);
+  const levels = parseList(get("level"), LOG_LEVELS);
+  const service = parseOne(get("service"), LOG_SERVICES);
+  const q = (get("q") ?? "").slice(0, 200);
+  const at = get("at");
+  const hour = hourWindow(at);
+  const from = hour?.from ?? rangeCtx?.range.from.toISOString();
+  const to = hour?.to ?? rangeCtx?.range.to.toISOString();
 
-  const levels = useMemo(() => {
-    const fromData = Array.from(new Set(logs.map((l) => (l.level || "INFO").toUpperCase())));
-    return ["all", ...Array.from(new Set([...KNOWN_LEVELS, ...fromData]))];
-  }, [logs]);
-
-  const filtered = useMemo(
-    () =>
-      logs.filter((log) => {
-        if (levelFilter !== "all" && (log.level || "INFO").toUpperCase() !== levelFilter) {
-          return false;
-        }
-        if (!search.trim()) return true;
-        const haystack = `${log.message ?? ""} ${log.service ?? ""} ${log.ip_address ?? ""}`.toLowerCase();
-        return haystack.includes(search.trim().toLowerCase());
-      }),
-    [logs, levelFilter, search]
+  const filters = useMemo(
+    () => ({ level: levels, service: service ? [service] : undefined, q: q || undefined, from, to }),
+    // levels is a fresh array per render; key on its joined value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [levels.join(","), service, q, from, to],
   );
+  const filterKey = [audience, filters.level.join(","), service, q, from, to].join("|");
+  const pager = useCursorStack(filterKey);
 
-  const paged = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, page, pageSize]);
+  const query = useApiQuery<GovernanceLogPage>(
+    ["admin/governance/logs", filterKey, pager.cursor],
+    (signal) => governanceApi.logs(token, { ...filters, audience, limit: LOGS_PAGE_SIZE, cursor: pager.cursor }, signal),
+    { enabled: Boolean(token) },
+  );
+  const page = query.data;
+  const items = page?.items ?? [];
+  const { refetch } = query;
+  // G13: auto-refresh only re-reads the newest page, and pauses while hidden.
+  const live = useAutoRefresh(autoRefresh && !pager.hasPrev, () => void refetch());
 
-  const columns: ColumnDef<Log>[] = [
-    {
-      key: "created_at",
-      header: "Timestamp",
-      render: (log) => (
-        <span className="whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 font-mono">
-          {log.created_at ? new Date(log.created_at).toLocaleTimeString() : "—"}
-        </span>
-      ),
-    },
-    {
-      key: "level",
-      header: "Level",
-      align: "center",
-      render: (log) => (
-        <span
-          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold border ${levelClass(
-            log.level
-          )}`}
-        >
-          {log.level || "INFO"}
-        </span>
-      ),
-    },
-    {
-      key: "service",
-      header: "Service",
-      render: (log) => (
-        <span className="text-xs font-mono font-medium text-slate-700 dark:text-slate-300">
-          {log.service || "app"}
-        </span>
-      ),
-    },
-    {
-      key: "message",
-      header: "Event Summary & Traces",
-      render: (log) => {
-        const { text, badges } = summarize(log.message);
-        return (
-          <div className="flex flex-col gap-1 max-w-md">
-            <span className="text-xs text-slate-800 dark:text-slate-200 line-clamp-1">{text}</span>
-            {badges.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {badges.map((b, i) => (
-                  <span
-                    key={i}
-                    className="rounded bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-100 dark:border-indigo-800/60 px-1.5 py-0.2 text-[10px] font-medium text-indigo-700 dark:text-indigo-300"
-                  >
-                    {b}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      key: "ip_address",
-      header: "Client IP",
-      render: (log) => (
-        <span className="font-mono text-xs text-slate-600 dark:text-slate-300">
-          {log.ip_address || "—"}
-        </span>
-      ),
-    },
-    {
-      key: "request_id",
-      header: "Request ID",
-      render: (log) => (
-        <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500" title={log.request_id}>
-          {shortId(log.request_id)}
-        </span>
-      ),
-    },
-  ];
+  const toggleLevel = (level: LogLevel) => {
+    const next = levels.includes(level) ? levels.filter((l) => l !== level) : [...levels, level];
+    set({ level: next.length ? LOG_LEVELS.filter((l) => next.includes(l)).join(",") : null });
+  };
+
+  const total = page ? `${page.total_is_estimate ? "≈ " : ""}${formatCount(page.total)} entries` : undefined;
+  const exportHref = logsExportUrl({ ...filters, audience });
 
   return (
-    <div className="space-y-6">
-      {!hideHeader && (
-        <header className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200 dark:border-white/10 bg-white dark:bg-dark-surface px-8">
-          <div>
-            <h1 className="text-sm font-semibold text-slate-900 dark:text-white">Governance Logs</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Audit trails, system operations, and security events.
-            </p>
+    <TableCard
+      title="Governance logs"
+      description="Audit, security and pipeline events, filtered and paged on the server."
+      badge={
+        total ? <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-fg-muted">{total}</span> : null
+      }
+      headerActions={
+        <>
+          <button
+            type="button"
+            aria-pressed={autoRefresh}
+            onClick={() => setAutoRefresh((v) => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              autoRefresh ? "bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300" : "text-fg-muted hover:text-fg"
+            } ${focusRing}`}
+          >
+            <RefreshCw className={`h-4 w-4 ${live ? "motion-safe:animate-spin" : ""}`} strokeWidth={1.75} aria-hidden="true" />
+            Auto-refresh {autoRefresh ? (live ? "on" : "paused") : "off"}
+          </button>
+          <a href={exportHref} download className={secondaryButton} data-testid="logs-export">
+            <Download className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+            Export CSV
+          </a>
+        </>
+      }
+      toolbar={
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by level">
+            {LOG_LEVELS.map((level) => {
+              const active = levels.includes(level);
+              const count = page?.level_counts?.[level];
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleLevel(level)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    active ? LEVEL_TONE[level] : "border-line bg-surface-card text-fg-muted hover:text-fg"
+                  } ${focusRing}`}
+                >
+                  {humanize(level.toLowerCase())}
+                  <span className="tabular-nums opacity-80">
+                    {count === undefined ? "–" : `${page?.level_counts_capped ? "≥" : ""}${formatCount(count)}`}
+                  </span>
+                </button>
+              );
+            })}
+            {hour && at ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-line-brand bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">
+                <Clock className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+                Hour of {formatHour(at)}
+                <button
+                  type="button"
+                  aria-label="Clear hour filter"
+                  onClick={() => set({ at: null })}
+                  className={`rounded-full p-0.5 hover:bg-brand-100 dark:hover:bg-brand-900/60 ${focusRing}`}
+                >
+                  <X className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+                </button>
+              </span>
+            ) : null}
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            </span>
-            {lastUpdated ? `Live · updated ${lastUpdated.toLocaleTimeString()}` : "Connecting…"}
-          </div>
-        </header>
-      )}
-
-      <div className="p-8">
-        <TableCard
-          toolbar={
-            <TableToolbar
-              search={search}
-              onSearchChange={(v) => {
-                setSearch(v);
-                setPage(1);
-              }}
-              searchPlaceholder="Search message, service, or client IP…"
-              filters={[
-                {
-                  id: "level",
-                  label: "Log Level",
-                  value: levelFilter,
-                  options: levels.map((lvl) => ({
-                    label: lvl === "all" ? "All Levels" : lvl,
-                    value: lvl,
-                  })),
-                  onChange: (v) => {
-                    setLevelFilter(v);
-                    setPage(1);
-                  },
-                },
-              ]}
-            />
-          }
-          pagination={
-            <Pagination
-              page={page}
-              pageCount={Math.ceil(filtered.length / pageSize)}
-              totalItems={filtered.length}
-              pageSize={pageSize}
-              onPageChange={setPage}
-              onPageSizeChange={setPageSize}
-            />
-          }
-        >
-          <DataTable
-            columns={columns}
-            data={paged}
-            keyField="request_id"
-            isLoading={loading}
-            emptyMessage="No log entries match the selected filters."
+          <TableToolbar
+            search={q}
+            onSearchChange={(v) => set({ q: v || null })}
+            debounceMs={300}
+            searchPlaceholder="Search summary, action or request ID…"
+            filters={[
+              {
+                id: "service",
+                label: "Service",
+                value: service ?? "all",
+                options: [option("all", "All services"), ...LOG_SERVICES.map((s) => option(s, SERVICE_LABEL[s]))],
+                onChange: (v) => set({ service: v === "all" ? null : v }),
+              },
+            ]}
+            onClearAll={() => set({ level: null, at: null })}
+            countLabel={hour ? undefined : rangeCtx ? `Range: ${rangeCtx.range.label}` : undefined}
           />
-        </TableCard>
-      </div>
-    </div>
+        </div>
+      }
+      cursor={{
+        hasPrev: pager.hasPrev,
+        hasNext: Boolean(page?.has_more && page.next_cursor),
+        onPrev: pager.prev,
+        onNext: () => pager.next(page?.next_cursor),
+        pageItemCount: items.length,
+        itemLabel: "entries",
+        isLoading: query.isValidating,
+      }}
+    >
+      <DataTable
+        columns={COLUMNS}
+        data={items}
+        keyField="id"
+        isLoading={query.isLoading}
+        error={query.error && !page ? "Couldn't load logs." : null}
+        onRetry={() => void refetch()}
+        emptyMessage="No log entries match these filters."
+      />
+    </TableCard>
   );
 }
