@@ -29,3 +29,26 @@ node_modules/
 
 # TypeScript build cache
 *.tsbuildinfo
+
+# --- Generated Reports & Benchmark Outputs ---
+backend/reports/
+reports/
+backend/eval_report*.json
+backend/evaluation_report.json
+backend/conc_*.json
+
+# --- Local tooling & deployment archives ---
+.mcp.json
+*.tgz
+
+# --- Local planning / design notes (not part of the product) ---
+/planchanges*.md
+/*_plan.md
+/audience_segmentation_tabs_plan.md
+/monitoring_and_governance_plan.md
+/backend/docs/
+
+# --- Knowledge-base scratch files (only the .md files listed in scripts/ingest_real_docs.py are sources) ---
+backend/data/real_docs/*.docx
+backend/data/real_docs/home-page-old.md
+backend/data/real_docs/DeployIQNewPages_SEO-AEO*

@@ -1,17 +1,32 @@
+"""Print one document's stored chunks (heading, char count, content).
+
+Run from backend/:
+    python scripts/show_chunking.py [source_name]
+
+Defaults to e8-learn-more.md. Use it to sanity-check chunking after a change.
+"""
+
 import asyncio
+import sys
+from pathlib import Path
+
+# Running `python scripts/show_chunking.py` puts scripts/ (not backend/)
+# on sys.path[0], so `app` isn't importable without this.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
 from app.models.db_models import Chunk, Document
-from sqlalchemy import select
+
+DEFAULT_SOURCE = "e8-learn-more.md"
 
 
-async def show_one_document():
+async def show_one_document(source_name: str = DEFAULT_SOURCE):
     async with AsyncSessionLocal() as db:
-
         # Select one real document
         result = await db.execute(
-            select(Document)
-            .where(Document.source_name == "e8-learn-more.md")
+            select(Document).where(Document.source_name == source_name)
         )
 
         document = result.scalar_one()
@@ -32,7 +47,6 @@ async def show_one_document():
         print("=" * 100)
 
         for chunk in chunks:
-
             metadata = chunk.chunk_metadata or {}
 
             section = (
@@ -56,4 +70,4 @@ async def show_one_document():
 
 
 if __name__ == "__main__":
-    asyncio.run(show_one_document())
+    asyncio.run(show_one_document(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SOURCE))

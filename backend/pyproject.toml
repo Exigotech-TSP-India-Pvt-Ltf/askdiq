@@ -1,0 +1,57 @@
+[project]
+name = "askdiq-backend"
+version = "0.1.0"
+description = "AskDIQ RAG backend"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "alembic/versions",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "E501",    # line too long (managed by ruff format)
+    "B007",    # loop control variable not used
+    "B008",    # do not perform function call `Depends` in argument defaults (standard FastAPI pattern)
+    "B905",    # zip() without an explicit strict= parameter
+    "RUF001",  # ambiguous unicode character (intentional quotes / dashes in domain strings and tests)
+    "RUF002",  # ambiguous unicode character in docstrings
+    "RUF003",  # ambiguous unicode character in comments
+    "RUF007",  # prefer itertools.pairwise over zip
+    "RUF043",  # regex metacharacters in test match
+    "RUF046",  # redundant int cast
+    "RUF059",  # unused unpacked variables
+    "RUF100",  # unused noqa directives
+    "W291",    # trailing whitespace
+    "W292",    # no newline at end of file
+    "C402",    # unnecessary generator (dict comprehension)
+    "C408",    # unnecessary dict() call
+    "C416",    # unnecessary list comprehension
+]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["E402"]
+"app/evaluation/dataset.py" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
