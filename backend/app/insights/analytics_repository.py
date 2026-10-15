@@ -204,24 +204,23 @@ _PEOPLE = """
     FROM scoped s JOIN plabel p USING (person_key)
     GROUP BY s.person_key, p.pn, s.outcome
 """
-_CONVERSATION_COLUMNS = """
+_CONVERSATION_PAGE = """
+    SELECT
     s.session_id, s.person_key, p.pn, s.start_ts, s.end_ts, s.user_type,
     s.outcome, s.rating, s.issue, s.issue_label, s.failing_question,
-    s.exchanges, s.substantive"""
-_CONVERSATION_PAGE = (
-    " SELECT"
-    + _CONVERSATION_COLUMNS
-    + """, count(*) OVER () AS total
+    s.exchanges, s.substantive,
+           count(*) OVER () AS total
     FROM scoped s JOIN plabel p USING (person_key)
     ORDER BY {order} {direction}, s.session_id {direction}
     LIMIT :limit OFFSET :offset
 """
-)
-_CONVERSATION_ONE = (
-    " SELECT"
-    + _CONVERSATION_COLUMNS
-    + " FROM scoped s JOIN plabel p USING (person_key)"
-)
+_CONVERSATION_ONE = """
+    SELECT
+    s.session_id, s.person_key, p.pn, s.start_ts, s.end_ts, s.user_type,
+    s.outcome, s.rating, s.issue, s.issue_label, s.failing_question,
+    s.exchanges, s.substantive
+    FROM scoped s JOIN plabel p USING (person_key)
+"""
 _COUNT_SCOPED = " SELECT count(*) AS n FROM scoped"
 _LIVE_CUBE = """
     SELECT CAST(ts AS date) AS day, intent, quality,
