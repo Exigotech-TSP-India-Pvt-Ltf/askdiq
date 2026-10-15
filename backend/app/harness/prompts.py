@@ -27,8 +27,20 @@ _client = AsyncAzureOpenAI(
     max_retries=settings.azure_openai_max_retries,
 )
 
+
+def get_chat_client() -> AsyncAzureOpenAI:
+    """Shared Azure chat client (one connection pool for every LLM caller)."""
+    return _client
+
+
 # The tokenizer matches the gpt-5-mini model family.
 _TOKEN_ENCODING = tiktoken.get_encoding("o200k_base")
+
+
+def count_tokens(text: str) -> int:
+    return len(_TOKEN_ENCODING.encode(text))
+
+
 _MAX_HISTORY_TURNS = 6
 
 

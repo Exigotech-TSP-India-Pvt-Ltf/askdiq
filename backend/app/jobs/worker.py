@@ -147,6 +147,22 @@ class JobWorker:
         except asyncio.CancelledError:
             # Shutdown: the lock expires and another worker reclaims the job.
             raise
+        except queue.JobDeferredError as deferred:
+            # Not a failure (e.g. budget exhausted): re-queue without
+            # consuming an attempt.
+            await self._safe(
+                queue.defer(
+                    job, deferred.run_after, deferred.reason, engine=self._engine
+                )
+            )
+            logger.info(
+                "job_deferred",
+                job_id=str(job.id),
+                job_type=job.type,
+                reason=deferred.reason,
+                run_after=deferred.run_after.isoformat(),
+            )
+            return
         except Exception as exc:
             status = await self._safe(
                 queue.fail(job, f"{type(exc).__name__}: {exc}", engine=self._engine)

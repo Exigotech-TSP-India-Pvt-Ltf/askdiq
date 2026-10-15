@@ -26,6 +26,7 @@ from app.governance.audit import record_audit_event
 from app.governance.costing import compute_exchange_cost
 from app.governance.outcomes import derive_outcome
 from app.governance.pii import redact_pii
+from app.insights.triggers import classify_after_persist
 from app.models.db_models import ChatMessageRecord, ChatSession, MessageFeedback
 from app.schemas.query import ChatTurn
 from app.schemas.session import (
@@ -321,6 +322,9 @@ async def _write_exchange(
         logger.warning(
             "exchange_persist_failed request_id=%s", request_id, exc_info=True
         )
+        return
+    # Labelled asynchronously by the job worker, never in the request path.
+    await classify_after_persist(assistant_message_id)
 
 
 def schedule_exchange_write(
