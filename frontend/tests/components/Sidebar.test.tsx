@@ -148,7 +148,7 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
 
     // Shift+Tab from the first control wraps to the last link inside the drawer.
     await user.tab({ shift: true });
-    expect(within(drawer).getByRole("link", { name: /admin governance/i })).toHaveFocus();
+    expect(within(drawer).getByRole("link", { name: /user management/i })).toHaveFocus();
     await user.tab();
     expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus();
 

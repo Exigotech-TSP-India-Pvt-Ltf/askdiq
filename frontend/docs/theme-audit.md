@@ -59,6 +59,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/login` (PR-18) | Pass | Pass | Pass | Split screen (§7.7): left panel `from-brand-600 to-brand-800` gradient with white text in both themes (white on `brand-600` 4.8:1), white `BrandLogo tone="onDark"`, hexagons/rings `text-white/*` (currentColor); right panel `bg-surface-page` + `text-fg*`, button `bg-surface-card border-line-strong`, error banner `status-danger-*`. Below `md`: teal header strip + single column. Microsoft logo colours are fixed brand colours in `theme-tokens.ts` | [ ] |
 | Access Required (any dashboard route, pending / rejected) (PR-18) | Pass | Pass | Pass | Card on `bg-surface-card`; stepper dots `brand-600` / `surface-card` / `status-danger-*`; rail `bg-line`; form fields `border-line bg-surface-card text-fg` | [ ] |
 | `/suspended` and suspended gate (PR-18) | Pass | Pass | Pass | Same layout as `BrandedStatusPage`; icon on `status-danger-bg` | [ ] |
+| `/admin/user-management` (Users, Access Requests, Roles & Permissions, Audit Trail tabs) (PR-19) | Pass | Pass | Pass | KPI cards and charts on `bg-surface-card` with `chartTheme` marks (bar, funnel, donut, histogram recolour on toggle, journey-tested); pending KPI `status-warn-bg` highlight; role / status / event chips on `status-*-bg` + `status-*-fg` and brand tints with `dark:` pairs | [ ] |
 
 ## Shared components
 
@@ -119,6 +120,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `auth/AccessRequiredView`, `auth/SuspendedView` (PR-18) | Pass | Pass | Pass | Tokens only; reduced motion renders the stepper static |
 | `shell/RoleBadge` (PR-18) | Pass | Pass | Pass | Superadmin `brand-50` / `dark:brand-950/60`; admin `status-info-*`; operator `surface-muted` |
 | `Sidebar` role filtering + pending badge (PR-18) | Pass | Pass | Pass | Badge `bg-status-warn` with `text-white dark:text-fg-inverse` (existing pair); role badge under the email |
+| `admin/user-management/*` (PR-19: `UserOverview`, `charts` DailyBars / Donut, `UserDrawer`, `AccessRequestsTab`, `RolesMatrixTab`, `AuthAuditTab`, `InviteUserDialog`) | Pass | Pass | Pass | Tokens only (`surface-*`, `fg*`, `line`, `status-*`, `brand-*` with `dark:`); safeguard tooltip `bg-surface-inverse` + `text-fg-inverse`; row exit via `AnimatePresence` + `fadeUp` preset |
 
 ## Known follow-ups (not theme-breaking)
 
