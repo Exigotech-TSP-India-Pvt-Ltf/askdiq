@@ -1512,29 +1512,29 @@ Show the B4 data with the newplan §4.2 layout and fix the UI side of G1, G8, G1
 - [ ] **[Test]** Phase F4 complete.
 
 #### Task F4.1: Overall tab
-- [ ] **[Dev]** A status banner (colour transition via Motion), KPI cards with 24h sparklines, a status timeline with incident markers (marker to Logs filtered), and a recent incidents list (new rows highlight briefly). The `InfoRow` list becomes a compact secondary section.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A banner state is shown for each health status. A marker click deep-links.
+- [x] **[Dev]** A status banner (colour transition via Motion), KPI cards with 24h sparklines, a status timeline with incident markers (marker to Logs filtered), and a recent incidents list (new rows highlight briefly). The `InfoRow` list becomes a compact secondary section.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A banner state is shown for each health status. A marker click deep-links.
 
 #### Task F4.2: Monitoring tab
-- [ ] **[Dev]** Axis `width` auto or tick formatter in ms or s (G1). Null stages show "no data" (G2). A balanced grid aligned to the AI Usage panel (G8). `PercentileBand` per stage, requests and errors timeline, `RadialGauge`s for CPU, RAM and Azure quota, guardrail flag bar, outcome mix, quality KPIs. SSE live updates replace 10 s polling and pause when the tab is hidden.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A tick-format unit test (0.18 ms to 1.2 s). The SSE reconnects with backoff.
+- [x] **[Dev]** Axis `width` auto or tick formatter in ms or s (G1). Null stages show "no data" (G2). A balanced grid aligned to the AI Usage panel (G8). `PercentileBand` per stage, requests and errors timeline, `RadialGauge`s for CPU, RAM and Azure quota, guardrail flag bar, outcome mix, quality KPIs. SSE live updates replace 10 s polling and pause when the tab is hidden.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A tick-format unit test (0.18 ms to 1.2 s). The SSE reconnects with backoff.
 
 #### Task F4.3: Traces tab
-- [ ] **[Dev]** A cursor `TableCard` with columns from §4.2 and filters (status, latency bucket, outcome, date). The drawer shows a stage `Waterfall`, sources with scores, flags and a conversation link. `?request_id=` opens the drawer.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The deep-link opens the drawer. Previous and next navigate.
+- [x] **[Dev]** A cursor `TableCard` with columns from §4.2 and filters (status, latency bucket, outcome, date). The drawer shows a stage `Waterfall`, sources with scores, flags and a conversation link. `?request_id=` opens the drawer.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The deep-link opens the drawer. Previous and next navigate.
 
 #### Task F4.4: Logs tab
-- [ ] **[Dev]** Server-side cursor pagination and filters (G12), level-count chips, the structured summary column with an expandable JSON viewer (rendered as text, never HTML), meaningful service values, CSV export, and an auto-refresh toggle (G13).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Deep pages are reachable beyond 2,000 rows. The JSON viewer escapes `<script>`.
+- [x] **[Dev]** Server-side cursor pagination and filters (G12), level-count chips, the structured summary column with an expandable JSON viewer (rendered as text, never HTML), meaningful service values, CSV export, and an auto-refresh toggle (G13).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Deep pages are reachable beyond 2,000 rows. The JSON viewer escapes `<script>`.
 
 #### Task F4.5: Phase F4 integration testing
-- [ ] **[Dev]** `tests/journeys/governance.test.tsx`: the overview incident links into Logs with filters, the trace drawer link targets the conversation, and the Logs cursor "next" uses the returned cursor. Attach G1 to G13 before and after screenshots (manual).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/governance.test.tsx`: the overview incident links into Logs with filters, the trace drawer link targets the conversation, and the Logs cursor "next" uses the returned cursor. Attach G1 to G13 before and after screenshots (manual).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F4.6: PR
 - **PR-23** `feat/ui-governance-revamp`.
@@ -2086,7 +2086,8 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 | #35 | PR-19 | `feat/ui-user-management` | #32 | Open, **all 4 jobs green** (351 vitest tests) | KPI cards with sparklines, a funnel, a role donut and a histogram that drill into the Users tab. Users table and drawer with role change, suspend, revoke and invite (typed confirmation, optimistic updates, 409 toast, blocked self and last-superadmin changes). Access-request queue with bulk approve and `a`/`x` keys. Roles matrix and auth audit trail. **Note:** writes need PR-18's proxy header forwarding, and the temporary `useCan` shim is replaced by PR-18's `usePermission`. |
 | #34 | PR-24 | `feat/ui-feedback-triage-workspace` | #32 | Open, **all 4 jobs green** (349 vitest tests) | Chat reason chips and a "what should it have said?" box. Workspace tabs: Overview (every chart mark filters the queue), Review Queue (j/k/x/r/d/p keys, bulk actions, drawer, optimistic updates with 409 handling, read-only for operators), Golden Cases with Run now, Preference Data export, Knowledge Gaps. **Backend follow-ups queued for #27:** `PATCH` should accept `corrected_answer`; add reason-tag and sentiment list filters; add a golden-run job status endpoint; widen the undo transitions. |
 | #37 | PR-26 | `feat/ui-settings-branding-taxonomy` | #32 | Open, **all 4 jobs green** (364 vitest tests) | Branding editor: form, live contrast badge (palette matches the backend exactly), 5 logo upload slots, live light/dark preview of sidebar, login and chat, save with version and 409 handling, reset to defaults, brand changes applied app-wide without a reload. Taxonomy editor: immutable codes, reorder, archive. Public `/branding/assets/[sha]` passthrough; proxy forwards PUT. **Follow-up:** the `--journey branding` smoke step needs the backend chain. |
-| – | PR-18, PR-23 | (feature UIs) | #32 | In progress |
+| #36 | PR-23 | `feat/ui-governance-revamp` | #32 | Open, **all 4 jobs green** (358 vitest tests) | Overall: animated health banner, 8 KPI sparkline cards, status timeline with incident markers that open Logs, live incident list. Monitoring: G1 (ms/s axis), G2 (no data), G7 (window/source labels), G8 (4×2 grid), stage percentiles, gauges, SSE live updates with backoff and pause on hidden (G13). Traces: cursor table and waterfall drawer, `?request_id=` deep link. Logs: server paging (G12), level chips, JSON viewer, CSV, auto-refresh. **Note:** SSE and CSV rely on the cookie session from PR-18. `/admin/governance` first-load JS is 317 kB; check it against the §13.4 budget in phase V. |
+| – | PR-18 | `feat/ui-auth-gate-login` | #32 | In progress | |
 | – | consolidation | – | after merges | Planned | Replace the 3 temporary permission helpers in #35, #34 and #37 with PR-18's `usePermission`/`useCan`, and flip the Analytics nav flag after #33. | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
 | #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
 
