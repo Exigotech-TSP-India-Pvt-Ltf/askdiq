@@ -95,9 +95,7 @@ def test_phase6_owasp_a03_prompt_injection_detection():
 
 
 @pytest.mark.asyncio
-async def test_phase6_owasp_hostile_uploads_rejected(
-    client: AsyncClient, fake_embed
-):
+async def test_phase6_owasp_hostile_uploads_rejected(client: AsyncClient, fake_embed):
     """Subtask 6.3.6: Hostile upload formats (macros, wrong extensions) are rejected."""
     # 1. Macro-enabled .docm
     res_docm = await client.post(
