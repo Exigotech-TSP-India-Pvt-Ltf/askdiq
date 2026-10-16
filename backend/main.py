@@ -17,6 +17,7 @@ from app.api.routes import (
     query,
     sessions,
 )
+from app.core.compression import SSEAwareGZipMiddleware
 from app.core.concurrency import configure_thread_pool
 from app.core.config import Settings, configure_logging, get_settings
 from app.core.database import init_db
@@ -25,6 +26,7 @@ from app.core.middleware import LatencyMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.tasks import drain as drain_background_tasks
 from app.harness.prompts import call_llm
+from app.jobs.runtime import start_platform_services
 from app.retrieval.embeddings import embed_text
 from app.retrieval.reranker import preload_reranker
 
@@ -69,9 +71,12 @@ async def lifespan(_app: FastAPI):
     configure_thread_pool()
     await _startup_azure_health_check()
     await asyncio.to_thread(preload_reranker)
+    # Event bus (LISTEN/NOTIFY) and, if JOBS_WORKER_ENABLED, the job worker.
+    platform_services = await start_platform_services()
     try:
         yield
     finally:
+        await platform_services.aclose()
         # Let supervised fire-and-forget work (e.g. latency persistence)
         # finish, bounded so shutdown can never hang.
         await drain_background_tasks(settings.task_drain_timeout_seconds)
@@ -112,6 +117,7 @@ app.add_middleware(
 )
 
 app.add_middleware(LatencyMiddleware)
+app.add_middleware(SSEAwareGZipMiddleware, minimum_size=settings.gzip_minimum_size)
 # Added last so it is the outermost user middleware: every response,
 # including CORS preflights and handled errors, carries the headers.
 app.add_middleware(SecurityHeadersMiddleware)

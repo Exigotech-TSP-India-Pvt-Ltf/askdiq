@@ -18,6 +18,7 @@ from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.events import TOPIC_CACHE_INVALIDATE, publish_event
 from app.governance.audit import record_audit_event
 from app.models.db_models import TestIpConfig
 
@@ -294,6 +295,7 @@ async def add_or_update_test_ip(
     await db.commit()
     await db.refresh(row)
     invalidate_audience_cache()
+    await publish_event(TOPIC_CACHE_INVALIDATE, "audience")
 
     return {
         "id": str(row.id),
@@ -331,6 +333,7 @@ async def delete_test_ip(
         )
         await db.commit()
         invalidate_audience_cache()
+        await publish_event(TOPIC_CACHE_INVALIDATE, "audience")
         return True
 
     await db.commit()

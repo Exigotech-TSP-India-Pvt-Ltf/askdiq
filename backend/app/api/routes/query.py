@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import llm_capacity
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limited_actor
@@ -22,7 +23,12 @@ router = APIRouter()
 settings = get_settings()
 
 
-@router.post("/query", response_model=QueryResponse)
+@router.post(
+    "/query",
+    response_model=QueryResponse,
+    dependencies=[Depends(llm_capacity)],
+    responses={429: {"description": "Rate limited or LLM capacity saturated"}},
+)
 async def query(
     request: Request,
     body: QueryRequest,
