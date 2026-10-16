@@ -1,14 +1,15 @@
 """Admin endpoints for users and conversation management."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.admin_entities import router as entities_router
 from app.api.routes.admin_feedback import router as feedback_router
 from app.api.routes.admin_governance import router as governance_router
 from app.api.routes.admin_usage import router as usage_router
@@ -25,6 +26,8 @@ from app.core.request_meta import get_client_ip
 from app.dashboard import activity as dashboard_activity
 from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
+from app.entities import conversations as conversation_stats
+from app.entities import visitors
 from app.governance.audience import (
     Audience,
     audience_scope,
@@ -43,7 +46,6 @@ from app.governance.test_ips import (
     get_test_ip_details,
     is_test_ip,
 )
-from app.governance.usage_queries import escape_ilike_pattern
 from app.guardrails.conversational import (
     CAPABILITY_RESPONSE,
     FAREWELL_RESPONSE,
@@ -61,12 +63,15 @@ from app.models.db_models import (
     User,
 )
 from app.schemas.dashboard import ActivityFeed, DashboardData
+from app.schemas.entity_stats import OutcomeName
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = get_logger(__name__)
 router.include_router(usage_router)
 router.include_router(feedback_router)
 router.include_router(governance_router)
+# Before `/conversations/{conversation_id}` so `/conversations/stats` matches.
+router.include_router(entities_router)
 
 
 class TestIpPayload(BaseModel):
@@ -89,10 +94,40 @@ async def list_users(
     sort: str = "last_active_desc",
     limit: int = 50,
     offset: int = 0,
+    weekday: int | None = Query(
+        None, ge=0, le=6, description="Heatmap filter: session start weekday (0 = Mon)."
+    ),
+    hour: int | None = Query(
+        None, ge=0, le=23, description="Heatmap filter: session start hour (UTC)."
+    ),
+    slot_from: str | None = Query(
+        None, alias="from", max_length=10, description="Slot filter first day."
+    ),
+    slot_to: str | None = Query(
+        None, alias="to", max_length=10, description="Slot filter last day."
+    ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Return users grouped by client IP with activity statistics (Task 2.3.1)."""
+    """Return users grouped by client IP with activity statistics (Task 2.3.1).
+
+    `weekday` + `hour` (both or neither) keep visitors with a session started
+    in that UTC slot within `from`..`to` (days, default the last 7 days).
+    """
+    if (weekday is None) != (hour is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="`weekday` and `hour` must be sent together.",
+        )
+    slot_ips: set[str] | None = None
+    if weekday is not None and hour is not None:
+        days = dashboard_window.resolve_days(
+            dashboard_window.parse_day(slot_from, "from"),
+            dashboard_window.parse_day(slot_to, "to"),
+            today=dashboard_window.utcnow().date(),
+            max_days=get_settings().usage_max_range_days,
+        )
+        slot_ips = await visitors.ips_in_slot(db, weekday, hour, days)
     # Audience resolution (preserving include_test backwards-compatibility)
     if include_test is False and audience == "overview":
         aud_scope = "users"
@@ -154,6 +189,9 @@ async def list_users(
             continue
 
         if q and q.strip() and q.strip().lower() not in ip.lower():
+            continue
+
+        if slot_ips is not None and ip not in slot_ips:
             continue
 
         all_users.append(
@@ -350,16 +388,41 @@ async def list_conversations(
     sort: str = "last_activity_desc",
     limit: int = 50,
     offset: int = 0,
+    min_turns: int | None = Query(
+        None, ge=1, description="Inclusive turn-count floor."
+    ),
+    max_turns: int | None = Query(None, ge=1, description="Inclusive turn-count cap."),
+    outcome: OutcomeName | None = Query(
+        None, description="Conversations with at least one turn of this outcome."
+    ),
+    day: date | None = Query(
+        None, description="With `outcome`: only turns on this UTC day (YYYY-MM-DD)."
+    ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Return conversations for the admin dashboard (Task 2.3.2: audience-scoped, paginated, no email)."""
+    """Return conversations for the admin dashboard (Task 2.3.2: audience-scoped, paginated, no email).
+
+    Rows carry `turn_count` and `outcome_counts` (NULL outcome = answered).
+    """
+    if min_turns is not None and max_turns is not None and min_turns > max_turns:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="`min_turns` must not exceed `max_turns`.",
+        )
+    if day is not None and outcome is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="`day` requires `outcome`.",
+        )
     aud_scope = audience_scope(audience)
+    turn_count = conversation_stats.turn_count_sql()
 
     query = (
         select(
             ChatSession,
             func.count(ChatMessageRecord.id).label("message_count"),
+            turn_count.label("turn_count"),
         )
         .outerjoin(
             ChatMessageRecord,
@@ -368,23 +431,14 @@ async def list_conversations(
         .group_by(ChatSession.id)
     )
 
-    aud_cond = await build_audience_filter(db, ChatSession.created_ip, aud_scope)
-    if aud_cond is not None:
-        query = query.where(aud_cond)
-
-    if ip and ip.strip():
-        query = query.where(ChatSession.created_ip == ip.strip())
-
-    if q and q.strip():
-        escaped = escape_ilike_pattern(q.strip())
-        pattern = f"%{escaped}%"
-        query = query.where(
-            or_(
-                ChatSession.title.ilike(pattern, escape="\\"),
-                cast(ChatSession.id, String).ilike(pattern, escape="\\"),
-                cast(ChatSession.created_ip, String).ilike(pattern, escape="\\"),
-            )
-        )
+    for cond in await conversation_stats.session_conditions(db, aud_scope, ip, q):
+        query = query.where(cond)
+    if outcome is not None:
+        query = query.where(conversation_stats.outcome_exists(outcome.value, day))
+    if min_turns is not None:
+        query = query.having(turn_count >= min_turns)
+    if max_turns is not None:
+        query = query.having(turn_count <= max_turns)
 
     # Sort
     if sort == "last_activity_asc":
@@ -399,9 +453,10 @@ async def list_conversations(
     ).scalar() or 0
 
     rows = (await db.execute(query.limit(limit).offset(offset))).all()
+    outcomes = await conversation_stats.outcome_counts(db, [r[0].id for r in rows])
 
     items = []
-    for session, message_count in rows:
+    for session, message_count, turns in rows:
         items.append(
             {
                 "id": str(session.id),
@@ -417,6 +472,8 @@ async def list_conversations(
                 else None,
                 "created_ip": session.created_ip or "Unknown",
                 "message_count": message_count or 0,
+                "turn_count": turns or 0,
+                "outcome_counts": outcomes.get(str(session.id), {}),
             }
         )
 
@@ -431,10 +488,17 @@ async def list_conversations(
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(
     conversation_id: str,
+    turn: int | None = Query(
+        None, ge=0, description="`turn_index` to focus; echoed as `focus_turn`."
+    ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Return one conversation and all of its messages."""
+    """Return one conversation, all of its messages and per-turn detail.
+
+    `turns` (one per `turn_index`) adds stage timings, tokens, cost, sources,
+    feedback, insight labels and the promoted golden case id.
+    """
 
     # -----------------------------------------------------------------------
     # Find conversation
@@ -464,6 +528,8 @@ async def get_conversation(
     )
 
     messages = messages_result.scalars().all()
+    turns = await conversation_stats.turn_details(db, messages)
+    turn_indexes = {t["turn_index"] for t in turns}
 
     # -----------------------------------------------------------------------
     # Response
@@ -494,6 +560,8 @@ async def get_conversation(
             for message in messages
         ],
         "message_count": len(messages),
+        "turns": turns,
+        "focus_turn": turn if turn in turn_indexes else None,
     }
 
 
