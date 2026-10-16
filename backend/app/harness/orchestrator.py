@@ -69,7 +69,7 @@ def _fallback_response(
             "I am unable to process that request. Please feel free to ask questions "
             f"regarding {brand}'s security platform and compliance features."
         )
-    elif "off_topic" in flags:
+    elif "off_topic" in flags or "no_sources" in flags:
         answer = (
             f"I couldn't find relevant information in the {brand} knowledge base to answer that. "
             f"I can help with questions about the {brand} platform, Zero Trust, "
@@ -233,9 +233,11 @@ async def run_query(
             query_len=len(query),
             latency_ms=round(latency_ms, 2),
         )
+        # Distinct from `off_topic` (low relevance): nothing was retrieved at all,
+        # which usually means an empty knowledge base or a filter that matches no chunk.
         return _fallback_response(
             request_id=request_id,
-            flags=["off_topic"],
+            flags=["no_sources"],
             latency_ms=latency_ms,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,

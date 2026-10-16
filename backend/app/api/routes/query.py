@@ -33,9 +33,14 @@ async def query(
     embedding_tokens_sink.set(embed_sink)
 
     vector_store = VectorStore(db)
-    # Client-supplied override is honored only outside production (for testing/demo);
-    # in production, always use the detected client IP.
-    if settings.env != "production" and body.ip_address:
+    # Client-supplied override is honoured only when explicitly enabled for
+    # testing/demo (ALLOW_CLIENT_IP_OVERRIDE) and never in production; otherwise
+    # always use the detected client IP so attribution and per-IP limits can't be spoofed.
+    if (
+        settings.allow_client_ip_override
+        and settings.env != "production"
+        and body.ip_address
+    ):
         client_ip = body.ip_address
     else:
         client_ip = get_client_ip(request)
