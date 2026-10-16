@@ -101,6 +101,11 @@ _PAGE_MAX_LIMIT = get_settings().usage_page_max_limit
 _PAGE_MAX_OFFSET = get_settings().usage_max_offset
 
 
+# `from`/`to` on /admin/users only matter with a heatmap slot (then they must
+# be YYYY-MM-DD, checked by parse_day). Without a slot they are ignored, so the
+# Visitors page may pass its ISO datetime window; this bound just caps input.
+_SLOT_RANGE_MAX_LEN = 64
+
 # A visitor row is "Active" while its latest session activity is this recent
 # (the same 30-minute window the Visitors table used client-side).
 VISITOR_ACTIVE_WINDOW = timedelta(minutes=30)
@@ -139,10 +144,16 @@ async def list_users(
         None, ge=0, le=23, description="Heatmap filter: session start hour (UTC)."
     ),
     slot_from: str | None = Query(
-        None, alias="from", max_length=10, description="Slot filter first day."
+        None,
+        alias="from",
+        max_length=_SLOT_RANGE_MAX_LEN,
+        description="Slot filter first day.",
     ),
     slot_to: str | None = Query(
-        None, alias="to", max_length=10, description="Slot filter last day."
+        None,
+        alias="to",
+        max_length=_SLOT_RANGE_MAX_LEN,
+        description="Slot filter last day.",
     ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
@@ -1005,7 +1016,7 @@ async def usage_embedding(
                     func.sum(
                         case(
                             (or_(content.is_(None), content == ""), 0),
-                            else_=func.greatest(1, func.length(content) / 4),
+                            else_=func.greatest(1, func.length(content) // 4),
                         )
                     ),
                     0,
@@ -1746,7 +1757,9 @@ async def _governance_status(db: AsyncSession, since: datetime) -> dict:
         )
     )
     return {
-        "monitoring": f"{METRICS['requests']:,} requests since start",
+        # Not the per-request counter: every poll bumps it, so the dashboard's
+        # ETag would never match and polling could never get a 304.
+        "monitoring": f"{METRICS['errors']:,} server errors since start",
         "tracing": f"{latency_24h or 0:,} traces (24h)",
         "audit_logs": f"{audit_total or 0:,} entries",
         "guardrails": f"{flagged or 0:,} responses with flags (24h)",

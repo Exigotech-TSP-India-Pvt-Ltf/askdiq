@@ -408,13 +408,22 @@ def test_openapi_documents_every_governance_route():
     )
 
 
+# Bulk CSV export is a data export: it needs usage:export, not dashboard:read.
+EXPORT_ROUTES = frozenset({f"{BASE}/logs/export.csv"})
+
+
 def test_all_governance_routes_need_dashboard_read():
     from tests.test_route_guards import api_routes, requirement
 
     routes = [r for r in api_routes() if r.path.startswith(f"{BASE}/")]
     assert len(routes) >= 8
     for route in routes:
-        assert requirement(route) == str(Permission.DASHBOARD_READ), route.path
+        expected = (
+            Permission.USAGE_EXPORT
+            if route.path in EXPORT_ROUTES
+            else Permission.DASHBOARD_READ
+        )
+        assert requirement(route) == str(expected), route.path
 
 
 # ===========================================================================

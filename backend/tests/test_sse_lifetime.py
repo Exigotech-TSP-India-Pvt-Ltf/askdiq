@@ -19,7 +19,9 @@ async def _forever() -> AsyncIterator[dict]:
 
 async def test_stream_ends_at_max_lifetime() -> None:
     frames = []
-    gen = sse._frames(_Req(), _forever(), heartbeat=0.05, retry_ms=1000, max_seconds=0.3)
+    gen = sse._frames(
+        _Req(), _forever(), heartbeat=0.05, retry_ms=1000, max_seconds=0.3
+    )
     async with asyncio.timeout(5):
         async for frame in gen:
             frames.append(frame)

@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core import sessions
+from app.dashboard import active_visitors
 from app.governance.audience import invalidate_audience_cache
 from app.ingestion.service import ingest_text
 from app.models.db_models import (
@@ -191,7 +192,7 @@ async def test_governance_active_users_counts_session_ips(client, db_session) ->
         resp = await client.get("/admin/governance/overview?audience=overview")
         assert resp.status_code == 200, resp.text
         kpi = resp.json()["kpis"]["active_users"]
-        assert kpi["source"] == "chat_sessions.created_ip"
+        assert kpi["source"] == active_visitors.SOURCE
         return int(kpi["value"])
 
     before = await active()

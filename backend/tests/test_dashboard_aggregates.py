@@ -266,7 +266,10 @@ async def _seed_window(db) -> dict:
     """Current window D0..D3 (day buckets) and the previous one D-3..D0."""
     d0 = unique_day()
     ip_a, ip_b, ip_c = unique_ip(), unique_ip(), unique_ip()
-    code_a, code_b = f"Z{uuid.uuid4().hex[:6]}", f"Y{uuid.uuid4().hex[:6]}"
+    code_a, code_b = (
+        f"Z{uuid.uuid4().hex[:6].upper()}",
+        f"Y{uuid.uuid4().hex[:6].upper()}",
+    )
     db.add(InsightTaxonomy(kind="intent", code=code_a, label="Alpha test"))
 
     a = await session_at(db, d0 + timedelta(hours=10), ip_a)
