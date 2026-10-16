@@ -258,6 +258,12 @@ class ChatMessageRecord(Base):
         Index("ix_chat_messages_created_at", "created_at"),
         Index("ix_chat_messages_ip_created", "ip_address", "created_at"),
         Index("ix_chat_messages_request_role", "request_id", "role"),
+        # Newest user turns first (usage queries page; b2d6e08d82b3).
+        Index(
+            "ix_chat_messages_user_created_desc",
+            text("created_at DESC NULLS LAST"),
+            postgresql_where=text("role = 'user'"),
+        ),
     )
 
 

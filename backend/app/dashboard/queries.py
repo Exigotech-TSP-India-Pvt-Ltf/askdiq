@@ -35,7 +35,6 @@ from sqlalchemy import (
     literal_column,
     select,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -392,8 +391,15 @@ async def daily_cost(
 
 
 def cached_tokens_sql(msg: Any) -> Any:
-    """``token_details.cached_tokens`` as a number (0 when absent or not numeric)."""
-    value = cast(msg.token_details, JSONB)["cached_tokens"]
+    """``token_details.cached_tokens`` as a number (0 when absent or not numeric).
+
+    ``token_details`` is a ``json`` column: the native ``json`` operators read
+    the key directly, where casting every row to ``jsonb`` (twice) re-parsed
+    the whole document and dominated the usage / dashboard aggregates
+    (EXPLAIN ANALYZE: ~3x slower over the same rows).
+    """
+    value = msg.token_details["cached_tokens"]
     return case(
-        (func.jsonb_typeof(value) == "number", cast(value.astext, Float)), else_=0.0
+        (func.json_typeof(value) == "number", cast(value.as_string(), Float)),
+        else_=0.0,
     )
