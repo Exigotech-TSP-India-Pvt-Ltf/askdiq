@@ -31,6 +31,9 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | T4 | No `storage` listener (tabs drifted), no System mode | `storage` event sync, `light` / `dark` / `system` modes, live `matchMedia` change listener; `ThemeToggle` cycles Light -> Dark -> System |
 | T5 | Single logo asset with `dark:brightness-110` | `BrandLogo` light/dark pair; new `exigotech-logo-dark.svg` and `exigotech-mark-dark.svg` |
 | T6 | Amber `#B7791F` and red `#C0362C` too dark on dark surfaces | Separate lifted dark status tokens (`#F2B84B`, `#F87171`, ...) and `*-fg` text variants, all AA-tested |
+| T7 | Owner (Oct 2026): only the Usage "Live Telemetry" cards looked right; other cards were flat near-black in dark | Studio look extracted into tokens (`surface-studio`, `bg-studio`, `shadow-studio` / `shadow-studio-hover`, per theme in `globals.css`) and `components/ui/StudioCard`; every shared card / chart / KPI / table container now uses it (see "Studio rollout") |
+| T8 | Owner: tables "not good" in black: slate `dark:bg-dark-surface` headers and footers (#0F1720) inside near-black cards, slate borders | Dark neutrals (`surface-card/muted/elevated`, `line`, `line-strong`, `chart-grid`) and the legacy `dark-*` palette moved to brand-tinted near-black (asserted: green/blue > red); table header `bg-surface-studio`, zebra + brand hover rows, footers on tokens |
+| T9 | `zinc` greys and `bg-slate-900` blocks in light mode (Usage stage breakdown) | Replaced with `fg*` / `chart-track` / studio tile tokens |
 
 ## Pages
 
@@ -150,6 +153,28 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `admin/DashboardHeader` breadcrumb (PR-22) | Pass | Pass | Pass | `text-fg-subtle` trail, current page `text-fg-muted`, hover `text-accent-fg` |
 | `admin/entity/ConversationPreviewDrawer` (PR-22) | Pass | Pass | Pass | `DrawerShell`; turn rail `border-brand-200` / `dark:border-brand-800`; outcome chips on `status-*` |
 | `admin/entity/shared` (`FilterChip`, `SectionCard`, `ToneChip`) (PR-22) | Pass | Pass | Pass | Chips on `brand-50`/`dark:brand-950/60` and `status-*-bg`/`-fg`; cards `surface-card` + `line`, hover brand border + `shadow-md` |
+
+## Studio rollout (owner theme pass: fix/owner-theme-tables-motion)
+
+Reference: Usage > Overview "Economic Waterfall / Thinking Pipeline / Performance Cockpit" in dark. All rows
+below: tokens only, light and dark designed (dark is the reference), toggle switches via CSS variables;
+motion from `lib/motion.ts` presets only, reduced to opacity (or instant) under reduced motion.
+
+| Component | Light | Dark | Toggle | Notes | Screenshot L/D |
+|---|---|---|---|---|---|
+| `ui/StudioCard` (new: StudioCard, StudioCardHeader, StudioIconBadge, StudioPill, StudioGrid, StudioMetricTile, StudioSectionHeader, StudioSegmented, `studioCardClass`) | Pass | Pass | Pass | `bg-studio` gradient (brand-tinted top + corner glow), `border-line-brand` / `dark:border-brand-500/25`, `shadow-studio` inner highlight; hover lift + `shadow-studio-hover`; active ring; tone badges on `brand-*` / `status-*`; grid stagger (none above 50 items); metric count-up; segmented layoutId pill | [ ] |
+| `ui/Collapse` (new) | n/a | n/a | n/a | `expand` preset (height + opacity, 200 ms); instant under reduced motion | n/a |
+| `ui/styles` studio / table / segment tokens | Pass | Pass | Pass | `studioSurface`, `studioTile`, `studioToneClasses`, `tableHead` (`bg-surface-studio`), `tableRow` (zebra + brand hover), `segmentTrack`; overlay / popover panels get the brand edge | [ ] |
+| `charts/ChartCard` (plain + aurora) | Pass | Pass | Pass | Studio surface; optional icon badge + pill; body crossfades by state (loading / error / empty / chart / table); "View as table" header sticky `bg-surface-studio` | [ ] |
+| `charts/primitives` ChartEmpty, `charts/Sparkline` empty | Pass | Pass | Pass | Empty panel is a studio tile; sparkline empty is a dashed baseline + "No trend data" (no boxed placeholder) | [ ] |
+| `charts/KpiTrendCard`, `insights/StatCard`, `ui/Skeleton` SkeletonCard | Pass | Pass | Pass | Studio surface; StatCard tone pills on `status-*` tokens | [ ] |
+| `admin/TableCard`, `admin/DataTable` | Pass | Fixed (T8) | Pass | Studio surface (edge glow on hover, no lift); sticky `bg-surface-studio` header, zebra + brand hover rows, token empty / error / skeleton | [ ] |
+| `admin/Pagination`, `CursorPagination`, `TableToolbar` | Pass | Fixed (T8) | Pass | Slate pairs -> `fg*` / `line` / `surface-*`; filter + column popovers animate with `popover` | [ ] |
+| `admin/TabGroup`, `AudienceScopeTabs`, `DashboardHeader` | Pass | Fixed (T8) | Pass | `segmentTrack` (dark `bg-surface-studio`); header icon badge = studio brand badge | [ ] |
+| `ui/DrawerShell`, `Modal`, `ConfirmDialog`, `ToastProvider` | Pass | Pass | Pass | Brand edge + studio-tinted drawer header / footer | [ ] |
+| `ui/EmptyState`, `ErrorState` | Pass | Pass | Pass | Icon in a studio / danger ring badge | [ ] |
+| `usage/InteractiveOverviewTab` | Pass | Fixed (T9) | Pass | Stage breakdown: studio tile + `Collapse` (was `bg-slate-900` in light); skeleton / error on shared primitives; token bars | [ ] |
+| Ad-hoc tables (feedback Golden / Preference / Review queue, settings Taxonomy, user-management Access requests / Roles, usage inspector, evaluation-live) | Pass | Fixed (T8) | Pass | Header `bg-surface-studio` + brand divider; zebra and hover from the table tokens | [ ] |
 
 ## Known follow-ups (not theme-breaking)
 

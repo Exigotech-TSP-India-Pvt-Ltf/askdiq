@@ -335,7 +335,7 @@ export function QueryInspectorDrawer({
             </div>
 
             {/* Progress Bar Line Containing Dynamically Divided Text */}
-            <div className="h-7 w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 flex gap-0.5 border border-line shadow-inner">
+            <div className="h-7 w-full overflow-hidden rounded-lg bg-chart-track p-0.5 flex gap-0.5 border border-line shadow-inner">
               {dynamicBarSegments.map((cat) => (
                 <div
                   key={cat.id}
@@ -377,7 +377,7 @@ export function QueryInspectorDrawer({
             </span>
             <div className="overflow-hidden rounded-xl border border-line">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-dark-card text-fg-muted uppercase text-[10px] border-b border-line">
+                <thead className="bg-surface-studio text-fg-muted uppercase text-[10px] border-b border-line-brand/70 dark:border-brand-500/20">
                   <tr>
                     <th className="px-3.5 py-2 font-medium">Stage</th>
                     <th className="px-3.5 py-2 font-medium text-right">Tokens</th>
@@ -460,7 +460,7 @@ export function QueryInspectorDrawer({
                       ${guardrailEmbedCost.toFixed(5)}
                     </td>
                   </tr>
-                  <tr className="bg-slate-50 dark:bg-dark-card font-semibold text-fg">
+                  <tr className="bg-surface-studio font-semibold text-fg">
                     <td className="px-3.5 py-2.5">Total Exact Turn Billed</td>
                     <td className="px-3.5 py-2.5 text-right font-mono tabular-nums">
                       {(tokens.total_billed || 0).toLocaleString()}

@@ -271,7 +271,7 @@ function PendingQueue({ listKey, items }: { listKey: string; items: readonly Acc
         </div>
       </div>
       <table className="w-full border-collapse text-left text-xs" aria-describedby={hintId}>
-        <thead className="border-b border-line bg-surface-muted/60 text-fg-muted">
+        <thead className="border-b border-line-brand/70 bg-surface-studio dark:border-brand-500/20 text-fg-muted">
           <tr>
             <th scope="col" className="w-10 px-4 py-2.5">
               <label htmlFor={selectAllId} className="sr-only">
@@ -446,7 +446,7 @@ function DecisionHistory({ items }: { items: readonly AccessRequest[] }) {
   if (items.length === 0) return <EmptyState icon={Inbox} title="No decisions yet" />;
   return (
     <table className="w-full border-collapse text-left text-xs">
-      <thead className="border-b border-line bg-surface-muted/60 text-fg-muted">
+      <thead className="border-b border-line-brand/70 bg-surface-studio dark:border-brand-500/20 text-fg-muted">
         <tr>
           <th scope="col" className="px-4 py-2.5 font-semibold">User</th>
           <th scope="col" className="px-3 py-2.5 font-semibold">Requested</th>
@@ -458,7 +458,7 @@ function DecisionHistory({ items }: { items: readonly AccessRequest[] }) {
       </thead>
       <tbody className="divide-y divide-line text-fg-muted">
         {items.map((r) => (
-          <tr key={r.id} className="transition-colors hover:bg-surface-muted/60">
+          <tr key={r.id} className="transition-colors hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07]">
             <td className="px-4 py-2.5">
               <p className="font-medium text-fg">{r.user_name || "—"}</p>
               <p className="text-fg-subtle">{r.user_email}</p>

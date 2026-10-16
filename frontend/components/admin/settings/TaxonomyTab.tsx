@@ -209,7 +209,7 @@ export function TaxonomyTab() {
           <EmptyState compact title={`No ${KIND_NOUN[kind]} entries`} description="Add the first one below." icon={Tags} />
         ) : (
           <table className="w-full min-w-[760px] text-left text-xs" aria-label={`${KIND_TABS.find((t) => t.id === kind)?.label} taxonomy`}>
-            <thead className="border-b border-line bg-surface-muted text-[11px] uppercase tracking-wider text-fg-subtle">
+            <thead className="border-b border-line-brand/70 bg-surface-studio dark:border-brand-500/20 text-[11px] uppercase tracking-wider text-fg-subtle">
               <tr>
                 <th scope="col" className="w-20 px-3 py-2 font-semibold">
                   Order

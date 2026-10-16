@@ -12,7 +12,6 @@ import {
   Zap,
   Clock,
   ShieldCheck,
-  ShieldAlert,
   Activity,
   CheckCircle2,
   AlertTriangle,
@@ -27,6 +26,10 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useChartTheme } from "@/lib/use-chart-theme";
+import { Collapse } from "@/components/ui/Collapse";
+import { SkeletonCard, SkeletonGroup, Skeleton } from "@/components/ui/Skeleton";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { studioTile } from "@/components/ui/styles";
 import {
   OutcomeBadge,
   formatTokens,
@@ -100,36 +103,25 @@ export function InteractiveOverviewTab({
 
   if (isLoading && !summary) {
     return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-28 bg-slate-200/60 rounded-2xl" />
+      <SkeletonGroup label="Loading live telemetry" className="space-y-6">
+        <Skeleton className="h-28 w-full rounded-2xl" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="h-80 bg-slate-200/60 rounded-2xl" />
-          <div className="h-80 bg-slate-200/60 rounded-2xl" />
-          <div className="h-80 bg-slate-200/60 rounded-2xl" />
+          <SkeletonCard className="h-80" />
+          <SkeletonCard className="h-80" />
+          <SkeletonCard className="h-80" />
         </div>
-      </div>
+      </SkeletonGroup>
     );
   }
 
   if (error || !summary) {
     return (
-      <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-8 text-center">
-        <ShieldAlert className="w-8 h-8 text-rose-500 mx-auto mb-2" />
-        <h3 className="text-sm font-semibold text-rose-900">
-          Failed to load Live Telemetry Studio
-        </h3>
-        <p className="text-xs text-rose-700 mt-1 max-w-md mx-auto">
-          {error || "No telemetry found for the selected audience scope."}
-        </p>
-        {onRetry && (
-          <button
-            onClick={onRetry}
-            className="mt-4 px-4 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-medium hover:bg-rose-700 transition"
-          >
-            Retry Analytics
-          </button>
-        )}
-      </div>
+      <ErrorState
+        className="rounded-2xl border border-status-danger/30 bg-status-danger-bg/60"
+        title="Failed to load Live Telemetry Studio"
+        message={error || "No telemetry found for the selected audience scope."}
+        onRetry={onRetry}
+      />
     );
   }
 
@@ -372,7 +364,7 @@ export function InteractiveOverviewTab({
                 </div>
 
                 {/* Aurora Multi-stage Jewel Gradient Bar */}
-                <div className="mt-2.5 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex border border-black/5 dark:border-white/5">
+                <div className="mt-2.5 h-1.5 w-full bg-chart-track rounded-full overflow-hidden flex border border-black/5 dark:border-white/5">
                   <div style={{ width: `${promptPct}%`, backgroundColor: promptColor }} className="h-full" title={`Prompt: ${promptPct}%`} />
                   <div style={{ width: `${reasoningPct}%`, backgroundColor: reasoningColor }} className="h-full" title={`Reasoning: ${reasoningPct}%`} />
                   <div style={{ width: `${outputPct}%`, backgroundColor: outputColor }} className="h-full" title={`Output: ${outputPct}%`} />
@@ -433,14 +425,14 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Expandable Granular Breakdown when a channel is clicked */}
-            {selectedStageDetail && (
-              <div className="mt-3 p-3 rounded-xl bg-slate-900 text-white dark:bg-surface-muted border border-teal-500/30 text-xs animate-in fade-in duration-200">
-                <div className="flex items-center justify-between font-bold text-teal-200 mb-2">
+            <Collapse open={selectedStageDetail !== null}>
+              <div className={`mt-3 p-3 text-xs text-fg ${studioTile}`}>
+                <div className="flex items-center justify-between font-bold text-accent-fg mb-2">
                   <span>Stage Detail Breakdown</span>
                   <button
                     type="button"
                     onClick={() => setSelectedStageDetail(null)}
-                    className="text-[11px] text-slate-400 hover:text-white transition"
+                    className="text-[11px] text-fg-subtle hover:text-fg transition"
                   >
                     Close
                   </button>
@@ -449,16 +441,16 @@ export function InteractiveOverviewTab({
                 {selectedStageDetail === "llm" && (
                   <div className="space-y-1.5 text-[11px]">
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Prompt Context Cost:</span>
-                      <span className="font-mono font-bold text-white">${financial.stage_costs.prompt_uncached_cost.toFixed(5)}</span>
+                      <span className="text-fg-subtle">Prompt Context Cost:</span>
+                      <span className="font-mono font-bold text-fg">${financial.stage_costs.prompt_uncached_cost.toFixed(5)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Reasoning Trace Cost:</span>
-                      <span className="font-mono font-bold text-white">${financial.stage_costs.reasoning_cost.toFixed(5)}</span>
+                      <span className="text-fg-subtle">Reasoning Trace Cost:</span>
+                      <span className="font-mono font-bold text-fg">${financial.stage_costs.reasoning_cost.toFixed(5)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Visible Output Cost:</span>
-                      <span className="font-mono font-bold text-white">${financial.stage_costs.visible_cost.toFixed(5)}</span>
+                      <span className="text-fg-subtle">Visible Output Cost:</span>
+                      <span className="font-mono font-bold text-fg">${financial.stage_costs.visible_cost.toFixed(5)}</span>
                     </div>
                   </div>
                 )}
@@ -466,24 +458,24 @@ export function InteractiveOverviewTab({
                 {selectedStageDetail === "embed" && (
                   <div className="space-y-1.5 text-[11px]">
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Query Embed Cost:</span>
-                      <span className="font-mono font-bold text-white">${financial.stage_costs.query_embed_cost.toFixed(5)}</span>
+                      <span className="text-fg-subtle">Query Embed Cost:</span>
+                      <span className="font-mono font-bold text-fg">${financial.stage_costs.query_embed_cost.toFixed(5)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Guardrails Embed Cost:</span>
-                      <span className="font-mono font-bold text-white">${financial.stage_costs.guardrail_embed_cost.toFixed(5)}</span>
+                      <span className="text-fg-subtle">Guardrails Embed Cost:</span>
+                      <span className="font-mono font-bold text-fg">${financial.stage_costs.guardrail_embed_cost.toFixed(5)}</span>
                     </div>
                   </div>
                 )}
 
                 {selectedStageDetail === "savings" && (
-                  <div className="space-y-1 text-[11px] text-emerald-200">
+                  <div className="space-y-1 text-[11px] text-status-ok-fg">
                     <p>Cached prompt tokens are billed at 50% discount (${pricing.price_cached_per_million || 0.0625}/1M vs ${pricing.price_prompt_per_million}/1M).</p>
-                    <p className="font-bold text-white">Total net saved: ${financial.stage_costs.cached_savings_usd.toFixed(4)}</p>
+                    <p className="font-bold text-fg">Total net saved: ${financial.stage_costs.cached_savings_usd.toFixed(4)}</p>
                   </div>
                 )}
               </div>
-            )}
+            </Collapse>
           </div>
 
           <div className="relative z-10 mt-4 pt-3 border-t border-teal-100 dark:border-teal-500/20 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
@@ -733,7 +725,7 @@ export function InteractiveOverviewTab({
                 </div>
 
                 <div className="mt-1 text-center">
-                  <span className="text-[10px] text-slate-400 dark:text-zinc-400 block font-medium">Turn Speedometer</span>
+                  <span className="text-[10px] text-slate-400 dark:text-fg-muted block font-medium">Turn Speedometer</span>
                   <div className="flex items-center gap-2 text-xs font-mono">
                     <span className="text-cyan-600 dark:text-cyan-400 font-bold" title="Median P50">P50: {Math.round(p50)}ms</span>
                     <span className="text-amber-600 dark:text-amber-400 font-bold" title="Tail P95">P95: {Math.round(p95)}ms</span>
@@ -768,7 +760,7 @@ export function InteractiveOverviewTab({
                 </div>
 
                 <div className="mt-1 text-center">
-                  <span className="text-[10px] text-slate-400 dark:text-zinc-400 block font-medium">Groundedness</span>
+                  <span className="text-[10px] text-slate-400 dark:text-fg-muted block font-medium">Groundedness</span>
                   <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">Verified Citations</span>
                 </div>
               </div>
@@ -776,7 +768,7 @@ export function InteractiveOverviewTab({
 
             {/* Clickable Outcome Filter Pills */}
             <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/[0.08]">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-400 block mb-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-fg-muted block mb-2">
                 Click Outcome to Filter Real Query Feed
               </span>
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -847,7 +839,7 @@ export function InteractiveOverviewTab({
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-teal-100 dark:border-teal-500/20 flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-400">
+          <div className="mt-4 pt-3 border-t border-teal-100 dark:border-teal-500/20 flex items-center justify-between text-[11px] text-slate-500 dark:text-fg-muted">
             <span>Accuracy: {accounting.actual_pct.toFixed(1)}% verified</span>
             <span className="text-teal-600 dark:text-cyan-400 font-bold">Cockpit Online</span>
           </div>
@@ -881,12 +873,12 @@ export function InteractiveOverviewTab({
               <button
                 type="button"
                 onClick={() => setSelectedOutcome("all")}
-                className="text-xs text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-white/10 px-2.5 py-1 rounded-lg font-medium transition"
+                className="text-xs text-slate-500 dark:text-fg-muted hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-white/10 px-2.5 py-1 rounded-lg font-medium transition"
               >
                 Clear Filter (Show All)
               </button>
             )}
-            <span className="text-xs text-slate-400 dark:text-zinc-500 font-mono">
+            <span className="text-xs text-slate-400 dark:text-fg-subtle font-mono">
               {realQueries.length} recent turns
             </span>
           </div>
@@ -894,7 +886,7 @@ export function InteractiveOverviewTab({
 
         {/* Loading / Error States */}
         {loadingQueries && (
-          <div className="flex h-36 items-center justify-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+          <div className="flex h-36 items-center justify-center gap-2 text-xs text-slate-500 dark:text-fg-muted">
             <RefreshCw className="w-4 h-4 animate-spin text-brand-primary dark:text-teal-400" />
             <span>Loading real chatbot queries...</span>
           </div>
@@ -908,7 +900,7 @@ export function InteractiveOverviewTab({
 
         {/* Real Queries Table List */}
         {!loadingQueries && !queriesError && realQueries.length === 0 && (
-          <div className="py-8 text-center text-xs text-slate-400 dark:text-zinc-500">
+          <div className="py-8 text-center text-xs text-slate-400 dark:text-fg-subtle">
             No chatbot turns found matching the selected outcome.
           </div>
         )}
@@ -916,7 +908,7 @@ export function InteractiveOverviewTab({
         {!loadingQueries && !queriesError && realQueries.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-teal-50/30 dark:bg-white/[0.02] text-slate-500 dark:text-zinc-400 font-semibold border-b border-teal-100 dark:border-teal-500/20">
+              <thead className="bg-surface-studio text-fg-muted font-semibold border-b border-line-brand/70 dark:border-brand-500/20">
                 <tr>
                   <th className="px-4 py-2.5">User Prompt & Chatbot Answer</th>
                   <th className="px-3 py-2.5">Outcome</th>
@@ -927,7 +919,7 @@ export function InteractiveOverviewTab({
                   <th className="px-4 py-2.5 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06] text-slate-700 dark:text-zinc-200">
+              <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06] text-slate-700 dark:text-fg">
                 {realQueries.map((q) => (
                   <tr
                     key={q.request_id}
@@ -939,10 +931,10 @@ export function InteractiveOverviewTab({
                       <div className="font-semibold text-slate-900 dark:text-white truncate" title={q.query}>
                         &ldquo;{q.query}&rdquo;
                       </div>
-                      <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate mt-0.5" title={q.answer}>
+                      <div className="text-[11px] text-slate-500 dark:text-fg-muted truncate mt-0.5" title={q.answer}>
                         {q.answer || "No response generated"}
                       </div>
-                      <div className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono mt-0.5 flex items-center gap-2">
+                      <div className="text-[10px] text-slate-400 dark:text-fg-subtle font-mono mt-0.5 flex items-center gap-2">
                         <span>IP: {q.ip_address}</span>
                         <span>•</span>
                         <span>Session: {q.session_title || q.session_id.slice(0, 8)}</span>
@@ -965,7 +957,7 @@ export function InteractiveOverviewTab({
                     </td>
 
                     {/* Latency */}
-                    <td className="px-3 py-3 text-right font-mono text-slate-600 dark:text-zinc-400 whitespace-nowrap">
+                    <td className="px-3 py-3 text-right font-mono text-slate-600 dark:text-fg-muted whitespace-nowrap">
                       {q.latency_ms ? `${q.latency_ms} ms` : "—"}
                     </td>
 

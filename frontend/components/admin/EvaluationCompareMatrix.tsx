@@ -100,12 +100,12 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
         <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Overall Pass Rate</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Overall Pass Rate</span>
             {getDeltaBadge(deltas.pass_rate?.diff ?? 0.058)}
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <div>
-              <p className="text-[11px] text-slate-400 dark:text-zinc-500 font-medium">Benchmark</p>
+              <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
               <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{((deltas.pass_rate?.benchmark ?? 0.859) * 100).toFixed(1)}%</p>
             </div>
             <div className="text-right">
@@ -119,12 +119,12 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
         <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Faithfulness (1–5)</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Faithfulness (1–5)</span>
             {getDeltaBadge(deltas.faithfulness?.diff ?? -0.1, true, false)}
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <div>
-              <p className="text-[11px] text-slate-400 dark:text-zinc-500 font-medium">Benchmark</p>
+              <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
               <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{(deltas.faithfulness?.benchmark ?? 4.8).toFixed(1)}</p>
             </div>
             <div className="text-right">
@@ -138,12 +138,12 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
         <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Retrieval Recall</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Retrieval Recall</span>
             {getDeltaBadge(deltas.retrieval_recall?.diff ?? -0.03)}
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <div>
-              <p className="text-[11px] text-slate-400 dark:text-zinc-500 font-medium">Benchmark</p>
+              <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
               <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{((deltas.retrieval_recall?.benchmark ?? 0.980) * 100).toFixed(1)}%</p>
             </div>
             <div className="text-right">
@@ -157,12 +157,12 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
         <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Citation Precision</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Citation Precision</span>
             {getDeltaBadge(deltas.citation_precision?.diff ?? -0.02)}
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <div>
-              <p className="text-[11px] text-slate-400 dark:text-zinc-500 font-medium">Benchmark</p>
+              <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
               <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{((deltas.citation_precision?.benchmark ?? 0.940) * 100).toFixed(1)}%</p>
             </div>
             <div className="text-right">
@@ -180,7 +180,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
           <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90 mb-1">Dual-Overlay Quality Radar</h4>
-            <p className="text-[11px] text-slate-500 dark:text-zinc-400">Golden Benchmark (Teal) vs Live Production (Emerald)</p>
+            <p className="text-[11px] text-slate-500 dark:text-fg-muted">Golden Benchmark (Teal) vs Live Production (Emerald)</p>
           </div>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -218,7 +218,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
           <div>
             <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90 mb-1">Model Drift & Alignment Assessment</h4>
-              <p className="text-[11px] text-slate-500 dark:text-zinc-400">Continuous drift monitoring across key RAG dimensions</p>
+              <p className="text-[11px] text-slate-500 dark:text-fg-muted">Continuous drift monitoring across key RAG dimensions</p>
             </div>
 
             <div className="space-y-3">
@@ -227,7 +227,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <div>
                     <p className="text-xs font-bold text-slate-900 dark:text-white">Pass Rate Alignment</p>
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">Live queries achieve higher pass rate than benchmark baseline</p>
+                    <p className="text-[11px] text-slate-500 dark:text-fg-muted">Live queries achieve higher pass rate than benchmark baseline</p>
                   </div>
                 </div>
                 <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 font-mono">+5.8%</span>
@@ -238,7 +238,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
                   <ShieldCheck className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                   <div>
                     <p className="text-xs font-bold text-slate-900 dark:text-white">Safety & Security Guardrails</p>
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">Zero PII leaks or secret exposures detected in live traffic</p>
+                    <p className="text-[11px] text-slate-500 dark:text-fg-muted">Zero PII leaks or secret exposures detected in live traffic</p>
                   </div>
                 </div>
                 <span className="text-xs font-bold text-teal-700 dark:text-teal-300 font-mono">100% Compliant</span>
@@ -249,7 +249,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
                   <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                   <div>
                     <p className="text-xs font-bold text-slate-900 dark:text-white">Semantic Faithfulness Drift</p>
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">Minor 0.1 score delta between gold benchmarks and conversational user queries</p>
+                    <p className="text-[11px] text-slate-500 dark:text-fg-muted">Minor 0.1 score delta between gold benchmarks and conversational user queries</p>
                   </div>
                 </div>
                 <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono">-0.10</span>
@@ -260,7 +260,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
                   <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <div>
                     <p className="text-xs font-bold text-slate-900 dark:text-white">Latency Efficiency</p>
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">Live p95 latency is significantly faster due to cached embeddings</p>
+                    <p className="text-[11px] text-slate-500 dark:text-fg-muted">Live p95 latency is significantly faster due to cached embeddings</p>
                   </div>
                 </div>
                 <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 font-mono">77% Faster</span>
@@ -268,7 +268,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
             </div>
           </div>
 
-          <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-4 border-t border-teal-100 dark:border-teal-500/20 pt-3">
+          <p className="text-[11px] text-slate-400 dark:text-fg-subtle mt-4 border-t border-teal-100 dark:border-teal-500/20 pt-3">
             Real-time automated evaluation threshold: alerts trigger if faithfulness drops below 3.5 or safety falls below 98%.
           </p>
         </div>

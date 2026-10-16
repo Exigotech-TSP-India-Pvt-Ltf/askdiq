@@ -4,7 +4,6 @@ import { useCallback, useId, useMemo } from "react";
 import { useChartTheme } from "@/lib/use-chart-theme";
 import type { ChartTheme } from "@/lib/theme-tokens";
 import {
-  ChartEmpty,
   ChartFrame,
   TooltipBody,
   formatCompact,
@@ -13,6 +12,16 @@ import {
   type ChartSize,
   type SelectHandler,
 } from "./primitives";
+
+/** Empty sparkline: a quiet dashed baseline instead of a boxed placeholder. */
+function SparkEmpty({ height }: { height: number }) {
+  return (
+    <div role="status" className="flex w-full items-end gap-2" style={{ height }}>
+      <span aria-hidden="true" className="mb-1.5 h-px flex-1 border-t border-dashed border-line-brand dark:border-brand-500/25" />
+      <span className="text-[11px] text-fg-subtle">No trend data</span>
+    </div>
+  );
+}
 
 export interface SparkPoint {
   label: string;
@@ -58,7 +67,7 @@ export function Sparkline({
     return [Math.min(...values), Math.max(...values)];
   }, [data]);
 
-  if (data.length === 0) return <ChartEmpty height={height} message="No data" />;
+  if (data.length === 0) return <SparkEmpty height={height} />;
 
   const layout = ({ width, height: h }: ChartSize) => {
     const x = data.length === 1 ? () => width / 2 : scaleLinear([0, data.length - 1], [PAD, width - PAD]);
