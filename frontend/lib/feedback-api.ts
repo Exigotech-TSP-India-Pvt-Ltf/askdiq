@@ -122,6 +122,10 @@ export interface TrendPoint {
   positive: number;
   negative: number;
   avg_rating: number | null;
+  /** Assistant answers that day (coverage denominator). */
+  answers?: number;
+  /** Ratings / answers that day (0-1); null with no answers. */
+  coverage?: number | null;
 }
 
 export interface CountItem {

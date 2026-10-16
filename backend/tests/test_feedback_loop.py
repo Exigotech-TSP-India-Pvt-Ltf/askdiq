@@ -1179,3 +1179,16 @@ def test_exchange_write_task_is_tracked_until_done():
     from app.core import sessions
 
     assert sessions.exchange_write_task(str(uuid.uuid4())) is None
+
+
+def test_daily_coverage_divides_ratings_by_that_days_answers() -> None:
+    from app.feedback.analytics import with_daily_coverage
+
+    trend = [
+        {"day": "2026-10-13", "total": 2},
+        {"day": "2026-10-14", "total": 3},
+    ]
+    out = with_daily_coverage(trend, {"2026-10-14": 12})
+    assert out[0]["answers"] == 0
+    assert out[0]["coverage"] is None
+    assert out[1]["coverage"] == 0.25

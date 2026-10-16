@@ -83,13 +83,8 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
     const funnel: (FunnelStage & { key: string })[] = TRIAGE_STATUSES.filter((s) => s !== "dismissed").map((s) => ({
       key: s,
       label: TRIAGE_LABELS[s],
-      // A row moves on from "new", so each stage counts everything that reached it.
-      value:
-        s === "new"
-          ? (analytics.triage_funnel.new ?? 0) + (analytics.triage_funnel.reviewed ?? 0) + (analytics.triage_funnel.promoted ?? 0)
-          : s === "reviewed"
-            ? (analytics.triage_funnel.reviewed ?? 0) + (analytics.triage_funnel.promoted ?? 0)
-            : analytics.triage_funnel[s] ?? 0,
+      // Rows currently in this status: exactly what a click filters the queue to.
+      value: analytics.triage_funnel[s] ?? 0,
     }));
     const quadrant: QuadrantPoint[] = QUADRANTS.map((q) => ({
       id: q.id,
@@ -98,7 +93,11 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
       y: q.y,
       size: Math.max(analytics.disagreement[q.id], 0.5),
     }));
-    return { trend, spark, ratings, outcomes, reasons, funnel, quadrant };
+    // Daily coverage (ratings / answers, in %), not the ratings count.
+    const coverage: SparkPoint[] = trend
+      .filter((p) => typeof p.coverage === "number")
+      .map((p) => ({ label: p.day, value: Math.round((p.coverage as number) * 1000) / 10 }));
+    return { trend, spark, coverage, ratings, outcomes, reasons, funnel, quadrant };
   }, [analytics]);
 
   if (error && !analytics) {
@@ -180,7 +179,7 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
         <KpiTrendCard
           label="Coverage"
           value={percent(analytics.feedback_rate)}
-          trend={derived.spark((p) => p.total)}
+          trend={derived.coverage}
           onSelect={dayFilter}
           icon={Percent}
           hint="Share of answers that received a rating"
@@ -271,11 +270,11 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
         </ChartCard>
         <ChartCard
           title="Triage funnel"
-          subtitle="New, reviewed, promoted to golden cases."
+          subtitle="Feedback in each triage status. Click a stage to filter the queue to it."
           table={{
             columns: [
               { key: "label", label: "Stage" },
-              { key: "value", label: "Reached", numeric: true },
+              { key: "value", label: "In status", numeric: true },
             ],
             rows: derived.funnel.map((s) => ({ label: s.label, value: s.value })),
           }}
