@@ -394,6 +394,7 @@ def _log_filters(
     q: str | None,
     date_from: datetime | None,
     date_to: datetime | None,
+    include_auth: bool = False,
 ) -> logs.LogFilters:
     start, end = _date_range(date_from, date_to)
     return logs.LogFilters(
@@ -403,6 +404,7 @@ def _log_filters(
         q=_clean_q(q),
         date_from=start,
         date_to=end,
+        include_auth=include_auth,
     )
 
 
@@ -425,7 +427,15 @@ async def governance_logs(
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(read_guard),
 ) -> dict[str, Any]:
-    filters = _log_filters(audience, level, service, q, date_from, date_to)
+    filters = _log_filters(
+        audience,
+        level,
+        service,
+        q,
+        date_from,
+        date_to,
+        include_auth=user.has(Permission.AUDIT_AUTH_READ),
+    )
     position = Cursor.decode(cursor)
     cap = get_settings().governance_exact_count_cap
     (rows, next_cursor), (counts, capped, total) = await runner.gather(
@@ -490,7 +500,15 @@ async def governance_logs_export(
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(read_guard),
 ) -> StreamingResponse:
-    filters = _log_filters(audience, level, service, q, date_from, date_to)
+    filters = _log_filters(
+        audience,
+        level,
+        service,
+        q,
+        date_from,
+        date_to,
+        include_auth=user.has(Permission.AUDIT_AUTH_READ),
+    )
     settings = get_settings()
     await record_audit_event(
         db,

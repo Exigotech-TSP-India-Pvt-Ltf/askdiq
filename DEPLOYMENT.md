@@ -91,9 +91,78 @@ request needs a signed-in session. The proxy must send:
 
 Status and role are re-read from Postgres on every request: pending or
 rejected users get Chat only (403 on dashboard routes), suspended users get
-403 everywhere, and role changes apply on the next request. Public routes:
-`/health`, `/branding` and, with `AUTH_DEV_MOCK=true` in development only,
-the mock IdP under `/mock-idp/`.
+403 everywhere (except `GET /auth/me` and `POST /auth/logout`, so the UI can
+show the suspended page), and role changes apply on the next request. Public
+routes: `/health`, `/branding`, `/auth/sso/login` and `/auth/sso/callback`
+(no session yet, but the service key is still required) and, with
+`AUTH_DEV_MOCK=true` in development only, the mock IdP under `/mock-idp/`.
+
+### Sign-in flow (frontend contract for the Next.js side)
+
+The Next.js handlers are thin; the backend is the authority. Exact contract:
+
+| Step | Next.js | Backend call (through the proxy, with `X-API-Key`) |
+|---|---|---|
+| 1 | "Sign in with Microsoft" calls `GET /api/proxy/auth/sso/login`. | Returns `{"authorize_url": ...}` (`Cache-Control: no-store`). Rate-limited per client IP (`AUTH_LOGIN_RATE_LIMIT_PER_MINUTE`, default 10/min, **429** with `Retry-After`). |
+| 2 | Before redirecting the browser to `authorize_url`, set a short-lived (10 min) httpOnly, `SameSite=Lax` cookie `askdiq_oidc_state` holding the `state` query parameter of that URL. | `state`, `nonce` and the PKCE verifier are stored server-side, single use. |
+| 3 | `GET /auth/callback?code=&state=` (route handler, server-side): reject unless `state` equals the `askdiq_oidc_state` cookie (login-CSRF defence), then delete that cookie. | |
+| 4 | Server-side `POST {backend}/auth/sso/callback` with JSON `{"code", "state"}`, plus `X-Session: <old cookie value>` if a session cookie already exists (it is revoked: rotation on login). | **200** `{"session", "cookie_name", "cookie_secure", "expires_at", "me"}`. **400**: state unknown, expired or replayed (start again). **401**: invalid ID token. **403**: suspended (`detail: "Account suspended."`, body also has `access_contact_email`) or the email belongs to another Entra identity. **429**: rate limited. **502**: identity provider unreachable. Every outcome is audited (`login_success` / `login_denied`). |
+| 5 | Set the cookie named `cookie_name` (`SESSION_COOKIE_NAME`, default `askdiq_session`) to `session`: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when `cookie_secure` (`SESSION_COOKIE_SECURE`), `Expires=expires_at`. Never expose it to client JavaScript. Redirect to `/` (active) or `/chat` (pending/rejected) based on `me.status`; on 403 suspended redirect to the suspended page. | |
+| 6 | Every proxied call: `X-API-Key`, `X-Session: <cookie value>`, `X-Forwarded-For`; on `POST`/`PUT`/`PATCH`/`DELETE` also `X-Requested-With: askdiq` and forward the browser's `Origin`. | Table above. |
+| 7 | Page gate: `GET /api/proxy/auth/me` returns `{user, role, status, permissions, version, access_contact_email}` (weak `ETag`, `Cache-Control: private, max-age=0`, `Vary: X-API-Key, X-Session`). 401 means go to `/login`. | |
+| 8 | Sign out: `POST /api/proxy/auth/logout` (**204**), then delete the cookie. | The session is revoked server-side and `logout` is audited. |
+
+In development with `AUTH_DEV_MOCK=true` the authorize URL points at
+`APP_BASE_URL/mock-idp/...`, so the frontend must forward `/mock-idp/*` to the
+backend (development only), or set `AUTH_MOCK_BASE_URL` to the backend URL
+that both the browser and the backend can reach.
+
+Other `/auth` routes: `GET /auth/access-request` (own status and latest
+request) and `POST /auth/access-request` (`{"requested_role"?, "justification"?}`;
+**409** when already active or a request is pending). User Management
+(superadmin only, `users:manage`): `/admin/users-accounts` (list, `stats`,
+detail, `PATCH` with `version`, `revoke-sessions`, `invite`) and
+`/admin/access-requests` (queue, `approve`, `reject`, `bulk-approve`). Auth
+audit events appear on `/governance/audit-log` and `/admin/governance/logs`
+only for callers with `audit:auth:read` (superadmin).
+
+### Full-stack sign-in smoke
+
+`backend/scripts/smoke_journeys.py` signs in through port 3000 against the
+mock IdP (a pending user gets 403 on `/api/proxy/admin/dashboard`, a
+`SUPERADMIN_EMAILS` user gets 200, logout invalidates the cookie). Run it
+standalone (`venv\Scripts\python.exe scripts\smoke_journeys.py --base-url
+http://localhost:3000`) or call `run_signin_journeys()` from
+`scripts/smoke_e2e.py` after its health checks.
+
+## Entra ID go-live checklist (owner)
+
+Nothing else changes in code: real Entra is switched on by `.env` alone.
+
+1. **Register the app in Entra ID** (single tenant). Add the Web redirect URI
+   `http://localhost:3000/auth/callback` (and the production HTTPS URL, e.g.
+   `https://askdiq.example.com/auth/callback`). Create a client secret. Grant
+   the delegated permissions `openid`, `profile` and `email`. Optionally add
+   the `email` optional claim to the ID token (otherwise `preferred_username`
+   is used).
+2. **Fill in `backend/.env`** (copy from `backend/.env.example`; never commit
+   it): `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`,
+   `ENTRA_REDIRECT_URI` (must equal `APP_BASE_URL` + `/auth/callback`),
+   `SESSION_SECRET` (`python -c "import secrets; print(secrets.token_hex(32))"`),
+   `SUPERADMIN_EMAILS` (your own email), `ACCESS_CONTACT_EMAIL`, and
+   `AUTH_DEV_MOCK=false`. Fill in `frontend/.env.local`: `APP_BASE_URL`,
+   `SESSION_COOKIE_NAME` (same as the backend) and `SESSION_COOKIE_SECURE`
+   (`true` over HTTPS).
+3. **Preflight:** `cd backend` then
+   `venv\Scripts\python.exe scripts\verify_sso_config.py`. Every check must
+   PASS (it prints check names only, never values).
+4. **Sign in as a superadmin:** start the backend and `npm run dev` (port
+   3000), open `http://localhost:3000`, and sign in with an email from
+   `SUPERADMIN_EMAILS`. You should land on the dashboard.
+5. **Approve a second account:** sign in with another account (for example in
+   a private window). It should get Chat plus the Access Required page.
+   Request access, approve it in User Management with a role, and the second
+   account should reach the dashboard without signing in again.
 
 ## 5. API Deprecations
 
@@ -110,6 +179,87 @@ the mock IdP under `/mock-idp/`.
 - Backend health: `http://localhost:8000/health`
 - Frontend: `http://localhost:3000`
 - `docker compose logs -f backend` — confirm no startup errors
+
+## 7. Production topology: replicas, workers and pool sizing
+
+[docker-compose.prod.yml](docker-compose.prod.yml) runs three containers from
+the `askdiq-api:latest` image ([backend/Dockerfile.prod](backend/Dockerfile.prod)):
+
+| Service | Container | Runs | Notes |
+|---|---|---|---|
+| `api-1` | `askdiq-api-1` | `uvicorn --workers ${WEB_CONCURRENCY}` | `/health` healthcheck, host port `127.0.0.1:5500` |
+| `api-2` | `askdiq-api-2` | same | `/health` healthcheck, host port `127.0.0.1:5501` |
+| `worker` | `askdiq-worker` | `python -m app.jobs.worker` | Postgres job queue (`SKIP LOCKED`); no HTTP |
+
+- **Load balancing:** nginx ([askdiq.conf](askdiq.conf)) proxies to
+  `upstream askdiq_api` (`least_conn`, `max_fails=3 fail_timeout=10s`,
+  `keepalive 32`) and fails over on `error timeout http_502 http_503`. POSTs
+  are never replayed once sent. SSE paths (`.../stream`, `.../events`) are
+  unbuffered with a 1 h read timeout. No sticky sessions are needed:
+  rate limits, OIDC state, jobs and live events are shared through Postgres.
+- **Workers:** `WEB_CONCURRENCY` (default `2` in compose, `1` in the image)
+  sets uvicorn workers per replica. Each worker holds its own DB pool, one
+  `LISTEN` connection for the event bus, and its own reranker model in memory,
+  so budget RAM per worker too.
+- **Jobs:** the API replicas run with `JOBS_WORKER_ENABLED=false`; only the
+  `worker` service claims jobs. Any number of workers is safe; to scale with
+  `--scale worker=N`, remove its `container_name` first.
+- **Overrides:** `WEB_CONCURRENCY`, `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`,
+  `WORKER_DB_POOL_SIZE` and `WORKER_DB_MAX_OVERFLOW` are set in the compose
+  file's `environment:` (which wins over `backend/.env`). Change them from the
+  shell or a project-root `.env` read by compose interpolation.
+
+### Pool sizing rule
+
+```
+replicas × workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) ≤ max_connections − 20
+```
+
+Defaults: `2 × 2 × (10 + 5) = 60`. Also count the job worker's pool
+(`5 + 5 = 10`) and one `LISTEN` connection per process (`2 × 2 + 1 = 5`):
+**75 in total**, within the `100 − 20 = 80` budget of a stock Postgres. Check
+the server with `SHOW max_connections;` and, before adding replicas or
+workers, lower `DB_POOL_SIZE` or raise `max_connections`.
+
+### Rollout
+
+```bash
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml run --rm api-1 alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml ps        # api-1 / api-2 "healthy"
+nginx -t && nginx -s reload                         # inside the et-platform nginx container
+```
+
+nginx resolves `askdiq-api-1` / `askdiq-api-2` when it loads the config, so
+both containers must exist on the shared network before `nginx -t` or a
+reload (otherwise: `host not found in upstream`). Once loaded, a stopped
+replica is just marked failed and skipped.
+
+Run migrations before starting the replicas, so several processes never race
+on first-time schema setup. For a rolling update restart one replica at a
+time (`restart api-1`, wait for healthy, then `api-2`); nginx routes around
+the replica that is down. To see which replica served a request, log
+`$upstream_addr` in the nginx access log (an `add_header` inside a location
+block would drop the server-level security headers).
+
+### Load test
+
+```bash
+# From backend/ (venv python). CI-sized smoke: 50 users for 15 s; exits 1 on a breach.
+python scripts/run_admin_load_test.py --smoke --base-url https://askdiq.ethub.co
+# Full admin profile (newplan §13.5): 50, then 100 users for 10 minutes.
+python scripts/run_admin_load_test.py --profile admin --concurrency 100 --duration 600
+# Chat profile against a fake-LLM stack; add loadtest-<n> to RATE_LIMIT_EXEMPT_ACTORS.
+python scripts/run_admin_load_test.py --profile chat --concurrency 50 --duration 120
+```
+
+The API key comes from `--api-key` or `API_KEY_NAME`. The JSON report
+(`backend/reports/admin_load_report.json`, or `--output`) lists p50/p70/p95/p99,
+error % and 429s per route, plus every newplan §13.4 budget check: aggregation
+GETs p95 < 600 ms, paginated lists p95 < 250 ms, and an error rate below 0.5 %
+(429s excluded). `--report-only` always exits 0; `--profile usage` reproduces
+the original `/admin/usage/*` mix.
 
 ## Notes / gotchas
 

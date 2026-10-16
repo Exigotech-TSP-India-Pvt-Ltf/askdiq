@@ -29,6 +29,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.governance.audience import build_audience_filter
 from app.governance.log_summary import (
     AUTH_PREFIXES,
@@ -93,6 +94,8 @@ class LogFilters:
     q: str | None = None
     date_from: datetime | None = None
     date_to: datetime | None = None
+    # Auth events are superadmin-only (`audit:auth:read`, newplan §7.5).
+    include_auth: bool = False
 
     def as_audit_detail(self) -> dict[str, Any]:
         return {
@@ -127,6 +130,8 @@ async def _conditions(
                 AuditLog.request_id.ilike(pattern, escape="\\"),
             )
         )
+    if not f.include_auth:
+        conds.append(AuditLog.action.not_in(AUTH_AUDIT_ACTIONS))
     if with_level and f.levels:
         conds.append(level_sql().in_(f.levels))
     return conds
