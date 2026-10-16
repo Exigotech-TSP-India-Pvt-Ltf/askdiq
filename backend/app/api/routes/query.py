@@ -1,3 +1,5 @@
+import ipaddress
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +23,16 @@ router = APIRouter()
 settings = get_settings()
 
 
+def _valid_ip(value: str | None) -> str | None:
+    """Return the normalised IP if `value` is a valid IPv4/IPv6 address, else None."""
+    if not value:
+        return None
+    try:
+        return str(ipaddress.ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
 @router.post("/query", response_model=QueryResponse)
 async def query(
     request: Request,
@@ -33,17 +45,12 @@ async def query(
     embedding_tokens_sink.set(embed_sink)
 
     vector_store = VectorStore(db)
-    # Client-supplied override is honoured only when explicitly enabled for
-    # testing/demo (ALLOW_CLIENT_IP_OVERRIDE) and never in production; otherwise
-    # always use the detected client IP so attribution and per-IP limits can't be spoofed.
-    if (
-        settings.allow_client_ip_override
-        and settings.env != "production"
-        and body.ip_address
-    ):
-        client_ip = body.ip_address
-    else:
-        client_ip = get_client_ip(request)
+    # A trusted server-side caller (e.g. the website frontend, which already holds
+    # the API key) passes the real end user's IP in the body; otherwise the API
+    # would only ever see the caller's own address. Honoured only when
+    # ALLOW_CLIENT_IP_OVERRIDE=true and only if it is a valid IP address.
+    override = _valid_ip(body.ip_address) if settings.allow_client_ip_override else None
+    client_ip = override or get_client_ip(request)
 
     session = await resolve_session_for_query(db, actor, body.session_id, client_ip)
     history = await load_recent_history(db, session)

@@ -90,8 +90,9 @@ class Settings(BaseSettings):
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).
     retrieval_filter_keys: list[str] = ["source_type", "corpus", "ingestion_source"]
-    # Honour a client-supplied `ip_address` in /query bodies. Demo/testing only;
-    # never honoured when ENV=production regardless of this flag.
+    # Honour `ip_address` in /query bodies: set true when a trusted server-side
+    # caller (the website frontend, which holds the API key) forwards the real
+    # end user's IP. Only valid IPv4/IPv6 values are accepted. Off by default.
     allow_client_ip_override: bool = False
     # Extra LLM generation attempts (beyond the first) on empty/failed/ungrounded output.
     # Each retry is a full LLM call (~5-8s) — capped at 1 (not 2) so a run of

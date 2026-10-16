@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.retrieval.vector_store import usable_filters
 from app.schemas.query import QueryRequest
 
@@ -40,7 +40,7 @@ def test_swagger_example_omits_filters_and_ip() -> None:
 
 
 def test_client_ip_override_is_off_by_default() -> None:
-    assert get_settings().model_fields["allow_client_ip_override"].default is False
+    assert Settings.model_fields["allow_client_ip_override"].default is False
 
 
 async def test_body_ip_is_ignored_unless_override_enabled(
@@ -57,6 +57,58 @@ async def test_body_ip_is_ignored_unless_override_enabled(
     )
     assert resp.status_code == 200
     assert resp.json()["ip_address"] != "203.0.113.250"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("20.20.20.241", "20.20.20.241"),
+        (" 2001:db8::1 ", "2001:db8::1"),
+        ("not-an-ip", None),
+        ("1.2.3.4; DROP TABLE", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_only_valid_ips_are_accepted_from_the_body(value, expected) -> None:
+    from app.api.routes.query import _valid_ip
+
+    assert _valid_ip(value) == expected
+
+
+async def test_body_ip_is_used_when_override_enabled_even_in_production(
+    client, monkeypatch, fake_embed
+) -> None:
+    # The website frontend calls the API server-to-server and forwards the end
+    # user's IP in the body; with the override enabled that IP is recorded.
+    from tests.conftest import TestingSessionLocal
+
+    monkeypatch.setattr("app.core.sessions.AsyncSessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(get_settings(), "allow_client_ip_override", True)
+    monkeypatch.setattr(get_settings(), "env", "production")
+    resp = await client.post(
+        "/query",
+        json={"query": "hello", "ip_address": "20.20.20.241"},
+        headers={"X-Client-Id": "ip_forward_tester"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ip_address"] == "20.20.20.241"
+
+
+async def test_invalid_body_ip_falls_back_to_the_detected_ip(
+    client, monkeypatch, fake_embed
+) -> None:
+    from tests.conftest import TestingSessionLocal
+
+    monkeypatch.setattr("app.core.sessions.AsyncSessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(get_settings(), "allow_client_ip_override", True)
+    resp = await client.post(
+        "/query",
+        json={"query": "hello", "ip_address": "not-an-ip"},
+        headers={"X-Client-Id": "ip_invalid_tester"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ip_address"] != "not-an-ip"
 
 
 def test_knowledge_base_markdown_is_not_excluded_from_the_image() -> None:
