@@ -85,6 +85,14 @@ EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/users-accounts/{user_id}": MANAGE,
     "/admin/access-requests": MANAGE,
 }
+# Chart-aggregation reads added by PR-14 (planchanges4 B7.1, B7.2): each must
+# exist and need exactly dashboard:read.
+EXPECTED_B7_READS: dict[str, str] = {
+    "/admin/dashboard/activity": Permission.DASHBOARD_READ,
+    "/admin/visitors/stats": Permission.DASHBOARD_READ,
+    "/admin/visitors/{visitor_id}/timeline": Permission.DASHBOARD_READ,
+    "/admin/conversations/stats": Permission.DASHBOARD_READ,
+}
 # Open to every signed-in user, whatever their status.
 SIGNED_IN_ROUTES = frozenset({("GET", "/auth/me"), ("POST", "/auth/logout")})
 
@@ -206,6 +214,12 @@ def test_read_routes_are_operator_level_and_chat_is_open() -> None:
         else:
             expected = EXPECTED_SPECIAL_READS.get(path, Permission.DASHBOARD_READ)
             assert req == str(expected), path
+
+
+def test_chart_aggregation_routes_need_dashboard_read() -> None:
+    reads = {p: req for m, p, req in guarded_endpoints() if m == "GET"}
+    for path, permission in EXPECTED_B7_READS.items():
+        assert reads.get(path) == str(permission), path
 
 
 # ---------------------------------------------------------------------------

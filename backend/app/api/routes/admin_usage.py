@@ -40,6 +40,9 @@ from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
+from app.dashboard import usage_series
+from app.dashboard.queries import cached_tokens_sql
+from app.dashboard.window import utcnow
 from app.governance.audience import (
     Audience,
     audience_scope,
@@ -311,6 +314,9 @@ async def _usage_summary_payload(
                     "sum_guardrail_embed"
                 ),
                 func.coalesce(func.sum(asst_msg.cost_usd), 0.0).label("sum_cost"),
+                func.coalesce(func.sum(cached_tokens_sql(asst_msg)), 0.0).label(
+                    "sum_cached"
+                ),
                 # Count actual vs estimated turns (safely handle JSON boolean / string)
                 func.count(
                     case(
@@ -348,6 +354,7 @@ async def _usage_summary_payload(
         sum_query_embed = int(row.sum_query_embed)
         sum_guardrail_embed = int(row.sum_guardrail_embed)
         sum_cost = float(row.sum_cost)
+        sum_cached = min(int(row.sum_cached), sum_prompt)
         estimated_turns = int(row.estimated_turns)
         actual_turns = max(0, total_turns - estimated_turns)
 
@@ -449,12 +456,16 @@ async def _usage_summary_payload(
 
         # Visible vs reasoning tokens
         visible_tokens = max(0, sum_completion - sum_reasoning)
-        prompt_cost = (sum_prompt * prompt_rate) / 1e6
+        # Cached prompt tokens are billed at the cached rate (as recorded per
+        # exchange by compute_exchange_cost); the rest at the prompt rate.
+        prompt_cost = ((sum_prompt - sum_cached) * prompt_rate) / 1e6
+        cached_prompt_cost = (sum_cached * cached_rate) / 1e6
+        cached_savings = (sum_cached * max(0.0, prompt_rate - cached_rate)) / 1e6
         reasoning_cost = (sum_reasoning * output_rate) / 1e6
         visible_cost = (visible_tokens * output_rate) / 1e6
         query_embed_cost = (sum_query_embed * embed_rate) / 1e6
         guardrail_embed_cost = (sum_guardrail_embed * embed_rate) / 1e6
-        llm_cost = prompt_cost + reasoning_cost + visible_cost
+        llm_cost = prompt_cost + cached_prompt_cost + reasoning_cost + visible_cost
         embeddings_cost = query_embed_cost + guardrail_embed_cost + ingest_cost
 
         total_platform_cost = sum_cost + ingest_cost
@@ -477,8 +488,8 @@ async def _usage_summary_payload(
                     "query_embed_cost": round(query_embed_cost, 6),
                     "guardrail_embed_cost": round(guardrail_embed_cost, 6),
                     "prompt_uncached_cost": round(prompt_cost, 6),
-                    "cached_prompt_cost": 0.0,
-                    "cached_savings_usd": 0.0,
+                    "cached_prompt_cost": round(cached_prompt_cost, 6),
+                    "cached_savings_usd": round(cached_savings, 6),
                     "reasoning_cost": round(reasoning_cost, 6),
                     "visible_cost": round(visible_cost, 6),
                     "ingestion_overhead_cost": round(ingest_cost, 6),
@@ -491,7 +502,7 @@ async def _usage_summary_payload(
                 + ingest_embed_tokens,
                 "llm_tokens": {
                     "prompt_context_tokens": sum_prompt,
-                    "cached_prompt_tokens": 0,
+                    "cached_prompt_tokens": sum_cached,
                     "reasoning_tokens": sum_reasoning,
                     "visible_output_tokens": visible_tokens,
                     "total_llm_tokens": sum_total_tokens,
@@ -530,6 +541,14 @@ async def _usage_summary_payload(
                     "p95_ms": round(float(lat_row.p95_lat), 1),
                 },
             },
+            # B7.4 chart additions (contract: dashboard-aggregations.md §4).
+            "cost_by_stage_series": await usage_series.cost_by_stage_series(
+                db, audience, from_dt, to_dt, utcnow(), settings
+            ),
+            "forecast": await usage_series.month_cost_forecast(
+                db, audience, utcnow(), settings
+            ),
+            "cache": usage_series.cache_stats(sum_cached, sum_prompt),
         }
         _summary_cache[cache_key] = (time.time(), summary_res)
         return summary_res
