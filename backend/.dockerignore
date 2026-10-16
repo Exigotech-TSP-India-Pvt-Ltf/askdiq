@@ -10,6 +10,9 @@ __pycache__/
 .gitignore
 .vscode
 *.md
+# ...except the knowledge-base sources: scripts/ingest_real_docs.py reads them
+# inside the container, and without them prod ingestion fails ("Missing source document").
+!data/real_docs/*.md
 Dockerfile
 Dockerfile.prod
 docker-compose.yml

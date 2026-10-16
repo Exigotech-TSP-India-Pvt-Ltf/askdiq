@@ -12,7 +12,7 @@ from app.auth.principal import AuthUser
 from app.core import sessions as session_service
 from app.core.database import get_db
 from app.core.rate_limit import aenforce_feedback_rate_limit
-from app.core.request_meta import get_client_ip
+from app.core.request_meta import resolve_client_ip
 from app.schemas.session import (
     ChatSessionDetail,
     ChatSessionSummary,
@@ -41,7 +41,10 @@ async def create_session(
     user: AuthUser = Depends(require_role_or_chat),
 ) -> ChatSessionSummary:
     return await session_service.create_session(
-        db, user.email, body.title, client_ip=get_client_ip(request)
+        db,
+        user.email,
+        body.title,
+        client_ip=resolve_client_ip(request, body.ip_address),
     )
 
 
@@ -102,7 +105,7 @@ async def submit_feedback(
 
     Optional ``reason_tags`` (allow-listed) and ``corrected_answer`` (max 4,000
     characters, PII-masked before storage) feed the RLHF review queue."""
-    client_ip = get_client_ip(request)
+    client_ip = resolve_client_ip(request, body.ip_address)
     await aenforce_feedback_rate_limit(user.email, client_ip, limit=30)
     req_id = getattr(request.state, "request_id", None)
 

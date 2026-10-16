@@ -96,6 +96,14 @@ class Settings(BaseSettings):
     # weather?" ~0.10) — gating too high silently blocks on-topic questions
     # before the LLM+groundedness check (the real safety net) ever sees them.
     min_retrieval_score: float = 0.15
+    # Metadata keys a /query `filters` object may use. Unknown keys and non-scalar
+    # values are ignored (a stray key such as Swagger's "additionalProp1" used to
+    # filter out every chunk and turn a valid question into an empty answer).
+    retrieval_filter_keys: list[str] = ["source_type", "corpus", "ingestion_source"]
+    # Honour `ip_address` in request bodies (/query, /sessions, feedback): the
+    # website frontend calls server-to-server and forwards each end user's IP,
+    # which is stored against that user. Only valid IPv4/IPv6 values are used.
+    allow_client_ip_override: bool = True
     # Extra LLM generation attempts (beyond the first) on empty/failed/ungrounded output.
     # Each retry is a full LLM call (~5-8s) — capped at 1 (not 2) so a run of
     # bad luck can't stack 3 LLM calls into one request's tail latency.

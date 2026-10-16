@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatTurn(BaseModel):
@@ -11,9 +11,27 @@ class ChatTurn(BaseModel):
 
 
 class QueryRequest(BaseModel):
+    # Swagger "Try it out" pre-fills this example; it deliberately omits
+    # `filters`, whose generic placeholder used to empty every answer.
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "query": "What is the Trust Center?",
+                    "session_id": None,
+                    "ip_address": "203.0.113.10",
+                }
+            ]
+        }
+    )
+
     query: str = Field(..., min_length=1, max_length=2000)
     filters: dict | None = Field(
-        default=None, description="Metadata filters, e.g. {'source_type': 'pdf'}"
+        default=None,
+        description=(
+            "Optional metadata filters. Only allow-listed keys with scalar values "
+            "are applied (source_type, corpus, ingestion_source); others are ignored."
+        ),
     )
     # Which chat session this belongs to. Omit to resume the caller's most
     # recent non-expired session (or start a new one if there isn't one) —

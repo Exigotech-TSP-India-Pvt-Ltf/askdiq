@@ -163,9 +163,11 @@ async def rate_limited_actor(
     request: Request, user: AuthUser = Depends(require_role_or_chat)
 ) -> str:
     """Chat guard (any signed-in, non-suspended user) that also enforces the
-    per-user AND per-IP rate limits; returns the user's email as the actor."""
+    per-user rate limit; returns the user's email as the actor. The per-IP limit
+    is applied by the route once the end-user IP (possibly forwarded in the
+    body) is known; see app.api.routes.query."""
+    del request
     await aenforce_rate_limit(user.email)
-    await aenforce_ip_rate_limit(get_client_ip(request))
     return user.email
 
 

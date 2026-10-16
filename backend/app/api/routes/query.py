@@ -4,8 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.concurrency import llm_capacity
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.rate_limit import rate_limited_actor
-from app.core.request_meta import get_client_ip
+from app.core.rate_limit import aenforce_ip_rate_limit, rate_limited_actor
+from app.core.request_meta import resolve_client_ip
+from app.core.request_meta import valid_ip as _valid_ip  # noqa: F401  (re-export)
 from app.core.sessions import (
     exchange_write_task,
     load_recent_history,
@@ -41,12 +42,10 @@ async def query(
     embedding_tokens_sink.set(embed_sink)
 
     vector_store = VectorStore(db)
-    # Client-supplied override is honored only outside production (for testing/demo);
-    # in production, always use the detected client IP.
-    if settings.env != "production" and body.ip_address:
-        client_ip = body.ip_address
-    else:
-        client_ip = get_client_ip(request)
+    # The website frontend calls server-to-server and passes each end user's IP
+    # in the body; it is stored against that user and used for the per-IP limit.
+    client_ip = resolve_client_ip(request, body.ip_address)
+    await aenforce_ip_rate_limit(client_ip)
 
     session = await resolve_session_for_query(db, actor, body.session_id, client_ip)
     history = await load_recent_history(db, session)

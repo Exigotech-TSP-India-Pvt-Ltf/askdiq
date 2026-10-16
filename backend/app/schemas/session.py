@@ -46,6 +46,9 @@ class ChatSessionDetail(ChatSessionSummary):
 
 class CreateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=256)
+    ip_address: str | None = Field(
+        default=None, description="End user's IP address (forwarded by the frontend)."
+    )
 
 
 class RenameSessionRequest(BaseModel):
@@ -81,6 +84,10 @@ class UserFeedbackRequest(BaseModel):
     @classmethod
     def sanitize_corrected_answer(cls, v: str | None) -> str | None:
         return strip_control_chars(v)
+
+    ip_address: str | None = Field(
+        default=None, description="End user's IP address (forwarded by the frontend)."
+    )
 
     @field_validator("comment", mode="after")
     @classmethod
