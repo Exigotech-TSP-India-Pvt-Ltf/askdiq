@@ -30,7 +30,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 mounted across those route changes. */}
             <AudienceProvider>
               <ChatProvider>
-                <main className="min-h-0 flex-1 overflow-hidden bg-surface-page">
+                <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-surface-page">
                   <GateContent decision={gate.decision}>{children}</GateContent>
                 </main>
                 {/* Floating AskDIQ chat on every dashboard page (drawer is lazy-loaded). */}

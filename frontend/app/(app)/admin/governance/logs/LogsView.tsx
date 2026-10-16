@@ -61,7 +61,7 @@ async function downloadCsv(href: string): Promise<string | null> {
   }
 }
 
-export const LOGS_PAGE_SIZE = 50;
+export const LOGS_PAGE_SIZE = 25;
 
 const SERVICE_LABEL: Record<string, string> = {
   auth: "Authentication",
@@ -148,12 +148,13 @@ export default function LogsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [levels.join(","), service, q, from, to],
   );
-  const filterKey = [audience, filters.level.join(","), service, q, from, to].join("|");
+  const [pageSize, setPageSize] = useState<number>(LOGS_PAGE_SIZE);
+  const filterKey = [audience, filters.level.join(","), service, q, from, to, pageSize].join("|");
   const pager = useCursorStack(filterKey);
 
   const query = useApiQuery<GovernanceLogPage>(
     ["admin/governance/logs", filterKey, pager.cursor],
-    (signal) => governanceApi.logs(token, { ...filters, audience, limit: LOGS_PAGE_SIZE, cursor: pager.cursor }, signal),
+    (signal) => governanceApi.logs(token, { ...filters, audience, limit: pageSize, cursor: pager.cursor }, signal),
     { enabled: Boolean(token) },
   );
   const page = query.data;
@@ -273,6 +274,11 @@ export default function LogsView() {
         pageItemCount: items.length,
         itemLabel: "entries",
         isLoading: query.isValidating,
+        page: pager.page,
+        totalItems: page?.total,
+        pageSize,
+        onPageSizeChange: setPageSize,
+        onFirst: pager.reset,
       }}
     >
       <DataTable

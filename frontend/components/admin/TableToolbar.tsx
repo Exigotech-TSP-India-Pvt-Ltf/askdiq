@@ -31,6 +31,8 @@ export interface TableToolbarProps {
   onFilterChange?: (value: string) => void;
   filterLabel?: string;
   countLabel?: string;
+  /** Heading shown on the left of the search row (instead of a separate card header). */
+  title?: React.ReactNode;
   onClearAll?: () => void;
   extraActions?: React.ReactNode;
   /** Column-visibility menu (pair with `useTablePreferences`). */
@@ -120,6 +122,7 @@ export function TableToolbar({
   onFilterChange,
   filterLabel,
   countLabel,
+  title,
   onClearAll,
   extraActions,
   columnOptions,
@@ -213,8 +216,13 @@ export function TableToolbar({
   return (
     <div className="flex flex-col gap-2.5" ref={containerRef}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {countLabel ? (
-          <span className="text-xs font-medium text-fg-subtle">{countLabel}</span>
+        {title || countLabel ? (
+          <div className="flex min-w-0 flex-col gap-0.5">
+            {title ? (
+              <h2 className="truncate text-sm font-semibold text-fg dark:text-white">{title}</h2>
+            ) : null}
+            {countLabel ? <span className="text-xs font-medium text-fg-subtle">{countLabel}</span> : null}
+          </div>
         ) : (
           <div />
         )}
