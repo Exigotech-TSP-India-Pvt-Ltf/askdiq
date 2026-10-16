@@ -14,7 +14,7 @@ import { EntityLink } from "@/components/ui/EntityLink";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { SkeletonCard } from "@/components/ui/Skeleton";
+import { MascotLoader } from "@/components/ui/MascotLoader";
 import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
 import {
@@ -142,9 +142,7 @@ function ConversationDetailContent() {
 
   if (detail.isLoading) {
     return (
-      <div className="space-y-4 p-8" aria-busy="true">
-        <SkeletonCard label="Loading conversation" />
-      </div>
+      <MascotLoader variant="page" label="Loading conversation" />
     );
   }
 

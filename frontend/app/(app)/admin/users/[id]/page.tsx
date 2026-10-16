@@ -19,6 +19,7 @@ import { EntityLink } from "@/components/ui/EntityLink";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { MascotLoader } from "@/components/ui/MascotLoader";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { secondaryButton } from "@/components/ui/styles";
 import {
@@ -193,9 +194,7 @@ function VisitorDetailContent() {
 
   if (visitor.isLoading) {
     return (
-      <div className="space-y-4 p-8" aria-busy="true">
-        <SkeletonCard label="Loading visitor" />
-      </div>
+      <MascotLoader variant="page" label="Loading visitor" />
     );
   }
 

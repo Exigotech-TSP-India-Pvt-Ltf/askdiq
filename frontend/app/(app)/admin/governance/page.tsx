@@ -9,7 +9,7 @@ import { useDeepLink } from "@/lib/use-deep-link";
 import { TAB_PARAMS, isGovernanceTab, type GovernanceTab } from "@/lib/governance-links";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, GOVERNANCE_TABS } from "@/components/admin/TabGroup";
-import { SkeletonCard } from "@/components/ui/Skeleton";
+import { MascotLoader } from "@/components/ui/MascotLoader";
 import { runWhenIdle } from "@/lib/query-cache";
 import OverallView from "./overall/OverallView";
 
@@ -19,7 +19,7 @@ import OverallView from "./overall/OverallView";
 const loadMonitoring = () => import("./monitoring/MonitoringView");
 const loadTraces = () => import("./traces/TracesView");
 const loadLogs = () => import("./logs/LogsView");
-const tabLoading = () => <SkeletonCard label="Loading tab" className="h-96" />;
+const tabLoading = () => <MascotLoader variant="inline" label="Loading tab" className="min-h-96" />;
 const MonitoringView = dynamic(loadMonitoring, { loading: tabLoading });
 const TracesView = dynamic(loadTraces, { loading: tabLoading });
 const LogsView = dynamic(loadLogs, { loading: tabLoading });
