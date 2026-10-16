@@ -32,6 +32,10 @@ def _invalidate_local_caches(event: Event) -> None:
     aggregation_cache.invalidate_prefix(event.id)
 
 
+# Upper bound on waiting for the job worker to stop cleanly at shutdown.
+_WORKER_STOP_TIMEOUT_SECONDS = 5.0
+
+
 class PlatformServices:
     """Owns the event-bus listener and the optional job worker task."""
 
@@ -58,9 +62,15 @@ class PlatformServices:
     async def aclose(self) -> None:
         self._stop.set()
         if self._worker_task is not None:
-            with contextlib.suppress(Exception):
-                await self._worker_task
+            task = self._worker_task
             self._worker_task = None
+            # Give the worker a moment to finish its current step, then cancel it.
+            # A cancelled worker is a normal stop (reload/shutdown), not an error.
+            done, _ = await asyncio.wait({task}, timeout=_WORKER_STOP_TIMEOUT_SECONDS)
+            if not done:
+                task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
         await self.bus.stop()
 
 
