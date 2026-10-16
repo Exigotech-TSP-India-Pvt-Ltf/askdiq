@@ -258,7 +258,7 @@ describe("Settings → Branding", { timeout: 15_000 }, () => {
     expect(light).not.toHaveClass("dark");
     expect(dark).toHaveClass("dark");
     expect(light.style.getPropertyValue("--surface-card")).toBe("255 255 255");
-    expect(dark.style.getPropertyValue("--surface-card")).toBe("12 13 16");
+    expect(dark.style.getPropertyValue("--surface-card")).toBe("11 17 19");
 
     // The page switching to dark leaves both panes pinned.
     document.documentElement.classList.add("dark");

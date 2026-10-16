@@ -1,4 +1,5 @@
 import React from "react";
+import { studioSurface } from "@/components/ui/styles";
 
 interface SkeletonProps {
   className?: string;
@@ -6,7 +7,12 @@ interface SkeletonProps {
 
 /** A single shimmering placeholder block (decorative; wrap groups in SkeletonGroup). */
 export function Skeleton({ className = "h-4 w-full" }: SkeletonProps) {
-  return <span aria-hidden="true" className={`block animate-pulse rounded-md bg-surface-muted motion-reduce:animate-none ${className}`} />;
+  return (
+    <span
+      aria-hidden="true"
+      className={`block animate-pulse rounded-md bg-surface-muted motion-reduce:animate-none dark:bg-brand-500/[0.08] ${className}`}
+    />
+  );
 }
 
 interface SkeletonGroupProps {
@@ -40,7 +46,7 @@ export function SkeletonText({ lines = 3, label }: { lines?: number; label?: str
 /** KPI / chart card placeholder. */
 export function SkeletonCard({ label, className = "" }: { label?: string; className?: string }) {
   return (
-    <SkeletonGroup label={label} className={`space-y-3 rounded-2xl border border-line bg-surface-card p-5 shadow-sm ${className}`}>
+    <SkeletonGroup label={label} className={`space-y-3 p-5 ${studioSurface} ${className}`}>
       <Skeleton className="h-3 w-1/3" />
       <Skeleton className="h-7 w-1/2" />
       <Skeleton className="h-24 w-full" />

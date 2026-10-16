@@ -229,30 +229,30 @@ export function QueryInspectorDrawer({
       {!loading && !error && detail && (
         <>
           {/* Metadata strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-dark-card p-3.5 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl border border-line bg-slate-50/70 dark:bg-dark-card p-3.5 text-xs">
             <div>
-              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Client IP</span>
-              <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+              <span className="text-fg-subtle block text-[11px]">Client IP</span>
+              <span className="font-mono font-medium text-fg">
                 {detail.session?.ip || detail.ip_address || "—"}
               </span>
             </div>
             <div>
-              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Session</span>
+              <span className="text-fg-subtle block text-[11px]">Session</span>
               <span
-                className="font-medium text-slate-800 dark:text-slate-200 truncate block"
+                className="font-medium text-fg truncate block"
                 title={detail.session?.title || detail.session_title}
               >
                 {detail.session?.title || detail.session_title || detail.session?.id || "—"}
               </span>
             </div>
             <div>
-              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Turn Cost</span>
-              <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white">
+              <span className="text-fg-subtle block text-[11px]">Turn Cost</span>
+              <span className="font-mono tabular-nums font-bold text-fg">
                 ${(detail.cost_usd ?? totalCalculatedCost).toFixed(4)}
               </span>
             </div>
             <div>
-              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Groundedness</span>
+              <span className="text-fg-subtle block text-[11px]">Groundedness</span>
               <span
                 className={`inline-flex items-center gap-1 font-semibold text-xs ${
                   detail.grounded ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"
@@ -268,13 +268,13 @@ export function QueryInspectorDrawer({
           <div className="space-y-4">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <span className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
                   User Prompt
                 </span>
                 <button
                   type="button"
                   onClick={() => handleCopy(detail.user_query || detail.query, "query")}
-                  className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                  className="inline-flex items-center gap-1 text-[11px] text-fg-subtle hover:text-slate-800 dark:hover:text-slate-200"
                 >
                   {copiedQuery ? (
                     <>
@@ -289,20 +289,20 @@ export function QueryInspectorDrawer({
                   )}
                 </button>
               </div>
-              <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-dark-card p-3.5 text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">
+              <div className="rounded-xl border border-line bg-slate-50/50 dark:bg-dark-card p-3.5 text-xs text-fg whitespace-pre-wrap font-sans leading-relaxed">
                 {detail.user_query || detail.query || "—"}
               </div>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <span className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
                   Assistant Response
                 </span>
                 <button
                   type="button"
                   onClick={() => handleCopy(detail.assistant_answer || detail.answer, "answer")}
-                  className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                  className="inline-flex items-center gap-1 text-[11px] text-fg-subtle hover:text-slate-800 dark:hover:text-slate-200"
                 >
                   {copiedAnswer ? (
                     <>
@@ -317,7 +317,7 @@ export function QueryInspectorDrawer({
                   )}
                 </button>
               </div>
-              <div className="rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50/30 dark:bg-teal-950/20 p-3.5 text-xs text-slate-900 dark:text-slate-100 whitespace-pre-wrap font-sans leading-relaxed max-h-60 overflow-y-auto">
+              <div className="rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50/30 dark:bg-teal-950/20 p-3.5 text-xs text-fg whitespace-pre-wrap font-sans leading-relaxed max-h-60 overflow-y-auto">
                 {detail.assistant_answer || detail.answer || "—"}
               </div>
             </div>
@@ -326,16 +326,16 @@ export function QueryInspectorDrawer({
           {/* Token Allocation Bar */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
                 Token Budget Allocation ({(tokens.total_billed || totalBilledTokens).toLocaleString()} billed tokens)
               </span>
-              <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">
+              <span className="text-[11px] font-mono text-fg-subtle">
                 100% of Turn Volume
               </span>
             </div>
 
             {/* Progress Bar Line Containing Dynamically Divided Text */}
-            <div className="h-7 w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 flex gap-0.5 border border-slate-200/80 dark:border-white/10 shadow-inner">
+            <div className="h-7 w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 flex gap-0.5 border border-line shadow-inner">
               {dynamicBarSegments.map((cat) => (
                 <div
                   key={cat.id}
@@ -354,15 +354,15 @@ export function QueryInspectorDrawer({
             </div>
 
             {/* Clean Inline Legend Strip */}
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 pt-0.5 text-xs text-slate-600 dark:text-slate-300">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 pt-0.5 text-xs text-fg-muted">
               {tokenCategories.map((cat) => (
                 <div key={cat.id} className="flex items-center gap-1.5">
                   <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${cat.dotColor}`} />
-                  <span className="font-medium text-slate-700 dark:text-slate-200">{cat.label}:</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white tabular-nums">
+                  <span className="font-medium text-fg">{cat.label}:</span>
+                  <span className="font-mono font-bold text-fg tabular-nums">
                     {cat.tokens.toLocaleString()}
                   </span>
-                  <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                  <span className="text-[11px] font-medium text-fg-subtle">
                     ({cat.pct.toFixed(1)}%)
                   </span>
                 </div>
@@ -372,12 +372,12 @@ export function QueryInspectorDrawer({
 
           {/* Mathematical Pricing Breakdown Table using Dynamic Rate Card */}
           <div className="space-y-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+            <span className="text-xs font-semibold uppercase tracking-wider text-fg-subtle block">
               Stage-by-Stage Mathematical Pricing (Rate Card)
             </span>
-            <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10">
+            <div className="overflow-hidden rounded-xl border border-line">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-dark-card text-slate-600 dark:text-slate-400 uppercase text-[10px] border-b border-slate-200 dark:border-white/10">
+                <thead className="bg-slate-50 dark:bg-dark-card text-fg-muted uppercase text-[10px] border-b border-line">
                   <tr>
                     <th className="px-3.5 py-2 font-medium">Stage</th>
                     <th className="px-3.5 py-2 font-medium text-right">Tokens</th>
@@ -385,28 +385,28 @@ export function QueryInspectorDrawer({
                     <th className="px-3.5 py-2 font-medium text-right">Cost (USD)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                <tbody className="divide-y divide-line/70">
                   <tr>
-                    <td className="px-3.5 py-2 font-medium text-slate-800 dark:text-slate-200">1. Query Embedding</td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-600 dark:text-slate-300">
+                    <td className="px-3.5 py-2 font-medium text-fg">1. Query Embedding</td>
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-muted">
                       {(tokens.query_embed || 0).toLocaleString()}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-subtle">
                       ${pricing.price_embed_per_million.toFixed(2)}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-slate-800 dark:text-slate-200">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-fg">
                       ${queryEmbedCost.toFixed(5)}
                     </td>
                   </tr>
                   <tr>
-                    <td className="px-3.5 py-2 font-medium text-slate-800 dark:text-slate-200">2. Prompt Context (Uncached)</td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-600 dark:text-slate-300">
+                    <td className="px-3.5 py-2 font-medium text-fg">2. Prompt Context (Uncached)</td>
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-muted">
                       {(tokens.prompt || 0).toLocaleString()}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-subtle">
                       ${pricing.price_input_per_million.toFixed(2)}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-slate-800 dark:text-slate-200">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-fg">
                       ${promptCost.toFixed(5)}
                     </td>
                   </tr>
@@ -416,7 +416,7 @@ export function QueryInspectorDrawer({
                       <td className="px-3.5 py-2 text-right font-mono tabular-nums text-teal-700 dark:text-teal-300">
                         {tokens.cached_prompt.toLocaleString()}
                       </td>
-                      <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                      <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-subtle">
                         ${(pricing.price_cached_per_million || 0.0625).toFixed(4)}
                       </td>
                       <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-teal-800 dark:text-teal-300">
@@ -425,42 +425,42 @@ export function QueryInspectorDrawer({
                     </tr>
                   )}
                   <tr>
-                    <td className="px-3.5 py-2 font-medium text-slate-800 dark:text-slate-200">3. LLM Reasoning</td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-600 dark:text-slate-300">
+                    <td className="px-3.5 py-2 font-medium text-fg">3. LLM Reasoning</td>
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-muted">
                       {(tokens.reasoning || 0).toLocaleString()}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-subtle">
                       ${pricing.price_output_per_million.toFixed(2)}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-slate-800 dark:text-slate-200">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-fg">
                       ${reasoningCost.toFixed(5)}
                     </td>
                   </tr>
                   <tr>
-                    <td className="px-3.5 py-2 font-medium text-slate-800 dark:text-slate-200">4. Visible Output</td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-600 dark:text-slate-300">
+                    <td className="px-3.5 py-2 font-medium text-fg">4. Visible Output</td>
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-muted">
                       {(tokens.visible || 0).toLocaleString()}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-subtle">
                       ${pricing.price_output_per_million.toFixed(2)}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-slate-800 dark:text-slate-200">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-fg">
                       ${visibleCost.toFixed(5)}
                     </td>
                   </tr>
                   <tr>
-                    <td className="px-3.5 py-2 font-medium text-slate-800 dark:text-slate-200">5. Guardrail Embedding</td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-600 dark:text-slate-300">
+                    <td className="px-3.5 py-2 font-medium text-fg">5. Guardrail Embedding</td>
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-muted">
                       {(tokens.guardrail_embed || 0).toLocaleString()}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-subtle">
                       ${pricing.price_embed_per_million.toFixed(2)}
                     </td>
-                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-slate-800 dark:text-slate-200">
+                    <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-fg">
                       ${guardrailEmbedCost.toFixed(5)}
                     </td>
                   </tr>
-                  <tr className="bg-slate-50 dark:bg-dark-card font-semibold text-slate-900 dark:text-white">
+                  <tr className="bg-slate-50 dark:bg-dark-card font-semibold text-fg">
                     <td className="px-3.5 py-2.5">Total Exact Turn Billed</td>
                     <td className="px-3.5 py-2.5 text-right font-mono tabular-nums">
                       {(tokens.total_billed || 0).toLocaleString()}
@@ -478,32 +478,32 @@ export function QueryInspectorDrawer({
           {/* Latency Breakdown */}
           {detail.latency && (
             <div className="space-y-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-fg-subtle flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
                 Turn Latency Stages ({detail.latency.total_ms ?? "—"} ms total)
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-dark-card p-2.5">
-                  <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Retrieval & Search</span>
-                  <span className="font-semibold text-slate-900 dark:text-white font-mono tabular-nums">
+                <div className="rounded-lg border border-line bg-slate-50 dark:bg-dark-card p-2.5">
+                  <span className="text-fg-subtle block text-[11px]">Retrieval & Search</span>
+                  <span className="font-semibold text-fg font-mono tabular-nums">
                     {detail.latency.retrieval_ms ?? "—"} ms
                   </span>
                 </div>
-                <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-dark-card p-2.5">
-                  <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Guardrails Pre</span>
-                  <span className="font-semibold text-slate-900 dark:text-white font-mono tabular-nums">
+                <div className="rounded-lg border border-line bg-slate-50 dark:bg-dark-card p-2.5">
+                  <span className="text-fg-subtle block text-[11px]">Guardrails Pre</span>
+                  <span className="font-semibold text-fg font-mono tabular-nums">
                     {detail.latency.guardrail_pre_ms ?? detail.latency.guardrails_ms ?? "—"} ms
                   </span>
                 </div>
-                <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-dark-card p-2.5">
-                  <span className="text-slate-500 dark:text-slate-400 block text-[11px]">LLM Generation</span>
-                  <span className="font-semibold text-slate-900 dark:text-white font-mono tabular-nums">
+                <div className="rounded-lg border border-line bg-slate-50 dark:bg-dark-card p-2.5">
+                  <span className="text-fg-subtle block text-[11px]">LLM Generation</span>
+                  <span className="font-semibold text-fg font-mono tabular-nums">
                     {detail.latency.llm_generation_ms ?? detail.latency.llm_ms ?? "—"} ms
                   </span>
                 </div>
-                <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-dark-card p-2.5">
-                  <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Guardrails Post</span>
-                  <span className="font-semibold text-slate-900 dark:text-white font-mono tabular-nums">
+                <div className="rounded-lg border border-line bg-slate-50 dark:bg-dark-card p-2.5">
+                  <span className="text-fg-subtle block text-[11px]">Guardrails Post</span>
+                  <span className="font-semibold text-fg font-mono tabular-nums">
                     {detail.latency.guardrail_post_ms ?? "—"} ms
                   </span>
                 </div>

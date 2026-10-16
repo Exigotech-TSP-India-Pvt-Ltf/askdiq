@@ -2,6 +2,10 @@
 
 import React from "react";
 import { CursorPagination, type CursorPaginationProps } from "@/components/admin/CursorPagination";
+import { studioDivider, studioSurface, studioTitle } from "@/components/ui/styles";
+
+// Studio surface without the hover lift (tables are work surfaces): edge glows on hover / focus.
+const CARD = `${studioSurface} transition-[box-shadow,border-color] duration-150 hover:border-brand-400/70 hover:shadow-studio-hover focus-within:border-brand-400/70 motion-reduce:transition-none dark:hover:border-brand-400/50`;
 
 export interface TableCardProps {
   title?: React.ReactNode;
@@ -33,22 +37,22 @@ export function TableCard({
   return (
     <div
       data-testid="table-card"
-      className={`overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 ${className}`}
+      className={`${CARD} ${className}`}
     >
       {/* Optional Top Card Header (Title / Subtitle / Header Actions) */}
       {hasCardHeader && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-teal-100 dark:border-teal-500/20 bg-surface-card px-5 py-4">
+        <div className={`relative z-10 flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4 ${studioDivider}`}>
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
               {typeof title === "string" ? (
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">{title}</h2>
+                <h2 className={studioTitle}>{title}</h2>
               ) : (
                 title
               )}
               {badge}
             </div>
             {description && (
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{description}</p>
+              <p className="mt-0.5 text-xs text-fg-subtle dark:text-brand-200/70">{description}</p>
             )}
           </div>
           {headerActions && (
@@ -59,19 +63,19 @@ export function TableCard({
 
       {/* Toolbar Slot (Integrated Search & Single Filters Popover) */}
       {toolbar && (
-        <div className="border-b border-teal-100 dark:border-teal-500/20 bg-teal-50/20 dark:bg-white/[0.02] px-4 py-3 sm:px-5">
+        <div className={`relative z-10 border-b bg-surface-studio/40 px-4 py-3 dark:bg-white/[0.02] sm:px-5 ${studioDivider}`}>
           {toolbar}
         </div>
       )}
 
       {/* Table Grid Slot */}
-      <div className="overflow-x-auto min-h-[300px]">
+      <div className="relative z-10 min-h-[300px] overflow-x-auto">
         {children}
       </div>
 
       {/* Bottom Pagination Slot */}
       {footer && (
-        <div>
+        <div className="relative z-10">
           {footer}
         </div>
       )}

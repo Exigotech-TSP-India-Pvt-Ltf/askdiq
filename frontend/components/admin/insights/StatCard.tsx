@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { studioCardClass } from "@/components/ui/StudioCard";
+import { studioToneClasses } from "@/components/ui/styles";
 
 export interface StatCardProps {
   title: string;
@@ -15,6 +17,7 @@ export interface StatCardProps {
   className?: string;
 }
 
+/** KPI tile on the studio surface (Usage Live Telemetry look). */
 export function StatCard({
   title,
   value,
@@ -25,38 +28,31 @@ export function StatCard({
   className = "",
 }: StatCardProps) {
   return (
-    <div
-      className={`group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-5 shadow-card dark:shadow-xl transition-all hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md ${className}`}
-    >
-      {/* Ambient Aurora Corner Glow */}
-      <div className="absolute -top-6 -right-6 w-20 h-20 bg-teal-400/10 dark:bg-teal-500/15 rounded-full blur-xl pointer-events-none transition-transform group-hover:scale-125" />
-
+    <div className={`group p-5 ${studioCardClass({ interactive: true })} ${className}`}>
       <div className="relative z-10 flex items-start justify-between gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-teal-200/80">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-fg-subtle dark:text-brand-200/80">
           {title}
         </span>
         {Icon && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-200/80 dark:border-teal-500/30 shadow-2xs">
+          <div className={`flex h-8 w-8 items-center justify-center rounded-xl border shadow-sm ${studioToneClasses.brand}`}>
             <Icon className="h-4 w-4" />
           </div>
         )}
       </div>
 
       <div className="relative z-10 mt-3 flex items-baseline justify-between gap-2">
-        <span className="text-2xl font-black font-mono tracking-tight text-slate-900 dark:text-white">
+        <span className="font-mono text-2xl font-black tracking-tight text-fg">
           {typeof value === "number" ? value.toLocaleString() : value}
         </span>
         {badge}
       </div>
 
       {(subtitle || trend) && (
-        <div className="relative z-10 mt-2 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="relative z-10 mt-2 flex items-center gap-1.5 text-[11px] text-fg-subtle">
           {trend && (
             <span
-              className={`font-semibold font-mono px-1.5 py-0.5 rounded text-[10px] ${
-                trend.isPositive
-                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30"
-                  : "bg-amber-50 text-amber-700 border border-amber-200/60 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30"
+              className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                trend.isPositive ? studioToneClasses.ok : studioToneClasses.warn
               }`}
             >
               {trend.value}

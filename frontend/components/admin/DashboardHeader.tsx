@@ -47,20 +47,20 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   return (
     <header
-      className={`h-20 shrink-0 border-b border-ink/10 dark:border-white/10 bg-white dark:bg-dark-surface px-6 flex items-center justify-between gap-4 ${className}`}
+      className={`h-20 shrink-0 border-b border-line dark:border-brand-500/15 bg-surface-card px-6 flex items-center justify-between gap-4 ${className}`}
     >
       {/* Left Column: Icon Badge + Standardized text-sm bold title */}
       <div className="flex items-center gap-3 min-w-0 sm:min-w-[200px]">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-950/60 border border-brand-500/20 text-brand-600 dark:text-brand-400 shadow-sm">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm border-brand-200/80 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/15 dark:text-brand-300">
           <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+            <h1 className="truncate text-sm font-bold text-fg tracking-tight">
               {title}
             </h1>
             {badgeCount !== undefined && badgeCount !== null ? (
-              <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              <span className="inline-flex items-center rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-fg-muted">
                 {badgeCount}
               </span>
             ) : null}
@@ -88,7 +88,7 @@ export function DashboardHeader({
               </ol>
             </nav>
           ) : subtitle && (
-            <p className="truncate text-[11px] text-slate-500 dark:text-slate-400 font-normal leading-tight">
+            <p className="truncate text-[11px] text-fg-subtle font-normal leading-tight">
               {subtitle}
             </p>
           )}

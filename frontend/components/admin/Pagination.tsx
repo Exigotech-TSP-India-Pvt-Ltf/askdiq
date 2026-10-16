@@ -47,28 +47,28 @@ export function Pagination({
   return (
     <nav
       aria-label="Pagination Navigation"
-      className={`flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 dark:border-white/10 bg-slate-50/40 dark:bg-dark-surface px-5 py-3 ${className}`}
+      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-studio/50 dark:bg-white/[0.02] px-5 py-3 ${className}`}
     >
-      <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+      <div className="flex items-center gap-4 text-xs text-fg-subtle">
         <p>
-          Showing <span className="font-medium text-slate-700 dark:text-slate-200">{start}</span>–
-          <span className="font-medium text-slate-700 dark:text-slate-200">{end}</span> of{" "}
-          <span className="font-medium text-slate-700 dark:text-slate-200">{totalItems.toLocaleString()}</span> entries
+          Showing <span className="font-medium text-fg">{start}</span>–
+          <span className="font-medium text-fg">{end}</span> of{" "}
+          <span className="font-medium text-fg">{totalItems.toLocaleString()}</span> entries
         </p>
 
         {onPageSizeChange && (
-          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 dark:border-white/10">
-            <label htmlFor="page-size-select" className="text-slate-500 dark:text-slate-400">
+          <div className="flex items-center gap-1.5 pl-2 border-l border-line">
+            <label htmlFor="page-size-select" className="text-fg-subtle">
               Rows per page:
             </label>
             <select
               id="page-size-select"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value) as PageSize)}
-              className="rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 transition-colors"
+              className="rounded-md border border-line bg-surface-card px-2 py-1 text-xs font-medium text-fg focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 transition-colors"
             >
               {ALLOWED_PAGE_SIZES.map((sz) => (
-                <option key={sz} value={sz} className="dark:bg-dark-card dark:text-slate-200">
+                <option key={sz} value={sz} className="bg-surface-elevated text-fg">
                   {sz}
                 </option>
               ))}
@@ -84,7 +84,7 @@ export function Pagination({
           disabled={page <= 1}
           aria-label="First page"
           title="First page"
-          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 dark:text-slate-400 transition-colors duration-150 hover:bg-slate-100 dark:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-fg-subtle transition-colors duration-150 hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
         >
           <ChevronsLeft className="h-4 w-4" />
         </button>
@@ -95,12 +95,12 @@ export function Pagination({
           disabled={page <= 1}
           aria-label="Previous page"
           title="Previous page"
-          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 dark:text-slate-400 transition-colors duration-150 hover:bg-slate-100 dark:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-fg-subtle transition-colors duration-150 hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
 
-        {windowStart > 1 && <span className="px-1 text-xs text-slate-400 dark:text-slate-500">…</span>}
+        {windowStart > 1 && <span className="px-1 text-xs text-fg-subtle">…</span>}
 
         {pageNumbers.map((p) => {
           const isCurrent = p === page;
@@ -112,7 +112,7 @@ export function Pagination({
               className={`flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-xs font-medium transition-colors duration-150 ${
                 isCurrent
                   ? "bg-brand-600 dark:bg-brand-500 text-white shadow-xs font-semibold"
-                  : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white"
+                  : "text-fg-muted hover:bg-surface-muted hover:text-fg"
               }`}
             >
               {p}
@@ -120,7 +120,7 @@ export function Pagination({
           );
         })}
 
-        {windowEnd < safePageCount && <span className="px-1 text-xs text-slate-400 dark:text-slate-500">…</span>}
+        {windowEnd < safePageCount && <span className="px-1 text-xs text-fg-subtle">…</span>}
 
         {/* Next */}
         <button
@@ -137,7 +137,7 @@ export function Pagination({
           disabled={page >= safePageCount}
           aria-label="Next page"
           title="Next page"
-          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 dark:text-slate-400 transition-colors duration-150 hover:bg-slate-100 dark:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-fg-subtle transition-colors duration-150 hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
@@ -148,7 +148,7 @@ export function Pagination({
           disabled={page >= safePageCount}
           aria-label="Last page"
           title="Last page"
-          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 dark:text-slate-400 transition-colors duration-150 hover:bg-slate-100 dark:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-fg-subtle transition-colors duration-150 hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
         >
           <ChevronsRight className="h-4 w-4" />
         </button>

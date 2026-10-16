@@ -15,10 +15,10 @@ export function formatNumber(
   fallback = "0"
 ): React.ReactNode {
   if (val === null || val === undefined || isNaN(val)) {
-    return <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500">{fallback}</span>;
+    return <span className="font-mono tabular-nums text-fg-subtle">{fallback}</span>;
   }
   return (
-    <span className="font-mono tabular-nums font-medium text-slate-800 dark:text-slate-200">
+    <span className="font-mono tabular-nums font-medium text-fg">
       {val.toLocaleString()}
     </span>
   );
@@ -31,10 +31,10 @@ export function formatCurrency(
   fallback = "$0.0000"
 ): React.ReactNode {
   if (val === null || val === undefined || isNaN(val)) {
-    return <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500">{fallback}</span>;
+    return <span className="font-mono tabular-nums text-fg-subtle">{fallback}</span>;
   }
   return (
-    <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white">
+    <span className="font-mono tabular-nums font-bold text-fg">
       ${val.toFixed(decimals)}
     </span>
   );
@@ -70,7 +70,7 @@ export function formatTokens(
     case "input":
       return (
         <span
-          className="font-mono tabular-nums text-slate-600 dark:text-slate-300"
+          className="font-mono tabular-nums text-fg-muted"
           title="Input context tokens"
         >
           {formatted}
@@ -78,19 +78,19 @@ export function formatTokens(
       );
     case "muted":
       return (
-        <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400">
+        <span className="font-mono tabular-nums text-fg-subtle">
           {formatted}
         </span>
       );
     case "total":
       return (
-        <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-white">
+        <span className="font-mono tabular-nums font-semibold text-fg">
           {formatted}
         </span>
       );
     default:
       return (
-        <span className="font-mono tabular-nums text-slate-700 dark:text-slate-300">
+        <span className="font-mono tabular-nums text-fg-muted">
           {formatted}
         </span>
       );
@@ -103,10 +103,10 @@ export function formatLatency(
   fallback = "—"
 ): React.ReactNode {
   if (ms === null || ms === undefined || isNaN(ms)) {
-    return <span className="font-mono text-slate-400 dark:text-slate-500">{fallback}</span>;
+    return <span className="font-mono text-fg-subtle">{fallback}</span>;
   }
   return (
-    <span className="font-mono tabular-nums text-slate-600 dark:text-slate-300 whitespace-nowrap">
+    <span className="font-mono tabular-nums text-fg-muted whitespace-nowrap">
       {ms.toLocaleString()} ms
     </span>
   );

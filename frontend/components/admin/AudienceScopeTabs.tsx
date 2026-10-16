@@ -2,6 +2,7 @@
 
 import React, { useId, useRef } from "react";
 import { ActivePill } from "@/components/ui/ActivePill";
+import { segmentTrack } from "@/components/ui/styles";
 import { useAudience } from "@/lib/audience-context";
 import type { Audience, AudienceCounts } from "@/lib/types";
 import { Users, TestTube, Globe } from "lucide-react";
@@ -66,7 +67,7 @@ export function AudienceScopeTabs({
     <div
       role="tablist"
       aria-label="Audience Scope"
-      className={`inline-flex p-1 bg-slate-100/90 dark:bg-dark-card rounded-xl border border-slate-200/90 dark:border-dark-border shadow-inner gap-1 select-none ${className}`}
+      className={`${segmentTrack} select-none ${className}`}
     >
       {TABS.map((tab, idx) => {
         const isActive = audience === tab.id;
@@ -92,12 +93,12 @@ export function AudienceScopeTabs({
             className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
               isActive
                 ? "text-white"
-                : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10"
+                : "text-fg-muted hover:text-fg hover:bg-surface-card/80 dark:hover:bg-white/[0.06]"
             }`}
           >
             {isActive && <ActivePill layoutId={pillId} />}
             <Icon
-              className={`relative w-4 h-4 flex-shrink-0 ${isActive ? "text-white" : "text-slate-500 dark:text-slate-400"}`}
+              className={`relative w-4 h-4 flex-shrink-0 ${isActive ? "text-white" : "text-fg-subtle"}`}
               strokeWidth={1.75}
             />
             <span className="relative whitespace-nowrap">{tab.label}</span>
@@ -106,7 +107,7 @@ export function AudienceScopeTabs({
                 className={`relative text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
                   isActive
                     ? "bg-white/20 text-white"
-                    : "bg-slate-200/80 dark:bg-white/10 text-slate-600 dark:text-slate-300"
+                    : "bg-surface-card text-fg-muted dark:bg-white/10"
                 }`}
               >
                 {badgeCount.toLocaleString()}

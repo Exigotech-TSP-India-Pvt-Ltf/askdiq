@@ -4,7 +4,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { Search, SlidersHorizontal, X, RotateCcw, Check, Columns3, Rows3, Rows4 } from "lucide-react";
 import type { TableDensity } from "@/lib/use-table-preferences";
 import { usePopover } from "@/lib/use-popover";
-import { focusRing, popoverPanel } from "@/components/ui/styles";
+import { m } from "motion/react";
+import { popover, useMotionVariants } from "@/lib/motion";
+import { focusRing, popoverPanel, primaryButton } from "@/components/ui/styles";
 
 export type FilterOption = { label: string; value: string };
 
@@ -44,7 +46,7 @@ export interface TableToolbarProps {
 
 export type ColumnOption = { key: string; label: string; hideable?: boolean };
 
-const toolbarButton = `flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white ${focusRing}`;
+const toolbarButton = `flex items-center gap-1.5 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg shadow-sm transition-colors hover:bg-surface-muted hover:text-fg ${focusRing}`;
 
 function ColumnMenu({
   options,
@@ -56,6 +58,7 @@ function ColumnMenu({
   onToggle: (key: string) => void;
 }) {
   const { open, toggle, triggerRef, panelRef } = usePopover();
+  const variants = useMotionVariants(popover);
   const visibleCount = options.filter((o) => !hidden.includes(o.key)).length;
   return (
     <div className="relative">
@@ -71,7 +74,15 @@ function ColumnMenu({
         <span>Columns</span>
       </button>
       {open && (
-        <div ref={panelRef} role="group" aria-label="Visible columns" className={`absolute right-0 z-50 mt-2 w-56 ${popoverPanel}`}>
+        <m.div
+          ref={panelRef}
+          role="group"
+          aria-label="Visible columns"
+          variants={variants}
+          initial="hidden"
+          animate="visible"
+          className={`absolute right-0 z-50 mt-2 w-56 origin-top-right ${popoverPanel}`}
+        >
           {options.map((opt) => {
             const checked = !hidden.includes(opt.key);
             // Never hide the last visible column, nor a column marked not hideable.
@@ -92,7 +103,7 @@ function ColumnMenu({
               </label>
             );
           })}
-        </div>
+        </m.div>
       )}
     </div>
   );
@@ -119,6 +130,7 @@ export function TableToolbar({
   exportAction,
 }: TableToolbarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const popoverVariants = useMotionVariants(popover);
   const [internalSearch, setInternalSearch] = useState(search);
   const containerRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -202,7 +214,7 @@ export function TableToolbar({
     <div className="flex flex-col gap-2.5" ref={containerRef}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         {countLabel ? (
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{countLabel}</span>
+          <span className="text-xs font-medium text-fg-subtle">{countLabel}</span>
         ) : (
           <div />
         )}
@@ -213,7 +225,7 @@ export function TableToolbar({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {/* Integrated Search Input with Clear Button */}
           <div className="relative w-full max-w-xs sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
             <input
               type="text"
               value={debounceMs > 0 ? internalSearch : search}
@@ -226,7 +238,7 @@ export function TableToolbar({
                 }
               }}
               placeholder={searchPlaceholder}
-              className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card py-1.5 pl-8 pr-7 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 shadow-sm transition focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="w-full rounded-lg border border-line bg-surface-card py-1.5 pl-8 pr-7 text-xs text-fg placeholder:text-fg-subtle/80 shadow-sm transition focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
             {(debounceMs > 0 ? internalSearch : search) ? (
               <button
@@ -239,7 +251,7 @@ export function TableToolbar({
                 }}
                 aria-label="Clear search"
                 title="Clear search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 focus:outline-none"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-subtle hover:text-fg focus:outline-none"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -257,7 +269,7 @@ export function TableToolbar({
                 className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 ${
                   activeCount > 0
                     ? "border-brand-500 bg-brand-50/70 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold shadow-brand-glow/20"
-                    : "border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white"
+                    : "border-line bg-surface-card text-fg hover:bg-surface-muted hover:text-fg"
                 }`}
               >
                 <SlidersHorizontal className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
@@ -271,14 +283,17 @@ export function TableToolbar({
 
               {/* Multi-Group Filter Popover Panel */}
               {isOpen && (
-                <div
+                <m.div
                   ref={popoverRef}
                   role="dialog"
                   aria-label="Filter Options"
-                  className="absolute right-0 z-50 mt-2 w-72 rounded-xl border border-slate-200/90 dark:border-white/15 bg-white dark:bg-dark-card p-3 shadow-xl animate-in fade-in zoom-in-95 duration-100"
+                  variants={popoverVariants}
+                  initial="hidden"
+                  animate="visible"
+                  className={`absolute right-0 z-50 mt-2 w-72 origin-top-right ${popoverPanel} p-3`}
                 >
-                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2 mb-2">
-                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">Filter Options</span>
+                  <div className="flex items-center justify-between border-b border-line/70 pb-2 mb-2">
+                    <span className="text-xs font-semibold text-fg">Filter Options</span>
                     {activeCount > 0 && (
                       <button
                         type="button"
@@ -293,7 +308,7 @@ export function TableToolbar({
                   <div className="max-h-72 overflow-y-auto space-y-3 pr-1">
                     {allFilterGroups.map((group) => (
                       <div key={group.id} className="space-y-1.5">
-                        <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-fg-subtle">
                           {group.label}
                         </label>
                         <div className="space-y-0.5">
@@ -308,7 +323,7 @@ export function TableToolbar({
                                 className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition ${
                                   isSelected
                                     ? "bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold"
-                                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white"
+                                    : "text-fg-muted hover:bg-surface-muted hover:text-fg"
                                 }`}
                               >
                                 <span>{opt.label}</span>
@@ -321,16 +336,16 @@ export function TableToolbar({
                     ))}
                   </div>
 
-                  <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-white/10 pt-2.5">
+                  <div className="mt-3 flex items-center justify-end gap-2 border-t border-line/70 pt-2.5">
                     <button
                       type="button"
                       onClick={() => setIsOpen(false)}
-                      className="rounded-lg bg-slate-900 dark:bg-brand-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800 dark:hover:bg-brand-700 transition"
+                      className={primaryButton}
                     >
                       Done
                     </button>
                   </div>
-                </div>
+                </m.div>
               )}
             </div>
           )}
@@ -368,7 +383,7 @@ export function TableToolbar({
               type="button"
               onClick={handleResetAll}
               title="Reset all filters and search"
-              className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-700 dark:hover:text-slate-200 transition"
+              className="flex items-center gap-1 rounded-lg border border-line bg-surface-muted px-2.5 py-1.5 text-xs text-fg-subtle hover:bg-surface-muted hover:text-fg transition"
             >
               <RotateCcw className="h-3 w-3" />
               <span>Reset</span>
@@ -380,7 +395,7 @@ export function TableToolbar({
       {/* Active Filter Pills Strip */}
       {activePills.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">Active filters:</span>
+          <span className="text-[11px] font-medium text-fg-subtle">Active filters:</span>
           {activePills.map((pill) => (
             <span
               key={`${pill.groupId}-${pill.value}`}

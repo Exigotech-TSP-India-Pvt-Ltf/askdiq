@@ -29,7 +29,7 @@ export function ErrorState({
       role="alert"
       className={`flex flex-col items-center justify-center text-center ${compact ? "gap-1.5 px-4 py-6" : "gap-2 px-6 py-12"} ${className}`}
     >
-      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-status-danger-bg text-status-danger">
+      <span className="flex h-10 w-10 items-center justify-center rounded-full border border-status-danger/25 bg-status-danger-bg text-status-danger">
         <AlertTriangle className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden="true" />
       </span>
       <p className="text-sm font-semibold text-fg">{title}</p>

@@ -83,7 +83,7 @@ describe("TabGroup Component & 20-Tab Icon Audit (Task 5.3)", () => {
     expect(activeBtn.className).toContain("text-white");
 
     const usersBtn = screen.getByRole("tab", { name: /all users/i });
-    expect(usersBtn.className).toContain("text-slate-600");
+    expect(usersBtn.className).toContain("text-fg-muted");
     expect(within(usersBtn).queryByTestId("tab-active-pill")).toBeNull();
 
     fireEvent.click(usersBtn);
