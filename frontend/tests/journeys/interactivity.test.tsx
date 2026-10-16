@@ -249,9 +249,14 @@ describe("Global state carries across pages", () => {
     expect(screen.getByRole("link", { name: `View sessions for ${IP}` }).getAttribute("href")).toContain("range=30d");
     await waitFor(() => {
       const stats = lastCall("/admin/visitors/stats");
-      const from = new Date(stats?.searchParams.get("from") ?? "");
-      const to = new Date(stats?.searchParams.get("to") ?? "");
-      expect(Math.round((to.getTime() - from.getTime()) / 86_400_000)).toBe(30);
+      // Day-based endpoints get inclusive UTC calendar days: 30d = 30 days, from..to.
+      const fromDay = stats?.searchParams.get("from") ?? "";
+      const toDay = stats?.searchParams.get("to") ?? "";
+      expect(fromDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(toDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const from = new Date(`${fromDay}T00:00:00Z`);
+      const to = new Date(`${toDay}T00:00:00Z`);
+      expect(Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1).toBe(30);
     });
 
     renderPage(<VisitorDetailPage />, { url: `${visitorDetailHref(VISITOR_ID)}?range=30d` });

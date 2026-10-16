@@ -230,14 +230,15 @@ function trace(i: number) {
   };
 }
 
-const LOG_PAGE_SIZE = 50;
+// The Logs tab's default rows-per-page (LOGS_PAGE_SIZE in LogsView).
+const LOG_PAGE_SIZE = 25;
 
-function logsPage(cursor: string | null) {
+function logsPage(cursor: string | null, limit = LOG_PAGE_SIZE) {
   const pageNo = cursor ? Number(cursor.slice(1)) : 0;
   return {
     // Deeper pages use lightweight rows (no detail / request link) to keep the
-    // 41-page walk fast; page 0 exercises the full row rendering.
-    items: Array.from({ length: LOG_PAGE_SIZE }, (_, i) => {
+    // deep-page walk fast; page 0 exercises the full row rendering.
+    items: Array.from({ length: limit }, (_, i) => {
       const item = logItem(`p${pageNo}-${i}`, i % 7 === 0 ? "ERROR" : "INFO");
       return pageNo === 0 ? item : { ...item, detail: {}, request_id: null };
     }),
@@ -246,7 +247,7 @@ function logsPage(cursor: string | null) {
     total_is_estimate: false,
     level_counts: { CRITICAL: 1, ALERT: 2, ERROR: 30, WARNING: 4, INFO: 5963 },
     level_counts_capped: false,
-    limit: LOG_PAGE_SIZE,
+    limit,
     next_cursor: `c${pageNo + 1}`,
     has_more: true,
   };
@@ -267,7 +268,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   if (path === "/governance/monitoring") return respond(MONITORING);
   if (path === "/governance/logs") {
     const limit = Number(url.searchParams.get("limit"));
-    return respond(limit === 1 ? { ...logsPage(null), items: [] } : logsPage(url.searchParams.get("cursor")));
+    return respond(limit === 1 ? { ...logsPage(null), items: [] } : logsPage(url.searchParams.get("cursor"), limit));
   }
   if (path === "/governance/traces/page") {
     return respond({
@@ -351,7 +352,7 @@ describe("Governance journey (F4.5)", () => {
     calls.length = 0;
     renderPage(href.replace("http://localhost", ""));
     await screen.findByText("Event p0-0");
-    const req = callsTo("logs").find((u) => u.searchParams.get("limit") === "50");
+    const req = callsTo("logs").find((u) => u.searchParams.get("limit") === "25");
     expect(req?.searchParams.getAll("level")).toEqual(["CRITICAL", "ALERT"]);
     expect(req?.searchParams.get("from")).toBe(new Date(LAST_HOUR).toISOString());
     expect(req?.searchParams.get("to")).toBe(new Date(new Date(LAST_HOUR).getTime() + HOUR_MS).toISOString());
@@ -423,24 +424,41 @@ describe("Governance journey (F4.5)", () => {
   it("Logs 'Older' uses the returned cursor; deep pages beyond 2,000 rows are reachable", async () => {
     renderPage("/admin/governance?tab=Logs");
     await screen.findByText("Event p0-0");
-    expect(callsTo("logs").find((u) => u.searchParams.get("limit") === "50")?.searchParams.has("cursor")).toBe(false);
+    expect(callsTo("logs").find((u) => u.searchParams.get("limit") === "25")?.searchParams.has("cursor")).toBe(false);
+
+    expect(screen.getByTestId("cursor-page")).toHaveTextContent("Page 1 of 240");
+
+    // Rows per page restarts paging from the newest page at the new size.
+    fireEvent.change(screen.getByLabelText(/rows per page/i), { target: { value: "100" } });
+    await waitFor(() =>
+      expect(callsTo("logs").find((u) => u.searchParams.get("limit") === "100")?.searchParams.has("cursor")).toBe(false),
+    );
+    await waitFor(() => expect(screen.getByTestId("cursor-page")).toHaveTextContent("Page 1 of 60"));
 
     const older = () => screen.getByRole("button", { name: /older/i });
+    await waitFor(() => expect(older()).toBeEnabled());
     fireEvent.click(older());
     await screen.findByText("Event p1-0");
     expect(callsTo("logs").at(-1)?.searchParams.get("cursor")).toBe("c1");
 
-    // 41 pages x 50 rows = 2,050 rows, past the old 2,000-row ceiling (G12).
-    for (let page = 2; page <= 41; page += 1) {
+    // 21 pages x 100 rows = 2,100 rows, past the old 2,000-row ceiling (G12).
+    for (let page = 2; page <= 21; page += 1) {
       fireEvent.click(older());
       await waitFor(() => expect(callsTo("logs").at(-1)?.searchParams.get("cursor")).toBe(`c${page}`));
       await waitFor(() => expect(older()).toBeEnabled());
     }
-    expect(await screen.findByText("Event p41-0")).toBeInTheDocument();
-    expect(callsTo("logs").at(-1)?.searchParams.get("cursor")).toBe("c41");
+    expect(await screen.findByText("Event p21-0")).toBeInTheDocument();
+    expect(callsTo("logs").at(-1)?.searchParams.get("cursor")).toBe("c21");
+    expect(callsTo("logs").at(-1)?.searchParams.get("limit")).toBe("100");
+    expect(screen.getByTestId("cursor-page")).toHaveTextContent("Page 22 of 60");
 
     fireEvent.click(screen.getByRole("button", { name: /newer/i }));
-    await screen.findByText("Event p40-0");
+    await screen.findByText("Event p20-0");
+
+    // "Newest" jumps straight back to the first page.
+    fireEvent.click(screen.getByRole("button", { name: /newest/i }));
+    await screen.findByText("Event p0-0");
+    expect(screen.getByTestId("cursor-page")).toHaveTextContent("Page 1 of 60");
   }, 120_000);
 
   it("Logs renders level-count chips, service names, escaped JSON and a filtered CSV export", async () => {

@@ -152,7 +152,13 @@ describe("DateRangePicker + RangeProvider", () => {
     );
     const tabs = screen.getByRole("tablist", { name: "Audience Scope" });
     const picker = screen.getByRole("button", { name: /date range/i });
-    expect(tabs.parentElement).toBe(picker.parentElement?.parentElement);
+    // Each control sits in its guided-tour anchor; the two anchors are siblings
+    // in the header's centre column.
+    const audienceAnchor = tabs.closest('[data-tour="shell-audience"]');
+    const rangeAnchor = picker.closest('[data-tour="shell-date-range"]');
+    expect(audienceAnchor).not.toBeNull();
+    expect(rangeAnchor).not.toBeNull();
+    expect(audienceAnchor?.parentElement).toBe(rangeAnchor?.parentElement);
     unmount();
 
     render(<DashboardHeader title="Dashboard" icon={LayoutDashboard} showDateRange />);

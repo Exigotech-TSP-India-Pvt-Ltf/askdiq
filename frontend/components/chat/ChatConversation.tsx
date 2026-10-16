@@ -58,7 +58,9 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
     const tour = (id: string) => (variant === "page" ? `chat-${id}` : undefined);
 
     useEffect(() => {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      const el = scrollRef.current;
+      // jsdom (and some older embedded browsers) lack Element.scrollTo.
+      if (el && typeof el.scrollTo === "function") el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }, [messages]);
 
     function onSubmit(e: FormEvent) {

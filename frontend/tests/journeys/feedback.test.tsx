@@ -36,10 +36,25 @@ beforeEach(() => {
   queue = [makeItem({ user_query: "Alpha question" }), makeItem({ user_query: "Bravo question" }), makeItem({ user_query: "Charlie question" })];
   calls = installFetch((call) => {
     if (call.method === "POST" && call.path.startsWith("/sessions/")) {
-      const body = call.body as { rating: number; reason_tags: string[]; corrected_answer: string | null };
+      const body = call.body as { rating: number; reason_tags?: string[]; corrected_answer?: string | null };
+      // Like the server, omitted details keep what is stored (nothing yet on the first rating).
+      const reason_tags = body.reason_tags ?? [];
+      const corrected_answer = body.corrected_answer ?? null;
       // The rating lands in the queue as a new item.
-      queue = [makeItem({ user_query: "Chat question", reason_tags: body.reason_tags, corrected_answer: body.corrected_answer }), ...queue];
-      return { json: { message_id: "m-1", session_id: "s-1", ...body, comment: null, triage_status: "new", created_at: "", updated_at: "" } };
+      queue = [makeItem({ user_query: "Chat question", reason_tags, corrected_answer }), ...queue];
+      return {
+        json: {
+          message_id: "m-1",
+          session_id: "s-1",
+          rating: body.rating,
+          reason_tags,
+          corrected_answer,
+          comment: null,
+          triage_status: "new",
+          created_at: "",
+          updated_at: "",
+        },
+      };
     }
     if (call.path.startsWith("/admin/feedback/analytics")) return { json: analyticsFixture };
     if (call.method === "GET" && call.path.startsWith("/admin/feedback?")) {
@@ -78,7 +93,8 @@ describe("Phase F5 feedback journey", () => {
     fireEvent.click(within(panel).getByRole("button", { name: /send feedback/i }));
     await waitFor(() => expect(calls.filter((c) => c.path === "/sessions/s-1/messages/m-1/feedback")).toHaveLength(2));
     const sent = calls.filter((c) => c.path === "/sessions/s-1/messages/m-1/feedback");
-    expect(sent[0].body).toEqual({ rating: 1, comment: null, reason_tags: [], corrected_answer: null });
+    // The bare thumbs-down omits reasons, so the server keeps any stored details.
+    expect(sent[0].body).toEqual({ rating: 1, comment: null });
     expect(sent[1].body).toEqual({ rating: 1, comment: null, reason_tags: ["wrong", "incomplete"], corrected_answer: "Every 90 days." });
     chat.unmount();
 
