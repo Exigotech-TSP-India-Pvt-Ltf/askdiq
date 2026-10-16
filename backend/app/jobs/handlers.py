@@ -6,6 +6,9 @@ from typing import Any
 
 from app.core.logging_config import get_logger
 from app.core.state import PostgresState
+
+# Feature job modules register their handlers on import.
+from app.insights import jobs as insights_jobs  # noqa: F401
 from app.jobs.queue import prune_finished
 from app.jobs.registry import STATE_CLEANUP_JOB, job_handler
 

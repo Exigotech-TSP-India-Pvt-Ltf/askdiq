@@ -26,6 +26,7 @@ from app.governance.audit import record_audit_event
 from app.governance.costing import compute_exchange_cost
 from app.governance.outcomes import derive_outcome
 from app.governance.pii import redact_pii
+from app.insights.triggers import enqueue_classification_in_transaction
 from app.models.db_models import ChatMessageRecord, ChatSession, MessageFeedback
 from app.schemas.query import ChatTurn
 from app.schemas.session import (
@@ -316,6 +317,8 @@ async def _write_exchange(
                 ip_address=client_ip,
                 commit=False,
             )
+            # Labelled later by the job worker, never in the request path.
+            await enqueue_classification_in_transaction(db, assistant_message_id)
             await db.commit()
     except Exception:
         logger.warning(
