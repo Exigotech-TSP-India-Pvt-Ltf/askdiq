@@ -37,8 +37,13 @@ export function applyTheme(resolved: ThemeMode, root: HTMLElement = document.doc
  * `resolveStoredMode` + `applyTheme`; it also persists the one-time migration.
  * The middleware's CSP nonce is passed by app/layout.tsx.
  */
-export const THEME_INIT_SCRIPT = `(function(){var r=document.documentElement;var d=false;try{var k=${JSON.stringify(
+/** JSON for embedding inside an inline <script>: `<`, `>`, `/` and line separators escaped. */
+function scriptLiteral(value: string): string {
+  return JSON.stringify(value).replace(/[<>/\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
+export const THEME_INIT_SCRIPT = `(function(){var r=document.documentElement;var d=false;try{var k=${scriptLiteral(
   THEME_STORAGE_KEY,
-)};var m=localStorage.getItem(k);if(m!=="light"&&m!=="dark"){m=window.matchMedia(${JSON.stringify(
+)};var m=localStorage.getItem(k);if(m!=="light"&&m!=="dark"){m=window.matchMedia(${scriptLiteral(
   DARK_QUERY,
 )}).matches?"dark":"light";try{localStorage.setItem(k,m);}catch(e){}}d=m==="dark";}catch(e){}r.classList.toggle("dark",d);r.style.colorScheme=d?"dark":"light";})();`;

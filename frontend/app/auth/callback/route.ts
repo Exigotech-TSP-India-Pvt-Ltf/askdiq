@@ -59,13 +59,16 @@ function parseIssued(raw: unknown): SessionIssued | null {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const params = req.nextUrl.searchParams;
-  if (params.get("error")) return toLogin(req, "idp_denied");
-
   const code = params.get("code");
   const state = params.get("state");
   const expected = req.cookies.get(OIDC_STATE_COOKIE)?.value;
-  if (!code || !state || code.length > MAX_CODE_LENGTH) return toLogin(req, "expired");
-  if (!expected || !safeEqual(state, expected)) return toLogin(req, "state_mismatch");
+  // The state check comes first: nothing else in the query is trusted until
+  // it matches the cookie set when this sign-in started.
+  if (!state || !expected || !safeEqual(state, expected)) {
+    return toLogin(req, params.get("error") ? "idp_denied" : state ? "state_mismatch" : "expired");
+  }
+  if (params.get("error")) return toLogin(req, "idp_denied");
+  if (!code || code.length > MAX_CODE_LENGTH) return toLogin(req, "expired");
 
   const headers = backendHeaders(req);
   headers.set("Content-Type", "application/json");
