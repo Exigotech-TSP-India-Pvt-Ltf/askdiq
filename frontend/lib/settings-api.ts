@@ -233,6 +233,9 @@ export const settingsApi = {
 
   archiveTaxonomy: (kind: TaxonomyKind, code: string) =>
     request<TaxonomyRead>(`${TAXONOMY_PATH}/${kind}/${encodeURIComponent(code)}/archive`, { method: "POST" }),
+
+  unarchiveTaxonomy: (kind: TaxonomyKind, code: string) =>
+    request<TaxonomyRead>(`${TAXONOMY_PATH}/${kind}/${encodeURIComponent(code)}/unarchive`, { method: "POST" }),
 };
 
 // ---------------------------------------------------------------------------
@@ -288,6 +291,7 @@ export type TaxonomyKind = (typeof TAXONOMY_KINDS)[number];
 export const TAXONOMY_CODE_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
 export const TAXONOMY_LABEL_MAX = 128;
 export const TAXONOMY_GROUP_MAX = 64;
+export const TAXONOMY_DESCRIPTION_MAX = 1000;
 export const TAXONOMY_SORT_MAX = 10_000;
 
 /**
@@ -340,6 +344,8 @@ export interface TaxonomyUpdate {
   color?: string | null;
   group?: string | null;
   sort_order?: number;
+  substantive?: boolean;
+  handled?: boolean;
 }
 
 export const TAXONOMY_KEY = "settings/taxonomy";

@@ -33,10 +33,14 @@ function fakeBackend(items: TaxonomyRead[] = taxonomyFixture()) {
       store.push(created);
       return json(created, 201);
     }
-    const match = url.match(/^\/api\/proxy\/admin\/insights\/taxonomy\/(\w+)\/(\w+)(\/archive)?$/);
+    const match = url.match(/^\/api\/proxy\/admin\/insights\/taxonomy\/(\w+)\/(\w+)(\/archive|\/unarchive)?$/);
     if (match) {
       const row = store.find((i) => i.kind === match[1] && i.code === match[2]);
       if (!row) return problem(404, "Taxonomy entry not found.");
+      if (method === "POST" && match[3] === "/unarchive") {
+        row.is_active = true;
+        return json({ ...row });
+      }
       if (method === "POST" && match[3]) {
         if (["OOS", "OK", "OTHER"].includes(row.code)) {
           return problem(409, "This code is used by the rule stage and cannot be archived.");
@@ -185,6 +189,42 @@ describe("Settings → Insights Taxonomy", { timeout: 15_000 }, () => {
     expect(within(row("SEC")).getByText("Archived")).toBeInTheDocument();
     expect(within(row("LEGACY")).getByText("Archived")).toBeInTheDocument();
     expect(screen.getByLabelText("Label for LEGACY")).toBeDisabled();
+  });
+
+  it("unarchives an archived entry", async () => {
+    const { calls } = fakeBackend();
+    renderTab();
+    await screen.findByTestId("taxonomy-row-SVC");
+    fireEvent.click(screen.getByRole("checkbox", { name: /show archived/i }));
+    await act(async () => {
+      fireEvent.click(within(row("LEGACY")).getByRole("button", { name: "Unarchive LEGACY" }));
+    });
+    expect(calls.find((c) => c.method === "POST")?.url).toBe("/api/proxy/admin/insights/taxonomy/intent/LEGACY/unarchive");
+    await waitFor(() => expect(within(row("LEGACY")).getByText("Active")).toBeInTheDocument());
+    expect(screen.getByLabelText("Label for LEGACY")).toBeEnabled();
+  });
+
+  it("edits description and the substantive flag, sending only those fields", async () => {
+    const { calls } = fakeBackend();
+    renderTab();
+    await screen.findByTestId("taxonomy-row-SVC");
+    fireEvent.change(screen.getByLabelText("Description for SVC"), { target: { value: "Questions about the platform" } });
+    fireEvent.click(screen.getByLabelText("SVC is substantive"));
+    fireEvent.click(within(row("SVC")).getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+      description: "Questions about the platform",
+      substantive: false,
+    });
+  });
+
+  it("bot-quality values have an editable handled flag", async () => {
+    fakeBackend();
+    renderTab();
+    await screen.findByTestId("taxonomy-row-SVC");
+    fireEvent.click(screen.getByRole("tab", { name: /Bot quality/ }));
+    expect(await screen.findByLabelText("OK counts as handled")).toBeInTheDocument();
+    expect(screen.queryByLabelText("OK is substantive")).not.toBeInTheDocument();
   });
 
   it("core codes cannot be archived", async () => {

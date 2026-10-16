@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { Archive, ArrowDown, ArrowUp, Bot, CircleAlert, Lock, Plus, Save, Tags, Target } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, Bot, CircleAlert, Lock, Plus, Save, Tags, Target } from "lucide-react";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -17,6 +17,7 @@ import {
   PROTECTED_TAXONOMY_CODES,
   SettingsApiError,
   TAXONOMY_CODE_RE,
+  TAXONOMY_DESCRIPTION_MAX,
   TAXONOMY_GROUP_MAX,
   TAXONOMY_KEY,
   TAXONOMY_LABEL_MAX,
@@ -45,9 +46,19 @@ interface RowDraft {
   label: string;
   color: string;
   group: string;
+  description: string;
+  substantive: boolean;
+  handled: boolean;
 }
 
-const draftOf = (item: TaxonomyRead): RowDraft => ({ label: item.label, color: item.color ?? "", group: item.group ?? "" });
+const draftOf = (item: TaxonomyRead): RowDraft => ({
+  label: item.label,
+  color: item.color ?? "",
+  group: item.group ?? "",
+  description: item.description ?? "",
+  substantive: item.substantive,
+  handled: item.handled,
+});
 
 function rowChanges(item: TaxonomyRead, draft: RowDraft): TaxonomyUpdate {
   const out: TaxonomyUpdate = {};
@@ -56,6 +67,10 @@ function rowChanges(item: TaxonomyRead, draft: RowDraft): TaxonomyUpdate {
   if (color !== (item.color?.toLowerCase() ?? null)) out.color = color;
   const group = draft.group.trim() || null;
   if (group !== item.group) out.group = group;
+  const description = draft.description.trim() || null;
+  if (description !== item.description) out.description = description;
+  if (draft.substantive !== item.substantive) out.substantive = draft.substantive;
+  if (draft.handled !== item.handled) out.handled = draft.handled;
   return out;
 }
 
@@ -64,6 +79,9 @@ function rowError(draft: RowDraft): string | null {
   if (draft.label.trim().length > TAXONOMY_LABEL_MAX) return `Label is at most ${TAXONOMY_LABEL_MAX} characters.`;
   if (draft.color.trim() && !normalizeHex(draft.color)) return "Colour must be #RRGGBB.";
   if (draft.group.trim().length > TAXONOMY_GROUP_MAX) return `Group is at most ${TAXONOMY_GROUP_MAX} characters.`;
+  if (draft.description.trim().length > TAXONOMY_DESCRIPTION_MAX) {
+    return `Description is at most ${TAXONOMY_DESCRIPTION_MAX} characters.`;
+  }
   return null;
 }
 
@@ -171,6 +189,23 @@ export function TaxonomyTab() {
     }
   }
 
+  async function unarchive(item: TaxonomyRead) {
+    setBusyFor(item.id, true);
+    try {
+      const updated = await settingsApi.unarchiveTaxonomy(item.kind, item.code);
+      replaceItems([updated]);
+      toast.show({
+        title: `${item.code} restored`,
+        description: "It is offered in filters and to the classifier again.",
+        tone: "success",
+      });
+    } catch (error) {
+      toast.show({ title: `Could not restore ${item.code}`, description: message(error), tone: "error" });
+    } finally {
+      setBusyFor(item.id, false);
+    }
+  }
+
   if (query.error && !query.data) {
     return (
       <ErrorState
@@ -226,6 +261,19 @@ export function TaxonomyTab() {
                 {kind === "intent" ? (
                   <th scope="col" className="px-3 py-2 font-semibold">
                     Group
+                  </th>
+                ) : null}
+                <th scope="col" className="px-3 py-2 font-semibold">
+                  Description
+                </th>
+                {kind === "intent" ? (
+                  <th scope="col" className="px-3 py-2 font-semibold" title="Counts as a substantive question">
+                    Substantive
+                  </th>
+                ) : null}
+                {kind === "bot_quality" ? (
+                  <th scope="col" className="px-3 py-2 font-semibold" title="Counts as handled by the assistant">
+                    Handled
                   </th>
                 ) : null}
                 <th scope="col" className="px-3 py-2 font-semibold">
@@ -327,6 +375,39 @@ export function TaxonomyTab() {
                         </td>
                       ) : null}
                       <td className="px-3 py-2">
+                        <input
+                          type="text"
+                          value={draft.description}
+                          disabled={archived}
+                          maxLength={TAXONOMY_DESCRIPTION_MAX}
+                          aria-label={`Description for ${item.code}`}
+                          onChange={(e) => edit({ description: e.target.value })}
+                          className={`${inputClass} py-1.5 text-xs`}
+                        />
+                      </td>
+                      {kind === "intent" ? (
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={draft.substantive}
+                            disabled={archived}
+                            aria-label={`${item.code} is substantive`}
+                            onChange={(e) => edit({ substantive: e.target.checked })}
+                          />
+                        </td>
+                      ) : null}
+                      {kind === "bot_quality" ? (
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={draft.handled}
+                            disabled={archived}
+                            aria-label={`${item.code} counts as handled`}
+                            onChange={(e) => edit({ handled: e.target.checked })}
+                          />
+                        </td>
+                      ) : null}
+                      <td className="px-3 py-2">
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                             archived ? "bg-surface-muted text-fg-muted" : "bg-status-ok-bg text-status-ok-fg"
@@ -361,7 +442,18 @@ export function TaxonomyTab() {
                             >
                               <Archive className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
                             </button>
-                          ) : null}
+                          ) : (
+                            <button
+                              type="button"
+                              className={`${iconButton} h-7 w-7`}
+                              aria-label={`Unarchive ${item.code}`}
+                              title="Unarchive"
+                              disabled={busy[item.id]}
+                              onClick={() => void unarchive(item)}
+                            >
+                              <ArchiveRestore className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </m.tr>
