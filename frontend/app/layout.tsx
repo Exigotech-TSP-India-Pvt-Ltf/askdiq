@@ -11,9 +11,8 @@ import { MotionProvider } from "@/components/providers/MotionProvider";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import "./globals.css";
 
-// Branding is cached and re-fetched at most every 5 minutes (ISR).
-export const revalidate = 300; // must be a literal; keep equal to BRANDING_REVALIDATE_SECONDS
-
+// Branding is cached in-process by fetchBrand (re-fetched at most every
+// BRANDING_REVALIDATE_SECONDS, each call bounded), not in Next's data cache.
 const getBrand = cache((): Promise<Brand> => fetchBrand());
 
 export async function generateMetadata(): Promise<Metadata> {

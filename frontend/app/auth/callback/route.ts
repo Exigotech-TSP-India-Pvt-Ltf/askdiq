@@ -5,7 +5,7 @@
 //    httpOnly session cookie and redirect by status. The session id is never
 //    put in a URL or a response body.
 import { NextResponse, type NextRequest } from "next/server";
-import { appOrigin, appUrl, backendHeaders, backendUrl } from "@/lib/server/backend";
+import { appOrigin, appUrl, backendHeaders, backendTimeoutMs, backendUrl } from "@/lib/server/backend";
 import {
   LOGIN_NEXT_COOKIE,
   OIDC_STATE_COOKIE,
@@ -81,6 +81,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       headers,
       body: JSON.stringify({ code, state }),
       cache: "no-store",
+      signal: AbortSignal.timeout(backendTimeoutMs(true)),
     });
   } catch {
     return toLogin(req, "backend_unavailable");

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { ApiError } from "@/lib/api";
 import {
+  ERROR_BACKOFF_BASE_MS,
+  ERROR_BACKOFF_MAX_MS,
   INTENT_DELAY_MS,
   QueryCache,
   prefetchNextPage,
@@ -296,5 +298,55 @@ describe("F0.5.3 optimistic mutation and undo", () => {
       await result.current.mutate("x");
     });
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("error backoff (no request storm while the backend is failing)", () => {
+  it("a failing key is not re-requested by stale checks until its backoff passes; it doubles up to the cap", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(0);
+    const cache = new QueryCache();
+    const failing = vi.fn().mockRejectedValue(new ApiError("Bad Gateway", 502));
+
+    await cache.fetch("k", failing).catch(() => undefined);
+    expect(cache.isStale("k", 30_000)).toBe(false);
+    vi.setSystemTime(ERROR_BACKOFF_BASE_MS);
+    expect(cache.isStale("k", 30_000)).toBe(true);
+
+    await cache.fetch("k", failing).catch(() => undefined);
+    vi.setSystemTime(ERROR_BACKOFF_BASE_MS * 2.5);
+    expect(cache.isStale("k", 30_000)).toBe(false); // second failure waits 2 s
+    vi.setSystemTime(ERROR_BACKOFF_BASE_MS * 3);
+    expect(cache.isStale("k", 30_000)).toBe(true);
+
+    for (let i = 0; i < 10; i += 1) await cache.fetch("k", failing).catch(() => undefined);
+    const failedAt = Date.now();
+    vi.setSystemTime(failedAt + ERROR_BACKOFF_MAX_MS - 1);
+    expect(cache.isStale("k", 30_000)).toBe(false);
+    vi.setSystemTime(failedAt + ERROR_BACKOFF_MAX_MS);
+    expect(cache.isStale("k", 30_000)).toBe(true);
+  });
+
+  it("an explicit refetch still goes through, and a success clears the backoff", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(0);
+    const cache = new QueryCache();
+    await cache.fetch("k", vi.fn().mockRejectedValue(new Error("down"))).catch(() => undefined);
+    const ok = vi.fn().mockResolvedValue(1);
+    await cache.fetch("k", ok, { force: true });
+    expect(ok).toHaveBeenCalledTimes(1);
+    expect(cache.getState("k").data).toBe(1);
+    vi.setSystemTime(30_000);
+    expect(cache.isStale("k", 30_000)).toBe(true); // normal staleness again
+  });
+
+  it("remounting a component with a failed query does not refetch during the backoff", async () => {
+    const cache = new QueryCache();
+    const fetcher = vi.fn().mockRejectedValue(new ApiError("Bad Gateway", 502));
+    const first = renderHook(() => useApiQuery("pending", fetcher, { cache }));
+    await waitFor(() => expect(first.result.current.error).toBeTruthy());
+    first.unmount();
+    for (let i = 0; i < 5; i += 1) renderHook(() => useApiQuery("pending", fetcher, { cache })).unmount();
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

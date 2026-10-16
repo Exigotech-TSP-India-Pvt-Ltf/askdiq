@@ -4,7 +4,7 @@
 // through port 3000. Off (404) unless AUTH_DEV_MOCK=true is set for this
 // server; the backend itself only mounts the mock when ENV=development.
 import { NextResponse, type NextRequest } from "next/server";
-import { backendUrl } from "@/lib/server/backend";
+import { backendTimeoutMs, backendUrl } from "@/lib/server/backend";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +41,7 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
       body,
       redirect: "manual",
       cache: "no-store",
+      signal: AbortSignal.timeout(backendTimeoutMs(false)),
     });
     const out = new Headers();
     for (const name of PASS_HEADERS) {

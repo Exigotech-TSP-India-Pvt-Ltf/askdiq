@@ -8,7 +8,7 @@
 // client and backend `Set-Cookie` headers are dropped. A 401 or a sign-out
 // deletes the cookie.
 import { NextRequest, NextResponse } from "next/server";
-import { backendHeaders, backendUrl } from "@/lib/server/backend";
+import { backendHeaders, backendRetries, backendTimeoutMs, backendUrl } from "@/lib/server/backend";
 import {
   clearSessionCookie,
   sessionCookieName,
@@ -22,6 +22,11 @@ const CSRF_HEADER_VALUE = "askdiq";
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_NO_CONTENT = 204;
 const HTTP_NOT_MODIFIED = 304;
+const HTTP_GATEWAY_TIMEOUT = 504;
+const MS_PER_SECOND = 1000;
+/** Upstream answers worth one more try (gateway / overload / timeout). */
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const RETRY_BASE_MS = 250;
 /** Response headers passed back to the browser (never Set-Cookie). */
 const PASS_THROUGH_HEADERS = ["content-type", "content-disposition", "etag", "cache-control", "vary", "retry-after"];
 /** Returns the raw session id in its body: only the /auth/callback handler may call it. */
@@ -73,6 +78,84 @@ async function ssoLoginResponse(res: Response, headers: Headers): Promise<NextRe
   return response;
 }
 
+/**
+ * Abort signal for one backend call: fires when the backend has not sent its
+ * response headers within `timeoutMs` (call `headersReceived()` once they
+ * arrive, so a streamed body such as SSE is never cut off) or when the
+ * browser goes away (so the backend sees the disconnect).
+ */
+function upstreamSignal(req: NextRequest, timeoutMs: number) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new DOMException(`No response headers within ${timeoutMs} ms`, "TimeoutError"));
+  }, timeoutMs);
+  req.signal?.addEventListener("abort", () => controller.abort(req.signal.reason), { once: true });
+  return {
+    signal: controller.signal,
+    headersReceived: () => clearTimeout(timer),
+    timedOut: () => timedOut,
+  };
+}
+
+/** Reads and sign-out are idempotent, so a transient failure may be retried. */
+function isIdempotent(method: string, joined: string): boolean {
+  return SAFE_METHODS.has(method) || (method === "POST" && joined === LOGOUT_PATH);
+}
+
+/** Exponential backoff with full jitter: attempt 1 -> 250-500 ms, 2 -> 500-1000 ms. */
+function retryDelayMs(attempt: number): number {
+  const base = RETRY_BASE_MS * 2 ** (attempt - 1);
+  return base + Math.random() * base;
+}
+
+function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
+class UpstreamTimeout extends Error {}
+
+/**
+ * One backend call with a bounded wait for headers. Idempotent calls are
+ * retried (jittered backoff) after a connection error or a 502 / 503 / 504,
+ * so a blip or a restart does not reach the user. A timeout is not retried:
+ * it is already the last-resort limit.
+ */
+async function fetchUpstream(
+  req: NextRequest,
+  targetUrl: string,
+  init: RequestInit,
+  timeoutMs: number,
+  retries: number,
+): Promise<Response> {
+  for (let attempt = 0; ; attempt += 1) {
+    const upstream = upstreamSignal(req, timeoutMs);
+    try {
+      const res = await fetch(targetUrl, { ...init, signal: upstream.signal });
+      upstream.headersReceived();
+      if (attempt >= retries || !RETRYABLE_STATUSES.has(res.status) || req.signal?.aborted) return res;
+      await res.body?.cancel().catch(() => undefined);
+    } catch (err) {
+      upstream.headersReceived();
+      if (upstream.timedOut()) throw new UpstreamTimeout();
+      if (attempt >= retries || req.signal?.aborted) throw err;
+    }
+    console.warn(`[Proxy] Retrying ${init.method} ${targetUrl} (attempt ${attempt + 2} of ${retries + 1})`);
+    await sleep(retryDelayMs(attempt + 1), req.signal);
+  }
+}
+
 async function forward(req: NextRequest, path: string[]): Promise<Response> {
   // Path traversal & SSRF hygiene (OWASP A10)
   for (const segment of path) {
@@ -99,13 +182,16 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
     bodyBuffer = Buffer.from(arrayBuf);
   }
 
+  const timeoutMs = backendTimeoutMs(hasBody);
+  const retries = isIdempotent(req.method, joined) ? backendRetries() : 0;
   try {
-    const res = await fetch(targetUrl, {
-      method: req.method,
-      headers: proxyHeaders(req),
-      body: bodyBuffer,
-      cache: "no-store",
-    });
+    const res = await fetchUpstream(
+      req,
+      targetUrl,
+      { method: req.method, headers: proxyHeaders(req), body: bodyBuffer, cache: "no-store" },
+      timeoutMs,
+      retries,
+    );
 
     const outHeaders = new Headers();
     for (const name of PASS_THROUGH_HEADERS) {
@@ -128,6 +214,14 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
     }
     return response;
   } catch (err: unknown) {
+    if (err instanceof UpstreamTimeout) {
+      const seconds = Math.round(timeoutMs / MS_PER_SECOND);
+      console.error(`[Proxy] Backend at ${targetUrl} sent no response within ${seconds} s`);
+      return NextResponse.json(
+        { detail: `The backend did not respond within ${seconds} seconds. Please try again.` },
+        { status: HTTP_GATEWAY_TIMEOUT, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     const cause = (err as { cause?: { code?: string }; code?: string; message?: string } | null) ?? {};
     const code = cause.cause?.code || cause.code || "ECONNREFUSED";
     console.error(`[Proxy] Failed to reach backend at ${targetUrl}: ${cause.message ?? String(err)}`);

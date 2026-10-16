@@ -9,6 +9,9 @@
  * - `AbortController`: the request is aborted when its last observer unmounts
  *   or switches to another key.
  * - Revalidates observed, stale keys on window focus / tab visible.
+ * - Backs off after a failure (1 s, 2 s, 4 s ... 60 s): mounts, focus and
+ *   stale checks do not re-request a failing key until then; explicit
+ *   refetches (Try again, polling) still go through.
  * - `invalidate(prefix)` marks matching keys stale and refetches observed ones.
  * - Prefetch on intent (120 ms dwell) and idle prefetch of the next page.
  * - `useApiMutation`: optimistic update, rollback on failure, undo, and a
@@ -27,6 +30,9 @@ export type Fetcher<T> = (signal: AbortSignal) => Promise<T>;
 export const DEFAULT_STALE_TIME_MS = 30_000;
 /** Hover / focus dwell before an intent prefetch fires (newplan §13.3). */
 export const INTENT_DELAY_MS = 120;
+/** First wait after a failed request before stale checks refetch the key. */
+export const ERROR_BACKOFF_BASE_MS = 1_000;
+export const ERROR_BACKOFF_MAX_MS = 60_000;
 
 /**
  * Stable string form of a key. Tuple keys join with "/" so that
@@ -67,6 +73,9 @@ interface Entry {
   listeners: Set<() => void>;
   /** In-flight prefetches holding the request open without an observer. */
   pins: number;
+  /** Consecutive failed requests, and when stale checks may try again (epoch ms). */
+  failures: number;
+  retryAt: number;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -83,7 +92,7 @@ export class QueryCache {
   private entry(key: string): Entry {
     let e = this.entries.get(key);
     if (!e) {
-      e = { state: EMPTY_STATE, observers: new Set(), listeners: new Set(), pins: 0 };
+      e = { state: EMPTY_STATE, observers: new Set(), listeners: new Set(), pins: 0, failures: 0, retryAt: 0 };
       this.entries.set(key, e);
     }
     return e;
@@ -113,6 +122,8 @@ export class QueryCache {
   }
 
   isStale(key: QueryKey, staleTime: number): boolean {
+    const e = this.entries.get(serializeKey(key));
+    if (e && e.retryAt > Date.now()) return false; // backing off after a failure
     const { updatedAt } = this.getState(key);
     return updatedAt === 0 || Date.now() - updatedAt >= staleTime;
   }
@@ -139,6 +150,8 @@ export class QueryCache {
         if (e.controller === controller) {
           e.promise = undefined;
           e.controller = undefined;
+          e.failures = 0;
+          e.retryAt = 0;
           this.setState(k, { data, error: undefined, updatedAt: Date.now(), isFetching: false });
         }
         return data;
@@ -150,6 +163,9 @@ export class QueryCache {
           if (controller.signal.aborted || isAbortError(error)) {
             this.setState(k, { isFetching: false });
           } else {
+            e.failures += 1;
+            e.retryAt =
+              Date.now() + Math.min(ERROR_BACKOFF_BASE_MS * 2 ** (e.failures - 1), ERROR_BACKOFF_MAX_MS);
             this.setState(k, { error, isFetching: false });
           }
         }
