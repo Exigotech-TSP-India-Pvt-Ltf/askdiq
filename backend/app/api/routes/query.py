@@ -137,6 +137,7 @@ async def query(
         outcome=response.outcome,
         grounded=response.grounded,
         confidence=response.confidence,
+        latency_ms=response.latency_ms,
         after=exchange_write_task(assistant_message_id),
     )
 
