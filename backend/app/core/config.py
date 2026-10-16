@@ -1,8 +1,18 @@
 """Centralized application configuration."""
 
 from functools import lru_cache
+from typing import Self
+from urllib.parse import urlsplit
 
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Placeholder identifiers used only by the local mock IdP (AUTH_DEV_MOCK=true)
+# when the real ENTRA_* values are not set. Never valid against real Entra.
+MOCK_TENANT_ID = "00000000-0000-4000-8000-00000000a51d"
+MOCK_CLIENT_ID = "00000000-0000-4000-8000-0000000c11e7"
+MOCK_CLIENT_SECRET = "mock-idp-client-secret"  # noqa: S105 - dev-only mock value
+MIN_SESSION_SECRET_BYTES = 32
 
 
 class Settings(BaseSettings):
@@ -51,11 +61,9 @@ class Settings(BaseSettings):
     embedding_dim: int = 1536
 
     # Auth
-    api_jwt_secret: str
-    api_jwt_algorithm: str = "HS256"
-    # Single shared API key required in the `X-API-Key` header on every
-    # protected route (see app/governance/auth.py). Empty by default so the
-    # app fails closed until a real value is set in .env.
+    # Service key the Next.js proxy sends in `X-API-Key` (see app/auth/deps.py).
+    # It proves "request came from our proxy" only; user access needs a session.
+    # Empty by default so the app fails closed until a real value is set.
     api_key_name: str = ""
 
     # Guardrails
@@ -255,6 +263,104 @@ class Settings(BaseSettings):
     jobs_shutdown_timeout_seconds: float = 30.0
     jobs_retention_days: int = 7
     state_cleanup_interval_seconds: int = 60
+
+    # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
+    # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).
+    entra_tenant_id: str | None = None
+    entra_client_id: str | None = None
+    entra_client_secret: SecretStr | None = None
+    entra_redirect_uri: str | None = None
+    entra_authority_host: str = "https://login.microsoftonline.com"
+    app_base_url: str = "http://localhost:3000"
+    # Keys the session-id hash (HMAC-SHA256); no default, must be set in .env.
+    session_secret: SecretStr
+    session_ttl_minutes: int = Field(default=480, ge=5)
+    session_idle_minutes: int = Field(default=60, ge=1)
+    session_cookie_name: str = "askdiq_session"
+    session_cookie_secure: bool = False
+    # `last_seen_at` is written at most this often per session.
+    session_touch_interval_seconds: int = Field(default=60, ge=1)
+    # Comma-separated; these emails become active superadmins on first login.
+    superadmin_emails: str = ""
+    access_contact_email: str = ""
+    # Local-only mock IdP; refused unless ENV=development.
+    auth_dev_mock: bool = False
+    # Mock IdP authority base; empty = APP_BASE_URL + "/mock-idp".
+    auth_mock_base_url: str = ""
+    oidc_http_timeout_seconds: float = Field(default=10.0, gt=0)
+    oidc_state_ttl_seconds: int = Field(default=600, ge=60)
+    oidc_metadata_cache_seconds: int = Field(default=3600, ge=60)
+    oidc_clock_skew_seconds: int = Field(default=60, ge=0, le=300)
+
+    @model_validator(mode="after")
+    def _validate_auth(self) -> Self:
+        if self.auth_dev_mock:
+            if self.env != "development":
+                raise ValueError(
+                    "AUTH_DEV_MOCK=true is only allowed when ENV=development; "
+                    "refusing to start."
+                )
+            self.entra_tenant_id = self.entra_tenant_id or MOCK_TENANT_ID
+            self.entra_client_id = self.entra_client_id or MOCK_CLIENT_ID
+            if not self.entra_client_secret:
+                self.entra_client_secret = SecretStr(MOCK_CLIENT_SECRET)
+        else:
+            missing = [
+                name.upper()
+                for name in (
+                    "entra_tenant_id",
+                    "entra_client_id",
+                    "entra_client_secret",
+                    "entra_redirect_uri",
+                )
+                if not _has_value(getattr(self, name))
+            ]
+            if missing:
+                raise ValueError(
+                    f"Missing SSO settings: {', '.join(missing)} "
+                    "(or set AUTH_DEV_MOCK=true with ENV=development)."
+                )
+        if not self.entra_redirect_uri:
+            self.entra_redirect_uri = f"{self.app_base_url.rstrip('/')}/auth/callback"
+        if not self.session_secret.get_secret_value():
+            raise ValueError("SESSION_SECRET must not be empty.")
+        if self.env == "production" and (
+            len(self.session_secret.get_secret_value().encode())
+            < MIN_SESSION_SECRET_BYTES
+        ):
+            raise ValueError(
+                f"SESSION_SECRET must be at least {MIN_SESSION_SECRET_BYTES} bytes "
+                "in production."
+            )
+        return self
+
+    @property
+    def superadmin_email_set(self) -> frozenset[str]:
+        return frozenset(
+            e.strip().lower() for e in self.superadmin_emails.split(",") if e.strip()
+        )
+
+    @property
+    def oidc_authority(self) -> str:
+        """Authority base: real Entra, or the APP_BASE_URL-relative mock IdP."""
+        if self.auth_dev_mock:
+            base = (
+                self.auth_mock_base_url or f"{self.app_base_url.rstrip('/')}/mock-idp"
+            )
+            return base.rstrip("/")
+        return self.entra_authority_host.rstrip("/")
+
+    @property
+    def app_origin(self) -> str:
+        """`scheme://host[:port]` of APP_BASE_URL (CSRF Origin check)."""
+        parts = urlsplit(self.app_base_url)
+        return f"{parts.scheme}://{parts.netloc}".lower()
+
+
+def _has_value(value: object) -> bool:
+    if isinstance(value, SecretStr):
+        return bool(value.get_secret_value())
+    return bool(value)
 
 
 @lru_cache
