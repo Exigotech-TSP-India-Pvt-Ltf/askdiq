@@ -28,6 +28,7 @@ import { CopyButton } from "@/components/ui/CopyButton";
 import { EntityLink } from "@/components/ui/EntityLink";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { MascotLoader } from "@/components/ui/MascotLoader";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
 import { SectionCard, ToneChip, errorMessage, formatDay, ratingTone } from "@/components/admin/entity/shared";
@@ -507,7 +508,7 @@ function DocumentDetailContent() {
         ) : doc ? (
           <MetadataCard doc={doc} detail={detail} />
         ) : (
-          <SkeletonCard label="Loading document metadata" />
+          <MascotLoader variant="inline" label="Loading document metadata" />
         )}
 
         {notFound ? null : (

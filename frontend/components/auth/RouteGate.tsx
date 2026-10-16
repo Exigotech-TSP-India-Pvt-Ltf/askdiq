@@ -8,13 +8,14 @@ import { gateDecision, type GateDecision } from "@/lib/auth-gate";
 import { crossfade, fadeUp, useMotionVariants } from "@/lib/motion";
 import { AccessRequiredView } from "@/components/auth/AccessRequiredView";
 import { SuspendedView } from "@/components/auth/SuspendedView";
+import { MascotLoader } from "@/components/ui/MascotLoader";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useToast } from "@/components/ui/ToastProvider";
 
-function FullScreenSpinner() {
+function FullScreenLoader() {
   return (
-    <div role="status" aria-label="Loading" className="flex h-screen items-center justify-center bg-surface-page">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+    <div className="h-screen bg-surface-page">
+      <MascotLoader variant="page" label="Checking your session" />
     </div>
   );
 }
@@ -67,7 +68,7 @@ export function useRouteGate(): RouteGate {
       ),
     };
   }
-  if (decision === "loading" || decision === "login") return { decision, screen: <FullScreenSpinner /> };
+  if (decision === "loading" || decision === "login") return { decision, screen: <FullScreenLoader /> };
   if (decision === "suspended") {
     return {
       decision,

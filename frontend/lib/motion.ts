@@ -224,3 +224,75 @@ export const greeting: Variants = {
 
 /** Delay before the once-per-session greeting appears (ms). */
 export const greetingDelayMs = 1200;
+
+/* ------------------------------------------------------------------------ */
+/* Mascot loader (components/ui/MascotLoader). Idle loops are decoration;    */
+/* callers render them static when the user prefers reduced motion.         */
+/* ------------------------------------------------------------------------ */
+
+/** Loads faster than this never show the mascot (ms). */
+export const loaderShowDelayMs = 300;
+
+/** How often the friendly status line changes (ms). */
+export const loaderStatusRotateMs = 2400;
+
+const loaderBobSeconds = 2.8;
+
+/** Gentle float / bob of the mascot. */
+export const loaderBob: { animate: TargetAndTransition; transition: Transition } = {
+  animate: { y: [0, -8, 0], rotate: [0, -2, 0, 2, 0] },
+  transition: { duration: loaderBobSeconds, ease: "easeInOut", repeat: Infinity },
+};
+
+/** Ground shadow that breathes in time with the bob (smaller when the mascot is high). */
+export const loaderShadow: { animate: TargetAndTransition; transition: Transition } = {
+  animate: { scaleX: [1, 0.72, 1], opacity: [0.5, 0.25, 0.5] },
+  transition: { duration: loaderBobSeconds, ease: "easeInOut", repeat: Infinity },
+};
+
+/** Soft pulse ring behind the mascot. */
+export const loaderRing: { animate: TargetAndTransition; transition: Transition } = {
+  animate: { scale: [0.85, 1.35], opacity: [0.5, 0] },
+  transition: { duration: 2, ease: "easeOut", repeat: Infinity, repeatDelay: 0.3 },
+};
+
+/** Orbiting dots around the mascot: one full turn. */
+export const loaderOrbit: { animate: TargetAndTransition; transition: Transition } = {
+  animate: { rotate: 360 },
+  transition: { duration: 4.8, ease: "linear", repeat: Infinity },
+};
+
+/** "Thinking" scan line sweeping across the visor. */
+export const loaderScan: { animate: TargetAndTransition; transition: Transition } = {
+  animate: { y: [-10, 10], opacity: [0, 0.9, 0] },
+  transition: { duration: 1.6, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.5 },
+};
+
+/** Typing dots under the status line; `i` staggers each dot. */
+export function loaderDot(i: number): { animate: TargetAndTransition; transition: Transition } {
+  return {
+    animate: { opacity: [0.3, 1, 0.3], y: [0, -3, 0] },
+    transition: { duration: 1.1, ease: "easeInOut", repeat: Infinity, delay: i * 0.18 },
+  };
+}
+
+/** Status line swap. */
+export const loaderStatus: Variants = {
+  hidden: { opacity: 0, y: 4 },
+  visible: { opacity: 1, y: 0, transition: tween(duration.base) },
+  exit: { opacity: 0, y: -4, transition: tween(duration.fast) },
+};
+
+/** Loader in / out: soft scale-fade in, instant-feeling fade out. */
+export const loaderPresence: Variants = {
+  hidden: { opacity: 0, scale: 0.94 },
+  visible: { opacity: 1, scale: 1, transition: tween(duration.base) },
+  exit: { opacity: 0, scale: 0.96, transition: tween(duration.fast) },
+};
+
+/** Top route-transition bar: creeps toward the end while the next page loads. */
+export const routeProgress: { initial: TargetAndTransition; animate: TargetAndTransition; transition: Transition } = {
+  initial: { scaleX: 0.05 },
+  animate: { scaleX: [0.05, 0.6, 0.85, 0.95] },
+  transition: { duration: 6, ease: "easeOut", times: [0, 0.15, 0.5, 1] },
+};
