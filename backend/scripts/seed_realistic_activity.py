@@ -34,6 +34,7 @@ import argparse
 import asyncio
 import bisect
 import functools
+import ipaddress
 import logging
 import math
 import random
@@ -52,6 +53,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import Table, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
@@ -1194,6 +1197,42 @@ async def seed(
     return writer.counts
 
 
+_LOCAL_HOSTS = frozenset({"localhost", "host.docker.internal"})
+_DEV_HOST_TAGS = ("dev", "local", "test")
+OVERRIDE_FLAG = "--i-know-this-is-not-prod"
+
+
+def is_dev_database(database_url: str) -> bool:
+    """True for loopback/private-IP hosts, localhost or a dev/local/test hostname."""
+    try:
+        host = (make_url(database_url).host or "").strip("[]").lower()
+    except ArgumentError:
+        return False
+    if not host:
+        return False  # unix socket / unknown: treat as not provably dev
+    if host in _LOCAL_HOSTS:
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return any(tag in host for tag in _DEV_HOST_TAGS)
+    return address.is_loopback or address.is_private
+
+
+def production_guard(env: str, database_url: str, *, override: bool) -> str | None:
+    """Reason to refuse running, or None. Never includes the URL (it holds secrets)."""
+    if override:
+        return None
+    if env.strip().lower() in ("production", "prod"):
+        return f"ENV={env} looks like production; pass {OVERRIDE_FLAG} if it is not"
+    if not is_dev_database(database_url):
+        return (
+            "DATABASE_URL host is not local/dev (loopback, private IP, localhost or "
+            f"a dev/local/test hostname); pass {OVERRIDE_FLAG} if it is not prod"
+        )
+    return None
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -1217,6 +1256,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Online-eval sample rate (default: ONLINE_EVAL_SAMPLE_RATE)",
     )
+    parser.add_argument(
+        OVERRIDE_FLAG,
+        dest="not_prod",
+        action="store_true",
+        help="Bypass the production guard (ENV / database host checks)",
+    )
     args = parser.parse_args(argv)
     if not 0.001 <= args.scale <= 20:  # noqa: PLR2004
         parser.error("--scale must be between 0.001 and 20")
@@ -1229,6 +1274,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 async def amain(args: argparse.Namespace) -> int:
     settings = get_settings()
+    refusal = production_guard(
+        settings.env, settings.database_url, override=args.not_prod
+    )
+    if refusal:
+        logger.error("Refusing to run: %s", refusal)
+        return 2
     cfg = SeedConfig(
         seed=args.seed,
         scale=args.scale,
