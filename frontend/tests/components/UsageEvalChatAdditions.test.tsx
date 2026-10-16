@@ -162,7 +162,7 @@ describe("Evaluation (Live) additions", () => {
 describe("Chat additions", () => {
   it("shows the brand header and the signed-in user chip", () => {
     render(<ChatHeader />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Assistant");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("AskDIQ");
     const chip = screen.getByTestId("user-chip");
     expect(chip).toHaveAccessibleName("Signed in as Ada Lovelace");
     expect(within(chip).getByText("AL")).toBeInTheDocument();

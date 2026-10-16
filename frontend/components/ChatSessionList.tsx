@@ -49,6 +49,7 @@ export function ChatSessionList({
   onNew,
   onRename,
   onDelete,
+  className = "w-64 shrink-0 border-r border-ink/10 bg-ink/[0.015] dark:border-white/10 dark:bg-dark-surface/60",
 }: {
   sessions: ChatSessionSummary[];
   activeSessionId: string | null;
@@ -56,6 +57,8 @@ export function ChatSessionList({
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
+  /** Container sizing / surface (the /chat sidebar by default; the AskDIQ drawer passes its own). */
+  className?: string;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
@@ -78,7 +81,7 @@ export function ChatSessionList({
   }
 
   return (
-    <div className="flex w-64 shrink-0 flex-col border-r border-ink/10 dark:border-white/10 bg-ink/[0.015] dark:bg-dark-surface/60">
+    <div className={`flex flex-col ${className}`}>
       <div className="p-3">
         <button
           onClick={onNew}
@@ -128,7 +131,7 @@ export function ChatSessionList({
                 </p>
               </div>
 
-              <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
+              <div className="flex shrink-0 items-center gap-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
