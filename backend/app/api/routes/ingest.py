@@ -3,7 +3,16 @@
 import hashlib
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_permission
@@ -19,6 +28,13 @@ from app.schemas.document import IngestRequest, IngestResponse
 logger = logging.getLogger(__name__)
 router = APIRouter()
 settings = get_settings()
+
+
+def _to_response(result: dict) -> IngestResponse:
+    """Map the ingestion service result onto the public response model."""
+    return IngestResponse(
+        **{k: result[k] for k in IngestResponse.model_fields if k in result}
+    )
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -65,25 +81,7 @@ async def ingest_json(
             detail=f"Ingestion failed. Reference Request ID: {req_id}",
         ) from exc
 
-    return IngestResponse(
-        document_id=result["document_id"],
-        source_name=result["source_name"],
-        original_filename=result["original_filename"],
-        converted_from=result["converted_from"],
-        status=result["status"],
-        content_hash=result["content_hash"],
-        previous_content_hash=result["previous_content_hash"],
-        chunk_count=result["chunk_count"],
-        chunks_added=result["chunks_added"],
-        chunks_kept=result["chunks_kept"],
-        chunks_removed=result["chunks_removed"],
-        embedding_tokens=result["embedding_tokens"],
-        embedding_cost_usd=result["embedding_cost_usd"],
-        strategy_used=result["strategy_used"],
-        warnings=result["warnings"],
-        quarantined=result["quarantined"],
-        dry_run=result["dry_run"],
-    )
+    return _to_response(result)
 
 
 @router.post("/ingest/file", response_model=IngestResponse)
@@ -93,10 +91,18 @@ async def ingest_file(
     chunking_strategy: str = Form("auto"),
     force: bool = Form(False),
     dry_run: bool = Form(False),
+    force_query: bool = Query(False, alias="force"),
+    dry_run_query: bool = Query(False, alias="dry_run"),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DOCUMENTS_WRITE)),
 ) -> IngestResponse:
-    """Server-side file ingestion endpoint supporting .md, .markdown, and .docx formats."""
+    """Server-side file ingestion endpoint supporting .md, .markdown, and .docx formats.
+
+    ``dry_run`` / ``force`` are accepted as form fields or query parameters
+    (the dashboard sends query parameters); either one set to true applies.
+    """
+    force = force or force_query
+    dry_run = dry_run or dry_run_query
     req_id = getattr(request.state, "request_id", "unknown")
     client_ip = get_client_ip(request)
     filename = file.filename or "uploaded_document.md"
@@ -152,6 +158,7 @@ async def ingest_file(
             original_filename=filename,
             converted_from=converted_from,
             original_sha256=raw_sha256,
+            original_size_bytes=len(contents),
             warnings=warnings,
             quarantined=quarantined,
             force=force,
@@ -172,22 +179,4 @@ async def ingest_file(
             detail=f"Ingestion failed. Reference Request ID: {req_id}",
         ) from exc
 
-    return IngestResponse(
-        document_id=result["document_id"],
-        source_name=result["source_name"],
-        original_filename=result["original_filename"],
-        converted_from=result["converted_from"],
-        status=result["status"],
-        content_hash=result["content_hash"],
-        previous_content_hash=result["previous_content_hash"],
-        chunk_count=result["chunk_count"],
-        chunks_added=result["chunks_added"],
-        chunks_kept=result["chunks_kept"],
-        chunks_removed=result["chunks_removed"],
-        embedding_tokens=result["embedding_tokens"],
-        embedding_cost_usd=result["embedding_cost_usd"],
-        strategy_used=result["strategy_used"],
-        warnings=result["warnings"],
-        quarantined=result["quarantined"],
-        dry_run=result["dry_run"],
-    )
+    return _to_response(result)

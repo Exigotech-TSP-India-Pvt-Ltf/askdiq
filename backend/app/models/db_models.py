@@ -97,6 +97,12 @@ class Document(Base):
     )
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     doc_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    # The standardized Markdown every upload (.md or .docx) is normalized to
+    # before chunking. Deferred so list queries never load the full text;
+    # NULL for documents ingested before migration 254857d10a20.
+    canonical_markdown: Mapped[str | None] = mapped_column(
+        Text, nullable=True, deferred=True
+    )
 
     chunks: Mapped[list["Chunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"

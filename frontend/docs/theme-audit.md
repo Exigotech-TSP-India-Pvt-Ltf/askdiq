@@ -43,6 +43,8 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `/chat` | Pass | Pass | Pass | Page bg token; sample questions and product name from brand. PR-21: `chat/ChatHeader` (BrandLogo mark pair, `bg-surface-card`, `border-line`, `text-fg*`), user chip and "View trace" link on tokens | [ ] |
 | `/documents` | Pass | Fixed (T2) | Pass | PR-22: top-cited bar (`StackedBar` horizontal), age vs citations `QuadrantScatter`, coverage `RadialGauge` from `chartTheme`; delete via `ConfirmDialog` (danger tokens); upload / delete hidden without `documents:write` | [ ] |
 | `/documents/[id]` | Pass | Pass | Pass | PR-22: `DashboardHeader` + breadcrumb; chunk cards on `surface-card` / `line`, strategy chips on `status-*` tokens; hit heatmap on the sequential ramp; highlighted chunk `ring-brand-500/40` | [ ] |
+| `/documents` inventory (owner fix) | Pass | Pass | Pass | Inventory `TableCard` (format / size / chunks / hash + copy / ingested / status chips on `status-*` tokens), KPI cards on `surface-card` / `line` with brand hover, rows fade up (`fadeUp`, reduced motion = opacity only) | [ ] |
+| `/documents/[id]` tabs (owner fix) | Pass | Pass | Pass | Metadata card (`surface-card`, warnings on `status-warn-*`), `TabGroup` (Chunks / Canonical Markdown / Citations / History), Markdown rendered with `MarkdownView` (tokens only, no HTML injection), source view on `surface-muted` | [ ] |
 | `/admin` (Dashboard) | Pass | Pass | Pass | PR-21 rebuild: KpiTrendCard grid, StackedArea, PercentileBand, BulletChart, RadialGauge, Treemap from `useChartTheme()`; activity feed and health pill on `status-*` / `surface-*` tokens; old teal/slate literals and the custom tooltip removed | [ ] |
 | `/admin/conversations` | Pass | Pass | Pass | PR-22: turns `Histogram`, outcome 100 % `StackedBar`; preview `DrawerShell` (surface-elevated) | [ ] |
 | `/admin/conversations/[id]` | Pass | Pass | Pass | PR-22: `DashboardHeader` + breadcrumb; turn cards on `surface-card` / `surface-muted` / `brand-50`+`dark:brand-950/40` (no `text-gray-*`); stage `Waterfall`, token `StackedBar`; highlighted turn ring `brand-500/40` | [ ] |
@@ -105,7 +107,9 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `admin/usage/SessionsTab` | Pass | Fixed (T2) | Pass | Detail heading tokenised |
 | `admin/usage/QueriesTab` | Pass | Fixed (T2) | Pass | Neutral chips tokenised |
 | `admin/usage/TestIpManager` | Pass | Fixed (T2) | Pass | Cancel button tokenised |
-| `documents/FormatBadge` | Pass | Fixed (T2) | Pass | Default badge tokenised |
+| `documents/FormatBadge` | Pass | Fixed (T2) | Pass | `.docx` chip on `status-info-*`, `.md` chip on `surface-muted` / `line`, "Standardized to Markdown" caption `brand-700` / `dark:brand-300` |
+| `documents/UploadDialog` (new) | Pass | Pass | Pass | `Modal` (`pop` + focus trap + Esc), drop zone `line` / `brand-50` (`dark:brand-950/40`), step bars `progressFill` on `brand-600`, result on `status-ok-bg` / `status-warn-bg`, errors on `status-danger-*` |
+| `documents/MarkdownView` (new) | Pass | Pass | Pass | Headings `text-fg`, code / tables on `surface-muted` / `line`, links `brand-700` / `dark:brand-300` |
 | `charts/ChartCard` (new, PR-16) | Pass | Pass | Pass | Replaces the local cards in Dashboard (`AuroraChartCard`), Monitoring, Evaluation and Evaluation Live; `plain` / `aurora` variants on `surface-*`, `line`, `brand-*` tokens; skeleton, error, empty and "View as table" states use tokens |
 | `charts/Sparkline`, `charts/KpiTrendCard` (new) | Pass | Pass | Pass | SVG colours from `useChartTheme()`; delta badge on `status-*-bg` / `status-*-fg` |
 | `charts/StackedArea`, `PercentileBand`, `Histogram` (new) | Pass | Pass | Pass | Series `chartTheme.categorical`, grid `chartTheme.grid`, axis `chartTheme.axis`; legend hover dims to `dimOpacity` |

@@ -227,7 +227,8 @@ describe("Documents and Document detail (row: usage signal, chunks)", () => {
   });
 
   it("low-rated citation -> Feedback and back to the chunk", async () => {
-    renderPage(<DocumentDetailPage />, { url: `/documents/${DOC_ID}` });
+    renderPage(<DocumentDetailPage />, { url: `/documents/${DOC_ID}?tab=citations` });
+    expect(await screen.findByRole("tab", { name: /Citations/ })).toHaveAttribute("aria-selected", "true");
     const list = await screen.findByRole("list", { name: "Low-rated citations" });
     expect(within(list).getByRole("link", { name: "Open in Feedback" })).toHaveAttribute(
       "href",
