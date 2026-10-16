@@ -37,13 +37,17 @@ export function useDeepLink() {
   // Several `set` calls in one tick (e.g. a toolbar "Reset all" clearing each
   // filter in turn) must compose: each merges onto the URL the previous call
   // wrote, not onto the render-time `search`, or only the last one sticks.
-  const pending = useRef<{ base: string; next: string } | null>(null);
+  // The pending URL is only reused until the next render, so back / forward
+  // (which re-renders with an older URL) never resurrects an undone write.
+  const pending = useRef<{ render: number; next: string } | null>(null);
+  const renders = useRef(0);
+  renders.current += 1;
 
   const set = useCallback(
     (update: DeepLinkUpdate, { history = "replace" }: DeepLinkOptions = {}) => {
-      const base = pending.current?.base === search ? pending.current.next : search;
+      const base = pending.current?.render === renders.current ? pending.current.next : search;
       const merged = mergeSearch(base, update);
-      pending.current = { base: search, next: merged.replace(/^\?/, "") };
+      pending.current = { render: renders.current, next: merged.replace(/^\?/, "") };
       const href = `${pathname ?? ""}${merged}`;
       if (history === "push") router.push(href, { scroll: false });
       else router.replace(href, { scroll: false });
