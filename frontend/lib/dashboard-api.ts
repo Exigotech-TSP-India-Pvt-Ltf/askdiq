@@ -15,7 +15,7 @@
 import type { ActiveVisitors } from "@/lib/active-visitors";
 import { ApiError } from "@/lib/api";
 import type { Audience } from "@/lib/types";
-import type { DateRange } from "@/lib/range-context";
+import { utcMidnight, type DateRange } from "@/lib/range-context";
 
 const PROXY_BASE = "/api/proxy/admin";
 
@@ -212,13 +212,16 @@ function isoMinute(date: Date): string {
   return new Date(Math.floor(date.getTime() / MINUTE_MS) * MINUTE_MS).toISOString();
 }
 
-/** Request window for a range. Custom ranges are whole days, `to` inclusive, so it moves to the next midnight. */
+/**
+ * Request window for a range. Custom ranges are whole UTC days (the app-wide
+ * day convention, matching the UTC day buckets), `to` inclusive, so it moves
+ * to the next UTC midnight. Presets are rolling windows ending now.
+ */
 export function rangeParams(range: DateRange, audience: Audience): DashboardParams {
-  const to =
-    range.kind === "custom"
-      ? new Date(range.to.getFullYear(), range.to.getMonth(), range.to.getDate() + 1)
-      : range.to;
-  return { audience, from: isoMinute(range.from), to: isoMinute(to) };
+  if (range.kind === "custom") {
+    return { audience, from: isoMinute(utcMidnight(range.from)), to: isoMinute(utcMidnight(range.to, 1)) };
+  }
+  return { audience, from: isoMinute(range.from), to: isoMinute(range.to) };
 }
 
 export function buildQuery(params: Record<string, string | number | undefined>): string {

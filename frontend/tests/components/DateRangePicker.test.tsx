@@ -9,10 +9,13 @@ import {
   MAX_RANGE_DAYS,
   RangeProvider,
   clampCustomRange,
+  presetRange,
   rangeFromParams,
+  rangeUtcDays,
   toIsoDay,
   useRange,
 } from "@/lib/range-context";
+import { rangeParams } from "@/lib/dashboard-api";
 import { LayoutDashboard } from "lucide-react";
 
 const router = vi.hoisted(() => {
@@ -154,5 +157,26 @@ describe("DateRangePicker + RangeProvider", () => {
 
     render(<DashboardHeader title="Dashboard" icon={LayoutDashboard} showDateRange />);
     expect(screen.queryByRole("button", { name: /date range/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("one day convention: UTC days end to end", () => {
+  const now = new Date("2026-10-16T01:30:00Z");
+
+  it("presets become exactly N UTC days ending today for day-based endpoints", () => {
+    expect(rangeUtcDays(presetRange("7d", now))).toEqual({ from: "2026-10-10", to: "2026-10-16" });
+    expect(rangeUtcDays(presetRange("30d", now))).toEqual({ from: "2026-09-17", to: "2026-10-16" });
+    // The last 24 hours touch yesterday and today (UTC).
+    expect(rangeUtcDays(presetRange("24h", now))).toEqual({ from: "2026-10-15", to: "2026-10-16" });
+  });
+
+  it("custom ranges send the picked dates, and the Dashboard their UTC midnights", () => {
+    const custom = clampCustomRange(new Date(2026, 9, 1), new Date(2026, 9, 3), now);
+    expect(rangeUtcDays(custom)).toEqual({ from: "2026-10-01", to: "2026-10-03" });
+    expect(rangeParams(custom, "overview")).toEqual({
+      audience: "overview",
+      from: "2026-10-01T00:00:00.000Z",
+      to: "2026-10-04T00:00:00.000Z",
+    });
   });
 });
