@@ -105,4 +105,26 @@ describe("submitMessageFeedback payload", () => {
     expect(calls[1].path).toBe(calls[0].path);
     expect(calls[1].body).toEqual({ rating: 1, comment: null, reason_tags: ["incomplete"], corrected_answer: null });
   });
+
+  it("omits reason tags and corrected answer when none are given, so a note keeps the stored ones", async () => {
+    const calls = installFetch((call) =>
+      call.method === "POST"
+        ? {
+            json: {
+              message_id: "m-1",
+              session_id: "s-1",
+              rating: 1,
+              comment: "Outdated",
+              reason_tags: ["wrong"],
+              corrected_answer: "Better.",
+              triage_status: "new",
+              created_at: "",
+              updated_at: "",
+            },
+          }
+        : undefined,
+    );
+    await submitMessageFeedback("t", "s-1", "m-1", { rating: 1, comment: "Outdated" });
+    expect(calls[0].body).toEqual({ rating: 1, comment: "Outdated" });
+  });
 });
