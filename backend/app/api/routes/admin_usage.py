@@ -1244,6 +1244,7 @@ async def get_query_detail(
                 LatencyRecord.embedding_ms.label("embedding_ms"),
                 LatencyRecord.retrieval_ms.label("retrieval_ms"),
                 LatencyRecord.llm_ms.label("llm_ms"),
+                LatencyRecord.reranker_ms.label("reranker_ms"),
             )
             .select_from(asst_msg)
             .join(
@@ -1272,6 +1273,7 @@ async def get_query_detail(
         lat_embed,
         lat_ret,
         lat_llm,
+        lat_rerank,
     ) = row
     details = asst.token_details or {}
 
@@ -1326,6 +1328,7 @@ async def get_query_detail(
             "embedding_ms": lat_embed,
             "retrieval_ms": lat_ret,
             "llm_ms": lat_llm,
+            "reranker_ms": lat_rerank,
         },
     }
 

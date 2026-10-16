@@ -13,6 +13,20 @@ interface QueryInspectorDrawerProps {
   onClose: () => void;
 }
 
+/** Configured default `PRICE_CACHED_PER_MILLION`, used only when the API omits the rate card. */
+const DEFAULT_CACHED_RATE = 0.125;
+
+const LATENCY_STAGES: readonly (readonly [string, string])[] = [
+  ["embedding_ms", "Query Embedding"],
+  ["retrieval_ms", "Retrieval & Search"],
+  ["reranker_ms", "Reranker"],
+  ["llm_ms", "LLM Generation"],
+];
+
+function msText(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value).toLocaleString()} ms` : "—";
+}
+
 export function QueryInspectorDrawer({
   requestId,
   token,
@@ -64,8 +78,12 @@ export function QueryInspectorDrawer({
     price_embed_per_million: 0.02,
     price_input_per_million: 0.25,
     price_output_per_million: 2.0,
-    price_cached_per_million: 0.0625,
+    price_cached_per_million: DEFAULT_CACHED_RATE,
   };
+
+  const rawLatency = detail?.latencies ?? detail?.latency;
+  const stageLatency: Record<string, number | null | undefined> | null =
+    rawLatency && typeof rawLatency === "object" && rawLatency.total_ms != null ? rawLatency : null;
 
   const tokens = detail?.tokens || {
     prompt: 0,
@@ -77,9 +95,12 @@ export function QueryInspectorDrawer({
     total_billed: 0,
   };
 
-  const promptCost = ((tokens.prompt || 0) / 1_000_000) * pricing.price_input_per_million;
+  // `prompt` counts every input token, cached ones included: bill only the
+  // uncached remainder at the prompt rate and the cached part at its own rate.
+  const uncachedPrompt = Math.max(0, (tokens.prompt || 0) - (tokens.cached_prompt || 0));
+  const promptCost = (uncachedPrompt / 1_000_000) * pricing.price_input_per_million;
   const cachedCost =
-    ((tokens.cached_prompt || 0) / 1_000_000) * (pricing.price_cached_per_million || 0.0625);
+    ((tokens.cached_prompt || 0) / 1_000_000) * (pricing.price_cached_per_million || DEFAULT_CACHED_RATE);
   const reasoningCost =
     ((tokens.reasoning || 0) / 1_000_000) * pricing.price_output_per_million;
   const visibleCost =
@@ -101,13 +122,12 @@ export function QueryInspectorDrawer({
   const totalBilledTokens =
     tokens.total_billed ||
     ((tokens.prompt || 0) +
-      (tokens.cached_prompt || 0) +
       (tokens.reasoning || 0) +
       (tokens.visible || 0) +
       embeddingsTokens) ||
     1;
 
-  const promptPct = ((tokens.prompt || 0) / totalBilledTokens) * 100;
+  const promptPct = (uncachedPrompt / totalBilledTokens) * 100;
   const cachedPct = ((tokens.cached_prompt || 0) / totalBilledTokens) * 100;
   const reasoningPct = ((tokens.reasoning || 0) / totalBilledTokens) * 100;
   const visiblePct = ((tokens.visible || 0) / totalBilledTokens) * 100;
@@ -118,7 +138,7 @@ export function QueryInspectorDrawer({
       id: "prompt",
       label: "Prompt Context",
       shortLabel: "Prompt",
-      tokens: tokens.prompt || 0,
+      tokens: uncachedPrompt,
       pct: promptPct,
       cost: promptCost,
       barColor: "bg-teal-600 dark:bg-teal-500",
@@ -401,7 +421,7 @@ export function QueryInspectorDrawer({
                   <tr>
                     <td className="px-3.5 py-2 font-medium text-fg">2. Prompt Context (Uncached)</td>
                     <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-muted">
-                      {(tokens.prompt || 0).toLocaleString()}
+                      {uncachedPrompt.toLocaleString()}
                     </td>
                     <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-subtle">
                       ${pricing.price_input_per_million.toFixed(2)}
@@ -417,7 +437,7 @@ export function QueryInspectorDrawer({
                         {tokens.cached_prompt.toLocaleString()}
                       </td>
                       <td className="px-3.5 py-2 text-right font-mono tabular-nums text-fg-subtle">
-                        ${(pricing.price_cached_per_million || 0.0625).toFixed(4)}
+                        ${(pricing.price_cached_per_million || DEFAULT_CACHED_RATE).toFixed(4)}
                       </td>
                       <td className="px-3.5 py-2 text-right font-mono tabular-nums font-medium text-teal-800 dark:text-teal-300">
                         ${cachedCost.toFixed(5)}
@@ -475,38 +495,20 @@ export function QueryInspectorDrawer({
             </div>
           </div>
 
-          {/* Latency Breakdown */}
-          {detail.latency && (
-            <div className="space-y-2">
+          {/* Latency Breakdown (the endpoint sends `latencies`; `latency` is the legacy name) */}
+          {stageLatency && (
+            <div className="space-y-2" data-testid="usage-latency-stages">
               <span className="text-xs font-semibold uppercase tracking-wider text-fg-subtle flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
-                Turn Latency Stages ({detail.latency.total_ms ?? "—"} ms total)
+                Turn Latency Stages ({msText(stageLatency.total_ms)} total)
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                <div className="rounded-lg border border-line bg-slate-50 dark:bg-dark-card p-2.5">
-                  <span className="text-fg-subtle block text-[11px]">Retrieval & Search</span>
-                  <span className="font-semibold text-fg font-mono tabular-nums">
-                    {detail.latency.retrieval_ms ?? "—"} ms
-                  </span>
-                </div>
-                <div className="rounded-lg border border-line bg-slate-50 dark:bg-dark-card p-2.5">
-                  <span className="text-fg-subtle block text-[11px]">Guardrails Pre</span>
-                  <span className="font-semibold text-fg font-mono tabular-nums">
-                    {detail.latency.guardrail_pre_ms ?? detail.latency.guardrails_ms ?? "—"} ms
-                  </span>
-                </div>
-                <div className="rounded-lg border border-line bg-slate-50 dark:bg-dark-card p-2.5">
-                  <span className="text-fg-subtle block text-[11px]">LLM Generation</span>
-                  <span className="font-semibold text-fg font-mono tabular-nums">
-                    {detail.latency.llm_generation_ms ?? detail.latency.llm_ms ?? "—"} ms
-                  </span>
-                </div>
-                <div className="rounded-lg border border-line bg-slate-50 dark:bg-dark-card p-2.5">
-                  <span className="text-fg-subtle block text-[11px]">Guardrails Post</span>
-                  <span className="font-semibold text-fg font-mono tabular-nums">
-                    {detail.latency.guardrail_post_ms ?? "—"} ms
-                  </span>
-                </div>
+                {LATENCY_STAGES.map(([key, label]) => (
+                  <div key={key} className="rounded-lg border border-line bg-slate-50 dark:bg-dark-card p-2.5">
+                    <span className="text-fg-subtle block text-[11px]">{label}</span>
+                    <span className="font-semibold text-fg font-mono tabular-nums">{msText(stageLatency[key])}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
