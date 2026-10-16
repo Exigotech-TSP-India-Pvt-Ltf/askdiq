@@ -128,6 +128,13 @@ export const parallaxSpring = { stiffness: 60, damping: 20, mass: 0.6 } as const
 /** Sign-in step indicator: the progress rail fills over `slow`. */
 export const progressFill: Transition = { duration: duration.slow, ease };
 
+/** No animation: used under reduced motion where a Transition is still required. */
+export const instant: Transition = { duration: 0 };
+
+/** Guided tour: scrim fades over `base`; the step progress bar fills over 0.3s. */
+export const tourScrimFade: Transition = { duration: duration.base, ease };
+export const tourProgress: Transition = { duration: 0.3, ease };
+
 /** Transition for number count-ups (`animate(from, to, countUp)`). */
 export const countUp: Transition = { duration: duration.slow, ease };
 

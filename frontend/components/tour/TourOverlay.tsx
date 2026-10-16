@@ -6,7 +6,7 @@ import { m } from "motion/react";
 import { ArrowLeft, ArrowRight, Check, Compass, X } from "lucide-react";
 import type { TourStep } from "@/lib/tour/types";
 import { SPOTLIGHT_PADDING, placeCard, type Box } from "@/lib/tour/dom";
-import { ease, spring } from "@/lib/motion";
+import { instant, spring, tourProgress, tourScrimFade } from "@/lib/motion";
 import { iconButton, primaryButton, secondaryButton } from "@/components/ui/styles";
 
 const CARD_WIDTH = 360;
@@ -115,7 +115,7 @@ export function TourOverlay({ tourTitle, step, index, total, target, reduced, on
 
   const width = Math.min(CARD_WIDTH, vp.vw - 32);
   const pos = placeCard(rect, step.placement, width, cardHeight, vp.vw, vp.vh);
-  const transition = reduced ? { duration: 0 } : spring;
+  const transition = reduced ? instant : spring;
   const progress = ((index + 1) / total) * 100;
 
   return createPortal(
@@ -139,7 +139,7 @@ export function TourOverlay({ tourTitle, step, index, total, target, reduced, on
           style={{ background: SCRIM }}
           initial={reduced ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: reduced ? 0 : 0.2, ease }}
+          transition={reduced ? instant : tourScrimFade}
         />
       )}
 
@@ -162,7 +162,7 @@ export function TourOverlay({ tourTitle, step, index, total, target, reduced, on
             data-testid="tour-progress"
             initial={false}
             animate={{ width: `${progress}%` }}
-            transition={reduced ? { duration: 0 } : { duration: 0.3, ease }}
+            transition={reduced ? instant : tourProgress}
           />
         </div>
         <div className="p-5">
