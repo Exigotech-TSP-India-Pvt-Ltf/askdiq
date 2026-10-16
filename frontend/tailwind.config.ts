@@ -59,10 +59,17 @@ const config: Config = {
           "linear-gradient(135deg, rgb(var(--brand-950)) 0%, rgb(var(--brand-900)) 48%, rgb(var(--brand-600)) 100%)",
         "brand-gradient":
           "linear-gradient(135deg, var(--brand-gradient-from) 0%, var(--brand-gradient-via) 50%, var(--brand-gradient-to) 100%)",
+        // Studio card surface (components/ui/StudioCard): a corner brand glow over a
+        // brand-tinted top that fades into the card colour. Follows theme and brand.
+        studio:
+          "radial-gradient(120% 90% at 100% 0%, rgb(var(--brand-400) / var(--studio-glow-alpha)) 0%, transparent 55%), linear-gradient(165deg, rgb(var(--surface-studio)) 0%, rgb(var(--surface-card)) 60%)",
       },
       boxShadow: {
         card: "0 1px 2px rgba(10, 28, 26, 0.04), 0 8px 24px rgba(10, 28, 26, 0.06)",
         "brand-glow": "0 4px 14px 0 var(--brand-glow)",
+        // Layered studio shadows; values per theme live in app/globals.css.
+        studio: "var(--shadow-studio)",
+        "studio-hover": "var(--shadow-studio-hover)",
       },
     },
   },

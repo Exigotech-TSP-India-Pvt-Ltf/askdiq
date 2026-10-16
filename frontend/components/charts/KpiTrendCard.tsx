@@ -6,6 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import { ArrowUpRight, Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { Sparkline, type SparkPoint, type SparkTone } from "./Sparkline";
 import type { SelectHandler } from "./primitives";
+import { studioInteractive, studioSurface } from "@/components/ui/styles";
 
 export interface KpiTrendCardProps {
   label: string;
@@ -52,10 +53,9 @@ function DeltaBadge({ delta, goodDirection }: { delta: number; goodDirection: "u
   );
 }
 
-const CARD =
-  "group relative flex flex-col gap-3 rounded-2xl border border-line bg-surface-card p-5 shadow-sm transition duration-150 motion-reduce:transition-none";
-const CARD_INTERACTIVE =
-  "motion-safe:hover:-translate-y-0.5 hover:shadow-md hover:border-brand-300 dark:hover:border-brand-700/60";
+// Studio surface (same as the Usage Live Telemetry cards).
+const CARD = `group flex flex-col gap-3 p-5 ${studioSurface}`;
+const CARD_INTERACTIVE = studioInteractive;
 
 /** KPI tile with value, period delta and a sparkline (newplan §15.4 Dashboard). */
 export function KpiTrendCard({

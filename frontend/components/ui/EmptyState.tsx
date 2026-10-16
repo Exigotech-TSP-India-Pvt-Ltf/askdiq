@@ -18,7 +18,7 @@ export function EmptyState({ title, description, icon: Icon = Inbox, action, cla
     <div
       className={`flex flex-col items-center justify-center text-center ${compact ? "gap-1.5 px-4 py-6" : "gap-2 px-6 py-12"} ${className}`}
     >
-      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-muted text-fg-subtle">
+      <span className="flex h-10 w-10 items-center justify-center rounded-full border border-line-brand/60 bg-surface-studio text-accent-fg dark:border-brand-500/25">
         <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden="true" />
       </span>
       <p className="text-sm font-semibold text-fg">{title}</p>

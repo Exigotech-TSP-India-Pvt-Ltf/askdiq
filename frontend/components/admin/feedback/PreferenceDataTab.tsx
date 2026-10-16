@@ -79,7 +79,7 @@ export function PreferenceDataTab({ token, canExport }: PreferenceDataTabProps) 
   } else {
     body = (
       <table className="w-full text-left text-xs" aria-label="Preference pairs preview">
-        <thead className="border-b border-line bg-surface-muted/40 text-[11px] uppercase tracking-wide text-fg-subtle">
+        <thead className="border-b border-line-brand/70 bg-surface-studio dark:border-brand-500/20 text-[11px] uppercase tracking-wide text-fg-subtle">
           <tr>
             <th scope="col" className="px-4 py-2.5">Prompt</th>
             <th scope="col" className="px-3 py-2.5">Chosen</th>

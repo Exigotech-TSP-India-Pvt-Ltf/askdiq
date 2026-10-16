@@ -238,7 +238,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
   return (
     <>
       <aside
-        className={`hidden md:flex h-screen shrink-0 flex-col border-r border-ink/10 dark:border-white/10 bg-white dark:bg-dark-surface transition-[width] duration-200 ${
+        className={`hidden md:flex h-screen shrink-0 flex-col border-r border-ink/10 dark:border-white/10 bg-surface-card transition-[width] duration-200 ${
           collapsed ? "w-16" : "w-64"
         }`}
       >

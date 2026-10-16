@@ -47,7 +47,7 @@ export function RolesMatrixTab({ me }: { me: Me | undefined }) {
       ) : null}
       <table className="w-full border-collapse text-left text-xs" data-testid="um-roles-matrix">
         <caption className="sr-only">Permissions granted to each role</caption>
-        <thead className="border-b border-line bg-surface-muted/60 text-fg-muted">
+        <thead className="border-b border-line-brand/70 bg-surface-studio dark:border-brand-500/20 text-fg-muted">
           <tr>
             <th scope="col" className="px-5 py-2.5 font-semibold">
               Permission
@@ -66,7 +66,7 @@ export function RolesMatrixTab({ me }: { me: Me | undefined }) {
         </thead>
         <tbody className="divide-y divide-line">
           {rows.map((perm) => (
-            <tr key={perm} className="transition-colors hover:bg-surface-muted/60">
+            <tr key={perm} className="transition-colors hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07]">
               <th scope="row" className="px-5 py-2.5 font-normal">
                 <p className="font-medium text-fg">{PERMISSION_LABEL[perm] ?? perm}</p>
                 <p className="font-mono text-[11px] text-fg-subtle">{perm}</p>

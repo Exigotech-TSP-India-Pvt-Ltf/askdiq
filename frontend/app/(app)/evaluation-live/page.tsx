@@ -62,9 +62,9 @@ function statusColor(value: string): string {
 }
 
 function statusBar(value: string): string {
-  if (!value.endsWith("%")) return "bg-slate-200 dark:bg-zinc-700";
+  if (!value.endsWith("%")) return "bg-chart-track";
   const n = parseFloat(value);
-  if (Number.isNaN(n)) return "bg-slate-200 dark:bg-zinc-700";
+  if (Number.isNaN(n)) return "bg-chart-track";
   if (n >= 80) return "bg-emerald-500";
   if (n >= 50) return "bg-amber-500";
   return "bg-rose-500";
@@ -76,12 +76,12 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md px-4 py-3.5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
       <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
-      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">{label}</p>
+      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">{label}</p>
       <p className={`mt-1 text-xl font-black font-mono tracking-tight tabular-nums ${isPct ? statusColor(value) : "text-slate-900 dark:text-white"}`}>
         {value}
       </p>
       {pctNum !== null && (
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-teal-100/60 dark:bg-zinc-800">
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-chart-track">
           <div
             className={`h-full rounded-full transition-all duration-500 ${statusBar(value)}`}
             style={{ width: `${pctNum}%` }}
@@ -107,7 +107,7 @@ function HeroStat({
     <div className="group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
       <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl transition-transform group-hover:scale-125" />
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">{label}</p>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">{label}</p>
         <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-teal-500/10 dark:bg-teal-400/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 shadow-xs">
           <Icon className="h-4 w-4" />
         </div>
@@ -382,7 +382,7 @@ export default function EvaluationLivePage() {
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Retrieval Ranking Metrics</h3>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">Context coverage, noise ratio, and multi-tier retrieval recall</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-fg-muted">Context coverage, noise ratio, and multi-tier retrieval recall</p>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <Stat label="Recall @ 1" value={pct(r?.retrieval?.["recall@1"])} />
@@ -424,7 +424,7 @@ export default function EvaluationLivePage() {
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <div>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Citation & Attribution Verification</h3>
-                  <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">Claims grounded in cited passages vs total claims stated</p>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-fg-muted">Claims grounded in cited passages vs total claims stated</p>
                 </div>
                 <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200/80 dark:border-teal-500/30">
                   Automated Citation Attributor Active
@@ -469,12 +469,12 @@ export default function EvaluationLivePage() {
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Adversarial Robustness & Stability</h3>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">Response stability against typos, paraphrasing, and adversarial prompt perturbations</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-fg-muted">Response stability against typos, paraphrasing, and adversarial prompt perturbations</p>
               </div>
 
               <div className="overflow-x-auto rounded-xl border border-teal-100 dark:border-teal-500/20">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-teal-50/50 dark:bg-teal-950/30 text-slate-700 dark:text-teal-200 border-b border-teal-200/70 dark:border-teal-500/20 font-bold">
+                  <thead className="bg-surface-studio text-fg-muted dark:text-brand-200 border-b border-line-brand/70 dark:border-brand-500/20 font-bold">
                     <tr>
                       <th className="px-3.5 py-2.5">Perturbation Type</th>
                       <th className="px-3.5 py-2.5 text-right">Cases Tested</th>
@@ -486,7 +486,7 @@ export default function EvaluationLivePage() {
                   </thead>
                   <tbody>
                     {Object.entries(r?.robustness?.by_perturbation ?? {}).map(([k, v]: any) => (
-                      <tr key={k} className="border-b border-teal-100/50 dark:border-teal-500/10 odd:bg-white dark:odd:bg-dark-card even:bg-teal-50/20 dark:even:bg-dark-surface/40 hover:bg-teal-50/60 dark:hover:bg-teal-500/10 transition-colors">
+                      <tr key={k} className="border-b border-teal-100/50 dark:border-teal-500/10 even:bg-surface-muted/30 dark:even:bg-white/[0.015] hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07] transition-colors">
                         <td className="px-3.5 py-2.5 font-bold text-slate-900 dark:text-white">{label(k)}</td>
                         <td className="px-3.5 py-2.5 text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">{v.n}</td>
                         <td className="px-3.5 py-2.5 text-right font-mono tabular-nums text-emerald-600 dark:text-emerald-400">{num(v.retrieval_stability, 3)}</td>
@@ -505,7 +505,7 @@ export default function EvaluationLivePage() {
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Abstention & Refusal Quality</h3>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">Refusal precision on out-of-domain and unanswerable scenarios</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-fg-muted">Refusal precision on out-of-domain and unanswerable scenarios</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Stat label="Abstention Rate" value={pct(r?.abstention?.abstention_rate)} />
@@ -554,7 +554,7 @@ export default function EvaluationLivePage() {
           >
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-teal-50/50 dark:bg-teal-950/30 text-slate-700 dark:text-teal-200 border-b border-teal-200/70 dark:border-teal-500/20 font-bold">
+                <thead className="bg-surface-studio text-fg-muted dark:text-brand-200 border-b border-line-brand/70 dark:border-brand-500/20 font-bold">
                   <tr>
                     <th className="px-3.5 py-2.5">Status</th>
                     <th className="px-3.5 py-2.5">Outcome Type</th>
@@ -572,7 +572,7 @@ export default function EvaluationLivePage() {
                     <tr
                       key={c.id}
                       onClick={() => handleRowClick(c)}
-                      className="border-b border-teal-100/50 dark:border-teal-500/10 align-top odd:bg-white dark:odd:bg-dark-card even:bg-teal-50/20 dark:even:bg-dark-surface/40 hover:bg-teal-50/60 dark:hover:bg-teal-500/10 cursor-pointer transition-colors group"
+                      className="border-b border-teal-100/50 dark:border-teal-500/10 align-top even:bg-surface-muted/30 dark:even:bg-white/[0.015] hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07] cursor-pointer transition-colors group"
                     >
                       <td className="px-3.5 py-2.5 whitespace-nowrap">
                         <span

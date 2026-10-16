@@ -83,6 +83,34 @@ export const crossfade: Variants = {
   exit: { opacity: 0, transition: tween(duration.fast) },
 };
 
+/** Popovers and menus (filters, column picker): small drop from the trigger. */
+export const popover: Variants = {
+  hidden: { opacity: 0, y: -4, scale: 0.98 },
+  visible: { opacity: 1, y: 0, scale: 1, transition: tween(duration.fast) },
+  exit: { opacity: 0, y: -4, scale: 0.98, transition: tween(duration.fast) },
+};
+
+/**
+ * Expand / collapse (row detail, stage breakdowns). Animates height, so
+ * `Collapse` (components/ui/Collapse) renders it instantly under reduced motion.
+ */
+export const expand: Variants = {
+  hidden: { height: 0, opacity: 0, transition: tween(duration.fast) },
+  visible: { height: "auto", opacity: 1, transition: tween(duration.base) },
+  exit: { height: 0, opacity: 0, transition: tween(duration.fast) },
+};
+
+/** Studio card entrance: fade + 8 px rise (children of a `stagger` grid). */
+export const cardEnter: Variants = fadeUp;
+
+/** Lists longer than this render without per-row animation (performance). */
+export const MAX_ANIMATED_ROWS = 50;
+
+/** `stagger` for short lists; no stagger for long ones. */
+export function staggerFor(count: number): Variants {
+  return count > MAX_ANIMATED_ROWS ? {} : stagger;
+}
+
 /**
  * Ambient decoration loops (login brand panel, newplan §7.7): very slow,
  * transform-only drift between 20 and 40 s. Not UI feedback, so the 300 ms

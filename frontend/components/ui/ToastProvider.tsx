@@ -137,7 +137,7 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number) =
       onFocus={pause}
       onBlur={resume}
       data-paused={paused ? "true" : "false"}
-      className="pointer-events-auto flex items-start gap-3 rounded-xl border border-line bg-surface-elevated p-3.5 text-fg shadow-xl dark:shadow-black/40"
+      className="pointer-events-auto flex items-start gap-3 rounded-xl border border-line-brand/70 bg-surface-elevated p-3.5 text-fg shadow-xl dark:border-brand-500/20 dark:shadow-black/40"
     >
       <Icon className={`mt-0.5 h-[18px] w-[18px] shrink-0 ${className}`} strokeWidth={1.75} aria-hidden="true" />
       <div className="min-w-0 flex-1">

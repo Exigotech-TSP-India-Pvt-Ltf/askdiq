@@ -164,7 +164,7 @@ export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS }: Golde
   } else {
     body = (
       <table className="w-full text-left text-xs" aria-label="Golden cases">
-        <thead className="border-b border-line bg-surface-muted/40 text-[11px] uppercase tracking-wide text-fg-subtle">
+        <thead className="border-b border-line-brand/70 bg-surface-studio dark:border-brand-500/20 text-[11px] uppercase tracking-wide text-fg-subtle">
           <tr>
             <th scope="col" className="px-4 py-2.5">Case</th>
             <th scope="col" className="px-3 py-2.5">Question</th>
@@ -179,7 +179,7 @@ export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS }: Golde
             const job = jobs[c.id];
             const running = job?.phase === "queued" || job?.phase === "running";
             return (
-              <tr key={c.id} className="border-b border-line/70 last:border-0 hover:bg-surface-muted/50">
+              <tr key={c.id} className="border-b border-line/70 last:border-0 hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07]">
                 <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-fg-muted">{c.id}</td>
                 <td className="max-w-md px-3 py-3">
                   <p className="line-clamp-2 text-fg">{c.query}</p>

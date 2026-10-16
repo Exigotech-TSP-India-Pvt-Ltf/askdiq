@@ -2,6 +2,7 @@
 
 import React, { useId, useRef } from "react";
 import { ActivePill } from "@/components/ui/ActivePill";
+import { segmentTrack } from "@/components/ui/styles";
 import {
   BarChart3,
   Users,
@@ -90,7 +91,7 @@ export function TabGroup<T extends string = string>({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={`inline-flex p-1 bg-slate-100/90 dark:bg-dark-surface rounded-xl border border-slate-200/90 dark:border-dark-border shadow-inner gap-1 flex-wrap select-none ${className}`}
+      className={`${segmentTrack} flex-wrap select-none ${className}`}
     >
       {tabs.map((tab, idx) => {
         const isActive = activeTab === tab.id;
@@ -111,14 +112,14 @@ export function TabGroup<T extends string = string>({
             className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
               isActive
                 ? "text-white font-semibold"
-                : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 font-medium"
+                : "text-fg-muted hover:text-fg hover:bg-surface-card/80 dark:hover:bg-white/[0.06] font-medium"
             }`}
           >
             {isActive && <ActivePill layoutId={pillId} />}
             {Icon && (
               <Icon
                 className={`relative w-4 h-4 flex-shrink-0 ${
-                  isActive ? "text-white" : "text-slate-500 dark:text-slate-400"
+                  isActive ? "text-white" : "text-fg-subtle"
                 }`}
                 strokeWidth={1.75}
               />

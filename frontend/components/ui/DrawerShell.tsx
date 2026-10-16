@@ -102,7 +102,7 @@ export function DrawerShell({
             exit="exit"
             className={`relative flex h-full w-full flex-col overflow-hidden border-y-0 border-r-0 ${overlayPanel} ${widthClassName}`}
           >
-            <div className="flex items-start justify-between gap-3 border-b border-line bg-surface-muted/50 px-6 py-4">
+            <div className="flex items-start justify-between gap-3 border-b border-line-brand/70 bg-surface-studio/70 px-6 py-4 dark:border-brand-500/20">
               <div className="min-w-0 flex-1">
                 <h2 id={titleId} className="flex min-w-0 items-center gap-2 text-sm font-semibold text-fg">
                   {title}
@@ -166,7 +166,7 @@ export function DrawerShell({
             </div>
             {toolbar}
             <div className={`flex-1 overflow-y-auto ${bodyClassName}`}>{children}</div>
-            {footer ? <div className="border-t border-line bg-surface-muted/50 px-6 py-3.5">{footer}</div> : null}
+            {footer ? <div className="border-t border-line-brand/70 bg-surface-studio/50 px-6 py-3.5 dark:border-brand-500/20">{footer}</div> : null}
           </m.div>
         </div>
       ) : null}

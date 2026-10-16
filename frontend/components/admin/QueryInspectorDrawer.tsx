@@ -90,7 +90,7 @@ export function QueryInspectorDrawer({
         {isPassed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
         {isPassed ? "Evaluation Passed" : "Issue Detected"}
       </span>
-      <span className="text-xs font-normal font-mono text-slate-500 dark:text-zinc-400 truncate max-w-[200px]">
+      <span className="text-xs font-normal font-mono text-slate-500 dark:text-fg-muted truncate max-w-[200px]">
         ID: {requestId}
       </span>
       {requestId ? <CopyButton value={requestId} label="Copy request id" /> : null}
@@ -105,7 +105,7 @@ export function QueryInspectorDrawer({
         className={`py-3 border-b-2 transition-colors ${
           activeTab === "overview"
             ? "border-teal-500 text-teal-600 dark:text-teal-400 font-bold"
-            : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+            : "border-transparent text-fg-subtle hover:text-slate-800 dark:hover:text-slate-200"
         }`}
       >
         Interaction & Audit
@@ -115,7 +115,7 @@ export function QueryInspectorDrawer({
         className={`py-3 border-b-2 transition-colors ${
           activeTab === "judge"
             ? "border-teal-500 text-teal-600 dark:text-teal-400 font-bold"
-            : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+            : "border-transparent text-fg-subtle hover:text-slate-800 dark:hover:text-slate-200"
         }`}
       >
         LLM Judge Breakdown
@@ -125,7 +125,7 @@ export function QueryInspectorDrawer({
         className={`py-3 border-b-2 transition-colors ${
           activeTab === "sources"
             ? "border-teal-500 text-teal-600 dark:text-teal-400 font-bold"
-            : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+            : "border-transparent text-fg-subtle hover:text-slate-800 dark:hover:text-slate-200"
         }`}
       >
         Sources & Citations ({chunks.length})
@@ -135,7 +135,7 @@ export function QueryInspectorDrawer({
         className={`py-3 border-b-2 transition-colors ${
           activeTab === "latency"
             ? "border-teal-500 text-teal-600 dark:text-teal-400 font-bold"
-            : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+            : "border-transparent text-fg-subtle hover:text-slate-800 dark:hover:text-slate-200"
         }`}
       >
         Latency & Ops
@@ -144,7 +144,7 @@ export function QueryInspectorDrawer({
   );
 
   const footer = (
-    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400">
+    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-fg-muted">
       <span>Continuous Evaluator v2.0</span>
       <button
         onClick={onClose}
@@ -166,7 +166,7 @@ export function QueryInspectorDrawer({
       footer={footer}
     >
       {loading && (
-        <div className="flex items-center justify-center h-48 text-slate-400 dark:text-zinc-500 text-sm">
+        <div className="flex items-center justify-center h-48 text-slate-400 dark:text-fg-subtle text-sm">
           <Sparkles className="w-5 h-5 animate-spin mr-2 text-teal-500" />
           Loading deep inspection telemetry...
         </div>
@@ -176,8 +176,8 @@ export function QueryInspectorDrawer({
         <>
           {/* Query Box */}
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">User Query</label>
-            <div className="p-3.5 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-sm font-medium text-slate-900 dark:text-slate-100 select-text">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">User Query</label>
+            <div className="p-3.5 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-sm font-medium text-fg select-text">
               {data?.query || "No query available"}
             </div>
           </div>
@@ -185,7 +185,7 @@ export function QueryInspectorDrawer({
           {/* Response Box */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Generated Assistant Response</label>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Generated Assistant Response</label>
               <button
                 onClick={() => copyToClipboard(data?.answer || "")}
                 className="inline-flex items-center gap-1 text-[11px] text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 font-medium"
@@ -194,7 +194,7 @@ export function QueryInspectorDrawer({
                 {copied ? "Copied" : "Copy Response"}
               </button>
             </div>
-            <div className="p-4 bg-white dark:bg-dark-card rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap select-text">
+            <div className="p-4 bg-surface-card rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-fg leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap select-text">
               {data?.answer || "No response text available."}
             </div>
           </div>
@@ -202,16 +202,16 @@ export function QueryInspectorDrawer({
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-3 gap-3">
             <div className="p-3 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Faithfulness</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Faithfulness</p>
               <p className="text-lg font-black font-mono text-teal-600 dark:text-teal-400 mt-0.5">{Number(faith).toFixed(1)} / 5.0</p>
             </div>
             <div className="p-3 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Citation Prec.</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Citation Prec.</p>
               <p className="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">{citPrec}</p>
             </div>
             <div className="p-3 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Total Latency</p>
-              <p className="text-lg font-black font-mono text-slate-800 dark:text-slate-200 mt-0.5">{latency}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Total Latency</p>
+              <p className="text-lg font-black font-mono text-fg mt-0.5">{latency}</p>
             </div>
           </div>
 
@@ -224,23 +224,23 @@ export function QueryInspectorDrawer({
             <div className="grid grid-cols-2 gap-2 text-xs pt-1">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-slate-500 dark:text-zinc-400">PII Leakage:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">Clean</span>
+                <span className="text-slate-500 dark:text-fg-muted">PII Leakage:</span>
+                <span className="font-semibold text-fg">Clean</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-slate-500 dark:text-zinc-400">Secret Scanning:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">Clean</span>
+                <span className="text-slate-500 dark:text-fg-muted">Secret Scanning:</span>
+                <span className="font-semibold text-fg">Clean</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-slate-500 dark:text-zinc-400">Prompt Injection:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">Compliant</span>
+                <span className="text-slate-500 dark:text-fg-muted">Prompt Injection:</span>
+                <span className="font-semibold text-fg">Compliant</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-slate-500 dark:text-zinc-400">Groundedness:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">Verified</span>
+                <span className="text-slate-500 dark:text-fg-muted">Groundedness:</span>
+                <span className="font-semibold text-fg">Verified</span>
               </div>
             </div>
           </div>
@@ -260,35 +260,35 @@ export function QueryInspectorDrawer({
             </div>
 
             <div className="grid grid-cols-3 gap-3 pt-1">
-              <div className="bg-white dark:bg-dark-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
-                <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-zinc-400">Faithfulness</p>
+              <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
+                <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-fg-muted">Faithfulness</p>
                 <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{Number(faith).toFixed(1)}</p>
-                <p className="text-[10px] text-slate-400 dark:text-zinc-500 mt-0.5">Claims backed by docs</p>
+                <p className="text-[10px] text-slate-400 dark:text-fg-subtle mt-0.5">Claims backed by docs</p>
               </div>
-              <div className="bg-white dark:bg-dark-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
-                <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-zinc-400">Relevance</p>
+              <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
+                <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-fg-muted">Relevance</p>
                 <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{Number(rel).toFixed(1)}</p>
-                <p className="text-[10px] text-slate-400 dark:text-zinc-500 mt-0.5">Direct query answer</p>
+                <p className="text-[10px] text-slate-400 dark:text-fg-subtle mt-0.5">Direct query answer</p>
               </div>
-              <div className="bg-white dark:bg-dark-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
-                <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-zinc-400">Completeness</p>
+              <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
+                <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-fg-muted">Completeness</p>
                 <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{Number(comp).toFixed(1)}</p>
-                <p className="text-[10px] text-slate-400 dark:text-zinc-500 mt-0.5">Coverage of facts</p>
+                <p className="text-[10px] text-slate-400 dark:text-fg-subtle mt-0.5">Coverage of facts</p>
               </div>
             </div>
           </div>
 
           {/* Judge Reasoning */}
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Judge Rationale & Synthesis</label>
-            <div className="p-4 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed select-text">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Judge Rationale & Synthesis</label>
+            <div className="p-4 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-fg leading-relaxed select-text">
               {data?.judge_reason || "Every factual claim stated in the generated answer was directly cross-referenced against the retrieved ACSC and Zero Trust compliance context. No unsupported claims or hallucinations detected."}
             </div>
           </div>
 
           {/* Unsupported Claims (if any) */}
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Unsupported Claims Detected</label>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Unsupported Claims Detected</label>
             {data?.unsupported_claims && data.unsupported_claims.length > 0 ? (
               <div className="space-y-2">
                 {data.unsupported_claims.map((claim: string, idx: number) => (
@@ -311,12 +311,12 @@ export function QueryInspectorDrawer({
       {!loading && activeTab === "sources" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between pb-1">
-            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Retrieved Context Passages ({chunks.length})</span>
-            <span className="text-xs text-slate-400 dark:text-zinc-500">Top-k Similarity Reranked</span>
+            <span className="text-xs font-semibold text-fg-muted">Retrieved Context Passages ({chunks.length})</span>
+            <span className="text-xs text-slate-400 dark:text-fg-subtle">Top-k Similarity Reranked</span>
           </div>
 
           {chunks.length === 0 ? (
-            <div className="p-6 text-center text-slate-400 dark:text-zinc-500 text-xs bg-teal-50/20 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
+            <div className="p-6 text-center text-slate-400 dark:text-fg-subtle text-xs bg-teal-50/20 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
               No retrieved context chunks stored for this query.
             </div>
           ) : (
@@ -327,7 +327,7 @@ export function QueryInspectorDrawer({
                     <span className="w-5 h-5 rounded-full bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[10px] font-bold flex items-center justify-center border border-teal-500/20">
                       {idx + 1}
                     </span>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white">{c.source_name || "Enterprise Document"}</span>
+                    <span className="text-xs font-bold text-fg">{c.source_name || "Enterprise Document"}</span>
                   </div>
                   {c.score !== undefined && (
                     <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-semibold">
@@ -338,7 +338,7 @@ export function QueryInspectorDrawer({
                 {c.section_heading && (
                   <p className="text-[11px] font-medium text-teal-600 dark:text-teal-400">Section: {c.section_heading}</p>
                 )}
-                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-dark-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/10 select-text font-sans">
+                <p className="text-xs text-fg-muted leading-relaxed bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/10 select-text font-sans">
                   {c.content || "Context content excerpt."}
                 </p>
               </div>
@@ -357,51 +357,51 @@ export function QueryInspectorDrawer({
 
             <div className="space-y-2 pt-2 text-xs">
               <div>
-                <div className="flex justify-between text-slate-600 dark:text-slate-400 mb-1">
+                <div className="flex justify-between text-fg-muted mb-1">
                   <span>Query Embedding</span>
                   <span className="font-mono">110 ms</span>
                 </div>
-                <div className="h-1.5 w-full bg-teal-100/60 dark:bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
                   <div className="h-full bg-teal-500 rounded-full" style={{ width: "8%" }} />
                 </div>
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-600 dark:text-slate-400 mb-1">
+                <div className="flex justify-between text-fg-muted mb-1">
                   <span>Vector Search Retrieval</span>
                   <span className="font-mono">180 ms</span>
                 </div>
-                <div className="h-1.5 w-full bg-teal-100/60 dark:bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
                   <div className="h-full bg-cyan-500 rounded-full" style={{ width: "12%" }} />
                 </div>
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-600 dark:text-slate-400 mb-1">
+                <div className="flex justify-between text-fg-muted mb-1">
                   <span>Cross-Encoder Reranker</span>
                   <span className="font-mono">140 ms</span>
                 </div>
-                <div className="h-1.5 w-full bg-teal-100/60 dark:bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
                   <div className="h-full bg-amber-500 rounded-full" style={{ width: "10%" }} />
                 </div>
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-600 dark:text-slate-400 mb-1">
+                <div className="flex justify-between text-fg-muted mb-1">
                   <span>LLM Generation (Azure OpenAI)</span>
                   <span className="font-mono">1,380 ms</span>
                 </div>
-                <div className="h-1.5 w-full bg-teal-100/60 dark:bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
                   <div className="h-full bg-teal-600 rounded-full" style={{ width: "65%" }} />
                 </div>
               </div>
 
               <div>
-                <div className="flex justify-between text-slate-600 dark:text-slate-400 mb-1">
+                <div className="flex justify-between text-fg-muted mb-1">
                   <span>Post-Guardrail Safety Scan</span>
                   <span className="font-mono">35 ms</span>
                 </div>
-                <div className="h-1.5 w-full bg-teal-100/60 dark:bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
                   <div className="h-full bg-emerald-500 rounded-full" style={{ width: "5%" }} />
                 </div>
               </div>

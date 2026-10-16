@@ -442,7 +442,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
   } else {
     body = (
       <table className="w-full text-left text-xs" aria-label="Feedback review queue" aria-rowcount={rows.length}>
-        <thead className="border-b border-line bg-surface-muted/40 text-[11px] uppercase tracking-wide text-fg-subtle">
+        <thead className="border-b border-line-brand/70 bg-surface-studio dark:border-brand-500/20 text-[11px] uppercase tracking-wide text-fg-subtle">
           <tr>
             {canTriage ? (
               <th scope="col" className="w-10 px-4 py-2.5">

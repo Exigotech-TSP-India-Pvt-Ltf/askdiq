@@ -14,8 +14,20 @@
  */
 import type React from "react";
 import { useId, useState } from "react";
+import { m } from "motion/react";
 import { ChartColumnBig, RotateCcw, Table2, TriangleAlert } from "lucide-react";
 import { ChartEmpty } from "./primitives";
+import { crossfade, useMotionVariants } from "@/lib/motion";
+import { StudioIconBadge, StudioPill, studioCardClass } from "@/components/ui/StudioCard";
+import {
+  studioDivider,
+  studioSubtitle,
+  studioTitle,
+  tableBody,
+  tableHead,
+  tableRow,
+  type StudioTone,
+} from "@/components/ui/styles";
 
 export type ChartCardVariant = "plain" | "aurora";
 export type ChartCardTitleStyle = "heading" | "eyebrow";
@@ -40,6 +52,11 @@ export interface ChartCardProps {
   window?: string;
   /** Header slot (badges, range control, menus). */
   actions?: React.ReactNode;
+  /** Studio header: icon badge left of the title. */
+  icon?: React.ComponentType<{ className?: string; strokeWidth?: string | number }>;
+  /** Studio header: mono pill beside the title. */
+  pill?: React.ReactNode;
+  tone?: StudioTone;
   variant?: ChartCardVariant;
   titleStyle?: ChartCardTitleStyle;
   loading?: boolean;
@@ -55,28 +72,13 @@ export interface ChartCardProps {
   children: React.ReactNode;
 }
 
-const HOVER =
-  "transition duration-150 motion-safe:hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none";
+// Both variants use the studio surface (Usage Live Telemetry look); "aurora"
+// adds the extra corner glow. Kept as two names so existing pages keep working.
+const SECTION = `${studioCardClass({ interactive: true })} flex flex-col p-6`;
 
-const SECTION: Record<ChartCardVariant, string> = {
-  plain: `rounded-xl border border-line bg-surface-card p-6 hover:border-brand-300 dark:hover:border-brand-700/60 ${HOVER}`,
-  aurora: `relative overflow-hidden rounded-2xl border border-brand-300/80 dark:border-brand-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl hover:border-brand-400 dark:hover:border-brand-400/60 ${HOVER}`,
-};
-
-const TITLE: Record<ChartCardVariant, Record<ChartCardTitleStyle, string>> = {
-  plain: {
-    heading: "text-base font-semibold text-fg",
-    eyebrow: "text-xs font-semibold uppercase tracking-wide text-fg-muted",
-  },
-  aurora: {
-    heading: "text-sm font-extrabold tracking-tight text-fg",
-    eyebrow: "text-xs font-bold uppercase tracking-wider text-fg-muted dark:text-brand-300/90",
-  },
-};
-
-const SUBTITLE: Record<ChartCardVariant, string> = {
-  plain: "mt-1 text-xs text-fg-subtle",
-  aurora: "mt-0.5 text-[11px] font-medium text-fg-subtle dark:text-brand-200/70",
+const TITLE: Record<ChartCardTitleStyle, string> = {
+  heading: studioTitle,
+  eyebrow: "text-xs font-bold uppercase tracking-wider text-fg-muted dark:text-brand-300/90",
 };
 
 const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
@@ -120,8 +122,8 @@ export function ChartTable({ table, labelledBy }: { table: ChartTableData; label
     <div className="h-full w-full overflow-auto">
       <table className="w-full text-left text-xs" aria-labelledby={labelledBy}>
         {table.caption && <caption className="sr-only">{table.caption}</caption>}
-        <thead className="sticky top-0 bg-surface-card">
-          <tr className="border-b border-line">
+        <thead className={`sticky top-0 z-10 ${tableHead}`}>
+          <tr>
             {table.columns.map((col) => (
               <th
                 key={col.key}
@@ -133,9 +135,9 @@ export function ChartTable({ table, labelledBy }: { table: ChartTableData; label
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className={tableBody}>
           {table.rows.map((row, i) => (
-            <tr key={i} className="border-b border-line/60 last:border-0">
+            <tr key={i} className={tableRow}>
               {table.columns.map((col) => (
                 <td
                   key={col.key}
@@ -157,6 +159,9 @@ export function ChartCard({
   subtitle,
   window: timeWindow,
   actions,
+  icon,
+  pill,
+  tone = "brand",
   variant = "plain",
   titleStyle = "heading",
   loading = false,
@@ -177,6 +182,8 @@ export function ChartCard({
   const showTable = canToggle && asTable;
   const aurora = variant === "aurora";
   const subtitleText = [subtitle, timeWindow].filter(Boolean).join(" · ");
+  const fade = useMotionVariants(crossfade);
+  const bodyState = loading ? "loading" : error ? "error" : empty ? "empty" : showTable ? "table" : "chart";
 
   let body: React.ReactNode;
   if (loading) body = <ChartSkeleton />;
@@ -186,23 +193,25 @@ export function ChartCard({
   else body = children;
 
   return (
-    <section aria-labelledby={titleId} className={`${SECTION[variant]} ${className}`}>
+    <section aria-labelledby={titleId} data-testid="chart-card" className={`${SECTION} ${className}`}>
       {aurora && (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-brand-400/10 blur-2xl dark:bg-brand-500/15"
         />
       )}
-      <div
-        className={`flex justify-between gap-3 ${
-          aurora ? "relative z-10 items-center border-b border-brand-100 pb-3 dark:border-brand-500/20" : "items-start"
-        }`}
-      >
-        <div className="min-w-0">
-          <h2 id={titleId} className={TITLE[variant][titleStyle]}>
-            {title}
-          </h2>
-          {subtitleText && <p className={SUBTITLE[variant]}>{subtitleText}</p>}
+      <div className={`relative z-10 flex items-center justify-between gap-3 border-b pb-3 ${studioDivider}`}>
+        <div className="flex min-w-0 items-center gap-2.5">
+          {icon ? <StudioIconBadge icon={icon} tone={tone} /> : null}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id={titleId} className={TITLE[titleStyle]}>
+                {title}
+              </h2>
+              {pill ? <StudioPill tone={tone}>{pill}</StudioPill> : null}
+            </div>
+            {subtitleText && <p className={`mt-0.5 ${studioSubtitle}`}>{subtitleText}</p>}
+          </div>
         </div>
         {(actions || canToggle) && (
           <div className="flex shrink-0 items-center gap-2">
@@ -222,13 +231,18 @@ export function ChartCard({
           </div>
         )}
       </div>
-      <div
+      <m.div
+        key={bodyState}
         id={bodyId}
         aria-busy={loading || undefined}
-        className={`${aurora ? "relative z-10 mt-5" : titleStyle === "eyebrow" ? "mt-4" : "mt-5"} ${bodyClassName}`}
+        variants={fade}
+        initial="hidden"
+        animate="visible"
+        data-state={bodyState}
+        className={`relative z-10 ${titleStyle === "eyebrow" ? "mt-4" : "mt-5"} ${bodyClassName}`}
       >
         {body}
-      </div>
+      </m.div>
     </section>
   );
 }
