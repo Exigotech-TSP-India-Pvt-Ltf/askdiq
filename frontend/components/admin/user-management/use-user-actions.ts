@@ -9,6 +9,7 @@
 import { useCallback } from "react";
 import { HTTP_CONFLICT, errorStatus, useApiMutation, type MutationConflict } from "@/lib/query-cache";
 import { useToast } from "@/components/ui/ToastProvider";
+import { PENDING_ACCESS_QUERY_KEY } from "@/lib/use-shell-notifications";
 import {
   umKeys,
   userManagementApi,
@@ -47,7 +48,14 @@ function errorText(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "Request failed.";
 }
 
-const AFTER_CHANGE = [umKeys.statsPrefix, umKeys.userPrefix, umKeys.auditPrefix, umKeys.requestsPrefix] as const;
+// Activating a pending user closes their request: refresh the sidebar badge too.
+const AFTER_CHANGE = [
+  umKeys.statsPrefix,
+  umKeys.userPrefix,
+  umKeys.auditPrefix,
+  umKeys.requestsPrefix,
+  PENDING_ACCESS_QUERY_KEY,
+] as const;
 
 function applyChange<T extends UserAccount>(user: T, vars: UserChangeVars): T {
   return { ...user, role: vars.role ?? user.role, status: vars.status ?? user.status };

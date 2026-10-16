@@ -40,10 +40,18 @@ import {
 import { RoleBadge, fieldClass, formatWaiting } from "./parts";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useConflictToast } from "./use-user-actions";
+import { PENDING_ACCESS_QUERY_KEY } from "@/lib/use-shell-notifications";
 
 const DEFAULT_PAGE_SIZE: PageSize = 25;
 const DEFAULT_ROLE: Role = "operator";
-const AFTER_DECISION = [umKeys.requestsPrefix, umKeys.usersPrefix, umKeys.statsPrefix, umKeys.auditPrefix] as const;
+// The sidebar badge / bell count is refreshed too, not left for its 60 s poll.
+const AFTER_DECISION = [
+  umKeys.requestsPrefix,
+  umKeys.usersPrefix,
+  umKeys.statsPrefix,
+  umKeys.auditPrefix,
+  PENDING_ACCESS_QUERY_KEY,
+] as const;
 
 const VIEWS: { id: AccessRequestView; label: string }[] = [
   { id: "pending", label: "Queue" },
