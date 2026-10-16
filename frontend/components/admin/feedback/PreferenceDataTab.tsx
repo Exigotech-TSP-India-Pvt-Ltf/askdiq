@@ -131,6 +131,7 @@ export function PreferenceDataTab({ token, canExport }: PreferenceDataTabProps) 
   }
 
   return (
+    <div data-tour="feedback-pairs">
     <TableCard
       title="Preference data"
       description={`Chosen vs rejected answers for a later DPO / SFT run. Preview of the first ${PREVIEW_LIMIT} pairs; text is PII-masked.`}
@@ -152,7 +153,7 @@ export function PreferenceDataTab({ token, canExport }: PreferenceDataTabProps) 
             />
             Complete pairs only
           </label>
-          <button type="button" onClick={() => void download()} disabled={downloading} className={primaryButton}>
+          <button data-tour="feedback-pairs-download" type="button" onClick={() => void download()} disabled={downloading} className={primaryButton}>
             <Download className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
             {downloading ? "Downloading…" : "Download JSONL"}
           </button>
@@ -161,5 +162,6 @@ export function PreferenceDataTab({ token, canExport }: PreferenceDataTabProps) 
     >
       {body}
     </TableCard>
+    </div>
   );
 }

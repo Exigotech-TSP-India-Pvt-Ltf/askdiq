@@ -188,7 +188,7 @@ function ConversationDetailContent() {
       />
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="conversations-detail-stats">
           <StatCard
             title="Visitor"
             value={conversation.created_ip || "—"}
@@ -214,7 +214,7 @@ function ConversationDetailContent() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2" data-tour="conversations-detail-charts">
           <ChartCard
             title={selected ? `Stage latency · turn ${selected.turnIndex + 1}` : "Stage latency"}
             subtitle="Select a stage to open the query inspector"
@@ -267,7 +267,7 @@ function ConversationDetailContent() {
           </ChartCard>
         </div>
 
-        <section aria-label="Turns" className="space-y-4">
+        <section aria-label="Turns" className="space-y-4" data-tour="conversations-detail-turns">
           {turns.length === 0 ? (
             <EmptyState title="No messages found" />
           ) : (
@@ -383,7 +383,7 @@ function TurnCard({ turn, conversationId, highlighted, canPromote, promoting, on
       </div>
 
       {d && (d.feedback.length > 0 || labels || d.sources.length > 0) ? (
-        <footer className="mt-4 grid grid-cols-1 gap-3 border-t border-line pt-3 text-[11px] md:grid-cols-3">
+        <footer data-tour="conversations-detail-turn-footer" className="mt-4 grid grid-cols-1 gap-3 border-t border-line pt-3 text-[11px] md:grid-cols-3">
           <div>
             <p className="mb-1 font-semibold text-fg-muted">Feedback</p>
             {d.feedback.length === 0 ? (

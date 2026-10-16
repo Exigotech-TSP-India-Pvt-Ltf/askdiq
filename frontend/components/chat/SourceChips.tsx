@@ -53,7 +53,7 @@ export function SourceChips({ sources }: { sources: readonly SourceChunk[] | und
   const shown = chips.slice(0, MAX_CHIPS);
   const hidden = chips.length - shown.length;
   return (
-    <ul className="flex flex-wrap items-center gap-1.5" aria-label="Sources">
+    <ul className="flex flex-wrap items-center gap-1.5" aria-label="Sources" data-tour="chat-sources">
       {shown.map((chip) => (
         <li
           key={chip.documentId}

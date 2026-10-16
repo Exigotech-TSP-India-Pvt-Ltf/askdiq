@@ -237,6 +237,7 @@ export function BrandingTab() {
             ) : null}
           </AnimatePresence>
 
+          <div data-tour="settings-identity">
           <SettingsCard title="Identity" description="Names shown across the console, login page and chat." icon={Building2}>
             <div className="grid gap-4 sm:grid-cols-2">
               {text("product_name", "Product name")}
@@ -249,7 +250,9 @@ export function BrandingTab() {
               })}
             </div>
           </SettingsCard>
+          </div>
 
+          <div data-tour="settings-colours">
           <SettingsCard title="Colours" description="Live WCAG check; the server re-checks on save." icon={Palette}>
             <div className="grid gap-4 sm:grid-cols-3">
               <ColorField
@@ -283,7 +286,7 @@ export function BrandingTab() {
               />
             </div>
             {primaryCheck.reason && normalizeHex(form.primary_hex) ? (
-              <p className="mt-3 rounded-lg bg-status-warn-bg px-3 py-2 text-[11px] text-status-warn-fg" data-testid="contrast-warning">
+              <p className="mt-3 rounded-lg bg-status-warn-bg px-3 py-2 text-[11px] text-status-warn-fg" data-testid="contrast-warning" data-tour="settings-contrast-warning">
                 {primaryCheck.reason}. Saving will be rejected.
               </p>
             ) : null}
@@ -295,7 +298,9 @@ export function BrandingTab() {
               </div>
             ) : null}
           </SettingsCard>
+          </div>
 
+          <div data-tour="settings-logos">
           <SettingsCard title="Logos" description="Drag and drop, or choose a file. Dark artwork is shown on dark surfaces." icon={ImageIcon}>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {BRAND_ASSET_SLOTS.map((slot) => {
@@ -321,7 +326,9 @@ export function BrandingTab() {
               })}
             </div>
           </SettingsCard>
+          </div>
 
+          <div data-tour="settings-login-copy">
           <SettingsCard title="Login page" description="Copy for the split-screen sign-in page." icon={LogIn}>
             <div className="grid gap-4 sm:grid-cols-2">
               {text("login_eyebrow", "Eyebrow", { hint: "Small uppercase label, e.g. the product name." })}
@@ -330,7 +337,9 @@ export function BrandingTab() {
               <div className="sm:col-span-2">{text("login_description", "Card description", { multiline: true })}</div>
             </div>
           </SettingsCard>
+          </div>
 
+          <div data-tour="settings-links">
           <SettingsCard title="Links" description="https:// or a relative path such as /privacy. Empty links are hidden." icon={Link2}>
             <div className="grid gap-4 sm:grid-cols-3">
               {text("privacy_url", "Privacy policy URL", { type: "url" })}
@@ -338,7 +347,9 @@ export function BrandingTab() {
               {text("help_url", "Help URL", { type: "url" })}
             </div>
           </SettingsCard>
+          </div>
 
+          <div data-tour="settings-sample-questions">
           <SettingsCard title="Chat sample questions" description="Suggested prompts on an empty chat (1 to 8)." icon={MessageSquareText}>
             <QuestionsEditor
               value={form.chat_sample_questions}
@@ -346,9 +357,10 @@ export function BrandingTab() {
               error={showErrors || form.chat_sample_questions !== baseline.chat_sample_questions ? errors.chat_sample_questions : undefined}
             />
           </SettingsCard>
+          </div>
         </m.div>
 
-        <aside className="space-y-3 xl:sticky xl:top-4 xl:self-start" aria-label="Live preview">
+        <aside className="space-y-3 xl:sticky xl:top-4 xl:self-start" aria-label="Live preview" data-tour="settings-preview">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-fg">Live preview</h2>
             <span className="text-[11px] text-fg-subtle">{dirty ? "Unsaved changes" : `Version ${server.version}`}</span>
@@ -357,8 +369,8 @@ export function BrandingTab() {
         </aside>
       </div>
 
-      <div className="sticky bottom-0 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface-elevated/95 px-4 py-3 shadow-md backdrop-blur">
-        <button type="button" className={secondaryButton} onClick={() => setConfirmReset(true)} disabled={save.isPending}>
+      <div data-tour="settings-save-bar" className="sticky bottom-0 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface-elevated/95 px-4 py-3 shadow-md backdrop-blur">
+        <button type="button" className={secondaryButton} onClick={() => setConfirmReset(true)} disabled={save.isPending} data-tour="settings-reset">
           <RotateCcw className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
           Reset to defaults
         </button>

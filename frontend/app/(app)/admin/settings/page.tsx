@@ -38,12 +38,14 @@ function SettingsView() {
 
   return (
     <div className="flex min-h-full flex-col bg-surface-page text-fg">
-      <DashboardHeader
-        title="Settings"
-        subtitle="White-label branding and the insights taxonomy (superadmin)"
-        icon={Settings2}
-        showAudienceTabs={false}
-      />
+      <div data-tour="settings-header">
+        <DashboardHeader
+          title="Settings"
+          subtitle="White-label branding and the insights taxonomy (superadmin)"
+          icon={Settings2}
+          showAudienceTabs={false}
+        />
+      </div>
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-5 p-4 sm:p-6 lg:p-8">
         {!canBrand && !canTaxonomy ? (
           <EmptyState
@@ -53,12 +55,14 @@ function SettingsView() {
           />
         ) : (
           <>
-            <TabGroup
-              tabs={SETTINGS_TABS}
-              activeTab={tab}
-              onChange={(id) => setTabParam(id === "branding" ? null : id)}
-              ariaLabel="Settings sections"
-            />
+            <div data-tour="settings-tabs">
+              <TabGroup
+                tabs={SETTINGS_TABS}
+                activeTab={tab}
+                onChange={(id) => setTabParam(id === "branding" ? null : id)}
+                ariaLabel="Settings sections"
+              />
+            </div>
             <div role="tabpanel" aria-label={SETTINGS_TABS.find((t) => t.id === tab)?.label}>
               {tab === "branding" ? <BrandingTab key="branding" /> : <TaxonomyTab key="taxonomy" />}
             </div>

@@ -70,7 +70,9 @@ function GovernanceContent() {
       />
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
-        <TabGroup tabs={GOVERNANCE_TABS} activeTab={activeTab} onChange={onTabChange} ariaLabel="Governance sub-tabs" />
+        <div data-tour="governance-tabs">
+          <TabGroup tabs={GOVERNANCE_TABS} activeTab={activeTab} onChange={onTabChange} ariaLabel="Governance sub-tabs" />
+        </div>
 
         <m.div key={activeTab} variants={variants} initial="hidden" animate="visible">
           {activeTab === "Overall" && <OverallView />}

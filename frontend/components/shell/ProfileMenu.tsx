@@ -69,6 +69,7 @@ export function ProfileMenu({ roleBadge, onSignOut }: ProfileMenuProps) {
         type="button"
         onClick={toggle}
         aria-haspopup="menu"
+        data-tour="shell-profile"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={`Account menu for ${name}`}

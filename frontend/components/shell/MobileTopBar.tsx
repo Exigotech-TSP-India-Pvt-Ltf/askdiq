@@ -26,7 +26,7 @@ export function MobileTopBar() {
         </button>
         <BrandLogo variant="mark" />
       </div>
-      <HeaderUtilities />
+      <HeaderUtilities launcherVariant="mobile" />
     </header>
   );
 }

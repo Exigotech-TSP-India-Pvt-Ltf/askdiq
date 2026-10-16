@@ -234,7 +234,7 @@ export function SessionsTab({
       {/* PRE-TABLE INTELLIGENCE HEADER */}
       {/* ========================================================================= */}
       <section className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-tour="usage-sessions-stats">
           <StatCard
             title="Total Sessions"
             value={stats.total_sessions ?? data?.total ?? 0}
@@ -266,7 +266,7 @@ export function SessionsTab({
 
         {/* Top 3 High-Spend Sessions Highlight Cards */}
         {topSessions.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2" data-tour="usage-sessions-top">
             <h4 className="text-xs font-semibold text-fg-muted">
               Top Sessions by Financial Cost (1-Click Drilldown)
             </h4>
@@ -291,7 +291,7 @@ export function SessionsTab({
       {/* ========================================================================= */}
       {/* TABLE CONTROLS & DATA TABLE (Integrated TableCard) */}
       {/* ========================================================================= */}
-      <section>
+      <section data-tour="usage-sessions-table">
         <TableCard
           toolbar={
             <TableToolbar
@@ -319,6 +319,7 @@ export function SessionsTab({
               }
               extraActions={
                 <a
+                  data-tour="usage-sessions-export"
                   href={exportUrl}
                   download
                   className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 transition"

@@ -283,7 +283,7 @@ function AiUsagePanel() {
   const e = embedding.data ?? {};
 
   return (
-    <section aria-labelledby="ai-usage" className="rounded-xl border border-line bg-surface-card p-6">
+    <section aria-labelledby="ai-usage" data-tour="governance-mon-ai-usage" className="rounded-xl border border-line bg-surface-card p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="ai-usage" className="text-base font-semibold text-fg">
@@ -421,7 +421,7 @@ export default function MonitoringView() {
       </div>
 
       {/* G8: a balanced 4 x 2 grid (no dead slot) at the same width as AI Usage. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={loading || undefined}>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={loading || undefined} data-tour="governance-mon-tiles">
         <StatTile label="API requests" href={logsHref()} icon={Activity} value={formatCount(counts.api_requests?.value ?? m?.api_requests)} caption={countCaption(counts.api_requests)} />
         <StatTile label="Queries" href={tabHref("Traces")} icon={Search} value={formatCount(counts.queries_24h?.value ?? m?.queries_24h)} caption={countCaption(counts.queries_24h)} />
         <StatTile label={ACTIVE_VISITORS_LABEL} info={<ActiveVisitorsInfo />} href="/admin/usage?tab=users" icon={Users} value={formatCount(counts.active_users?.value ?? m?.active_users)} caption={countCaption(counts.active_users)} />
@@ -444,7 +444,7 @@ export default function MonitoringView() {
         <StatTile label="Active queries" href={tabHref("Traces")} icon={Loader} value={formatCount(counts.active_queries?.value ?? m?.active_queries)} caption={countCaption(counts.active_queries)} />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2" data-tour="governance-mon-latency">
         <ChartCard
           title="Pipeline latency"
           subtitle="Average per stage"
@@ -525,7 +525,7 @@ export default function MonitoringView() {
         </ChartCard>
       </div>
 
-      <section aria-labelledby="gov-resources" className="rounded-xl border border-line bg-surface-card p-6">
+      <section aria-labelledby="gov-resources" data-tour="governance-mon-resources" className="rounded-xl border border-line bg-surface-card p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 id="gov-resources" className="text-base font-semibold text-fg">
             Resources and Azure quota
@@ -554,7 +554,7 @@ export default function MonitoringView() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2" data-tour="governance-mon-guardrails">
         <ChartCard
           title="Guardrail flags"
           subtitle="Flags raised on assistant turns"
@@ -599,7 +599,7 @@ export default function MonitoringView() {
         </ChartCard>
       </div>
 
-      <section aria-labelledby="gov-quality" className="rounded-xl border border-line bg-surface-card p-6">
+      <section aria-labelledby="gov-quality" data-tour="governance-mon-online-quality" className="rounded-xl border border-line bg-surface-card p-6">
         <h2 id="gov-quality" className="text-base font-semibold text-fg">
           Online quality
         </h2>

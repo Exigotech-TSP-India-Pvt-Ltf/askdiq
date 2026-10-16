@@ -246,6 +246,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
   return (
     <>
       <aside
+        data-tour="shell-sidebar"
         className={`hidden md:flex h-screen shrink-0 flex-col border-r border-ink/10 dark:border-white/10 bg-surface-card transition-[width] duration-200 ${
           collapsed ? "w-16" : "w-64"
         }`}
@@ -281,12 +282,12 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
           )}
         </div>
 
-        <nav aria-label="Main" className={`flex-1 space-y-0.5 overflow-y-auto py-4 ${collapsed ? "px-2" : "px-3"}`}>
+        <nav aria-label="Main" data-tour="shell-nav" className={`flex-1 space-y-0.5 overflow-y-auto py-4 ${collapsed ? "px-2" : "px-3"}`}>
           {/* One flat, permission-filtered list: no group headers. */}
           <NavList items={items} pathname={pathname} collapsed={collapsed} badges={badges} layoutId="sidebar-active" />
         </nav>
 
-        <div className="border-t border-ink/10 dark:border-white/10 p-3">
+        <div data-tour="shell-account" className="border-t border-ink/10 dark:border-white/10 p-3">
           {collapsed ? (
             <div className="flex flex-col items-center gap-2">
               <ThemeToggle size="sm" />

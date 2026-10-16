@@ -215,15 +215,17 @@ function ConversationsContent() {
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-page text-fg">
+      <div data-tour="conversations-header">
       <DashboardHeader
         title="Conversations"
         subtitle="Audience-scoped conversations, turn counts and outcomes"
         icon={MessagesSquare}
         showDateRange
       />
+      </div>
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3" data-tour="conversations-stats">
           <StatCard title="Conversations" value={statsData?.totals.conversations ?? total} subtitle={statsData ? (range.label ?? undefined) : "Matching filters"} icon={MessagesSquare} />
           <StatCard
             title="Avg turns per conversation"
@@ -237,7 +239,7 @@ function ConversationsContent() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2" data-tour="conversations-charts">
           <ChartCard
             title="Conversation length"
             subtitle="Conversations by number of turns; select a bar to filter"
@@ -284,9 +286,10 @@ function ConversationsContent() {
           </ChartCard>
         </div>
 
+        <div data-tour="conversations-table">
         <TableCard
           toolbar={
-            <div className="space-y-2">
+            <div className="space-y-2" data-tour="conversations-filters">
               <TableToolbar
                 search={search}
                 onSearchChange={setSearchInput}
@@ -334,6 +337,7 @@ function ConversationsContent() {
             emptyMessage="No conversations found matching current audience and filters."
           />
         </TableCard>
+        </div>
       </div>
 
       {token ? (

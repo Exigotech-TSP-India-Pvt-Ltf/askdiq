@@ -96,6 +96,7 @@ export function AccessRequestsTab({ view, update }: AccessRequestsTabProps) {
   const total = query.data?.total ?? 0;
 
   return (
+    <div data-tour="user-management-requests-table">
     <TableCard
       title={view === "pending" ? "Access request queue" : "Decision history"}
       description={
@@ -104,7 +105,7 @@ export function AccessRequestsTab({ view, update }: AccessRequestsTabProps) {
           : "Who decided what, and when."
       }
       headerActions={
-        <div role="radiogroup" aria-label="Request view" className="inline-flex rounded-lg border border-line bg-surface-muted p-0.5">
+        <div role="radiogroup" aria-label="Request view" data-tour="user-management-requests-view" className="inline-flex rounded-lg border border-line bg-surface-muted p-0.5">
           {VIEWS.map((v) => (
             <button
               key={v.id}
@@ -147,6 +148,7 @@ export function AccessRequestsTab({ view, update }: AccessRequestsTabProps) {
         <DecisionHistory items={query.data?.items ?? []} />
       )}
     </TableCard>
+    </div>
   );
 }
 
@@ -248,7 +250,7 @@ function PendingQueue({ listKey, items }: { listKey: string; items: readonly Acc
           Focus a row, then press <kbd className="rounded bg-surface-muted px-1 font-mono text-fg-muted">A</kbd> to approve
           or <kbd className="rounded bg-surface-muted px-1 font-mono text-fg-muted">X</kbd> to reject.
         </p>
-        <div className="flex items-center gap-2" data-testid="um-bulk-bar">
+        <div className="flex items-center gap-2" data-testid="um-bulk-bar" data-tour="user-management-requests-bulk">
           <span className="text-xs text-fg-muted tabular-nums">{selectedIds.length} selected</span>
           <label htmlFor={bulkRoleId} className="sr-only">
             Role for bulk approval

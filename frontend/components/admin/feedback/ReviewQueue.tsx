@@ -355,7 +355,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
     });
 
   const toolbar = (
-    <div className="space-y-3">
+    <div data-tour="feedback-queue-toolbar" className="space-y-3">
       <TableToolbar
         search={filters.q ?? ""}
         onSearchChange={(v) => onFilter({ q: v || null })}
@@ -420,7 +420,11 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
         ]}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-subtle" aria-label="Keyboard shortcuts">
+        <p
+          data-tour="feedback-queue-shortcuts"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-subtle"
+          aria-label="Keyboard shortcuts"
+        >
           <Keyboard className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
           {SHORTCUT_HINTS.filter(([k]) => canTriage || ["j / k", "Enter"].includes(k)).map(([k, label]) => (
             <span key={k}>
@@ -590,6 +594,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
 
   return (
     <>
+      <div data-tour="feedback-queue">
       <TableCard
         title="Review queue"
         description={canTriage ? "Triage with the keyboard: j / k to move, r / d / p to act, Enter to open." : "Read-only: your role can view feedback but not triage it."}
@@ -613,6 +618,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
       >
         {body}
       </TableCard>
+      </div>
       <FeedbackDrawer
         item={drawerItem}
         onClose={() => setDrawerId(null)}

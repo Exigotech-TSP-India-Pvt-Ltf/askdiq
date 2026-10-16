@@ -129,6 +129,7 @@ function UsageCostContent() {
         actions={
           <button
             type="button"
+            data-tour="usage-test-ips"
             onClick={() => setIsConfigOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-surface px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-xs hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition"
           >
@@ -141,7 +142,7 @@ function UsageCostContent() {
       {/* Main Responsive Body with Strict Width Bounds */}
       <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
         {/* Boxed Tab Navigation Strip */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between" data-tour="usage-tabs">
           <TabGroup
             tabs={USAGE_CONSOLE_TABS}
             activeTab={activeTab}

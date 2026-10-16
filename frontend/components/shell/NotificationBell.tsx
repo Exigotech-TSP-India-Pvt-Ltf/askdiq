@@ -44,6 +44,7 @@ export function NotificationBell({ items = [] }: NotificationBellProps) {
         type="button"
         onClick={toggle}
         aria-haspopup="dialog"
+        data-tour="shell-notifications"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         aria-label={count ? `Notifications (${count} new)` : "Notifications"}

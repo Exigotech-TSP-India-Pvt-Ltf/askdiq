@@ -121,6 +121,7 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
     <m.div variants={container} initial="hidden" animate="visible" className="space-y-6">
       {spike ? (
         <m.div
+          data-tour="feedback-spike"
           variants={item}
           role="alert"
           className="flex flex-wrap items-start gap-3 rounded-xl border border-status-danger/40 bg-status-danger-bg p-4"
@@ -149,7 +150,7 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
         </m.div>
       ) : null}
 
-      <m.div variants={item} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <m.div data-tour="feedback-kpis" variants={item} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTrendCard
           label="Total feedback"
           value={analytics.total.toLocaleString()}
@@ -187,7 +188,7 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
         />
       </m.div>
 
-      <m.div variants={item} className="grid gap-4 xl:grid-cols-3">
+      <m.div data-tour="feedback-charts-main" variants={item} className="grid gap-4 xl:grid-cols-3">
         <ChartCard
           title="Satisfaction trend"
           subtitle="Positive and negative ratings per day. Click a day to filter the queue."
@@ -234,7 +235,7 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
         </ChartCard>
       </m.div>
 
-      <m.div variants={item} className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+      <m.div data-tour="feedback-charts-breakdown" variants={item} className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <ChartCard
           title="Feedback by outcome"
           subtitle="What the pipeline did on rated answers."

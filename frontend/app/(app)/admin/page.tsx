@@ -37,43 +37,63 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-surface-page text-fg">
-      <DashboardHeader
-        title="Dashboard"
-        subtitle="Monitor users, conversations, RAG performance and governance."
-        icon={LayoutDashboard}
-        showDateRange
-        actions={<HealthPill />}
-      />
+      <div data-tour="dashboard-header">
+        <DashboardHeader
+          title="Dashboard"
+          subtitle="Monitor users, conversations, RAG performance and governance."
+          icon={LayoutDashboard}
+          showDateRange
+          actions={
+            <span data-tour="dashboard-health">
+              <HealthPill />
+            </span>
+          }
+        />
+      </div>
 
       <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6 sm:p-8">
-        <DashboardKpis
-          data={summary.data}
-          loading={summary.isLoading}
-          error={summary.error}
-          onRetry={widget.onRetry}
-          range={range}
-        />
+        <div data-tour="dashboard-kpis">
+          <DashboardKpis
+            data={summary.data}
+            loading={summary.isLoading}
+            error={summary.error}
+            onRetry={widget.onRetry}
+            range={range}
+          />
+        </div>
 
-        <ActiveVisitorsPanel data={summary.data?.active_visitors} />
+        <div data-tour="dashboard-active-visitors">
+          <ActiveVisitorsPanel data={summary.data?.active_visitors} />
+        </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="xl:col-span-2">
+          <div className="xl:col-span-2" data-tour="dashboard-outcomes">
             <OutcomesWidget {...widget} />
           </div>
-          <SatisfactionWidget {...widget} />
+          <div data-tour="dashboard-satisfaction">
+            <SatisfactionWidget {...widget} />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="xl:col-span-2">
+          <div className="xl:col-span-2" data-tour="dashboard-latency">
             <LatencyWidget {...widget} />
           </div>
-          <CostWidget {...widget} />
+          <div data-tour="dashboard-cost">
+            <CostWidget {...widget} />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <IntentsWidget {...widget} />
-          <ActivityFeed />
-          <PipelineWidget {...widget} />
+          <div data-tour="dashboard-intents">
+            <IntentsWidget {...widget} />
+          </div>
+          <div data-tour="dashboard-activity">
+            <ActivityFeed />
+          </div>
+          <div data-tour="dashboard-pipeline">
+            <PipelineWidget {...widget} />
+          </div>
         </div>
       </div>
     </div>

@@ -208,6 +208,7 @@ function VisitorsContent() {
           <Link
             href={carry(visitorDetailHref(u.id))}
             onClick={(e) => e.stopPropagation()}
+            data-tour="visitors-ip-link"
             className={`rounded font-mono text-xs font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
           >
             {u.ip_address}
@@ -252,6 +253,7 @@ function VisitorsContent() {
           <Link
             href={carry(entityHref({ kind: "visitor", id: u.ip_address }))}
             onClick={(e) => e.stopPropagation()}
+            data-tour="visitors-row-sessions"
             aria-label={`View sessions for ${u.ip_address}`}
             title="View sessions"
             className={iconButton}
@@ -267,6 +269,7 @@ function VisitorsContent() {
               }}
               disabled={markTestIp.isPending}
               aria-label={`Mark ${u.ip_address} as test IP`}
+              data-tour="visitors-row-mark-test"
               title="Mark as test IP"
               className={iconButton}
             >
@@ -280,23 +283,30 @@ function VisitorsContent() {
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-page text-fg">
-      <DashboardHeader
-        title="Visitors"
-        subtitle="Audience-scoped visitors by client IP: activity, sessions and engagement"
-        icon={UsersIcon}
-        showDateRange
-        actions={
-          canWriteTestIp ? (
-            <button type="button" onClick={() => setConfigOpen(true)} className={secondaryButton}>
-              <SettingsIcon {...ICON} />
-              Manage test IPs
-            </button>
-          ) : undefined
-        }
-      />
+      <div data-tour="visitors-header">
+        <DashboardHeader
+          title="Visitors"
+          subtitle="Audience-scoped visitors by client IP: activity, sessions and engagement"
+          icon={UsersIcon}
+          showDateRange
+          actions={
+            canWriteTestIp ? (
+              <button
+                type="button"
+                onClick={() => setConfigOpen(true)}
+                className={secondaryButton}
+                data-tour="visitors-manage-test-ips"
+              >
+                <SettingsIcon {...ICON} />
+                Manage test IPs
+              </button>
+            ) : undefined
+          }
+        />
+      </div>
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="visitor-kpis">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="visitor-kpis" data-tour="visitors-kpis">
           {statsData ? (
             <>
               <StatCard title="Visitors" value={statsData.kpis.visitors} subtitle={range.label ?? undefined} icon={UsersIcon} />
@@ -320,70 +330,76 @@ function VisitorsContent() {
           )}
         </div>
 
-        <ActiveVisitorsPanel data={statsData?.active_visitors} showNow={false} />
+        <div data-tour="visitors-active-visitors">
+          <ActiveVisitorsPanel data={statsData?.active_visitors} showNow={false} />
+        </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <ChartCard
-            title="New vs returning"
-            subtitle="Visitors per day"
-            window={range.label ?? undefined}
-            loading={stats.isLoading}
-            error={statsError}
-            onRetry={() => void stats.refetch()}
-            empty={statsAbsent || (statsData?.new_vs_returning.length ?? 0) === 0}
-            emptyMessage={statsAbsent ? "Visitor stats are not available yet" : undefined}
-            table={{
-              columns: [
-                { key: "day", label: "Day" },
-                { key: "new", label: "New", numeric: true },
-                { key: "returning", label: "Returning", numeric: true },
-              ],
-              rows: (statsData?.new_vs_returning ?? []).map((d) => ({ day: formatDay(d.day), new: d.new, returning: d.returning })),
-            }}
-          >
-            <StackedBar
-              data={statsData?.new_vs_returning ?? []}
-              xKey="day"
-              series={[
-                { key: "new", label: "New" },
-                { key: "returning", label: "Returning" },
-              ]}
-              formatLabel={formatDay}
-              label="New vs returning visitors per day"
-            />
-          </ChartCard>
+          <div data-tour="visitors-new-vs-returning">
+            <ChartCard
+              title="New vs returning"
+              subtitle="Visitors per day"
+              window={range.label ?? undefined}
+              loading={stats.isLoading}
+              error={statsError}
+              onRetry={() => void stats.refetch()}
+              empty={statsAbsent || (statsData?.new_vs_returning.length ?? 0) === 0}
+              emptyMessage={statsAbsent ? "Visitor stats are not available yet" : undefined}
+              table={{
+                columns: [
+                  { key: "day", label: "Day" },
+                  { key: "new", label: "New", numeric: true },
+                  { key: "returning", label: "Returning", numeric: true },
+                ],
+                rows: (statsData?.new_vs_returning ?? []).map((d) => ({ day: formatDay(d.day), new: d.new, returning: d.returning })),
+              }}
+            >
+              <StackedBar
+                data={statsData?.new_vs_returning ?? []}
+                xKey="day"
+                series={[
+                  { key: "new", label: "New" },
+                  { key: "returning", label: "Returning" },
+                ]}
+                formatLabel={formatDay}
+                label="New vs returning visitors per day"
+              />
+            </ChartCard>
+          </div>
 
-          <ChartCard
-            title="When visitors are active"
-            subtitle="Sessions by weekday and hour (UTC); select a cell to filter the table"
-            window={range.label ?? undefined}
-            loading={stats.isLoading}
-            error={statsError}
-            onRetry={() => void stats.refetch()}
-            empty={statsAbsent || heatData.length === 0}
-            emptyMessage={statsAbsent ? "Visitor stats are not available yet" : undefined}
-            table={{
-              columns: [
-                { key: "slot", label: "Slot" },
-                { key: "sessions", label: "Sessions", numeric: true },
-              ],
-              rows: heatData.map((c) => ({ slot: `${c.row} ${c.col}:00`, sessions: c.value })),
-            }}
-          >
-            <CalendarHeatmap
-              data={heatData}
-              rows={WEEKDAYS}
-              cols={HOUR_LABELS}
-              colLabelEvery={3}
-              onSelect={selectHeatCell}
-              label="Sessions by weekday and hour"
-            />
-          </ChartCard>
+          <div data-tour="visitors-heatmap">
+            <ChartCard
+              title="When visitors are active"
+              subtitle="Sessions by weekday and hour (UTC); select a cell to filter the table"
+              window={range.label ?? undefined}
+              loading={stats.isLoading}
+              error={statsError}
+              onRetry={() => void stats.refetch()}
+              empty={statsAbsent || heatData.length === 0}
+              emptyMessage={statsAbsent ? "Visitor stats are not available yet" : undefined}
+              table={{
+                columns: [
+                  { key: "slot", label: "Slot" },
+                  { key: "sessions", label: "Sessions", numeric: true },
+                ],
+                rows: heatData.map((c) => ({ slot: `${c.row} ${c.col}:00`, sessions: c.value })),
+              }}
+            >
+              <CalendarHeatmap
+                data={heatData}
+                rows={WEEKDAYS}
+                cols={HOUR_LABELS}
+                colLabelEvery={3}
+                onSelect={selectHeatCell}
+                label="Sessions by weekday and hour"
+              />
+            </ChartCard>
+          </div>
         </div>
 
         <TableCard
           toolbar={
-            <div className="space-y-2">
+            <div className="space-y-2" data-tour="visitors-filters">
               <TableToolbar
                 search={search}
                 onSearchChange={setSearchInput}
@@ -428,28 +444,32 @@ function VisitorsContent() {
             </div>
           }
           pagination={
-            <Pagination
-              page={page}
-              pageCount={Math.ceil(total / pageSize)}
-              totalItems={total}
-              pageSize={pageSize}
-              onPageChange={setPage}
-              onPageSizeChange={setPageSize}
-            />
+            <div data-tour="visitors-pagination">
+              <Pagination
+                page={page}
+                pageCount={Math.ceil(total / pageSize)}
+                totalItems={total}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+              />
+            </div>
           }
         >
-          <DataTable
-            columns={columns}
-            data={items}
-            keyField="ip_address"
-            isLoading={list.isLoading}
-            error={errorMessage(list.error, "Failed to load visitors.")}
-            onRetry={() => void list.refetch()}
-            currentSort={sort}
-            onSortChange={setSort}
-            onRowClick={(u) => router.push(carry(visitorDetailHref(u.id)))}
-            emptyMessage="No visitors found matching current audience and filters."
-          />
+          <div data-tour="visitors-table">
+            <DataTable
+              columns={columns}
+              data={items}
+              keyField="ip_address"
+              isLoading={list.isLoading}
+              error={errorMessage(list.error, "Failed to load visitors.")}
+              onRetry={() => void list.refetch()}
+              currentSort={sort}
+              onSortChange={setSort}
+              onRowClick={(u) => router.push(carry(visitorDetailHref(u.id)))}
+              emptyMessage="No visitors found matching current audience and filters."
+            />
+          </div>
         </TableCard>
       </div>
 

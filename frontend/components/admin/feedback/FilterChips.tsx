@@ -20,7 +20,7 @@ export function FilterChips({ chips, onRemove, onClearAll, note }: FilterChipsPr
   const variants = useMotionVariants(pop);
   if (chips.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2" role="region" aria-label="Active filters">
+    <div data-tour="feedback-filter-chips" className="flex flex-wrap items-center gap-2" role="region" aria-label="Active filters">
       <Filter className="h-4 w-4 text-fg-subtle" strokeWidth={1.75} aria-hidden="true" />
       <ul className="flex flex-wrap items-center gap-1.5">
         <AnimatePresence initial={false}>

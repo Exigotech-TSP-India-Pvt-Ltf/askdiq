@@ -70,9 +70,10 @@ export function ChatSessionList({
   }
 
   return (
-    <div className={`flex flex-col ${className}`}>
+    <div className={`flex flex-col ${className}`} data-tour="chat-sessions">
       <div className="p-3">
         <button
+          data-tour="chat-new"
           onClick={onNew}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white shadow-brand-glow transition hover:bg-brand-700"
         >

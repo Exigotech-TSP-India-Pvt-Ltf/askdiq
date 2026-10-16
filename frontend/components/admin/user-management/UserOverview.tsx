@@ -159,9 +159,10 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
         animate="visible"
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5"
         data-testid="um-kpis"
+        data-tour="user-management-kpis"
       >
         {cards.map((c) => (
-          <m.div key={c.key} variants={item} data-testid={`kpi-${c.key}`} data-highlight={c.highlight ? "true" : undefined}>
+          <m.div key={c.key} variants={item} data-testid={`kpi-${c.key}`} data-tour={`user-management-kpi-${c.key}`} data-highlight={c.highlight ? "true" : undefined}>
             <KpiTrendCard
               label={c.label}
               value={c.value}
@@ -181,6 +182,7 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
       </m.div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div data-tour="user-management-logins-chart">
         <ChartCard
           title="Logins per day"
           subtitle="Successful sign-ins; select a day to sort Users by last login"
@@ -199,7 +201,9 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
             onSelect={() => onDrill({ tab: "users", sort: "last_login_at", order: "desc", status: null, role: null })}
           />
         </ChartCard>
+        </div>
 
+        <div data-tour="user-management-funnel">
         <ChartCard
           title="Access-request funnel"
           subtitle="Select a stage to filter Users"
@@ -219,7 +223,9 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
             }}
           />
         </ChartCard>
+        </div>
 
+        <div data-tour="user-management-role-distribution">
         <ChartCard
           title="Role distribution"
           subtitle="Active users; select a role to filter Users"
@@ -238,7 +244,9 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
             onSelect={(d) => onDrill({ tab: "users", role: d.id as Role, status: "active" })}
           />
         </ChartCard>
+        </div>
 
+        <div data-tour="user-management-time-to-approve">
         <ChartCard
           title="Time to approve"
           subtitle="Approved requests by wait; select a bin to see decisions"
@@ -261,6 +269,7 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
             onSelect={() => onDrill({ tab: "requests", view: "approved" })}
           />
         </ChartCard>
+        </div>
       </div>
     </div>
   );
