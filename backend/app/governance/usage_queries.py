@@ -127,9 +127,9 @@ async def apply_usage_filters(
     if to_date is not None:
         query = query.where(user_alias.created_at <= to_date)
 
-    # 3. Exact filters
+    # 3. Exact filters (IP matches the displayed coalesce of message and session IP)
     if ip:
-        query = query.where(user_alias.ip_address == ip.strip())
+        query = query.where(client_ip_col == ip.strip())
     if session_id:
         try:
             s_uuid = uuid.UUID(session_id.strip())

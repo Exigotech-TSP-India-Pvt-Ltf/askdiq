@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
-from app.core.concurrency import gather_scoped
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, read_only_session
 from app.core.exceptions import get_request_id
@@ -145,9 +145,15 @@ def insights_filters(
         ) from None
 
 
-def get_parallel_runner() -> ParallelRunner:
-    """Parallel aggregation, one short-lived session per task."""
-    return gather_scoped
+def get_parallel_runner(
+    scoped: ScopedRunner = Depends(get_scoped_runner),
+) -> ParallelRunner:
+    """Parallel aggregation, one short-lived session per task.
+
+    Built on the injectable ``get_scoped_runner`` (like every other fan-out
+    route), so overriding it routes these tasks too.
+    """
+    return scoped.gather
 
 
 def get_service(
@@ -404,8 +410,9 @@ async def update_taxonomy(
     code: str = Path(pattern=CODE_PATTERN, description="Stable code."),
     db: AsyncSession = Depends(get_db),
 ) -> TaxonomyRead:
-    """Label, description, colour, group and order are editable; existing
-    labels keep their code, so renaming never breaks them. Audited."""
+    """Label, description, colour, group, order and the substantive /
+    handled flags are editable; existing labels keep their code, so renaming
+    never breaks them. Audited."""
     try:
         row = await TaxonomyService(db).update(
             kind, code, payload, _audit(request, user)
@@ -432,6 +439,28 @@ async def archive_taxonomy(
     stored keep their code and label. Entries are never deleted. Audited."""
     try:
         row = await TaxonomyService(db).archive(kind, code, _audit(request, user))
+    except TaxonomyError as exc:
+        raise _taxonomy_http_error(exc) from None
+    return TaxonomyRead.model_validate(row)
+
+
+@router.post(
+    "/taxonomy/{kind}/{code}/unarchive",
+    response_model=TaxonomyRead,
+    summary="Unarchive a taxonomy entry",
+    responses=WRITE_ERRORS,
+)
+async def unarchive_taxonomy(
+    request: Request,
+    user: AuthUser = Depends(write_guard),
+    kind: TaxonomyKind = Path(description="Taxonomy kind."),
+    code: str = Path(pattern=CODE_PATTERN, description="Stable code."),
+    db: AsyncSession = Depends(get_db),
+) -> TaxonomyRead:
+    """Makes an archived entry active again (filters and classifier). A no-op
+    on an active entry. Audited."""
+    try:
+        row = await TaxonomyService(db).unarchive(kind, code, _audit(request, user))
     except TaxonomyError as exc:
         raise _taxonomy_http_error(exc) from None
     return TaxonomyRead.model_validate(row)

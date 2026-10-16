@@ -1,10 +1,11 @@
 """Centralized application configuration."""
 
+import re
 from functools import lru_cache
 from typing import Self
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Placeholder identifiers used only by the local mock IdP (AUTH_DEV_MOCK=true)
@@ -19,6 +20,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Database
@@ -29,6 +31,9 @@ class Settings(BaseSettings):
     # free connection instead of getting an answer.
     db_pool_size: int = 20
     db_max_overflow: int = 10
+    # Last-resort wait for a free pooled connection (seconds); generous so a
+    # burst queues and succeeds instead of failing.
+    db_pool_timeout_seconds: float = Field(default=120.0, gt=0)
     # SQL statement logging (incl. 1536-float vector params) — off by default.
     db_echo: bool = False
 
@@ -94,6 +99,14 @@ class Settings(BaseSettings):
     # weather?" ~0.10) — gating too high silently blocks on-topic questions
     # before the LLM+groundedness check (the real safety net) ever sees them.
     min_retrieval_score: float = 0.15
+    # Metadata keys a /query `filters` object may use. Unknown keys and non-scalar
+    # values are ignored (a stray key such as Swagger's "additionalProp1" used to
+    # filter out every chunk and turn a valid question into an empty answer).
+    retrieval_filter_keys: list[str] = ["source_type", "corpus", "ingestion_source"]
+    # Honour `ip_address` in request bodies (/query, /sessions, feedback): the
+    # website frontend calls server-to-server and forwards each end user's IP,
+    # which is stored against that user. Only valid IPv4/IPv6 values are used.
+    allow_client_ip_override: bool = True
     # Extra LLM generation attempts (beyond the first) on empty/failed/ungrounded output.
     # Each retry is a full LLM call (~5-8s) — capped at 1 (not 2) so a run of
     # bad luck can't stack 3 LLM calls into one request's tail latency.
@@ -160,6 +173,8 @@ class Settings(BaseSettings):
     brand_company_name: str = "Exigo Tech"
     # Public GET /branding: in-process cache TTL and browser max-age.
     branding_cache_ttl_seconds: int = Field(default=60, ge=1)
+    # Upper bound on one branding DB read (config defaults are served on timeout).
+    branding_load_timeout_seconds: float = Field(default=5.0, gt=0)
     branding_http_max_age_seconds: int = Field(default=300, ge=0)
     # Brand asset uploads (PNG, WebP or sanitized SVG).
     branding_asset_max_bytes: int = Field(default=512 * 1024, ge=1024)
@@ -180,6 +195,9 @@ class Settings(BaseSettings):
     usage_export_max_rows: int = 10_000
     usage_max_range_days: int = 400
     usage_agg_max_concurrency: int = 4
+    # Monthly spend budget (USD) drawn on the dashboard cost bullet and the
+    # usage forecast. Unset (None) = no budget line.
+    monthly_cost_budget_usd: float | None = Field(default=None, ge=0)
     test_ip_max_entries: int = 500
 
     # Azure Quota Limits (Verified from live Azure headers: 1M TPM, 1,000 RPM)
@@ -248,6 +266,9 @@ class Settings(BaseSettings):
     online_eval_max_concurrency: int = 4
     # Default bound for `gather_scoped()` parallel aggregation.
     agg_max_concurrency: int = 4
+    # Pooled connections parallel aggregation (all requests together) may never
+    # take, so sign-in checks, /health and plain reads always find one.
+    agg_pool_reserve: int = Field(default=5, ge=0)
     # Shared state: "auto" = memory when ENV=test, otherwise postgres.
     state_backend: str = "auto"
     # Actors exempt from the per-user /query limit (load tests only).
@@ -260,6 +281,9 @@ class Settings(BaseSettings):
     http_cache_max_age_seconds: int = 15
     sse_heartbeat_seconds: float = 15.0
     sse_retry_ms: int = 3000
+    # Each SSE response ends after this long and the browser reconnects (retry),
+    # so open streams can never block a server reload or graceful shutdown.
+    sse_max_stream_seconds: float = 120.0
 
     # --- Governance endpoints & live stream (PR-10, newplan §4.5) ---
     # Above this many matching rows, list totals switch to a planner estimate.
@@ -278,6 +302,8 @@ class Settings(BaseSettings):
     governance_incidents_window_hours: int = Field(default=24, ge=1)
     governance_incidents_limit: int = Field(default=10, ge=1, le=100)
     governance_stream_interval_seconds: float = Field(default=5.0, gt=0)
+    # Upper bound on one SSE producer snapshot (overview queries).
+    governance_stream_snapshot_timeout_seconds: float = Field(default=60.0, gt=0)
     governance_quota_sample_seconds: float = Field(default=60.0, gt=0)
     governance_quota_series_points: int = Field(default=60, ge=1)
     # Background jobs (Postgres SKIP LOCKED queue).
@@ -319,10 +345,23 @@ class Settings(BaseSettings):
 
     # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
     # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).
-    entra_tenant_id: str | None = None
-    entra_client_id: str | None = None
-    entra_client_secret: SecretStr | None = None
-    entra_redirect_uri: str | None = None
+    # Each also accepts the generic OIDC_* names other Exigo apps use, so one .env works for both.
+    # ENTRA_TENANT_ID may be omitted when OIDC_DISCOVERY_URL contains the tenant.
+    entra_tenant_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("ENTRA_TENANT_ID", "OIDC_TENANT_ID")
+    )
+    entra_client_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("ENTRA_CLIENT_ID", "OIDC_CLIENT_ID")
+    )
+    entra_client_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ENTRA_CLIENT_SECRET", "OIDC_CLIENT_SECRET"),
+    )
+    # Optional: defaults to APP_BASE_URL + /auth/callback.
+    entra_redirect_uri: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ENTRA_REDIRECT_URI", "OIDC_REDIRECT_URI"),
+    )
     entra_authority_host: str = "https://login.microsoftonline.com"
     app_base_url: str = "http://localhost:3000"
     # Keys the session-id hash (HMAC-SHA256); no default, must be set in .env.
@@ -340,6 +379,11 @@ class Settings(BaseSettings):
     auth_dev_mock: bool = False
     # Mock IdP authority base; empty = APP_BASE_URL + "/mock-idp".
     auth_mock_base_url: str = ""
+    # Optional explicit discovery document URL, e.g.
+    # https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration
+    # Empty = built from ENTRA_AUTHORITY_HOST + ENTRA_TENANT_ID. Ignored when AUTH_DEV_MOCK=true.
+    # The issuer in the document is still pinned to ENTRA_TENANT_ID.
+    oidc_discovery_url: str = ""
     oidc_http_timeout_seconds: float = Field(default=10.0, gt=0)
     oidc_state_ttl_seconds: int = Field(default=600, ge=60)
     oidc_metadata_cache_seconds: int = Field(default=3600, ge=60)
@@ -360,20 +404,27 @@ class Settings(BaseSettings):
             if not self.entra_client_secret:
                 self.entra_client_secret = SecretStr(MOCK_CLIENT_SECRET)
         else:
+            if not self.entra_tenant_id and self.oidc_discovery_url:
+                found = re.search(
+                    r"^https://[^/]+/([^/]+)/v2\.0/\.well-known/openid-configuration$",
+                    self.oidc_discovery_url.strip(),
+                )
+                if found:
+                    self.entra_tenant_id = found.group(1)
             missing = [
                 name.upper()
                 for name in (
                     "entra_tenant_id",
                     "entra_client_id",
                     "entra_client_secret",
-                    "entra_redirect_uri",
                 )
                 if not _has_value(getattr(self, name))
             ]
             if missing:
                 raise ValueError(
                     f"Missing SSO settings: {', '.join(missing)} "
-                    "(or set AUTH_DEV_MOCK=true with ENV=development)."
+                    "(ENTRA_* or OIDC_* names; the tenant may come from "
+                    "OIDC_DISCOVERY_URL; or set AUTH_DEV_MOCK=true with ENV=development)."
                 )
         if not self.entra_redirect_uri:
             self.entra_redirect_uri = f"{self.app_base_url.rstrip('/')}/auth/callback"

@@ -27,6 +27,7 @@
   --surface-muted: 241 245 249;
   --surface-elevated: 255 255 255;
   --surface-inverse: 10 28 26;
+  --surface-studio: 242 250 249;
   --line: 226 232 240;
   --line-strong: 203 213 225;
   --line-brand: 153 219 213;
@@ -51,17 +52,26 @@
   --chart-grid: 226 232 240;
   --chart-axis: 91 107 127;
   --chart-track: 226 232 240;
+
+  /* Studio card effects (alpha layers over the tokens above, not new colours).
+     Light: soft brand-tinted drop shadow and a white top highlight. */
+  --studio-glow-alpha: 0.1;
+  --shadow-studio: 0 1px 2px rgb(var(--fg) / 0.04), 0 8px 24px rgb(var(--brand-800) / 0.07),
+    inset 0 1px 0 0 rgb(var(--fg-inverse) / 0.9);
+  --shadow-studio-hover: 0 2px 4px rgb(var(--fg) / 0.05), 0 14px 32px rgb(var(--brand-800) / 0.13),
+    inset 0 1px 0 0 rgb(var(--fg-inverse) / 0.9);
 }
 
 .dark {
   /* Semantic tokens (dark). Brand ramp is shared; dark uses the lifted 300/400 steps. */
   --surface-page: 9 13 17;
-  --surface-card: 12 13 16;
-  --surface-muted: 15 23 32;
-  --surface-elevated: 19 29 39;
+  --surface-card: 11 17 19;
+  --surface-muted: 14 26 28;
+  --surface-elevated: 17 33 35;
   --surface-inverse: 241 245 249;
-  --line: 30 41 59;
-  --line-strong: 51 65 85;
+  --surface-studio: 7 29 28;
+  --line: 26 48 50;
+  --line-strong: 42 70 72;
   --line-brand: 15 74 70;
   --fg: 241 245 249;
   --fg-muted: 163 177 194;
@@ -81,9 +91,17 @@
   --status-info: 56 189 248;
   --status-info-fg: 125 211 252;
   --status-info-bg: 8 34 52;
-  --chart-grid: 30 41 59;
+  --chart-grid: 26 48 50;
   --chart-axis: 132 148 167;
   --chart-track: 8 48 56;
+
+  /* Studio card effects (dark is the reference look): outer brand glow, deep
+     drop shadow and a brand-tinted inner top edge. */
+  --studio-glow-alpha: 0.16;
+  --shadow-studio: 0 0 30px rgb(var(--brand-400) / 0.08), 0 12px 32px rgb(0 0 0 / 0.45),
+    inset 0 1px 0 0 rgb(var(--brand-300) / 0.18);
+  --shadow-studio-hover: 0 0 36px rgb(var(--brand-400) / 0.16), 0 16px 40px rgb(0 0 0 / 0.5),
+    inset 0 1px 0 0 rgb(var(--brand-300) / 0.3);
 }
 
 
@@ -141,4 +159,13 @@ html.dark ::selection {
 }
 html.dark .scrollbar-thin::-webkit-scrollbar-thumb {
   background: rgb(var(--line));
+}
+
+/* Chart kit (components/charts): focusable marks get the brand focus ring. */
+.chart-mark {
+  outline: none;
+}
+.chart-mark:focus-visible {
+  outline: 2px solid rgb(var(--brand-500));
+  outline-offset: 2px;
 }

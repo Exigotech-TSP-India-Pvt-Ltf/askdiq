@@ -144,6 +144,7 @@ def _pair_row(**kw):
         "prompt": "What is X?",
         "answer": "X is Y.",
         "retrieved_chunks": [{"chunk_id": "c1"}, {"chunk_id": ""}, "junk"],
+        "created_at": datetime(2026, 10, 14, 9, 30),
     }
     return SimpleNamespace(**{**base, **kw})
 
@@ -166,6 +167,11 @@ def test_build_pair_shapes():
 
     masked = service.build_pair(_pair_row(prompt="mail me at jane.doe@example.com"))
     assert "jane.doe@example.com" not in masked["prompt"]
+
+
+def test_build_pair_carries_feedback_timestamp():
+    assert service.build_pair(_pair_row())["created_at"] == "2026-10-14T09:30:00"
+    assert service.build_pair(_pair_row(created_at=None))["created_at"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -820,6 +826,7 @@ async def test_export_jsonl_api(client, db_session):
     pairs = [json.loads(line) for line in r.text.splitlines() if line]
     assert all(p["complete"] for p in pairs)
     mine = next(p for p in pairs if p["feedback_id"] == str(row.id))
+    assert datetime.fromisoformat(mine.pop("created_at"))
     assert mine == {
         "feedback_id": str(row.id),
         "message_id": str(asst.id),
@@ -1172,3 +1179,28 @@ def test_exchange_write_task_is_tracked_until_done():
     from app.core import sessions
 
     assert sessions.exchange_write_task(str(uuid.uuid4())) is None
+
+
+def test_daily_coverage_divides_ratings_by_that_days_answers() -> None:
+    from app.feedback.analytics import with_daily_coverage
+
+    trend = [
+        {"day": "2026-10-13", "total": 2},
+        {"day": "2026-10-14", "total": 3},
+    ]
+    out = with_daily_coverage(trend, {"2026-10-14": 12})
+    assert out[0]["answers"] == 0
+    assert out[0]["coverage"] is None
+    assert out[1]["coverage"] == 0.25
+
+
+def test_feedback_outcome_filter_accepts_empty_llm_output() -> None:
+    from pydantic import TypeAdapter, ValidationError
+
+    from app.api.routes.admin_feedback import FeedbackOutcome
+
+    adapter = TypeAdapter(FeedbackOutcome)
+    assert adapter.validate_python("empty_llm_output") == "empty_llm_output"
+    assert adapter.validate_python("llm_failed") == "llm_failed"
+    with pytest.raises(ValidationError):
+        adapter.validate_python("failed")

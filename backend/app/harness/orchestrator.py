@@ -71,15 +71,20 @@ def _fallback_response(
             "I am unable to process that request. Please feel free to ask questions "
             f"regarding {brand}'s security platform and compliance features."
         )
-    elif "off_topic" in flags:
+    elif "off_topic" in flags or "no_sources" in flags:
         answer = (
             f"I couldn't find relevant information in the {brand} knowledge base to answer that. "
             f"I can help with questions about the {brand} platform, Zero Trust, "
             "Essential Eight, Responsible AI, governance, and data handling."
         )
+    elif "llm_call_failed" in flags or "empty_llm_output" in flags:
+        answer = "I couldn't generate an answer just now. Please try again in a moment."
     else:
+        # Ungrounded answers (low retrieval confidence, possible hallucination,
+        # unsupported figures): the question was fine, the evidence was not.
         answer = (
-            "Seems like you have made a typo, could you please rephrase your question? "
+            f"I couldn't find enough support in the {brand} knowledge base to answer "
+            "that confidently. Try asking about a more specific topic. "
             f"I can help with questions about the {brand} platform, Zero Trust, "
             "Essential Eight, Responsible AI, governance, and data handling."
         )
@@ -235,9 +240,11 @@ async def run_query(
             query_len=len(query),
             latency_ms=round(latency_ms, 2),
         )
+        # Distinct from `off_topic` (low relevance): nothing was retrieved at all,
+        # which usually means an empty knowledge base or a filter that matches no chunk.
         return _fallback_response(
             request_id=request_id,
-            flags=["off_topic"],
+            flags=["no_sources"],
             latency_ms=latency_ms,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
@@ -377,6 +384,7 @@ async def run_query(
             answer,
             sources,
             settings.groundedness_threshold,
+            settings.min_retrieval_score,
         )
         guardrail_post_ms += (time.perf_counter() - t_post) * 1000
 

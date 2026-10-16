@@ -1,9 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import type { ChatMessage } from "@/lib/types";
 import { renderFormattedText } from "@/lib/format-text";
 import { useChat } from "@/lib/chat-context";
+import type { FeedbackDetails, ReasonTag } from "@/lib/feedback-api";
+import { FeedbackReasonPanel } from "@/components/chat/FeedbackReasonPanel";
+import { SourceChips, citedSources } from "@/components/chat/SourceChips";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/ToastProvider";
+
+type FeedbackFn = (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
+
+const THUMBS_UP = 5;
+const THUMBS_DOWN = 1;
 
 function CopyIcon() {
   return (
@@ -75,14 +86,29 @@ function MessageSquareIcon() {
   );
 }
 
+/** Local time of a message ("14:05"), with the full date as the tooltip. */
+function MessageTime({ at }: { at: number }) {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return null;
+  return (
+    <time dateTime={date.toISOString()} title={date.toLocaleString()} className="tabular-nums">
+      {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+    </time>
+  );
+}
+
 export function MessageBubble({
   message,
   onDelete,
   onFeedback,
+  onRetry,
 }: {
   message: ChatMessage;
-  onDelete?: () => void;
-  onFeedback?: (messageId: string, rating: number, comment?: string) => Promise<void>;
+  /** Deletes the question/answer pair; a rejection is shown under the bubble. */
+  onDelete?: () => void | Promise<void>;
+  onFeedback?: FeedbackFn;
+  /** Shown on a failed answer: re-sends the question. */
+  onRetry?: () => void;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -93,6 +119,12 @@ export function MessageBubble({
   const [commentText, setCommentText] = useState("");
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [savingFeedback, setSavingFeedback] = useState(false);
+  const [reasonsOpen, setReasonsOpen] = useState(false);
+  const [reasons, setReasons] = useState<ReasonTag[]>([]);
+  const [correctedAnswer, setCorrectedAnswer] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const toast = useToast();
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -123,7 +155,7 @@ export function MessageBubble({
   }, [commentOpen]);
 
   // Obtain feedback submission handler
-  let chatFeedback: ((messageId: string, rating: number, comment?: string) => Promise<void>) | undefined;
+  let chatFeedback: FeedbackFn | undefined;
   try {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const chat = useChat();
@@ -140,48 +172,109 @@ export function MessageBubble({
     setTimeout(() => setCopied(false), 1500);
   };
 
+  /** Thumbs-down detail, sent only when there is some (keeps the one-click call minimal). */
+  const currentDetails = (): FeedbackDetails | undefined => {
+    const corrected = correctedAnswer.trim();
+    if (reasons.length === 0 && !corrected) return undefined;
+    return { reason_tags: reasons, corrected_answer: corrected || null };
+  };
+
+  /** Upserts the rating; a resubmission updates the existing feedback row. */
+  const submit = async (rating: number, comment: string | undefined, details: FeedbackDetails | undefined) => {
+    if (!submitFn) return true;
+    setSavingFeedback(true);
+    setFeedbackError(null);
+    try {
+      if (details) await submitFn(message.id, rating, comment, details);
+      else await submitFn(message.id, rating, comment);
+      return true;
+    } catch (err: unknown) {
+      setFeedbackError(err instanceof Error && err.message ? err.message : "Failed to submit rating. Please try again.");
+      return false;
+    } finally {
+      setSavingFeedback(false);
+    }
+  };
+
   const handleRatingClick = async (ratingVal: number) => {
     if (savingFeedback) return;
+    if (ratingVal === THUMBS_DOWN && activeRating === THUMBS_DOWN) {
+      setReasonsOpen((open) => !open);
+      return;
+    }
     const prevRating = activeRating;
+    // Optimistic: the thumb lights up before the request settles.
     setActiveRating(ratingVal);
-    setFeedbackError(null);
+    setReasonsOpen(ratingVal === THUMBS_DOWN);
+    const details = ratingVal === THUMBS_DOWN ? currentDetails() : undefined;
+    const ok = await submit(ratingVal, commentText || undefined, details);
+    if (!ok) {
+      setActiveRating(prevRating);
+      setReasonsOpen(false);
+      return;
+    }
+    if (ratingVal === THUMBS_UP) {
+      toast.show({ title: "Thanks for the feedback", tone: "success" });
+    }
+  };
 
-    if (submitFn) {
-      setSavingFeedback(true);
-      try {
-        await submitFn(message.id, ratingVal, commentText || undefined);
-        // Prompt optional comment if not provided
-        if (!commentText) {
-          setCommentOpen(true);
-        }
-      } catch (err: any) {
-        setActiveRating(prevRating);
-        setFeedbackError(err?.message || "Failed to submit rating. Please try again.");
-      } finally {
-        setSavingFeedback(false);
-      }
+  const toggleReason = (tag: ReasonTag) => {
+    setReasons((list) => (list.includes(tag) ? list.filter((t) => t !== tag) : [...list, tag]));
+  };
+
+  const handleReasonsSubmit = async () => {
+    if (savingFeedback) return;
+    const ok = await submit(THUMBS_DOWN, commentText.trim() || undefined, currentDetails());
+    if (ok) {
+      setReasonsOpen(false);
+      toast.show({ title: "Feedback sent", description: "Thanks, this helps us improve the answers.", tone: "success" });
     }
   };
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeRating || savingFeedback) return;
-
-    if (submitFn) {
-      setSavingFeedback(true);
-      setFeedbackError(null);
-      try {
-        await submitFn(message.id, activeRating, commentText.trim());
-        setCommentOpen(false);
-      } catch (err: any) {
-        setFeedbackError(err?.message || "Failed to save comment.");
-      } finally {
-        setSavingFeedback(false);
-      }
-    } else {
+    const details = activeRating === THUMBS_DOWN ? currentDetails() : undefined;
+    const ok = await submit(activeRating, commentText.trim(), details);
+    if (ok) {
       setCommentOpen(false);
+      if (submitFn) toast.show({ title: "Note saved", tone: "success" });
     }
   };
+
+  const confirmDelete = async () => {
+    if (!onDelete) return;
+    setDeleteError(null);
+    try {
+      await onDelete();
+    } catch (err: unknown) {
+      setDeleteError(
+        err instanceof Error && err.message
+          ? `Couldn't delete this exchange: ${err.message}`
+          : "Couldn't delete this exchange. Please try again.",
+      );
+    } finally {
+      setConfirmingDelete(false);
+    }
+  };
+
+  const deleteDialog = onDelete ? (
+    <ConfirmDialog
+      open={confirmingDelete}
+      title="Delete this exchange?"
+      description="The question and its answer are removed from this chat. This cannot be undone."
+      confirmLabel="Delete"
+      tone="danger"
+      onConfirm={confirmDelete}
+      onCancel={() => setConfirmingDelete(false)}
+    />
+  ) : null;
+
+  const deleteErrorNotice = deleteError ? (
+    <p className="text-[11px] text-rose-600 dark:text-rose-400" role="alert">
+      {deleteError}
+    </p>
+  ) : null;
 
   if (isUser) {
     return (
@@ -190,7 +283,10 @@ export function MessageBubble({
           <div className="rounded-2xl rounded-tr-sm bg-brand-600 px-4 py-2.5 text-sm text-white">
             {message.content}
           </div>
-          <div className="mt-1 flex items-center justify-end gap-2 text-ink/35">
+          <div className="mt-1 flex items-center justify-end gap-2 text-ink/35 dark:text-slate-500">
+            <span className="text-[11px]">
+              <MessageTime at={message.createdAt} />
+            </span>
             <button
               type="button"
               onClick={handleCopy}
@@ -203,7 +299,7 @@ export function MessageBubble({
             {onDelete && (
               <button
                 type="button"
-                onClick={onDelete}
+                onClick={() => setConfirmingDelete(true)}
                 className="inline-flex items-center gap-1 text-[11px] transition hover:text-ink/70"
                 aria-label="Delete this exchange"
               >
@@ -212,6 +308,8 @@ export function MessageBubble({
               </button>
             )}
           </div>
+          {deleteErrorNotice}
+          {deleteDialog}
         </div>
       </div>
     );
@@ -220,7 +318,7 @@ export function MessageBubble({
   return (
     <div className="flex justify-start">
       <div className="relative max-w-[80%] space-y-2">
-        <div className="rounded-2xl rounded-tl-sm border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-sm">
+        <div data-tour="chat-answer" className="rounded-2xl rounded-tl-sm border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-sm">
           {message.pending ? (
             <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400" role="status" aria-label="Thinking">
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 dark:bg-slate-500 [animation-delay:-0.3s]" />
@@ -228,18 +326,32 @@ export function MessageBubble({
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 dark:bg-slate-500" />
             </span>
           ) : message.error ? (
-            <span className="text-red-600 dark:text-red-400">{message.error}</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" role="alert">
+              <span className="text-red-600 dark:text-red-400">{message.error}</span>
+              {onRetry ? (
+                <button
+                  type="button"
+                  data-tour="chat-retry"
+                  onClick={onRetry}
+                  className="rounded-md border border-line px-2 py-0.5 text-xs font-medium text-fg-muted transition hover:border-brand-300 hover:text-fg focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  Retry
+                </button>
+              ) : null}
+            </div>
           ) : (
             renderFormattedText(message.content)
           )}
         </div>
 
+        {!message.pending && !message.error && <SourceChips sources={citedSources(message.response)} />}
+
         {!message.pending && !message.error && (
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]" data-tour="chat-feedback">
             {/* Feedback: Thumbs Up */}
             <button
               type="button"
-              onClick={() => handleRatingClick(5)}
+              onClick={() => handleRatingClick(THUMBS_UP)}
               aria-label="Helpful response"
               aria-pressed={activeRating === 5}
               disabled={savingFeedback}
@@ -256,7 +368,7 @@ export function MessageBubble({
             {/* Feedback: Thumbs Down */}
             <button
               type="button"
-              onClick={() => handleRatingClick(1)}
+              onClick={() => handleRatingClick(THUMBS_DOWN)}
               aria-label="Unhelpful response"
               aria-pressed={activeRating === 1}
               disabled={savingFeedback}
@@ -284,7 +396,8 @@ export function MessageBubble({
               </button>
             )}
 
-            <div className="ml-auto flex items-center gap-2 text-slate-400 dark:text-slate-500">
+            <div className="ml-auto flex items-center gap-2 text-slate-400 dark:text-slate-500" data-tour="chat-message-actions">
+              <MessageTime at={message.createdAt} />
               {/* Copy */}
               <button
                 type="button"
@@ -300,7 +413,7 @@ export function MessageBubble({
               {onDelete && (
                 <button
                   type="button"
-                  onClick={onDelete}
+                  onClick={() => setConfirmingDelete(true)}
                   className="inline-flex items-center gap-1 transition hover:text-slate-700 dark:hover:text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   aria-label="Delete this exchange"
                 >
@@ -312,12 +425,31 @@ export function MessageBubble({
           </div>
         )}
 
+        {deleteErrorNotice}
+        {deleteDialog}
+
         {/* Feedback Error Notice */}
         {feedbackError && (
           <p className="text-[11px] text-rose-600 dark:text-rose-400" role="alert">
             {feedbackError}
           </p>
         )}
+
+        {/* Thumbs-down reason chips (pop preset) */}
+        <AnimatePresence>
+          {reasonsOpen && activeRating === THUMBS_DOWN ? (
+            <FeedbackReasonPanel
+              key="reasons"
+              reasons={reasons}
+              onToggleReason={toggleReason}
+              correctedAnswer={correctedAnswer}
+              onCorrectedAnswerChange={setCorrectedAnswer}
+              onSubmit={handleReasonsSubmit}
+              onCancel={() => setReasonsOpen(false)}
+              saving={savingFeedback}
+            />
+          ) : null}
+        </AnimatePresence>
 
         {/* Comment Popover / Expansion */}
         {commentOpen && (

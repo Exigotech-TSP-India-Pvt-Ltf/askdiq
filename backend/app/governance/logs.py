@@ -29,7 +29,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.governance.audience import build_audience_filter
 from app.governance.log_summary import (
     AUTH_PREFIXES,
@@ -50,24 +49,44 @@ def _text_array(values: Sequence[str]) -> Any:
     return cast(array(sorted(values), type_=Text), ARRAY(Text))
 
 
-def _detail_jsonb() -> Any:
-    return cast(AuditLog.detail, JSONB)
+def flags_sql() -> Any:
+    """``detail.guardrail_flags`` as ``jsonb`` (for ``?|``).
+
+    ``detail`` is a ``json`` column: only the small flags array is converted,
+    never the whole document (casting every row's ``detail`` to ``jsonb`` once
+    per CASE branch made the level chips the slowest query on the Logs tab).
+    """
+    return cast(AuditLog.detail["guardrail_flags"], JSONB)
 
 
-def level_sql() -> Any:
-    """SQL mirror of ``log_summary.level_for`` over ``audit_log`` columns."""
-    detail = _detail_jsonb()
-    flags = detail["guardrail_flags"]
+def grounded_sql() -> Any:
+    """``detail.grounded`` as ``jsonb`` (so only a JSON ``false`` matches)."""
+    return cast(AuditLog.detail["grounded"], JSONB)
+
+
+def level_sql(
+    flags: Any | None = None,
+    grounded: Any | None = None,
+    action: Any | None = None,
+) -> Any:
+    """SQL mirror of ``log_summary.level_for`` over ``audit_log`` columns.
+
+    Pass precomputed ``flags`` / ``grounded`` / ``action`` columns (from a
+    subquery) to extract them once per row instead of once per branch.
+    """
+    flags = flags_sql() if flags is None else flags
+    grounded = grounded_sql() if grounded is None else grounded
+    action = AuditLog.action if action is None else action
     whens: list[tuple[ColumnElement[bool], str]] = [
         (func.coalesce(flags.has_any(_text_array(names)), False), level)
         for level, names in LEVEL_FLAGS
     ]
-    whens.append((detail["grounded"] == cast(literal("false"), JSONB), "WARNING"))
+    whens.append((grounded == cast(literal("false"), JSONB), "WARNING"))
     by_level: dict[str, list[str]] = {}
-    for action, level in LEVEL_BY_ACTION.items():
-        by_level.setdefault(level, []).append(action)
+    for action_name, level in LEVEL_BY_ACTION.items():
+        by_level.setdefault(level, []).append(action_name)
     whens.extend(
-        (AuditLog.action.in_(sorted(actions)), level)
+        (action.in_(sorted(actions)), level)
         for level, actions in sorted(by_level.items())
     )
     return case(*whens, else_="INFO")
@@ -94,8 +113,8 @@ class LogFilters:
     q: str | None = None
     date_from: datetime | None = None
     date_to: datetime | None = None
-    # Auth events are superadmin-only (`audit:auth:read`, newplan §7.5).
-    include_auth: bool = False
+    # Audit actions the caller may not see (auth events without audit:auth:read).
+    hidden_actions: frozenset[str] = frozenset()
 
     def as_audit_detail(self) -> dict[str, Any]:
         return {
@@ -119,6 +138,8 @@ async def _conditions(
         conds.append(AuditLog.created_at >= f.date_from)
     if f.date_to is not None:
         conds.append(AuditLog.created_at <= f.date_to)
+    if f.hidden_actions:
+        conds.append(AuditLog.action.not_in(f.hidden_actions))
     if f.services:
         conds.append(service_sql().in_(f.services))
     if f.q:
@@ -130,8 +151,6 @@ async def _conditions(
                 AuditLog.request_id.ilike(pattern, escape="\\"),
             )
         )
-    if not f.include_auth:
-        conds.append(AuditLog.action.not_in(AUTH_AUDIT_ACTIONS))
     if with_level and f.levels:
         conds.append(level_sql().in_(f.levels))
     return conds
@@ -171,9 +190,21 @@ async def level_counts_and_total(
     ``cap`` rows (``capped``) and the total is the planner estimate.
     """
     conds = await _conditions(db, f, with_level=False)
-    level = level_sql().label("level")
-    newest = _ordered(select(level).where(*conds)).limit(cap + 1).subquery()
-    grouped = select(newest.c.level, func.count()).group_by(newest.c.level)
+    # The LIMIT keeps this subquery from being flattened, so each row's flags
+    # and grounded values are extracted once; the CASE then runs on them.
+    newest = (
+        _ordered(
+            select(
+                flags_sql().label("flags"),
+                grounded_sql().label("grounded"),
+                AuditLog.action.label("action"),
+            ).where(*conds)
+        )
+        .limit(cap + 1)
+        .subquery()
+    )
+    level = level_sql(newest.c.flags, newest.c.grounded, newest.c.action).label("level")
+    grouped = select(level, func.count()).group_by(level)
     counts = dict.fromkeys(LEVELS, 0)
     for name, n in (await db.execute(grouped)).all():
         counts[str(name)] = int(n)

@@ -1,5 +1,5 @@
 # Production image for askdiq-api (DeployIQ RAG backend).
-# Build context: ./backend
+# Build context: ./backend. Deployment runbook: deploy/RUNBOOK.md.
 FROM python:3.14-slim
 
 WORKDIR /app
@@ -19,13 +19,27 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin appuser \
+# The knowledge-base sources must be in the image for the entrypoint's
+# ingestion step (.dockerignore re-includes data/real_docs/*.md); fail the
+# build if they are missing. The sed strips CRLF in case the entrypoint was
+# checked out on Windows.
+RUN test -f data/real_docs/deploy-iq-platform.md \
+    && sed -i 's/\r$//' docker-entrypoint.sh \
+    && useradd --create-home --uid 1000 --shell /usr/sbin/nologin appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
+# Start-up automation (docker-entrypoint.sh -> scripts/prestart.py), API only:
+# migrations under a Postgres advisory lock (fatal on error), then idempotent
+# knowledge-base ingestion (non-fatal). The usage backfill is opt-in.
+ENV RUN_MIGRATIONS=true \
+    RUN_INGESTION=true \
+    RUN_USAGE_BACKFILL=false
+
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+# start-period covers the entrypoint's migrations + ingestion before uvicorn.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # main.py (at backend/ root) defines `app` -> module path "main:app".
@@ -35,4 +49,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 # WEB_CONCURRENCY sets the worker count (docker-compose.prod.yml sets 2 per
 # replica); size the DB pool with the rule in DEPLOYMENT.md. Shell form so the
 # variable expands; `exec` keeps uvicorn as PID 1 to receive SIGTERM.
-CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1}"]
+# The entrypoint runs the pre-start steps only for a uvicorn command, then
+# `exec`s CMD unchanged; other commands (the job worker) are exec'd directly.
+ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1} --timeout-graceful-shutdown 20"]

@@ -1,0 +1,89 @@
+"use client";
+
+import { useMemo } from "react";
+import { useAudience } from "@/lib/audience-context";
+import { useAuth } from "@/lib/auth-context";
+import {
+  INSIGHTS_CACHE_PREFIX,
+  insightsApi,
+  insightsQuery,
+  type ConversationPageParams,
+  type InsightsEndpoint,
+  type InsightsFilters,
+  type InsightsResponses,
+} from "@/lib/insights-api";
+import { useApiQuery, usePrefetchNextPage, type UseApiQueryResult } from "@/lib/query-cache";
+import { toInsightsFilters, type AnalyticsState } from "./url-state";
+
+const TZ_RE = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/;
+
+/** The viewer's IANA zone (days and hours are bucketed in it, newplan §6.4). */
+export function viewerTimeZone(): string | undefined {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz && TZ_RE.test(tz) ? tz : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** API filters for the current URL state plus audience scope and viewer zone. */
+export function useInsightsFilters(state: AnalyticsState): InsightsFilters {
+  const { audience } = useAudience();
+  return useMemo(() => {
+    const filters = toInsightsFilters(state);
+    const tz = viewerTimeZone();
+    return { ...filters, audience, ...(tz ? { tz } : {}) };
+  }, [state, audience]);
+}
+
+export function useInsightsAggregate<E extends InsightsEndpoint>(
+  endpoint: E,
+  filters: InsightsFilters,
+  enabled = true,
+): UseApiQueryResult<InsightsResponses[E]> {
+  const { token } = useAuth();
+  return useApiQuery<InsightsResponses[E]>(
+    [`${INSIGHTS_CACHE_PREFIX}/${endpoint}`, insightsQuery(filters)],
+    (signal) => insightsApi.aggregate(endpoint, token, filters, signal),
+    { enabled },
+  );
+}
+
+const conversationsKey = (filters: InsightsFilters, page: ConversationPageParams) =>
+  [`${INSIGHTS_CACHE_PREFIX}/conversations`, insightsQuery(filters), page.sort, page.dir, page.limit, page.offset] as const;
+
+/** One page of the Conversations table; the next page is warmed while idle. */
+export function useInsightsConversations(filters: InsightsFilters, page: ConversationPageParams) {
+  const { token } = useAuth();
+  const result = useApiQuery(conversationsKey(filters, page), (signal) =>
+    insightsApi.getConversations(token, filters, page, signal),
+  );
+  const next = { ...page, offset: page.offset + page.limit };
+  const hasNext = result.data !== undefined && next.offset < result.data.total;
+  usePrefetchNextPage(
+    hasNext ? conversationsKey(filters, next) : null,
+    (signal) => insightsApi.getConversations(token, filters, next, signal),
+  );
+  return result;
+}
+
+export function useInsightsConversation(convId: string, filters: InsightsFilters, enabled: boolean) {
+  const { token } = useAuth();
+  const scope = { audience: filters.audience, tz: filters.tz };
+  return useApiQuery(
+    enabled ? [`${INSIGHTS_CACHE_PREFIX}/conversation`, convId, scope.audience, scope.tz] : null,
+    (signal) => insightsApi.getConversation(token, convId, scope, signal),
+  );
+}
+
+export function useInsightsPending() {
+  const { token } = useAuth();
+  return useApiQuery(`${INSIGHTS_CACHE_PREFIX}/pending`, (signal) => insightsApi.getPending(token, signal));
+}
+
+/** Readable message for a failed query. */
+export function errorText(error: unknown): string | null {
+  if (!error) return null;
+  return error instanceof Error && error.message ? error.message : "Could not load this data.";
+}

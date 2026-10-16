@@ -1,26 +1,38 @@
 """Admin endpoints for users and conversation management."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.admin_entities import router as entities_router
 from app.api.routes.admin_feedback import router as feedback_router
 from app.api.routes.admin_governance import router as governance_router
+from app.api.routes.admin_usage import USAGE_CARD_CACHE_PREFIX
 from app.api.routes.admin_usage import router as usage_router
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
+from app.core.cache import aggregation_cache
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import get_db, release_connection
 from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
 from app.core.request_meta import get_client_ip
+from app.dashboard import active_visitors
+from app.dashboard import activity as dashboard_activity
+from app.dashboard import service as dashboard_service
+from app.dashboard import window as dashboard_window
+from app.entities import conversations as conversation_stats
+from app.entities import visitors
 from app.governance.audience import (
+    Audience,
     audience_scope,
     build_audience_filter,
     get_classified_ips,
@@ -37,7 +49,6 @@ from app.governance.test_ips import (
     get_test_ip_details,
     is_test_ip,
 )
-from app.governance.usage_queries import escape_ilike_pattern
 from app.guardrails.conversational import (
     CAPABILITY_RESPONSE,
     FAREWELL_RESPONSE,
@@ -54,12 +65,16 @@ from app.models.db_models import (
     LatencyRecord,
     User,
 )
+from app.schemas.dashboard import ActivityFeed, DashboardData
+from app.schemas.entity_stats import OutcomeName
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = get_logger(__name__)
 router.include_router(usage_router)
 router.include_router(feedback_router)
 router.include_router(governance_router)
+# Before `/conversations/{conversation_id}` so `/conversations/stats` matches.
+router.include_router(entities_router)
 
 
 class TestIpPayload(BaseModel):
@@ -72,20 +87,96 @@ class TestIpPayload(BaseModel):
 # ============================================================================
 
 
+# `sort` prefix -> visitor row field; unknown values sort by last activity.
+_VISITOR_SORT_FIELDS = {
+    "last_active": "last_active",
+    "first_seen": "first_seen",
+    "queries": "queries",
+    "sessions": "sessions",
+}
+
+
+# Bounds shared with the Usage tables (USAGE_PAGE_MAX_LIMIT / USAGE_MAX_OFFSET).
+_PAGE_MAX_LIMIT = get_settings().usage_page_max_limit
+_PAGE_MAX_OFFSET = get_settings().usage_max_offset
+
+
+# `from`/`to` on /admin/users only matter with a heatmap slot (then they must
+# be YYYY-MM-DD, checked by parse_day). Without a slot they are ignored, so the
+# Visitors page may pass its ISO datetime window; this bound just caps input.
+_SLOT_RANGE_MAX_LEN = 64
+
+# A visitor row is "Active" while its latest session activity is this recent
+# (the same 30-minute window the Visitors table used client-side).
+VISITOR_ACTIVE_WINDOW = timedelta(minutes=30)
+
+
+def visitor_status_label(last_active: datetime | None, now: datetime) -> str:
+    """ "Active" / "Inactive" from the latest activity (naive UTC)."""
+    if last_active is None:
+        return "Inactive"
+    return "Active" if now - last_active <= VISITOR_ACTIVE_WINDOW else "Inactive"
+
+
 @router.get("/users")
 async def list_users(
     audience: str = Query("overview"),
     include_test: bool | None = None,
     q: str | None = None,
-    status: str | None = None,
+    # Not named `status`: that would shadow fastapi.status used below.
+    visitor_status: str | None = Query(
+        None,
+        alias="status",
+        pattern="^(?i:all|active|inactive)$",
+        description=(
+            "`active`: last activity within the last "
+            f"{int(VISITOR_ACTIVE_WINDOW.total_seconds() // 60)} minutes."
+        ),
+    ),
     user_type: str | None = Query(None, alias="type"),
     sort: str = "last_active_desc",
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=_PAGE_MAX_LIMIT),
+    offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
+    weekday: int | None = Query(
+        None, ge=0, le=6, description="Heatmap filter: session start weekday (0 = Mon)."
+    ),
+    hour: int | None = Query(
+        None, ge=0, le=23, description="Heatmap filter: session start hour (UTC)."
+    ),
+    slot_from: str | None = Query(
+        None,
+        alias="from",
+        max_length=_SLOT_RANGE_MAX_LEN,
+        description="Slot filter first day.",
+    ),
+    slot_to: str | None = Query(
+        None,
+        alias="to",
+        max_length=_SLOT_RANGE_MAX_LEN,
+        description="Slot filter last day.",
+    ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Return users grouped by client IP with activity statistics (Task 2.3.1)."""
+    """Return users grouped by client IP with activity statistics (Task 2.3.1).
+
+    `weekday` + `hour` (both or neither) keep visitors with a session started
+    in that UTC slot within `from`..`to` (days, default the last 7 days).
+    """
+    if (weekday is None) != (hour is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="`weekday` and `hour` must be sent together.",
+        )
+    slot_ips: set[str] | None = None
+    if weekday is not None and hour is not None:
+        days = dashboard_window.resolve_days(
+            dashboard_window.parse_day(slot_from, "from"),
+            dashboard_window.parse_day(slot_to, "to"),
+            today=dashboard_window.utcnow().date(),
+            max_days=get_settings().usage_max_range_days,
+        )
+        slot_ips = await visitors.ips_in_slot(db, weekday, hour, days)
     # Audience resolution (preserving include_test backwards-compatibility)
     if include_test is False and audience == "overview":
         aud_scope = "users"
@@ -95,6 +186,8 @@ async def list_users(
         aud_scope = audience_scope(audience)
 
     test_ips, _, _ = await get_classified_ips(db)
+    wanted_status = (visitor_status or "all").lower()
+    now = datetime.utcnow()
 
     ip_rows = (
         await db.execute(
@@ -149,13 +242,20 @@ async def list_users(
         if q and q.strip() and q.strip().lower() not in ip.lower():
             continue
 
+        if slot_ips is not None and ip not in slot_ips:
+            continue
+
+        row_status = visitor_status_label(row.last_active, now)
+        if wanted_status != "all" and row_status.lower() != wanted_status:
+            continue
+
         all_users.append(
             {
                 "id": f"client-{ip}",
                 "ip_address": ip,
                 "is_test": is_test,
                 "type": t_type,
-                "status": "Active",
+                "status": row_status,
                 "sessions": row.sessions,
                 "conversations": row.sessions,
                 "queries": queries_by_ip.get(ip, 0),
@@ -166,7 +266,9 @@ async def list_users(
         )
 
     reverse = "asc" not in sort
-    all_users.sort(key=lambda u: u.get("last_active") or "", reverse=reverse)
+    sort_field = _VISITOR_SORT_FIELDS.get(sort.rsplit("_", 1)[0], "last_active")
+    empty: str | int = 0 if sort_field in {"queries", "sessions"} else ""
+    all_users.sort(key=lambda u: u.get(sort_field) or empty, reverse=reverse)
 
     total = len(all_users)
     paged = all_users[offset : offset + limit]
@@ -230,6 +332,19 @@ async def get_user(
 
         first_seen = min(s.created_at for s in sessions_res)
         last_active = max(s.last_activity_at for s in sessions_res)
+        message_counts = dict(
+            (
+                await db.execute(
+                    select(
+                        ChatMessageRecord.session_id, func.count(ChatMessageRecord.id)
+                    )
+                    .where(
+                        ChatMessageRecord.session_id.in_([s.id for s in sessions_res])
+                    )
+                    .group_by(ChatMessageRecord.session_id)
+                )
+            ).all()
+        )
 
         return {
             "id": user_id,
@@ -238,7 +353,7 @@ async def get_user(
             "ip_address": ip,
             "first_seen": first_seen,
             "last_active": last_active,
-            "status": "Active",
+            "status": visitor_status_label(last_active, datetime.utcnow()),
             "sessions": len(sessions_res),
             "conversations": len(sessions_res),
             "queries": query_count,
@@ -249,7 +364,7 @@ async def get_user(
                     "title": s.title,
                     "created_at": s.created_at,
                     "last_activity_at": s.last_activity_at,
-                    "message_count": 0,
+                    "message_count": message_counts.get(s.id, 0),
                 }
                 for s in sessions_res
             ],
@@ -312,7 +427,9 @@ async def get_user(
         "ip_address": ip_address,
         "first_seen": user.created_at,
         "last_active": last_activity or user.created_at,
-        "status": "Active",
+        "status": visitor_status_label(
+            last_activity or user.created_at, datetime.utcnow()
+        ),
         "sessions": len(conversation_rows),
         "conversations": len(conversation_rows),
         "queries": query_count,
@@ -341,18 +458,43 @@ async def list_conversations(
     q: str | None = None,
     ip: str | None = None,
     sort: str = "last_activity_desc",
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=_PAGE_MAX_LIMIT),
+    offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
+    min_turns: int | None = Query(
+        None, ge=1, description="Inclusive turn-count floor."
+    ),
+    max_turns: int | None = Query(None, ge=1, description="Inclusive turn-count cap."),
+    outcome: OutcomeName | None = Query(
+        None, description="Conversations with at least one turn of this outcome."
+    ),
+    day: date | None = Query(
+        None, description="With `outcome`: only turns on this UTC day (YYYY-MM-DD)."
+    ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Return conversations for the admin dashboard (Task 2.3.2: audience-scoped, paginated, no email)."""
+    """Return conversations for the admin dashboard (Task 2.3.2: audience-scoped, paginated, no email).
+
+    Rows carry `turn_count` and `outcome_counts` (NULL outcome = answered).
+    """
+    if min_turns is not None and max_turns is not None and min_turns > max_turns:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="`min_turns` must not exceed `max_turns`.",
+        )
+    if day is not None and outcome is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="`day` requires `outcome`.",
+        )
     aud_scope = audience_scope(audience)
+    turn_count = conversation_stats.turn_count_sql()
 
     query = (
         select(
             ChatSession,
             func.count(ChatMessageRecord.id).label("message_count"),
+            turn_count.label("turn_count"),
         )
         .outerjoin(
             ChatMessageRecord,
@@ -361,29 +503,25 @@ async def list_conversations(
         .group_by(ChatSession.id)
     )
 
-    aud_cond = await build_audience_filter(db, ChatSession.created_ip, aud_scope)
-    if aud_cond is not None:
-        query = query.where(aud_cond)
+    for cond in await conversation_stats.session_conditions(db, aud_scope, ip, q):
+        query = query.where(cond)
+    if outcome is not None:
+        query = query.where(conversation_stats.outcome_exists(outcome.value, day))
+    if min_turns is not None:
+        query = query.having(turn_count >= min_turns)
+    if max_turns is not None:
+        query = query.having(turn_count <= max_turns)
 
-    if ip and ip.strip():
-        query = query.where(ChatSession.created_ip == ip.strip())
-
-    if q and q.strip():
-        escaped = escape_ilike_pattern(q.strip())
-        pattern = f"%{escaped}%"
-        query = query.where(
-            or_(
-                ChatSession.title.ilike(pattern, escape="\\"),
-                cast(ChatSession.id, String).ilike(pattern, escape="\\"),
-                cast(ChatSession.created_ip, String).ilike(pattern, escape="\\"),
-            )
-        )
-
-    # Sort
-    if sort == "last_activity_asc":
-        query = query.order_by(ChatSession.last_activity_at.asc())
-    else:
-        query = query.order_by(ChatSession.last_activity_at.desc())
+    # Sort (unknown values fall back to the newest activity first)
+    sort_column = (
+        ChatSession.created_at
+        if sort.startswith("created_at_")
+        else ChatSession.last_activity_at
+    )
+    query = query.order_by(
+        sort_column.asc() if sort.endswith("_asc") else sort_column.desc(),
+        ChatSession.id,
+    )
 
     # Total count
     count_sub = query.subquery()
@@ -392,9 +530,10 @@ async def list_conversations(
     ).scalar() or 0
 
     rows = (await db.execute(query.limit(limit).offset(offset))).all()
+    outcomes = await conversation_stats.outcome_counts(db, [r[0].id for r in rows])
 
     items = []
-    for session, message_count in rows:
+    for session, message_count, turns in rows:
         items.append(
             {
                 "id": str(session.id),
@@ -410,6 +549,8 @@ async def list_conversations(
                 else None,
                 "created_ip": session.created_ip or "Unknown",
                 "message_count": message_count or 0,
+                "turn_count": turns or 0,
+                "outcome_counts": outcomes.get(str(session.id), {}),
             }
         )
 
@@ -424,10 +565,17 @@ async def list_conversations(
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(
     conversation_id: str,
+    turn: int | None = Query(
+        None, ge=0, description="`turn_index` to focus; echoed as `focus_turn`."
+    ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Return one conversation and all of its messages."""
+    """Return one conversation, all of its messages and per-turn detail.
+
+    `turns` (one per `turn_index`) adds stage timings, tokens, cost, sources,
+    feedback, insight labels and the promoted golden case id.
+    """
 
     # -----------------------------------------------------------------------
     # Find conversation
@@ -457,6 +605,8 @@ async def get_conversation(
     )
 
     messages = messages_result.scalars().all()
+    turns = await conversation_stats.turn_details(db, messages)
+    turn_indexes = {t["turn_index"] for t in turns}
 
     # -----------------------------------------------------------------------
     # Response
@@ -487,6 +637,8 @@ async def get_conversation(
             for message in messages
         ],
         "message_count": len(messages),
+        "turns": turns,
+        "focus_turn": turn if turn in turn_indexes else None,
     }
 
 
@@ -513,22 +665,37 @@ def _r(v, d=0):
     return round(v, d) if isinstance(v, (int, float)) else None
 
 
-async def _latency_rows(db: AsyncSession, hours: int = 24 * 30):
+def _float_or_none(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+async def _latency_stats(db: AsyncSession, hours: int = 24 * 30) -> dict[str, Any]:
+    """Counts and stage averages over ``hours``, aggregated in SQL (one row)
+    instead of loading every ``latency_metrics`` row into Python."""
     since = datetime.utcnow() - timedelta(hours=hours)
-    return (
-        (
-            await db.execute(
-                select(LatencyRecord).where(LatencyRecord.created_at >= since)
-            )
+    row = (
+        await db.execute(
+            select(
+                func.count(LatencyRecord.id),
+                func.avg(LatencyRecord.llm_ms),
+                func.avg(LatencyRecord.embedding_ms),
+                func.count(LatencyRecord.reranker_ms),
+                func.avg(LatencyRecord.reranker_ms),
+            ).where(LatencyRecord.created_at >= since)
         )
-        .scalars()
-        .all()
-    )
+    ).one()
+    return {
+        "requests": int(row[0]),
+        "llm_ms": _float_or_none(row[1]),
+        "embedding_ms": _float_or_none(row[2]),
+        "reranker_requests": int(row[3]),
+        "reranker_ms": _float_or_none(row[4]),
+    }
 
 
-def _avg(rows, field):
-    vals = [getattr(r, field) for r in rows if getattr(r, field) is not None]
-    return sum(vals) / len(vals) if vals else None
+def _usage_card_key(name: str) -> str:
+    """Aggregation-cache key for a usage card; the permission scope is part of it."""
+    return f"{USAGE_CARD_CACHE_PREFIX}{Permission.DASHBOARD_READ.value}:{name}"
 
 
 async def _query_usage_rows(db: AsyncSession) -> list[dict]:
@@ -787,32 +954,42 @@ async def usage_llm(
 ):
     settings = get_settings()
 
-    rows = await _latency_rows(db)
-    query_rows = await _query_usage_rows(db)
-    in_tokens = sum(q["input_tokens"] for q in query_rows)
-    out_tokens = sum(q["output_tokens"] for q in query_rows)
-    cost = sum(q["cost_usd"] for q in query_rows)
-    failed = sum(1 for q in query_rows if q["grounded"] is False)
-    actual_count = sum(1 for q in query_rows if q["is_actual"])
-    return {
-        "provider": "Azure OpenAI",
-        "model": settings.azure_deployment_name,
-        "requests": len(rows),
-        "successful": max(len(rows) - failed, 0),
-        "failed": failed,
-        "input_tokens": in_tokens,
-        "output_tokens": out_tokens,
-        "total_tokens": in_tokens + out_tokens,
-        "average_latency_ms": _r(_avg(rows, "llm_ms")),
-        "cost": f"${cost:.4f}",
-        # How many of the queries counted above used the real Azure usage
-        # numbers vs. the legacy text-length estimate (pre-migration rows
-        # or exchanges with no actual LLM call).
-        "token_accounting": {
-            "actual": actual_count,
-            "estimated": len(query_rows) - actual_count,
-        },
-    }
+    async def compute() -> dict:
+        lat = await _latency_stats(db)
+        query_rows = await _query_usage_rows(db)
+        in_tokens = sum(q["input_tokens"] for q in query_rows)
+        out_tokens = sum(q["output_tokens"] for q in query_rows)
+        cost = sum(q["cost_usd"] for q in query_rows)
+        failed = sum(1 for q in query_rows if q["grounded"] is False)
+        actual_count = sum(1 for q in query_rows if q["is_actual"])
+        requests = lat["requests"]
+        return {
+            "provider": "Azure OpenAI",
+            "model": settings.azure_deployment_name,
+            "requests": requests,
+            "successful": max(requests - failed, 0),
+            "failed": failed,
+            "input_tokens": in_tokens,
+            "output_tokens": out_tokens,
+            "total_tokens": in_tokens + out_tokens,
+            "average_latency_ms": _r(lat["llm_ms"]),
+            "cost": f"${cost:.4f}",
+            # How many of the queries counted above used the real Azure usage
+            # numbers vs. the legacy text-length estimate (pre-migration rows
+            # or exchanges with no actual LLM call).
+            "token_accounting": {
+                "actual": actual_count,
+                "estimated": len(query_rows) - actual_count,
+            },
+        }
+
+    # Per-exchange cost accounting runs in Python over every exchange; the
+    # all-time totals are cached briefly and concurrent callers share one run.
+    return await aggregation_cache.get_or_compute(
+        _usage_card_key("llm"),
+        compute,
+        ttl=settings.usage_summary_cache_ttl_seconds,
+    )
 
 
 @router.get("/usage/embedding")
@@ -822,33 +999,41 @@ async def usage_embedding(
 ):
     settings = get_settings()
 
-    rows = await _latency_rows(db)
+    lat = await _latency_stats(db)
     docs = await db.scalar(select(func.count(Document.id)))
     chunks = await db.scalar(select(func.count(Chunk.id)))
     chunk_chars = await db.scalar(
         select(func.coalesce(func.sum(func.length(Chunk.content)), 0))
     )
-    q_msgs = (
-        (
-            await db.execute(
-                select(ChatMessageRecord.content).where(
-                    ChatMessageRecord.role == "user"
-                )
-            )
+    # SQL mirror of sum(_est_tokens(content)) over user turns: 0 for empty,
+    # else max(1, chars // 4). No message bodies leave the database.
+    content = ChatMessageRecord.content
+    q_count, q_tokens = (
+        await db.execute(
+            select(
+                func.count(ChatMessageRecord.id),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (or_(content.is_(None), content == ""), 0),
+                            else_=func.greatest(1, func.length(content) // 4),
+                        )
+                    ),
+                    0,
+                ),
+            ).where(ChatMessageRecord.role == "user")
         )
-        .scalars()
-        .all()
-    )
-    tokens = int((chunk_chars or 0) // 4) + sum(_est_tokens(c) for c in q_msgs)
+    ).one()
+    tokens = int((chunk_chars or 0) // 4) + int(q_tokens)
     return {
         "provider": "Azure OpenAI",
         "model": settings.embedding_model,
         "dimensions": settings.embedding_dim,
         "documents": docs or 0,
         "chunks": chunks or 0,
-        "requests": len(q_msgs) + (chunks or 0),
+        "requests": int(q_count) + (chunks or 0),
         "input_tokens": tokens,
-        "average_latency_ms": _r(_avg(rows, "embedding_ms")),
+        "average_latency_ms": _r(lat["embedding_ms"]),
         "cost": f"${tokens / 1e6 * 0.02:.4f}",
     }
 
@@ -860,8 +1045,8 @@ async def usage_reranker(
 ):
     settings = get_settings()
 
-    rows = [r for r in await _latency_rows(db) if r.reranker_ms is not None]
-    avg_ms = _avg(rows, "reranker_ms")
+    lat = await _latency_stats(db)
+    avg_ms = lat["reranker_ms"]
     pool = max(
         settings.default_top_k * settings.retrieval_candidate_multiplier,
         settings.retrieval_candidate_min,
@@ -880,8 +1065,8 @@ async def usage_reranker(
     return {
         "provider": "Local cross-encoder" if settings.enable_reranker else "Disabled",
         "model": settings.reranker_model,
-        "queries": len(rows),
-        "requests": len(rows),
+        "queries": lat["reranker_requests"],
+        "requests": lat["reranker_requests"],
         "documents_per_query": pool,
         "top_n": settings.default_top_k,
         "average_latency_ms": _r(avg_ms),
@@ -1293,136 +1478,116 @@ async def usage_cost_breakdown(
     }
 
 
-@router.get("/usage/queries/{request_id}")
-async def get_query_usage_detail(
-    request_id: str,
-    db: AsyncSession = Depends(get_db),
-    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
-):
-    """Subtask 2.5.5: Return full single-query record with stage tokens, pricing snapshot, and latency."""
-    # 1. Fetch assistant message and session
-    result = await db.execute(
-        select(ChatMessageRecord, ChatSession)
-        .join(ChatSession, ChatMessageRecord.session_id == ChatSession.id)
-        .where(
-            ChatMessageRecord.request_id == request_id,
-            ChatMessageRecord.role == "assistant",
-        )
-    )
-    row = result.first()
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Query with request_id '{request_id}' not found",
-        )
-    assistant_msg, session = row
-
-    # 2. Fetch corresponding user message in the same turn
-    user_res = await db.execute(
-        select(ChatMessageRecord).where(
-            ChatMessageRecord.session_id == session.id,
-            ChatMessageRecord.turn_index == assistant_msg.turn_index,
-            ChatMessageRecord.role == "user",
-        )
-    )
-    user_msg = user_res.scalar_one_or_none()
-
-    # 3. Fetch latency metrics
-    lat_res = await db.execute(
-        select(LatencyRecord).where(LatencyRecord.request_id == request_id)
-    )
-    lat_record = lat_res.scalar_one_or_none()
-    latency_dict = (
-        {
-            "total_ms": lat_record.total_ms,
-            "embedding_ms": lat_record.embedding_ms,
-            "retrieval_ms": lat_record.retrieval_ms,
-            "guardrail_pre_ms": lat_record.guardrail_pre_ms,
-            "llm_ms": lat_record.llm_ms,
-            "guardrail_post_ms": lat_record.guardrail_post_ms,
-            "reranker_ms": lat_record.reranker_ms,
-        }
-        if lat_record
-        else None
-    )
-
-    in_tok = assistant_msg.prompt_tokens or 0
-    out_tok = assistant_msg.completion_tokens or 0
-    reasoning_tok = assistant_msg.reasoning_tokens or 0
-    visible_tok = max(0, out_tok - reasoning_tok)
-    q_embed_tok = assistant_msg.embedding_tokens or 0
-    g_embed_tok = assistant_msg.guardrail_tokens or 0
-
-    return {
-        "request_id": request_id,
-        "session_id": str(session.id),
-        "session_title": session.title,
-        "user_email": session.user_email,
-        "ip_address": (user_msg.ip_address if user_msg else None)
-        or session.created_ip
-        or "Unknown",
-        "query": user_msg.content if user_msg else "",
-        "answer": assistant_msg.content,
-        "grounded": assistant_msg.grounded,
-        "guardrail_flags": assistant_msg.guardrail_flags or [],
-        "created_at": assistant_msg.created_at.isoformat() + "Z"
-        if assistant_msg.created_at
-        else None,
-        "tokens": {
-            "query_embed": q_embed_tok,
-            "guardrail_embed": g_embed_tok,
-            "total_embed": q_embed_tok + g_embed_tok,
-            "prompt": in_tok,
-            "reasoning": reasoning_tok,
-            "visible": visible_tok,
-            "completion": out_tok,
-            "total_llm": assistant_msg.total_tokens or (in_tok + out_tok),
-            "total_billed": q_embed_tok
-            + g_embed_tok
-            + (assistant_msg.total_tokens or (in_tok + out_tok)),
-        },
-        "cost_usd": assistant_msg.cost_usd,
-        "token_details": assistant_msg.token_details or {},
-        "latency": latency_dict,
-    }
-
-
 # ============================================================================
 # DASHBOARD
 # ============================================================================
 
 
-@router.get("/dashboard")
+_DASHBOARD_ERRORS: dict[int | str, dict[str, Any]] = {
+    304: {"description": "ETag matched (`If-None-Match`)."},
+    401: {"description": "Not authenticated."},
+    403: {"description": "Missing `dashboard:read`."},
+    422: {"description": "Invalid audience, window or limit."},
+}
+
+
+@router.get(
+    "/dashboard",
+    summary="Dashboard KPIs, sparklines and chart series",
+    responses={200: {"model": DashboardData}, **_DASHBOARD_ERRORS},
+)
 async def admin_dashboard(
     request: Request,
-    audience: str = Query("overview"),
+    audience: Audience = Depends(audience_scope),
+    window_from: datetime | None = Query(
+        None,
+        alias="from",
+        description="Window start, ISO 8601 (UTC when no offset), inclusive.",
+    ),
+    window_to: datetime | None = Query(
+        None,
+        alias="to",
+        description="Window end, ISO 8601 (UTC when no offset), exclusive.",
+    ),
+    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
+) -> Response:
+    """Dashboard KPIs; weak ETag + `Cache-Control: private` (304 on match).
+
+    Without `from`/`to` the KPIs keep their legacy windows (all time, last
+    24 h, since process start). With a window the KPI totals are computed for
+    it and the response adds `window`, `sparklines`, `deltas` (vs the
+    equal-length previous window), `cost_usd`, `queries_by_outcome`,
+    `latency_series`, `cost` (current UTC month), `satisfaction` and
+    `top_intents`. `to <= from` or a span above `USAGE_MAX_RANGE_DAYS` is 422.
+    """
+    now = dashboard_window.utcnow()
+    window = dashboard_window.resolve_window(
+        window_from,
+        window_to,
+        now=now,
+        max_days=get_settings().usage_max_range_days,
+    )
+    if window is None:
+        return cached_response(request, await _dashboard_payload(db, audience))
+    panels = await _dashboard_panels(db, audience)
+    await release_connection(db)  # never hold a pool slot while waiting for more
+    payload = {
+        **panels,
+        **await dashboard_service.window_payload(runner, audience, window, now),
+    }
+    return cached_response(request, payload)
+
+
+@router.get(
+    "/dashboard/activity",
+    summary="Live activity feed (newest audit events)",
+    responses={200: {"model": ActivityFeed}, **_DASHBOARD_ERRORS},
+)
+async def admin_dashboard_activity(
+    request: Request,
+    audience: Audience = Depends(audience_scope),
+    limit: int = Query(
+        dashboard_activity.DEFAULT_LIMIT, ge=1, le=dashboard_activity.MAX_LIMIT
+    ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> Response:
-    """Dashboard KPIs; weak ETag + `Cache-Control: private` (304 on match)."""
-    return cached_response(request, await _dashboard_payload(db, audience))
+    """Newest query, feedback, error, guardrail, document and admin events.
+
+    Summaries are PII-free (no emails, IPs or query text); auth events are
+    never listed. Weak ETag, so an unchanged feed polls as a 304.
+    """
+    items = await dashboard_activity.recent_activity(db, audience, limit)
+    feed = ActivityFeed.model_validate(
+        {
+            "items": items,
+            "generated_at": dashboard_window.iso_z(dashboard_window.utcnow()),
+        }
+    )
+    return cached_response(request, feed.model_dump(mode="json"))
+
+
+async def _dashboard_panels(db: AsyncSession, audience: str) -> dict:
+    """The non-KPI dashboard fields (pipeline, governance text, trends)."""
+    since = datetime.utcnow() - timedelta(hours=24)
+    return {
+        "pipeline": await _pipeline_status(db),
+        "governance": await _governance_status(db, since),
+        "query_trend": await _query_trend(db, audience),
+        "latency_breakdown": await _latency_breakdown(db, audience),
+    }
 
 
 async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
-    since = datetime.utcnow() - timedelta(hours=24)
+    now = dashboard_window.utcnow()
     aud_sess = await build_audience_filter(db, ChatSession.created_ip, audience)
 
-    # 1. Total users: distinct IPs from ChatSession
-    q_users = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None)
-    )
-    if aud_sess is not None:
-        q_users = q_users.where(aud_sess)
-    users = await db.scalar(q_users)
-
-    # 2. Active users: distinct IPs active in last 24h
-    q_active = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None),
-        ChatSession.last_activity_at >= since,
-    )
-    if aud_sess is not None:
-        q_active = q_active.where(aud_sess)
-    active_users = await db.scalar(q_active)
+    # 1-2. Active visitors all time and in the last 24 h (shared definition).
+    users = await active_visitors.count_active(db, audience, None, now)
+    visitor_counts = await active_visitors.active_counts(db, audience, now)
+    active_users = visitor_counts["dau"]
 
     # 3. Sessions & Conversations
     q_sessions = select(func.count(ChatSession.id))
@@ -1482,10 +1647,8 @@ async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
         "error_rate": METRICS["errors"] * 100 / requests_total
         if requests_total
         else 0.0,
-        "pipeline": await _pipeline_status(db),
-        "governance": await _governance_status(db, since),
-        "query_trend": await _query_trend(db, audience),
-        "latency_breakdown": await _latency_breakdown(db, audience),
+        "active_visitors": active_visitors.summary(visitor_counts),
+        **await _dashboard_panels(db, audience),
     }
 
 
@@ -1594,7 +1757,9 @@ async def _governance_status(db: AsyncSession, since: datetime) -> dict:
         )
     )
     return {
-        "monitoring": f"{METRICS['requests']:,} requests since start",
+        # Not the per-request counter: every poll bumps it, so the dashboard's
+        # ETag would never match and polling could never get a 304.
+        "monitoring": f"{METRICS['errors']:,} server errors since start",
         "tracing": f"{latency_24h or 0:,} traces (24h)",
         "audit_logs": f"{audit_total or 0:,} entries",
         "guardrails": f"{flagged or 0:,} responses with flags (24h)",

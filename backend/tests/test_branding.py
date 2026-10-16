@@ -575,6 +575,29 @@ async def test_admin_role_cannot_change_branding(
     assert upload.status_code == 403
 
 
+async def test_admin_role_cannot_read_branding_defaults(
+    api: httpx.AsyncClient, no_db: None, admin_not_superadmin: None
+) -> None:
+    assert (await api.get("/admin/branding/defaults")).status_code == 403
+
+
+async def test_branding_defaults_are_the_seeded_row(
+    api: httpx.AsyncClient, no_db: None
+) -> None:
+    from app.branding import defaults
+
+    response = await api.get("/admin/branding/defaults")
+    assert response.status_code == 200
+    body = response.json()
+    settings = get_settings()
+    assert body["product_name"] == settings.brand_name
+    assert body["assistant_name"] == settings.brand_assistant_name
+    assert body["accent_hex"] == defaults.ACCENT_HEX
+    assert body["tint_hex"] == defaults.TINT_HEX
+    assert body["login_headline"] == defaults.LOGIN_HEADLINE
+    assert body["chat_sample_questions"] == list(defaults.CHAT_SAMPLE_QUESTIONS)
+
+
 async def test_missing_service_key_gets_401_on_admin_routes(no_db: None) -> None:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"

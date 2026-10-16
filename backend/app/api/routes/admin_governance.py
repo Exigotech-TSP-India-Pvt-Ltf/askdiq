@@ -18,22 +18,24 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.admin_usage import _sanitize_csv_cell
+from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import get_db, release_connection
 from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
 from app.core.sse import event_stream
+from app.dashboard import active_visitors
 from app.governance import logs, timeseries, traces
-from app.governance.audience import Audience, audience_scope, build_audience_filter
+from app.governance.audience import Audience, audience_scope
 from app.governance.audit import record_audit_event
 from app.governance.monitoring import (
     LATENCY_UNIT,
@@ -48,7 +50,7 @@ from app.governance.overview import overview_payload
 from app.governance.pagination import Cursor
 from app.governance.quota_series import quota_series
 from app.governance.stream import GovernanceStreamHub, get_governance_hub
-from app.models.db_models import ChatSession, LatencyRecord
+from app.models.db_models import LatencyRecord
 from app.schemas.governance import (
     GovernanceLogPage,
     GovernanceOverview,
@@ -173,16 +175,10 @@ async def governance_monitoring(
     stages = stage_latency_summary(records)
     avg_total_ms = sum(totals) / len(totals) if totals else None
 
-    aud_sess = await build_audience_filter(db, ChatSession.created_ip, audience)
-    q_active = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None),
-        ChatSession.last_activity_at >= since,
-    )
-    if aud_sess is not None:
-        q_active = q_active.where(aud_sess)
-    active_users = (await db.scalar(q_active)) or 0
+    active_users = await active_visitors.count_active(db, audience, since, now)
     errors = await persisted_error_counts(db, audience, since)
     traces_total = await count_traces(db, audience)
+    await release_connection(db)  # never hold a pool slot while waiting for more
 
     starts = timeseries.hour_starts(now)
     start = starts[0]
@@ -230,7 +226,7 @@ async def governance_monitoring(
                 "in_memory_counter" if process_counter else "latency_metrics",
             ),
             "queries_24h": labelled(len(records), window, "latency_metrics"),
-            "active_users": labelled(active_users, window, "chat_sessions"),
+            "active_users": labelled(active_users, window, active_visitors.SOURCE),
             "active_queries": labelled(
                 METRICS["active_queries"], "now", "in_memory_counter"
             ),
@@ -388,13 +384,13 @@ _LOGS_DESCRIPTION = (
 
 
 def _log_filters(
+    user: AuthUser,
     audience: str,
     level: list[LogLevel] | None,
     service: list[LogService] | None,
     q: str | None,
     date_from: datetime | None,
     date_to: datetime | None,
-    include_auth: bool = False,
 ) -> logs.LogFilters:
     start, end = _date_range(date_from, date_to)
     return logs.LogFilters(
@@ -404,7 +400,10 @@ def _log_filters(
         q=_clean_q(q),
         date_from=start,
         date_to=end,
-        include_auth=include_auth,
+        # Auth events (newplan §7.5) are superadmin-only (`audit:auth:read`).
+        hidden_actions=frozenset()
+        if user.has(Permission.AUDIT_AUTH_READ)
+        else AUTH_AUDIT_ACTIONS,
     )
 
 
@@ -427,15 +426,7 @@ async def governance_logs(
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(read_guard),
 ) -> dict[str, Any]:
-    filters = _log_filters(
-        audience,
-        level,
-        service,
-        q,
-        date_from,
-        date_to,
-        include_auth=user.has(Permission.AUDIT_AUTH_READ),
-    )
+    filters = _log_filters(user, audience, level, service, q, date_from, date_to)
     position = Cursor.decode(cursor)
     cap = get_settings().governance_exact_count_cap
     (rows, next_cursor), (counts, capped, total) = await runner.gather(
@@ -480,7 +471,8 @@ def _csv_line(values: list[Any]) -> str:
         "Streams every row matching the `/governance/logs` filters (newest "
         "first, at most `GOVERNANCE_EXPORT_MAX_ROWS`) with flat memory. Cells "
         "starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` "
-        "(formula-injection safe). The export itself is audited."
+        "(formula-injection safe). The export itself is audited. Needs "
+        "`usage:export` (bulk data export, admin and up)."
     ),
     response_class=StreamingResponse,
     responses={
@@ -498,17 +490,9 @@ async def governance_logs_export(
     audience: Audience = Depends(audience_scope),
     db: AsyncSession = Depends(get_db),
     runner: ScopedRunner = Depends(get_scoped_runner),
-    user: AuthUser = Depends(read_guard),
+    user: AuthUser = Depends(require_permission(Permission.USAGE_EXPORT)),
 ) -> StreamingResponse:
-    filters = _log_filters(
-        audience,
-        level,
-        service,
-        q,
-        date_from,
-        date_to,
-        include_auth=user.has(Permission.AUDIT_AUTH_READ),
-    )
+    filters = _log_filters(user, audience, level, service, q, date_from, date_to)
     settings = get_settings()
     await record_audit_event(
         db,

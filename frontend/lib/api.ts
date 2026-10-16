@@ -176,7 +176,6 @@ export const api = {
     return request<Record<string, any>>(`/metrics/evaluation/record/${recordId}`, { token, signal });
   },
 
-
   ingest: (
     token: string,
     body: {
@@ -211,27 +210,6 @@ export const api = {
       token,
     });
   },
-
-  submitFeedback: (
-    token: string,
-    sessionId: string,
-    messageId: string,
-    rating: number,
-    comment?: string
-  ) =>
-    request<{
-      id: string;
-      message_id: string;
-      actor: string;
-      rating: number;
-      comment: string | null;
-      created_at: string;
-      updated_at: string;
-    }>(`/sessions/${sessionId}/messages/${messageId}/feedback`, {
-      method: "POST",
-      token,
-      body: JSON.stringify({ rating, comment: comment ?? null }),
-    }),
 
   ingestFile: (
     token: string,
@@ -331,6 +309,9 @@ export const api = {
       session_id?: string;
       outcome?: string;
       grounded?: boolean;
+      /** ISO datetime or YYYY-MM-DD (a day covers the whole UTC day). */
+      from_date?: string;
+      to_date?: string;
       sort?: string;
       limit?: number;
       offset?: number;
@@ -342,6 +323,8 @@ export const api = {
     if (params.q) qs.set("q", params.q);
     if (params.ip) qs.set("ip", params.ip);
     if (params.session_id) qs.set("session_id", params.session_id);
+    if (params.from_date) qs.set("from_date", params.from_date);
+    if (params.to_date) qs.set("to_date", params.to_date);
     if (params.outcome) qs.set("outcome", params.outcome);
     if (params.grounded !== undefined) qs.set("grounded", String(params.grounded));
     if (params.sort) qs.set("sort", params.sort);
@@ -393,7 +376,9 @@ export const api = {
 
   deleteTestIp: (token: string, ipAddress: string) =>
     request<{ deleted: boolean; ip_address: string }>(
-      `/admin/usage/test-ips/${encodeURIComponent(ipAddress)}`,
+      // Encode per segment: a CIDR's "/" must stay a path separator (the
+      // proxy rejects %2F; the backend route is `{ip_address:path}`).
+      `/admin/usage/test-ips/${ipAddress.split("/").map(encodeURIComponent).join("/")}`,
       { method: "DELETE", token }
     ),
 

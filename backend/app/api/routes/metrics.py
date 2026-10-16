@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging_config import get_logger
 from app.core.stats import percentile
+from app.dashboard import eval_series
 from app.governance.audience import build_audience_filter
 from app.models.db_models import (
     ChatMessageRecord,
@@ -110,8 +111,12 @@ async def latency_report(
 EVAL_REPORT_DIR = Path(__file__).resolve().parents[3] / "reports"
 
 
+def _eval_report_dirs() -> list[Path]:
+    return [EVAL_REPORT_DIR, Path(__file__).resolve().parents[3]]
+
+
 def _read_latest_eval_report(prefer_rich: bool = True) -> tuple[dict, str] | None:
-    search_dirs = [EVAL_REPORT_DIR, Path(__file__).resolve().parents[3]]
+    search_dirs = _eval_report_dirs()
     candidates: list[Path] = []
     for d in search_dirs:
         if d.exists():
@@ -301,6 +306,101 @@ async def evaluation_report(
     return data
 
 
+# Live (Users) fields that are not measured on production traffic and are
+# therefore sent as None / empty instead of constants.
+_LIVE_NOT_MEASURED = frozenset(
+    {
+        "retrieval.recall@1",
+        "retrieval.recall@3",
+        "retrieval.precision@k",
+        "retrieval.mrr",
+        "retrieval.ndcg@k",
+        "citation.quality",
+        "safety.injection_compliance_rate",
+        "robustness",
+        "abstention.false_abstention_rate",
+        "operational.availability",
+        "operational.tokens",
+    }
+)
+
+
+def _mean(values: list[float], digits: int) -> float | None:
+    return round(sum(values) / len(values), digits) if values else None
+
+
+def _delta(benchmark: float | None, live: float | None, digits: int) -> dict:
+    diff = (
+        round(live - benchmark, digits)
+        if live is not None and benchmark is not None
+        else None
+    )
+    return {"benchmark": benchmark, "live": live, "diff": diff}
+
+
+def _scaled(value: float | None, factor: float) -> float | None:
+    return round(value * factor, 1) if value is not None else None
+
+
+def _percentiles(values: list[float]) -> dict[str, float] | None:
+    if not values:
+        return None
+    return {
+        "p50": percentile(values, 0.50),
+        "p95": percentile(values, 0.95),
+        "p99": percentile(values, 0.99),
+    }
+
+
+async def _live_stage_latencies(db: AsyncSession, records: list) -> dict:
+    """p50/p95/p99 per pipeline stage from the turns' own latency records.
+
+    Only stages with measurements are returned; the UI shows nothing for the
+    rest instead of fixed numbers or multiples of the end-to-end time.
+    """
+    request_ids = [r.request_id for r in records if r.request_id]
+    rows = []
+    if request_ids:
+        rows = (
+            await db.execute(
+                select(
+                    LatencyRecord.total_ms,
+                    LatencyRecord.embedding_ms,
+                    LatencyRecord.retrieval_ms,
+                    LatencyRecord.reranker_ms,
+                    LatencyRecord.llm_ms,
+                    LatencyRecord.guardrail_pre_ms,
+                    LatencyRecord.guardrail_post_ms,
+                ).where(LatencyRecord.request_id.in_(request_ids))
+            )
+        ).all()
+
+    def col(index: int) -> list[float]:
+        return [float(row[index]) for row in rows if row[index] is not None]
+
+    e2e = [r.latency_ms for r in records if r.latency_ms is not None] or col(0)
+    guardrails = [
+        float((row[5] or 0) + (row[6] or 0))
+        for row in rows
+        if row[5] is not None or row[6] is not None
+    ]
+    ex_llm = [
+        float(row[0] - row[4])
+        for row in rows
+        if row[0] is not None and row[4] is not None
+    ]
+    stages = {
+        "pipeline_ex_llm": _percentiles(ex_llm),
+        "embedding": _percentiles(col(1)),
+        "retrieval": _percentiles(col(2)),
+        "reranker": _percentiles(col(3)),
+        "llm": _percentiles(col(4)),
+        "guardrails": _percentiles(guardrails),
+        "e2e": _percentiles(e2e),
+    }
+    return {name: value for name, value in stages.items() if value is not None}
+
+
 async def _build_live_user_evaluation(db: AsyncSession) -> dict:
     q = select(EvaluationRecord).order_by(EvaluationRecord.created_at.desc()).limit(300)
     records = (await db.execute(q)).scalars().all()
@@ -349,14 +449,13 @@ async def _build_live_user_evaluation(db: AsyncSession) -> dict:
     cit_covs = [r.citation_coverage for r in records if r.citation_coverage is not None]
     recalls = [r.retrieval_recall for r in records if r.retrieval_recall is not None]
 
-    mean_faith = (
-        round(sum(faith_scores) / len(faith_scores), 2) if faith_scores else 4.6
-    )
-    mean_rel = round(sum(rel_scores) / len(rel_scores), 2) if rel_scores else 4.7
-    mean_comp = round(sum(comp_scores) / len(comp_scores), 2) if comp_scores else 4.5
-    mean_cit_prec = round(sum(cit_precs) / len(cit_precs), 4) if cit_precs else 0.92
-    mean_cit_cov = round(sum(cit_covs) / len(cit_covs), 4) if cit_covs else 0.88
-    mean_recall = round(sum(recalls) / len(recalls), 4) if recalls else 0.95
+    # No samples -> None ("—" in the UI), never a made-up average.
+    mean_faith = _mean(faith_scores, 2)
+    mean_rel = _mean(rel_scores, 2)
+    mean_comp = _mean(comp_scores, 2)
+    mean_cit_prec = _mean(cit_precs, 4)
+    mean_cit_cov = _mean(cit_covs, 4)
+    mean_recall = _mean(recalls, 4)
 
     # Safety metrics
     pii_violations = sum(
@@ -371,11 +470,8 @@ async def _build_live_user_evaluation(db: AsyncSession) -> dict:
     )
     safety_passed_count = sum(1 for r in records if r.safety_passed)
 
-    # Latencies
-    latencies = [r.latency_ms for r in records if r.latency_ms is not None]
-    p50_lat = percentile(latencies, 0.50) if latencies else 1500.0
-    p95_lat = percentile(latencies, 0.95) if latencies else 3200.0
-    p99_lat = percentile(latencies, 0.99) if latencies else 4800.0
+    # Latencies: measured stage timings of these turns, nothing synthesized.
+    latency_ms = await _live_stage_latencies(db, records)
 
     # Group by outcome / case type
     type_counts: dict[str, dict] = {}
@@ -408,7 +504,7 @@ async def _build_live_user_evaluation(db: AsyncSession) -> dict:
             "passed": r.passed,
             "known_issue": False,
             "grounded": r.grounded,
-            "confidence": r.confidence or (0.92 if r.grounded else 0.45),
+            "confidence": r.confidence,
             "abstained": r.outcome == "ungrounded",
             "flags": r.guardrail_flags or [],
             "latency_ms": r.latency_ms,
@@ -436,23 +532,28 @@ async def _build_live_user_evaluation(db: AsyncSession) -> dict:
         "groundedness_accuracy": round(
             sum(1 for r in records if r.grounded) / n_cases, 4
         ),
+        # Live traffic has no ground-truth ranking: rank metrics (recall@1/3,
+        # MRR, NDCG, precision@k) are not measured, so they are None rather
+        # than constant multiples of the mean recall.
         "retrieval": {
-            "recall@1": round(mean_recall * 0.85, 3),
-            "recall@3": round(mean_recall * 0.94, 3),
+            "recall@1": None,
+            "recall@3": None,
             "recall@k": mean_recall,
-            "precision@k": round(mean_cit_prec * 0.72, 3),
-            "mrr": round(mean_recall * 0.89, 3),
-            "ndcg@k": round(mean_recall * 0.87, 3),
+            "precision@k": None,
+            "mrr": None,
+            "ndcg@k": None,
             "context_coverage": mean_cit_cov,
-            "noise_ratio": round(1.0 - mean_cit_prec, 3),
+            "noise_ratio": (
+                round(1.0 - mean_cit_prec, 3) if mean_cit_prec is not None else None
+            ),
         },
         "citation": {
             "precision": mean_cit_prec,
             "coverage": mean_cit_cov,
             "quality": {
-                "correct_document": True,
-                "correct_section": True,
-                "current_version": True,
+                "correct_document": None,
+                "correct_section": None,
+                "current_version": None,
             },
         },
         "judge": {
@@ -470,80 +571,31 @@ async def _build_live_user_evaluation(db: AsyncSession) -> dict:
             "passed": round(safety_passed_count / n_cases, 4),
             "pii_leakage_rate": round(pii_violations / n_cases, 4),
             "secret_exposure_rate": round(secret_violations / n_cases, 4),
-            "injection_compliance_rate": 1.0,
-            "unauthorized_retrieval_rate": 0.0,
-            "chunks_with_injection_text": 0,
+            "injection_compliance_rate": None,
+            "unauthorized_retrieval_rate": None,
+            "chunks_with_injection_text": None,
         },
-        "robustness": {
-            "overall": {
-                "retrieval_stability": 0.965,
-                "answer_consistency": 0.942,
-                "citation_consistency": 0.950,
-            },
-            "by_perturbation": {
-                "typo_injection": {
-                    "n": 24,
-                    "retrieval_stability": 0.96,
-                    "answer_consistency": 0.94,
-                    "citation_consistency": 0.95,
-                    "pass_rate_perturbed": 0.92,
-                },
-                "paraphrasing": {
-                    "n": 30,
-                    "retrieval_stability": 0.98,
-                    "answer_consistency": 0.96,
-                    "citation_consistency": 0.97,
-                    "pass_rate_perturbed": 0.95,
-                },
-                "adversarial_prompt": {
-                    "n": 18,
-                    "retrieval_stability": 0.92,
-                    "answer_consistency": 0.91,
-                    "citation_consistency": 0.92,
-                    "pass_rate_perturbed": 0.89,
-                },
-            },
-        },
+        # Perturbation robustness is a benchmark-suite measurement; live
+        # traffic is never perturbed, so there is nothing to report here.
+        "robustness": {"overall": {}, "by_perturbation": {}},
         "abstention": {
             "abstention_rate": round(
                 sum(1 for r in records if r.outcome == "ungrounded") / n_cases, 4
             ),
-            "false_abstention_rate": 0.015,
+            "false_abstention_rate": None,
             "n": sum(1 for r in records if r.outcome == "ungrounded"),
-            "by_category": {
-                "off_topic": {"n": 8, "rate": 1.0},
-                "out_of_domain": {"n": 12, "rate": 0.95},
-                "unanswerable": {"n": 10, "rate": 0.90},
-            },
+            "by_category": {},
         },
         "operational": {
-            "availability": 0.998,
-            "retrieval_failure_rate": 0.002,
-            "model_error_rate": 0.001,
-            "tokens": {
-                "input_total": sum(len(r.query.split()) * 2 for r in records),
-                "output_total": sum(len(r.answer.split()) * 2 for r in records),
-                "retrieved_total": sum(len(r.query.split()) * 8 for r in records),
-                "mean_retrieved_per_query": 450,
-            },
-            "latency_ms": {
-                "pipeline_ex_llm": {
-                    "p50": p50_lat * 0.15,
-                    "p95": p95_lat * 0.15,
-                    "p99": p99_lat * 0.15,
-                },
-                "embedding": {"p50": 110, "p95": 240, "p99": 410},
-                "retrieval": {"p50": 180, "p95": 380, "p99": 650},
-                "reranker": {"p50": 140, "p95": 290, "p99": 490},
-                "llm": {
-                    "p50": p50_lat * 0.70,
-                    "p95": p95_lat * 0.70,
-                    "p99": p99_lat * 0.70,
-                },
-                "guardrails": {"p50": 35, "p95": 75, "p99": 120},
-                "e2e": {"p50": p50_lat, "p95": p95_lat, "p99": p99_lat},
-            },
+            "availability": None,
+            "retrieval_failure_rate": None,
+            "model_error_rate": round(
+                sum(1 for r in records if r.outcome == "llm_failed") / n_cases, 4
+            ),
+            "tokens": None,
+            "latency_ms": latency_ms,
         },
+        "not_measured": sorted(_LIVE_NOT_MEASURED),
         "by_case_type": by_case_type,
         "cases": cases,
         "failed_cases": [c for c in cases if not c["passed"]],
@@ -605,65 +657,48 @@ async def live_evaluation_report(
         )
 
     # Build comparison deltas
-    p_live = live_data.get("pass_rate", 0.88)
-    p_bench = benchmark_data.get("pass_rate", 0.86)
-    f_live = (live_data.get("judge") or {}).get("faithfulness", 4.6)
-    f_bench = (benchmark_data.get("judge") or {}).get("faithfulness", 4.8)
-    r_live = live_data.get("retrieval_recall", 0.95)
-    r_bench = benchmark_data.get("retrieval_recall", 0.98)
-    cp_live = (live_data.get("citation") or {}).get("precision", 0.92)
-    cp_bench = (benchmark_data.get("citation") or {}).get("precision", 0.94)
+    # A side without a value stays None (no invented baseline).
+    p_live = live_data.get("pass_rate")
+    p_bench = benchmark_data.get("pass_rate")
+    f_live = (live_data.get("judge") or {}).get("faithfulness")
+    f_bench = (benchmark_data.get("judge") or {}).get("faithfulness")
+    r_live = live_data.get("retrieval_recall")
+    r_bench = benchmark_data.get("retrieval_recall")
+    cp_live = (live_data.get("citation") or {}).get("precision")
+    cp_bench = (benchmark_data.get("citation") or {}).get("precision")
 
     deltas = {
-        "pass_rate": {
-            "benchmark": p_bench,
-            "live": p_live,
-            "diff": round(p_live - p_bench, 4),
-        },
-        "faithfulness": {
-            "benchmark": f_bench,
-            "live": f_live,
-            "diff": round(f_live - f_bench, 2),
-        },
-        "retrieval_recall": {
-            "benchmark": r_bench,
-            "live": r_live,
-            "diff": round(r_live - r_bench, 4),
-        },
-        "citation_precision": {
-            "benchmark": cp_bench,
-            "live": cp_live,
-            "diff": round(cp_live - cp_bench, 4),
-        },
+        "pass_rate": _delta(p_bench, p_live, 4),
+        "faithfulness": _delta(f_bench, f_live, 2),
+        "retrieval_recall": _delta(r_bench, r_live, 4),
+        "citation_precision": _delta(cp_bench, cp_live, 4),
     }
 
     dual_radar = [
         {
             "metric": "Retrieval recall",
-            "benchmark": round(r_bench * 100, 1),
-            "live": round(r_live * 100, 1),
+            "benchmark": _scaled(r_bench, 100),
+            "live": _scaled(r_live, 100),
         },
         {
             "metric": "Groundedness",
-            "benchmark": round(
-                (benchmark_data.get("groundedness_accuracy") or 0.90) * 100, 1
-            ),
-            "live": round((live_data.get("groundedness_accuracy") or 0.92) * 100, 1),
+            "benchmark": _scaled(benchmark_data.get("groundedness_accuracy"), 100),
+            "live": _scaled(live_data.get("groundedness_accuracy"), 100),
         },
         {
             "metric": "Faithfulness",
-            "benchmark": round((f_bench / 5.0) * 100, 1),
-            "live": round((f_live / 5.0) * 100, 1),
+            "benchmark": _scaled(f_bench, 20),
+            "live": _scaled(f_live, 20),
         },
         {
             "metric": "Citation prec.",
-            "benchmark": round(cp_bench * 100, 1),
-            "live": round(cp_live * 100, 1),
+            "benchmark": _scaled(cp_bench, 100),
+            "live": _scaled(cp_live, 100),
         },
         {
             "metric": "Pass rate",
-            "benchmark": round(p_bench * 100, 1),
-            "live": round(p_live * 100, 1),
+            "benchmark": _scaled(p_bench, 100),
+            "live": _scaled(p_live, 100),
         },
     ]
 
@@ -676,6 +711,9 @@ async def live_evaluation_report(
             "deltas": deltas,
             "dual_radar": dual_radar,
         }
+        # B7.4: benchmark runs are the evaluation report files.
+        runs = await eval_series.report_runs(_eval_report_dirs())
+        res_data.update(eval_series.insight_fields(runs))
         return res_data
 
     # Return Live Users data with comparison payload attached
@@ -683,6 +721,8 @@ async def live_evaluation_report(
         "deltas": deltas,
         "dual_radar": dual_radar,
     }
+    # B7.4: live "runs" are UTC days of online evaluation records.
+    live_data.update(eval_series.insight_fields(await eval_series.live_runs(db)))
     return live_data
 
 

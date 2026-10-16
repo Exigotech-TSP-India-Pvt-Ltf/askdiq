@@ -1,244 +1,248 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api, ApiError } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
-import type { DocumentSummary, IngestResult } from "@/lib/types";
-import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
-import { TableToolbar } from "@/components/admin/TableToolbar";
-import { Pagination } from "@/components/admin/Pagination";
-import { DashboardHeader } from "@/components/admin/DashboardHeader";
-import { TableCard } from "@/components/admin/TableCard";
-import { formatNumber } from "@/components/admin/TableFormatters";
-import { FormatBadge } from "@/components/documents/FormatBadge";
+import { m } from "motion/react";
 import {
   AlertTriangle,
-  CheckCircle2,
+  ArrowUpRight,
   Clock,
   FileText,
-  Info,
   Layers,
-  RefreshCw,
   ShieldAlert,
   Trash2,
   Upload,
-  X,
-  Sparkles,
+  type LucideIcon,
 } from "lucide-react";
+import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
+import { TableToolbar } from "@/components/admin/TableToolbar";
+import { Pagination, type PageSize } from "@/components/admin/Pagination";
+import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { TableCard } from "@/components/admin/TableCard";
+import { FormatBadge } from "@/components/documents/FormatBadge";
+import { UploadDialog } from "@/components/documents/UploadDialog";
+import { ChartCard } from "@/components/charts/ChartCard";
+import { StackedBar } from "@/components/charts/StackedBar";
+import { QuadrantScatter } from "@/components/charts/QuadrantScatter";
+import { RadialGauge } from "@/components/charts/RadialGauge";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { CopyButton } from "@/components/ui/CopyButton";
+import { CountUp } from "@/components/ui/CountUp";
+import { RelativeTime } from "@/components/ui/RelativeTime";
+import { useToast } from "@/components/ui/ToastProvider";
+import { focusRing, iconButton } from "@/components/ui/styles";
+import { ToneChip, errorMessage, useRangeParams } from "@/components/admin/entity/shared";
+import { entityHref } from "@/lib/entity-links";
+import { useCan } from "@/lib/use-can";
+import { useDeepLink } from "@/lib/use-deep-link";
+import { useTablePreferences } from "@/lib/use-table-preferences";
+import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
+import { invalidate, useApiQuery } from "@/lib/query-cache";
+import { getDocumentCitationStats, type CitedDocument } from "@/lib/entity-stats-api";
+import {
+  DEFAULT_INVENTORY_SORT,
+  FORMAT_FILTERS,
+  INVENTORY_SORTS,
+  STATUS_FILTERS,
+  WARNING_FILTERS,
+  documentStatus,
+  filterInventory,
+  formatBytes,
+  ingestedAt,
+  isOneOf,
+  isStandardized,
+  listDocumentInventory,
+  originalFormat,
+  shortHash,
+  strategyLabel,
+  type DocumentInventoryItem,
+  type DocumentStatus,
+  type InventoryFilters,
+  type UploadResult,
+} from "@/lib/documents-api";
 
-interface PendingPreview {
-  file: File;
-  preview: IngestResult;
+const TOP_CITED_LIMIT = 10;
+const COVERAGE_BANDS = { warn: 80, danger: 60 } as const;
+const DEFAULT_PAGE_SIZE: PageSize = 10;
+const TABLE_ID = "documents-inventory";
+const DOCS_KEY = "documents";
+
+const STATUS_TONE: Record<DocumentStatus, "ok" | "warn" | "danger" | "neutral"> = {
+  active: "ok",
+  quarantined: "danger",
+  empty: "warn",
+};
+const STATUS_LABEL: Record<DocumentStatus, string> = { active: "Active", quarantined: "Quarantined", empty: "No chunks" };
+
+/** DataTable header sort key -> inventory sort base. */
+const SORT_COLUMNS: Record<string, string> = { source_name: "name", size: "size", chunk_count: "chunks", ingested: "ingested" };
+
+interface PendingDelete {
+  id: string;
+  name: string;
 }
 
-export default function DocumentsPage() {
+function Kpi({
+  icon: Icon,
+  label,
+  children,
+  caption,
+}: {
+  icon: LucideIcon;
+  label: string;
+  children: React.ReactNode;
+  caption?: React.ReactNode;
+}) {
+  const variants = useMotionVariants(fadeUp);
+  return (
+    <m.div
+      variants={variants}
+      className="flex items-start gap-3 rounded-xl border border-line bg-surface-card p-4 shadow-sm transition duration-150 hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0 dark:hover:border-brand-700/60"
+    >
+      <div className="rounded-lg border border-brand-100 bg-brand-50 p-2.5 text-brand-600 dark:border-brand-900/40 dark:bg-brand-950/40 dark:text-brand-400">
+        <Icon className="h-5 w-5" strokeWidth={1.75} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-fg-subtle">{label}</p>
+        <div className="mt-1 text-2xl font-bold tracking-tight text-fg">{children}</div>
+        {caption ? <p className="mt-0.5 text-[11px] text-fg-subtle">{caption}</p> : null}
+      </div>
+    </m.div>
+  );
+}
+
+function DocumentsContent() {
   const { token } = useAuth();
   const router = useRouter();
-  const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+  const canWrite = useCan("documents:write");
+  const range = useRangeParams();
+  const { get, set } = useDeepLink();
+  const prefs = useTablePreferences(TABLE_ID);
+  const gridVariants = useMotionVariants(stagger);
 
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [result, setResult] = useState<IngestResult | null>(null);
-  const [pendingPreview, setPendingPreview] = useState<PendingPreview | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
 
-  // Table state
-  const [search, setSearch] = useState("");
-  const [filterOrigin, setFilterOrigin] = useState("all");
-  const [filterQuarantine, setFilterQuarantine] = useState("all");
-  const [filterWarnings, setFilterWarnings] = useState("all");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [sort, setSort] = useState("updated_at_desc");
+  // `?action=upload` (e.g. Feedback > Knowledge gaps > Add document) opens the
+  // upload dialog once; the param is dropped so closing it does not reopen.
+  const action = get("action");
+  useEffect(() => {
+    if (action !== "upload") return;
+    if (canWrite) setUploadOpen(true);
+    set({ action: null });
+  }, [action, canWrite, set]);
 
-  const load = useCallback(() => {
-    if (!token) return;
-    api
-      .listDocuments(token)
-      .then(setDocuments)
-      .catch((err) =>
-        setError(err instanceof ApiError ? err.message : "Couldn't load documents.")
-      );
-  }, [token]);
+  // URL state: ?q=&format=&status=&warnings=&sort=&page=
+  const q = get("q") ?? "";
+  const formatRaw = get("format");
+  const statusRaw = get("status");
+  const warningsRaw = get("warnings");
+  const sortRaw = get("sort");
+  const filters: InventoryFilters = useMemo(
+    () => ({
+      q,
+      format: isOneOf(FORMAT_FILTERS, formatRaw) ? formatRaw : "all",
+      status: isOneOf(STATUS_FILTERS, statusRaw) ? statusRaw : "all",
+      warnings: isOneOf(WARNING_FILTERS, warningsRaw) ? warningsRaw : "all",
+    }),
+    [q, formatRaw, statusRaw, warningsRaw],
+  );
+  const sort = isOneOf(INVENTORY_SORTS, sortRaw) ? sortRaw : DEFAULT_INVENTORY_SORT;
+  const page = Math.max(1, Number.parseInt(get("page") ?? "1", 10) || 1);
 
-  useEffect(load, [load]);
+  const docs = useApiQuery(token ? [DOCS_KEY, "inventory"] : null, (signal) => listDocumentInventory(token ?? "", signal));
+  const documents = docs.data;
+  const citations = useApiQuery(
+    token ? [DOCS_KEY, "stats", "citations", range.from, range.to] : null,
+    (signal) => getDocumentCitationStats(token ?? "", { from: range.from, to: range.to, limit: TOP_CITED_LIMIT }, signal),
+  );
+  const citationStats = citations.data ?? null;
+  const citationsAbsent = !citations.isLoading && !citations.error && citationStats === null;
+  const citationsError = errorMessage(citations.error, "Couldn't load citation stats.");
 
-  async function handleDelete(e: React.MouseEvent, id: string, name: string) {
-    e.stopPropagation();
-    if (!token || !window.confirm(`Delete "${name}" and all its chunks?`)) return;
+  const filtered = useMemo(() => filterInventory(documents ?? [], filters, sort), [documents, filters, sort]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  const totals = useMemo(() => {
+    const list = documents ?? [];
+    const latest = list.reduce<DocumentInventoryItem | null>(
+      (best, d) => (!best || new Date(ingestedAt(d)) > new Date(ingestedAt(best)) ? d : best),
+      null,
+    );
+    return {
+      documents: list.length,
+      standardized: list.filter(isStandardized).length,
+      chunks: list.reduce((sum, d) => sum + (d.chunk_count ?? 0), 0),
+      quarantined: list.filter((d) => documentStatus(d) === "quarantined").length,
+      empty: list.filter((d) => documentStatus(d) === "empty").length,
+      warnings: list.filter((d) => (d.warnings?.length ?? 0) > 0).length,
+      latest,
+    };
+  }, [documents]);
+
+  const setFilter = useCallback((key: string, value: string) => set({ [key]: value === "all" ? null : value, page: null }), [set]);
+
+  const onUploaded = useCallback(
+    (res: UploadResult) => {
+      invalidate(DOCS_KEY);
+      toast.show({
+        tone: res.quarantined ? "info" : "success",
+        title: `${res.source_name}: ${res.chunk_count} chunk${res.chunk_count === 1 ? "" : "s"}`,
+      });
+    },
+    [toast],
+  );
+
+  async function confirmDelete() {
+    if (!token || !pendingDelete) return;
+    const { id, name } = pendingDelete;
+    setPendingDelete(null);
     try {
       await api.deleteDocument(token, id);
-      setDocuments((docs) => docs?.filter((d) => d.document_id !== id) ?? null);
+      docs.setData((current) => current?.filter((d) => d.document_id !== id));
+      invalidate(DOCS_KEY);
+      toast.show({ tone: "success", title: `Deleted ${name}` });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't delete document.");
+      toast.show({ tone: "error", title: err instanceof ApiError ? err.message : "Couldn't delete document." });
     }
   }
 
-  function mapUploadError(err: unknown): string {
-    if (err instanceof ApiError) {
-      if (err.status === 413) return "File exceeds the 10 MB maximum upload limit.";
-      if (err.status === 415) return "Unsupported file type. Only .md and .docx files are accepted.";
-      if (err.status === 422) return "Unreadable, corrupted, or password-protected document.";
-      if (err.status === 409) return "Concurrent update conflict. Please try again.";
-      if (err.status === 429) return "Rate limit reached. Please wait before uploading again.";
-      return err.message;
-    }
-    if (err instanceof Error) return `Upload failed: ${err.message}`;
-    return "Upload failed. Please check your connection and try again.";
-  }
-
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !token) return;
-
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    if (ext !== "md" && ext !== "docx") {
-      setUploadError("Unsupported file type. Only .md and .docx files are accepted.");
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadError("File exceeds the 10 MB maximum upload limit.");
-      return;
-    }
-
-    setUploading(true);
-    setUploadError(null);
-    setResult(null);
-    setPendingPreview(null);
-
-    try {
-      const preview = await api.ingestFile(token, file, { dryRun: true });
-
-      if (preview.status === "unchanged") {
-        setResult(preview);
-        setUploading(false);
-        return;
-      }
-
-      if (
-        preview.status === "updated" ||
-        preview.status === "repaired" ||
-        preview.status === "forced"
-      ) {
-        setPendingPreview({ file, preview });
-        setUploading(false);
-        return;
-      }
-
-      const ingestRes = await api.ingestFile(token, file, { force: false });
-      setResult(ingestRes);
-      load();
-    } catch (err) {
-      setUploadError(mapUploadError(err));
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function confirmReingest() {
-    if (!pendingPreview || !token) return;
-    const { file } = pendingPreview;
-    setPendingPreview(null);
-    setUploading(true);
-    setUploadError(null);
-
-    try {
-      const res = await api.ingestFile(token, file, { force: false });
-      setResult(res);
-      load();
-    } catch (err) {
-      setUploadError(mapUploadError(err));
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  const totalDocuments = documents?.length ?? 0;
-  const totalChunks = documents?.reduce((sum, d) => sum + (d.chunk_count ?? 0), 0) ?? 0;
-  const lastIngested =
-    documents && documents.length > 0
-      ? documents.reduce((latest, d) => {
-          const docTime = d.updated_at || d.created_at;
-          return new Date(docTime) > new Date(latest) ? docTime : latest;
-        }, documents[0].updated_at || documents[0].created_at)
-      : null;
-
-  // Filter and sort documents for table
-  const filteredDocuments = useMemo(() => {
-    if (!documents) return [];
-    return documents.filter((d) => {
-      // Search
-      if (search) {
-        const needle = search.toLowerCase();
-        const matchName = d.source_name.toLowerCase().includes(needle);
-        const matchId = d.document_id.toLowerCase().includes(needle);
-        const matchHash = d.content_hash?.toLowerCase().includes(needle);
-        if (!matchName && !matchId && !matchHash) return false;
-      }
-
-      // Filter Origin
-      if (filterOrigin === "docx" && d.converted_from !== "docx") return false;
-      if (filterOrigin === "markdown" && d.converted_from === "docx") return false;
-
-      // Filter Quarantine
-      if (filterQuarantine === "quarantined" && !d.quarantined) return false;
-      if (filterQuarantine === "normal" && d.quarantined) return false;
-
-      // Filter Warnings
-      if (filterWarnings === "warnings_only" && (!d.warnings || d.warnings.length === 0)) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [documents, search, filterOrigin, filterQuarantine, filterWarnings]);
-
-  const sortedDocuments = useMemo(() => {
-    return [...filteredDocuments].sort((a, b) => {
-      if (sort === "updated_at_desc") {
-        return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime();
-      }
-      if (sort === "updated_at_asc") {
-        return new Date(a.updated_at || a.created_at).getTime() - new Date(b.updated_at || b.created_at).getTime();
-      }
-      if (sort === "chunks_desc") return (b.chunk_count || 0) - (a.chunk_count || 0);
-      if (sort === "chunks_asc") return (a.chunk_count || 0) - (b.chunk_count || 0);
-      return 0;
-    });
-  }, [filteredDocuments, sort]);
-
-  const pagedDocuments = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return sortedDocuments.slice(start, start + pageSize);
-  }, [sortedDocuments, page, pageSize]);
-
-  const columns: ColumnDef<DocumentSummary>[] = [
+  const columns: ColumnDef<DocumentInventoryItem>[] = [
     {
       key: "source_name",
-      header: "Canonical Source Document",
-      sortable: false,
+      header: "Document",
+      sortable: true,
       render: (doc) => (
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-fg line-clamp-1">{doc.source_name}</span>
-            {doc.quarantined && (
-              <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-800">
-                Quarantined
-              </span>
-            )}
-            {doc.warnings && doc.warnings.length > 0 && (
-              <span
-                title={`${doc.warnings.length} warning(s)`}
-                className="inline-flex items-center text-amber-600"
-              >
-                <AlertTriangle className="w-3.5 h-3.5" />
-              </span>
-            )}
-          </div>
-          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">{doc.document_id}</span>
+        <div className="flex min-w-[220px] flex-col gap-0.5">
+          <Link
+            href={entityHref({ kind: "document", id: doc.document_id })}
+            onClick={(e) => e.stopPropagation()}
+            className={`group/link inline-flex items-center gap-1 rounded font-medium text-fg hover:text-brand-700 dark:hover:text-brand-300 ${focusRing}`}
+          >
+            <span className="line-clamp-1">{doc.source_name}</span>
+            <ArrowUpRight
+              className="h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-150 group-hover/link:-translate-y-0.5 group-hover/link:translate-x-0.5 motion-reduce:transition-none"
+              strokeWidth={1.75}
+              aria-hidden="true"
+            />
+          </Link>
+          {doc.original_filename && doc.original_filename !== doc.source_name ? (
+            <span className="text-[11px] text-fg-subtle">uploaded as {doc.original_filename}</span>
+          ) : null}
+          {doc.labels && Object.keys(doc.labels).length ? (
+            <span className="text-[10px] text-fg-subtle">
+              {Object.entries(doc.labels)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(" · ")}
+            </span>
+          ) : null}
         </div>
       ),
     },
@@ -247,10 +251,27 @@ export default function DocumentsPage() {
       header: "Format",
       render: (doc) => (
         <FormatBadge
-          convertedFrom={doc.converted_from}
+          convertedFrom={originalFormat(doc)}
           originalFilename={doc.original_filename}
           originalSha256={doc.original_sha256}
+          converter={doc.converter}
         />
+      ),
+    },
+    {
+      key: "size",
+      header: "Size",
+      sortable: true,
+      align: "right",
+      render: (doc) => (
+        <div className="flex flex-col items-end whitespace-nowrap">
+          <span className="text-fg" title="Canonical Markdown size">
+            {formatBytes(doc.canonical_size_bytes)}
+          </span>
+          {typeof doc.original_size_bytes === "number" && isStandardized(doc) ? (
+            <span className="text-[10px] text-fg-subtle">original {formatBytes(doc.original_size_bytes)}</span>
+          ) : null}
+        </div>
       ),
     },
     {
@@ -258,326 +279,394 @@ export default function DocumentsPage() {
       header: "Chunks",
       sortable: true,
       align: "right",
-      render: (doc) => formatNumber(doc.chunk_count),
-    },
-    {
-      key: "ingest_count",
-      header: "Ingests",
-      align: "right",
-      render: (doc) => formatNumber(doc.ingest_count ?? 1),
-    },
-    {
-      key: "content_hash",
-      header: "SHA-256 Hash",
       render: (doc) => (
-        <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">
-          {doc.content_hash ? `${doc.content_hash.slice(0, 12)}…` : "—"}
-        </span>
+        <div className="flex flex-col items-end whitespace-nowrap">
+          <span className="font-semibold text-fg">{doc.chunk_count.toLocaleString()}</span>
+          <span className="text-[10px] text-fg-subtle">{strategyLabel(doc.chunking_strategy ?? doc.chunk_strategies?.[0])}</span>
+        </div>
       ),
     },
     {
-      key: "updated_at",
-      header: "Last Updated",
+      key: "hash",
+      header: "Content hash",
+      render: (doc) => {
+        const full = doc.content_sha256 ?? doc.content_hash ?? null;
+        return full ? (
+          <span className="inline-flex items-center gap-1">
+            <code className="font-mono text-[11px] text-fg-muted" title={full}>
+              {shortHash(full)}
+            </code>
+            <CopyButton value={full} label={`Copy content hash of ${doc.source_name}`} />
+          </span>
+        ) : (
+          <span className="text-fg-subtle">—</span>
+        );
+      },
+    },
+    {
+      key: "ingested",
+      header: "Ingested",
       sortable: true,
       render: (doc) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-          {new Date(doc.updated_at || doc.created_at).toLocaleString()}
-        </span>
+        <div className="flex flex-col whitespace-nowrap">
+          <RelativeTime value={ingestedAt(doc)} className="text-fg-muted" />
+          <span className="max-w-[200px] truncate text-[10px] text-fg-subtle" title={doc.ingested_by ?? undefined}>
+            {doc.ingested_by ? `by ${doc.ingested_by}` : "by —"}
+            {doc.ingest_count && doc.ingest_count > 1 ? ` · ${doc.ingest_count} ingests` : ""}
+          </span>
+        </div>
       ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (doc) => {
+        const status = documentStatus(doc);
+        const warnings = doc.warnings?.length ?? 0;
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            <ToneChip tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</ToneChip>
+            {warnings ? (
+              <span title={doc.warnings?.join("\n")}>
+                <ToneChip tone="warn">
+                  {warnings} warning{warnings === 1 ? "" : "s"}
+                </ToneChip>
+              </span>
+            ) : null}
+            {doc.pii_redacted?.length ? (
+              <span title={`PII redacted: ${doc.pii_redacted.join(", ")}`}>
+                <ToneChip tone="neutral">PII redacted</ToneChip>
+              </span>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: "actions",
-      header: "Action",
+      header: "",
       align: "right",
       render: (doc) => (
         <button
           type="button"
-          onClick={(e) => handleDelete(e, doc.document_id, doc.source_name)}
-          className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-rose-600 dark:hover:text-rose-400 transition"
+          onClick={(e) => {
+            e.stopPropagation();
+            setPendingDelete({ id: doc.document_id, name: doc.source_name });
+          }}
+          data-tour="documents-delete"
+          className={`${iconButton} hover:text-status-danger`}
           aria-label={`Delete ${doc.source_name}`}
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
         </button>
       ),
     },
   ];
 
+  const allowed = canWrite ? columns : columns.filter((c) => c.key !== "actions");
+  const visible = prefs.visibleColumns(allowed);
+  const currentSort = (() => {
+    const [base, dir] = [sort.slice(0, sort.lastIndexOf("_")), sort.slice(sort.lastIndexOf("_") + 1)];
+    const column = Object.entries(SORT_COLUMNS).find(([, v]) => v === base)?.[0];
+    return column ? `${column}_${dir}` : undefined;
+  })();
+
+  const latest = totals.latest;
+
   return (
-    <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
-      {/* Standard Top Bar Line */}
+    <div className="flex min-h-screen flex-col bg-surface-page text-fg">
+      <div data-tour="documents-header">
       <DashboardHeader
         title="Knowledge Base Documents"
-        subtitle="Standardized markdown knowledge documents, ingestion provenance, and vector chunk mappings"
+        subtitle="Every uploaded .md and .docx file, standardized to canonical Markdown, chunked and embedded"
         icon={FileText}
         showAudienceTabs={false}
+        showDateRange
         actions={
-          <label
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold text-white shadow-brand-glow transition ${
-              uploading
-                ? "cursor-not-allowed bg-brand-600/60"
-                : "cursor-pointer bg-brand-gradient hover:opacity-90"
-            }`}
-          >
-            {uploading ? (
-              <RefreshCw className="h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="h-4 w-4" />
-            )}
-            <span>{uploading ? "Standardizing & Ingesting…" : "Upload Document"}</span>
-            <input
-              type="file"
-              accept=".md,.docx"
-              className="hidden"
-              disabled={uploading}
-              onChange={handleFileSelect}
-            />
-          </label>
-        }
-      />
-
-      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
-        {/* Upload Error Banner */}
-        {uploadError && (
-          <div className="flex items-center justify-between rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-xs text-rose-700">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-              <span>{uploadError}</span>
-            </div>
+          canWrite ? (
             <button
               type="button"
-              onClick={() => setUploadError(null)}
-              className="text-rose-500 hover:text-rose-700"
-              aria-label="Dismiss"
+              data-tour="documents-upload"
+              onClick={() => setUploadOpen(true)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-gradient px-3.5 py-1.5 text-xs font-semibold text-white shadow-brand-glow transition hover:opacity-90 ${focusRing}`}
             >
-              <X className="h-4 w-4" />
+              <Upload className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+              <span>Upload Document</span>
             </button>
-          </div>
-        )}
+          ) : undefined
+        }
+      />
+      </div>
 
-        {/* Result Status Banner */}
-        {result && (
-          <div
-            className={`rounded-xl border p-4 text-xs ${
-              result.status === "unchanged"
-                ? "border-line bg-surface-muted text-fg"
-                : result.quarantined
-                ? "border-status-warn/40 bg-status-warn-bg text-status-warn-fg"
-                : "border-status-ok/40 bg-status-ok-bg text-status-ok-fg"
-            }`}
+      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
+        <m.div data-tour="documents-kpis" variants={gridVariants} initial="hidden" animate="visible" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Kpi
+            icon={FileText}
+            label="Total Canonical Documents"
+            caption={documents ? `${totals.standardized} standardized from .docx` : undefined}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-2.5">
-                {result.status === "unchanged" ? (
-                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-fg-muted" />
-                ) : result.quarantined ? (
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                ) : (
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                )}
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-fg">{result.source_name}</span>
-                    {result.original_filename && result.original_filename !== result.source_name && (
-                      <span className="text-[11px] text-slate-500">
-                        (standardized from {result.original_filename})
-                      </span>
-                    )}
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                        result.status === "new"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : result.status === "updated"
-                          ? "bg-blue-100 text-blue-800"
-                          : result.status === "unchanged"
-                          ? "bg-surface-muted text-fg-muted"
-                          : "bg-amber-100 text-amber-800"
-                      }`}
-                    >
-                      {result.status}
-                    </span>
-                  </div>
-                  <p className="text-fg-muted">
-                    {result.chunks_added} chunks added, {result.chunks_kept} kept unchanged,{" "}
-                    {result.chunks_removed} removed. Embeddings cost: ${result.embedding_cost_usd.toFixed(4)}.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setResult(null)}
-                className="text-fg-subtle hover:text-fg-muted"
-                aria-label="Dismiss result"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
+            {documents ? <CountUp value={totals.documents} format={(v) => Math.round(v).toLocaleString()} /> : "—"}
+          </Kpi>
+          <Kpi
+            icon={Layers}
+            label="Total Indexed Chunks"
+            caption={
+              documents && totals.documents ? `${(totals.chunks / totals.documents).toFixed(1)} per document` : undefined
+            }
+          >
+            {documents ? <CountUp value={totals.chunks} format={(v) => Math.round(v).toLocaleString()} /> : "—"}
+          </Kpi>
+          <Kpi
+            icon={Clock}
+            label="Last Ingestion Event"
+            caption={latest ? `${latest.source_name}${latest.ingested_by ? ` · ${latest.ingested_by}` : ""}` : undefined}
+          >
+            <RelativeTime value={latest ? ingestedAt(latest) : null} className="text-sm font-semibold" />
+          </Kpi>
+          <Kpi
+            icon={totals.quarantined ? ShieldAlert : AlertTriangle}
+            label="Needs Attention"
+            caption={
+              documents
+                ? `${totals.quarantined} quarantined · ${totals.warnings} with warnings · ${totals.empty} without chunks`
+                : undefined
+            }
+          >
+            {documents ? (
+              <CountUp
+                value={new Set(
+                  documents
+                    .filter((d) => documentStatus(d) !== "active" || (d.warnings?.length ?? 0) > 0)
+                    .map((d) => d.document_id),
+                ).size}
+                format={(v) => Math.round(v).toLocaleString()}
+              />
+            ) : (
+              "—"
+            )}
+          </Kpi>
+        </m.div>
 
-        {/* Confirmation Modal */}
-        {pendingPreview && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-            <div className="w-full max-w-md rounded-2xl bg-surface-card p-6 shadow-2xl border border-line">
-              <h3 className="text-sm font-bold text-fg">Confirm Document Re-ingest</h3>
-              <p className="mt-1 text-xs text-fg-subtle">
-                Re-ingesting <strong>{pendingPreview.preview.source_name}</strong> will update changed
-                chunks and reuse unchanged embeddings.
-              </p>
-              <div className="my-4 rounded-xl border border-line bg-surface-muted p-3 text-xs space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-fg-subtle">New chunks:</span>
-                  <span className="font-semibold text-status-ok-fg">
-                    +{pendingPreview.preview.chunks_added}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-fg-subtle">Unchanged:</span>
-                  <span className="font-semibold text-fg-muted">
-                    {pendingPreview.preview.chunks_kept}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-fg-subtle">Removed:</span>
-                  <span className="font-semibold text-status-danger-fg">
-                    -{pendingPreview.preview.chunks_removed}
-                  </span>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPendingPreview(null)}
-                  className="rounded-lg border border-line px-3 py-1.5 text-xs text-fg-muted hover:bg-surface-muted"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmReingest}
-                  className="rounded-lg bg-brand-gradient px-4 py-1.5 text-xs font-medium text-white shadow-brand-glow hover:opacity-90"
-                >
-                  Confirm Re-ingest
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Overview Hero Stat Cards (Permanently Merged at Top) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm">
-            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/40 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/40">
-              <FileText className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Canonical Documents</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalDocuments}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm">
-            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/40 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/40">
-              <Layers className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Indexed Chunks</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{totalChunks.toLocaleString()}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-4 shadow-sm">
-            <div className="rounded-lg bg-brand-50 dark:bg-brand-950/40 p-2.5 text-brand-600 dark:text-brand-400 border border-brand-100 dark:border-brand-900/40">
-              <Clock className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Last Ingestion Event</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                {lastIngested ? new Date(lastIngested).toLocaleString() : "—"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Complete Inventory Table Integrated in TableCard */}
+        <div data-tour="documents-inventory">
         <TableCard
+          title="Document inventory"
+          description="Every canonical document with its original format, sizes, chunks, hash and ingestion provenance. Select a document for its Markdown and chunks."
           toolbar={
+            <div data-tour="documents-toolbar">
             <TableToolbar
-              search={search}
-              onSearchChange={(v) => {
-                setSearch(v);
-                setPage(1);
-              }}
-              searchPlaceholder="Search source document, ID, or content hash..."
+              search={q}
+              onSearchChange={(v) => set({ q: v || null, page: null })}
+              searchPlaceholder="Search name, original file, id or hash…"
+              countLabel={documents ? `${filtered.length} of ${documents.length} documents` : undefined}
               filters={[
                 {
-                  id: "origin",
-                  label: "Origin Format",
-                  value: filterOrigin,
+                  id: "format",
+                  label: "Original format",
+                  value: filters.format,
                   options: [
-                    { label: "All Formats", value: "all" },
-                    { label: "Native Markdown", value: "markdown" },
-                    { label: "Converted from DOCX", value: "docx" },
+                    { label: "All formats", value: "all" },
+                    { label: "Markdown (.md)", value: "md" },
+                    { label: "Word (.docx → .md)", value: "docx" },
                   ],
-                  onChange: (v: string) => {
-                    setFilterOrigin(v);
-                    setPage(1);
-                  },
+                  onChange: (v: string) => setFilter("format", v),
                 },
                 {
-                  id: "quarantine",
-                  label: "Quarantine Status",
-                  value: filterQuarantine,
+                  id: "status",
+                  label: "Status",
+                  value: filters.status,
                   options: [
-                    { label: "All Documents", value: "all" },
-                    { label: "Quarantined Only", value: "quarantined" },
-                    { label: "Active & Verified", value: "normal" },
+                    { label: "All statuses", value: "all" },
+                    { label: "Active", value: "active" },
+                    { label: "Quarantined", value: "quarantined" },
+                    { label: "No chunks", value: "empty" },
                   ],
-                  onChange: (v: string) => {
-                    setFilterQuarantine(v);
-                    setPage(1);
-                  },
+                  onChange: (v: string) => setFilter("status", v),
                 },
                 {
                   id: "warnings",
-                  label: "Health Warnings",
-                  value: filterWarnings,
+                  label: "Warnings",
+                  value: filters.warnings,
                   options: [
-                    { label: "All Documents", value: "all" },
-                    { label: "With Warnings Only", value: "warnings_only" },
+                    { label: "Any", value: "all" },
+                    { label: "With warnings", value: "with" },
+                    { label: "Without warnings", value: "without" },
                   ],
-                  onChange: (v: string) => {
-                    setFilterWarnings(v);
-                    setPage(1);
-                  },
+                  onChange: (v: string) => setFilter("warnings", v),
                 },
               ]}
+              onClearAll={() => set({ q: null, format: null, status: null, warnings: null, page: null })}
+              columnOptions={allowed
+                .filter((c) => c.key !== "actions")
+                .map((c) => ({ key: c.key, label: c.header, hideable: c.key !== "source_name" }))}
+              hiddenColumns={prefs.hiddenColumns}
+              onToggleColumn={prefs.toggleColumn}
+              density={prefs.density}
+              onDensityChange={prefs.setDensity}
             />
+            </div>
           }
           pagination={
+            <div data-tour="documents-pagination">
             <Pagination
-              page={page}
-              pageCount={Math.ceil(sortedDocuments.length / pageSize)}
-              totalItems={sortedDocuments.length}
+              page={safePage}
+              pageCount={pageCount}
+              totalItems={filtered.length}
               pageSize={pageSize}
-              onPageChange={setPage}
-              onPageSizeChange={setPageSize}
+              onPageChange={(p) => set({ page: p > 1 ? p : null })}
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                set({ page: null });
+              }}
             />
+            </div>
           }
         >
           <DataTable
-            columns={columns}
-            data={pagedDocuments}
+            columns={visible}
+            data={paged}
             keyField="document_id"
-            isLoading={!documents && !error}
-            error={error}
-            onRetry={load}
-            currentSort={sort}
-            onSortChange={setSort}
-            onRowClick={(doc: DocumentSummary) => router.push(`/documents/${doc.document_id}`)}
-            emptyMessage="No documents found matching the selected filters."
+            isLoading={docs.isLoading}
+            error={documents ? null : errorMessage(docs.error, "Couldn't load documents.")}
+            onRetry={() => void docs.refetch()}
+            currentSort={currentSort}
+            onSortChange={(key) => {
+              const dir = key.endsWith("_asc") ? "asc" : "desc";
+              const base = SORT_COLUMNS[key.slice(0, key.lastIndexOf("_"))];
+              if (base) set({ sort: `${base}_${dir}` === DEFAULT_INVENTORY_SORT ? null : `${base}_${dir}`, page: null });
+            }}
+            onRowClick={(doc) => router.push(entityHref({ kind: "document", id: doc.document_id }))}
+            density={prefs.density}
+            animateRows
+            emptyMessage={documents?.length ? "No documents match these filters" : "No documents yet"}
+            emptySubMessage={
+              documents?.length
+                ? "Clear the search or filters to see every document."
+                : canWrite
+                  ? "Upload a .md or .docx file to add it to the knowledge base."
+                  : "An admin can upload .md or .docx files."
+            }
           />
         </TableCard>
+        </div>
+
+        <div data-tour="documents-charts" className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <ChartCard
+            title="Most cited documents"
+            subtitle="Answers that cited each document; select a bar to open it"
+            window={range.label ?? "Last 7 days"}
+            loading={citations.isLoading}
+            error={citationsError}
+            onRetry={() => void citations.refetch()}
+            empty={citationsAbsent || (citationStats?.top_cited.length ?? 0) === 0}
+            emptyMessage={citationsAbsent ? "Citation stats are not available yet" : "No answer cited a document in this period"}
+            table={{
+              columns: [
+                { key: "source_name", label: "Document" },
+                { key: "citations", label: "Citations", numeric: true },
+              ],
+              rows: (citationStats?.top_cited ?? []).map((d) => ({ source_name: d.source_name, citations: d.citations })),
+            }}
+          >
+            <StackedBar<CitedDocument>
+              data={citationStats?.top_cited ?? []}
+              xKey="source_name"
+              series={[{ key: "citations", label: "Citations" }]}
+              orientation="horizontal"
+              onSelect={(seg) => router.push(entityHref({ kind: "document", id: seg.row.document_id }))}
+              label="Most cited documents"
+            />
+          </ChartCard>
+
+          <ChartCard
+            title="Age vs citations"
+            subtitle="Old documents nobody cites are stale content; select a dot to open it"
+            window={range.label ?? "Last 7 days"}
+            loading={citations.isLoading}
+            error={citationsError}
+            onRetry={() => void citations.refetch()}
+            empty={citationsAbsent || (citationStats?.age_vs_citations.length ?? 0) === 0}
+            emptyMessage={citationsAbsent ? "Citation stats are not available yet" : "No documents yet"}
+            table={{
+              columns: [
+                { key: "source_name", label: "Document" },
+                { key: "age_days", label: "Age (days)", numeric: true },
+                { key: "citations", label: "Citations", numeric: true },
+              ],
+              rows: (citationStats?.age_vs_citations ?? []).map((d) => ({
+                source_name: d.source_name,
+                age_days: d.age_days,
+                citations: d.citations,
+              })),
+            }}
+          >
+            <QuadrantScatter
+              data={(citationStats?.age_vs_citations ?? []).map((d) => ({
+                id: d.document_id,
+                label: d.source_name,
+                x: d.age_days,
+                y: d.citations,
+              }))}
+              xLabel="Age (days)"
+              yLabel="Citations"
+              quadrants={{ topLeft: "Fresh, cited", topRight: "Old, still cited", bottomLeft: "New", bottomRight: "Stale" }}
+              onSelect={(p) => router.push(entityHref({ kind: "document", id: p.id }))}
+              label="Document age against citations"
+            />
+          </ChartCard>
+
+          <ChartCard
+            title="Answer coverage"
+            subtitle="Answered questions that cited at least one document"
+            window={range.label ?? "Last 7 days"}
+            loading={citations.isLoading}
+            error={citationsError}
+            onRetry={() => void citations.refetch()}
+            empty={citationsAbsent || citationStats?.coverage.coverage_pct === null}
+            emptyMessage={citationsAbsent ? "Citation stats are not available yet" : "No answered questions in this period"}
+            bodyClassName="h-48 w-full"
+          >
+            <RadialGauge
+              label="Answer coverage"
+              value={citationStats?.coverage.coverage_pct ?? null}
+              bands={COVERAGE_BANDS}
+              caption={
+                citationStats
+                  ? `${citationStats.coverage.cited_queries.toLocaleString()} of ${citationStats.coverage.answered_queries.toLocaleString()} answers`
+                  : undefined
+              }
+            />
+          </ChartCard>
+        </div>
       </div>
+
+      {canWrite && token ? (
+        <UploadDialog open={uploadOpen} token={token} onClose={() => setUploadOpen(false)} onUploaded={onUploaded} />
+      ) : null}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        tone="danger"
+        title="Delete document?"
+        description={
+          pendingDelete ? (
+            <>
+              <strong>{pendingDelete.name}</strong> and all of its chunks will be removed from the knowledge base.
+              Answers will no longer cite it.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Delete document"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
+  );
+}
+
+export default function DocumentsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-xs text-fg-subtle">Loading documents…</div>}>
+      <DocumentsContent />
+    </Suspense>
   );
 }

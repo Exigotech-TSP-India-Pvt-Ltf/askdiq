@@ -9,6 +9,7 @@ cached), so the login page always renders.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,7 +22,7 @@ from app.branding.assets import HTTP_INVALID, AssetError, validate_asset
 from app.branding.defaults import SINGLETON_ID, default_brand_values
 from app.branding.palette import PaletteError, derive_ramp, palette_for
 from app.core.cache import TTLCache
-from app.core.concurrency import single_flight
+from app.core.concurrency import SessionFactory, single_flight
 from app.core.config import Settings, get_settings
 from app.core.events import TOPIC_CACHE_INVALIDATE, publish_event
 from app.core.logging_config import get_logger
@@ -120,15 +121,26 @@ async def _fetch_row(db: AsyncSession) -> BrandSettings | None:
     return result.scalar_one_or_none()
 
 
-async def get_branding(db: AsyncSession) -> BrandingRead:
-    """Resolved branding (cached per process; config defaults on DB failure)."""
+async def get_branding(session_factory: SessionFactory) -> BrandingRead:
+    """Resolved branding (cached per process; config defaults on DB failure).
+
+    The single-flight load runs in its own task, so it opens its own session
+    instead of borrowing a caller's: a caller cancelled mid-load (client
+    disconnect) would close a session the shared load is still using and
+    strand its pooled connection. Bounded by ``BRANDING_LOAD_TIMEOUT_SECONDS``.
+    """
     settings = get_settings()
     cached = _cache.get(_CACHE_KEY)
     if cached is not None:
         return cached
 
     async def _load() -> BrandingRead:
-        branding = resolve(_row_values(await _fetch_row(db)), settings)
+        async with (
+            asyncio.timeout(settings.branding_load_timeout_seconds),
+            session_factory() as db,
+        ):
+            row = await _fetch_row(db)
+        branding = resolve(_row_values(row), settings)
         _cache.set(_CACHE_KEY, branding, ttl=settings.branding_cache_ttl_seconds)
         return branding
 

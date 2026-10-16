@@ -1,7 +1,7 @@
 import React from "react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   DEFAULT_BRAND,
   brandCssText,
@@ -11,8 +11,8 @@ import {
   normalizeBrand,
   safeAssetUrl,
 } from "@/lib/brand";
-import { BRANDING_REVALIDATE_SECONDS, fetchBrand } from "@/lib/brand-server";
-import { BrandProvider, useBrand } from "@/lib/brand-context";
+import { BRANDING_REVALIDATE_SECONDS, fetchBrand, resetBrandCache } from "@/lib/brand-server";
+import { BrandProvider, useBrand, useBrandUpdater } from "@/lib/brand-context";
 
 const sendQuery = vi.fn();
 vi.mock("@/lib/chat-context", () => ({
@@ -112,14 +112,18 @@ describe("normalizeBrand", () => {
 });
 
 describe("fetchBrand (server layout fetch)", () => {
-  it("returns the normalized brand and asks Next to revalidate every 300 s", async () => {
+  beforeEach(() => resetBrandCache());
+
+  it("returns the normalized brand from a bounded fetch outside Next's data cache", async () => {
     vi.stubEnv("API_BASE_URL", "http://backend:8000/");
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(CURRENT_PAYLOAD));
     const brand = await fetchBrand(fetchMock as unknown as typeof fetch);
     expect(brand.productName).toBe("Acme Assist");
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("http://backend:8000/branding");
-    expect(init.next).toEqual({ revalidate: BRANDING_REVALIDATE_SECONDS });
+    expect(init.next).toBeUndefined();
+    expect(init.cache).toBe("no-store");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(BRANDING_REVALIDATE_SECONDS).toBe(300);
   });
 
@@ -199,7 +203,7 @@ describe("chat sample questions come from the brand", () => {
     Element.prototype.scrollTo = vi.fn() as unknown as typeof Element.prototype.scrollTo;
   });
 
-  it("renders the brand's questions and product name", () => {
+  it("renders the brand's questions and assistant name", () => {
     render(
       <BrandProvider brand={normalizeBrand(FUTURE_PAYLOAD)}>
         <ChatPage />
@@ -207,7 +211,7 @@ describe("chat sample questions come from the brand", () => {
     );
     expect(screen.getByText("How do I reset MFA?")).toBeInTheDocument();
     expect(screen.getByText("What is Zero Trust?")).toBeInTheDocument();
-    expect(screen.getByText("Contoso IQ Assistant")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Conti");
     expect(screen.queryByText(/DeployIQ/)).not.toBeInTheDocument();
   });
 
@@ -216,5 +220,46 @@ describe("chat sample questions come from the brand", () => {
     expect(
       screen.getByText("What is the Essential Eight and how does DeployIQ implement it?"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("BrandProvider runtime updates (Settings save, PR-26)", () => {
+  function Refresher() {
+    const { refresh, setBrand } = useBrandUpdater();
+    const brand = useBrand();
+    return (
+      <div>
+        <span data-testid="product">{brand.productName}</span>
+        <button type="button" onClick={() => void refresh()}>
+          refresh
+        </button>
+        <button type="button" onClick={() => setBrand(DEFAULT_BRAND)}>
+          defaults
+        </button>
+      </div>
+    );
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("refresh() re-reads /branding through the proxy and applies names and every --brand-* variable", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(FUTURE_PAYLOAD));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <BrandProvider brand={normalizeBrand(CURRENT_PAYLOAD)}>
+        <Refresher />
+      </BrandProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+    await waitFor(() => expect(screen.getByTestId("product")).toHaveTextContent("Contoso IQ"));
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/proxy/branding");
+    const style = document.documentElement.style;
+    expect(style.getPropertyValue("--brand-600")).toBe("51 85 204");
+    // Unchanged shades are written too, so they beat the server-rendered <style>.
+    expect(style.getPropertyValue("--brand-800")).toBe("0 88 79");
+
+    // Going back to the defaults still overrides a stale server palette.
+    fireEvent.click(screen.getByRole("button", { name: "defaults" }));
+    await waitFor(() => expect(style.getPropertyValue("--brand-600")).toBe("0 128 128"));
   });
 });

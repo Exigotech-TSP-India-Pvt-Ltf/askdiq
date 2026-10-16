@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
+import { useDeepLink } from "@/lib/use-deep-link";
 import {
   CheckCircle2,
   Target,
@@ -26,8 +28,11 @@ import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, EVALUATION_LIVE_TABS } from "@/components/admin/TabGroup";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
+import { Pagination, type PageSize } from "@/components/admin/Pagination";
 import { QueryInspectorDrawer } from "@/components/admin/QueryInspectorDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
+import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
+import { SkeletonCard } from "@/components/ui/Skeleton";
 import {
   Bar,
   BarChart,
@@ -36,16 +41,21 @@ import {
   Legend,
   Pie,
   PieChart,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+
+// The radar (polar Recharts) and the trend card sit below the fold: split out.
+const QualityRadarCard = dynamic(
+  () => import("@/components/admin/evaluation/QualityCharts").then((mod) => mod.QualityRadarCard),
+  { ssr: false, loading: () => <SkeletonCard label="Loading chart" className="h-80" /> },
+);
+const PassRateTrendCard = dynamic(
+  () => import("@/components/admin/evaluation/QualityCharts").then((mod) => mod.PassRateTrendCard),
+  { ssr: false, loading: () => <SkeletonCard label="Loading chart" className="h-80" /> },
+);
 
 
 const pct = (v: unknown) =>
@@ -65,9 +75,9 @@ function statusColor(value: string): string {
 }
 
 function statusBar(value: string): string {
-  if (!value.endsWith("%")) return "bg-slate-200 dark:bg-zinc-700";
+  if (!value.endsWith("%")) return "bg-chart-track";
   const n = parseFloat(value);
-  if (Number.isNaN(n)) return "bg-slate-200 dark:bg-zinc-700";
+  if (Number.isNaN(n)) return "bg-chart-track";
   if (n >= 80) return "bg-emerald-500";
   if (n >= 50) return "bg-amber-500";
   return "bg-rose-500";
@@ -79,12 +89,12 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md px-4 py-3.5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
       <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
-      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">{label}</p>
+      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">{label}</p>
       <p className={`mt-1 text-xl font-black font-mono tracking-tight tabular-nums ${isPct ? statusColor(value) : "text-slate-900 dark:text-white"}`}>
         {value}
       </p>
       {pctNum !== null && (
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-teal-100/60 dark:bg-zinc-800">
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-chart-track">
           <div
             className={`h-full rounded-full transition-all duration-500 ${statusBar(value)}`}
             style={{ width: `${pctNum}%` }}
@@ -110,36 +120,13 @@ function HeroStat({
     <div className="group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
       <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl transition-transform group-hover:scale-125" />
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">{label}</p>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">{label}</p>
         <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-teal-500/10 dark:bg-teal-400/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 shadow-xs">
           <Icon className="h-4 w-4" />
         </div>
       </div>
       <p className="mt-2 text-2xl font-black font-mono text-slate-900 dark:text-white tracking-tight tabular-nums">{value}</p>
     </div>
-  );
-}
-
-function ChartCard({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
-      <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-2xl" />
-      <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90 flex items-center gap-2">
-          {title}
-        </h2>
-        {subtitle && <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">{subtitle}</p>}
-      </div>
-      <div className="h-64 w-full">{children}</div>
-    </section>
   );
 }
 
@@ -153,11 +140,18 @@ export default function EvaluationLivePage() {
   const [r, setR] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  // Tab and the selected run (pass-rate trend marker) live in the URL.
+  const { get, set } = useDeepLink();
+  const rawTab = get("tab");
+  const activeTab = EVALUATION_LIVE_TABS.some((t) => t.id === rawTab) ? (rawTab as string) : "overview";
+  const setActiveTab = (tab: string) => set({ tab: tab === "overview" ? null : tab });
+  const selectedRun = get("run");
   const [compareMode, setCompareMode] = useState(false);
   const [search, setSearch] = useState("");
   const [filterOutcome, setFilterOutcome] = useState<string>("all");
   const [filterGrounded, setFilterGrounded] = useState<string>("all");
+  const [casePage, setCasePage] = useState(1);
+  const [casePageSize, setCasePageSize] = useState<PageSize>(25);
 
   // Selected query for inspector drawer
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
@@ -170,6 +164,7 @@ export default function EvaluationLivePage() {
       .evaluationReportLive(token, audience, compareMode)
       .then((data) => {
         setR(data);
+        setError(null);
         setLoading(false);
       })
       .catch((err) => {
@@ -211,18 +206,6 @@ export default function EvaluationLivePage() {
     ].filter((d) => d.value > 0);
   }, [allCases]);
 
-  const qualityRadar = useMemo(
-    () => [
-      { metric: "Retrieval recall", score: (r?.retrieval_recall ?? 0.95) * 100 },
-      { metric: "Groundedness", score: (r?.groundedness_accuracy ?? 0.92) * 100 },
-      { metric: "Faithfulness", score: (((r?.judge?.faithfulness ?? 4.6) / 5) * 100) },
-      { metric: "Citation prec.", score: (r?.citation?.precision ?? 0.92) * 100 },
-      { metric: "Safety check", score: (r?.safety?.passed ?? 1.0) * 100 },
-      { metric: "Pass rate", score: (r?.pass_rate ?? 0.88) * 100 },
-    ],
-    [r]
-  );
-
   const caseTypeBars = useMemo(
     () =>
       Object.entries(r?.by_case_type ?? {}).map(([k, v]: [string, any]) => ({
@@ -234,7 +217,10 @@ export default function EvaluationLivePage() {
 
   const latencyBars = useMemo(() => {
     const stageMap: Record<string, any> = r?.operational?.latency_ms ?? {};
-    return Object.entries(stageMap).map(([k, v]: [string, any]) => ({
+    // Only measured stages: the API omits stages it has no timings for.
+    return Object.entries(stageMap)
+      .filter(([, v]) => v && typeof v === "object")
+      .map(([k, v]: [string, any]) => ({
       stage: label(k),
       p50: ((v.p50 ?? 0) / 1000).toFixed(2),
       p95: ((v.p95 ?? 0) / 1000).toFixed(2),
@@ -249,12 +235,14 @@ export default function EvaluationLivePage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
+      <div data-tour="evaluation-header">
       <DashboardHeader
         title="RAG Evaluation (Live)"
         subtitle="Continuous production evaluation, live query audit, and benchmark comparative scorecard"
         icon={Sparkles}
       >
         <button
+          data-tour="evaluation-compare"
           onClick={() => setCompareMode(!compareMode)}
           className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm ${
             compareMode
@@ -269,6 +257,7 @@ export default function EvaluationLivePage() {
           )}
         </button>
       </DashboardHeader>
+      </div>
 
       <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
         {error && (
@@ -278,13 +267,32 @@ export default function EvaluationLivePage() {
           </div>
         )}
 
+        {selectedRun && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-2 rounded-xl border border-status-info/40 bg-status-info-bg p-3 text-xs text-status-info-fg"
+          >
+            <span>
+              Run <span className="font-mono font-semibold">{selectedRun}</span> selected from the pass-rate trend. Per-run case
+              lists are not reported by the server, so the figures below are the latest evaluation.
+            </span>
+            <button
+              type="button"
+              onClick={() => set({ run: null })}
+              className="ml-auto rounded-md border border-status-info/40 px-2 py-0.5 font-semibold hover:bg-surface-card focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Live Comparison View Banner if enabled */}
         {compareMode && r?.comparison && (
           <EvaluationCompareMatrix comparisonData={r.comparison} />
         )}
 
         {/* Standardized Tab Navigation */}
-        <div className="flex items-center justify-between overflow-x-auto pb-1">
+        <div data-tour="evaluation-tabs" className="flex items-center justify-between overflow-x-auto pb-1">
           <TabGroup
             tabs={EVALUATION_LIVE_TABS}
             activeTab={activeTab}
@@ -297,7 +305,7 @@ export default function EvaluationLivePage() {
         {activeTab === "overview" && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Unified 6-stat hero grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div data-tour="evaluation-overview-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               <HeroStat label="Pass rate" value={pct(r?.pass_rate)} icon={CheckCircle2} />
               <HeroStat label="Cases total" value={String(r?.n_cases ?? "—")} icon={Target} />
               <HeroStat label="Retrieval recall" value={pct(r?.retrieval_recall)} icon={ShieldCheck} />
@@ -307,31 +315,23 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Radar and Outcomes */}
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <div data-tour="evaluation-overview-radar" className="grid grid-cols-1 gap-6 xl:grid-cols-3">
               <div className="xl:col-span-2">
-                <ChartCard title="Quality scorecard" subtitle="Continuous evaluation performance (%)">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={qualityRadar} outerRadius="75%">
-                      <PolarGrid stroke={ct.grid} />
-                      <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: ct.axis }} />
-                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: ct.axis }} />
-                      <Radar
-                        name="Score"
-                        dataKey="score"
-                        stroke={ct.categorical[0]}
-                        fill={ct.categorical[0]}
-                        fillOpacity={0.35}
-                      />
-                      <Tooltip
-                        contentStyle={tooltipStyle}
-                        formatter={(v) => [`${Number(v).toFixed(1)}%`, "Score"]}
-                      />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </ChartCard>
+                <QualityRadarCard report={r} loading={loading} />
               </div>
 
-              <ChartCard title="Case outcomes" subtitle="Pass / fail split across live evaluations">
+              <ChartCard
+                title="Case outcomes"
+                subtitle="Pass / fail split across live evaluations"
+                variant="aurora"
+                titleStyle="eyebrow"
+                empty={passBreakdown.length === 0}
+                emptyMessage="No scored cases yet"
+                table={toChartTable(passBreakdown, [
+                { key: "name", label: "Outcome" },
+                { key: "value", label: "Cases", numeric: true },
+              ])}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -355,9 +355,22 @@ export default function EvaluationLivePage() {
               </ChartCard>
             </div>
 
+            <div data-tour="evaluation-overview-trend">
+              <PassRateTrendCard report={r} loading={loading} />
+            </div>
+
             {/* Category breakdown & Stage Latency */}
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-              <ChartCard title="Pass rate by query type" subtitle="Distribution of passing answers per intent">
+            <div data-tour="evaluation-overview-breakdown" className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <ChartCard
+                title="Pass rate by query type"
+                subtitle="Distribution of passing answers per intent"
+                variant="aurora"
+                titleStyle="eyebrow"
+                table={toChartTable(caseTypeBars, [
+                { key: "type", label: "Query type" },
+                { key: "passRate", label: "Pass rate", numeric: true, format: (v) => `${String(v)}%` },
+              ])}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={caseTypeBars}>
                     <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
@@ -382,7 +395,18 @@ export default function EvaluationLivePage() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Latency by pipeline stage" subtitle="p50 / p95 / p99 across stages (seconds)">
+              <ChartCard
+                title="Latency by pipeline stage"
+                subtitle="p50 / p95 / p99 across stages (seconds)"
+                variant="aurora"
+                titleStyle="eyebrow"
+                table={toChartTable(latencyBars, [
+                { key: "stage", label: "Stage" },
+                { key: "p50", label: "p50", numeric: true, format: (v) => `${Number(v).toFixed(2)} s` },
+                { key: "p95", label: "p95", numeric: true, format: (v) => `${Number(v).toFixed(2)} s` },
+                { key: "p99", label: "p99", numeric: true, format: (v) => `${Number(v).toFixed(2)} s` },
+              ])}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={latencyBars}>
                     <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
@@ -402,11 +426,11 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Retrieval Detailed Performance Grid */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div data-tour="evaluation-overview-retrieval" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Retrieval Ranking Metrics</h3>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">Context coverage, noise ratio, and multi-tier retrieval recall</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-fg-muted">Context coverage, noise ratio, and multi-tier retrieval recall</p>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <Stat label="Recall @ 1" value={pct(r?.retrieval?.["recall@1"])} />
@@ -424,7 +448,7 @@ export default function EvaluationLivePage() {
         {activeTab === "judge" && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* LLM Judge Hero Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div data-tour="evaluation-judge-kpis" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <HeroStat
                 label="Faithfulness (LLM Judge)"
                 value={`${num(r?.judge?.faithfulness, 2)} / 5.0`}
@@ -443,12 +467,12 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Citation & Attribution Matrix */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div data-tour="evaluation-judge-citations" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <div>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Citation & Attribution Verification</h3>
-                  <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">Claims grounded in cited passages vs total claims stated</p>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-fg-muted">Claims grounded in cited passages vs total claims stated</p>
                 </div>
                 <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200/80 dark:border-teal-500/30">
                   Automated Citation Attributor Active
@@ -457,21 +481,23 @@ export default function EvaluationLivePage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
                 <Stat label="Citation Precision" value={pct(r?.citation?.precision)} />
                 <Stat label="Citation Coverage" value={pct(r?.citation?.coverage)} />
-                <Stat label="Correct Document" value={r?.citation?.quality?.correct_document !== false ? "100.0%" : "—"} />
-                <Stat label="Current Version" value={r?.citation?.quality?.current_version !== false ? "100.0%" : "—"} />
+                <Stat label="Correct Document" value={r?.citation?.quality?.correct_document === true ? "100.0%" : "—"} />
+                <Stat label="Current Version" value={r?.citation?.quality?.current_version === true ? "100.0%" : "—"} />
               </div>
             </div>
 
             {/* Semantic Quality Insights */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-teal-50/30 dark:bg-teal-950/20 backdrop-blur-md p-6 shadow-card dark:shadow-xl space-y-3">
+            <div data-tour="evaluation-judge-rationale" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-teal-50/30 dark:bg-teal-950/20 backdrop-blur-md p-6 shadow-card dark:shadow-xl space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-teal-900 dark:text-teal-300 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                 Live Evaluation Quality Rationale
               </h4>
               <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                Evaluator continuously scores assistant responses against retrieved enterprise documents. 
-                Answers maintain a mean faithfulness of <strong className="text-teal-700 dark:text-teal-300 font-bold font-mono">{num(r?.judge?.faithfulness, 2)} / 5.0</strong> with zero hallucinated security guidelines.
-                Citation precision remains high at <strong className="text-emerald-600 dark:text-emerald-400 font-bold font-mono">{pct(r?.citation?.precision)}</strong>, indicating virtually all claims have verifiable source lineage.
+                The evaluator scores assistant responses against the retrieved documents. Mean faithfulness is{" "}
+                <strong className="text-teal-700 dark:text-teal-300 font-bold font-mono">{num(r?.judge?.faithfulness, 2)} / 5.0</strong>{" "}
+                and citation precision (word overlap with the sources) is{" "}
+                <strong className="text-emerald-600 dark:text-emerald-400 font-bold font-mono">{pct(r?.citation?.precision)}</strong>.
+                Without the LLM judge (ONLINE_EVAL_ENABLED) faithfulness is a heuristic, not a judged score.
               </p>
             </div>
           </div>
@@ -481,7 +507,7 @@ export default function EvaluationLivePage() {
         {activeTab === "safety" && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Safety Scorecard */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div data-tour="evaluation-safety-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <HeroStat label="Safety Passed" value={pct(r?.safety?.passed)} icon={ShieldCheck} />
               <HeroStat label="PII Leakage Rate" value={pct(r?.safety?.pii_leakage_rate)} icon={ShieldAlert} />
               <HeroStat label="Secret Exposure Rate" value={pct(r?.safety?.secret_exposure_rate)} icon={ShieldAlert} />
@@ -489,16 +515,16 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Robustness by Perturbation */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div data-tour="evaluation-safety-robustness" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Adversarial Robustness & Stability</h3>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">Response stability against typos, paraphrasing, and adversarial prompt perturbations</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-fg-muted">Response stability against typos, paraphrasing, and adversarial prompt perturbations</p>
               </div>
 
               <div className="overflow-x-auto rounded-xl border border-teal-100 dark:border-teal-500/20">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-teal-50/50 dark:bg-teal-950/30 text-slate-700 dark:text-teal-200 border-b border-teal-200/70 dark:border-teal-500/20 font-bold">
+                  <thead className="bg-surface-studio text-fg-muted dark:text-brand-200 border-b border-line-brand/70 dark:border-brand-500/20 font-bold">
                     <tr>
                       <th className="px-3.5 py-2.5">Perturbation Type</th>
                       <th className="px-3.5 py-2.5 text-right">Cases Tested</th>
@@ -509,8 +535,15 @@ export default function EvaluationLivePage() {
                     </tr>
                   </thead>
                   <tbody>
+                    {Object.keys(r?.robustness?.by_perturbation ?? {}).length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-3.5 py-4 text-center text-fg-muted" data-testid="robustness-not-measured">
+                          Not measured: robustness comes from the benchmark suite, not live traffic.
+                        </td>
+                      </tr>
+                    ) : null}
                     {Object.entries(r?.robustness?.by_perturbation ?? {}).map(([k, v]: any) => (
-                      <tr key={k} className="border-b border-teal-100/50 dark:border-teal-500/10 odd:bg-white dark:odd:bg-dark-card even:bg-teal-50/20 dark:even:bg-dark-surface/40 hover:bg-teal-50/60 dark:hover:bg-teal-500/10 transition-colors">
+                      <tr key={k} className="border-b border-teal-100/50 dark:border-teal-500/10 even:bg-surface-muted/30 dark:even:bg-white/[0.015] hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07] transition-colors">
                         <td className="px-3.5 py-2.5 font-bold text-slate-900 dark:text-white">{label(k)}</td>
                         <td className="px-3.5 py-2.5 text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">{v.n}</td>
                         <td className="px-3.5 py-2.5 text-right font-mono tabular-nums text-emerald-600 dark:text-emerald-400">{num(v.retrieval_stability, 3)}</td>
@@ -525,11 +558,11 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Abstention Analysis */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div data-tour="evaluation-safety-abstention" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Abstention & Refusal Quality</h3>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-zinc-400">Refusal precision on out-of-domain and unanswerable scenarios</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-fg-muted">Refusal precision on out-of-domain and unanswerable scenarios</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Stat label="Abstention Rate" value={pct(r?.abstention?.abstention_rate)} />
@@ -542,12 +575,16 @@ export default function EvaluationLivePage() {
 
         {/* Domain Tab 4: Query & Case Explorer */}
         {activeTab === "explorer" && (
+          <div data-tour="evaluation-explorer">
           <TableCard
-            title={`Evaluated Queries & Test Cases (${filteredCases.length})`}
             toolbar={
               <TableToolbar
+                title={`Evaluated Queries & Test Cases (${filteredCases.length})`}
                 search={search}
-                onSearchChange={setSearch}
+                onSearchChange={(v) => {
+                  setSearch(v);
+                  setCasePage(1);
+                }}
                 searchPlaceholder="Search queries, answers, IDs..."
                 filters={[
                   {
@@ -559,7 +596,10 @@ export default function EvaluationLivePage() {
                       { label: "Passed Only", value: "passed" },
                       { label: "Failed Only", value: "failed" },
                     ],
-                    onChange: (v) => setFilterOutcome(v),
+                    onChange: (v) => {
+                      setFilterOutcome(v);
+                      setCasePage(1);
+                    },
                   },
                   {
                     id: "grounded",
@@ -570,15 +610,31 @@ export default function EvaluationLivePage() {
                       { label: "Grounded Only", value: "grounded" },
                       { label: "Ungrounded Fallback", value: "ungrounded" },
                     ],
-                    onChange: (v) => setFilterGrounded(v),
+                    onChange: (v) => {
+                      setFilterGrounded(v);
+                      setCasePage(1);
+                    },
                   },
                 ]}
               />
             }
+            pagination={
+              <Pagination
+                page={Math.min(casePage, Math.max(1, Math.ceil(filteredCases.length / casePageSize)))}
+                pageCount={Math.ceil(filteredCases.length / casePageSize)}
+                totalItems={filteredCases.length}
+                pageSize={casePageSize}
+                onPageChange={setCasePage}
+                onPageSizeChange={(size) => {
+                  setCasePageSize(size);
+                  setCasePage(1);
+                }}
+              />
+            }
           >
-            <div className="overflow-x-auto">
+            <div data-tour="evaluation-explorer-table" className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-teal-50/50 dark:bg-teal-950/30 text-slate-700 dark:text-teal-200 border-b border-teal-200/70 dark:border-teal-500/20 font-bold">
+                <thead className="bg-surface-studio text-fg-muted dark:text-brand-200 border-b border-line-brand/70 dark:border-brand-500/20 font-bold">
                   <tr>
                     <th className="px-3.5 py-2.5">Status</th>
                     <th className="px-3.5 py-2.5">Outcome Type</th>
@@ -592,11 +648,16 @@ export default function EvaluationLivePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCases.map((c: any) => (
+                  {filteredCases
+                    .slice(
+                      (Math.min(casePage, Math.max(1, Math.ceil(filteredCases.length / casePageSize))) - 1) * casePageSize,
+                      Math.min(casePage, Math.max(1, Math.ceil(filteredCases.length / casePageSize))) * casePageSize,
+                    )
+                    .map((c: any) => (
                     <tr
                       key={c.id}
                       onClick={() => handleRowClick(c)}
-                      className="border-b border-teal-100/50 dark:border-teal-500/10 align-top odd:bg-white dark:odd:bg-dark-card even:bg-teal-50/20 dark:even:bg-dark-surface/40 hover:bg-teal-50/60 dark:hover:bg-teal-500/10 cursor-pointer transition-colors group"
+                      className="border-b border-teal-100/50 dark:border-teal-500/10 align-top even:bg-surface-muted/30 dark:even:bg-white/[0.015] hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07] cursor-pointer transition-colors group"
                     >
                       <td className="px-3.5 py-2.5 whitespace-nowrap">
                         <span
@@ -646,6 +707,7 @@ export default function EvaluationLivePage() {
               </table>
             </div>
           </TableCard>
+          </div>
         )}
       </div>
 

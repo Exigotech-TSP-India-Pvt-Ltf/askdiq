@@ -400,13 +400,18 @@ class TaxonomyUpdate(BaseModel):
     color: str | None = Field(default=None, pattern=COLOR_PATTERN)
     group: str | None = Field(default=None, min_length=1, max_length=64)
     sort_order: int | None = Field(default=None, ge=0, le=10_000)
+    substantive: bool | None = Field(
+        default=None, description="Intent counts as a substantive question."
+    )
+    handled: bool | None = Field(
+        default=None, description="Bot-quality value counts as handled."
+    )
 
     @model_validator(mode="after")
     def _not_empty(self) -> TaxonomyUpdate:
         if not self.model_fields_set:
             raise ValueError("Nothing to update.")
-        if "label" in self.model_fields_set and self.label is None:
-            raise ValueError("label cannot be null.")
-        if "sort_order" in self.model_fields_set and self.sort_order is None:
-            raise ValueError("sort_order cannot be null.")
+        for name in ("label", "sort_order", "substantive", "handled"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null.")
         return self

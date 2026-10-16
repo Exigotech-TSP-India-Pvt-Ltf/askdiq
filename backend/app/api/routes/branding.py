@@ -5,6 +5,7 @@ Public (no auth, cache-friendly):
 - ``GET /branding/assets/{sha}``: immutable, content-addressed brand images.
 
 Superadmin only (``branding:write``), audited:
+- ``GET /admin/branding/defaults``: the seeded values, for "Reset to defaults".
 - ``PUT /admin/branding``: optimistic concurrency on ``version`` (409).
 - ``POST /admin/branding/assets``: PNG, WebP or sanitized SVG, max 512 KB.
 """
@@ -31,14 +32,17 @@ from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
 from app.branding import service
 from app.branding.assets import AssetMime
+from app.branding.defaults import default_brand_values
+from app.core.concurrency import SessionFactory
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import get_db, get_session_factory
 from app.core.exceptions import get_request_id
 from app.core.http_cache import cached_response
 from app.core.request_meta import get_client_ip
 from app.schemas.branding import (
     ASSET_ID_PATTERN,
     BrandAssetRead,
+    BrandingDefaults,
     BrandingRead,
     BrandingUpdate,
 )
@@ -75,8 +79,11 @@ Db = Annotated[AsyncSession, Depends(get_db)]
     ),
     responses={304: {"description": "Not modified (ETag matched)"}},
 )
-async def get_branding(request: Request, db: Db) -> Response:
-    branding = await service.get_branding(db)
+async def get_branding(
+    request: Request,
+    session_factory: Annotated[SessionFactory, Depends(get_session_factory)],
+) -> Response:
+    branding = await service.get_branding(session_factory)
     return cached_response(
         request,
         branding.model_dump(mode="json"),
@@ -119,6 +126,21 @@ async def get_brand_asset(
     if request.headers.get("if-none-match", "").strip() in {etag, f"W/{etag}"}:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
     return Response(content=asset.data, media_type=asset.mime, headers=headers)
+
+
+@admin_router.get(
+    "/defaults",
+    response_model=BrandingDefaults,
+    summary="Seeded branding defaults",
+    description=(
+        "The values of the seeded branding row (built-in colours and login copy, "
+        "names and support email from the `BRAND_*` settings). The dashboard's "
+        "Reset to defaults sends these back with PUT /admin/branding."
+    ),
+    responses=_AUTH_ERRORS,
+)
+async def get_branding_defaults(user: BrandingWriter) -> BrandingDefaults:
+    return BrandingDefaults(**default_brand_values(get_settings()))
 
 
 @admin_router.put(

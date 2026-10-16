@@ -1,164 +1,94 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Activity, AlertTriangle, FileSearch, Gauge, ScrollText, ShieldCheck } from "lucide-react";
-import { api } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
-import { useAudience } from "@/lib/audience-context";
-import { formatLatencyMs } from "@/lib/format";
+import React, { useCallback, useEffect } from "react";
+import dynamic from "next/dynamic";
+import { m } from "motion/react";
+import { ShieldCheck } from "lucide-react";
+import { crossfade, useMotionVariants } from "@/lib/motion";
+import { useDeepLink } from "@/lib/use-deep-link";
+import { TAB_PARAMS, isGovernanceTab, type GovernanceTab } from "@/lib/governance-links";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, GOVERNANCE_TABS } from "@/components/admin/TabGroup";
-import MonitoringView from "./monitoring/MonitoringView";
-import TracesView from "./traces/TracesView";
-import LogsView from "./logs/LogsView";
+import { MascotLoader } from "@/components/ui/MascotLoader";
+import { runWhenIdle } from "@/lib/query-cache";
+import OverallView from "./overall/OverallView";
 
-type Tab = "Overall" | "Monitoring" | "Traces" | "Logs";
+// Only the default tab ships with the page; the others (Monitoring pulls the
+// polar Recharts modules) are split out and preloaded once the browser is idle,
+// so a tab switch never waits on the network.
+const loadMonitoring = () => import("./monitoring/MonitoringView");
+const loadTraces = () => import("./traces/TracesView");
+const loadLogs = () => import("./logs/LogsView");
+const tabLoading = () => <MascotLoader variant="inline" label="Loading tab" className="min-h-96" />;
+const MonitoringView = dynamic(loadMonitoring, { loading: tabLoading });
+const TracesView = dynamic(loadTraces, { loading: tabLoading });
+const LogsView = dynamic(loadLogs, { loading: tabLoading });
 
-function InfoRow({
-  icon: Icon,
-  label,
-  value,
-  detail,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  detail?: string;
-}) {
-  return (
-    <div className="flex items-center gap-4 border-b border-slate-100 dark:border-dark-border py-3.5 last:border-0">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-950/60 border border-brand-100 dark:border-brand-800 text-brand-600 dark:text-brand-400">
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-slate-900 dark:text-white">{label}</p>
-        {detail && <p className="text-xs text-slate-500 dark:text-slate-400">{detail}</p>}
-      </div>
-      <p className="shrink-0 text-sm font-bold text-slate-900 dark:text-white font-mono">{value}</p>
-    </div>
+function usePreloadTabs(): void {
+  useEffect(
+    () =>
+      runWhenIdle(() => {
+        for (const load of [loadMonitoring, loadTraces, loadLogs]) load().catch(() => undefined);
+      }),
+    [],
   );
 }
 
-/** Minimal, read-only summary pulled from the same endpoints the Monitoring/
- * Traces/Logs tabs use — gives a quick status glance without duplicating
- * their full dashboards. */
-function OverallSummary() {
-  const { token } = useAuth();
-  const { audience } = useAudience();
-  const [monitoring, setMonitoring] = useState<any>(null);
-  const [traceCount, setTraceCount] = useState<number | null>(null);
-  const [traceErrors, setTraceErrors] = useState<number | null>(null);
-  const [logTotal, setLogTotal] = useState<number | null>(null);
+/** Tabs whose endpoints accept `from` / `to`, so the date range applies. */
+const RANGED_TABS: ReadonlySet<GovernanceTab> = new Set(["Traces", "Logs"]);
 
-  useEffect(() => {
-    if (!token) return;
-    const qs = audience && audience !== "overview" ? `?audience=${audience}` : "";
-    api
-      .adminGet<any>(token, `/governance/monitoring${qs}`)
-      .then((m) => {
-        setMonitoring(m);
-        // True total over the audience, not the length of the capped list (G4).
-        if (typeof m?.traces_total === "number") setTraceCount(m.traces_total);
-      })
-      .catch(() => {});
-    api
-      .adminGet<any[]>(token, `/governance/traces${qs}`)
-      .then((traces) => {
-        setTraceCount((prev) => prev ?? traces.length);
-        setTraceErrors(traces.filter((t) => (t.status || "ok").toLowerCase() === "failed").length);
-      })
-      .catch(() => {});
-    api
-      .adminGet<{ total: number }>(token, `/governance/logs?limit=1${audience && audience !== "overview" ? `&audience=${audience}` : ""}`)
-      .then((data) => setLogTotal(data.total))
-      .catch(() => {});
-  }, [token, audience]);
+const SUBTITLE: Record<GovernanceTab, string> = {
+  Overall: "Health at a glance: status, KPIs, incidents",
+  Monitoring: "Pipeline latency percentiles, traffic, resources and quality, live",
+  Traces: "Request journeys across the RAG pipeline",
+  Logs: "Audit, security and pipeline events",
+};
+
+function GovernanceContent() {
+  const { get, set } = useDeepLink();
+  const raw = get("tab");
+  const activeTab: GovernanceTab = isGovernanceTab(raw) ? raw : "Overall";
+  const variants = useMotionVariants(crossfade);
+  usePreloadTabs();
+
+  const onTabChange = useCallback(
+    (tab: string) => {
+      if (!isGovernanceTab(tab) || tab === activeTab) return;
+      const cleared = Object.fromEntries(TAB_PARAMS.map((p) => [p, null]));
+      set({ ...cleared, tab: tab === "Overall" ? null : tab }, { history: "push" });
+    },
+    [activeTab, set],
+  );
 
   return (
-    <section className="rounded-xl border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card p-6 shadow-sm">
-      <InfoRow
-        icon={Activity}
-        label="Monitoring"
-        detail="Infrastructure, application and RAG pipeline health"
-        value={
-          monitoring?.error_rate != null
-            ? `${Number(monitoring.error_rate).toFixed(1)}% error rate`
-            : "Loading…"
-        }
+    <div className="flex min-h-screen flex-col bg-surface-page text-fg">
+      <DashboardHeader
+        title="Admin Governance"
+        subtitle={SUBTITLE[activeTab]}
+        icon={ShieldCheck}
+        showDateRange={RANGED_TABS.has(activeTab)}
       />
-      <InfoRow
-        icon={Gauge}
-        label="Latency"
-        detail="Average turn latency, end to end (24h)"
-        value={
-          monitoring
-            ? formatLatencyMs(monitoring.total_latency_ms ?? monitoring.avg_latency_ms)
-            : "Loading…"
-        }
-      />
-      <InfoRow
-        icon={FileSearch}
-        label="Traces"
-        detail="Request journeys recorded"
-        value={traceCount != null ? `${traceCount} total` : "Loading…"}
-      />
-      <InfoRow
-        icon={AlertTriangle}
-        label="Trace errors"
-        detail="Requests that failed"
-        value={traceErrors != null ? String(traceErrors) : "Loading…"}
-      />
-      <InfoRow
-        icon={ScrollText}
-        label="Logs"
-        detail="Application, security and RAG governance entries"
-        value={logTotal != null ? `${logTotal} entries` : "Loading…"}
-      />
-    </section>
+
+      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
+        <div data-tour="governance-tabs">
+          <TabGroup tabs={GOVERNANCE_TABS} activeTab={activeTab} onChange={onTabChange} ariaLabel="Governance sub-tabs" />
+        </div>
+
+        <m.div key={activeTab} variants={variants} initial="hidden" animate="visible">
+          {activeTab === "Overall" && <OverallView />}
+          {activeTab === "Monitoring" && <MonitoringView />}
+          {activeTab === "Traces" && <TracesView />}
+          {activeTab === "Logs" && <LogsView />}
+        </m.div>
+      </div>
+    </div>
   );
 }
 
 export default function GovernancePage() {
-  const [activeTab, setActiveTab] = useState<Tab>("Overall");
-
   return (
-    <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
-      <DashboardHeader
-        title="Admin Governance"
-        subtitle="System health monitoring, request tracing, and security audit log streams"
-        icon={ShieldCheck}
-      />
-
-      <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
-        <div className="flex items-center justify-between">
-          <TabGroup
-            tabs={GOVERNANCE_TABS}
-            activeTab={activeTab}
-            onChange={(t) => setActiveTab(t as Tab)}
-            ariaLabel="Governance sub-tabs"
-          />
-        </div>
-
-        {activeTab === "Overall" && <OverallSummary />}
-
-        {activeTab === "Monitoring" && (
-          <div>
-            <MonitoringView hideHeader />
-          </div>
-        )}
-
-        {activeTab === "Traces" && (
-          <div>
-            <TracesView hideHeader />
-          </div>
-        )}
-
-        {activeTab === "Logs" && (
-          <div>
-            <LogsView hideHeader />
-          </div>
-        )}
-      </div>
-    </div>
+    <React.Suspense fallback={<div className="min-h-screen bg-surface-page" aria-busy="true" />}>
+      <GovernanceContent />
+    </React.Suspense>
   );
 }

@@ -1,0 +1,1407 @@
+<title>AskDIQ System Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Interactive architecture of the AskDIQ RAG platform: context, deployment, /query pipeline, dashboard data flow, ingestion, data model and OWASP overlay.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: control-room board. Sticky header with view tabs, toolbar, then a two-pane workspace (diagram canvas + inspector) that stacks on phones. */
+:root {
+  --bg: #eef5f4;
+  --surface: #ffffff;
+  --surface-2: #e3eeec;
+  --ink: #0c2422;
+  --ink-2: #4b6360;
+  --line: #c6d7d4;
+  --grid: #c9dcd9;
+  --brand: #008080;
+  --brand-strong: #006b68;
+  --brand-soft: #d3ece9;
+  --edge: #87a29e;
+  --st-live: #008080;
+  --st-preview: #4c58cf;
+  --st-progress: #b86e00;
+  --st-planned: #6f8481;
+  --sec: #c03a67;
+  --sec-soft: #fbe3ea;
+  --shadow: 0 1px 2px rgba(6, 40, 37, .06), 0 10px 30px rgba(6, 60, 56, .08);
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #061413; --surface: #0c201e; --surface-2: #112d2a; --ink: #e2f1ef; --ink-2: #9cb6b2;
+    --line: #22423f; --grid: #17322f; --brand: #33b8ad; --brand-strong: #6ccfc6; --brand-soft: #0f3a36;
+    --edge: #4f716d; --st-live: #33b8ad; --st-preview: #929bff; --st-progress: #f0b04a; --st-planned: #8ba29f;
+    --sec: #ff7ba3; --sec-soft: #3a1626; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #061413; --surface: #0c201e; --surface-2: #112d2a; --ink: #e2f1ef; --ink-2: #9cb6b2;
+  --line: #22423f; --grid: #17322f; --brand: #33b8ad; --brand-strong: #6ccfc6; --brand-soft: #0f3a36;
+  --edge: #4f716d; --st-live: #33b8ad; --st-preview: #929bff; --st-progress: #f0b04a; --st-planned: #8ba29f;
+  --sec: #ff7ba3; --sec-soft: #3a1626; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--bg); }
+body {
+  margin: 0; color: var(--ink); font: 400 14px/1.5 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 32px;
+  overflow-x: hidden;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.mono { font-family: var(--f-mono); }
+
+/* Header */
+header.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  background: var(--bg); padding-block: 14px 10px; display: grid; gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.brandrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+.brandmark { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.hex { width: 34px; height: 34px; flex: none; }
+.hex path { fill: var(--brand); }
+.hex .eye { fill: var(--surface); }
+h1 { font: 700 clamp(19px, 2.4vw, 26px)/1.1 var(--f-display); margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+.snap { font: 400 11.5px/1.4 var(--f-mono); color: var(--ink-2); margin-top: 3px; }
+.snap b { font-weight: 500; color: var(--ink); }
+.tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 11px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 7px; font-size: 13px; line-height: 1.2;
+  transition: background .18s var(--ease), border-color .18s var(--ease), color .18s var(--ease);
+}
+.btn:hover { border-color: var(--brand); }
+.btn[aria-pressed="true"] { background: var(--sec-soft); border-color: var(--sec); color: var(--ink); }
+.btn.primary[aria-pressed="true"] { background: var(--brand-soft); border-color: var(--brand); }
+.btn svg { width: 15px; height: 15px; }
+.tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+.tab {
+  flex: none; border: 0; background: transparent; padding: 7px 12px; border-radius: 999px; cursor: pointer;
+  color: var(--ink-2); font-weight: 500; font-size: 13.5px; display: inline-flex; gap: 7px; align-items: baseline;
+  transition: background .2s var(--ease), color .2s var(--ease);
+}
+.tab .n { font: 500 10.5px var(--f-mono); opacity: .7; }
+.tab:hover { color: var(--ink); background: var(--surface-2); }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+
+/* Toolbar */
+.bar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; padding-block: 12px 10px; }
+.search { position: relative; flex: 1 1 240px; max-width: 360px; min-width: 0; }
+.search input {
+  width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 9px;
+  padding: 8px 34px 8px 32px; font-size: 13.5px;
+}
+.search > svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--ink-2); }
+.search kbd { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); font: 500 11px var(--f-mono); color: var(--ink-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.results {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; margin: 0; list-style: none;
+  max-height: 320px; overflow: auto;
+}
+.results button { width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 9px; border-radius: 7px; cursor: pointer; display: grid; gap: 1px; }
+.results button:hover, .results button.on { background: var(--surface-2); }
+.results small { color: var(--ink-2); font-size: 11.5px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.legend .lab { font: 500 10.5px var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin-right: 2px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface);
+  border-radius: 999px; padding: 4px 10px 4px 8px; font-size: 12.5px; cursor: pointer; transition: opacity .18s, border-color .18s;
+}
+.chip[aria-pressed="false"] { opacity: .45; }
+.chip[aria-pressed="false"] .sw { background: transparent !important; }
+.sw { width: 11px; height: 11px; border-radius: 50%; border: 2px solid currentColor; flex: none; }
+.sw.live { color: var(--st-live); background: var(--st-live); }
+.sw.preview { color: var(--st-preview); background: var(--st-preview); }
+.sw.progress { color: var(--st-progress); background: var(--st-progress); border-style: dashed; }
+.sw.planned { color: var(--st-planned); background: transparent; border-style: dashed; }
+.owasp-row { display: flex; flex-wrap: wrap; gap: 5px; padding-bottom: 10px; }
+.ow {
+  border: 1px solid var(--sec); color: var(--sec); background: transparent; border-radius: 6px;
+  font: 500 11.5px var(--f-mono); padding: 3px 7px; cursor: pointer;
+}
+.ow[aria-pressed="true"] { background: var(--sec); color: var(--surface); }
+
+/* Workspace */
+.work { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start; }
+.stage { min-width: 0; display: grid; gap: 10px; }
+.intro { display: flex; gap: 10px 20px; flex-wrap: wrap; align-items: baseline; }
+.intro h2 { font: 700 20px/1.2 var(--f-display); margin: 0; letter-spacing: -.01em; }
+.intro p { margin: 0; color: var(--ink-2); max-width: 75ch; flex: 1 1 320px; }
+.canvas {
+  position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  height: min(72vh, 760px); min-height: 380px; overflow: hidden; box-shadow: var(--shadow);
+}
+.canvas svg.diagram { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; }
+.canvas svg.diagram.dragging { cursor: grabbing; }
+.zoom { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+.zoom .btn { width: 34px; height: 34px; justify-content: center; padding: 0; background: var(--surface); }
+.hint { position: absolute; left: 12px; bottom: 10px; font: 400 11px var(--f-mono); color: var(--ink-2); background: var(--surface); padding: 2px 6px; border-radius: 5px; }
+
+/* Player */
+.player { display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.player .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.player .cap { flex: 1 1 260px; min-width: 0; }
+.player .cap b { font: 600 14px var(--f-body); }
+.player .cap span { color: var(--ink-2); font-size: 12.5px; display: block; }
+.tl { display: flex; height: 26px; border-radius: 7px; overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
+.tl div { min-width: 6px; position: relative; border-right: 1px solid var(--surface); background: var(--brand-soft); transition: background .25s var(--ease); cursor: pointer; }
+.tl div.done { background: color-mix(in srgb, var(--brand) 45%, var(--brand-soft)); }
+.tl div.cur { background: var(--brand); }
+.tl div.async { background: repeating-linear-gradient(135deg, var(--surface-2) 0 5px, var(--brand-soft) 5px 10px); }
+.tl div.async.cur { background: repeating-linear-gradient(135deg, var(--brand) 0 5px, var(--brand-strong) 5px 10px); }
+.tlk { display: flex; justify-content: space-between; font: 400 11px var(--f-mono); color: var(--ink-2); gap: 8px; flex-wrap: wrap; }
+
+/* Inspector */
+aside.panel {
+  position: sticky; top: 150px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: var(--shadow); max-height: calc(100vh - 170px); overflow: auto; min-width: 0;
+}
+.pin { padding: 16px 18px 20px; display: grid; gap: 14px; animation: rise .28s var(--ease); }
+@keyframes rise { from { opacity: .001; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.eyebrow { font: 500 10.5px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.pin h3 { font: 700 21px/1.15 var(--f-display); margin: 2px 0 0; letter-spacing: -.01em; text-wrap: balance; overflow-wrap: anywhere; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px 3px 7px; font-size: 12px; font-weight: 500; border: 1px solid var(--line); }
+.pill.branch { font: 400 11.5px var(--f-mono); padding: 3px 8px; }
+.meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.pin p { margin: 0; }
+.sect { display: grid; gap: 6px; }
+.sect h4 { margin: 0; font: 500 10.5px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.sect ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.sect li.code { font: 400 12px/1.45 var(--f-mono); background: var(--surface-2); border-radius: 6px; padding: 4px 8px; overflow-wrap: anywhere; }
+.tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.tag { font-size: 12px; background: var(--surface-2); border-radius: 6px; padding: 2px 8px; }
+.cols { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cols td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+.cols td:first-child { font-family: var(--f-mono); white-space: nowrap; }
+.cols td:last-child { color: var(--ink-2); overflow-wrap: anywhere; }
+.secl li { display: grid; grid-template-columns: 42px 1fr; gap: 8px; font-size: 13px; }
+.secl li b { font: 500 11.5px var(--f-mono); color: var(--sec); padding-top: 2px; }
+.secl.dim { opacity: .75; }
+.rel { display: flex; flex-wrap: wrap; gap: 6px; }
+.rel button { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 3px 9px; font-size: 12.5px; cursor: pointer; }
+.rel button:hover { border-color: var(--brand); color: var(--brand-strong); }
+.note { border-left: 3px solid var(--st-progress); background: var(--surface-2); padding: 8px 10px; border-radius: 0 8px 8px 0; font-size: 13px; }
+.howto { display: grid; gap: 6px; color: var(--ink-2); font-size: 13px; padding: 0; margin: 0; list-style: none; }
+.howto kbd { font: 500 11px var(--f-mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--ink); }
+.close { justify-self: end; border: 0; background: transparent; cursor: pointer; color: var(--ink-2); font-size: 12.5px; padding: 0; }
+.close:hover { color: var(--ink); }
+
+/* SVG */
+svg text { fill: var(--ink); font-family: var(--f-body); }
+.gbox { fill: transparent; stroke: var(--line); stroke-width: 1.2; }
+.g-host .gbox { fill: var(--surface-2); fill-opacity: .45; stroke: var(--ink-2); stroke-opacity: .5; stroke-width: 1.4; }
+.g-net .gbox { stroke: var(--brand); stroke-dasharray: 7 5; stroke-opacity: .7; fill: var(--brand-soft); fill-opacity: .25; }
+.g-zone .gbox { fill: var(--surface-2); fill-opacity: .55; stroke-dasharray: 2 4; }
+.g-ext .gbox { stroke-dasharray: 4 4; fill: none; }
+.glabel { font: 500 11px var(--f-mono); letter-spacing: .08em; fill: var(--ink-2); text-transform: uppercase; }
+.g-net .glabel { fill: var(--brand-strong); }
+.node { cursor: pointer; transition: opacity .22s var(--ease); }
+.node .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; transition: stroke .2s, filter .2s; }
+.node .kind { font: 500 9.5px var(--f-mono); letter-spacing: .1em; fill: var(--ink-2); }
+.node .name { font: 600 14px var(--f-body); }
+.node .mono-name { font: 500 13px var(--f-mono); }
+.node .sub { font: 400 11.5px var(--f-body); fill: var(--ink-2); }
+.node .dot { stroke: var(--surface); stroke-width: 2; }
+.node.s-live .dot { fill: var(--st-live); }
+.node.s-preview .dot { fill: var(--st-preview); }
+.node.s-progress .box { stroke: var(--st-progress); stroke-dasharray: 3 3; }
+.node.s-planned .box { stroke: var(--st-planned); stroke-dasharray: 7 5; fill: var(--surface-2); }
+.badge rect { stroke-width: 1; }
+.node.s-progress .badge rect { fill: var(--surface); stroke: var(--st-progress); }
+.node.s-progress .badge text { fill: var(--st-progress); }
+.node.s-planned .badge rect { fill: var(--surface); stroke: var(--st-planned); }
+.node.s-planned .badge text { fill: var(--st-planned); }
+.badge text { font: 500 9px var(--f-mono); letter-spacing: .08em; }
+.node.k-store .cyl { fill: none; stroke: var(--line); stroke-width: 1.2; }
+.node.k-person .box { fill: var(--brand-soft); stroke: transparent; }
+.node.k-external .box { fill: var(--surface-2); }
+.node.k-step .num { font: 700 22px var(--f-display); fill: var(--brand); opacity: .9; }
+.node:hover .box, .node:focus-visible .box { stroke: var(--brand); stroke-width: 2; }
+.node:focus { outline: none; }
+.node:focus-visible .box { filter: drop-shadow(0 0 0 var(--brand)); stroke-width: 2.6; }
+.node.sel .box { stroke: var(--brand); stroke-width: 2.6; }
+.node.active .box { stroke: var(--brand); stroke-width: 3; fill: var(--brand-soft); }
+.owc { display: none; }
+.secon .owc { display: inline; }
+.owc rect { fill: var(--sec); }
+.owc text { fill: var(--surface); font: 600 9.5px var(--f-mono); }
+.secon .node:not(.has-sec) { opacity: .4; }
+.edge path.ln { fill: none; stroke: var(--edge); stroke-width: 1.5; transition: stroke .2s, opacity .22s; }
+.edge.dash path.ln { stroke-dasharray: 5 4; }
+.edge path.hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; }
+.elabel { cursor: pointer; transition: opacity .22s var(--ease); }
+.elabel rect { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+.elabel text { font: 400 10.5px var(--f-mono); fill: var(--ink-2); }
+.elabel:focus { outline: none; }
+.elabel:focus-visible rect, .elabel.sel rect { stroke: var(--brand); stroke-width: 2; }
+.arrowhead { fill: var(--edge); }
+.arrowhead.hl { fill: var(--brand); }
+.focusing .node:not(.on), .focusing .elabel:not(.on) { opacity: .2; }
+.focusing .edge:not(.on) path.ln { opacity: .15; }
+.edge.on path.ln { stroke: var(--brand); stroke-width: 2.2; }
+.searching .node:not(.match) { opacity: .2; }
+.searching .edge path.ln, .searching .elabel { opacity: .2; }
+.node.match .box { stroke: var(--brand); stroke-width: 2.4; }
+.pulse { fill: var(--brand); }
+.pulse-ring { fill: none; stroke: var(--brand); stroke-width: 2; opacity: .5; }
+
+footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex; gap: 6px 16px; flex-wrap: wrap; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 980px) {
+  .work { grid-template-columns: minmax(0, 1fr); }
+  aside.panel { position: static; max-height: none; }
+  .canvas { height: 62vh; }
+  header.top { position: static; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+</style>
+
+<header class="top">
+  <div class="brandrow">
+    <div class="brandmark">
+      <svg class="hex" viewBox="0 0 34 34" aria-hidden="true"><path d="M17 1.5 30.4 9.25v15.5L17 32.5 3.6 24.75V9.25Z"/><circle class="eye" cx="12.5" cy="16.5" r="2.4"/><circle class="eye" cx="21.5" cy="16.5" r="2.4"/></svg>
+      <div>
+        <h1>AskDIQ System Architecture</h1>
+        <div class="snap">Snapshot <b>16 Oct 2026</b> · preview/view <b>9115c45</b> · production = main 1a88798 + hotfix <b>f9d76ed</b></div>
+      </div>
+    </div>
+    <div class="tools">
+      <button class="btn" id="secBtn" type="button" aria-pressed="false" title="Show OWASP Top 10:2025 controls (S)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5 13.5 3.5v4.2c0 3.2-2.3 5.7-5.5 6.8C4.8 13.4 2.5 10.9 2.5 7.7V3.5Z"/><path d="m5.6 8 1.7 1.7L10.6 6.4"/></svg>
+        OWASP overlay
+      </button>
+      <button class="btn" id="themeBtn" type="button" title="Switch light or dark theme">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.1 1.1M11.9 11.9 13 13M3 13l1.1-1.1M11.9 4.1 13 3"/></svg>
+        <span id="themeLabel">Theme</span>
+      </button>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Architecture views" id="tabs"></nav>
+</header>
+
+<div class="bar">
+  <div class="search">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="m10.5 10.5 3.8 3.8"/></svg>
+    <label class="sr" for="q">Search components, files, endpoints, tables</label>
+    <input id="q" type="search" placeholder="Search components, files, routes, tables" autocomplete="off" aria-controls="results">
+    <kbd>/</kbd>
+    <ul class="results" id="results" role="listbox" hidden></ul>
+  </div>
+  <div class="legend" id="legend" aria-label="Status filter"><span class="lab">Status</span></div>
+</div>
+<div class="owasp-row" id="owaspRow" hidden aria-label="OWASP categories"></div>
+
+<main class="work">
+  <section class="stage" aria-live="polite">
+    <div class="intro"><h2 id="vTitle"></h2><p id="vBlurb"></p></div>
+    <div class="player" id="player" hidden>
+      <div class="row">
+        <button class="btn" id="pPrev" type="button" aria-label="Previous stage">&#8592; Prev</button>
+        <button class="btn primary" id="pPlay" type="button" aria-pressed="false">&#9654; Play</button>
+        <button class="btn" id="pNext" type="button" aria-label="Next stage">Next &#8594;</button>
+        <button class="btn" id="pReset" type="button">Reset</button>
+        <div class="cap" id="pCap"><b>Ready</b><span>Press Play to walk one POST /query request through the pipeline.</span></div>
+      </div>
+      <div class="tl" id="tl" role="list" aria-label="Stage timeline"></div>
+      <div class="tlk"><span id="tlTotal"></span><span>Illustrative timings for one grounded answer, not measurements. Real values per request live in <span class="mono">latency_metrics</span>.</span></div>
+    </div>
+    <div class="canvas" id="canvas">
+      <svg class="diagram" id="svg" role="group" aria-label="Architecture diagram" tabindex="0">
+        <defs>
+          <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill="var(--grid)"/></pattern>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0 10 5 0 10z"/></marker>
+          <marker id="arrHl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead hl" d="M0 0 10 5 0 10z"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#dots)"/>
+        <g id="vp"></g>
+      </svg>
+      <span class="hint" id="hint">drag to pan · scroll or pinch to zoom</span>
+      <div class="zoom">
+        <button class="btn" type="button" id="zIn" aria-label="Zoom in">+</button>
+        <button class="btn" type="button" id="zOut" aria-label="Zoom out">&#8722;</button>
+        <button class="btn" type="button" id="zFit" aria-label="Fit diagram to view" title="Fit (0)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+        </button>
+      </div>
+    </div>
+  </section>
+  <aside class="panel" id="panel" aria-label="Details"></aside>
+</main>
+
+<footer>
+  <span>Sources: backend/app, frontend/app, alembic (23 migrations, head 254857d10a20), docker and nginx files, newplan.md rev 3.3, planchanges4.md, and the seven in-flight branches.</span>
+  <span>Keyboard: <span class="mono">Tab</span> through nodes, <span class="mono">Enter</span> to inspect, <span class="mono">Esc</span> to close, <span class="mono">1–6</span> views, <span class="mono">S</span> security, <span class="mono">+ − 0</span> zoom.</span>
+</footer>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ */
+/* Vocabulary                                                          */
+/* ------------------------------------------------------------------ */
+var STATUS = {
+  live: { label: "Live in prod", rank: 0 },
+  preview: { label: "Merged in preview", rank: 1 },
+  progress: { label: "In progress", rank: 2 },
+  planned: { label: "Planned", rank: 3 }
+};
+var OWASP = {
+  A01: "Broken Access Control", A02: "Security Misconfiguration", A03: "Software Supply Chain Failures",
+  A04: "Cryptographic Failures", A05: "Injection", A06: "Insecure Design", A07: "Authentication Failures",
+  A08: "Software or Data Integrity Failures", A09: "Security Logging and Alerting Failures",
+  A10: "Mishandling of Exceptional Conditions"
+};
+var KIND = { person: "PEOPLE", external: "EXTERNAL", service: "SERVICE", container: "CONTAINER", store: "DATA STORE", step: "STAGE", module: "MODULE", table: "TABLE", route: "ROUTE", job: "JOB" };
+
+/* ------------------------------------------------------------------ */
+/* Component catalogue (shared across views)                           */
+/* ------------------------------------------------------------------ */
+var C = {};
+function def(id, o) { o.id = id; C[id] = o; }
+
+/* ---- People and external systems ---- */
+def("visitors", { name: "Website visitors", kind: "person", status: "live",
+  desc: "Members of the public chatting through the widget on the company website. They never reach AskDIQ directly; the website server calls /query for them and forwards their IP.",
+  tech: ["Browser"], rel: ["website"] });
+def("website", { name: "Company website + chat widget", kind: "external", status: "live", sub: "Other team's Next.js app",
+  desc: "Owned by another team. Its server calls AskDIQ server to server: POST /query with the shared X-API-Key, an X-Client-Id that partitions chat sessions per visitor, and the visitor's ip_address in the body. Since the hotfix that IP is honoured (ALLOW_CLIENT_IP_OVERRIDE) and the per-IP rate limit keys on it.",
+  tech: ["Next.js", "Server-side fetch"],
+  endpoints: ["POST /query", "GET|POST /sessions", "POST feedback (ip_address forwarded)"],
+  env: ["X-API-Key = API_KEY_NAME (shared secret, server side only)", "X-Client-Id (session partition, not an identity)"],
+  note: "Contract change to watch: on preview/view, POST /query depends on require_role_or_chat, which needs a signed-in SSO session (X-Session). The website's key-only path must be kept or re-added before preview/view is released to production.",
+  sec: { A01: "Shared X-API-Key gate; key never reaches the visitor's browser.", A06: "Per-IP limit (RATE_LIMIT_PER_MINUTE_PER_IP=30) on the forwarded end-user IP." },
+  rel: ["visitors", "api", "nginx", "p_validate", "p_session"] });
+def("admins", { name: "Admins and operators", kind: "person", status: "preview",
+  desc: "Superadmins, admins and operators of the dashboard. They sign in with Microsoft Entra ID; the role on their users row decides which pages and actions they get.",
+  tech: ["Browser"], rel: ["dashboard", "entra", "d_browser"] });
+def("entra", { name: "Microsoft Entra ID", kind: "external", status: "preview",
+  desc: "Identity provider for the dashboard. OIDC authorization code flow with PKCE; the backend validates the ID token (JWKS signature, iss, aud, tid, exp, nonce) and keeps the client secret server side. A local mock IdP is mounted only with AUTH_DEV_MOCK=true in development.",
+  tech: ["OIDC", "PKCE", "JWKS"],
+  files: ["backend/app/auth/oidc.py", "backend/app/auth/service.py", "backend/app/api/routes/auth.py", "backend/app/auth/mock_idp.py", "frontend/app/auth/callback/[provider]/route.ts", "backend/scripts/verify_sso_config.py"],
+  endpoints: ["GET /auth/sso/login", "POST /auth/sso/callback", "GET /auth/me", "POST /auth/logout", "GET|POST /auth/access-request"],
+  env: ["ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "ENTRA_REDIRECT_URI", "APP_BASE_URL", "OIDC_STATE_TTL_SECONDS=600", "AUTH_LOGIN_RATE_LIMIT_PER_MINUTE=10", "AUTH_DEV_MOCK=false"],
+  sec: { A07: "Code flow + PKCE, state and nonce, iss/aud/tid/exp checks, login rate limit, login_denied audited.", A02: "Startup guard refuses AUTH_DEV_MOCK outside ENV=development." },
+  rel: ["d_callback", "d_authdeps", "t_users", "t_oidc_states", "t_auth_sessions"] });
+def("aoai", { name: "Azure OpenAI", kind: "external", status: "live", sub: "gpt-5-mini · text-embedding-3-small",
+  desc: "Chat completions through the AZURE_DEPLOYMENT_NAME deployment (gpt-5-mini family, temperature fixed at 1.0) and embeddings with text-embedding-3-small at 1536 dimensions. Called for answers, query and chunk embeddings, groundedness checks, the online judge and the insights classifier. A boot-time health check makes one real call of each kind.",
+  tech: ["openai SDK (AsyncAzureOpenAI)", "tiktoken"],
+  files: ["backend/app/harness/prompts.py", "backend/app/retrieval/embeddings.py", "backend/app/core/circuit.py", "backend/scripts/check_tpm.py"],
+  env: ["AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_API_VERSION", "AZURE_DEPLOYMENT_NAME", "EMBEDDING_MODEL=text-embedding-3-small", "EMBEDDING_DIM=1536", "LLM_REASONING_EFFORT=minimal", "AZURE_OPENAI_REQUEST_TIMEOUT=60", "AZURE_OPENAI_TPM_LIMIT / RPM_LIMIT"],
+  sec: { A06: "LLM_MAX_CONCURRENCY=64 gate returns 429 instead of queueing without bound.", A10: "60 s timeouts, bounded retries, circuit breaker (preview) fails fast with a fallback answer." },
+  rel: ["p_embed", "p_llm", "p_post", "p_eval", "i_embed", "d_insights"] });
+def("postgres", { name: "PostgreSQL + pgvector", kind: "store", status: "live", sub: "et-platform-postgres-1 · db askdiq",
+  desc: "One shared Exigo Tech platform Postgres instance holds everything: relational data, vector embeddings (pgvector, created by init_db), and the shared state that replaces Redis (rate_limit_buckets, oidc_states, jobs queue, LISTEN/NOTIFY). 22 tables on preview/view (19 ORM models plus jobs, oidc_states and rate_limit_buckets created in migrations); production is at migration d6e7f8a9b0c1. chunks.embedding has no HNSW or ivfflat index, so similarity search is an exact scan, which is fine at the current corpus size.",
+  tech: ["PostgreSQL", "pgvector", "SQLAlchemy 2 async", "asyncpg", "Alembic"],
+  files: ["backend/app/models/db_models.py", "backend/app/core/database.py", "backend/alembic/versions/ (23 migrations, head 254857d10a20)"],
+  env: ["DATABASE_URL (no default)", "DB_POOL_SIZE=20", "DB_MAX_OVERFLOW=10", "DASHBOARD_STATEMENT_TIMEOUT_MS=5000", "STATE_BACKEND=auto", "EVENTS_CHANNEL=askdiq_events"],
+  sec: { A05: "Parameterised SQLAlchemy everywhere; sort and filter allow-lists in db/query_builders.py.", A08: "audit_log is append-only (trg_audit_log_immutable)." },
+  rel: ["api", "t_chunks", "t_audit_log", "d_ro", "d_events", "d_jobs"] });
+
+/* ---- Containers and services ---- */
+def("api", { name: "askdiq-api", kind: "container", status: "live", sub: "FastAPI on uvicorn · :8000",
+  desc: "The RAG backend. Serves the public /query contract, ingestion, and every dashboard route. Middleware order from the outside in: SecurityHeadersMiddleware, SSEAwareGZipMiddleware, LatencyMiddleware, CORS. On startup it runs init_db, sizes the thread pool, checks Azure OpenAI, preloads the ONNX reranker and starts the event bus and (if JOBS_WORKER_ENABLED) the job worker.",
+  tech: ["Python", "FastAPI", "uvicorn", "Pydantic v2 + pydantic-settings", "SQLAlchemy async", "fastembed (ONNX)"],
+  files: ["backend/main.py", "backend/app/api/routes/", "backend/app/core/config.py", "backend/app/core/middleware.py", "backend/app/core/security_headers.py", "backend/app/core/exceptions.py", "backend/Dockerfile.prod"],
+  endpoints: ["POST /query", "/sessions", "POST /ingest, /ingest/file", "/documents", "/metrics/latency, /metrics/evaluation(/live)", "/governance/audit-log", "/admin/* (usage, governance, feedback, insights, users-accounts, branding)", "/auth/*", "/branding", "GET /health"],
+  env: ["ENV", "DATABASE_URL", "API_KEY_NAME", "TRUST_PROXY_HEADERS", "CORS_ALLOWED_ORIGINS", "ENABLE_API_DOCS=false", "WEB_CONCURRENCY", "JOBS_WORKER_ENABLED"],
+  sec: { A02: "Security headers on every response (preview); /docs and /openapi.json off when ENV=production; explicit CORS allow-lists.", A10: "Global handlers return problem+json with request_id and no internals; supervised background tasks drained on shutdown." },
+  rel: ["nginx", "postgres", "aoai", "prestart", "worker", "p_validate", "d_authdeps"] });
+def("nginx", { name: "et-platform-nginx-1", kind: "container", status: "live", sub: "TLS · askdiq.ethub.co",
+  desc: "The shared platform reverse proxy. Terminates TLS for askdiq.ethub.co and proxies to the API on port 8000; stream and events locations turn buffering off for SSE. A second server block for askdiq-admin.ethub.co is prepared for the dashboard container. The repo template askdiq.conf still lists a two-replica upstream (askdiq-api-1/-2).",
+  tech: ["nginx", "Let's Encrypt"],
+  files: ["askdiq.conf", "deploy/nginx/askdiq-admin.conf.example (branch)"],
+  endpoints: ["https://askdiq.ethub.co → askdiq-api:8000", "https://askdiq-admin.ethub.co → askdiq-web:3000 (planned)"],
+  sec: { A02: "server_tokens off; HSTS, nosniff, Referrer-Policy and Permissions-Policy at server level.", A04: "TLS only at the edge; port 80 redirects to 443." },
+  rel: ["api", "web", "website"] });
+def("prestart", { name: "Startup sequence", kind: "module", status: "progress", branch: "chore/prod-deploy-fullstack", sub: "docker-entrypoint.sh → prestart.py",
+  desc: "Runs before uvicorn only when the command contains uvicorn. Waits for Postgres, runs alembic upgrade head while holding pg_try_advisory_lock so only one container migrates, then runs idempotent ingestion (content hash skips unchanged documents; skipped if another replica holds the lock), then the optional usage backfill, then execs uvicorn main:app with WEB_CONCURRENCY workers. A failed migration stops the container.",
+  tech: ["sh", "Alembic", "Postgres advisory lock"],
+  files: ["backend/docker-entrypoint.sh", "backend/scripts/prestart.py", "backend/Dockerfile.prod", "deploy/RUNBOOK.md"],
+  env: ["RUN_MIGRATIONS=true", "RUN_INGESTION=true", "RUN_USAGE_BACKFILL=false", "DB_WAIT_RETRIES=30"],
+  sec: { A08: "Single migrator under an advisory lock; ingestion is idempotent by content hash.", A10: "Migration failure is fatal, so a half-migrated API never serves traffic." },
+  rel: ["api", "postgres", "i_hash", "i_scripts"] });
+def("web", { name: "askdiq-web", kind: "container", status: "planned", branch: "chore/prod-deploy-fullstack", sub: "Next.js standalone · no host port",
+  desc: "The dashboard as its own container: Next.js standalone on node:20-alpine, running as user node, port 3000 reachable only on askdiq_internal. nginx serves it at askdiq-admin.ethub.co; the API stays on askdiq.ethub.co. It talks to the API by service name. No NEXT_PUBLIC_ variables are used.",
+  tech: ["Next.js (App Router)", "Node 20", "Docker multi-stage"],
+  files: ["frontend/Dockerfile.prod", "deploy/docker-compose.prod.example.yml", "deploy/frontend.env.prod.example"],
+  env: ["API_BASE_URL=http://askdiq-api:8000", "API_KEY (= backend API_KEY_NAME)", "APP_BASE_URL=https://askdiq-admin.ethub.co", "SESSION_COOKIE_NAME=askdiq_session", "SESSION_COOKIE_SECURE=true", "AUTH_DEV_MOCK=false"],
+  sec: { A02: "No published host port; strict headers from next.config.js.", A04: "Secure, httpOnly, SameSite=Lax session cookie in production." },
+  rel: ["dashboard", "nginx", "api", "d_proxy"] });
+def("worker", { name: "askdiq-worker", kind: "container", status: "progress", branch: "chore/prod-deploy-fullstack", sub: "python -m app.jobs.worker",
+  desc: "Runs the Postgres job queue outside the API (compose profile worker). The API then runs with JOBS_WORKER_ENABLED=false. Job types: eval.golden_run, insights.classify, insights.backfill, insights.rollup, state.cleanup. The queue code is merged in preview; the container is on the deploy branch.",
+  tech: ["Python asyncio", "Postgres SKIP LOCKED"],
+  files: ["backend/app/jobs/worker.py", "backend/app/jobs/runtime.py", "backend/app/jobs/handlers.py"],
+  env: ["JOBS_WORKER_ENABLED=false (on the API)", "JOBS_MAX_CONCURRENCY=4", "WORKER_DB_POOL_SIZE"],
+  sec: { A10: "Failures are recorded on the job row and retried with backoff; dead after JOBS_MAX_ATTEMPTS." },
+  rel: ["d_jobs", "postgres", "aoai", "d_insights"] });
+def("dashboard", { name: "AskDIQ dashboard", kind: "service", status: "preview", sub: "Next.js admin console",
+  desc: "Admin console: overview, Usage and Cost, Governance, Feedback (RLHF triage), Analytics (Chatbot Insights), Conversations, Users, User Management, Settings and branding, Evaluation and Live Evaluation, Documents, and Chat. The browser only talks to its own origin; every API call goes through the /api/proxy route handler. Not deployed in production yet (production ships backend/ only).",
+  tech: ["Next.js App Router", "React", "Tailwind tokens", "Motion", "Recharts"],
+  files: ["frontend/app/(app)/admin/", "frontend/app/(app)/chat", "frontend/app/(app)/documents", "frontend/app/api/proxy/[...path]/route.ts", "frontend/middleware.ts", "frontend/lib/"],
+  rel: ["admins", "api", "web", "d_proxy", "entra", "w_widget"] });
+def("w_widget", { name: "In-dashboard AskDIQ widget", kind: "module", status: "progress", branch: "feat/askdiq-chat-widget",
+  desc: "Floating mascot launcher on every dashboard page (hidden on /chat) that opens a lazily loaded right-side drawer; full screen below 639 px. It reuses ChatProvider.sendQuery, so it calls POST /query through the same proxy. This is not the website widget built by the other team.",
+  tech: ["React", "next/dynamic", "Motion"],
+  files: ["frontend/components/askdiq/AskDiqLauncher.tsx", "frontend/components/askdiq/AskDiqDrawer.tsx", "frontend/components/chat/ChatConversation.tsx", "frontend/lib/askdiq-widget.ts"],
+  sec: { A05: "Markdown rendered without dangerouslySetInnerHTML; only https: or relative links." },
+  rel: ["dashboard", "d_proxy", "p_validate"] });
+
+/* ---- /query pipeline stages ---- */
+def("p_validate", { name: "Validate + rate limit", kind: "step", status: "live", ms: 3, metric: "part of total_ms",
+  desc: "Pydantic QueryRequest validation, then llm_capacity (429 with Retry-After when LLM_MAX_CONCURRENCY slots are taken), then the sliding-window limits: per user or client id, and per end-user IP. Production keeps the windows in memory; preview shares them across workers in the UNLOGGED rate_limit_buckets table.",
+  files: ["backend/app/api/routes/query.py", "backend/app/schemas/query.py", "backend/app/core/rate_limit.py", "backend/app/core/concurrency.py", "backend/app/core/state.py"],
+  endpoints: ["POST /query → 422 | 429 | 401"],
+  env: ["MAX_QUERY_LENGTH=2000", "RATE_LIMIT_PER_MINUTE=10", "RATE_LIMIT_PER_MINUTE_PER_IP=30", "RATE_LIMIT_EXEMPT_ACTORS", "LLM_MAX_CONCURRENCY=64", "LLM_SATURATED_RETRY_AFTER_SECONDS=2"],
+  sec: { A01: "Production: X-API-Key + X-Client-Id. Preview: proxy key + SSO session (require_role_or_chat).", A06: "Per-user and per-IP windows; bounded LLM concurrency." },
+  rel: ["p_session", "website", "t_rate_limit_buckets"] });
+def("p_session", { name: "Resolve session + IP", kind: "step", status: "live", ms: 8, metric: "part of total_ms",
+  desc: "resolve_client_ip uses a valid body ip_address when ALLOW_CLIENT_IP_OVERRIDE is on (hotfix), otherwise X-Forwarded-For when TRUST_PROXY_HEADERS is on, otherwise the socket. resolve_session_for_query finds or opens the chat session, load_recent_history loads earlier turns, then db.commit() returns the pooled connection before the slow stages.",
+  files: ["backend/app/core/request_meta.py", "backend/app/core/sessions.py"],
+  env: ["ALLOW_CLIENT_IP_OVERRIDE (hotfix)", "TRUST_PROXY_HEADERS", "SESSION_TIMEOUT_MINUTES=60", "SESSION_HISTORY_MAX_MESSAGES=20"],
+  note: "Hotfix default mismatch: config.py defaults ALLOW_CLIENT_IP_OVERRIDE to true while backend/.env.example says false.",
+  sec: { A01: "Sessions scoped to the actor; only valid IPv4/IPv6 values are accepted from the body." },
+  rel: ["p_validate", "p_guard", "t_chat_sessions"] });
+def("p_guard", { name: "Pre-checks", kind: "step", status: "live", ms: 2, metric: "guardrail_pre_ms",
+  desc: "Small talk (greetings, thanks, capability questions) is answered at once with outcome conversational. Everything else goes through run_pre_checks (length, gibberish, injection patterns) and sanitize_query; a hit returns a fallback answer with guardrail_flags and skips the LLM.",
+  files: ["backend/app/guardrails/conversational.py", "backend/app/guardrails/pre_checks.py", "backend/app/harness/orchestrator.py"],
+  sec: { A05: "Direct prompt-injection patterns blocked before retrieval (LLM01)." },
+  rel: ["p_session", "p_embed"] });
+def("p_embed", { name: "Embed query", kind: "step", status: "live", ms: 180, metric: "embedding_ms",
+  desc: "Follow-up questions are rewritten with recent history (contextualize_query); compound questions are split (decompose_query). The query is embedded with text-embedding-3-small (1536 dims). Query and guardrail embedding tokens are counted separately for cost.",
+  files: ["backend/app/retrieval/retriever.py", "backend/app/retrieval/embeddings.py"],
+  env: ["EMBEDDING_MODEL", "EMBEDDING_DIM=1536", "ENABLE_QUERY_DECOMPOSITION=true", "COMPOUND_QUERY_TOP_K=9"],
+  rel: ["aoai", "p_vector"] });
+def("p_vector", { name: "pgvector similarity", kind: "step", status: "live", ms: 45, metric: "retrieval_ms (spans the whole retrieve call)",
+  desc: "Broad cosine-distance recall over chunks.embedding (Chunk.embedding.cosine_distance), at least RETRIEVAL_CANDIDATE_MIN candidates, deduped by chunk id keeping the best score. Metadata filters pass through usable_filters: only allow-listed keys with scalar values; anything else, such as Swagger's additionalProp1, is dropped and logged.",
+  files: ["backend/app/retrieval/vector_store.py"],
+  env: ["DEFAULT_TOP_K=5", "RETRIEVAL_CANDIDATE_MIN=8", "RETRIEVAL_CANDIDATE_MULTIPLIER=1", "RETRIEVAL_FILTER_KEYS=source_type,corpus,ingestion_source (hotfix)"],
+  sec: { A05: "Filter keys allow-listed; values bound as parameters." },
+  rel: ["postgres", "t_chunks", "p_rerank"] });
+def("p_rerank", { name: "ONNX rerank", kind: "step", status: "live", ms: 320, metric: "reranker_ms",
+  desc: "Cross-encoder rerank of the candidate pool with fastembed TextCrossEncoder (Xenova/ms-marco-MiniLM-L-6-v2, ONNX on CPU), preloaded at startup. It only changes the order and keeps the cosine score. A bounded semaphore caps parallel reranks; if the model cannot load, cosine order is used. In code this runs before the cross-document quota.",
+  files: ["backend/app/retrieval/reranker.py"],
+  env: ["ENABLE_RERANKER=true", "RERANKER_MODEL", "RERANK_MAX_CONCURRENCY=4", "RERANK_BATCH_SIZE=1"],
+  rel: ["p_vector", "p_quota"] });
+def("p_quota", { name: "Cross-doc quota + gate", kind: "step", status: "live", ms: 1, metric: "retrieval_relevance_score",
+  desc: "_select_diverse_chunks fills DEFAULT_TOP_K round-robin across up to three documents so one long document cannot crowd out others. Then the relevance gate: no sources returns flag no_sources (hotfix) and a top score under MIN_RETRIEVAL_SCORE returns off_topic. injection_in_chunks drops chunks that carry instructions (indirect prompt injection).",
+  files: ["backend/app/retrieval/vector_store.py", "backend/app/harness/orchestrator.py"],
+  env: ["CROSS_DOC_QUOTA_MAX_DOCUMENTS=3", "MIN_RETRIEVAL_SCORE=0.15"],
+  sec: { A05: "Poisoned chunks removed before they reach the prompt (LLM01, indirect)." },
+  rel: ["p_rerank", "p_llm"] });
+def("p_llm", { name: "LLM answer", kind: "step", status: "live", ms: 2300, metric: "llm_ms", sub: "gpt-5-mini · reasoning effort",
+  desc: "call_llm sends the delimited context and trimmed history to the Azure deployment with reasoning_effort, a completion budget and an answer length cap. Only call errors and empty output are retried. Usage records prompt, completion, reasoning and cached tokens per attempt; retries and failures go to the audit log.",
+  files: ["backend/app/harness/prompts.py", "backend/app/harness/orchestrator.py", "backend/app/core/circuit.py"],
+  env: ["AZURE_DEPLOYMENT_NAME", "LLM_REASONING_EFFORT=minimal", "LLM_MAX_COMPLETION_TOKENS=1400", "ANSWER_MAX_WORDS=150", "LLM_CONTEXT_MAX_TOKENS=2400", "LLM_HISTORY_MAX_TOKENS=400", "MAX_LLM_RETRIES=1", "LLM_BREAKER_FAILURE_THRESHOLD=5"],
+  sec: { A06: "Token and word caps bound spend per request (LLM10).", A10: "Circuit breaker opens after repeated failures; a fallback answer is returned, never a stack trace." },
+  rel: ["aoai", "p_quota", "p_post"] });
+def("p_post", { name: "Groundedness + guardrails", kind: "step", status: "live", ms: 140, metric: "guardrail_post_ms",
+  desc: "run_post_checks and check_groundedness compare the answer with the retrieved chunks (embedding similarity against GROUNDEDNESS_THRESHOLD). An ungrounded answer is replaced by a safe fallback and flagged; it is not re-sampled, which saves a full LLM call.",
+  files: ["backend/app/guardrails/post_checks.py"],
+  env: ["GROUNDEDNESS_THRESHOLD=0.45"],
+  sec: { A05: "Output checked against sources before it is returned." },
+  rel: ["p_llm", "p_persist", "aoai"] });
+def("p_persist", { name: "Persist exchange", kind: "step", status: "live", ms: 0, async: true, metric: "written after the response",
+  desc: "compute_exchange_cost prices the tokens; redact_pii masks the query for the audit row. schedule_exchange_write stores both chat_messages turns (tokens, cost_usd, outcome, ip_address, token_details) and an audit_log row with the sources and scores. LatencyMiddleware persists latency_metrics (total and per stage) in a supervised background task. On preview, INSIGHTS_CLASSIFY_ON_WRITE enqueues insights.classify.",
+  files: ["backend/app/core/sessions.py", "backend/app/governance/costing.py", "backend/app/governance/pii.py", "backend/app/core/middleware.py", "backend/app/core/tasks.py"],
+  env: ["PRICE_PROMPT_PER_MILLION=0.25", "PRICE_OUTPUT_PER_MILLION=2.00", "PRICE_EMBED_PER_MILLION=0.02", "PRICE_CACHED_PER_MILLION=0.125"],
+  sec: { A09: "Every exchange audited with request_id; PII masked first.", A08: "audit_log rows cannot be updated or deleted." },
+  rel: ["t_chat_messages", "t_audit_log", "t_latency_metrics", "p_eval", "d_jobs"] });
+def("p_eval", { name: "Online eval sampling", kind: "step", status: "live", ms: 0, async: true, metric: "evaluation_records",
+  desc: "schedule_online_evaluation samples a share of live answers after the exchange write and grades them with an LLM judge: faithfulness, relevance, completeness, citation precision and coverage, retrieval recall. Results feed Live Evaluation. Off by default (ONLINE_EVAL_ENABLED=false).",
+  files: ["backend/app/governance/online_eval.py", "backend/app/evaluation/judge.py", "backend/app/evaluation/metrics.py"],
+  env: ["ONLINE_EVAL_ENABLED=false", "ONLINE_EVAL_SAMPLE_RATE=0.10", "ONLINE_EVAL_MAX_CONCURRENCY=4"],
+  rel: ["t_evaluation_records", "aoai", "p_persist"] });
+
+/* ---- Dashboard data flow ---- */
+def("d_browser", { name: "Admin browser", kind: "person", status: "preview",
+  desc: "React client. Data hooks (useApiQuery in lib/query-cache.ts) dedupe requests and keep stale-while-revalidate caches. Governance opens an EventSource on the stream route. The browser never holds the API key or a token, only the httpOnly session cookie.",
+  files: ["frontend/lib/api.ts", "frontend/lib/query-cache.ts", "frontend/lib/use-dashboard.ts", "frontend/lib/governance-api.ts"],
+  rel: ["d_middleware", "d_proxy", "admins"] });
+def("d_middleware", { name: "middleware.ts", kind: "module", status: "preview",
+  desc: "Redirects page requests without a session cookie to /login. A UX redirect only; the real boundary is the backend check on every proxied call. The shell branch updates it for logout.",
+  files: ["frontend/middleware.ts", "frontend/lib/auth-gate.ts", "frontend/lib/safe-redirect.ts"],
+  sec: { A01: "Open-redirect safe return paths (safe-redirect.ts)." },
+  rel: ["d_proxy", "d_browser"] });
+def("d_proxy", { name: "/api/proxy/[...path]", kind: "route", status: "preview", sub: "Next route handler",
+  desc: "Reads the httpOnly askdiq_session cookie and forwards it as X-Session, adds the server-only X-API-Key, forwards X-Client-Id and X-Forwarded-For, and on POST/PATCH/DELETE adds X-Requested-With: askdiq plus the browser Origin for the CSRF check. Backend Set-Cookie is dropped; a 401 clears the cookie.",
+  files: ["frontend/app/api/proxy/[...path]/route.ts", "frontend/lib/server/backend.ts", "frontend/lib/server/auth-cookies.ts"],
+  env: ["API_BASE_URL", "API_KEY", "SESSION_COOKIE_NAME=askdiq_session", "BACKEND_TIMEOUT_MS=60000 (branch)", "BACKEND_WRITE_TIMEOUT_MS=180000 (branch)", "BACKEND_RETRIES=2 (branch)"],
+  note: "fix/chat-page-fetch-timeouts (uncommitted): bounded wait for response headers, then 504; idempotent calls retried with jittered backoff; SSE never cut once headers arrive.",
+  sec: { A01: "CSRF: SameSite=Lax + Origin + X-Requested-With on state changes.", A07: "Session id only ever in an httpOnly cookie.", A10: "Upstream timeouts become a typed error, not a hang (branch)." },
+  rel: ["d_authdeps", "d_browser", "d_callback", "w_widget"] });
+def("d_callback", { name: "/auth/callback/[provider]", kind: "route", status: "preview", sub: "+ /auth/login, /auth/logout",
+  desc: "Receives Entra's redirect, forwards code and state to POST /auth/sso/callback, and sets the session id as an httpOnly, SameSite=Lax cookie (Secure in production). The logout route on fix/shell-nav-logout-theme-dates revokes the server session (4 s bound) and always clears the cookie.",
+  files: ["frontend/app/auth/callback/[provider]/route.ts", "frontend/app/auth/login/route.ts", "frontend/app/auth/logout/route.ts (branch)"],
+  sec: { A07: "Session rotation on login; server-side revocation on logout." },
+  rel: ["entra", "d_proxy", "t_auth_sessions"] });
+def("d_authdeps", { name: "Auth dependencies", kind: "module", status: "preview", sub: "require_permission(p)",
+  desc: "Deny by default. current_user checks the proxy key with hmac.compare_digest and resolves X-Session against auth_sessions (stored as an HMAC hash). require_role_or_chat for chat, require_active_user for any dashboard route, require_permission(p) for actions. The user row is reloaded on every request, so a role change or suspension applies immediately.",
+  files: ["backend/app/auth/deps.py", "backend/app/auth/permissions.py", "backend/app/auth/sessions.py", "backend/app/auth/principal.py"],
+  env: ["API_KEY_NAME", "SESSION_TTL_MINUTES=480", "SESSION_IDLE_MINUTES=60", "APP_BASE_URL (allowed Origin)"],
+  tech: ["Roles: operator < admin < superadmin", "dashboard:read, documents:write, feedback:triage, feedback:export, eval:run, testip:write, usage:export, users:manage, audit:auth:read, branding:write, taxonomy:write"],
+  sec: { A01: "Guard on every route (route-walk test); object-level checks on detail routes.", A04: "Session ids from secrets.token_urlsafe, stored hashed.", A07: "Idle and absolute timeouts; revoked sessions rejected." },
+  rel: ["d_routes", "d_proxy", "t_users", "t_auth_sessions"] });
+def("d_routes", { name: "Admin routers", kind: "service", status: "preview",
+  desc: "Thin routers that validate and call domain modules (app/dashboard, app/governance, app/feedback, app/insights, app/entities). Heavy analytics share a 60 per minute per-user and per-IP limit.",
+  files: ["backend/app/api/routes/admin.py", "admin_usage.py", "admin_governance.py", "admin_feedback.py", "admin_entities.py", "insights.py", "user_management.py", "branding.py", "documents.py", "metrics.py"],
+  endpoints: ["/admin/usage/summary, /users, /sessions, /queries, /export", "/admin/governance/overview, /monitoring, /traces, /logs, /logs/export.csv", "/admin/feedback, /analytics, /golden, /bulk", "/admin/insights/summary, /trend, /topics, /quality, /taxonomy", "/admin/users-accounts, /access-requests", "/admin/visitors/stats, /conversations/stats", "/documents, /metrics/evaluation/live"],
+  sec: { A05: "Sort and filter allow-lists (ALLOWED_*_SORTS), LIKE escaping, Enum params.", A06: "limit ≤ 200, offset ≤ 10k, export ≤ 10k rows; CSV formula prefixes neutralised." },
+  rel: ["d_authdeps", "d_cache", "d_ro", "d_sse"] });
+def("d_cache", { name: "ETag + TTL cache", kind: "module", status: "preview",
+  desc: "cached_response adds a weak ETag and answers 304 on If-None-Match, with Cache-Control private. aggregation_cache is an in-process TTLCache (15 s) for expensive aggregates. perf/dashboard-load-speed moves usage cards and the summary onto get_or_compute, so concurrent callers share one computation.",
+  files: ["backend/app/core/http_cache.py", "backend/app/core/cache.py"],
+  env: ["USAGE_SUMMARY_CACHE_TTL_SECONDS=15"],
+  note: "perf/dashboard-load-speed (uncommitted) also adds index ix_chat_messages_user_created_desc (/admin/usage/queries 3.9 s → 58 ms) and server-side preload of /auth/me.",
+  sec: { A01: "Cache keys include role and permission set so roles never share cached data.", A02: "private caching only; Vary on X-API-Key and X-Client-Id." },
+  rel: ["d_routes", "d_ro", "d_events"] });
+def("d_ro", { name: "read_only_session + gather_scoped", kind: "module", status: "preview",
+  desc: "Dashboard reads run in read_only_session, which sets SET LOCAL statement_timeout so a slow query becomes a clean 503. gather_scoped runs a page's independent queries in parallel, each with its own session, under a semaphore.",
+  files: ["backend/app/core/database.py", "backend/app/core/concurrency.py", "backend/app/dashboard/service.py", "backend/app/governance/overview.py"],
+  env: ["DASHBOARD_STATEMENT_TIMEOUT_MS=5000", "DB_POOL_TIMEOUT_SECONDS=120 (branch)", "AGG_POOL_RESERVE=5 (branch)"],
+  note: "fix/chat-page-fetch-timeouts adds release_connection, pool_stats (exposed on /health) and a process-wide fanout_slots semaphore to stop pool exhaustion.",
+  sec: { A06: "Bounded statement time and parallelism.", A10: "Timeouts surface as problem+json, never a hung worker." },
+  rel: ["postgres", "d_cache", "d_routes"] });
+def("d_sse", { name: "Governance SSE stream", kind: "route", status: "preview", sub: "GET /admin/governance/stream",
+  desc: "GovernanceStreamHub runs one producer per audience shared by every subscriber, takes a snapshot every few seconds and sends only the differences (diff_events). GZip skips SSE; nginx turns buffering off for stream locations.",
+  files: ["backend/app/governance/stream.py", "backend/app/core/sse.py", "backend/app/core/compression.py", "backend/app/api/routes/admin_governance.py"],
+  env: ["GOVERNANCE_STREAM_INTERVAL_SECONDS=5", "GOVERNANCE_STREAM_SNAPSHOT_TIMEOUT_SECONDS=60 (branch)"],
+  rel: ["d_routes", "d_events", "d_browser"] });
+def("d_events", { name: "Event bus", kind: "module", status: "preview", sub: "LISTEN/NOTIFY askdiq_events",
+  desc: "Each process keeps one asyncpg connection that LISTENs on the events channel and fans out in process. publish(topic, id) sends a NOTIFY carrying ids only. Used for cross-worker cache invalidation and waking the job worker. Postgres replaces Redis.",
+  files: ["backend/app/core/events.py", "backend/app/jobs/runtime.py"],
+  env: ["EVENTS_CHANNEL=askdiq_events"],
+  rel: ["postgres", "d_cache", "d_jobs", "d_sse"] });
+def("d_jobs", { name: "Job queue", kind: "module", status: "preview", sub: "FOR UPDATE SKIP LOCKED",
+  desc: "Postgres-backed queue: enqueue with an optional dedupe_key, claim with FOR UPDATE SKIP LOCKED, exponential backoff on failure, reclaim stale locks, mark dead after max attempts, prune finished rows.",
+  files: ["backend/app/jobs/queue.py", "backend/app/jobs/registry.py", "backend/app/jobs/worker.py"],
+  env: ["JOBS_MAX_CONCURRENCY=4", "JOBS_MAX_ATTEMPTS=5", "JOBS_LOCK_TIMEOUT_SECONDS=300", "JOBS_RETENTION_DAYS=7"],
+  sec: { A08: "Idempotent jobs: partial unique dedupe_key while queued or running.", A10: "Errors stored in last_error; no silent fire-and-forget." },
+  rel: ["t_jobs", "worker", "d_insights", "d_events"] });
+def("d_insights", { name: "Insights classifier + rollups", kind: "module", status: "preview",
+  desc: "insights.classify labels each turn (intent, bot quality, issue, friction) with rules first and the LLM second; output is JSON-schema constrained and validated against the taxonomy. insights.rollup aggregates per day into insight_daily_rollup for the Analytics page.",
+  files: ["backend/app/insights/classifier.py", "backend/app/insights/jobs.py", "backend/app/insights/rules.py", "backend/app/insights/analytics_service.py", "backend/scripts/backfill_turn_insights.py"],
+  endpoints: ["/admin/insights/summary, /trend, /hourly, /flow, /topics, /quality, /dropoff, /people, /conversations, /pending, /taxonomy"],
+  env: ["INSIGHTS_MODEL (falls back to AZURE_DEPLOYMENT_NAME)", "INSIGHTS_REASONING_EFFORT=minimal", "INSIGHTS_DAILY_TOKEN_BUDGET=200000", "INSIGHTS_TIMEZONE=Australia/Sydney", "INSIGHTS_CLASSIFY_ON_WRITE=true"],
+  sec: { A05: "User text placed in a delimited data block; labels only (LLM06).", A06: "Daily token budget caps classifier spend (LLM10)." },
+  rel: ["t_turn_insights", "t_insight_daily_rollup", "d_jobs", "aoai"] });
+
+/* ---- Ingestion ---- */
+def("i_upload", { name: "Upload .docx / .md", kind: "route", status: "live", sub: "POST /ingest/file",
+  desc: "The Documents page uploads a file (multipart) or scripts post JSON text. Allowed extensions: .md, .markdown, .docx. On preview both routes need documents:write.",
+  files: ["backend/app/api/routes/ingest.py", "backend/app/ingestion/naming.py", "frontend/app/(app)/documents", "frontend/lib/documents-api.ts"],
+  endpoints: ["POST /ingest (JSON)", "POST /ingest/file (multipart)", "GET /documents, /documents/{id}/chunks, DELETE /documents/{id}"],
+  sec: { A01: "require_permission(documents:write) (preview).", A06: "Extension allow-list and size caps." },
+  rel: ["i_convert", "i_scripts"] });
+def("i_scripts", { name: "Batch ingestion", kind: "module", status: "live",
+  desc: "Scripts ingest the knowledge base from backend/data/real_docs. The hotfix ships that markdown inside the image so production ingestion finds it; the deploy branch runs ingestion at container start via prestart.py.",
+  files: ["backend/scripts/ingest_real_docs.py", "backend/scripts/seed_ingest.py", "backend/scripts/inventory_kb_docs.py", "backend/scripts/reconcile_document_names.py", "backend/data/real_docs/"],
+  rel: ["i_convert", "prestart"] });
+def("i_convert", { name: "Convert to Markdown", kind: "module", status: "live",
+  desc: "Word files go through mammoth and GFM (converter mammoth+gfm); Markdown goes through the normaliser. Preview stores the canonical Markdown on documents.canonical_markdown (migration 254857d10a20).",
+  files: ["backend/app/ingestion/docx_converter.py", "frontend/lib/docx-to-markdown.ts"],
+  tech: ["mammoth", "GFM"],
+  rel: ["i_upload", "i_normalize"] });
+def("i_normalize", { name: "Canonical name + normalise", kind: "module", status: "live",
+  desc: "canonical_source_name makes the document name stable (unique on lower(source_name)). normalize_markdown is deterministic and redacts PII; what it removed is recorded as pii_redacted.",
+  files: ["backend/app/ingestion/naming.py", "backend/app/ingestion/normalizer.py"],
+  sec: { A05: "PII stripped before text reaches embeddings or prompts (LLM02)." },
+  rel: ["i_convert", "i_hash"] });
+def("i_hash", { name: "Content hash check", kind: "module", status: "live",
+  desc: "doc_content_hash of the normalised text is compared with documents.content_hash. Same hash means nothing changed: no chunking, no embedding cost. force=true re-ingests; dry_run reports without writing.",
+  files: ["backend/app/ingestion/service.py"],
+  sec: { A08: "Re-ingestion is idempotent and auditable." },
+  rel: ["i_skip", "i_chunk", "t_documents"] });
+def("i_skip", { name: "Skip unchanged", kind: "module", status: "preview", sub: "backfill missing provenance",
+  desc: "Returns status unchanged and keeps the existing chunks. backfill_provenance fills provenance fields older ingests never recorded (commit be1b646).",
+  files: ["backend/app/ingestion/service.py"],
+  rel: ["i_hash", "i_store"] });
+def("i_chunk", { name: "Chunking strategy", kind: "module", status: "live",
+  desc: "get_strategy: auto maps to structure_aware; fixed_size and semantic (embedding-based boundaries) are also available. Every base strategy is wrapped by metadata-aware enrichment that adds headings and section context.",
+  files: ["backend/app/chunking/factory.py", "backend/app/chunking/structure_aware.py", "backend/app/chunking/semantic.py", "backend/app/chunking/fixed_size.py", "backend/app/chunking/metadata_aware.py", "backend/scripts/show_chunking.py"],
+  rel: ["i_hash", "i_diff"] });
+def("i_diff", { name: "Chunk diff", kind: "module", status: "live",
+  desc: "chunk_content_hash (sha256 of v1 plus content) identifies each chunk. Only new chunks are embedded, removed chunks are deleted, kept chunks are reused. Three-phase concurrency safety around the upsert.",
+  files: ["backend/app/ingestion/service.py"],
+  rel: ["i_chunk", "i_embed"] });
+def("i_embed", { name: "Embed new chunks", kind: "module", status: "live",
+  desc: "embed_texts calls Azure OpenAI text-embedding-3-small in batches; tokens and cost are added to the ingest audit detail.",
+  files: ["backend/app/retrieval/embeddings.py"],
+  env: ["EMBEDDING_MODEL=text-embedding-3-small", "EMBEDDING_DIM=1536"],
+  rel: ["aoai", "i_store"] });
+def("i_store", { name: "Store chunks + provenance", kind: "module", status: "live",
+  desc: "Writes the documents row (content_hash, doc_metadata) and chunks with embedding vector(1536), strategy, chunk_index and chunk_metadata provenance: converter, chunking_strategy, embedding_model, embedding_dim, doc_hash_version, pipeline_version, pii_redacted, sizes. An ingest event goes to audit_log.",
+  files: ["backend/app/ingestion/service.py", "backend/app/models/db_models.py", "backend/app/documents/inventory.py"],
+  sec: { A09: "Ingest audited with actor, request_id and client IP." },
+  rel: ["t_documents", "t_chunks", "t_audit_log"] });
+
+/* ---- Tables ---- */
+function tbl(id, group, status, desc, cols, rel, extra) {
+  var o = { name: id, kind: "table", status: status, desc: desc, cols: cols, rel: (rel || []).map(function (r) { return "t_" + r; }), group: group,
+    files: ["backend/app/models/db_models.py"] };
+  if (extra) for (var k in extra) o[k] = extra[k];
+  def("t_" + id, o);
+}
+tbl("documents", "Content", "live", "One row per knowledge-base document, keyed by canonical name.", [
+  ["id", "UUID PK"], ["source_name", "String(512), unique on lower()"], ["source_type", "String(64)"], ["content_hash", "String(64)"], ["doc_metadata", "JSON"], ["canonical_markdown", "Text, deferred (preview)"], ["created_at / updated_at", "DateTime"]], ["chunks"]);
+tbl("chunks", "Content", "live", "Retrieval units with their embedding and provenance. No ANN index: similarity is an exact scan.", [
+  ["id", "UUID PK"], ["document_id", "FK → documents.id"], ["content", "Text"], ["embedding", "vector(1536)"], ["strategy", "String(64)"], ["chunk_index", "Integer"], ["chunk_metadata", "JSON provenance"], ["content_hash", "String(64), ix (document_id, content_hash)"]], ["documents"]);
+tbl("chat_sessions", "Chat", "live", "A conversation for one actor (email or client id).", [
+  ["id", "UUID PK"], ["user_email", "String(320), ix"], ["title", "String(256)"], ["created_at / last_activity_at / expires_at", "DateTime"], ["created_ip", "String(64), ix"]], ["chat_messages"]);
+tbl("chat_messages", "Chat", "live", "Each user and assistant turn with tokens, cost and outcome.", [
+  ["id", "UUID PK"], ["session_id", "FK → chat_sessions, CASCADE"], ["turn_index / role / content", ""], ["request_id", "String(64)"], ["grounded / guardrail_flags", "Bool / JSON"], ["ip_address / outcome", "String, ix"], ["prompt/completion/reasoning/embedding/guardrail_tokens", "Integer"], ["cost_usd / token_details", "Float / JSON"]], ["chat_sessions"],
+  { note: "perf/dashboard-load-speed adds partial index ix_chat_messages_user_created_desc WHERE role='user'." });
+tbl("message_feedback", "Chat", "live", "Ratings and triage for answers (RLHF loop). Triage columns arrive with preview.", [
+  ["id", "UUID PK"], ["message_id", "FK → chat_messages, CASCADE"], ["session_id", "FK → chat_sessions"], ["actor", "unique with message_id"], ["rating", "1–5 CHECK"], ["reason_tags", "JSONB"], ["triage_status", "new | reviewed | promoted | dismissed"], ["promoted_case_id", "FK → eval_promoted_cases"], ["version", "optimistic lock"]], ["chat_messages", "chat_sessions", "eval_promoted_cases"]);
+tbl("audit_log", "Observability", "live", "Append-only event log. trg_audit_log_immutable raises on UPDATE or DELETE.", [
+  ["id", "UUID PK"], ["created_at", "DateTime"], ["request_id", "String(64), ix"], ["actor", "String(256)"], ["action", "String(64)"], ["detail", "JSON (PII masked)"], ["ip_address", "String(64)"]], ["chat_messages"],
+  { sec: { A08: "Immutable by trigger, even for the app role.", A09: "Auth, 429, 5xx, query and ingest events correlated by request_id." } });
+tbl("latency_metrics", "Observability", "live", "Total and per-stage latency for every request.", [
+  ["id", "UUID PK"], ["request_id", "ix"], ["total_ms", "Float"], ["embedding_ms / retrieval_ms / reranker_ms", "Float"], ["guardrail_pre_ms / llm_ms / guardrail_post_ms", "Float"]], ["chat_messages"]);
+tbl("evaluation_records", "Observability", "live", "Judge results from online sampling and offline runs.", [
+  ["id", "UUID PK"], ["message_id / session_id", "FK, CASCADE"], ["audience", "String(32), ix"], ["passed", "Bool"], ["faithfulness / relevance / completeness", "Float"], ["citation_precision / citation_coverage / retrieval_recall", "Float"], ["unsupported_claims / retrieved_chunks", "JSON"], ["judge_reason", "Text"]], ["chat_messages", "chat_sessions"]);
+tbl("eval_promoted_cases", "Observability", "preview", "Golden test cases promoted from feedback (moved out of a JSON file).", [
+  ["id", "String(64) PK"], ["query / reference_answer", "Text"], ["case_type / expected_outcome", "String"], ["source_message_id", "UUID, unique, no FK"], ["reason_tags / last_run_detail", "JSONB"], ["promoted_by / promoted_at", ""]], []);
+tbl("test_ip_configs", "Observability", "live", "Internal and test IPs excluded from usage and active-visitor counts.", [
+  ["id", "UUID PK"], ["ip_address", "String(64), unique"], ["description", "String(256)"], ["is_active", "Bool"]], []);
+tbl("users", "Auth", "preview", "Dashboard users keyed on the Entra object id.", [
+  ["id", "UUID PK"], ["email", "unique"], ["entra_oid", "String(64), unique"], ["tenant_id", "String(64)"], ["role", "superadmin | admin | operator"], ["status", "pending | active | rejected | suspended"], ["approved_by", "FK → users (self)"], ["version", "optimistic lock"]], ["access_requests", "auth_sessions"]);
+tbl("access_requests", "Auth", "preview", "Requests for a role; at most one pending per user.", [
+  ["id", "UUID PK"], ["user_id", "FK → users, CASCADE"], ["requested_role", "CHECK"], ["justification", "Text"], ["status", "pending | approved | rejected"], ["decided_by", "FK → users"]], ["users"]);
+tbl("auth_sessions", "Auth", "preview", "Server-side sessions; the raw id is never stored.", [
+  ["id", "UUID PK"], ["id_hash", "HMAC-SHA256, unique"], ["user_id", "FK → users, CASCADE"], ["expires_at / idle_expires_at", "timestamptz"], ["last_seen_at / revoked_at", "timestamptz"], ["ip_address / user_agent", ""]], ["users"],
+  { sec: { A04: "Only the HMAC of the session id is stored.", A07: "Idle and absolute expiry; revocation." } });
+tbl("oidc_states", "Auth", "preview", "Short-lived OIDC state, nonce and PKCE verifier (raw SQL, no ORM model).", [
+  ["state_hash", "text PK"], ["payload", "jsonb"], ["expires_at", "timestamptz, ix"]], []);
+tbl("jobs", "Platform", "preview", "Postgres job queue (migration only, no ORM model).", [
+  ["id", "UUID PK"], ["type", "String(100)"], ["payload", "JSONB"], ["status", "queued | running | done | failed | dead"], ["attempts / max_attempts", "Integer"], ["run_after / locked_at / locked_by", ""], ["dedupe_key", "partial unique while active"], ["last_error", "Text"]], []);
+tbl("rate_limit_buckets", "Platform", "preview", "UNLOGGED table shared by all workers for sliding-window limits.", [
+  ["key", "text"], ["window_start", "timestamptz"], ["count", "int"], ["PK", "(key, window_start)"]], []);
+tbl("insight_taxonomy", "Insights", "preview", "Editable labels for intents, quality and issues.", [
+  ["id", "Identity PK"], ["kind / code", "unique pair"], ["label / group / color", ""], ["substantive / handled / is_active / is_system", "Bool"], ["sort_order", "Integer"]], []);
+tbl("turn_insights", "Insights", "preview", "One classification per assistant turn.", [
+  ["id", "UUID PK"], ["message_id", "FK → chat_messages, unique"], ["session_id", "FK → chat_sessions"], ["intent / bot_quality", "ix"], ["issue / friction", "String"], ["confidence", "Float"], ["classified_by / model", "rules or LLM"]], ["chat_messages", "chat_sessions"]);
+tbl("insight_daily_rollup", "Insights", "preview", "Daily aggregates behind the Analytics page.", [
+  ["day / audience / intent / quality / outcome", "composite PK"], ["count / handled / substantive", "Integer"], ["computed_at", "ix"]], []);
+tbl("insight_llm_usage", "Insights", "preview", "Classifier spend, checked against the daily budget.", [
+  ["id", "UUID PK"], ["model", "String(64)"], ["turns", "Integer"], ["prompt/completion/total_tokens", "Integer"], ["cost_usd", "Float"]], []);
+tbl("brand_settings", "Branding", "preview", "Singleton (id = 1) white-label settings.", [
+  ["product_name / assistant_name / company_name", ""], ["primary_hex / accent_hex / tint_hex", "CHECK #rrggbb"], ["logo_* / mark_* / favicon_asset_id", "FK → brand_assets"], ["chat_sample_questions", "JSON"], ["version", "optimistic lock"]], ["brand_assets"]);
+tbl("brand_assets", "Branding", "preview", "Content-addressed logo images (PNG, WebP, sanitised SVG).", [
+  ["sha256", "PK, CHECK hex"], ["mime", "png | webp | svg+xml"], ["data", "bytea"], ["size_bytes / width / height", "Integer"]], [],
+  { sec: { A05: "SVG sanitised (no script, on*, external href); served with nosniff." } });
+
+/* ------------------------------------------------------------------ */
+/* Views                                                               */
+/* ------------------------------------------------------------------ */
+var VIEWS = [
+ { id: "context", label: "System context", w: 1200, h: 700,
+   blurb: "Who uses AskDIQ and what it depends on. Visitors reach it only through the other team's website; admins use the dashboard with Entra sign-in.",
+   groups: [
+     { label: "AskDIQ", x: 290, y: 30, w: 560, h: 640, cls: "zone" },
+     { label: "Exigo Tech platform", x: 880, y: 250, w: 290, h: 190, cls: "ext" },
+     { label: "Microsoft cloud", x: 880, y: 30, w: 290, h: 190, cls: "ext" },
+     { label: "Microsoft cloud", x: 880, y: 470, w: 290, h: 200, cls: "ext" },
+     { label: "Other team", x: 20, y: 30, w: 250, h: 340, cls: "ext" }],
+   nodes: [
+     ["visitors", 45, 70, 200, 76], ["website", 45, 220, 200, 110],
+     ["admins", 45, 500, 200, 76],
+     ["dashboard", 320, 470, 230, 110], ["api", 560, 220, 240, 120],
+     ["aoai", 905, 75, 240, 110], ["postgres", 905, 290, 240, 110], ["entra", 905, 520, 240, 100]],
+   edges: [
+     { f: "visitors", t: "website", l: "chat UI" },
+     { f: "website", t: "api", l: "POST /query · X-API-Key · X-Client-Id", d: "Server to server over HTTPS through nginx at askdiq.ethub.co. The visitor's IP is forwarded in the body and used for attribution and the per-IP limit." },
+     { f: "admins", t: "dashboard", l: "HTTPS" },
+     { f: "dashboard", t: "api", l: "/api/proxy · X-API-Key + X-Session", d: "Every browser call goes through the Next route handler, which adds the proxy key and the session from the httpOnly cookie." },
+     { f: "admins", t: "entra", l: "SSO sign-in", curve: 120 },
+     { f: "api", t: "entra", l: "code exchange · JWKS", curve: -30 },
+     { f: "api", t: "aoai", l: "chat + embeddings" },
+     { f: "api", t: "postgres", l: "SQL + pgvector", d: "SQLAlchemy async over asyncpg; vectors and relational data in one database." }] },
+
+ { id: "containers", label: "Containers", w: 1460, h: 790,
+   blurb: "Production on Internal-Dev-Ubuntu (/opt/askdiq). Dashed boxes are not running yet: the dashboard container and admin subdomain are planned, the startup sequence and separate worker are on chore/prod-deploy-fullstack.",
+   groups: [
+     { label: "Internal-Dev-Ubuntu · Docker host · /opt/askdiq", x: 230, y: 20, w: 1000, h: 750, cls: "host" },
+     { label: "network askdiq_internal", x: 255, y: 70, w: 640, h: 670, cls: "net" },
+     { label: "network et-platform_internal", x: 815, y: 110, w: 395, h: 600, cls: "net", lx: "right" },
+     { label: "Internet", x: 10, y: 20, w: 200, h: 750, cls: "ext" },
+     { label: "Microsoft cloud", x: 1250, y: 20, w: 200, h: 750, cls: "ext" }],
+   nodes: [
+     ["website", 25, 150, 170, 110], ["admins", 25, 520, 170, 76],
+     ["nginx", 280, 300, 200, 100],
+     ["api", 640, 170, 260, 110, null, "FastAPI on uvicorn · :8000 · on both networks"],
+     ["prestart", 700, 330, 200, 110],
+     ["web", 300, 560, 240, 110],
+     ["postgres", 1010, 330, 190, 110],
+     ["worker", 1010, 560, 190, 100],
+     ["aoai", 1265, 150, 170, 110], ["entra", 1265, 480, 170, 100]],
+   edges: [
+     { f: "website", t: "nginx", l: "HTTPS askdiq.ethub.co" },
+     { f: "admins", t: "nginx", l: "HTTPS askdiq-admin.ethub.co", s: "planned" },
+     { f: "nginx", t: "api", l: "proxy_pass :8000" },
+     { f: "nginx", t: "web", l: "proxy_pass askdiq-web:3000", s: "planned" },
+     { f: "web", t: "api", l: "http://askdiq-api:8000", s: "planned", d: "API_BASE_URL=http://askdiq-api:8000 over askdiq_internal; the proxy adds API_KEY and the session." },
+     { f: "prestart", t: "api", l: "runs before uvicorn" },
+     { f: "prestart", t: "postgres", l: "alembic upgrade", d: "alembic upgrade head while holding pg_try_advisory_lock, then idempotent ingestion." },
+     { f: "api", t: "postgres", l: "DATABASE_URL · db askdiq" },
+     { f: "worker", t: "postgres", l: "claim jobs SKIP LOCKED" },
+     { f: "api", t: "aoai", l: "HTTPS" },
+     { f: "api", t: "entra", l: "OIDC", s: "preview", curve: -200 },
+     { f: "worker", t: "aoai", l: "LLM jobs", curve: 40, d: "insights.classify and eval.golden_run call Azure OpenAI." }] },
+
+ { id: "pipeline", label: "/query pipeline", w: 1240, h: 520, player: true,
+   blurb: "One POST /query request, stage by stage, as implemented in app/api/routes/query.py and app/harness/orchestrator.py. Any guardrail or relevance hit short-circuits to a fallback answer with flags.",
+   groups: [
+     { label: "Request path · blocks the response", x: 15, y: 20, w: 1210, h: 200, cls: "zone" },
+     { label: "Answer and after the response", x: 15, y: 290, w: 1210, h: 210, cls: "zone" }],
+   nodes: [
+     ["p_validate", 35, 70, 175, 120], ["p_session", 235, 70, 175, 120], ["p_guard", 435, 70, 175, 120],
+     ["p_embed", 635, 70, 175, 120], ["p_vector", 835, 70, 175, 120], ["p_rerank", 1035, 70, 175, 120],
+     ["p_quota", 1035, 345, 175, 120], ["p_llm", 835, 345, 175, 120], ["p_post", 635, 345, 175, 120],
+     ["p_persist", 335, 345, 200, 120], ["p_eval", 35, 345, 200, 120]],
+   edges: [
+     { f: "p_validate", t: "p_session" }, { f: "p_session", t: "p_guard" }, { f: "p_guard", t: "p_embed" },
+     { f: "p_embed", t: "p_vector" }, { f: "p_vector", t: "p_rerank" }, { f: "p_rerank", t: "p_quota" },
+     { f: "p_quota", t: "p_llm" }, { f: "p_llm", t: "p_post" }, { f: "p_post", t: "p_persist", l: "respond", d: "The QueryResponse is returned here; persistence and evaluation continue in supervised background tasks." },
+     { f: "p_persist", t: "p_eval", l: "sampled" }] },
+
+ { id: "dashboard", label: "Dashboard data flow", w: 1540, h: 760,
+   blurb: "How a dashboard page gets its data: the browser only calls its own origin, the proxy attaches credentials, the backend checks permissions, then reads Postgres through bounded sessions and caches. Governance pushes live updates over SSE.",
+   groups: [
+     { label: "Next.js (askdiq dashboard)", x: 220, y: 30, w: 280, h: 700, cls: "zone" },
+     { label: "askdiq-api", x: 530, y: 30, w: 720, h: 700, cls: "zone" }],
+   nodes: [
+     ["d_browser", 20, 320, 180, 90], ["w_widget", 20, 540, 180, 110],
+     ["d_middleware", 240, 90, 240, 90], ["d_proxy", 240, 310, 240, 110], ["d_callback", 240, 560, 240, 110],
+     ["d_authdeps", 555, 310, 210, 110],
+     ["d_routes", 790, 120, 200, 100], ["d_sse", 790, 470, 200, 100],
+     ["d_cache", 1025, 60, 200, 90], ["d_ro", 1025, 250, 200, 110], ["d_events", 1025, 440, 200, 100], ["d_jobs", 1025, 610, 200, 90],
+     ["postgres", 1290, 260, 230, 110], ["d_insights", 1290, 560, 230, 110], ["entra", 580, 600, 210, 90]],
+   edges: [
+     { f: "d_browser", t: "d_middleware", l: "page request", curve: 20 },
+     { f: "d_browser", t: "d_proxy", l: "fetch /api/proxy/*" },
+     { f: "d_proxy", t: "d_authdeps", l: "X-API-Key · X-Session · CSRF" },
+     { f: "d_callback", t: "entra", l: "code + state" },
+     { f: "d_callback", t: "d_authdeps", l: "POST /auth/sso/callback", curve: -30 },
+     { f: "d_authdeps", t: "d_routes", l: "require_permission" },
+     { f: "d_authdeps", t: "d_sse", l: "dashboard:read" },
+     { f: "d_routes", t: "d_cache", l: "ETag / 304" },
+     { f: "d_routes", t: "d_ro", l: "gather_scoped" },
+     { f: "d_cache", t: "d_ro", l: "miss" },
+     { f: "d_ro", t: "postgres", l: "statement_timeout" },
+     { f: "w_widget", t: "d_proxy", l: "POST /query" },
+     { f: "d_sse", t: "d_proxy", l: "text/event-stream", d: "SSE passes back through the proxy to the browser EventSource; nginx disables buffering on stream locations." },
+     { f: "d_events", t: "d_sse", l: "wake" },
+     { f: "postgres", t: "d_events", l: "NOTIFY askdiq_events" },
+     { f: "d_jobs", t: "postgres", l: "SKIP LOCKED", curve: 40 },
+     { f: "d_jobs", t: "d_insights", l: "insights.classify · rollup" },
+     { f: "d_insights", t: "postgres", l: "turn_insights · rollups" }] },
+
+ { id: "ingestion", label: "Ingestion", w: 1240, h: 650,
+   blurb: "From an uploaded file to searchable chunks, as implemented in app/ingestion/service.py. Unchanged documents stop at the hash check, so re-running ingestion costs nothing.",
+   groups: [{ label: "ingest_text · one transaction per document", x: 225, y: 20, w: 1000, h: 480, cls: "zone" }],
+   nodes: [
+     ["i_upload", 20, 70, 180, 100], ["i_scripts", 20, 330, 180, 100],
+     ["i_convert", 250, 190, 190, 100], ["i_normalize", 470, 190, 200, 100], ["i_hash", 700, 190, 190, 100],
+     ["i_skip", 700, 50, 190, 100], ["i_chunk", 960, 190, 240, 100], ["i_diff", 960, 360, 240, 90], ["i_embed", 700, 360, 190, 90],
+     ["i_store", 420, 360, 230, 100], ["aoai", 700, 545, 190, 90, null, "text-embedding-3-small"]],
+   edges: [
+     { f: "i_upload", t: "i_convert", l: ".docx / .md" }, { f: "i_scripts", t: "i_convert", l: "data/real_docs" },
+     { f: "i_convert", t: "i_normalize" }, { f: "i_normalize", t: "i_hash" },
+     { f: "i_hash", t: "i_skip", l: "unchanged" }, { f: "i_hash", t: "i_chunk", l: "changed" },
+     { f: "i_chunk", t: "i_diff" }, { f: "i_diff", t: "i_embed", l: "new only" },
+     { f: "i_embed", t: "aoai", l: "embed_texts" }, { f: "i_embed", t: "i_store" }] },
+
+ { id: "data", label: "Data model", w: 1160, h: 900,
+   blurb: "22 tables in one Postgres database. Teal dots are in production; violet dots arrive with preview/view. Solid lines are foreign keys; dashed lines are logical joins on request_id with no foreign key. Click a table for its key columns.",
+   groups: [
+     { label: "Content", x: 20, y: 30, w: 230, h: 260, cls: "zone" },
+     { label: "Chat and feedback", x: 280, y: 30, w: 560, h: 260, cls: "zone" },
+     { label: "Branding", x: 870, y: 30, w: 270, h: 260, cls: "zone" },
+     { label: "Observability and evaluation", x: 20, y: 330, w: 640, h: 260, cls: "zone" },
+     { label: "Insights", x: 700, y: 330, w: 440, h: 260, cls: "zone" },
+     { label: "Auth", x: 20, y: 630, w: 640, h: 250, cls: "zone" },
+     { label: "Platform (shared state)", x: 700, y: 630, w: 440, h: 250, cls: "zone" }],
+   nodes: [
+     ["t_documents", 45, 80, 180, 64], ["t_chunks", 45, 195, 180, 64],
+     ["t_chat_sessions", 305, 80, 180, 64], ["t_chat_messages", 305, 195, 180, 64],
+     ["t_eval_promoted_cases", 590, 80, 200, 64], ["t_message_feedback", 590, 195, 200, 64],
+     ["t_brand_settings", 895, 80, 200, 64], ["t_brand_assets", 895, 195, 200, 64],
+     ["t_audit_log", 45, 385, 180, 64], ["t_latency_metrics", 245, 385, 180, 64], ["t_evaluation_records", 445, 385, 195, 64], ["t_test_ip_configs", 45, 495, 180, 64],
+     ["t_turn_insights", 725, 385, 190, 64], ["t_insight_taxonomy", 935, 385, 190, 64], ["t_insight_daily_rollup", 725, 495, 190, 64], ["t_insight_llm_usage", 935, 495, 190, 64],
+     ["t_users", 45, 690, 180, 64], ["t_access_requests", 45, 800, 180, 64], ["t_auth_sessions", 300, 690, 190, 64], ["t_oidc_states", 300, 800, 190, 64],
+     ["t_jobs", 725, 690, 190, 64], ["t_rate_limit_buckets", 935, 690, 190, 64]],
+   edges: [
+     { f: "t_chunks", t: "t_documents", l: "document_id" },
+     { f: "t_chat_messages", t: "t_chat_sessions", l: "session_id" },
+     { f: "t_message_feedback", t: "t_chat_messages", l: "message_id" },
+     { f: "t_message_feedback", t: "t_eval_promoted_cases", l: "promoted_case_id" },
+     { f: "t_evaluation_records", t: "t_chat_messages", l: "message_id" },
+     { f: "t_turn_insights", t: "t_chat_messages", l: "message_id" },
+     { f: "t_audit_log", t: "t_chat_messages", l: "request_id", dash: true, d: "Logical join on request_id; audit_log has no foreign keys, so its rows outlive deleted chats." },
+     { f: "t_latency_metrics", t: "t_chat_messages", l: "request_id", dash: true, d: "Logical join on request_id (no foreign key)." },
+     { f: "t_access_requests", t: "t_users", l: "user_id" },
+     { f: "t_auth_sessions", t: "t_users", l: "user_id" },
+     { f: "t_brand_settings", t: "t_brand_assets", l: "logo_*, favicon" }] }
+];
+
+/* ------------------------------------------------------------------ */
+/* State + helpers                                                     */
+/* ------------------------------------------------------------------ */
+var NS = "http://www.w3.org/2000/svg";
+var $ = function (id) { return document.getElementById(id); };
+var svg = $("svg"), vp = $("vp"), panel = $("panel");
+var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+var state = { view: null, sel: null, hidden: {}, sec: false, owFilter: null, q: "", t: { x: 0, y: 0, k: 1 } };
+var nodeEls = {}, edgeEls = [], current = null;
+
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } return null; }
+function el(tag, attrs, parent) {
+  var e = document.createElementNS(NS, tag);
+  for (var a in attrs) if (attrs[a] !== null && attrs[a] !== undefined) e.setAttribute(a, attrs[a]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function h(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+function wrap(text, max) {
+  var words = String(text).split(" "), lines = [], line = "";
+  words.forEach(function (w) {
+    if ((line + " " + w).trim().length > max && line) { lines.push(line); line = w; } else { line = (line + " " + w).trim(); }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+function edgeStatus(e) {
+  if (e.s) return e.s;
+  var a = C[e.f].status, b = C[e.t].status;
+  return STATUS[a].rank >= STATUS[b].rank ? a : b;
+}
+function viewsWith(id) { return VIEWS.filter(function (v) { return v.nodes.some(function (n) { return n[0] === id; }); }); }
+
+/* ------------------------------------------------------------------ */
+/* Rendering                                                           */
+/* ------------------------------------------------------------------ */
+function render(view) {
+  current = view; nodeEls = {}; edgeEls = [];
+  while (vp.firstChild) vp.removeChild(vp.firstChild);
+  var gLayer = el("g", {}, vp), eLayer = el("g", {}, vp), nLayer = el("g", {}, vp), lLayer = el("g", {}, vp), fx = el("g", {}, vp);
+  var box = {};
+  view.groups.forEach(function (g) {
+    var gg = el("g", { "class": "grp g-" + g.cls }, gLayer);
+    el("rect", { "class": "gbox", x: g.x, y: g.y, width: g.w, height: g.h, rx: 14 }, gg);
+    var right = g.lx === "right";
+    var t = el("text", { "class": "glabel", x: right ? g.x + g.w - 14 : g.x + 14, y: g.y + 20, "text-anchor": right ? "end" : "start" }, gg);
+    t.textContent = g.label.toUpperCase();
+  });
+  view.nodes.forEach(function (n, i) {
+    var c = C[n[0]], x = n[1], y = n[2], w = n[3], hh = n[4];
+    box[c.id] = { x: x, y: y, w: w, h: hh };
+    var g = el("g", { "class": "node s-" + c.status + " k-" + c.kind + (c.sec ? " has-sec" : ""), transform: "translate(" + x + "," + y + ")", tabindex: 0, role: "button",
+      "aria-label": c.name + ", " + STATUS[c.status].label + ". " + (c.desc || "") }, nLayer);
+    g.dataset.id = c.id;
+    var person = c.kind === "person";
+    el("rect", { "class": "box", width: w, height: hh, rx: person ? 30 : (c.kind === "table" ? 8 : 12) }, g);
+    if (c.kind === "store") el("path", { "class": "cyl", d: "M1 14 Q" + w / 2 + " 30 " + (w - 1) + " 14" }, g);
+    var pad = 14, ty = c.kind === "store" ? 34 : 22;
+    var kl = c.kind === "step" ? "STAGE " + String(view.nodes.indexOf(n) + 1).padStart(2, "0") : KIND[c.kind];
+    if (c.kind === "table") kl = "TABLE · " + c.cols.length + " KEY COLUMNS";
+    var k = el("text", { "class": "kind", x: pad, y: ty }, g); k.textContent = kl;
+    if (c.status === "progress" || c.status === "planned") {
+      var lab = c.status === "planned" ? "PLANNED" : "IN PROGRESS", bw = lab.length * 6.2 + 12;
+      var b = el("g", { "class": "badge", transform: "translate(" + (w - bw - 8) + "," + (ty - 12) + ")" }, g);
+      el("rect", { width: bw, height: 16, rx: 8 }, b);
+      var bt = el("text", { x: bw / 2, y: 11.5, "text-anchor": "middle" }, b); bt.textContent = lab;
+    } else {
+      el("circle", { "class": "dot", cx: w - 16, cy: ty - 4, r: 5.5 }, g);
+    }
+    var label = n[5] || c.name, sub = n[6] !== undefined ? n[6] : c.sub;
+    var maxc = Math.floor((w - pad * 2) / (c.kind === "table" ? 7.6 : 7.7));
+    var lines = wrap(label, maxc).slice(0, 2), yy = ty + 20;
+    lines.forEach(function (ln) { var t = el("text", { "class": c.kind === "table" ? "mono-name" : "name", x: pad, y: yy }, g); t.textContent = ln; yy += 18; });
+    if (c.kind === "step" && c.ms !== undefined) {
+      var st = el("text", { "class": "sub", x: pad, y: yy + 2 }, g);
+      st.textContent = c.async ? "async · " + c.metric : "~" + c.ms + " ms · " + c.metric;
+      yy += 16;
+      if (sub) { wrap(sub, Math.floor((w - pad * 2) / 6.3)).slice(0, 1).forEach(function (ln) { var t = el("text", { "class": "sub", x: pad, y: yy + 2 }, g); t.textContent = ln; }); }
+    } else if (c.kind === "table") {
+      var tt = el("text", { "class": "sub", x: pad, y: yy }, g); tt.textContent = c.group;
+    } else if (sub) {
+      wrap(sub, Math.floor((w - pad * 2) / 6.3)).slice(0, Math.max(1, Math.floor((hh - yy) / 15))).forEach(function (ln) { var t = el("text", { "class": "sub", x: pad, y: yy + 2 }, g); t.textContent = ln; yy += 15; });
+    }
+    if (c.sec) {
+      var ow = el("g", { "class": "owc", transform: "translate(10,-9)" }, g), ox = 0;
+      Object.keys(c.sec).forEach(function (code) {
+        var r = el("g", { transform: "translate(" + ox + ",0)" }, ow);
+        el("rect", { width: 30, height: 17, rx: 5 }, r);
+        var t = el("text", { x: 15, y: 12, "text-anchor": "middle" }, r); t.textContent = code;
+        r.dataset.ow = code; ox += 34;
+      });
+    }
+    nodeEls[c.id] = g;
+  });
+  view.edges.forEach(function (e, i) {
+    var a = box[e.f], b = box[e.t];
+    var geo = route(a, b, e.curve || 0);
+    var st = edgeStatus(e);
+    var g = el("g", { "class": "edge" + ((st === "planned" || st === "progress" || e.dash) ? " dash" : "") }, eLayer);
+    var p = el("path", { "class": "ln", d: geo.d, "marker-end": "url(#arr)" }, g);
+    var hit = el("path", { "class": "hit", d: geo.d }, g);
+    var rec = { e: e, g: g, p: p, st: st, lab: null, key: e.f + ">" + e.t, idx: i };
+    if (e.l) {
+      var lg = el("g", { "class": "elabel", tabindex: 0, role: "button", "aria-label": "Connection " + C[e.f].name + " to " + C[e.t].name + ": " + e.l }, lLayer);
+      var t = el("text", { x: geo.mx, y: geo.my + 3.5, "text-anchor": "middle" }, lg); t.textContent = e.l;
+      var bw = e.l.length * 6.3 + 12;
+      var r = el("rect", { x: geo.mx - bw / 2, y: geo.my - 9, width: bw, height: 18, rx: 9 }, null);
+      lg.insertBefore(r, t);
+      rec.lab = lg;
+      lg.addEventListener("click", function (ev) { ev.stopPropagation(); selectEdge(rec); });
+      lg.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); selectEdge(rec); } });
+      lg.addEventListener("mouseenter", function () { focusEdge(rec); });
+      lg.addEventListener("mouseleave", unfocus);
+      lg.addEventListener("focus", function () { focusEdge(rec); });
+      lg.addEventListener("blur", unfocus);
+    }
+    hit.addEventListener("click", function (ev) { ev.stopPropagation(); selectEdge(rec); });
+    hit.addEventListener("mouseenter", function () { focusEdge(rec); });
+    hit.addEventListener("mouseleave", unfocus);
+    edgeEls.push(rec);
+  });
+  Object.keys(nodeEls).forEach(function (id) {
+    var g = nodeEls[id];
+    g.addEventListener("click", function (ev) { ev.stopPropagation(); if (!moved) selectNode(id); });
+    g.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); selectNode(id); } });
+    g.addEventListener("mouseenter", function () { focusNode(id); });
+    g.addEventListener("mouseleave", unfocus);
+    g.addEventListener("focus", function () { focusNode(id); });
+    g.addEventListener("blur", unfocus);
+  });
+  state.fx = fx;
+  applyFilters();
+}
+
+function clip(b, tx, ty) {
+  var cx = b.x + b.w / 2, cy = b.y + b.h / 2, dx = tx - cx, dy = ty - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  var sx = (b.w / 2 + 4) / Math.abs(dx || 1e-9), sy = (b.h / 2 + 4) / Math.abs(dy || 1e-9), s = Math.min(sx, sy);
+  return { x: cx + dx * s, y: cy + dy * s };
+}
+function route(a, b, curve) {
+  var ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 }, bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  var mx = (ac.x + bc.x) / 2, my = (ac.y + bc.y) / 2;
+  var dx = bc.x - ac.x, dy = bc.y - ac.y, len = Math.hypot(dx, dy) || 1;
+  var cx = mx - dy / len * curve, cy = my + dx / len * curve;
+  var p1 = clip(a, curve ? cx : bc.x, curve ? cy : bc.y), p2 = clip(b, curve ? cx : ac.x, curve ? cy : ac.y);
+  if (!curve) return { d: "M" + p1.x + " " + p1.y + " L" + p2.x + " " + p2.y, mx: (p1.x + p2.x) / 2, my: (p1.y + p2.y) / 2 };
+  var lx = 0.25 * p1.x + 0.5 * cx + 0.25 * p2.x, ly = 0.25 * p1.y + 0.5 * cy + 0.25 * p2.y;
+  return { d: "M" + p1.x + " " + p1.y + " Q" + cx + " " + cy + " " + p2.x + " " + p2.y, mx: lx, my: ly };
+}
+
+/* ------------------------------------------------------------------ */
+/* Highlight, filter, search                                           */
+/* ------------------------------------------------------------------ */
+function setOn(ids, edges) {
+  svg.classList.add("focusing");
+  Object.keys(nodeEls).forEach(function (id) { nodeEls[id].classList.toggle("on", !!ids[id]); });
+  edgeEls.forEach(function (r) {
+    var on = edges.indexOf(r) >= 0;
+    r.g.classList.toggle("on", on);
+    r.p.setAttribute("marker-end", on ? "url(#arrHl)" : "url(#arr)");
+    if (r.lab) r.lab.classList.toggle("on", on);
+  });
+}
+function focusNode(id) {
+  var ids = {}, es = []; ids[id] = 1;
+  edgeEls.forEach(function (r) { if (r.e.f === id || r.e.t === id) { es.push(r); ids[r.e.f] = 1; ids[r.e.t] = 1; } });
+  setOn(ids, es);
+}
+function focusEdge(r) { var ids = {}; ids[r.e.f] = 1; ids[r.e.t] = 1; setOn(ids, [r]); }
+function unfocus() {
+  svg.classList.remove("focusing");
+  edgeEls.forEach(function (r) { r.g.classList.remove("on"); r.p.setAttribute("marker-end", "url(#arr)"); if (r.lab) r.lab.classList.remove("on"); });
+  Object.keys(nodeEls).forEach(function (id) { nodeEls[id].classList.remove("on"); });
+}
+function applyFilters() {
+  Object.keys(nodeEls).forEach(function (id) {
+    var c = C[id], g = nodeEls[id];
+    var hide = !!state.hidden[c.status];
+    if (hide) g.setAttribute("display", "none"); else g.removeAttribute("display");
+    var owOk = !state.owFilter || (c.sec && c.sec[state.owFilter]);
+    g.classList.toggle("has-sec", !!(c.sec && owOk));
+    var q = state.q;
+    g.classList.toggle("match", !!q && matches(c, q));
+  });
+  edgeEls.forEach(function (r) {
+    var hide = state.hidden[r.st] || state.hidden[C[r.e.f].status] || state.hidden[C[r.e.t].status];
+    [r.g, r.lab].forEach(function (x) { if (!x) return; if (hide) x.setAttribute("display", "none"); else x.removeAttribute("display"); });
+  });
+  svg.classList.toggle("secon", state.sec);
+  svg.classList.toggle("searching", !!state.q && Object.keys(nodeEls).some(function (id) { return matches(C[id], state.q); }));
+}
+function hay(c) {
+  return [c.name, c.sub, c.desc, c.note, (c.files || []).join(" "), (c.endpoints || []).join(" "), (c.env || []).join(" "), (c.tech || []).join(" "),
+    (c.cols || []).map(function (x) { return x.join(" "); }).join(" "), c.branch].join(" ").toLowerCase();
+}
+function matches(c, q) { return hay(c).indexOf(q) >= 0; }
+
+var results = $("results"), qIn = $("q"), resIdx = -1;
+function runSearch() {
+  var q = qIn.value.trim().toLowerCase(); state.q = q; applyFilters();
+  results.innerHTML = ""; resIdx = -1;
+  if (!q) { results.hidden = true; return; }
+  var list = Object.keys(C).map(function (k) { return C[k]; }).filter(function (c) { return matches(c, q) && viewsWith(c.id).length; });
+  list.sort(function (a, b) { return (b.name.toLowerCase().indexOf(q) >= 0) - (a.name.toLowerCase().indexOf(q) >= 0); });
+  list.slice(0, 10).forEach(function (c) {
+    var li = h("li"), b = h("button"); b.type = "button"; b.setAttribute("role", "option");
+    var v = viewsWith(c.id); var inCur = v.indexOf(current) >= 0 ? current : v[0];
+    b.appendChild(h("span", "", c.name)); b.appendChild(h("small", "", inCur.label + " · " + STATUS[c.status].label));
+    b.addEventListener("click", function () { goTo(c.id); results.hidden = true; });
+    li.appendChild(b); results.appendChild(li);
+  });
+  if (!list.length) { var li = h("li"); li.appendChild(h("small", "", "  No component, file, route or table matches.")); results.appendChild(li); }
+  results.hidden = false;
+}
+qIn.addEventListener("input", runSearch);
+qIn.addEventListener("keydown", function (e) {
+  var btns = results.querySelectorAll("button");
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault(); if (!btns.length) return;
+    resIdx = (resIdx + (e.key === "ArrowDown" ? 1 : -1) + btns.length) % btns.length;
+    btns.forEach(function (b, i) { b.classList.toggle("on", i === resIdx); });
+  } else if (e.key === "Enter") { var b = btns[resIdx >= 0 ? resIdx : 0]; if (b) b.click(); }
+  else if (e.key === "Escape") { qIn.value = ""; runSearch(); qIn.blur(); }
+});
+document.addEventListener("click", function (e) { if (!e.target.closest || !e.target.closest(".search")) results.hidden = true; });
+
+/* ------------------------------------------------------------------ */
+/* Inspector panel                                                     */
+/* ------------------------------------------------------------------ */
+function statusPill(s) { var p = h("span", "pill"); var d = h("span", "sw " + s); p.appendChild(d); p.appendChild(document.createTextNode(STATUS[s].label)); return p; }
+function sect(title, items, cls) {
+  if (!items || !items.length) return null;
+  var s = h("div", "sect"); s.appendChild(h("h4", "", title));
+  var ul = h("ul", cls || ""); items.forEach(function (it) { ul.appendChild(h("li", "code", it)); }); s.appendChild(ul); return s;
+}
+function relButtons(ids, title) {
+  ids = ids.filter(function (r) { return C[r] && viewsWith(r).length; });
+  if (!ids.length) return null;
+  var s = h("div", "sect"); s.appendChild(h("h4", "", title || "Related"));
+  var row = h("div", "rel");
+  ids.forEach(function (r) { var b = h("button", "", C[r].name); b.type = "button"; b.addEventListener("click", function () { goTo(r); }); row.appendChild(b); });
+  s.appendChild(row); return s;
+}
+function secSect(c) {
+  if (!c.sec) return null;
+  var s = h("div", "sect"); s.appendChild(h("h4", "", "Security controls · OWASP Top 10:2025"));
+  var ul = h("ul", "secl" + (state.sec ? "" : " dim"));
+  Object.keys(c.sec).forEach(function (k) { var li = h("li"); li.appendChild(h("b", "", k)); li.appendChild(h("span", "", OWASP[k] + ". " + c.sec[k])); ul.appendChild(li); });
+  s.appendChild(ul); return s;
+}
+function panelShell() { panel.innerHTML = ""; var w = h("div", "pin"); panel.appendChild(w); return w; }
+function add(w, x) { if (x) w.appendChild(x); }
+
+function showNode(id) {
+  var c = C[id], w = panelShell();
+  var close = h("button", "close", "Close ✕"); close.type = "button"; close.addEventListener("click", clearSel); w.appendChild(close);
+  var hd = h("div"); hd.appendChild(h("div", "eyebrow", (c.kind === "table" ? "Table · " + c.group : KIND[c.kind]))); hd.appendChild(h("h3", "", c.name)); w.appendChild(hd);
+  var meta = h("div", "meta"); meta.appendChild(statusPill(c.status)); if (c.branch) meta.appendChild(h("span", "pill branch", c.branch)); w.appendChild(meta);
+  if (c.desc) w.appendChild(h("p", "", c.desc));
+  if (c.note) w.appendChild(h("div", "note", c.note));
+  if (c.kind === "step" && c.ms !== undefined) {
+    w.appendChild(h("p", "mono", c.async ? "Off the critical path · " + c.metric : "Example ~" + c.ms + " ms · recorded as " + c.metric));
+  }
+  if (c.cols) {
+    var s = h("div", "sect"); s.appendChild(h("h4", "", "Key columns"));
+    var t = h("table", "cols"); c.cols.forEach(function (r) { var tr = h("tr"); tr.appendChild(h("td", "", r[0])); tr.appendChild(h("td", "", r[1])); t.appendChild(tr); });
+    s.appendChild(t); w.appendChild(s);
+  }
+  if (c.tech && c.tech.length) { var ts = h("div", "sect"); ts.appendChild(h("h4", "", "Technologies")); var tg = h("div", "tags"); c.tech.forEach(function (x) { tg.appendChild(h("span", "tag", x)); }); ts.appendChild(tg); w.appendChild(ts); }
+  add(w, sect("Key files", c.files));
+  add(w, sect("Endpoints", c.endpoints));
+  add(w, sect("Config and env vars", c.env));
+  add(w, secSect(c));
+  var linked = [];
+  edgeEls.forEach(function (r) { if (r.e.f === id && linked.indexOf(r.e.t) < 0) linked.push(r.e.t); if (r.e.t === id && linked.indexOf(r.e.f) < 0) linked.push(r.e.f); });
+  (c.rel || []).forEach(function (r) { if (linked.indexOf(r) < 0 && r !== id) linked.push(r); });
+  add(w, relButtons(linked, "Connected and related"));
+  var vs = viewsWith(id).filter(function (v) { return v !== current; });
+  if (vs.length) {
+    var vsec = h("div", "sect"); vsec.appendChild(h("h4", "", "Also appears in")); var row = h("div", "rel");
+    vs.forEach(function (v) { var b = h("button", "", v.label); b.type = "button"; b.addEventListener("click", function () { switchView(v.id); selectNode(id); }); row.appendChild(b); });
+    vsec.appendChild(row); w.appendChild(vsec);
+  }
+}
+function showEdge(r) {
+  var e = r.e, w = panelShell();
+  var close = h("button", "close", "Close ✕"); close.type = "button"; close.addEventListener("click", clearSel); w.appendChild(close);
+  var hd = h("div"); hd.appendChild(h("div", "eyebrow", "Connection")); hd.appendChild(h("h3", "", C[e.f].name + " → " + C[e.t].name)); w.appendChild(hd);
+  var meta = h("div", "meta"); meta.appendChild(statusPill(r.st)); if (e.dash && r.st !== "planned") meta.appendChild(h("span", "pill branch", "logical, no FK")); w.appendChild(meta);
+  if (e.l) w.appendChild(h("p", "mono", e.l));
+  if (e.d) w.appendChild(h("p", "", e.d));
+  add(w, relButtons([e.f, e.t], "Endpoints of this connection"));
+}
+function showIntro() {
+  var w = panelShell(), v = current;
+  w.appendChild(h("div", "eyebrow", "View · " + v.label));
+  w.appendChild(h("h3", "", "Select anything to inspect it"));
+  w.appendChild(h("p", "", "Each box and each labelled line opens its description, technologies, repo paths, endpoints, settings, status and links to related parts."));
+  var counts = {}; v.nodes.forEach(function (n) { var s = C[n[0]].status; counts[s] = (counts[s] || 0) + 1; });
+  var s = h("div", "sect"); s.appendChild(h("h4", "", "In this view"));
+  var m = h("div", "meta"); Object.keys(STATUS).forEach(function (k) { if (counts[k]) { var p = statusPill(k); p.appendChild(document.createTextNode(" · " + counts[k])); m.appendChild(p); } });
+  s.appendChild(m); w.appendChild(s);
+  if (state.sec) {
+    var ss = h("div", "sect"); ss.appendChild(h("h4", "", "OWASP Top 10:2025 controls in this view"));
+    var ul = h("ul", "secl");
+    Object.keys(OWASP).forEach(function (k) {
+      var n = v.nodes.filter(function (x) { return C[x[0]].sec && C[x[0]].sec[k]; }).length;
+      var li = h("li"); li.appendChild(h("b", "", k)); li.appendChild(h("span", "", OWASP[k] + (n ? " · " + n + " component" + (n > 1 ? "s" : "") : " · none here"))); ul.appendChild(li);
+    });
+    ss.appendChild(ul); w.appendChild(ss);
+    w.appendChild(h("p", "", "A03 Supply Chain is enforced in CI rather than in a running component: pip-audit, npm audit --audit-level=high, exact pins for new dependencies, pinned Actions."));
+  }
+  var how = h("ul", "howto");
+  [["Drag", "to pan, scroll or pinch to zoom, "], ["0", "fits the diagram."], ["Tab", "moves through components; Enter opens one."], ["/", "jumps to search; it covers files, routes, env vars and columns."], ["S", "toggles the OWASP overlay."]].forEach(function (x) {
+    var li = h("li"); li.appendChild(h("kbd", "", x[0])); li.appendChild(document.createTextNode(" " + x[1])); how.appendChild(li);
+  });
+  w.appendChild(how);
+  if (v.id === "context" || v.id === "containers") {
+    w.appendChild(h("div", "note", "Contract change: production /query accepts X-API-Key + X-Client-Id from the website server. On preview/view /query also needs a signed-in SSO session. Keep a service path for the website before preview/view ships."));
+  }
+}
+
+function selectNode(id) {
+  if (!nodeEls[id]) return;
+  state.sel = id;
+  Object.keys(nodeEls).forEach(function (k) { nodeEls[k].classList.toggle("sel", k === id); });
+  edgeEls.forEach(function (r) { if (r.lab) r.lab.classList.remove("sel"); });
+  showNode(id);
+  if (current.player) { var i = current.nodes.findIndex(function (n) { return n[0] === id; }); if (i >= 0) setStep(i, false); }
+}
+function selectEdge(r) {
+  state.sel = null;
+  Object.keys(nodeEls).forEach(function (k) { nodeEls[k].classList.remove("sel"); });
+  edgeEls.forEach(function (x) { if (x.lab) x.lab.classList.toggle("sel", x === r); });
+  showEdge(r);
+}
+function clearSel() {
+  state.sel = null;
+  Object.keys(nodeEls).forEach(function (k) { nodeEls[k].classList.remove("sel"); });
+  edgeEls.forEach(function (x) { if (x.lab) x.lab.classList.remove("sel"); });
+  showIntro();
+}
+function goTo(id) {
+  if (!nodeEls[id]) { var vs = viewsWith(id); if (!vs.length) return; switchView(vs[0].id); }
+  if (state.hidden[C[id].status]) { state.hidden[C[id].status] = false; syncLegend(); applyFilters(); }
+  selectNode(id); centerOn(id);
+  var g = nodeEls[id]; if (g && g.focus) g.focus({ preventScroll: true });
+}
+
+/* ------------------------------------------------------------------ */
+/* Pan + zoom                                                          */
+/* ------------------------------------------------------------------ */
+function applyT() { vp.setAttribute("transform", "translate(" + state.t.x + "," + state.t.y + ") scale(" + state.t.k + ")"); }
+function fit() {
+  var r = svg.getBoundingClientRect(); if (!r.width) return;
+  var k = Math.min(r.width / current.w, r.height / current.h) * 0.97;
+  state.t = { k: k, x: (r.width - current.w * k) / 2, y: (r.height - current.h * k) / 2 }; applyT();
+}
+function zoomAt(px, py, f) {
+  var k = Math.max(0.2, Math.min(3, state.t.k * f)); f = k / state.t.k;
+  state.t.x = px - (px - state.t.x) * f; state.t.y = py - (py - state.t.y) * f; state.t.k = k; applyT();
+}
+function centerOn(id) {
+  var n = current.nodes.find(function (x) { return x[0] === id; }); if (!n) return;
+  var r = svg.getBoundingClientRect(), k = state.t.k;
+  var cx = (n[1] + n[3] / 2) * k + state.t.x, cy = (n[2] + n[4] / 2) * k + state.t.y;
+  if (cx < 40 || cx > r.width - 40 || cy < 40 || cy > r.height - 40) { state.t.x += r.width / 2 - cx; state.t.y += r.height / 2 - cy; applyT(); }
+}
+svg.addEventListener("wheel", function (e) {
+  e.preventDefault(); var r = svg.getBoundingClientRect();
+  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+}, { passive: false });
+var ptrs = {}, last = null, moved = false, pinch = null;
+svg.addEventListener("pointerdown", function (e) {
+  ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; moved = false;
+  var ids = Object.keys(ptrs);
+  if (ids.length === 2) { var a = ptrs[ids[0]], b = ptrs[ids[1]]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; }
+  last = { x: e.clientX, y: e.clientY };
+});
+svg.addEventListener("pointermove", function (e) {
+  if (!ptrs[e.pointerId]) return;
+  ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+  var ids = Object.keys(ptrs), r = svg.getBoundingClientRect();
+  if (ids.length === 2 && pinch) {
+    var a = ptrs[ids[0]], b = ptrs[ids[1]], d = Math.hypot(a.x - b.x, a.y - b.y);
+    zoomAt((a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top, d / (pinch.d || d)); pinch.d = d; moved = true; return;
+  }
+  var dx = e.clientX - last.x, dy = e.clientY - last.y;
+  if (!moved && Math.hypot(dx, dy) < 4) return;
+  if (!moved) { moved = true; try { svg.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ } svg.classList.add("dragging"); }
+  state.t.x += dx; state.t.y += dy; last = { x: e.clientX, y: e.clientY }; applyT();
+});
+function endPtr(e) {
+  delete ptrs[e.pointerId]; if (Object.keys(ptrs).length < 2) pinch = null;
+  svg.classList.remove("dragging");
+  setTimeout(function () { moved = false; }, 0);
+}
+svg.addEventListener("pointerup", endPtr); svg.addEventListener("pointercancel", endPtr);
+svg.addEventListener("click", function (e) { if (!moved && (e.target === svg || e.target.tagName === "rect" && !e.target.closest(".node,.elabel"))) { if (state.sel) clearSel(); } });
+svg.addEventListener("keydown", function (e) {
+  if (e.target !== svg) return;
+  var s = 40;
+  if (e.key === "ArrowLeft") state.t.x += s; else if (e.key === "ArrowRight") state.t.x -= s;
+  else if (e.key === "ArrowUp") state.t.y += s; else if (e.key === "ArrowDown") state.t.y -= s; else return;
+  e.preventDefault(); applyT();
+});
+function zc(f) { var r = svg.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, f); }
+$("zIn").addEventListener("click", function () { zc(1.2); });
+$("zOut").addEventListener("click", function () { zc(1 / 1.2); });
+$("zFit").addEventListener("click", fit);
+var rT; window.addEventListener("resize", function () { clearTimeout(rT); rT = setTimeout(fit, 120); });
+
+/* ------------------------------------------------------------------ */
+/* Pipeline player                                                     */
+/* ------------------------------------------------------------------ */
+var step = -1, timer = null;
+function buildTimeline() {
+  var tl = $("tl"); tl.innerHTML = "";
+  var steps = VIEWS[2].nodes.map(function (n) { return C[n[0]]; });
+  var sync = steps.filter(function (c) { return !c.async; }).reduce(function (a, c) { return a + c.ms; }, 0);
+  steps.forEach(function (c, i) {
+    var d = h("div"); d.setAttribute("role", "listitem");
+    var grow = c.async ? sync * 0.07 : Math.max(c.ms, sync * 0.012);
+    d.style.flex = grow + " 1 0"; d.title = c.name + (c.async ? " · async" : " · ~" + c.ms + " ms");
+    if (c.async) d.classList.add("async");
+    d.addEventListener("click", function () { stop(); setStep(i, true); });
+    tl.appendChild(d);
+  });
+  $("tlTotal").textContent = "≈ " + (sync / 1000).toFixed(2) + " s to the response · 2 stages after it";
+}
+function setStep(i, animate) {
+  var nodes = VIEWS[2].nodes, prev = step;
+  step = Math.max(-1, Math.min(nodes.length - 1, i));
+  if (current.id !== "pipeline") return;
+  Object.keys(nodeEls).forEach(function (k) { nodeEls[k].classList.remove("active"); });
+  var segs = $("tl").children;
+  for (var j = 0; j < segs.length; j++) { segs[j].classList.toggle("done", j < step); segs[j].classList.toggle("cur", j === step); }
+  if (step < 0) { $("pCap").innerHTML = "<b>Ready</b><span>Press Play to walk one POST /query request through the pipeline.</span>"; return; }
+  var c = C[nodes[step][0]];
+  nodeEls[c.id].classList.add("active");
+  var cap = $("pCap"); cap.innerHTML = "";
+  cap.appendChild(h("b", "", (step + 1) + ". " + c.name));
+  cap.appendChild(h("span", "", (c.async ? "After the response · " : "~" + c.ms + " ms · ") + c.metric));
+  if (animate && prev >= 0 && prev === step - 1) pulse(nodes[prev][0], c.id);
+  if (state.sel !== c.id) { state.sel = c.id; Object.keys(nodeEls).forEach(function (k) { nodeEls[k].classList.toggle("sel", k === c.id); }); showNode(c.id); }
+}
+function pulse(a, b) {
+  var r = edgeEls.find(function (x) { return x.e.f === a && x.e.t === b; }); if (!r || reduce) return;
+  var p = r.p, L = p.getTotalLength(), dot = el("circle", { "class": "pulse", r: 6 }, state.fx), ring = el("circle", { "class": "pulse-ring", r: 11 }, state.fx), t0 = null;
+  function f(ts) {
+    if (!t0) t0 = ts; var k = Math.min(1, (ts - t0) / 520), e = 1 - Math.pow(1 - k, 3), pt = p.getPointAtLength(L * e);
+    dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y); ring.setAttribute("cx", pt.x); ring.setAttribute("cy", pt.y);
+    if (k < 1) requestAnimationFrame(f); else { dot.remove(); ring.remove(); }
+  }
+  requestAnimationFrame(f);
+}
+function stop() { clearInterval(timer); timer = null; var b = $("pPlay"); b.setAttribute("aria-pressed", "false"); b.innerHTML = "&#9654; Play"; }
+function play() {
+  if (timer) { stop(); return; }
+  if (step >= VIEWS[2].nodes.length - 1) setStep(-1, false);
+  var b = $("pPlay"); b.setAttribute("aria-pressed", "true"); b.innerHTML = "&#10074;&#10074; Pause";
+  setStep(step + 1, true);
+  timer = setInterval(function () { if (step >= VIEWS[2].nodes.length - 1) { stop(); return; } setStep(step + 1, true); }, reduce ? 1800 : 1400);
+}
+$("pPlay").addEventListener("click", play);
+$("pNext").addEventListener("click", function () { stop(); setStep(step + 1, true); });
+$("pPrev").addEventListener("click", function () { stop(); setStep(step - 1, false); });
+$("pReset").addEventListener("click", function () { stop(); setStep(-1, false); clearSel(); });
+
+/* ------------------------------------------------------------------ */
+/* Chrome: tabs, legend, overlay, theme                                */
+/* ------------------------------------------------------------------ */
+var tabs = $("tabs");
+VIEWS.forEach(function (v, i) {
+  var b = h("button", "tab"); b.type = "button"; b.setAttribute("role", "tab"); b.id = "tab-" + v.id; b.dataset.view = v.id;
+  b.appendChild(h("span", "n", String(i + 1))); b.appendChild(document.createTextNode(v.label));
+  b.addEventListener("click", function () { switchView(v.id); });
+  b.addEventListener("keydown", function (e) {
+    var bs = Array.prototype.slice.call(tabs.children), k = bs.indexOf(b);
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); var n = bs[(k + (e.key === "ArrowRight" ? 1 : -1) + bs.length) % bs.length]; n.focus(); n.click(); }
+  });
+  tabs.appendChild(b);
+});
+function switchView(id) {
+  var v = VIEWS.find(function (x) { return x.id === id; }) || VIEWS[0];
+  stop();
+  state.view = v.id; state.sel = null;
+  Array.prototype.forEach.call(tabs.children, function (b) { var on = b.dataset.view === v.id; b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1; });
+  $("vTitle").textContent = v.label; $("vBlurb").textContent = v.blurb;
+  $("player").hidden = !v.player;
+  render(v); fit(); showIntro();
+  if (v.player) { step = -1; setStep(-1, false); }
+  store("askdiq-arch-view", v.id);
+  try { if (location.hash !== "#" + v.id) history.replaceState(null, "", "#" + v.id); } catch (e) { /* sandboxed */ }
+}
+var legend = $("legend");
+Object.keys(STATUS).forEach(function (k) {
+  var b = h("button", "chip"); b.type = "button"; b.dataset.st = k; b.setAttribute("aria-pressed", "true");
+  b.title = "Show or hide " + STATUS[k].label.toLowerCase();
+  b.appendChild(h("span", "sw " + k)); b.appendChild(document.createTextNode(STATUS[k].label));
+  b.addEventListener("click", function () { state.hidden[k] = !state.hidden[k]; syncLegend(); applyFilters(); });
+  legend.appendChild(b);
+});
+function syncLegend() { Array.prototype.forEach.call(legend.querySelectorAll(".chip"), function (b) { b.setAttribute("aria-pressed", state.hidden[b.dataset.st] ? "false" : "true"); }); }
+var owRow = $("owaspRow");
+Object.keys(OWASP).forEach(function (k) {
+  var b = h("button", "ow", k); b.type = "button"; b.title = OWASP[k]; b.setAttribute("aria-pressed", "false"); b.setAttribute("aria-label", k + " " + OWASP[k]);
+  b.addEventListener("click", function () {
+    state.owFilter = state.owFilter === k ? null : k;
+    Array.prototype.forEach.call(owRow.children, function (x) { x.setAttribute("aria-pressed", x.textContent === state.owFilter ? "true" : "false"); });
+    applyFilters();
+  });
+  owRow.appendChild(b);
+});
+function toggleSec() {
+  state.sec = !state.sec; $("secBtn").setAttribute("aria-pressed", state.sec ? "true" : "false");
+  owRow.hidden = !state.sec; if (!state.sec) { state.owFilter = null; Array.prototype.forEach.call(owRow.children, function (x) { x.setAttribute("aria-pressed", "false"); }); }
+  applyFilters();
+  if (state.sel && nodeEls[state.sel]) showNode(state.sel); else if (!state.sel) showIntro();
+}
+$("secBtn").addEventListener("click", toggleSec);
+
+var root = document.documentElement;
+function effectiveDark() { var t = root.getAttribute("data-theme"); if (t) return t === "dark"; return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches; }
+function syncThemeLabel() { $("themeLabel").textContent = effectiveDark() ? "Light theme" : "Dark theme"; }
+var savedTheme = store("askdiq-arch-theme");
+if (savedTheme === "light" || savedTheme === "dark") root.setAttribute("data-theme", savedTheme);
+syncThemeLabel();
+$("themeBtn").addEventListener("click", function () { var n = effectiveDark() ? "light" : "dark"; root.setAttribute("data-theme", n); store("askdiq-arch-theme", n); syncThemeLabel(); });
+
+document.addEventListener("keydown", function (e) {
+  var tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input") return;
+  if (e.key === "/") { e.preventDefault(); qIn.focus(); return; }
+  if (e.key === "Escape") { if (state.sel || panel.querySelector(".close")) clearSel(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "s" || e.key === "S") { toggleSec(); return; }
+  if (/^[1-6]$/.test(e.key)) { switchView(VIEWS[+e.key - 1].id); return; }
+  if (e.key === "+" || e.key === "=") zc(1.2); else if (e.key === "-") zc(1 / 1.2); else if (e.key === "0") fit();
+});
+
+/* Boot */
+buildTimeline();
+var startView = (location.hash || "").replace("#", "");
+if (!VIEWS.some(function (v) { return v.id === startView; })) startView = store("askdiq-arch-view") || "context";
+switchView(startView);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (!current) return; var keep = state.sel; render(current); if (current.player && step >= 0) setStep(step, false); if (keep && nodeEls[keep]) selectNode(keep); });
+</script>

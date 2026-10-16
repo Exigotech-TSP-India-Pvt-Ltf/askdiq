@@ -58,6 +58,7 @@ async def test_feedback_submission_and_upsert(client, db_session):
         role="assistant",
         content="AskDIQ is an enterprise compliance RAG assistant.",
         ip_address="198.51.100.25",
+        request_id="req-feedback-trace-1",
     )
     db_session.add_all([user_msg, assistant_msg])
     await db_session.commit()
@@ -109,6 +110,8 @@ async def test_feedback_submission_and_upsert(client, db_session):
     messages = sess_detail.json()["messages"]
     asst_m = next(m for m in messages if m["id"] == asst_mid)
     assert asst_m["feedback_rating"] == 5
+    # Saved answers keep their trace link (chat "View trace" after reload).
+    assert asst_m["request_id"] == "req-feedback-trace-1"
 
     # 8. Verify GET /admin/feedback returns de-duplicated latest feedback entry
     admin_res = await client.get("/admin/feedback")
@@ -265,3 +268,85 @@ async def test_feedback_analytics_and_promote_to_test(client, db_session):
     assert promote_data["status"] == "promoted"
     assert "case_id" in promote_data
     assert promote_data["query"] == "How do I configure mTLS for Zero Trust?"
+
+
+async def _assistant_turn(db_session, actor: str) -> tuple[str, str]:
+    sess = await session_service.create_session(
+        db_session, user_email=actor, title="Details", client_ip="198.51.100.30"
+    )
+    msg = ChatMessageRecord(
+        session_id=uuid.UUID(sess.id),
+        turn_index=1,
+        role="assistant",
+        content="An answer.",
+        ip_address="198.51.100.30",
+    )
+    db_session.add(msg)
+    await db_session.commit()
+    return sess.id, str(msg.id)
+
+
+@pytest.mark.asyncio
+async def test_feedback_comment_is_pii_masked_before_storage(client, db_session):
+    from sqlalchemy import select
+
+    from app.models.db_models import MessageFeedback
+
+    actor = "masked_comment@example.com"
+    client.headers["X-Client-Id"] = actor
+    sess_id, mid = await _assistant_turn(db_session, actor)
+
+    res = await client.post(
+        f"/sessions/{sess_id}/messages/{mid}/feedback",
+        json={"rating": 1, "comment": "Email me at jane.doe@example.org please"},
+    )
+    assert res.status_code == 200
+    assert "jane.doe@example.org" not in res.json()["comment"]
+
+    stored = await db_session.scalar(
+        select(MessageFeedback.comment).where(
+            MessageFeedback.message_id == uuid.UUID(mid)
+        )
+    )
+    assert stored is not None
+    assert "jane.doe@example.org" not in stored
+
+
+@pytest.mark.asyncio
+async def test_note_without_details_keeps_stored_reasons_on_thumbs_down(
+    client, db_session
+):
+    actor = "keep_reasons@example.com"
+    client.headers["X-Client-Id"] = actor
+    sess_id, mid = await _assistant_turn(db_session, actor)
+    url = f"/sessions/{sess_id}/messages/{mid}/feedback"
+
+    first = await client.post(
+        url,
+        json={
+            "rating": 1,
+            "reason_tags": ["wrong"],
+            "corrected_answer": "The right answer.",
+        },
+    )
+    assert first.status_code == 200
+
+    # Reloaded page: the note is saved without the (unknown) details.
+    note = await client.post(url, json={"rating": 1, "comment": "Also outdated."})
+    assert note.status_code == 200
+    body = note.json()
+    assert body["reason_tags"] == ["wrong"]
+    assert body["corrected_answer"] == "The right answer."
+    assert body["comment"] == "Also outdated."
+
+    # Explicitly sent empty details still clear them.
+    cleared = await client.post(
+        url, json={"rating": 1, "reason_tags": [], "corrected_answer": None}
+    )
+    assert cleared.json()["reason_tags"] == []
+    assert cleared.json()["corrected_answer"] is None
+
+    # A positive rating never keeps "what was wrong" details.
+    await client.post(url, json={"rating": 1, "reason_tags": ["wrong"]})
+    up = await client.post(url, json={"rating": 5})
+    assert up.json()["reason_tags"] == []

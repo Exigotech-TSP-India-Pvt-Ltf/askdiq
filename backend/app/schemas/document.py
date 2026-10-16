@@ -1,6 +1,6 @@
 """Request/response schemas for document ingestion and listing."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -45,6 +45,8 @@ class IngestResponse(BaseModel):
     quarantined: bool = False
     dry_run: bool = False
     quality: dict | None = None
+    original_size_bytes: int | None = None
+    canonical_size_bytes: int | None = None
 
 
 class DocumentSummary(BaseModel):
@@ -63,3 +65,165 @@ class DocumentSummary(BaseModel):
     ingest_count: int = 1
     warnings: list[str] = Field(default_factory=list)
     quarantined: bool = False
+    # --- Inventory metadata (additive; null = not recorded for this document) ---
+    content_sha256: str | None = Field(
+        default=None, description="Full SHA-256 of the canonical Markdown."
+    )
+    canonical_format: str = "md"
+    standardized: bool = Field(
+        default=False,
+        description="True when the upload was converted (e.g. .docx) to Markdown.",
+    )
+    converter: str | None = None
+    converter_version: str | None = None
+    original_size_bytes: int | None = None
+    canonical_size_bytes: int | None = None
+    canonical_available: bool = Field(
+        default=False,
+        description="The canonical Markdown is stored (documents ingested after "
+        "migration 254857d10a20, or re-uploaded since).",
+    )
+    total_chunk_chars: int = 0
+    chunk_strategies: list[str] = Field(default_factory=list)
+    chunking_strategy: str | None = None
+    embedding_model: str | None = None
+    embedding_dim: int | None = None
+    ingested_at: datetime | None = None
+    ingested_by: str | None = None
+    status: str = Field(
+        default="active", description="active | quarantined | empty (no chunks)."
+    )
+    pii_redacted: list[str] | None = Field(
+        default=None,
+        description="PII types redacted during normalization; null = not recorded.",
+    )
+    pipeline_version: str | None = None
+    labels: dict[str, str] = Field(
+        default_factory=dict,
+        description="Free-form ingestion metadata (e.g. corpus).",
+    )
+
+
+class IngestEvent(BaseModel):
+    """One ingest run of a document, from the audit log (newest first)."""
+
+    at: datetime
+    actor: str
+    status: str | None = None
+    original_filename: str | None = None
+    converted_from: str | None = None
+    content_hash: str | None = None
+    chunks_added: int | None = None
+    chunks_kept: int | None = None
+    chunks_removed: int | None = None
+    total_chunks: int | None = None
+    embedding_tokens: int | None = None
+    warnings: list[str] = Field(default_factory=list)
+    pii_redacted: list[str] | None = None
+    quarantined: bool | None = None
+
+
+class ChunkSizeStats(BaseModel):
+    count: int
+    total_chars: int
+    min_chars: int | None = None
+    max_chars: int | None = None
+    avg_chars: float | None = None
+
+
+class DocumentDetail(DocumentSummary):
+    """``GET /documents/{id}``: the summary plus history and chunk size stats."""
+
+    history: list[IngestEvent] = Field(default_factory=list)
+    history_truncated: bool = False
+    chunk_stats: ChunkSizeStats
+
+
+class CanonicalMarkdown(BaseModel):
+    """``GET /documents/{id}/canonical``: the standardized Markdown text."""
+
+    document_id: str
+    source_name: str
+    format: str = "markdown"
+    available: bool
+    content: str | None = None
+    size_bytes: int | None = None
+    content_sha256: str | None = None
+
+
+class WeeklyHits(BaseModel):
+    week_start: date
+    hits: int
+
+
+class DocumentChunkItem(BaseModel):
+    """Item of ``GET /documents/{id}/chunks``."""
+
+    id: str
+    chunk_index: int
+    content: str
+    strategy: str
+    base_strategy: str | None = None
+    section_heading: str | None = None
+    char_count: int
+    word_count: int
+    content_hash: str | None = None
+    hits: int = 0
+    low_rated_hits: int = 0
+    last_hit_at: datetime | None = None
+    weekly_hits: list[WeeklyHits] = Field(default_factory=list)
+
+
+class CitedDocument(BaseModel):
+    document_id: str
+    source_name: str
+    citations: int
+    last_cited_at: datetime | None = None
+
+
+class DocumentAgePoint(BaseModel):
+    document_id: str
+    source_name: str
+    age_days: int
+    citations: int
+
+
+class CitationCoverage(BaseModel):
+    answered_queries: int
+    cited_queries: int
+    coverage_pct: float | None = None
+
+
+class DocumentCitationStats(BaseModel):
+    """``GET /documents/stats/citations``."""
+
+    from_: date = Field(alias="from")
+    to: date
+    tz: str = "UTC"
+    top_cited: list[CitedDocument]
+    age_vs_citations: list[DocumentAgePoint]
+    coverage: CitationCoverage
+
+    model_config = {"populate_by_name": True}
+
+
+class LowRatedCitation(BaseModel):
+    message_id: str
+    session_id: str
+    turn_index: int | None = None
+    request_id: str | None = None
+    chunk_id: str | None = None
+    chunk_index: int | None = None
+    query: str | None = None
+    rating: int
+    reason_tags: list[str] = Field(default_factory=list)
+    comment: str | None = None
+    created_at: datetime
+
+
+class LowRatedCitations(BaseModel):
+    """``GET /documents/{id}/low-rated-citations``."""
+
+    document_id: str
+    total: int
+    items: list[LowRatedCitation]

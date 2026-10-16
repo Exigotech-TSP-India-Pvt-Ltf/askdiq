@@ -40,17 +40,24 @@ function paintColours(svg: string): string[] {
 }
 
 describe("logo assets (F0.3.4, newplan §1.7)", () => {
-  it("re-cropped full logo viewBox is within 5% of the tight PNG aspect (~4.06)", () => {
-    const target = pngAspect("exigotech-logo.png");
-    expect(target).toBeCloseTo(4.06, 1);
+  // Owner decision (2026-10-16): keep the "ARTIFICIAL INTELLIGENCE" tagline line (artwork y 886.98–1001.82),
+  // cropped tightly around wordmark + tagline (aspect ≈ 2.70).
+  it("full logo viewBox is tight around wordmark + tagline in light and dark variants", () => {
     for (const file of ["exigotech-logo.svg", "exigotech-logo-dark.svg"]) {
-      const aspect = viewBoxAspect(read(file));
-      expect(Math.abs(aspect - target) / target, `${file} aspect ${aspect}`).toBeLessThanOrEqual(0.05);
+      const svg = read(file);
+      const [, y, , h] = (svg.match(/viewBox="([^"]+)"/)?.[1] ?? "").split(/\s+/).map(Number);
+      expect(y + h, `${file} viewBox bottom`).toBeGreaterThanOrEqual(1001.82);
+      const aspect = viewBoxAspect(svg);
+      expect(Math.abs(aspect - 2.7) / 2.7, `${file} aspect ${aspect}`).toBeLessThanOrEqual(0.05);
     }
   });
 
-  it("fills at least 160 px of width at the h-10 (40 px) sidebar height", () => {
-    expect(40 * viewBoxAspect(read("exigotech-logo.svg"))).toBeGreaterThanOrEqual(160);
+  it("dark variant keeps the tagline", () => {
+    expect(read("exigotech-logo-dark.svg")).toContain('id="tagline"');
+  });
+
+  it("fills at least 125 px of width at the h-12 (48 px) sidebar height", () => {
+    expect(48 * viewBoxAspect(read("exigotech-logo.svg"))).toBeGreaterThanOrEqual(125);
   });
 
   it("dark variants use a white wordmark and the lifted brand-400 teal", () => {

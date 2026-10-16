@@ -1,7 +1,8 @@
 """Sliding-window rate limiter for /query, feedback and heavy admin routes.
 
 Two independent limits are enforced:
-  - per user (the signed-in user's email) — the original limit.
+  - per actor (the signed-in user's email, or the website visitor's
+    sanitised ``X-Client-Id``) — the original limit.
   - per client IP — a looser, separate cap so abuse spread across multiple
     accounts from the same source still gets throttled.
 
@@ -19,7 +20,7 @@ from collections import defaultdict, deque
 
 from fastapi import Depends, HTTPException, Request, status
 
-from app.auth.deps import require_permission, require_role_or_chat
+from app.auth.deps import require_chat_actor, require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
 from app.core.config import get_settings
@@ -160,13 +161,15 @@ async def aenforce_ip_rate_limit(ip: str) -> None:
 
 
 async def rate_limited_actor(
-    request: Request, user: AuthUser = Depends(require_role_or_chat)
+    request: Request, actor: str = Depends(require_chat_actor)
 ) -> str:
-    """Chat guard (any signed-in, non-suspended user) that also enforces the
-    per-user AND per-IP rate limits; returns the user's email as the actor."""
-    await aenforce_rate_limit(user.email)
-    await aenforce_ip_rate_limit(get_client_ip(request))
-    return user.email
+    """Chat guard (signed-in non-suspended user, or the website's service key)
+    that also enforces the per-actor rate limit and returns the actor. The
+    per-IP limit is applied by the route once the end-user IP (possibly
+    forwarded in the body) is known; see app.api.routes.query."""
+    del request
+    await aenforce_rate_limit(actor)
+    return actor
 
 
 def enforce_feedback_rate_limit(

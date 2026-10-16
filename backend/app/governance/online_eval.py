@@ -11,6 +11,7 @@ skip if TPM headroom is depleted, ensuring user-facing latency is never impacted
 
 import asyncio
 import logging
+import random
 import re
 import threading
 import uuid
@@ -82,6 +83,19 @@ def compute_attribution_metrics(
     return precision, coverage
 
 
+# Orchestrator outcomes for answers the LLM never produced.
+FAILED_OUTCOMES = frozenset({"llm_failed", "empty_llm_output"})
+
+
+def judge_sampled(rate: float) -> bool:
+    """True for roughly ``rate`` (0-1) of calls."""
+    if rate >= 1:
+        return True
+    if rate <= 0:
+        return False
+    return random.random() < rate  # noqa: S311 - traffic sampling, not security
+
+
 class OnlineQualityTracker:
     def __init__(self, max_history: int = 1000) -> None:
         self.sampled_count: int = 0
@@ -119,7 +133,7 @@ class OnlineQualityTracker:
                     sum(self.faithfulness_history) / len(self.faithfulness_history), 2
                 )
                 if self.faithfulness_history
-                else 5.0
+                else None  # nothing sampled yet: "—", not a perfect 5.00
             )
             return {
                 "sampled_count": total,
@@ -209,8 +223,16 @@ async def _run_evaluation_task(
         quota_sum = quota_monitor.get_summary()
         chat_headroom = quota_sum["chat"]["tpm_headroom_pct"]
 
+        # The LLM judge costs tokens, so only ONLINE_EVAL_SAMPLE_RATE of the
+        # answers get it; the rule checks above run on every answer.
         should_run_judge = (
-            (settings.online_eval_enabled or force_llm_judge)
+            (
+                force_llm_judge
+                or (
+                    settings.online_eval_enabled
+                    and judge_sampled(settings.online_eval_sample_rate)
+                )
+            )
             and chat_headroom >= 15.0
             and bool(context_chunks)
             and bool(answer.strip())
@@ -265,7 +287,7 @@ async def _run_evaluation_task(
         passed = bool(
             (grounded is not False)
             and safety_passed
-            and (outcome != "failed")
+            and (outcome not in FAILED_OUTCOMES)
             and (faithfulness_score >= 3.0)
         )
 

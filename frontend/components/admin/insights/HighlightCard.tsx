@@ -47,23 +47,23 @@ export function HighlightCard({
             {subtitle}
           </span>
           {isClickable && (
-            <ArrowRight className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-teal-600 dark:group-hover:text-teal-300 ml-auto" />
+            <ArrowRight className="h-3.5 w-3.5 text-fg-subtle transition group-hover:translate-x-0.5 group-hover:text-teal-600 dark:group-hover:text-teal-300 ml-auto" />
           )}
         </div>
 
-        <h4 className="mt-2 text-sm font-semibold text-slate-900 dark:text-white truncate" title={title}>
+        <h4 className="mt-2 text-sm font-semibold text-fg truncate" title={title}>
           {title}
         </h4>
       </div>
 
       <div className="relative z-10 mt-3 flex items-baseline justify-between border-t border-teal-100 dark:border-teal-500/20 pt-2 text-xs">
-        <span className="text-slate-500 dark:text-slate-400">{metricLabel}</span>
+        <span className="text-fg-subtle">{metricLabel}</span>
         <div className="flex items-center gap-1.5">
-          <span className="font-mono font-bold text-slate-900 dark:text-white">
+          <span className="font-mono font-bold text-fg">
             {typeof metricValue === "number" ? metricValue.toLocaleString() : metricValue}
           </span>
           {secondaryMetric && (
-            <span className="text-[10px] text-slate-400 dark:text-slate-500">({secondaryMetric})</span>
+            <span className="text-[10px] text-fg-subtle">({secondaryMetric})</span>
           )}
         </div>
       </div>

@@ -97,6 +97,7 @@ const mockUsersResponse: PageEnvelope<UsageUserRow> = {
       output_tokens: 600,
       total_tokens: 10800,
       cost_usd: 0.035,
+      last_active: "2026-10-16T01:00:00Z",
     },
     {
       ip_address: "127.0.0.1",
@@ -110,6 +111,7 @@ const mockUsersResponse: PageEnvelope<UsageUserRow> = {
       output_tokens: 200,
       total_tokens: 3500,
       cost_usd: 0.01,
+      last_active: null,
     },
   ],
   total: 2,
@@ -266,6 +268,46 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     expect(screen.getByText("Test IP")).toBeInTheDocument();
   });
 
+  it("shows when each IP was last active and sorts the Users table by it", async () => {
+    const { container } = render(<UsageCostPage />);
+    await waitFor(() => expect(screen.getByText(LIVE_TELEMETRY_HEADING)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("tab", { name: /all users/i }));
+    await waitFor(() => expect(screen.getByText("127.0.0.1")).toBeInTheDocument());
+
+    const stamp = container.querySelector('time[datetime="2026-10-16T01:00:00.000Z"]');
+    expect(stamp).not.toBeNull();
+    expect(stamp?.getAttribute("title")).toMatch(/2026/);
+
+    const header = screen.getByRole("columnheader", { name: /last active/i });
+    fireEvent.click(header);
+    await waitFor(() =>
+      expect(api.getUsageUsers).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ sort: "last_active_desc" }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("shows when each query was asked and sorts the Queries table by it", async () => {
+    const { container } = render(<UsageCostPage />);
+    await waitFor(() => expect(screen.getByText(LIVE_TELEMETRY_HEADING)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("tab", { name: /all queries/i }));
+    await waitFor(() => expect(screen.getByText("How is Essential Eight implemented?")).toBeInTheDocument());
+
+    expect(container.querySelector("tbody time[datetime]")?.textContent).toBe("just now");
+    const header = screen.getByRole("columnheader", { name: /asked/i });
+    expect(header).toHaveAttribute("aria-sort", "descending");
+    fireEvent.click(header);
+    await waitFor(() =>
+      expect(api.getUsageQueries).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ sort: "created_at_asc" }),
+        expect.anything(),
+      ),
+    );
+  });
+
   it("navigates to All Sessions tab and displays session metrics", async () => {
     render(<UsageCostPage />);
 
@@ -335,5 +377,44 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
 
     expect(screen.getByText(/single-query economic inspector/i)).toBeInTheDocument();
     expect(screen.getByText(/stage-by-stage mathematical pricing/i)).toBeInTheDocument();
+  });
+
+  // ---- Deep links and filters that used to be dropped (interaction audit) ----
+
+  const lastQueriesCall = () => {
+    const calls = vi.mocked(api.getUsageQueries).mock.calls;
+    return calls[calls.length - 1]?.[1] ?? {};
+  };
+
+  it("applies a dashboard day link (?tab=queries&from=&to=) and clears it from the chip", async () => {
+    window.history.replaceState(null, "", "/admin/usage?tab=queries&from=2026-10-14&to=2026-10-14");
+    render(<UsageCostPage />);
+
+    await waitFor(() => expect(lastQueriesCall()).toMatchObject({ from_date: "2026-10-14", to_date: "2026-10-14" }));
+    expect(screen.getByRole("tab", { name: /all queries/i })).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /remove filter day: 2026-10-14/i }));
+    await waitFor(() => expect(lastQueriesCall().from_date).toBeUndefined());
+    expect(lastQueriesCall().to_date).toBeUndefined();
+    expect(window.location.search).not.toContain("from=");
+  });
+
+  it("an IP filter can be cleared (it no longer snaps back)", async () => {
+    window.history.replaceState(null, "", "/admin/usage?tab=queries&ip=192.168.1.100");
+    render(<UsageCostPage />);
+
+    await waitFor(() => expect(lastQueriesCall().ip).toBe("192.168.1.100"));
+    fireEvent.click(screen.getByRole("button", { name: /remove filter ip: 192.168.1.100/i }));
+    await waitFor(() => expect(lastQueriesCall().ip).toBeUndefined());
+    expect(window.location.search).not.toContain("ip=");
+  });
+
+  it("sorting by latency sends the backend's latency sort", async () => {
+    window.history.replaceState(null, "", "/admin/usage?tab=queries");
+    render(<UsageCostPage />);
+    await screen.findByText("How is Essential Eight implemented?");
+
+    fireEvent.click(screen.getByRole("columnheader", { name: /latency/i }).querySelector("button") ?? screen.getByText("Latency"));
+    await waitFor(() => expect(lastQueriesCall().sort).toBe("latency_desc"));
   });
 });

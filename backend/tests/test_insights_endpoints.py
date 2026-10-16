@@ -214,6 +214,7 @@ async def test_taxonomy_writes_need_superadmin(api, request, role_fixture):
         ("POST", f"{BASE}/taxonomy", {"kind": "intent", "code": "NEW", "label": "x"}),
         ("PATCH", f"{BASE}/taxonomy/intent/SVC", {"label": "x"}),
         ("POST", f"{BASE}/taxonomy/intent/SVC/archive", None),
+        ("POST", f"{BASE}/taxonomy/intent/SVC/unarchive", None),
     ]
     for method, url, body in calls:
         response = await api.request(method, url, json=body)
@@ -459,10 +460,27 @@ async def test_taxonomy_crud_is_audited(insights_client, insights_reference_db):
     )
     assert "SLOW_REPLY" in {i["code"] for i in everything["items"]}
 
+    flags = await insights_client.patch(
+        f"{BASE}/taxonomy/issue/SLOW_REPLY",
+        json={"description": "Took too long", "substantive": False, "handled": True},
+    )
+    assert flags.status_code == 200
+    assert flags.json()["description"] == "Took too long"
+    assert flags.json()["substantive"] is False
+    assert flags.json()["handled"] is True
+
+    restored = await insights_client.post(f"{BASE}/taxonomy/issue/SLOW_REPLY/unarchive")
+    assert restored.status_code == 200
+    assert restored.json()["is_active"] is True
+    listed = await _get(insights_client, "taxonomy", kind="issue")
+    assert "SLOW_REPLY" in {i["code"] for i in listed["items"]}
+
     assert await _audit_actions(insights_reference_db, "SLOW_REPLY") == [
         "insights_taxonomy_created",
         "insights_taxonomy_updated",
         "insights_taxonomy_archived",
+        "insights_taxonomy_updated",
+        "insights_taxonomy_unarchived",
     ]
 
     missing = await insights_client.patch(
@@ -497,3 +515,15 @@ async def test_rule_codes_cannot_be_archived(insights_client):
     for kind, code in (("intent", "GRE"), ("bot_quality", "OK"), ("issue", "OTHER")):
         response = await insights_client.post(f"{BASE}/taxonomy/{kind}/{code}/archive")
         assert response.status_code == 409, (kind, code)
+
+
+@pytest.mark.parametrize(
+    "body", [{"substantive": None}, {"handled": None}, {"substantive": "maybe"}]
+)
+def test_taxonomy_flags_cannot_be_null_or_non_boolean(body):
+    from pydantic import ValidationError
+
+    from app.schemas.insights import TaxonomyUpdate
+
+    with pytest.raises(ValidationError):
+        TaxonomyUpdate(**body)

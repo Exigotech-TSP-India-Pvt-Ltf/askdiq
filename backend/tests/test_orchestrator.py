@@ -86,12 +86,15 @@ async def test_pre_guardrail_blocks_before_any_retrieval_or_llm_call(monkeypatch
     assert response.sources == []
 
 
-async def test_off_topic_when_no_sources_retrieved(monkeypatch):
+async def test_no_sources_flag_when_nothing_retrieved(monkeypatch):
+    # Empty retrieval (empty KB or a filter matching no chunk) is reported as
+    # `no_sources`, distinct from `off_topic` (relevance below threshold).
     response = await _run(monkeypatch, sources=[])
 
     assert response.grounded is False
-    assert response.guardrail_flags == ["off_topic"]
+    assert response.guardrail_flags == ["no_sources"]
     assert response.sources == []
+    assert "knowledge base" in response.answer
 
 
 async def test_off_topic_when_retrieval_score_below_minimum(monkeypatch):
@@ -177,3 +180,39 @@ async def test_happy_path_grounded_on_first_attempt(monkeypatch):
     assert response.confidence == 0.85
     assert response.guardrail_flags == []
     assert len(response.sources) == 1
+
+
+async def test_llm_failure_fallback_does_not_blame_the_user(monkeypatch):
+    response = await _run(
+        monkeypatch,
+        llm_side_effect=[RuntimeError("azure down")] * 3,
+    )
+
+    assert response.guardrail_flags == ["llm_call_failed"]
+    assert "typo" not in response.answer.lower()
+    assert "try again" in response.answer.lower()
+
+
+async def test_ungrounded_fallback_does_not_mention_typo(monkeypatch):
+    response = await _run(
+        monkeypatch,
+        llm_side_effect=["a1"],
+        post_checks_side_effect=[(False, 0.2, ["low_retrieval_confidence"])],
+    )
+
+    assert "typo" not in response.answer.lower()
+    assert "knowledge base" in response.answer
+
+
+async def test_post_checks_use_the_retrieval_gate_minimum(monkeypatch):
+    seen: dict = {}
+
+    async def fake_post_checks(answer, sources, threshold, min_score=None):
+        seen["min_score"] = min_score
+        return True, 0.9, []
+
+    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
+    response = await _run(monkeypatch, llm_side_effect=["Deploy IQ does X."])
+
+    assert response.grounded is True
+    assert seen["min_score"] == orchestrator.settings.min_retrieval_score

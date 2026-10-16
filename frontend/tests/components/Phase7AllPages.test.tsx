@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({ token: "mock-token", user: { id: "admin-1", role: "admin" }, loading: false }),
+  usePermission: () => true,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -253,17 +254,26 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
   });
 
   it("renders Admin Dashboard with DashboardHeader and metric cards", async () => {
+    // The dashboard reads through lib/dashboard-api (fetch + query cache), not api.adminGet.
+    const payload = await api.adminGet("mock-token", "/dashboard");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith("/api/proxy/admin/dashboard?") || url === "/api/proxy/admin/dashboard") {
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
+      return new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 });
+    });
     render(<AdminDashboard />);
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
     });
-    expect(screen.getByText("Total Users")).toBeInTheDocument();
+    expect((await screen.findAllByText("Active visitors")).length).toBeGreaterThan(0);
   });
 
   it("renders Admin Visitors Page with DashboardHeader and TableCard", async () => {
     render(<UsersPage />);
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /^Visitors$/i })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "Visitors" })).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
   });
@@ -276,12 +286,13 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
     expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
   });
 
-  it("renders Feedback Page with DashboardHeader and TableCard", async () => {
+  it("renders Feedback Page with DashboardHeader and the triage TabGroup", async () => {
     render(<FeedbackPage />);
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: /Feedback/i })).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
+    // The queue (with its Filters popover) lives on the Review Queue tab (PR-24).
+    expect(screen.getByRole("tab", { name: /review queue/i })).toBeInTheDocument();
   });
 
   it("renders the retired (unmounted) Evaluation report with DashboardHeader and TabGroup", async () => {
@@ -289,7 +300,8 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: /RAG Evaluation/i })).toBeInTheDocument();
     });
-    expect(screen.getByRole("tab", { name: /^retrieval$/i })).toBeInTheDocument();
+    // The heading renders before the report resolves; the tabs appear after it.
+    expect(await screen.findByRole("tab", { name: /^retrieval$/i })).toBeInTheDocument();
   });
 
   it("renders Governance Page with DashboardHeader and TabGroup", async () => {

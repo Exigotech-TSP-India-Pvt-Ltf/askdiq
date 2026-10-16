@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { useUsageSummary } from "@/lib/use-usage-data";
@@ -9,9 +10,15 @@ import { UsersTab } from "@/components/admin/usage/UsersTab";
 import { SessionsTab } from "@/components/admin/usage/SessionsTab";
 import { QueriesTab } from "@/components/admin/usage/QueriesTab";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
+import { CostInsights } from "@/components/admin/usage/CostInsights";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
-import { DEFAULT_USAGE_TAB, parseUsageTab, type UsageTabId } from "@/lib/usage-tabs";
+import {
+  DEFAULT_USAGE_TAB,
+  parseUsageDay,
+  parseUsageTab,
+  type UsageTabId,
+} from "@/lib/usage-tabs";
 import {
   CircleDollarSign,
   Settings as SettingsIcon,
@@ -38,7 +45,12 @@ function UsageCostContent() {
   const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_USAGE_TAB);
   const [selectedIp, setSelectedIp] = useState<string>("");
   const [selectedSession, setSelectedSession] = useState<string>("");
+  const [fromDay, setFromDay] = useState<string>("");
+  const [toDay, setToDay] = useState<string>("");
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  // Re-read the URL on every client navigation, not only on mount, so a link
+  // to /admin/usage?tab=... while already here switches tab and filters.
+  const searchKey = useSearchParams()?.toString() ?? "";
 
   // Hook for Tab 1 summary
   const { summary, isLoading, error, refresh } = useUsageSummary(
@@ -46,46 +58,65 @@ function UsageCostContent() {
     audience
   );
 
-  // Read URL search params on mount
+  // The URL is the source of truth: tab, ip, session and the from/to day
+  // range (dashboard day links send `from` = `to` = YYYY-MM-DD).
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
     // Old bookmarks (?tab=live_telemetry, ?tab=overall) resolve to "overview".
     setActiveTab(parseUsageTab(sp.get("tab")));
+    setSelectedIp(sp.get("ip") ?? "");
+    setSelectedSession(sp.get("session") ?? "");
+    setFromDay(parseUsageDay(sp.get("from")));
+    setToDay(parseUsageDay(sp.get("to")));
+  }, [searchKey]);
 
-    if (sp.get("ip")) setSelectedIp(sp.get("ip")!);
-    if (sp.get("session")) setSelectedSession(sp.get("session")!);
-  }, []);
-
-  // Update URL search params
-  const updateUrl = useCallback((tab: TabId, ip?: string, session?: string) => {
-    if (typeof window === "undefined") return;
-    const sp = new URLSearchParams(window.location.search);
-    sp.set("tab", tab);
-    if (ip) sp.set("ip", ip);
-    else sp.delete("ip");
-    if (session) sp.set("session", session);
-    else sp.delete("session");
-    const newUrl = `${window.location.pathname}?${sp.toString()}`;
-    window.history.replaceState(null, "", newUrl);
-  }, []);
+  const updateUrl = useCallback(
+    (patch: { tab?: TabId; ip?: string; session?: string; from?: string; to?: string }) => {
+      if (typeof window === "undefined") return;
+      const sp = new URLSearchParams(window.location.search);
+      for (const [key, value] of Object.entries(patch)) {
+        if (value) sp.set(key, value);
+        else sp.delete(key);
+      }
+      window.history.replaceState(null, "", `${window.location.pathname}?${sp.toString()}`);
+    },
+    [],
+  );
 
   const handleTabChange = (t: string) => {
     const validTab = t as TabId;
     setActiveTab(validTab);
-    updateUrl(validTab, selectedIp, selectedSession);
+    updateUrl({ tab: validTab });
   };
 
   const handleSelectUserIp = (ip: string) => {
     setSelectedIp(ip);
     setActiveTab("sessions");
-    updateUrl("sessions", ip, selectedSession);
+    updateUrl({ tab: "sessions", ip });
   };
 
   const handleSelectSession = (sessionId: string) => {
     setSelectedSession(sessionId);
     setActiveTab("queries");
-    updateUrl("queries", selectedIp, sessionId);
+    updateUrl({ tab: "queries", session: sessionId });
+  };
+
+  /** Sets or clears ("") the IP filter without leaving the current tab. */
+  const handleIpFilter = (ip: string) => {
+    setSelectedIp(ip);
+    updateUrl({ ip });
+  };
+
+  const handleSessionFilter = (sessionId: string) => {
+    setSelectedSession(sessionId);
+    updateUrl({ session: sessionId });
+  };
+
+  const handleClearDays = () => {
+    setFromDay("");
+    setToDay("");
+    updateUrl({ from: "", to: "" });
   };
 
   return (
@@ -98,6 +129,7 @@ function UsageCostContent() {
         actions={
           <button
             type="button"
+            data-tour="usage-test-ips"
             onClick={() => setIsConfigOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-surface px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-xs hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition"
           >
@@ -110,7 +142,7 @@ function UsageCostContent() {
       {/* Main Responsive Body with Strict Width Bounds */}
       <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
         {/* Boxed Tab Navigation Strip */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between" data-tour="usage-tabs">
           <TabGroup
             tabs={USAGE_CONSOLE_TABS}
             activeTab={activeTab}
@@ -122,7 +154,8 @@ function UsageCostContent() {
         {/* Tab Panels */}
         <div className="pt-1">
           {activeTab === "overview" && (
-            <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview">
+            <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" className="space-y-6">
+              <CostInsights summary={summary} isLoading={isLoading} error={error} onRetry={refresh} />
               <InteractiveOverviewTab
                 summary={summary}
                 isLoading={isLoading}
@@ -149,7 +182,7 @@ function UsageCostContent() {
                 token={token || ""}
                 initialIp={selectedIp}
                 onSelectSession={handleSelectSession}
-                onSelectIp={(ip) => setSelectedIp(ip)}
+                onSelectIp={handleIpFilter}
               />
             </div>
           )}
@@ -160,8 +193,11 @@ function UsageCostContent() {
                 token={token || ""}
                 initialSessionId={selectedSession}
                 initialIp={selectedIp}
-                onSelectIp={(ip) => setSelectedIp(ip)}
-                onSelectSession={(id) => setSelectedSession(id)}
+                fromDay={fromDay}
+                toDay={toDay}
+                onSelectIp={handleIpFilter}
+                onSelectSession={handleSessionFilter}
+                onClearDays={handleClearDays}
               />
             </div>
           )}

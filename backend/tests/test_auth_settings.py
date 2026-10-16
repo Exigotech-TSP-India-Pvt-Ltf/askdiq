@@ -35,18 +35,51 @@ def make(**overrides: Any) -> Settings:
     return Settings(_env_file=None, **{**_BASE, **overrides})
 
 
+_OIDC_ENV = (
+    "OIDC_TENANT_ID",
+    "OIDC_CLIENT_ID",
+    "OIDC_CLIENT_SECRET",
+    "OIDC_REDIRECT_URI",
+    "OIDC_DISCOVERY_URL",
+)
+
+
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (*_ENTRA, "auth_dev_mock", "env", "app_base_url", "superadmin_emails"):
         monkeypatch.delenv(name.upper(), raising=False)
+    for name in _OIDC_ENV:
+        monkeypatch.delenv(name, raising=False)
 
 
-def test_real_mode_requires_every_entra_value() -> None:
-    for missing in _ENTRA:
+def test_real_mode_requires_tenant_client_id_and_secret() -> None:
+    for missing in ("entra_tenant_id", "entra_client_id", "entra_client_secret"):
         values = {**_ENTRA, missing: None}
         with pytest.raises(ValidationError) as exc:
             make(auth_dev_mock=False, **values)
         assert missing.upper() in str(exc.value)
+
+
+def test_redirect_uri_is_optional_and_defaults_to_app_callback() -> None:
+    settings = make(auth_dev_mock=False, **{**_ENTRA, "entra_redirect_uri": None})
+    assert settings.entra_redirect_uri == "http://localhost:3000/auth/callback"
+
+
+def test_generic_oidc_env_names_are_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    tenant = "33333333-3333-3333-3333-333333333333"
+    monkeypatch.setenv("OIDC_CLIENT_ID", "client-from-oidc-name")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "secret-from-oidc-name")
+    monkeypatch.setenv(
+        "OIDC_DISCOVERY_URL",
+        f"https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration",
+    )
+    monkeypatch.setenv("OIDC_REDIRECT_URI", "http://localhost:3000/auth/callback/x")
+    settings = Settings(_env_file=None, **_BASE, auth_dev_mock=False)
+    assert settings.entra_client_id == "client-from-oidc-name"
+    assert settings.entra_client_secret is not None
+    assert settings.entra_client_secret.get_secret_value() == "secret-from-oidc-name"
+    assert settings.entra_tenant_id == tenant  # derived from OIDC_DISCOVERY_URL
+    assert settings.entra_redirect_uri == "http://localhost:3000/auth/callback/x"
 
 
 def test_real_mode_loads_with_all_entra_values() -> None:

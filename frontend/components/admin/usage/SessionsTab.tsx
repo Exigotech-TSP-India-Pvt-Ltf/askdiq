@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { PageEnvelope, UsageSessionRow } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useTableState } from "@/lib/use-table-state";
@@ -8,6 +8,7 @@ import { DataTable, type ColumnDef } from "../DataTable";
 import { TableToolbar } from "../TableToolbar";
 import { Pagination } from "../Pagination";
 import { TableCard } from "../TableCard";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { StatCard, HighlightCard } from "../insights";
 import {
   MessageSquare,
@@ -27,6 +28,7 @@ interface SessionsTabProps {
   token: string;
   initialIp?: string;
   onSelectSession?: (sessionId: string) => void;
+  /** Sets the IP filter; "" clears it. */
   onSelectIp?: (ip: string) => void;
 }
 
@@ -42,13 +44,11 @@ export function SessionsTab({
     offset,
     sort,
     search,
-    filters,
     audience,
     setPage,
     setPageSize,
     setSort,
     setSearchInput,
-    setFilter,
     getSignal,
   } = useTableState({
     tableKey: "sessions",
@@ -63,19 +63,22 @@ export function SessionsTab({
       "last_active_desc",
       "last_active_asc",
     ],
-    defaultFilters: { ip: initialIp || "" },
   });
+  // The IP filter is owned by the page URL (prop) so it can be cleared here.
+  const ipFilter = initialIp ?? "";
 
   const [data, setData] = useState<PageEnvelope<UsageSessionRow> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync initialIp prop if passed dynamically
+  const firstRun = useRef(true);
   useEffect(() => {
-    if (initialIp !== undefined && initialIp !== filters.ip) {
-      setFilter("ip", initialIp);
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
     }
-  }, [initialIp, filters.ip, setFilter]);
+    setPage(1);
+  }, [ipFilter, setPage]);
 
   const fetchData = React.useCallback(async () => {
     setIsLoading(true);
@@ -86,7 +89,7 @@ export function SessionsTab({
         {
           audience,
           q: search || undefined,
-          ip: filters.ip || undefined,
+          ip: ipFilter || undefined,
           sort,
           limit: pageSize,
           offset,
@@ -101,14 +104,14 @@ export function SessionsTab({
     } finally {
       setIsLoading(false);
     }
-  }, [token, audience, search, filters.ip, sort, pageSize, offset, getSignal]);
+  }, [token, audience, search, ipFilter, sort, pageSize, offset, getSignal]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const stats = data?.stats || {};
-  const topSessions = (stats.top_3_sessions || []) as Array<{
+  const topSessions = (stats.top_sessions || []) as Array<{
     id: string;
     title: string;
     ip_address: string;
@@ -199,11 +202,7 @@ export function SessionsTab({
       key: "last_active",
       header: "Last Active",
       sortable: true,
-      render: (r) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-          {r.last_active ? new Date(r.last_active).toLocaleString() : "—"}
-        </span>
-      ),
+      render: (r) => <RelativeTime value={r.last_active} className="text-xs text-fg-subtle" />,
     },
     {
       key: "actions",
@@ -227,7 +226,7 @@ export function SessionsTab({
 
   const exportUrl = `/api/proxy/admin/usage/export?tab=sessions&audience=${audience}&q=${encodeURIComponent(
     search
-  )}${filters.ip ? `&ip=${encodeURIComponent(filters.ip)}` : ""}`;
+  )}${ipFilter ? `&ip=${encodeURIComponent(ipFilter)}` : ""}`;
 
   return (
     <div className="space-y-6">
@@ -235,7 +234,7 @@ export function SessionsTab({
       {/* PRE-TABLE INTELLIGENCE HEADER */}
       {/* ========================================================================= */}
       <section className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-tour="usage-sessions-stats">
           <StatCard
             title="Total Sessions"
             value={stats.total_sessions ?? data?.total ?? 0}
@@ -252,14 +251,14 @@ export function SessionsTab({
 
           <StatCard
             title="Avg Cost / Session"
-            value={stats.avg_cost_per_session_usd ? `$${Number(stats.avg_cost_per_session_usd).toFixed(4)}` : "—"}
+            value={stats.avg_cost_per_session ? `$${Number(stats.avg_cost_per_session).toFixed(4)}` : "—"}
             subtitle="Blended execution cost"
             icon={CircleDollarSign}
           />
 
           <StatCard
             title="Max Depth (Turns)"
-            value={stats.max_session_turns ?? 0}
+            value={stats.max_depth ?? 0}
             subtitle="Deepest conversation thread"
             icon={Clock}
           />
@@ -267,7 +266,7 @@ export function SessionsTab({
 
         {/* Top 3 High-Spend Sessions Highlight Cards */}
         {topSessions.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2" data-tour="usage-sessions-top">
             <h4 className="text-xs font-semibold text-fg-muted">
               Top Sessions by Financial Cost (1-Click Drilldown)
             </h4>
@@ -280,7 +279,7 @@ export function SessionsTab({
                   subtitle={`Client IP: ${s.ip_address}`}
                   metricLabel="Total Cost"
                   metricValue={`$${s.cost_usd.toFixed(4)}`}
-                  secondaryMetric={`${s.queries.toLocaleString()} turns • ${s.tokens.toLocaleString()} tokens`}
+                  secondaryMetric={`${s.queries.toLocaleString()} turns • ${Number(s.tokens ?? 0).toLocaleString()} tokens`}
                   onClick={() => onSelectSession?.(s.id)}
                 />
               ))}
@@ -292,7 +291,7 @@ export function SessionsTab({
       {/* ========================================================================= */}
       {/* TABLE CONTROLS & DATA TABLE (Integrated TableCard) */}
       {/* ========================================================================= */}
-      <section>
+      <section data-tour="usage-sessions-table">
         <TableCard
           toolbar={
             <TableToolbar
@@ -300,23 +299,27 @@ export function SessionsTab({
               onSearchChange={setSearchInput}
               searchPlaceholder="Search session title, ID, or IP..."
               filters={
-                filters.ip
+                ipFilter
                   ? [
                       {
                         id: "ip",
-                        label: `Filtered IP: ${filters.ip}`,
-                        value: filters.ip,
+                        label: `Filtered IP: ${ipFilter}`,
+                        value: ipFilter,
                         options: [
-                          { label: `IP: ${filters.ip}`, value: filters.ip },
+                          { label: `IP: ${ipFilter}`, value: ipFilter },
                           { label: "Clear IP Filter", value: "" },
                         ],
-                        onChange: (val) => setFilter("ip", val),
+                        // Pills / Reset send "all", the option sends "".
+                        onChange: (val) => {
+                          if (val === "" || val === "all") onSelectIp?.("");
+                        },
                       },
                     ]
                   : []
               }
               extraActions={
                 <a
+                  data-tour="usage-sessions-export"
                   href={exportUrl}
                   download
                   className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 transition"

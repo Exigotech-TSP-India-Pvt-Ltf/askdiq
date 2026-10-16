@@ -25,11 +25,22 @@ export interface BrandLogin {
   description: string | null;
 }
 
+/** Legal / help links on the login page (each hidden when empty). */
+export interface BrandLinks {
+  privacy: string | null;
+  terms: string | null;
+  help: string | null;
+}
+
 export interface Brand {
   productName: string;
   assistantName: string;
   companyName: string;
   supportEmail: string;
+  /** Who grants access (login page / Access Required); null = not configured. */
+  accessContactEmail: string | null;
+  /** Login footer links (https:// or same-origin paths), hidden when null. */
+  links: BrandLinks;
   logos: BrandLogos;
   favicon: string;
   /** Only the shades the tenant overrides; the rest come from theme-tokens. */
@@ -52,6 +63,8 @@ export const DEFAULT_BRAND: Brand = {
   assistantName: "AskDIQ",
   companyName: "Exigo Tech",
   supportEmail: "support@deployiq.com",
+  accessContactEmail: null,
+  links: { privacy: null, terms: null, help: null },
   logos: {
     light: "/exigotech-logo.svg",
     dark: "/exigotech-logo-dark.svg",
@@ -93,6 +106,14 @@ function pick(raw: Record<string, unknown>, ...keys: string[]): unknown {
   return undefined;
 }
 
+/** A logo URL: the legacy `<slot>_url` key, else `assets.<slot>` (PR-08: relative /branding/assets/{sha}). */
+function assetUrl(raw: Record<string, unknown>, legacyKey: string, slot: string): unknown {
+  const assets = raw.assets;
+  const fromAssets =
+    assets && typeof assets === "object" && !Array.isArray(assets) ? (assets as Record<string, unknown>)[slot] : undefined;
+  return pick(raw, legacyKey) ?? fromAssets;
+}
+
 function normalizePalette(raw: Record<string, unknown>): Brand["palette"] {
   const palette: Brand["palette"] = {};
   const source = pick(raw, "palette", "brand_palette");
@@ -130,13 +151,19 @@ export function normalizeBrand(payload: unknown): Brand {
     assistantName: text(pick(raw, "assistant_name", "brand_assistant_name")) ?? d.assistantName,
     companyName: text(pick(raw, "company_name")) ?? d.companyName,
     supportEmail: text(pick(raw, "support_email", "brand_support_email")) ?? d.supportEmail,
-    logos: {
-      light: safeAssetUrl(pick(raw, "logo_light_url")) ?? d.logos.light,
-      dark: safeAssetUrl(pick(raw, "logo_dark_url")) ?? d.logos.dark,
-      markLight: safeAssetUrl(pick(raw, "mark_light_url")) ?? d.logos.markLight,
-      markDark: safeAssetUrl(pick(raw, "mark_dark_url")) ?? d.logos.markDark,
+    accessContactEmail: text(pick(raw, "access_contact_email")),
+    links: {
+      privacy: safeAssetUrl(pick(raw, "privacy_url")),
+      terms: safeAssetUrl(pick(raw, "terms_url")),
+      help: safeAssetUrl(pick(raw, "help_url")),
     },
-    favicon: safeAssetUrl(pick(raw, "favicon_url")) ?? d.favicon,
+    logos: {
+      light: safeAssetUrl(assetUrl(raw, "logo_light_url", "logo_light")) ?? d.logos.light,
+      dark: safeAssetUrl(assetUrl(raw, "logo_dark_url", "logo_dark")) ?? d.logos.dark,
+      markLight: safeAssetUrl(assetUrl(raw, "mark_light_url", "mark_light")) ?? d.logos.markLight,
+      markDark: safeAssetUrl(assetUrl(raw, "mark_dark_url", "mark_dark")) ?? d.logos.markDark,
+    },
+    favicon: safeAssetUrl(assetUrl(raw, "favicon_url", "favicon")) ?? d.favicon,
     palette: normalizePalette(raw),
     login: {
       eyebrow: text(pick(raw, "login_eyebrow")),
@@ -156,6 +183,20 @@ export function brandCssVariables(brand: Pick<Brand, "palette">): Record<string,
     if (value && isHexColor(value) && value.toUpperCase() !== brandRamp[shade]) {
       vars[`--brand-${shade}`] = hexToRgbTriplet(value);
     }
+  }
+  return vars;
+}
+
+/**
+ * Every --brand-* variable (the tenant shade or the seeded default). Used when
+ * the brand changes at runtime (Settings save) so a shade that goes back to the
+ * default still overrides the server-rendered <style id="brand-palette">.
+ */
+export function brandCssVariablesComplete(brand: Pick<Brand, "palette">): Record<string, string> {
+  const vars: Record<string, string> = {};
+  for (const shade of BRAND_SHADES) {
+    const value = brand.palette[shade];
+    vars[`--brand-${shade}`] = hexToRgbTriplet(value && isHexColor(value) ? value : brandRamp[shade]);
   }
   return vars;
 }

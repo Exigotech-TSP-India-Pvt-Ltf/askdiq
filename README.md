@@ -9,6 +9,10 @@ backend/    FastAPI service: chunking, retrieval, guardrails, LLM harness
 frontend/   Next.js 14 (App Router) chat UI, auth, documents, metrics
 ```
 
+Full technical documentation (architecture, API, database, configuration,
+security, deployment, development, website integration):
+[docs/technical/](docs/technical/README.md).
+
 ## Architecture
 
 ```mermaid
@@ -82,7 +86,7 @@ pip install -r requirements.txt
 copy .env.example .env   # fill in DATABASE_URL, AZURE_OPENAI_*, SESSION_SECRET, ENTRA_* (or AUTH_DEV_MOCK=true)
 alembic upgrade head
 python scripts/ingest_real_docs.py
-uvicorn main:app --reload
+uvicorn main:app --reload --timeout-graceful-shutdown 5
 ```
 
 Requires PostgreSQL with the `pgvector` extension enabled (a Docker

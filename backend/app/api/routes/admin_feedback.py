@@ -34,7 +34,7 @@ from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
 from app.core.config import get_settings
-from app.core.database import get_db, get_session_factory
+from app.core.database import get_db, get_session_factory, release_connection
 from app.core.http_cache import cached_response
 from app.feedback import analytics, service
 from app.feedback import repository as repo
@@ -42,7 +42,7 @@ from app.feedback.jobs import enqueue_golden_run
 from app.governance.audience import audience_scope, build_audience_filter
 from app.governance.audit import record_audit_event
 from app.governance.outcomes import Outcome
-from app.models.db_models import ChatMessageRecord, EvalPromotedCase
+from app.models.db_models import ChatSession, EvalPromotedCase
 from app.schemas.feedback import (
     MAX_PAGE_LIMIT,
     FeedbackAnalytics,
@@ -61,6 +61,10 @@ from app.schemas.feedback import (
 )
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+
+# Stored turn outcomes a rating can sit on: the canonical ones plus the raw
+# "empty_llm_output" the orchestrator records for an empty LLM reply.
+FeedbackOutcome = Outcome | Literal["empty_llm_output"]
 
 MAX_OFFSET = 10_000
 MAX_SEARCH_CHARS = 200
@@ -104,7 +108,7 @@ async def list_feedback(
     sort: FeedbackSort = Query(FeedbackSort.CREATED_AT_DESC),
     q: str | None = Query(None, max_length=MAX_SEARCH_CHARS),
     triage_status: TriageStatus | None = None,
-    outcome: Outcome | None = None,
+    outcome: FeedbackOutcome | None = None,
     grounded: bool | None = None,
     has_comment: bool | None = None,
     date_from: datetime | None = None,
@@ -180,7 +184,8 @@ async def get_feedback_analytics(
     ``by_intent`` is present only once turn insights exist."""
     scope = audience_scope(audience)
     aud_feedback = await build_audience_filter(db, repo.CLIENT_IP, scope)
-    aud_queries = await build_audience_filter(db, ChatMessageRecord.ip_address, scope)
+    aud_queries = await build_audience_filter(db, ChatSession.created_ip, scope)
+    await release_connection(db)  # never hold a pool slot while waiting for more
     payload = await analytics.compute_analytics(
         aud_feedback, aud_queries, session_factory
     )
@@ -237,7 +242,8 @@ def _golden(r: EvalPromotedCase) -> GoldenCase:
         **_READ_ERRORS,
         200: {
             "description": "One JSON object per line: prompt, chosen, rejected, "
-            "rating, reason_tags, source_ids, complete, missing",
+            "rating, reason_tags, source_ids, triage_status, created_at, "
+            "complete, missing",
             "content": {"application/x-ndjson": {}},
         },
     },

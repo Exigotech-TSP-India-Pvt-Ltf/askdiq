@@ -307,6 +307,28 @@ def validate_docx_bytes(data: bytes) -> None:
         raise ValueError("Corrupted or unreadable Word document archive") from exc
 
 
+def screen_markdown(markdown: str) -> tuple[str, list[str], bool]:
+    """Apply the ingest character cap and the prompt-injection scan.
+
+    Shared by every upload format (.docx after conversion, .md as-is, and JSON
+    text ingestion) so no path skips quarantine. Returns
+    ``(markdown, warnings, quarantined)``.
+    """
+    warnings: list[str] = []
+    if len(markdown) > settings.ingest_max_chars:
+        markdown = markdown[: settings.ingest_max_chars]
+        warnings.append(f"Content capped at {settings.ingest_max_chars} characters")
+
+    quarantined = any(
+        re.search(pat, markdown, re.IGNORECASE) for pat in UNSAFE_PATTERNS
+    )
+    if quarantined:
+        warnings.append(
+            "Indirect prompt injection pattern detected in document content"
+        )
+    return markdown, warnings, quarantined
+
+
 def _convert_docx_sync(file_bytes: bytes) -> ConversionResult:
     """Synchronous CPU-bound conversion and security analysis."""
     validate_docx_bytes(file_bytes)
@@ -338,20 +360,8 @@ def _convert_docx_sync(file_bytes: bytes) -> ConversionResult:
     if parser.images_dropped > 0:
         warnings.append(f"images_dropped={parser.images_dropped}")
 
-    # Cap character length
-    if len(markdown) > settings.ingest_max_chars:
-        markdown = markdown[: settings.ingest_max_chars]
-        warnings.append(f"Content capped at {settings.ingest_max_chars} characters")
-
-    # Prompt injection check
-    quarantined = False
-    for pat in UNSAFE_PATTERNS:
-        if re.search(pat, markdown, re.IGNORECASE):
-            quarantined = True
-            warnings.append(
-                "Indirect prompt injection pattern detected in document content"
-            )
-            break
+    markdown, screen_warnings, quarantined = screen_markdown(markdown)
+    warnings.extend(screen_warnings)
 
     return ConversionResult(
         markdown=markdown,

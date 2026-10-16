@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 
 MAX_CORRECTED_ANSWER_CHARS = 4000
 MAX_REVIEW_NOTE_CHARS = 2000
+MAX_TRIAGE_CORRECTED_ANSWER_CHARS = 4000
 MAX_BULK_IDS = 200
 MAX_PAGE_LIMIT = 200
 
@@ -116,15 +117,24 @@ class FeedbackPage(BaseModel):
 
 
 class FeedbackTriageRequest(BaseModel):
-    """PATCH body: a status transition and/or a reviewer note."""
+    """PATCH body: a status transition, a reviewer note and/or a corrected answer.
+
+    Sending ``review_note`` or ``corrected_answer`` as ``null`` clears it;
+    leaving a field out keeps the stored value.
+    """
 
     version: int = Field(..., ge=1, description="Row version you last read.")
     triage_status: TriageStatus | None = None
     review_note: str | None = Field(default=None, max_length=MAX_REVIEW_NOTE_CHARS)
+    corrected_answer: str | None = Field(
+        default=None,
+        max_length=MAX_TRIAGE_CORRECTED_ANSWER_CHARS,
+        description="Reviewer-written answer (the preference pair's chosen side); PII-masked.",
+    )
 
-    @field_validator("review_note", mode="after")
+    @field_validator("review_note", "corrected_answer", mode="after")
     @classmethod
-    def _clean_note(cls, v: str | None) -> str | None:
+    def _clean_text(cls, v: str | None) -> str | None:
         return strip_control_chars(v)
 
 
@@ -222,6 +232,13 @@ class TrendPoint(BaseModel):
     positive: int
     negative: int
     avg_rating: float | None
+    answers: int = Field(
+        default=0, description="Assistant answers that UTC day (audience-scoped)."
+    )
+    coverage: float | None = Field(
+        default=None,
+        description="Ratings / answers that day (0-1); null with no answers.",
+    )
 
 
 class CountItem(BaseModel):

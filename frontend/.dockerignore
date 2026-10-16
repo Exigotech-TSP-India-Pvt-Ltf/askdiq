@@ -8,3 +8,7 @@ npm-debug.log*
 *.tgz
 tests/
 vitest.config.ts
+Dockerfile*
+.dockerignore
+coverage/
+*.tsbuildinfo

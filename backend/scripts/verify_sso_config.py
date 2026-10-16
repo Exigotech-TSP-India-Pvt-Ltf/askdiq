@@ -53,6 +53,19 @@ def _value(settings: Settings, name: str) -> str:
     return raw or ""
 
 
+def _redirect_ok(actual: str, expected_base: str) -> bool:
+    """Paths the frontend serves: `/auth/callback`, `/auth/callback/<provider>` and the
+    Auth.js-style `/api/auth/callback/<provider>`."""
+    if actual == expected_base:
+        return True
+    base = expected_base.removesuffix("/auth/callback")
+    for prefix in (expected_base + "/", base + "/api/auth/callback/"):
+        if actual.startswith(prefix):
+            slug = actual[len(prefix) :]
+            return bool(slug) and slug.replace("-", "").replace("_", "").isalnum()
+    return False
+
+
 def _static_checks(settings: Settings) -> list[CheckResult]:
     missing = [n.upper() for n in REQUIRED_VALUES if not _value(settings, n)]
     secret_len = len(_value(settings, "session_secret").encode())
@@ -76,8 +89,9 @@ def _static_checks(settings: Settings) -> list[CheckResult]:
         ),
         CheckResult(
             "redirect_uri_matches_app_base_url",
-            _value(settings, "entra_redirect_uri") == expected_redirect,
-            "ENTRA_REDIRECT_URI must equal APP_BASE_URL + /auth/callback",
+            _redirect_ok(_value(settings, "entra_redirect_uri"), expected_redirect),
+            "ENTRA_REDIRECT_URI must be APP_BASE_URL + /auth/callback"
+            " (optionally + /<provider>, e.g. /auth/callback/microsoft-entra-id)",
         ),
         CheckResult(
             "cookie_secure_matches_scheme",

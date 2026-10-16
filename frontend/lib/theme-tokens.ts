@@ -58,6 +58,11 @@ export interface SemanticTokens {
   "surface-muted": string;
   "surface-elevated": string;
   "surface-inverse": string;
+  /**
+   * Studio surface (Usage "Live Telemetry" cards, newplan §15.2): the brand-tinted
+   * top of every card gradient, table header rows and inset tiles.
+   */
+  "surface-studio": string;
   line: string;
   "line-strong": string;
   "line-brand": string;
@@ -91,6 +96,7 @@ export const semanticTokens: Record<ThemeName, SemanticTokens> = {
     "surface-muted": "#F1F5F9",
     "surface-elevated": "#FFFFFF",
     "surface-inverse": "#0A1C1A",
+    "surface-studio": "#F2FAF9",
     line: "#E2E8F0",
     "line-strong": "#CBD5E1",
     "line-brand": "#99DBD5",
@@ -119,13 +125,16 @@ export const semanticTokens: Record<ThemeName, SemanticTokens> = {
     "chart-track": "#E2E8F0",
   },
   dark: {
+    // Dark neutrals carry a slight brand (teal) hue so cards, table headers,
+    // popovers and inputs match the studio look instead of reading as slate.
     "surface-page": "#090D11",
-    "surface-card": "#0C0D10",
-    "surface-muted": "#0F1720",
-    "surface-elevated": "#131D27",
+    "surface-card": "#0B1113",
+    "surface-muted": "#0E1A1C",
+    "surface-elevated": "#112123",
     "surface-inverse": "#F1F5F9",
-    line: "#1E293B",
-    "line-strong": "#334155",
+    "surface-studio": "#071D1C",
+    line: "#1A3032",
+    "line-strong": "#2A4648",
     "line-brand": "#0F4A46",
     fg: "#F1F5F9",
     "fg-muted": "#A3B1C2",
@@ -146,7 +155,7 @@ export const semanticTokens: Record<ThemeName, SemanticTokens> = {
     "status-info": "#38BDF8",
     "status-info-fg": "#7DD3FC",
     "status-info-bg": "#082234",
-    "chart-grid": "#1E293B",
+    "chart-grid": "#1A3032",
     "chart-axis": "#8494A7",
     "chart-track": "#083038",
   },
@@ -167,7 +176,58 @@ export interface ChartTheme {
   tooltip: { background: string; border: string; text: string };
   /** Opacity applied to non-hovered series. */
   dimOpacity: number;
+  /** Analytics (Chatbot Insights port, newplan 6.4): the reference HTML's colours, lifted for dark. */
+  insights: InsightsChartColors;
 }
+
+export type InsightsOutcome = "Served" | "Partly served" | "Not served" | "Greeting only";
+
+export interface InsightsChartColors {
+  /** Conversation outcome (flow, bubbles, pills). */
+  outcome: Record<InsightsOutcome, string>;
+  /** Bot-quality code (donut); unknown codes fall back to `categorical`. */
+  quality: Readonly<Record<string, string>>;
+  /** Topic shading: 0 % handled (low) to 100 % handled (high). */
+  handled: { low: string; high: string };
+  /** Hour-of-day ramp ends (radial). */
+  hours: { low: string; high: string };
+}
+
+// The HTML used #C8A039 (Partly) and #B7C4C5 (Greeting / Closing); both are under 3:1 on a
+// white card, so light mode uses status-warn and slate instead (asserted in the token tests).
+const insightsLight: InsightsChartColors = {
+  outcome: { Served: "#008080", "Partly served": "#B7791F", "Not served": "#C0362C", "Greeting only": "#64748B" },
+  quality: {
+    OK: "#008080",
+    CORR: "#2E8B8B",
+    SCOPE: "#6E7C7D",
+    PART: "#B7791F",
+    FB: "#8A8F73",
+    CLAR: "#5B8FA8",
+    OFF: "#C0362C",
+    FALSE: "#9A3B45",
+    ACK: "#64748B",
+  },
+  handled: { low: "#C0362C", high: "#008080" },
+  hours: { low: "#CFE9E6", high: "#008080" },
+};
+
+const insightsDark: InsightsChartColors = {
+  outcome: { Served: "#2DA9A0", "Partly served": "#F2B84B", "Not served": "#F87171", "Greeting only": "#64748B" },
+  quality: {
+    OK: "#2DA9A0",
+    CORR: "#5FC3BB",
+    SCOPE: "#94A3B8",
+    PART: "#F2B84B",
+    FB: "#B5B98F",
+    CLAR: "#7DB8D6",
+    OFF: "#F87171",
+    FALSE: "#E07A86",
+    ACK: "#64748B",
+  },
+  handled: { low: "#F87171", high: "#2DA9A0" },
+  hours: { low: "#0F3B38", high: "#5FC3BB" },
+};
 
 export const chartTheme: Record<ThemeName, ChartTheme> = {
   light: {
@@ -189,6 +249,7 @@ export const chartTheme: Record<ThemeName, ChartTheme> = {
       text: semanticTokens.light.fg,
     },
     dimOpacity: 0.35,
+    insights: insightsLight,
   },
   dark: {
     categorical: ["#2DA9A0", "#5FC3BB", "#F2B84B", "#94A3B8", "#F87171", "#818CF8"],
@@ -209,15 +270,18 @@ export const chartTheme: Record<ThemeName, ChartTheme> = {
       text: semanticTokens.dark.fg,
     },
     dimOpacity: 0.35,
+    insights: insightsDark,
   },
 };
 
 /** Fixed Tailwind palette for the legacy `dark-*` classes (kept for compatibility). */
 export const legacyDarkPalette = {
+  // Mirrors the dark surface-muted / surface-elevated / line tokens so legacy
+  // `dark:bg-dark-surface` classes sit on the same brand-tinted neutrals.
   bg: "#090D11",
-  surface: "#0F1720",
-  card: "#131D27",
-  border: "#1E293B",
+  surface: "#0E1A1C",
+  card: "#112123",
+  border: "#1A3032",
   text: "#F1F5F9",
   muted: "#94A3B8",
 } as const;
@@ -229,6 +293,17 @@ export const brandGradient = {
   from: "#40E0D0",
   via: "#14B8A6",
   to: "#068987",
+} as const;
+
+/**
+ * Microsoft's four-square logo colours, required unchanged by Microsoft's
+ * sign-in branding guidelines (used only by the "Sign in with Microsoft" button).
+ */
+export const microsoftLogoColors = {
+  red: "#F25022",
+  green: "#7FBA00",
+  blue: "#00A4EF",
+  yellow: "#FFB900",
 } as const;
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -266,6 +341,22 @@ export function contrastRatio(a: string, b: string): number {
   const lb = relativeLuminance(b);
   const [hi, lo] = la > lb ? [la, lb] : [lb, la];
   return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Linear blend of two hex colours (`t` in 0..1), e.g. the topic handled-% scale. */
+export function mixHex(from: string, to: string, t: number): string {
+  const k = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
+  const a = hexToRgb(from);
+  const b = hexToRgb(to);
+  const out = a.map((c, i) => Math.round(c + (b[i] - c) * k).toString(16).padStart(2, "0"));
+  return `#${out.join("")}`.toUpperCase();
+}
+
+/** Text colour (`fg` or `fg-inverse` of the theme) with the higher contrast on a mark fill. */
+export function readableOn(fill: string, theme: ThemeName): string {
+  const a = semanticTokens[theme].fg;
+  const b = semanticTokens[theme]["fg-inverse"];
+  return contrastRatio(a, fill) >= contrastRatio(b, fill) ? a : b;
 }
 
 /** Tailwind colour value backed by a CSS variable holding an "r g b" triplet. */

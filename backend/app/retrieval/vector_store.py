@@ -13,6 +13,7 @@ Retrieval pipeline (in order):
 """
 
 import asyncio
+import logging
 from collections import defaultdict
 
 from sqlalchemy import select
@@ -20,10 +21,44 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from app.core.config import get_settings
-from app.models.db_models import Chunk
+from app.models.db_models import Chunk, Document
 from app.retrieval.reranker import rerank
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+_SCALAR = (str, int, float, bool)
+
+
+def usable_filters(filters: dict | None) -> dict[str, str]:
+    """Keep only allow-listed metadata keys with scalar values.
+
+    Anything else (e.g. Swagger's placeholder ``{"additionalProp1": {}}``) would
+    match no chunk at all and silently empty the answer, so it is dropped.
+    """
+    if not filters:
+        return {}
+    allowed = set(settings.retrieval_filter_keys)
+    kept = {
+        key: str(value)
+        for key, value in filters.items()
+        if key in allowed and isinstance(value, _SCALAR) and str(value).strip()
+    }
+    dropped = sorted(set(filters) - set(kept))
+    if dropped:
+        logger.info("retrieval_filters_ignored keys=%s", dropped[:10])
+    return kept
+
+
+def quarantined_document_ids():
+    """Ids of documents the ingest scan quarantined (prompt-injection hits).
+
+    Their chunks stay stored so an admin can inspect them, but retrieval must
+    never cite them.
+    """
+    return select(Document.id).where(
+        Document.doc_metadata["quarantined"].as_string() == "true"
+    )
 
 
 class VectorStore:
@@ -69,10 +104,10 @@ class VectorStore:
             Chunk,
             Chunk.embedding.cosine_distance(query_embedding).label("distance"),
         ).options(defer(Chunk.embedding))
+        stmt = stmt.where(Chunk.document_id.not_in(quarantined_document_ids()))
 
-        if filters:
-            for key, value in filters.items():
-                stmt = stmt.where(Chunk.chunk_metadata[key].as_string() == str(value))
+        for key, value in usable_filters(filters).items():
+            stmt = stmt.where(Chunk.chunk_metadata[key].as_string() == value)
 
         stmt = stmt.order_by("distance").limit(candidate_k)
 

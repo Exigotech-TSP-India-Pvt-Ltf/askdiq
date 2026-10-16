@@ -6,34 +6,6 @@ describe("Frontend API Client", () => {
     vi.restoreAllMocks();
   });
 
-  it("submits user feedback via POST /sessions/:id/messages/:id/feedback", async () => {
-    const fakeResponse = {
-      id: "fb-123",
-      message_id: "msg-456",
-      actor: "test-user",
-      rating: 5,
-      comment: "Very helpful",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => fakeResponse,
-    } as Response);
-
-    const res = await api.submitFeedback("test-token", "sess-1", "msg-456", 5, "Very helpful");
-    expect(res).toEqual(fakeResponse);
-    expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/sessions/sess-1/messages/msg-456/feedback"),
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ rating: 5, comment: "Very helpful" }),
-      })
-    );
-  });
-
   it("sends multipart FormData in ingestFile with query flags", async () => {
     const fakeIngestResult = {
       source_name: "test.md",

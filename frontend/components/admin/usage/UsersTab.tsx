@@ -8,6 +8,7 @@ import { DataTable, type ColumnDef } from "../DataTable";
 import { TableToolbar } from "../TableToolbar";
 import { Pagination } from "../Pagination";
 import { TableCard } from "../TableCard";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { StatCard, HighlightCard } from "../insights";
 import { Users, Shield, Cpu, Download, Sparkles } from "lucide-react";
 
@@ -50,6 +51,8 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       "tokens_asc",
       "sessions_desc",
       "sessions_asc",
+      "last_active_desc",
+      "last_active_asc",
     ],
     defaultFilters: { type: "all" },
   });
@@ -89,7 +92,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
   }, [fetchData]);
 
   const stats = data?.stats || {};
-  const topUsers = (stats.top_3_users || []) as Array<{
+  const topUsers = (stats.top_users || []) as Array<{
     ip_address: string;
     queries: number;
     cost_usd: number;
@@ -165,11 +168,17 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       align: "right",
       render: (r) => formatCurrency(r.cost_usd, 4),
     },
+    {
+      key: "last_active",
+      header: "Last Active",
+      sortable: true,
+      render: (r) => <RelativeTime value={r.last_active} className="text-xs text-fg-subtle" />,
+    },
   ];
 
   const exportUrl = `/api/proxy/admin/usage/export?tab=users&audience=${audience}&q=${encodeURIComponent(
     search
-  )}`;
+  )}${filters.type !== "all" ? `&type=${encodeURIComponent(filters.type)}` : ""}`;
 
   return (
     <div className="space-y-6">
@@ -177,11 +186,11 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       {/* PRE-TABLE INTELLIGENCE HEADER */}
       {/* ========================================================================= */}
       <section className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-tour="usage-users-stats">
           <StatCard
-            title="Total Unique Users"
+            title="Unique client IPs"
             value={stats.unique_users ?? data?.total ?? 0}
-            subtitle={`Audience: ${audience}`}
+            subtitle={`All time, audience: ${audience}`}
             icon={Users}
           />
 
@@ -194,7 +203,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
 
           <StatCard
             title="Total Queries"
-            value={stats.total_queries ?? 0}
+            value={stats.queries_driven ?? 0}
             subtitle="Turns processed"
             icon={Sparkles}
           />
@@ -209,7 +218,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
 
         {/* Top 3 Users Highlight Cards */}
         {topUsers.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2" data-tour="usage-users-top">
             <h4 className="text-xs font-semibold text-fg-muted">
               Top Consumers by Financial Cost (1-Click Drilldown)
             </h4>
@@ -237,7 +246,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       {/* ========================================================================= */}
       {/* TABLE CONTROLS & DATA TABLE (Integrated TableCard) */}
       {/* ========================================================================= */}
-      <section>
+      <section data-tour="usage-users-table">
         <TableCard
           toolbar={
             <TableToolbar
@@ -259,6 +268,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
               ]}
               extraActions={
                 <a
+                  data-tour="usage-users-export"
                   href={exportUrl}
                   download
                   className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 transition"

@@ -15,6 +15,8 @@ class ChatMessageOut(BaseModel):
     role: str
     content: str
     created_at: datetime
+    # Assistant turns: links the answer to its governance trace after reload.
+    request_id: str | None = None
     grounded: bool | None = None
     guardrail_flags: list[str] | None = None
     feedback_rating: int | None = None
@@ -44,6 +46,9 @@ class ChatSessionDetail(ChatSessionSummary):
 
 class CreateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=256)
+    ip_address: str | None = Field(
+        default=None, description="End user's IP address (forwarded by the frontend)."
+    )
 
 
 class RenameSessionRequest(BaseModel):
@@ -57,12 +62,15 @@ class UserFeedbackRequest(BaseModel):
     comment: str | None = Field(
         default=None,
         max_length=1000,
-        description="Optional user comment (max 1000 chars)",
+        description="Optional user comment (max 1000 chars, PII-masked before storage)",
     )
     reason_tags: list[ReasonTag] = Field(
         default_factory=list,
         max_length=len(ReasonTag),
-        description="Allow-listed reasons (thumbs-down chips).",
+        description=(
+            "Allow-listed reasons (thumbs-down chips). Omit both this and "
+            "corrected_answer to keep the stored details on a negative rating."
+        ),
     )
     corrected_answer: str | None = Field(
         default=None,
@@ -79,6 +87,10 @@ class UserFeedbackRequest(BaseModel):
     @classmethod
     def sanitize_corrected_answer(cls, v: str | None) -> str | None:
         return strip_control_chars(v)
+
+    ip_address: str | None = Field(
+        default=None, description="End user's IP address (forwarded by the frontend)."
+    )
 
     @field_validator("comment", mode="after")
     @classmethod

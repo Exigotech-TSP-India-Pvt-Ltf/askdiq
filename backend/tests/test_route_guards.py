@@ -22,6 +22,7 @@ from app.auth.deps import (
     current_user,
     is_guard,
     require_active_user,
+    require_chat_actor,
     require_role_or_chat,
     require_service_key,
 )
@@ -36,6 +37,9 @@ PUBLIC_PATHS = frozenset({"/health", "/branding"})
 PUBLIC_PREFIXES = ("/branding/assets/", "/auth/sso/", "/mock-idp/")
 DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
 CHAT = "chat"
+# Chat routes the public website also calls with the service key alone
+# (require_chat_actor; docs/technical/10-website-integration.md).
+CHAT_OR_KEY = "chat-or-key"
 SIGNED_IN = "signed-in"  # any status, incl. suspended (/auth/me, logout)
 MANAGE = Permission.USERS_MANAGE
 
@@ -54,17 +58,20 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/admin/insights/taxonomy/{kind}/{code}/archive"): (
         Permission.TAXONOMY_WRITE
     ),
+    ("POST", "/admin/insights/taxonomy/{kind}/{code}/unarchive"): (
+        Permission.TAXONOMY_WRITE
+    ),
     ("PUT", "/admin/branding"): Permission.BRANDING_WRITE,
     ("POST", "/admin/branding/assets"): Permission.BRANDING_WRITE,
     ("POST", "/admin/feedback/bulk"): Permission.FEEDBACK_TRIAGE,
     ("PATCH", "/admin/feedback/{feedback_id}"): Permission.FEEDBACK_TRIAGE,
     ("POST", "/admin/feedback/golden/{case_id}/run"): Permission.FEEDBACK_TRIAGE,
-    ("POST", "/query"): CHAT,
-    ("POST", "/sessions"): CHAT,
-    ("PATCH", "/sessions/{session_id}"): CHAT,
-    ("DELETE", "/sessions/{session_id}"): CHAT,
-    ("DELETE", "/sessions/{session_id}/messages/{message_id}"): CHAT,
-    ("POST", "/sessions/{session_id}/messages/{message_id}/feedback"): CHAT,
+    ("POST", "/query"): CHAT_OR_KEY,
+    ("POST", "/sessions"): CHAT_OR_KEY,
+    ("PATCH", "/sessions/{session_id}"): CHAT_OR_KEY,
+    ("DELETE", "/sessions/{session_id}"): CHAT_OR_KEY,
+    ("DELETE", "/sessions/{session_id}/messages/{message_id}"): CHAT_OR_KEY,
+    ("POST", "/sessions/{session_id}/messages/{message_id}/feedback"): CHAT_OR_KEY,
     ("POST", "/auth/logout"): SIGNED_IN,
     ("POST", "/auth/access-request"): CHAT,
     ("POST", "/admin/users-accounts/invite"): MANAGE,
@@ -77,6 +84,8 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
 # GET routes needing more than dashboard:read.
 EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/usage/export": Permission.USAGE_EXPORT,
+    "/admin/branding/defaults": Permission.BRANDING_WRITE,
+    "/admin/governance/logs/export.csv": Permission.USAGE_EXPORT,
     "/admin/feedback/export": Permission.FEEDBACK_EXPORT,
     "/auth/me": SIGNED_IN,
     "/auth/access-request": CHAT,
@@ -84,6 +93,14 @@ EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/users-accounts/stats": MANAGE,
     "/admin/users-accounts/{user_id}": MANAGE,
     "/admin/access-requests": MANAGE,
+}
+# Chart-aggregation reads added by PR-14 (planchanges4 B7.1, B7.2): each must
+# exist and need exactly dashboard:read.
+EXPECTED_B7_READS: dict[str, str] = {
+    "/admin/dashboard/activity": Permission.DASHBOARD_READ,
+    "/admin/visitors/stats": Permission.DASHBOARD_READ,
+    "/admin/visitors/{visitor_id}/timeline": Permission.DASHBOARD_READ,
+    "/admin/conversations/stats": Permission.DASHBOARD_READ,
 }
 # Open to every signed-in user, whatever their status.
 SIGNED_IN_ROUTES = frozenset({("GET", "/auth/me"), ("POST", "/auth/logout")})
@@ -107,6 +124,8 @@ def requirement(route: APIRoute) -> str | None:
         permission = getattr(call, PERMISSION_ATTR, None)
         if permission is not None:
             return str(permission)
+    if require_chat_actor in calls:
+        return CHAT_OR_KEY
     if require_role_or_chat in calls:
         return CHAT
     if require_active_user in calls:
@@ -165,7 +184,7 @@ def test_public_prefixes_are_assets_sso_and_the_dev_mock_idp() -> None:
     prefixes = {
         p for r in api_routes() for p in PUBLIC_PREFIXES if r.path.startswith(p)
     }
-    assert prefixes <= {"/branding/assets/", "/auth/sso/", "/mock-idp/"}
+    assert prefixes <= {"/branding/assets/", "/mock-idp/", "/auth/sso/"}
     assert "/branding/assets/" in prefixes
     assert "/auth/sso/" in prefixes
     assert ("/mock-idp/" in prefixes) is get_settings().auth_dev_mock
@@ -202,10 +221,16 @@ def test_read_routes_are_operator_level_and_chat_is_open() -> None:
         if method != "GET":
             continue
         if path.startswith("/sessions"):
-            assert req == CHAT, path
+            assert req == CHAT_OR_KEY, path
         else:
             expected = EXPECTED_SPECIAL_READS.get(path, Permission.DASHBOARD_READ)
             assert req == str(expected), path
+
+
+def test_chart_aggregation_routes_need_dashboard_read() -> None:
+    reads = {p: req for m, p, req in guarded_endpoints() if m == "GET"}
+    for path, permission in EXPECTED_B7_READS.items():
+        assert reads.get(path) == str(permission), path
 
 
 # ---------------------------------------------------------------------------
@@ -266,10 +291,26 @@ async def _call(
 
 
 def _key() -> dict[str, str]:
-    return {"X-API-Key": get_settings().api_key_name}
+    """What the dashboard proxy sends: the service key plus its marker."""
+    return {"X-API-Key": get_settings().api_key_name, "X-AskDIQ-Proxy": "1"}
+
+
+def test_chat_or_key_routes_are_exactly_the_website_contract() -> None:
+    chat_or_key = {(m, p) for m, p, req in guarded_endpoints() if req == CHAT_OR_KEY}
+    assert chat_or_key == {
+        ("POST", "/query"),
+        ("GET", "/sessions"),
+        ("POST", "/sessions"),
+        ("GET", "/sessions/{session_id}"),
+        ("PATCH", "/sessions/{session_id}"),
+        ("DELETE", "/sessions/{session_id}"),
+        ("DELETE", "/sessions/{session_id}/messages/{message_id}"),
+        ("POST", "/sessions/{session_id}/messages/{message_id}/feedback"),
+    }
 
 
 async def test_no_session_gets_401_everywhere(raw_client: httpx.AsyncClient) -> None:
+    """Through the proxy (marker set) every guarded route needs a session."""
     for method, path, _ in guarded_endpoints():
         response = await _call(raw_client, method, path, _key())
         assert response.status_code == 401, (method, path, response.text)
@@ -292,7 +333,7 @@ async def test_pending_user_gets_403_on_every_dashboard_route(
     raw_client: httpx.AsyncClient, pending_user: None
 ) -> None:
     for method, path, req in guarded_endpoints():
-        if req in {CHAT, SIGNED_IN}:
+        if req in {CHAT, CHAT_OR_KEY, SIGNED_IN}:
             continue
         response = await _call(raw_client, method, path, _key())
         assert response.status_code == 403, (method, path)
@@ -316,7 +357,7 @@ async def test_operator_gets_403_on_admin_level_routes(
     admin_level = [
         (m, p)
         for m, p, req in guarded_endpoints()
-        if req not in {CHAT, SIGNED_IN, Permission.DASHBOARD_READ}
+        if req not in {CHAT, CHAT_OR_KEY, SIGNED_IN, Permission.DASHBOARD_READ}
     ]
     assert admin_level
     for method, path in admin_level:

@@ -11,6 +11,8 @@ import {
 } from "react";
 import { api, ApiError } from "./api";
 import { useAuth } from "./auth-context";
+import { useBrand } from "./brand-context";
+import { submitMessageFeedback, type FeedbackDetails } from "./feedback-api";
 import { parseServerDate } from "./time";
 import type { ChatMessage, ChatMessageOut, ChatSessionSummary } from "./types";
 
@@ -18,13 +20,15 @@ function newId() {
   return Math.random().toString(36).slice(2);
 }
 
-function toChatMessage(m: ChatMessageOut): ChatMessage {
+function toChatMessage(m: ChatMessageOut, sessionId: string): ChatMessage {
   return {
+    sessionId,
     id: m.id,
     role: m.role,
     content: m.content,
     createdAt: parseServerDate(m.created_at).getTime(),
     feedbackRating: m.feedback_rating,
+    requestId: m.request_id ?? null,
   };
 }
 
@@ -37,8 +41,12 @@ interface ChatContextValue {
   sending: boolean;
   loadingMessages: boolean;
   sendQuery: (text: string) => Promise<void>;
-  submitFeedback: (messageId: string, rating: number, comment?: string) => Promise<void>;
-  deleteExchange: (messageId: string) => void;
+  /** Upserts the rating; `details` carries thumbs-down reason chips and the corrected answer. */
+  submitFeedback: (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
+  /** Removes a question/answer pair; restores it and rejects if the server delete fails. */
+  deleteExchange: (messageId: string) => Promise<void>;
+  /** Re-sends the question behind a failed answer (the failed pair is dropped first). */
+  retryExchange: (assistantMessageId: string) => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
   startNewSession: () => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
@@ -59,6 +67,7 @@ const ChatContext = createContext<ChatContextValue | undefined>(undefined);
  */
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
+  const { assistantName } = useBrand();
 
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -74,7 +83,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       try {
         const detail = await api.getSession(token, sessionId);
         setActiveSessionId(detail.id);
-        setMessages(detail.messages.map(toChatMessage));
+        setMessages(detail.messages.map((m) => toChatMessage(m, detail.id)));
       } catch {
         // Session may have been deleted elsewhere — fall back to a blank slate.
         setActiveSessionId(null);
@@ -161,10 +170,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               pending: false,
               content: response.answer,
               response,
+              sessionId: response.session_id || null,
             };
           }
           if (message.id === userMessage.id) {
-            return { ...message, id: response.user_message_id || message.id };
+            return {
+              ...message,
+              id: response.user_message_id || message.id,
+              sessionId: response.session_id || null,
+            };
           }
           return message;
         })
@@ -186,7 +200,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 error:
                   err instanceof ApiError
                     ? err.message
-                    : "DeployIQ couldn't answer that just now. Please try again.",
+                    : `${assistantName} couldn't answer that just now. Please try again.`,
               }
             : message
         )
@@ -196,9 +210,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  function deleteExchange(messageId: string) {
-    if (!token || !activeSessionId) return;
+  async function deleteExchange(messageId: string) {
+    const target = messages.find((m) => m.id === messageId);
+    const sessionId = target?.sessionId ?? activeSessionId;
+    if (!token || !sessionId) return;
 
+    const before = messages;
     setMessages((prev) => {
       const index = prev.findIndex((m) => m.id === messageId);
       if (index === -1) return prev;
@@ -211,12 +228,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       return prev.filter((m) => m.id !== messageId && m.id !== pairId);
     });
 
-    // Best-effort backend delete — the pair is matched server-side by the
-    // shared turn_index, so any one of the two message ids is enough.
-    api.deleteExchange(token, activeSessionId, messageId).catch(() => {
-      // Already removed locally; a stale row surviving server-side isn't
-      // worth surfacing an error for here.
-    });
+    // The pair is matched server-side by the shared turn_index, so any one of
+    // the two message ids is enough. A failure puts the pair back so the
+    // screen never disagrees with what a reload would show.
+    try {
+      await api.deleteExchange(token, sessionId, messageId);
+    } catch (err) {
+      setMessages(before);
+      throw err;
+    }
+  }
+
+  async function retryExchange(assistantMessageId: string) {
+    const index = messages.findIndex((m) => m.id === assistantMessageId);
+    const question = index > 0 ? messages[index - 1] : undefined;
+    if (!question || question.role !== "user" || !messages[index].error) return;
+    // A failed turn has no server ids to delete, so it is only dropped locally.
+    setMessages((prev) => prev.filter((m) => m.id !== assistantMessageId && m.id !== question.id));
+    await sendQuery(question.content);
   }
 
   async function selectSession(sessionId: string) {
@@ -257,15 +286,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }
 
   const submitFeedback = useCallback(
-    async (messageId: string, rating: number, comment?: string) => {
-      if (!token || !activeSessionId) return;
-      const prevRating = messages.find((m) => m.id === messageId)?.feedbackRating;
+    async (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => {
+      const target = messages.find((m) => m.id === messageId);
+      // Rate in the message's own session: an expired session rotates to a
+      // new one, and the older messages still live in the old session.
+      const sessionId = target?.sessionId ?? activeSessionId;
+      // Never report "thanks" for a rating that was not sent.
+      if (!token || !sessionId) throw new Error("Open a saved chat to rate its answers.");
+      const prevRating = target?.feedbackRating;
       // Optimistic update
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, feedbackRating: rating } : m))
       );
       try {
-        await api.submitFeedback(token, activeSessionId, messageId, rating, comment);
+        await submitMessageFeedback(token, sessionId, messageId, { rating, comment, ...details });
       } catch (err) {
         // Rollback on failure
         setMessages((prev) =>
@@ -289,6 +323,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sendQuery,
       submitFeedback,
       deleteExchange,
+      retryExchange,
       selectSession,
       startNewSession,
       renameSession,

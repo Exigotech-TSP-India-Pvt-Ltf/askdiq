@@ -411,10 +411,13 @@ def test_openapi_documents_every_governance_route():
 def test_all_governance_routes_need_dashboard_read():
     from tests.test_route_guards import api_routes, requirement
 
+    # Bulk CSV export is an admin action (usage:export), like the Usage CSV.
+    exports = {f"{BASE}/logs/export.csv": str(Permission.USAGE_EXPORT)}
     routes = [r for r in api_routes() if r.path.startswith(f"{BASE}/")]
     assert len(routes) >= 8
     for route in routes:
-        assert requirement(route) == str(Permission.DASHBOARD_READ), route.path
+        expected = exports.get(route.path, str(Permission.DASHBOARD_READ))
+        assert requirement(route) == expected, route.path
 
 
 # ===========================================================================
@@ -850,6 +853,7 @@ async def _overview(client, **params) -> httpx.Response:
 
 
 async def test_overview_shape_and_bounded_query_count(client, db_session):
+    await _overview(client)  # warm the audience classification cache
     with QueryCounter(test_engine) as empty:
         await _overview(client)
     session = await chat_session(db_session)
@@ -884,6 +888,8 @@ async def test_overview_shape_and_bounded_query_count(client, db_session):
         kpi = data["kpis"][name]
         assert len(kpi["sparkline"]) == 24, name
         assert kpi["window"] and kpi["source"], name
+    # Cost today sums from UTC midnight; it must not claim a rolling 24h.
+    assert data["kpis"]["cost_today"]["window"] == "today_utc"
     assert data["kpis"]["requests"]["value"] >= 300
 
 

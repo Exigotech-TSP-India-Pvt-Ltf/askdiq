@@ -259,15 +259,30 @@ async def test_suspend_and_reactivate(
         headers=boss_headers,
     )
     assert suspended.status_code == 200
-    # Takes effect on the very next request, Chat included.
-    assert (await client.get("/sessions", headers=headers)).status_code == 403
+    # Suspension revokes every session at once: the old cookie is dead.
+    assert (await client.get("/auth/me", headers=headers)).status_code == 401
+    live = (
+        (
+            await db_session.execute(
+                select(AuthSession).where(
+                    AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert live == []
     reactivated = await client.patch(
         f"{USERS}/{user_id}",
         json={"version": 2, "status": "active"},
         headers=boss_headers,
     )
     assert reactivated.status_code == 200
-    assert (await client.get("/sessions", headers=headers)).status_code == 200
+    # The revoked session stays revoked; a fresh sign-in works again.
+    assert (await client.get("/auth/me", headers=headers)).status_code == 401
+    fresh = await session_headers(db_session, await reload(db_session, User, user_id))
+    assert (await client.get("/sessions", headers=fresh)).status_code == 200
     actions = await audit_actions(db_session, user_id)
     assert AuthEvent.USER_SUSPENDED in actions
     assert AuthEvent.USER_REACTIVATED in actions

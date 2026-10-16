@@ -70,7 +70,10 @@ describe("package.json (F0.1.1 port pin, F0.2.1 exact motion pin)", () => {
     const pkg = readPackage();
     expect(pkg.scripts.dev).toBe("next dev --turbo -p 3000");
     expect(pkg.scripts["dev:webpack"]).toBe("next dev -p 3000");
-    expect(pkg.scripts.start).toBe("next start -p 3000");
+    // `start` runs the standalone production build, whose launcher defaults PORT to 3000.
+    expect(pkg.scripts.start).toBe("node scripts/start-standalone.mjs");
+    const launcher = fs.readFileSync(path.resolve(__dirname, "../../scripts/start-standalone.mjs"), "utf-8");
+    expect(launcher).toMatch(/PORT:\s*process\.env\.PORT\s*\?\?\s*"3000"/);
   });
 
   it("pins motion to an exact version (no range)", () => {

@@ -29,6 +29,8 @@ export interface QueryResponse {
   request_id: string;
   latency_ms: number;
   guardrail_flags: string[];
+  /** "answered" | "ungrounded" | "blocked" | "conversational" | "llm_failed" (app/governance/outcomes.py). */
+  outcome?: string;
   session_id: string;
   session_title: string;
   user_message_id: string;
@@ -50,6 +52,7 @@ export interface ChatMessageOut {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  request_id?: string | null;
   grounded?: boolean | null;
   guardrail_flags?: string[] | null;
   feedback_rating?: number | null;
@@ -69,6 +72,14 @@ export interface ChatMessage {
   pending?: boolean;
   error?: string;
   feedbackRating?: number | null;
+  /** Saved answers' request id (the live `response` carries its own). */
+  requestId?: string | null;
+  /**
+   * Session the message is stored in. An expired session rotates to a new one
+   * mid-conversation, so the messages above the rotation still belong to the
+   * old session and must be rated/deleted there, not in the active one.
+   */
+  sessionId?: string | null;
 }
 
 export interface StageTokenBreakdown {
@@ -201,6 +212,8 @@ export interface UsageUserRow {
   output_tokens: number;
   total_tokens: number;
   cost_usd: number;
+  /** Most recent query from this IP (ISO 8601, UTC). */
+  last_active: string | null;
 }
 
 export interface UsageSessionRow {

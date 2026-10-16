@@ -1,9 +1,10 @@
 from collections.abc import AsyncGenerator
 
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -22,6 +23,7 @@ engine = create_async_engine(
     # Validate on checkout (stale sockets behind nginx / cloud LBs) and recycle.
     pool_pre_ping=settings.db_pool_pre_ping,
     pool_recycle=settings.db_pool_recycle_seconds,
+    pool_timeout=settings.db_pool_timeout_seconds,
 )
 
 # Postgres SQLSTATE for "canceling statement due to statement timeout".
@@ -44,6 +46,36 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+async def release_connection(session: AsyncSession) -> None:
+    """End ``session``'s read transaction so its pooled connection goes back now.
+
+    Call it before fanning out to parallel sessions (``gather_scoped``): a
+    request that keeps one connection while waiting for more holds a pool slot
+    idle, and enough such requests together deadlock the pool until
+    ``pool_timeout``. The session reconnects on its next use.
+
+    A session bound to a caller-owned connection (it joined an outer
+    transaction, e.g. the test fixture's) holds no pool slot of its own:
+    there is nothing to release, and committing would end a transaction it
+    does not own while other users of that connection may be mid-statement.
+    """
+    if isinstance(getattr(session, "bind", None), AsyncConnection):
+        return
+    if session.in_transaction():
+        await session.commit()
+
+
+def pool_stats() -> dict[str, int]:
+    """Live pool counters for this process (``/health``, load tests)."""
+    pool = engine.pool
+    return {
+        "size": settings.db_pool_size,
+        "max_overflow": settings.db_max_overflow,
+        "checked_out": int(getattr(pool, "checkedout", lambda: 0)()),
+        "idle": int(getattr(pool, "checkedin", lambda: 0)()),
+    }
+
+
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
     """Dependency: the factory ``gather_scoped`` opens one session per task from.
 
@@ -60,29 +92,32 @@ def is_statement_timeout(exc: BaseException) -> bool:
     return getattr(exc.orig, "sqlstate", None) == QUERY_CANCELED_SQLSTATE
 
 
-async def read_only_session() -> AsyncGenerator[AsyncSession, None]:
+async def read_only_session(
+    session: AsyncSession = Depends(get_db),
+) -> AsyncGenerator[AsyncSession, None]:
     """Dependency for heavy read paths (dashboards): bounded statement time.
 
-    ``SET LOCAL statement_timeout`` lasts for the request's transaction; a
-    query that exceeds ``DASHBOARD_STATEMENT_TIMEOUT_MS`` is cancelled by
-    Postgres and surfaces as a clean 503 instead of a hung worker.
+    Builds on the request's ``get_db`` session (one connection per request,
+    and overriding ``get_db`` covers these routes too). ``SET LOCAL
+    statement_timeout`` lasts for the request's transaction; a query that
+    exceeds ``DASHBOARD_STATEMENT_TIMEOUT_MS`` is cancelled by Postgres and
+    surfaces as a clean 503 instead of a hung worker.
     """
     timeout_ms = int(settings.dashboard_statement_timeout_ms)
-    async with AsyncSessionLocal() as session:
-        # Integer from typed settings; SET cannot take bind parameters.
-        await session.execute(
-            text(f"SET LOCAL statement_timeout = {timeout_ms}")  # nosec B608
-        )
-        try:
-            yield session
-        except DBAPIError as exc:
-            if is_statement_timeout(exc):
-                raise HTTPException(
-                    status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="The query took too long. Please retry or narrow the range.",
-                    headers={"Retry-After": "5"},
-                ) from None
-            raise
+    # Integer from typed settings; SET cannot take bind parameters.
+    await session.execute(
+        text(f"SET LOCAL statement_timeout = {timeout_ms}")  # nosec B608
+    )
+    try:
+        yield session
+    except DBAPIError as exc:
+        if is_statement_timeout(exc):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The query took too long. Please retry or narrow the range.",
+                headers={"Retry-After": "5"},
+            ) from None
+        raise
 
 
 async def init_db() -> None:

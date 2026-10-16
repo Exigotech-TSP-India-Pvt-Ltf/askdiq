@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useId, useRef } from "react";
+import { ActivePill } from "@/components/ui/ActivePill";
+import { segmentTrack } from "@/components/ui/styles";
 import {
   BarChart3,
   Users,
@@ -33,12 +35,18 @@ import {
   Gauge,
   Timer,
   ScrollText,
+  BookOpen,
+  LayoutDashboard,
+  TrendingUp,
+  Workflow,
+  TrendingDown,
+  MessagesSquare,
 } from "lucide-react";
 
 export interface TabItem<T extends string = string> {
   id: T;
   label: string;
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: React.ComponentType<{ className?: string; strokeWidth?: string | number }>;
   badgeCount?: number | string | null;
   description?: string;
 }
@@ -59,6 +67,7 @@ export function TabGroup<T extends string = string>({
   ariaLabel = "Tab Navigation",
 }: TabGroupProps<T>) {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const pillId = `tab-pill-${useId()}`;
 
   const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
     let nextIndex = index;
@@ -82,7 +91,7 @@ export function TabGroup<T extends string = string>({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={`inline-flex p-1 bg-slate-100/90 dark:bg-dark-surface rounded-xl border border-slate-200/90 dark:border-dark-border shadow-inner gap-1 flex-wrap select-none ${className}`}
+      className={`${segmentTrack} flex-wrap select-none ${className}`}
     >
       {tabs.map((tab, idx) => {
         const isActive = activeTab === tab.id;
@@ -100,23 +109,25 @@ export function TabGroup<T extends string = string>({
             onClick={() => onChange(tab.id)}
             onKeyDown={(e) => handleKeyDown(e, idx)}
             title={tab.description || tab.label}
-            className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-lg transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
+            className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
               isActive
-                ? "bg-brand-gradient text-white shadow-brand-glow font-semibold"
-                : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 font-medium"
+                ? "text-white font-semibold"
+                : "text-fg-muted hover:text-fg hover:bg-surface-card/80 dark:hover:bg-white/[0.06] font-medium"
             }`}
           >
+            {isActive && <ActivePill layoutId={pillId} />}
             {Icon && (
               <Icon
-                className={`w-3.5 h-3.5 flex-shrink-0 ${
-                  isActive ? "text-white" : "text-slate-500 dark:text-slate-400"
+                className={`relative w-4 h-4 flex-shrink-0 ${
+                  isActive ? "text-white" : "text-fg-subtle"
                 }`}
+                strokeWidth={1.75}
               />
             )}
-            <span className="whitespace-nowrap">{tab.label}</span>
+            <span className="relative whitespace-nowrap">{tab.label}</span>
             {tab.badgeCount !== undefined && tab.badgeCount !== null ? (
               <span
-                className={`text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
+                className={`relative text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
                   isActive
                     ? "bg-white/20 text-white"
                     : "bg-surface-muted text-fg-muted"
@@ -178,4 +189,15 @@ export const GOVERNANCE_TABS: TabItem[] = [
 export const DOCUMENTS_TABS: TabItem[] = [
   { id: "overview", label: "Overview", icon: Layers },
   { id: "inventory", label: "Document Inventory", icon: FileText },
+];
+
+/** Analytics (Chatbot Insights port, planchanges4 F6.1). Ids match the `?tab=` values. */
+export const ANALYTICS_TABS: TabItem[] = [
+  { id: "guide", label: "Guide", icon: BookOpen },
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "trend", label: "Trend", icon: TrendingUp },
+  { id: "flow", label: "Flow", icon: Workflow },
+  { id: "topics", label: "Topics", icon: LayoutGrid },
+  { id: "dropoff", label: "Drop-off", icon: TrendingDown },
+  { id: "conversations", label: "Conversations", icon: MessagesSquare },
 ];

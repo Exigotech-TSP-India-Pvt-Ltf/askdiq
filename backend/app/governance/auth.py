@@ -1,10 +1,10 @@
 """Client-id sanitizing helper.
 
-Authentication and authorization moved to `app.auth.deps` (SSO sessions plus
-the `X-API-Key` proxy service key). The actor identity is now the signed-in
-user's email; `X-Client-Id` is client-controlled and is never trusted as an
-identity. `sanitize_client_id` remains for callers that log or echo a
-client-supplied id and must normalise it safely.
+Authentication and authorization live in `app.auth.deps` (SSO sessions plus
+the `X-API-Key` service key). For dashboard users the actor is the signed-in
+user's email. For the website (service key, no session) the actor is the
+sanitised `X-Client-Id`: it partitions sessions and rate limits between
+visitors but is not a security boundary (the key is).
 """
 
 import re
