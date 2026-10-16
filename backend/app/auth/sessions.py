@@ -135,3 +135,6 @@ class SessionService:
 
     async def revoke_all(self, user_id: uuid.UUID) -> int:
         return await self._repo.revoke_all_for_user(user_id, self._clock())
+
+    async def live_sessions(self, user_id: uuid.UUID, limit: int) -> list[AuthSession]:
+        return await self._repo.list_live_for_user(user_id, self._clock(), limit)
