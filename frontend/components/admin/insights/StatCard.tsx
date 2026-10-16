@@ -26,7 +26,7 @@ export function StatCard({
 }: StatCardProps) {
   return (
     <div
-      className={`group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white dark:bg-[#0c0d10] p-5 shadow-card dark:shadow-xl transition-all hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md ${className}`}
+      className={`group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-5 shadow-card dark:shadow-xl transition-all hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md ${className}`}
     >
       {/* Ambient Aurora Corner Glow */}
       <div className="absolute -top-6 -right-6 w-20 h-20 bg-teal-400/10 dark:bg-teal-500/15 rounded-full blur-xl pointer-events-none transition-transform group-hover:scale-125" />

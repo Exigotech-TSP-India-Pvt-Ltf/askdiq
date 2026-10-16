@@ -1,3 +1,64 @@
 {
-  "extends": "next/core-web-vitals"
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "motion/react",
+            "importNames": [
+              "motion"
+            ],
+            "message": "Use `m.*` components (LazyMotion + domAnimation in MotionProvider) with presets from lib/motion.ts."
+          },
+          {
+            "name": "framer-motion",
+            "message": "Import from `motion/react` and use `m.*` components."
+          },
+          {
+            "name": "motion",
+            "message": "Import from `motion/react` and use `m.*` components."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "Literal[value=/(^|[^&\\w])#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(?![\\w-])/]",
+        "message": "Theme guard (newplan 15.2a): no hex colours outside lib/theme-tokens.ts. Use a token class (bg-surface-card, text-fg, bg-brand-600...) or useChartTheme()."
+      },
+      {
+        "selector": "TemplateElement[value.raw=/(^|[^&\\w])#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(?![\\w-])/]",
+        "message": "Theme guard (newplan 15.2a): no hex colours outside lib/theme-tokens.ts. Use a token class (bg-surface-card, text-fg, bg-brand-600...) or useChartTheme()."
+      },
+      {
+        "selector": "Literal[value=/^(?!.*dark:(?:[\\w-]+:)*bg-)(?:.*\\s)?bg-white(?:\\s.*)?$/]",
+        "message": "Theme guard: bg-white without a dark: background. Use bg-surface-card / bg-surface-page (themed) instead."
+      },
+      {
+        "selector": "TemplateElement[value.raw=/^(?!.*dark:(?:[\\w-]+:)*bg-)(?:.*\\s)?bg-white(?:\\s.*)?$/]",
+        "message": "Theme guard: bg-white without a dark: background. Use bg-surface-card / bg-surface-page (themed) instead."
+      },
+      {
+        "selector": "Literal[value=/^(?!.*dark:(?:[\\w-]+:)*text-)(?:.*\\s)?text-gray-\\d{2,3}(?:\\s.*)?$/]",
+        "message": "Theme guard: text-gray-* without a dark: text colour. Use text-fg / text-fg-muted / text-fg-subtle instead."
+      },
+      {
+        "selector": "TemplateElement[value.raw=/^(?!.*dark:(?:[\\w-]+:)*text-)(?:.*\\s)?text-gray-\\d{2,3}(?:\\s.*)?$/]",
+        "message": "Theme guard: text-gray-* without a dark: text colour. Use text-fg / text-fg-muted / text-fg-subtle instead."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "lib/theme-tokens.ts"
+      ],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    }
+  ]
 }

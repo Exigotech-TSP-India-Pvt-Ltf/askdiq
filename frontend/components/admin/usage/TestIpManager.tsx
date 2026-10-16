@@ -316,7 +316,7 @@ export function TestIpManager({
                 <button
                   type="button"
                   onClick={() => setConfirmDeleteIp(null)}
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                  className="rounded-md border border-line-strong bg-surface-card px-2.5 py-1 text-xs text-fg-muted hover:bg-surface-muted"
                 >
                   Cancel
                 </button>

@@ -254,7 +254,7 @@ function FeedbackContent() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+    <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
       {/* Standard Universal Top Bar Line */}
       <DashboardHeader
         title="User Feedback & RLHF"

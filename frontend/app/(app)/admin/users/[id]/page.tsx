@@ -149,12 +149,12 @@ export default function UserDetailPage() {
           ← Back to Users
         </Link>
 
-        <div className="mt-8 rounded-xl border border-slate-200 bg-white p-10 text-center">
-          <h1 className="text-lg font-semibold text-slate-900">
+        <div className="mt-8 rounded-xl border border-line bg-surface-card p-10 text-center">
+          <h1 className="text-lg font-semibold text-fg">
             User not found
           </h1>
 
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-fg-subtle">
             The requested user could not be found.
           </p>
         </div>
@@ -163,7 +163,7 @@ export default function UserDetailPage() {
   }
 
   return (
-    <div className="p-8 min-h-screen bg-[#f4fbfb] dark:bg-dark-bg text-ink dark:text-slate-100">
+    <div className="p-8 min-h-screen bg-surface-page text-ink dark:text-slate-100">
       <div className="mb-6">
         <Link
           href="/admin/users"
