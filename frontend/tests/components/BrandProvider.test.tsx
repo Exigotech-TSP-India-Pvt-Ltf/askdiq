@@ -1,5 +1,5 @@
 import React from "react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
@@ -11,7 +11,7 @@ import {
   normalizeBrand,
   safeAssetUrl,
 } from "@/lib/brand";
-import { BRANDING_REVALIDATE_SECONDS, fetchBrand } from "@/lib/brand-server";
+import { BRANDING_REVALIDATE_SECONDS, fetchBrand, resetBrandCache } from "@/lib/brand-server";
 import { BrandProvider, useBrand, useBrandUpdater } from "@/lib/brand-context";
 
 const sendQuery = vi.fn();
@@ -112,14 +112,18 @@ describe("normalizeBrand", () => {
 });
 
 describe("fetchBrand (server layout fetch)", () => {
-  it("returns the normalized brand and asks Next to revalidate every 300 s", async () => {
+  beforeEach(() => resetBrandCache());
+
+  it("returns the normalized brand from a bounded fetch outside Next's data cache", async () => {
     vi.stubEnv("API_BASE_URL", "http://backend:8000/");
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(CURRENT_PAYLOAD));
     const brand = await fetchBrand(fetchMock as unknown as typeof fetch);
     expect(brand.productName).toBe("Acme Assist");
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("http://backend:8000/branding");
-    expect(init.next).toEqual({ revalidate: BRANDING_REVALIDATE_SECONDS });
+    expect(init.next).toBeUndefined();
+    expect(init.cache).toBe("no-store");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(BRANDING_REVALIDATE_SECONDS).toBe(300);
   });
 

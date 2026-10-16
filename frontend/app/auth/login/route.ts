@@ -3,7 +3,7 @@
 // with an httpOnly cookie (login-CSRF defence), remembers a validated `next`
 // and redirects to the identity provider.
 import { NextResponse, type NextRequest } from "next/server";
-import { appUrl, backendHeaders, backendUrl } from "@/lib/server/backend";
+import { appUrl, backendHeaders, backendTimeoutMs, backendUrl } from "@/lib/server/backend";
 import { setLoginNextCookie, setOidcStateCookie, stateFromAuthorizeUrl } from "@/lib/server/auth-cookies";
 import { loginErrorForStatus, type LoginErrorCode } from "@/lib/login-errors";
 import { safeNextPath } from "@/lib/safe-redirect";
@@ -26,6 +26,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     res = await fetch(`${backendUrl()}/auth/sso/login`, {
       headers: backendHeaders(req),
       cache: "no-store",
+      signal: AbortSignal.timeout(backendTimeoutMs(false)),
     });
   } catch {
     return toLogin(req, "backend_unavailable");

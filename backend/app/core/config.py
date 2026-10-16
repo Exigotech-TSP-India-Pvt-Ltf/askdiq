@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # free connection instead of getting an answer.
     db_pool_size: int = 20
     db_max_overflow: int = 10
+    # Last-resort wait for a free pooled connection (seconds); generous so a
+    # burst queues and succeeds instead of failing.
+    db_pool_timeout_seconds: float = Field(default=120.0, gt=0)
     # SQL statement logging (incl. 1536-float vector params) — off by default.
     db_echo: bool = False
 
@@ -170,6 +173,8 @@ class Settings(BaseSettings):
     brand_company_name: str = "Exigo Tech"
     # Public GET /branding: in-process cache TTL and browser max-age.
     branding_cache_ttl_seconds: int = Field(default=60, ge=1)
+    # Upper bound on one branding DB read (config defaults are served on timeout).
+    branding_load_timeout_seconds: float = Field(default=5.0, gt=0)
     branding_http_max_age_seconds: int = Field(default=300, ge=0)
     # Brand asset uploads (PNG, WebP or sanitized SVG).
     branding_asset_max_bytes: int = Field(default=512 * 1024, ge=1024)
@@ -261,6 +266,9 @@ class Settings(BaseSettings):
     online_eval_max_concurrency: int = 4
     # Default bound for `gather_scoped()` parallel aggregation.
     agg_max_concurrency: int = 4
+    # Pooled connections parallel aggregation (all requests together) may never
+    # take, so sign-in checks, /health and plain reads always find one.
+    agg_pool_reserve: int = Field(default=5, ge=0)
     # Shared state: "auto" = memory when ENV=test, otherwise postgres.
     state_backend: str = "auto"
     # Actors exempt from the per-user /query limit (load tests only).
@@ -291,6 +299,8 @@ class Settings(BaseSettings):
     governance_incidents_window_hours: int = Field(default=24, ge=1)
     governance_incidents_limit: int = Field(default=10, ge=1, le=100)
     governance_stream_interval_seconds: float = Field(default=5.0, gt=0)
+    # Upper bound on one SSE producer snapshot (overview queries).
+    governance_stream_snapshot_timeout_seconds: float = Field(default=60.0, gt=0)
     governance_quota_sample_seconds: float = Field(default=60.0, gt=0)
     governance_quota_series_points: int = Field(default=60, ge=1)
     # Background jobs (Postgres SKIP LOCKED queue).

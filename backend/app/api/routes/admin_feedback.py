@@ -34,7 +34,7 @@ from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
 from app.core.config import get_settings
-from app.core.database import get_db, get_session_factory
+from app.core.database import get_db, get_session_factory, release_connection
 from app.core.http_cache import cached_response
 from app.feedback import analytics, service
 from app.feedback import repository as repo
@@ -181,6 +181,7 @@ async def get_feedback_analytics(
     scope = audience_scope(audience)
     aud_feedback = await build_audience_filter(db, repo.CLIENT_IP, scope)
     aud_queries = await build_audience_filter(db, ChatSession.created_ip, scope)
+    await release_connection(db)  # never hold a pool slot while waiting for more
     payload = await analytics.compute_analytics(
         aud_feedback, aud_queries, session_factory
     )

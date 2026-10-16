@@ -31,8 +31,9 @@ from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
 from app.branding import service
 from app.branding.assets import AssetMime
+from app.core.concurrency import SessionFactory
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import get_db, get_session_factory
 from app.core.exceptions import get_request_id
 from app.core.http_cache import cached_response
 from app.core.request_meta import get_client_ip
@@ -75,8 +76,11 @@ Db = Annotated[AsyncSession, Depends(get_db)]
     ),
     responses={304: {"description": "Not modified (ETag matched)"}},
 )
-async def get_branding(request: Request, db: Db) -> Response:
-    branding = await service.get_branding(db)
+async def get_branding(
+    request: Request,
+    session_factory: Annotated[SessionFactory, Depends(get_session_factory)],
+) -> Response:
+    branding = await service.get_branding(session_factory)
     return cached_response(
         request,
         branding.model_dump(mode="json"),

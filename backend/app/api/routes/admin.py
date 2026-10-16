@@ -20,7 +20,7 @@ from app.auth.principal import AuthUser
 from app.core.cache import aggregation_cache
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import get_db, release_connection
 from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
@@ -1568,8 +1568,10 @@ async def admin_dashboard(
     )
     if window is None:
         return cached_response(request, await _dashboard_payload(db, audience))
+    panels = await _dashboard_panels(db, audience)
+    await release_connection(db)  # never hold a pool slot while waiting for more
     payload = {
-        **await _dashboard_panels(db, audience),
+        **panels,
         **await dashboard_service.window_payload(runner, audience, window, now),
     }
     return cached_response(request, payload)

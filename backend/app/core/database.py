@@ -22,6 +22,7 @@ engine = create_async_engine(
     # Validate on checkout (stale sockets behind nginx / cloud LBs) and recycle.
     pool_pre_ping=settings.db_pool_pre_ping,
     pool_recycle=settings.db_pool_recycle_seconds,
+    pool_timeout=settings.db_pool_timeout_seconds,
 )
 
 # Postgres SQLSTATE for "canceling statement due to statement timeout".
@@ -42,6 +43,29 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency that yields a DB session per request."""
     async with AsyncSessionLocal() as session:
         yield session
+
+
+async def release_connection(session: AsyncSession) -> None:
+    """End ``session``'s read transaction so its pooled connection goes back now.
+
+    Call it before fanning out to parallel sessions (``gather_scoped``): a
+    request that keeps one connection while waiting for more holds a pool slot
+    idle, and enough such requests together deadlock the pool until
+    ``pool_timeout``. The session reconnects on its next use.
+    """
+    if session.in_transaction():
+        await session.commit()
+
+
+def pool_stats() -> dict[str, int]:
+    """Live pool counters for this process (``/health``, load tests)."""
+    pool = engine.pool
+    return {
+        "size": settings.db_pool_size,
+        "max_overflow": settings.db_max_overflow,
+        "checked_out": int(getattr(pool, "checkedout", lambda: 0)()),
+        "idle": int(getattr(pool, "checkedin", lambda: 0)()),
+    }
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
