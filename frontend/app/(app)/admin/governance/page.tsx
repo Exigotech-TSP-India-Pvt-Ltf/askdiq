@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { m } from "motion/react";
 import { ShieldCheck } from "lucide-react";
 import { crossfade, useMotionVariants } from "@/lib/motion";
@@ -8,10 +9,30 @@ import { useDeepLink } from "@/lib/use-deep-link";
 import { TAB_PARAMS, isGovernanceTab, type GovernanceTab } from "@/lib/governance-links";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, GOVERNANCE_TABS } from "@/components/admin/TabGroup";
+import { SkeletonCard } from "@/components/ui/Skeleton";
+import { runWhenIdle } from "@/lib/query-cache";
 import OverallView from "./overall/OverallView";
-import MonitoringView from "./monitoring/MonitoringView";
-import TracesView from "./traces/TracesView";
-import LogsView from "./logs/LogsView";
+
+// Only the default tab ships with the page; the others (Monitoring pulls the
+// polar Recharts modules) are split out and preloaded once the browser is idle,
+// so a tab switch never waits on the network.
+const loadMonitoring = () => import("./monitoring/MonitoringView");
+const loadTraces = () => import("./traces/TracesView");
+const loadLogs = () => import("./logs/LogsView");
+const tabLoading = () => <SkeletonCard label="Loading tab" className="h-96" />;
+const MonitoringView = dynamic(loadMonitoring, { loading: tabLoading });
+const TracesView = dynamic(loadTraces, { loading: tabLoading });
+const LogsView = dynamic(loadLogs, { loading: tabLoading });
+
+function usePreloadTabs(): void {
+  useEffect(
+    () =>
+      runWhenIdle(() => {
+        for (const load of [loadMonitoring, loadTraces, loadLogs]) load().catch(() => undefined);
+      }),
+    [],
+  );
+}
 
 /** Tabs whose endpoints accept `from` / `to`, so the date range applies. */
 const RANGED_TABS: ReadonlySet<GovernanceTab> = new Set(["Traces", "Logs"]);
@@ -28,6 +49,7 @@ function GovernanceContent() {
   const raw = get("tab");
   const activeTab: GovernanceTab = isGovernanceTab(raw) ? raw : "Overall";
   const variants = useMotionVariants(crossfade);
+  usePreloadTabs();
 
   const onTabChange = useCallback(
     (tab: string) => {

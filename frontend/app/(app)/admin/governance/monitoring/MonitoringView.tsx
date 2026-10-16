@@ -25,6 +25,7 @@ import {
   STAGES,
   TRACE_OUTCOMES,
   governanceApi,
+  governanceKeys,
   type GovernanceMonitoring,
   type GovernanceStreamEvent,
   type LabelledCount,
@@ -336,7 +337,7 @@ export default function MonitoringView() {
   const { audience } = useAudience();
   const ct = useChartTheme();
   const query = useApiQuery<GovernanceMonitoring>(
-    ["admin/governance/monitoring", audience],
+    governanceKeys.monitoring(audience),
     (signal) => governanceApi.monitoring(token, audience, signal),
     { enabled: Boolean(token), revalidateOnFocus: false },
   );
