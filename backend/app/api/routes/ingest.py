@@ -21,6 +21,13 @@ router = APIRouter()
 settings = get_settings()
 
 
+def _to_response(result: dict) -> IngestResponse:
+    """Map the ingestion service result onto the public response model."""
+    return IngestResponse(
+        **{k: result[k] for k in IngestResponse.model_fields if k in result}
+    )
+
+
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest_json(
     request: Request,
@@ -65,25 +72,7 @@ async def ingest_json(
             detail=f"Ingestion failed. Reference Request ID: {req_id}",
         ) from exc
 
-    return IngestResponse(
-        document_id=result["document_id"],
-        source_name=result["source_name"],
-        original_filename=result["original_filename"],
-        converted_from=result["converted_from"],
-        status=result["status"],
-        content_hash=result["content_hash"],
-        previous_content_hash=result["previous_content_hash"],
-        chunk_count=result["chunk_count"],
-        chunks_added=result["chunks_added"],
-        chunks_kept=result["chunks_kept"],
-        chunks_removed=result["chunks_removed"],
-        embedding_tokens=result["embedding_tokens"],
-        embedding_cost_usd=result["embedding_cost_usd"],
-        strategy_used=result["strategy_used"],
-        warnings=result["warnings"],
-        quarantined=result["quarantined"],
-        dry_run=result["dry_run"],
-    )
+    return _to_response(result)
 
 
 @router.post("/ingest/file", response_model=IngestResponse)
@@ -152,6 +141,7 @@ async def ingest_file(
             original_filename=filename,
             converted_from=converted_from,
             original_sha256=raw_sha256,
+            original_size_bytes=len(contents),
             warnings=warnings,
             quarantined=quarantined,
             force=force,
@@ -172,22 +162,4 @@ async def ingest_file(
             detail=f"Ingestion failed. Reference Request ID: {req_id}",
         ) from exc
 
-    return IngestResponse(
-        document_id=result["document_id"],
-        source_name=result["source_name"],
-        original_filename=result["original_filename"],
-        converted_from=result["converted_from"],
-        status=result["status"],
-        content_hash=result["content_hash"],
-        previous_content_hash=result["previous_content_hash"],
-        chunk_count=result["chunk_count"],
-        chunks_added=result["chunks_added"],
-        chunks_kept=result["chunks_kept"],
-        chunks_removed=result["chunks_removed"],
-        embedding_tokens=result["embedding_tokens"],
-        embedding_cost_usd=result["embedding_cost_usd"],
-        strategy_used=result["strategy_used"],
-        warnings=result["warnings"],
-        quarantined=result["quarantined"],
-        dry_run=result["dry_run"],
-    )
+    return _to_response(result)

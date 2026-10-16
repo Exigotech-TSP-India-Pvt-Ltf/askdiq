@@ -20,6 +20,8 @@ from app.core.logging_config import get_logger
 from app.governance.audit import record_audit_event
 from app.ingestion.naming import canonical_source_name
 from app.ingestion.normalizer import (
+    DOC_HASH_VERSION,
+    PIPELINE_VERSION,
     chunk_content_hash,
     doc_content_hash,
     normalize_markdown,
@@ -29,6 +31,36 @@ from app.retrieval.embeddings import embed_texts
 
 logger = get_logger(__name__)
 settings = get_settings()
+
+# Converter recorded per source format (provenance shown on the Documents page).
+CONVERTERS: dict[str, str] = {"docx": "mammoth+gfm", "md": "markdown-normalizer"}
+
+
+def provenance_extras(
+    *,
+    converted_from: str,
+    original_size_bytes: int,
+    canonical_markdown: str,
+    requested_strategy: str,
+    strategy_used: str,
+    pii_found: list[str],
+) -> dict:
+    """Provenance fields stored in ``documents.doc_metadata`` on every write."""
+    return {
+        "canonical_format": "md",
+        "standardized": converted_from != "md",
+        "converter": CONVERTERS.get(converted_from, converted_from),
+        "original_size_bytes": original_size_bytes,
+        "canonical_size_bytes": len(canonical_markdown.encode("utf-8")),
+        "canonical_chars": len(canonical_markdown),
+        "chunking_strategy_requested": requested_strategy,
+        "chunking_strategy": strategy_used,
+        "embedding_model": settings.embedding_model,
+        "embedding_dim": settings.embedding_dim,
+        "doc_hash_version": DOC_HASH_VERSION,
+        "pipeline_version": PIPELINE_VERSION,
+        "pii_redacted": list(pii_found),
+    }
 
 
 async def ingest_text(
@@ -42,6 +74,7 @@ async def ingest_text(
     original_filename: str | None = None,
     converted_from: str = "md",
     original_sha256: str | None = None,
+    original_size_bytes: int | None = None,
     warnings: list[str] | None = None,
     quarantined: bool = False,
     force: bool = False,
@@ -54,6 +87,8 @@ async def ingest_text(
     started = time.perf_counter()
     request_id = request_id or f"ingest-{uuid.uuid4().hex[:12]}"
     warnings_list = list(warnings or [])
+    if original_size_bytes is None:
+        original_size_bytes = len(content.encode("utf-8"))
 
     # 1. Canonical naming
     canonical_name = canonical_source_name(source_name)
@@ -106,6 +141,15 @@ async def ingest_text(
                 **(existing.doc_metadata or {}),
                 "last_checked_at": datetime.utcnow().isoformat(),
             }
+            # Same hash = same canonical text: store it if it predates the column.
+            await db.execute(
+                update(Document)
+                .where(
+                    Document.id == existing.id,
+                    Document.canonical_markdown.is_(None),
+                )
+                .values(canonical_markdown=normalized_content)
+            )
             await record_audit_event(
                 db,
                 request_id=request_id,
@@ -147,6 +191,8 @@ async def ingest_text(
             "strategy_used": chunking_strategy,
             "warnings": warnings_list,
             "quarantined": quarantined,
+            "original_size_bytes": original_size_bytes,
+            "canonical_size_bytes": len(normalized_content.encode("utf-8")),
             "dry_run": dry_run,
             "started": started,
             "chunk_ms": 0.0,
@@ -225,6 +271,8 @@ async def ingest_text(
             "strategy_used": getattr(strategy, "name", chunking_strategy),
             "warnings": warnings_list,
             "quarantined": quarantined,
+            "original_size_bytes": original_size_bytes,
+            "canonical_size_bytes": len(normalized_content.encode("utf-8")),
             "dry_run": True,
             "started": started,
             "chunk_ms": chunk_ms,
@@ -283,6 +331,14 @@ async def ingest_text(
         "last_ingested_by": actor,
         "warnings": warnings_list,
         "quarantined": quarantined,
+        **provenance_extras(
+            converted_from=converted_from,
+            original_size_bytes=original_size_bytes,
+            canonical_markdown=normalized_content,
+            requested_strategy=chunking_strategy,
+            strategy_used=getattr(strategy, "name", chunking_strategy),
+            pii_found=pii_found,
+        ),
     }
 
     if current_doc is None:
@@ -291,6 +347,7 @@ async def ingest_text(
             source_type=source_type,
             content_hash=new_doc_hash,
             doc_metadata=provenance,
+            canonical_markdown=normalized_content,
         )
         db.add(document)
         await db.flush()
@@ -300,6 +357,7 @@ async def ingest_text(
         document.updated_at = datetime.utcnow()
         document.source_type = source_type
         document.doc_metadata = provenance
+        document.canonical_markdown = normalized_content
 
     # Delete stale chunks
     if stale_chunk_ids:
@@ -397,6 +455,8 @@ async def ingest_text(
         "strategy_used": getattr(strategy, "name", chunking_strategy),
         "warnings": warnings_list,
         "quarantined": quarantined,
+        "original_size_bytes": original_size_bytes,
+        "canonical_size_bytes": len(normalized_content.encode("utf-8")),
         "dry_run": False,
         "started": started,
         "chunk_ms": chunk_ms,
