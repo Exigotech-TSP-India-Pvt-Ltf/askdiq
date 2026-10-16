@@ -164,16 +164,15 @@ async def test_retry_accumulation(
                 "visible_tokens": 10,
                 "cached_tokens": 0,
             }
-        else:
-            # Second attempt succeeds
-            return "DeployIQ provides continuous governance and auditability.", {
-                "prompt_tokens": 100,
-                "completion_tokens": 60,
-                "total_tokens": 160,
-                "reasoning_tokens": 30,
-                "visible_tokens": 30,
-                "cached_tokens": 0,
-            }
+        # Second attempt succeeds
+        return "DeployIQ provides continuous governance and auditability.", {
+            "prompt_tokens": 100,
+            "completion_tokens": 60,
+            "total_tokens": 160,
+            "reasoning_tokens": 30,
+            "visible_tokens": 30,
+            "cached_tokens": 0,
+        }
 
     monkeypatch.setattr("app.harness.orchestrator.call_llm", mock_call_llm)
 

@@ -193,7 +193,7 @@ def get_settings() -> Settings:
 
 def configure_logging() -> None:
     """Configure root logging and structlog with background QueueListener."""
-    from app.core.logging_config import configure_logging as _cfg
+    from app.core.logging_config import configure_logging as _cfg  # noqa: PLC0415 - avoids config<->logging import cycle
 
     settings = get_settings()
     _cfg(settings.log_level)

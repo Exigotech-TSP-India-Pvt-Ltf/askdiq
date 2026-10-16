@@ -277,7 +277,8 @@ async def main() -> int:
             file=sys.stderr,
         )
         return 2
-    assert len(set(pool[:total])) == total  # all distinct
+    if len(set(pool[:total])) != total:  # all distinct
+        raise RuntimeError("query pool contains duplicates")
 
     # Same warm-up the server does at startup, so cold imports/model loads
     # aren't raced by N users at once (and don't pollute latency numbers).

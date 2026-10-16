@@ -1,0 +1,13 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "ruff.path": ["${workspaceFolder}/backend/venv/Scripts/ruff.exe"],
+  "pylint.enabled": true,
+  "pylint.path": ["${workspaceFolder}/backend/venv/Scripts/pylint.exe"]
+}

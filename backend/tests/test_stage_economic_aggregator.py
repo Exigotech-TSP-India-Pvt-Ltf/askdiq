@@ -1,6 +1,7 @@
 """Unit tests for Stage-by-Stage Economic Telemetry Aggregator (Task 2.2)."""
 
 from decimal import Decimal
+
 import pytest
 
 from app.api.routes.admin_usage import calculate_stage_costs

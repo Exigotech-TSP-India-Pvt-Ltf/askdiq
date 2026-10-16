@@ -48,27 +48,27 @@ def audience_scope(audience: str = Query("overview")) -> Audience:
 
 def invalidate_audience_cache() -> None:
     """Invalidate the in-process IP classification cache on test-IP configuration changes."""
-    global _cached_classification
+    global _cached_classification  # noqa: PLW0603 - process-local TTL cache
     _cached_classification = {
         "test_ips": set(),
         "user_ips": set(),
         "as_of": None,
     }
-    from app.governance.test_ips import invalidate_test_ips_cache
+    from app.governance.test_ips import invalidate_test_ips_cache  # noqa: PLC0415 - audience<->test_ips import cycle
 
     invalidate_test_ips_cache()
     try:
-        from app.api.routes.admin_usage import clear_usage_caches
+        from app.api.routes.admin_usage import clear_usage_caches  # noqa: PLC0415 - governance must not import routes at load time
 
         clear_usage_caches()
-    except Exception:  # nosec B110
-        pass
+    except Exception:
+        logger.warning("usage_cache_clear_failed", exc_info=True)
     logger.info("Audience cache and usage summary caches explicitly invalidated.")
 
 
 async def get_classified_ips(db: AsyncSession) -> tuple[set[str], set[str], datetime]:
     """Return (test_ips, user_ips, as_of_dt) with short-TTL cache and single-flight lock."""
-    global _cached_classification
+    global _cached_classification  # noqa: PLW0603 - process-local TTL cache
     settings = get_settings()
     ttl = settings.audience_cache_ttl_seconds
     now = datetime.now(UTC)

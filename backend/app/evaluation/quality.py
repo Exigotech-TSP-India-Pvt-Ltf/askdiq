@@ -88,7 +88,7 @@ def citation_quality(
             any(
                 d
                 and any(h in (s.get("section_heading") or "").lower() for h in headings)
-                for d, s in zip(docs_ok, sources)
+                for d, s in zip(docs_ok, sources, strict=True)
             )
             if headings
             else None

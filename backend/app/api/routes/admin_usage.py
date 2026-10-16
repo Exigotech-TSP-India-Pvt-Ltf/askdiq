@@ -57,6 +57,9 @@ from app.models.db_models import (
     LatencyRecord,
 )
 
+# A single IP above this many queries likely fronts a shared gateway/NAT.
+_SHARED_GATEWAY_QUERY_THRESHOLD = 50
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/usage", tags=["usage"])
@@ -519,6 +522,18 @@ async def get_usage_summary(
 # ============================================================================
 
 
+_ALLOWED_USER_SORTS = {
+    "cost_desc",
+    "cost_asc",
+    "queries_desc",
+    "queries_asc",
+    "tokens_desc",
+    "tokens_asc",
+    "sessions_desc",
+    "sessions_asc",
+}
+
+
 @router.get("/users")
 async def get_usage_users(
     audience: Audience = Depends(audience_scope),
@@ -530,20 +545,10 @@ async def get_usage_users(
     db: AsyncSession = Depends(get_db),
     actor: str = Depends(get_current_actor),
 ):
-    ALLOWED_USER_SORTS = {
-        "cost_desc",
-        "cost_asc",
-        "queries_desc",
-        "queries_asc",
-        "tokens_desc",
-        "tokens_asc",
-        "sessions_desc",
-        "sessions_asc",
-    }
-    if sort not in ALLOWED_USER_SORTS:
+    if sort not in _ALLOWED_USER_SORTS:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(ALLOWED_USER_SORTS)}",
+            detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(_ALLOWED_USER_SORTS)}",
         )
 
     test_ips, _, _ = await get_classified_ips(db)
@@ -665,7 +670,9 @@ async def get_usage_users(
             "queries_driven": sum(x["queries"] for x in items),
             "top_consumer_share_pct": top_consumer_share_pct,
             "top_users": top_cards,
-            "shared_gateway_hint": any(x["queries"] > 50 for x in items),
+            "shared_gateway_hint": any(
+                x["queries"] > _SHARED_GATEWAY_QUERY_THRESHOLD for x in items
+            ),
         },
     }
 
@@ -673,6 +680,16 @@ async def get_usage_users(
 # ============================================================================
 # SESSIONS TAB ENDPOINT (Task 3.3.2)
 # ============================================================================
+
+
+_ALLOWED_SESSION_SORTS = {
+    "cost_desc",
+    "cost_asc",
+    "queries_desc",
+    "queries_asc",
+    "last_active_desc",
+    "last_active_asc",
+}
 
 
 @router.get("/sessions")
@@ -687,18 +704,10 @@ async def get_usage_sessions(
     actor: str = Depends(get_current_actor),
 ):
     """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2)."""
-    ALLOWED_SESSION_SORTS = {
-        "cost_desc",
-        "cost_asc",
-        "queries_desc",
-        "queries_asc",
-        "last_active_desc",
-        "last_active_asc",
-    }
-    if sort not in ALLOWED_SESSION_SORTS:
+    if sort not in _ALLOWED_SESSION_SORTS:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(ALLOWED_SESSION_SORTS)}",
+            detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(_ALLOWED_SESSION_SORTS)}",
         )
     settings = get_settings()
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
@@ -851,6 +860,16 @@ async def get_usage_sessions(
 # ============================================================================
 
 
+_ALLOWED_QUERY_SORTS = {
+    "created_at_desc",
+    "created_at_asc",
+    "cost_desc",
+    "cost_asc",
+    "tokens_desc",
+    "tokens_asc",
+}
+
+
 @router.get("/queries")
 async def get_usage_queries(
     audience: Audience = Depends(audience_scope),
@@ -865,18 +884,10 @@ async def get_usage_queries(
     db: AsyncSession = Depends(get_db),
     actor: str = Depends(get_current_actor),
 ):
-    ALLOWED_QUERY_SORTS = {
-        "created_at_desc",
-        "created_at_asc",
-        "cost_desc",
-        "cost_asc",
-        "tokens_desc",
-        "tokens_asc",
-    }
-    if sort not in ALLOWED_QUERY_SORTS:
+    if sort not in _ALLOWED_QUERY_SORTS:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(ALLOWED_QUERY_SORTS)}",
+            detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(_ALLOWED_QUERY_SORTS)}",
         )
     settings = get_settings()
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:

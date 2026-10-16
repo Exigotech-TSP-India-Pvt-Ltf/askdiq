@@ -219,7 +219,7 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         expected_keywords=[
             "application control",
             "backup",
-            "multi‑factor|multi-factor|mfa",
+            "multi\u2011factor|multi-factor|mfa",
         ],
     ),
     EvalCase(

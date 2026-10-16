@@ -2,8 +2,9 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from fastapi import HTTPException
+
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.core.cache import TTLCache, make_cache_key

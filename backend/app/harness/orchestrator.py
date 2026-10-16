@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
-class GuardrailBlocked(Exception):
+class GuardrailBlockedError(Exception):
     """Raised when a guardrail blocks the request."""
 
     def __init__(self, flags: list[str]):

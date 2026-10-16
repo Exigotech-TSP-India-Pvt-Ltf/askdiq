@@ -67,7 +67,7 @@ def validate_abn(abn_str: str) -> bool:
         return False
     weights = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
     digits[0] -= 1
-    total = sum(d * w for d, w in zip(digits, weights))
+    total = sum(d * w for d, w in zip(digits, weights, strict=True))
     return total % 89 == 0
 
 
@@ -76,10 +76,10 @@ def validate_tfn(tfn_str: str) -> bool:
     digits = [int(c) for c in tfn_str if c.isdigit()]
     if len(digits) == 9:
         weights = [1, 4, 3, 7, 5, 8, 6, 9, 10]
-        return sum(d * w for d, w in zip(digits, weights)) % 11 == 0
-    elif len(digits) == 8:
+        return sum(d * w for d, w in zip(digits, weights, strict=True)) % 11 == 0
+    if len(digits) == 8:
         weights = [10, 7, 8, 4, 6, 3, 5, 1]
-        return sum(d * w for d, w in zip(digits, weights)) % 11 == 0
+        return sum(d * w for d, w in zip(digits, weights, strict=True)) % 11 == 0
     return False
 
 
@@ -92,7 +92,7 @@ def validate_medicare(medicare_str: str) -> bool:
         return False
     # First 8 digits are weighted, 9th digit is check digit
     weights = [1, 3, 7, 9, 1, 3, 7, 9]
-    check = sum(d * w for d, w in zip(digits[:8], weights)) % 10
+    check = sum(d * w for d, w in zip(digits[:8], weights, strict=True)) % 10
     return digits[8] == check
 
 

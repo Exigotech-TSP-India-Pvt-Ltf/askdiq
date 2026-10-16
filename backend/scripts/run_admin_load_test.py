@@ -176,8 +176,9 @@ async def main():
     }
 
     out_path = REPORTS_DIR / "admin_load_report.json"
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
+    await asyncio.to_thread(
+        out_path.write_text, json.dumps(report, indent=2), encoding="utf-8"
+    )
 
     logger.info(
         "Load test completed in %.2fs: %d requests, %.1f req/s, P95=%.1fms, errors=%d",

@@ -18,6 +18,12 @@ from app.retrieval.embeddings import embed_text, embedding_timing_sink
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, SourceChunk
 
+# Query-decomposition heuristics.
+_MAX_SHORT_INPUT_CHARS = 2
+_SHORT_DOMAIN_TERMS = {"e8", "ai", "ip", "db"}
+_MIN_SUBQUESTIONS = 2
+_MIN_CLAUSE_WORDS = 3
+
 logger = get_logger(__name__)
 
 _AND_SPLIT_RE = re.compile(r"\band\b", re.IGNORECASE)
@@ -75,7 +81,10 @@ def needs_conversation_context(query: str) -> bool:
 
     # Ultra-short inputs (<= 2 chars) that are not recognized domain terms
     clean_chars = re.sub(r"[\W_]", "", text).lower()
-    if len(clean_chars) <= 2 and clean_chars not in {"e8", "ai", "ip", "db"}:
+    if (
+        len(clean_chars) <= _MAX_SHORT_INPUT_CHARS
+        and clean_chars not in _SHORT_DOMAIN_TERMS
+    ):
         return False
 
     if _REFERENTIAL_RE.search(text):
@@ -134,16 +143,19 @@ def decompose_query(query: str) -> list[str]:
 
     question_marks = text.count("?")
 
-    if question_marks >= 2:
+    if question_marks >= _MIN_SUBQUESTIONS:
         parts = [p.strip() for p in re.split(r"(?<=\?)\s*", text) if p.strip()]
-        if len(parts) >= 2:
+        if len(parts) >= _MIN_SUBQUESTIONS:
             return parts
 
     if question_marks >= 1 and _AND_SPLIT_RE.search(text):
         first, second = _AND_SPLIT_RE.split(text, maxsplit=1)
         first, second = first.strip(), second.strip()
 
-        if len(first.split()) >= 3 and len(second.split()) >= 3:
+        if (
+            len(first.split()) >= _MIN_CLAUSE_WORDS
+            and len(second.split()) >= _MIN_CLAUSE_WORDS
+        ):
             if not first.endswith("?"):
                 first += "?"
             if not second.endswith("?"):
@@ -215,7 +227,7 @@ async def retrieve(
     if embed_sink is not None:
         embed_sink.append((time.perf_counter() - embed_started) * 1000)
     per_query_results: list[list[tuple]] = []
-    for sub_query, embedding in zip(sub_queries, embeddings):
+    for sub_query, embedding in zip(sub_queries, embeddings, strict=True):
         per_query_results.append(
             await vector_store.similarity_search(
                 embedding,

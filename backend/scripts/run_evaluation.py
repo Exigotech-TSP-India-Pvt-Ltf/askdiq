@@ -33,6 +33,8 @@ from app.evaluation.dataset import ALL_DOCS, EVAL_CASES
 from app.evaluation.evaluator import STAGES, EvalResult, run_evaluation
 from app.retrieval.vector_store import VectorStore
 
+_REAL_DOCS_DIR = Path(__file__).resolve().parent.parent / "data" / "real_docs"
+
 configure_logging()
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 logging.getLogger("httpx2").setLevel(logging.WARNING)
@@ -237,7 +239,7 @@ async def _run_kb(args: argparse.Namespace) -> dict:
     from app.chunking.structure_aware import StructureAwareChunker
     from app.evaluation import kb_eval
 
-    source_dir = Path(__file__).resolve().parent.parent / "data" / "real_docs"
+    source_dir = _REAL_DOCS_DIR
     corpus = await kb_eval.load_corpus(source_dir)
     chunks, timings = await kb_eval.chunk_corpus(
         corpus, lambda: MetadataAwareChunker(base_strategy=StructureAwareChunker())

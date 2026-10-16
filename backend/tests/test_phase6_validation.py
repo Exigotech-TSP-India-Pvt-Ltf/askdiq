@@ -159,7 +159,7 @@ async def test_phase6_concurrency_load_stress_nonblocking(monkeypatch):
     app.dependency_overrides[get_db] = per_request_db
     monkeypatch.setattr("app.core.sessions.AsyncSessionLocal", TestingSessionLocal)
     monkeypatch.setattr(
-        "app.governance.online_eval.schedule_online_evaluation", lambda **k: None
+        "app.governance.online_eval.schedule_online_evaluation", lambda **_k: None
     )
 
     # Mock fake embeddings and retrieval to avoid external network calls during load test

@@ -18,7 +18,6 @@ from app.chunking.factory import get_strategy
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.governance.audit import record_audit_event
-
 from app.ingestion.naming import canonical_source_name
 from app.ingestion.normalizer import (
     chunk_content_hash,
@@ -245,7 +244,7 @@ async def ingest_text(
                 batch, "RETRIEVAL_DOCUMENT", stage="ingest"
             )
             all_embeddings.extend(batch_vectors)
-        for h, vec in zip(to_add_hashes, all_embeddings):
+        for h, vec in zip(to_add_hashes, all_embeddings, strict=False):
             embeddings_map[h] = vec
     embed_ms = (time.perf_counter() - embed_start) * 1000
 

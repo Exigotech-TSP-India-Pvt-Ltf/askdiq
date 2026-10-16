@@ -1,12 +1,15 @@
 """Azure OpenAI generation wrapper used by the RAG harness."""
 
 import asyncio
+import time
+from http import HTTPStatus
 
 import tiktoken
 from openai import AsyncAzureOpenAI
 
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
+from app.core.quota import quota_monitor
 from app.retrieval.retriever import needs_conversation_context
 from app.schemas.query import ChatTurn, SourceChunk
 
@@ -224,8 +227,6 @@ async def call_llm(
     prompt, context_tokens = await asyncio.to_thread(
         _build_prompt, query, context_chunks, history
     )
-    from app.core.quota import quota_monitor
-    import time
 
     t_start = time.perf_counter()
     try:
@@ -241,7 +242,8 @@ async def call_llm(
             reasoning_effort=settings.llm_reasoning_effort,
         )
     except Exception as exc:
-        is_429 = getattr(exc, "status_code", None) == 429 or "429" in str(exc)
+        status_code = getattr(exc, "status_code", None)
+        is_429 = status_code == HTTPStatus.TOO_MANY_REQUESTS or "429" in str(exc)
         quota_monitor.record_chat(0, is_error=True, is_429=is_429)
         if is_429:
             logger.error(

@@ -13,16 +13,18 @@ import logging
 from datetime import UTC, datetime
 from typing import Literal
 
-from sqlalchemy import ColumnElement, and_, delete, or_, select
+from fastapi import HTTPException
+from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.governance.audit import record_audit_event
 from app.models.db_models import TestIpConfig
 
 logger = logging.getLogger(__name__)
 
 # Hardcoded loopback addresses that must always be considered test/dev
-BUILTIN_LOOPBACKS = {"127.0.0.1", "::1", "localhost", "0.0.0.0", "unknown"}  # nosec B104
+BUILTIN_LOOPBACKS = {"127.0.0.1", "::1", "localhost", "0.0.0.0", "unknown"}  # nosec B104  # noqa: S104 - IP literal compared, not a bind address
 
 Audience = Literal["overview", "users", "testing"]
 
@@ -34,7 +36,7 @@ _effective_ips_lock = asyncio.Lock()
 
 def invalidate_test_ips_cache() -> None:
     """Invalidate in-memory effective test IP cache upon configuration changes."""
-    global _cached_effective_ips, _cached_parsed_networks
+    global _cached_effective_ips, _cached_parsed_networks  # noqa: PLW0603 - process-local cache
     _cached_effective_ips = None
     _cached_parsed_networks = []
 
@@ -54,7 +56,7 @@ def parse_env_test_ips() -> set[str]:
 
 async def get_effective_test_ips(db: AsyncSession) -> set[str]:
     """Return the merged set of effective test IPs from .env and database overrides with in-memory caching."""
-    global _cached_effective_ips, _cached_parsed_networks
+    global _cached_effective_ips, _cached_parsed_networks  # noqa: PLW0603 - process-local cache
     if _cached_effective_ips is not None:
         return _cached_effective_ips
 
@@ -154,7 +156,6 @@ def get_audience_filter(
 
 def validate_test_ip_string(ip_address: str, description: str | None = None) -> str:
     """Validate test IP / CIDR format and bounds (Task 2.2)."""
-    from fastapi import HTTPException
 
     if not ip_address or not ip_address.strip():
         raise HTTPException(status_code=422, detail="IP address cannot be empty.")
@@ -246,11 +247,8 @@ async def add_or_update_test_ip(
     client_ip: str | None = None,
 ) -> dict:
     """Add or update an IP address override in test_ip_configs (validated & audited)."""
-    from fastapi import HTTPException
-    from sqlalchemy import func
 
-    from app.governance.audience import invalidate_audience_cache
-    from app.governance.audit import record_audit_event
+    from app.governance.audience import invalidate_audience_cache  # noqa: PLC0415 - audience<->test_ips import cycle
 
     clean_ip = validate_test_ip_string(ip_address, description)
     settings = get_settings()
@@ -314,8 +312,7 @@ async def delete_test_ip(
     client_ip: str | None = None,
 ) -> bool:
     """Delete an IP address override from test_ip_configs (validated & audited)."""
-    from app.governance.audience import invalidate_audience_cache
-    from app.governance.audit import record_audit_event
+    from app.governance.audience import invalidate_audience_cache  # noqa: PLC0415 - audience<->test_ips import cycle
 
     clean_ip = validate_test_ip_string(ip_address)
     result = await db.execute(

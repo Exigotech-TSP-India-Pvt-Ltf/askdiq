@@ -22,6 +22,12 @@ from itertools import pairwise
 from pathlib import Path
 from statistics import mean
 
+from sqlalchemy import func, select
+
+from app.models.db_models import Chunk, Document
+
+_MIN_BLOCK_WORDS = 8
+
 ACCESS_KEYS = ("access_level", "allowed_roles", "tenant_id", "visibility")
 VERSION_KEYS = ("version", "last_updated", "updated_at", "effective_date")
 MOJIBAKE = ("\u00e2\u20ac", "\u00c3\u00a2", "\ufffd")  # 'â€', 'Ã¢', replacement char
@@ -240,7 +246,9 @@ def split_facts(source: str, chunks: Sequence[KBChunk]) -> dict:
 
     chunk_norms = [_norm(c.content) for c in chunks]
     blocks = [
-        b for b in re.split(r"\n\s*\n", source) if len(_WORD.findall(_norm(b))) >= 8
+        b
+        for b in re.split(r"\n\s*\n", source)
+        if len(_WORD.findall(_norm(b))) >= _MIN_BLOCK_WORDS
     ]
     split: list[str] = []
     cross_section = 0
@@ -252,7 +260,7 @@ def split_facts(source: str, chunks: Sequence[KBChunk]) -> dict:
         words = set(_WORD.findall(nb))
         homes = [
             c
-            for c, cn in zip(chunks, chunk_norms)
+            for c, cn in zip(chunks, chunk_norms, strict=True)
             if len(words & set(_WORD.findall(cn))) >= 0.3 * len(words)
         ]
         if len({c.metadata.get("section_heading") for c in homes}) > 1:
@@ -454,10 +462,6 @@ async def evaluate_ingested(
 ) -> dict:
     """Compare stored documents to the source files: staleness, duplicate live
     versions, empty documents, access metadata, and freshness delay."""
-
-    from sqlalchemy import func, select
-
-    from app.models.db_models import Chunk, Document
 
     docs = (await db.execute(select(Document))).scalars().all()
     counts = dict(

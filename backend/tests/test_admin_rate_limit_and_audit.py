@@ -1,7 +1,7 @@
 """Unit tests for Concurrency-Safe Rate Limiting & Admin Audit Logging (Task 2.3)."""
 
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
 
 from app.core.rate_limit import (
     _admin_ip_log,

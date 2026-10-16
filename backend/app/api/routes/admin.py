@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import os
+import uuid
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -10,15 +12,21 @@ from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.admin_usage import router as usage_router
+from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
+from app.core.quota import quota_monitor
 from app.core.request_meta import get_client_ip
 from app.governance.audience import (
     audience_scope,
     build_audience_filter,
     get_classified_ips,
 )
+from app.governance.audit import record_audit_event
 from app.governance.auth import get_current_actor
+from app.governance.costing import compute_exchange_cost
+from app.governance.online_eval import quality_tracker
 from app.governance.test_ips import (
     add_or_update_test_ip,
     delete_test_ip,
@@ -38,12 +46,17 @@ from app.models.db_models import (
     AuditLog,
     ChatMessageRecord,
     ChatSession,
+    Chunk,
+    Document,
     LatencyRecord,
     MessageFeedback,
     User,
 )
 
+_NEUTRAL_RATING = 3
+
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = get_logger(__name__)
 router.include_router(usage_router)
 
 
@@ -120,7 +133,7 @@ async def list_users(
     all_users = []
     for row in ip_rows:
         ip = row.ip
-        is_test = ip in test_ips or ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0")  # nosec B104
+        is_test = ip in test_ips or ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0")  # nosec B104  # noqa: S104 - IP literal compared, not a bind address
         t_type = "Test" if is_test else "Production"
 
         if aud_scope == "users" and is_test:
@@ -521,18 +534,16 @@ async def governance_monitoring(
 
     cpu = ram_mb = ram_pct = None
     try:
-        import psutil
+        import psutil  # noqa: PLC0415 - optional at runtime; import failure is tolerated
 
         proc = psutil.Process()
         cpu = await asyncio.to_thread(psutil.cpu_percent, None)
         ram_mb = proc.memory_info().rss / 1024 / 1024
         ram_pct = proc.memory_percent()
-    except Exception:  # nosec B110
-        pass
+    except Exception:
+        logger.debug("psutil_metrics_unavailable", exc_info=True)
 
     requests_total = len(records) if audience != "overview" else METRICS["requests"]
-    from app.core.quota import quota_monitor
-    from app.governance.online_eval import quality_tracker
 
     quota_data = quota_monitor.get_summary()
     online_kpis = quality_tracker.get_kpis()
@@ -752,10 +763,8 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
     column (no LLM call usage was ever persisted) or had no real LLM call
     (guardrail-blocked/fallback/conversational replies).
     """
-    from app.core.config import get_settings
 
     get_settings()
-    from app.governance.costing import compute_exchange_cost
 
     rows = (
         await db.execute(
@@ -997,8 +1006,6 @@ async def usage_llm(
     db: AsyncSession = Depends(get_db),
     actor: str = Depends(get_current_actor),
 ):
-    from app.core.config import get_settings
-
     settings = get_settings()
 
     rows = await _latency_rows(db)
@@ -1034,10 +1041,7 @@ async def usage_embedding(
     db: AsyncSession = Depends(get_db),
     actor: str = Depends(get_current_actor),
 ):
-    from app.core.config import get_settings
-
     settings = get_settings()
-    from app.models.db_models import Chunk, Document
 
     rows = await _latency_rows(db)
     docs = await db.scalar(select(func.count(Document.id)))
@@ -1075,8 +1079,6 @@ async def usage_reranker(
     db: AsyncSession = Depends(get_db),
     actor: str = Depends(get_current_actor),
 ):
-    from app.core.config import get_settings
-
     settings = get_settings()
 
     rows = [r for r in await _latency_rows(db) if r.reranker_ms is not None]
@@ -1087,12 +1089,12 @@ async def usage_reranker(
     )
     cpu = ram = None
     try:
-        import psutil
+        import psutil  # noqa: PLC0415 - optional at runtime; import failure is tolerated
 
         cpu = await asyncio.to_thread(psutil.cpu_percent, None)
         ram = round(psutil.Process().memory_info().rss / 1024 / 1024)
-    except Exception:  # nosec B110
-        pass
+    except Exception:
+        logger.debug("psutil_metrics_unavailable", exc_info=True)
     return {
         "provider": "Local cross-encoder" if settings.enable_reranker else "Disabled",
         "model": settings.reranker_model,
@@ -1111,8 +1113,6 @@ async def usage_reranker(
 
 @router.get("/usage/metadata")
 async def usage_metadata(actor: str = Depends(get_current_actor)):
-    from app.core.config import get_settings
-
     settings = get_settings()
 
     return {
@@ -1755,7 +1755,6 @@ async def _latency_breakdown(
 
 
 async def _pipeline_status(db: AsyncSession) -> dict:
-    from app.core.config import get_settings
 
     settings = get_settings()
     since = datetime.utcnow() - timedelta(hours=24)
@@ -1947,7 +1946,7 @@ async def get_feedback_analytics(
     total_feedback = len(rows)
     pos_count = sum(1 for r in rows if r.rating in (4, 5))
     neg_count = sum(1 for r in rows if r.rating in (1, 2))
-    neu_count = sum(1 for r in rows if r.rating == 3)
+    neu_count = sum(1 for r in rows if r.rating == _NEUTRAL_RATING)
     pos_ratio = round((pos_count / total_feedback) * 100, 1) if total_feedback else 0.0
     neg_ratio = round((neg_count / total_feedback) * 100, 1) if total_feedback else 0.0
 
@@ -2000,9 +1999,6 @@ async def promote_feedback_to_test(
     actor: str = Depends(get_current_actor),
 ):
     """Convert a user feedback turn into a permanent regression test case."""
-    import json
-    import os
-    import uuid
 
     try:
         mid = uuid.UUID(message_id)
@@ -2059,8 +2055,6 @@ async def promote_feedback_to_test(
         return case_id
 
     case_id = await asyncio.to_thread(_sync_save)
-
-    from app.governance.audit import record_audit_event
 
     await record_audit_event(
         db,

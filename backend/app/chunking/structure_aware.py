@@ -5,6 +5,9 @@ from collections import Counter
 
 from app.chunking.base import ChunkingStrategy, ChunkResult
 
+_MIN_BOLD_SECTIONS = 2
+_MIN_BOLD_SEGMENTS = 3
+
 # Markdown ATX headings only: # .. ######
 # Standalone bold lines (numbered items, UI labels, CTAs) are NOT headings —
 # they are noise in this corpus and must never create a section boundary.
@@ -70,7 +73,8 @@ class StructureAwareChunker(ChunkingStrategy):
         results: list[ChunkResult] = []
         idx = 0
 
-        for heading, body in sections:
+        for heading, raw_body in sections:
+            body = raw_body
             # Restore protected code blocks.
             for key, block in placeholders.items():
                 body = body.replace(key, block)
@@ -222,7 +226,7 @@ class StructureAwareChunker(ChunkingStrategy):
         for heading, body in sections:
             if len(body) > self.max_chunk_chars:
                 bold_sections = self._split_by_bold_headings(body)
-                if len(bold_sections) >= 2:
+                if len(bold_sections) >= _MIN_BOLD_SECTIONS:
                     expanded.extend(bold_sections)
                     continue
             expanded.append((heading, body))
@@ -236,7 +240,9 @@ class StructureAwareChunker(ChunkingStrategy):
         exports produce, while rejecting a line that mixes bold and plain
         text, e.g. "**A** some text **B**"."""
         segments = line.split("**")
-        return len(segments) >= 3 and all(seg.strip() == "" for seg in segments[::2])
+        return len(segments) >= _MIN_BOLD_SEGMENTS and all(
+            seg.strip() == "" for seg in segments[::2]
+        )
 
     @classmethod
     def _split_by_bold_headings(cls, text: str) -> list[tuple[str, str]]:
@@ -248,7 +254,7 @@ class StructureAwareChunker(ChunkingStrategy):
             for m in BOLD_HEADING_RE.finditer(text)
             if cls._is_pure_bold_line(m.group(0).strip())
         ]
-        if len(matches) < 2:
+        if len(matches) < _MIN_BOLD_SECTIONS:
             return []
 
         sections: list[tuple[str, str]] = []
@@ -275,7 +281,8 @@ class StructureAwareChunker(ChunkingStrategy):
             return [block]
         pieces: list[str] = []
         current = ""
-        for line in block.split("\n"):
+        for raw_line in block.split("\n"):
+            line = raw_line
             while len(line) > self.max_chunk_chars:
                 cut = line.rfind(" ", 0, self.max_chunk_chars)
                 cut = cut if cut > 0 else self.max_chunk_chars
@@ -314,8 +321,8 @@ class StructureAwareChunker(ChunkingStrategy):
         pieces: list[str] = []
         current = ""
 
-        for paragraph in paragraphs:
-            paragraph = paragraph.strip()
+        for raw_paragraph in paragraphs:
+            paragraph = raw_paragraph.strip()
 
             if not paragraph:
                 continue

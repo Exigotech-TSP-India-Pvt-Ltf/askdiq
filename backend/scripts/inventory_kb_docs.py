@@ -107,8 +107,9 @@ async def generate_inventory_report():
         ]
 
     out_file = REPORTS_DIR / "kb_inventory_report.json"
-    with open(out_file, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
+    await asyncio.to_thread(
+        out_file.write_text, json.dumps(report, indent=2), encoding="utf-8"
+    )
 
     print(f"Inventory Report generated successfully at: {out_file}")
     print(f"Total files on disk: {len(fs_files)}")

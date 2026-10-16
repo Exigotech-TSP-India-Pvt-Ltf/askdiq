@@ -1,7 +1,7 @@
 import asyncio
 import json
-from pathlib import Path
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, func, select
@@ -10,6 +10,7 @@ from sqlalchemy.orm import aliased
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.logging_config import get_logger
 from app.core.stats import percentile
 from app.governance.audience import build_audience_filter
 from app.governance.auth import get_current_actor
@@ -27,6 +28,7 @@ from app.schemas.metrics import (
 )
 
 router = APIRouter()
+logger = get_logger(__name__)
 settings = get_settings()
 
 STAGE_FIELDS = [
@@ -125,6 +127,9 @@ def _read_latest_eval_report(prefer_rich: bool = True) -> tuple[dict, str] | Non
                 if data.get("citation") or data.get("deep_judge"):
                     return data, f.name
             except Exception:
+                logger.warning(
+                    "benchmark_report_unreadable", file=f.name, exc_info=True
+                )
                 continue
 
     latest = files[0]
@@ -660,7 +665,7 @@ async def live_evaluation_report(
         },
     ]
 
-    if audience == "testing" or audience == "overview":
+    if audience in {"testing", "overview"}:
         res_data = dict(benchmark_data)
         res_data["cases"] = normalized_b_cases
         res_data["failed_cases"] = [c for c in normalized_b_cases if not c["passed"]]

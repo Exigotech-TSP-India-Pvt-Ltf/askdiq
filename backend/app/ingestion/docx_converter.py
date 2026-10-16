@@ -13,6 +13,7 @@ Security controls implemented:
 """
 
 import asyncio
+import functools
 import io
 import re
 import urllib.parse
@@ -26,15 +27,16 @@ import mammoth
 from app.core.config import get_settings
 from app.guardrails.pre_checks import UNSAFE_PATTERNS
 
+# ZIP-bomb guards for uploaded .docx archives.
+_MAX_ZIP_ENTRIES = 1000
+_MAX_COMPRESSION_RATIO = 100
+
 settings = get_settings()
-_convert_semaphore: asyncio.Semaphore | None = None
 
 
+@functools.cache
 def get_convert_semaphore() -> asyncio.Semaphore:
-    global _convert_semaphore
-    if _convert_semaphore is None:
-        _convert_semaphore = asyncio.Semaphore(settings.ingest_convert_concurrency)
-    return _convert_semaphore
+    return asyncio.Semaphore(settings.ingest_convert_concurrency)
 
 
 SAFE_SCHEMES = {"http", "https", "mailto"}
@@ -249,7 +251,7 @@ def validate_docx_bytes(data: bytes) -> None:
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             entries = zf.infolist()
-            if len(entries) > 1000:
+            if len(entries) > _MAX_ZIP_ENTRIES:
                 raise ValueError(
                     "Potential ZIP bomb: archive contains more than 1000 entries"
                 )
@@ -260,7 +262,10 @@ def validate_docx_bytes(data: bytes) -> None:
                     "Potential ZIP bomb: uncompressed content exceeds 100MB limit"
                 )
 
-            if len(data) > 0 and (total_uncompressed / len(data)) > 100:
+            if (
+                len(data) > 0
+                and (total_uncompressed / len(data)) > _MAX_COMPRESSION_RATIO
+            ):
                 raise ValueError(
                     "Potential ZIP bomb: compression ratio exceeds 100:1 safety limit"
                 )
@@ -308,7 +313,7 @@ def _convert_docx_sync(file_bytes: bytes) -> ConversionResult:
 
     dropped_images = 0
 
-    def _ignore_image(image):
+    def _ignore_image(_image):
         nonlocal dropped_images
         dropped_images += 1
         return []
