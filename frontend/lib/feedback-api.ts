@@ -416,10 +416,7 @@ export interface TriagePatch {
   version: number;
   triage_status?: TriageStatus;
   review_note?: string | null;
-  /**
-   * Reviewer-written answer (the `chosen` side of a pair). Not yet accepted by
-   * `FeedbackTriageRequest` on the API branch; see `saveCorrectedAnswer`.
-   */
+  /** Reviewer-written answer (the `chosen` side of a pair); `null` clears it. */
   corrected_answer?: string | null;
 }
 

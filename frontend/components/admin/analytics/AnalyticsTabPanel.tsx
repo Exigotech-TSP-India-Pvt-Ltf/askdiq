@@ -19,7 +19,11 @@ import type { AnalyticsTabId } from "./url-state";
 
 const GRID = "grid grid-cols-1 gap-4 lg:grid-cols-2";
 
-/** One tab's content. Overview mirrors the reference HTML's full layout. */
+/**
+ * One tab's content. Overview mirrors the reference HTML's full page in its
+ * order: trend; hour + flow; topics + quality; drop-off + people; the
+ * conversations table. The other tabs focus one section.
+ */
 export function AnalyticsTabPanel({ tab, ...card }: CardProps & { tab: AnalyticsTabId }) {
   const variants = useMotionVariants(fadeUp);
   let content: React.ReactNode;
@@ -81,6 +85,7 @@ export function AnalyticsTabPanel({ tab, ...card }: CardProps & { tab: Analytics
             <DropoffCard {...card} />
             <PeopleCard {...card} />
           </div>
+          <ConversationsTable state={card.state} filters={card.filters} update={card.update} />
         </>
       );
   }

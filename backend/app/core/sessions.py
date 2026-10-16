@@ -512,6 +512,7 @@ async def get_session_detail(
                 role=m.role,
                 content=m.content,
                 created_at=m.created_at,
+                request_id=m.request_id,
                 grounded=m.grounded,
                 guardrail_flags=m.guardrail_flags,
                 feedback_rating=feedback_map.get(m.id),

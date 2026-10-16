@@ -140,7 +140,7 @@ describe("Evaluation (Live) additions", () => {
     const markers = within(chart).getAllByRole("button");
     expect(markers).toHaveLength(2);
     fireEvent.click(markers[1]);
-    expect(nav.push).toHaveBeenCalledWith("/admin/evaluation?run=r2");
+    expect(nav.push).toHaveBeenCalledWith("/admin/evaluation-live?run=r2");
   });
 
   it("explains a missing run history", () => {

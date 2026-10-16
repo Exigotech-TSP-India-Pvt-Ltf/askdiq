@@ -57,7 +57,8 @@ export function entityHref(ref: EntityRef): string {
     case "visitor":
       return withQuery("/admin/usage", { tab: "sessions", ip: ref.id });
     case "session":
-      return withQuery("/admin/usage", { tab: "sessions", session: ref.id });
+      // A session's turns live on the Queries tab (Sessions has no session filter).
+      return withQuery("/admin/usage", { tab: "queries", session: ref.id });
     case "conversation":
       return `/admin/conversations/${seg(ref.id)}`;
     case "turn":

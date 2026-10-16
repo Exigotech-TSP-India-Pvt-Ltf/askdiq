@@ -182,7 +182,7 @@ describe("Dashboard: charts (F3.1.2)", () => {
     expect(screen.getByText("Thumbs down on an answer").closest("a")).toHaveAttribute("href", "/admin/feedback?message_id=msg-7");
     expect(await screen.findByRole("link", { name: /System health: Degraded/ })).toHaveAttribute(
       "href",
-      "/admin/governance?tab=Monitoring",
+      "/admin/governance?tab=Overall",
     );
   });
 

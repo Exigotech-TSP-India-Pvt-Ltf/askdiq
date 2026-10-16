@@ -15,6 +15,8 @@ class ChatMessageOut(BaseModel):
     role: str
     content: str
     created_at: datetime
+    # Assistant turns: links the answer to its governance trace after reload.
+    request_id: str | None = None
     grounded: bool | None = None
     guardrail_flags: list[str] | None = None
     feedback_rating: int | None = None

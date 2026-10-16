@@ -2,7 +2,7 @@
  * Deep links inside the Governance page. State lives in the URL so incident
  * markers, KPI cards and shared links open the right tab, pre-filtered.
  */
-import type { LatencyBucket, LogLevel, LogService, TraceStatus } from "@/lib/governance-api";
+import type { LatencyBucket, LogLevel, LogService, TraceOutcome, TraceStatus } from "@/lib/governance-api";
 
 export const GOVERNANCE_PATH = "/admin/governance";
 export const GOVERNANCE_TAB_IDS = ["Overall", "Monitoring", "Traces", "Logs"] as const;
@@ -35,12 +35,13 @@ export function logsHref({ level, service, q, at }: LogsLink = {}): string {
 
 export interface TracesLink {
   status?: TraceStatus;
+  outcome?: TraceOutcome;
   latency_bucket?: LatencyBucket;
   q?: string;
 }
 
-export function tracesHref({ status, latency_bucket, q }: TracesLink = {}): string {
-  return href({ tab: "Traces", status, latency_bucket, q });
+export function tracesHref({ status, outcome, latency_bucket, q }: TracesLink = {}): string {
+  return href({ tab: "Traces", status, outcome, latency_bucket, q });
 }
 
 export function tabHref(tab: GovernanceTab): string {

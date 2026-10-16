@@ -58,6 +58,7 @@ async def test_feedback_submission_and_upsert(client, db_session):
         role="assistant",
         content="AskDIQ is an enterprise compliance RAG assistant.",
         ip_address="198.51.100.25",
+        request_id="req-feedback-trace-1",
     )
     db_session.add_all([user_msg, assistant_msg])
     await db_session.commit()
@@ -109,6 +110,8 @@ async def test_feedback_submission_and_upsert(client, db_session):
     messages = sess_detail.json()["messages"]
     asst_m = next(m for m in messages if m["id"] == asst_mid)
     assert asst_m["feedback_rating"] == 5
+    # Saved answers keep their trace link (chat "View trace" after reload).
+    assert asst_m["request_id"] == "req-feedback-trace-1"
 
     # 8. Verify GET /admin/feedback returns de-duplicated latest feedback entry
     admin_res = await client.get("/admin/feedback")

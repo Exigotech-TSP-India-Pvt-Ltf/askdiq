@@ -111,7 +111,9 @@ export function useTableState<TFilter extends Record<string, any> = Record<strin
     else current.delete(paramKey("q"));
 
     const queryString = current.toString();
-    const newUrl = `${pathname}${queryString ? `?${queryString}` : ""}`;
+    if (queryString === searchParams.toString()) return;
+    // Page, size, sort and search are shareable and survive back / forward.
+    router.replace(`${pathname}${queryString ? `?${queryString}` : ""}`, { scroll: false });
   }, [page, pageSize, sort, debouncedSearch, syncWithUrl, defaultSort, paramKey, pathname, router, searchParams]);
 
   // Setters with validation

@@ -27,6 +27,38 @@ import { EntityLink } from "@/components/ui/EntityLink";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
 import { LEVEL_TONE, LevelBadge } from "@/components/admin/governance/badges";
 import { JsonViewer } from "@/components/admin/governance/JsonViewer";
+import { useToast } from "@/components/ui/ToastProvider";
+
+/**
+ * Downloads the CSV through fetch so a 403 / 422 shows an error toast instead
+ * of saving (or navigating to) a JSON error body. Returns the error message.
+ */
+async function downloadCsv(href: string): Promise<string | null> {
+  try {
+    const res = await fetch(href, { credentials: "same-origin" });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+      return typeof body?.detail === "string" ? body.detail : `Export failed (${res.status})`;
+    }
+    const disposition = res.headers.get("content-disposition") ?? "";
+    const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "governance-logs.csv";
+    const url = URL.createObjectURL(await res.blob());
+    try {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    return null;
+  } catch (err) {
+    return err instanceof Error && err.message ? err.message : "Export failed";
+  }
+}
 
 export const LOGS_PAGE_SIZE = 50;
 
@@ -136,6 +168,7 @@ export default function LogsView() {
 
   const total = page ? `${page.total_is_estimate ? "≈ " : ""}${formatCount(page.total)} entries` : undefined;
   const exportHref = logsExportUrl({ ...filters, audience });
+  const toast = useToast();
 
   return (
     <TableCard
@@ -157,7 +190,18 @@ export default function LogsView() {
             <RefreshCw className={`h-4 w-4 ${live ? "motion-safe:animate-spin" : ""}`} strokeWidth={1.75} aria-hidden="true" />
             Auto-refresh {autoRefresh ? (live ? "on" : "paused") : "off"}
           </button>
-          <a href={exportHref} download className={secondaryButton} data-testid="logs-export">
+          <a
+            href={exportHref}
+            download
+            className={secondaryButton}
+            data-testid="logs-export"
+            onClick={(e) => {
+              e.preventDefault();
+              void downloadCsv(exportHref).then((message) => {
+                if (message) toast.show({ title: "Couldn't export the logs", description: message, tone: "error" });
+              });
+            }}
+          >
             <Download className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
             Export CSV
           </a>

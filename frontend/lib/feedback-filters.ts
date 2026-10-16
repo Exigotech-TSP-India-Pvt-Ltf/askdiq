@@ -85,10 +85,13 @@ export function parseFilters(params: URLSearchParams): FeedbackFilters {
   return {
     rating: Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : undefined,
     outcome: outcome && (OUTCOMES as readonly string[]).includes(outcome) ? (outcome as Outcome) : undefined,
+    // A deep link to one message must find it whatever its triage status.
     status:
       status === "all" || (status && (TRIAGE_STATUSES as readonly string[]).includes(status))
         ? (status as StatusFilter)
-        : DEFAULT_STATUS,
+        : messageId && UUID_PATTERN.test(messageId)
+          ? "all"
+          : DEFAULT_STATUS,
     grounded: bool(params.get("grounded")),
     day: day && DAY_PATTERN.test(day) ? day : undefined,
     reason: reason && isReasonTag(reason) ? reason : undefined,

@@ -33,15 +33,15 @@ interface CompareMatrixProps {
 export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) {
   const ct = useChartTheme();
   const deltas = comparisonData?.deltas || {};
-  const radarData = comparisonData?.dual_radar || [
-    { metric: "Retrieval recall", benchmark: 98.1, live: 95.0 },
-    { metric: "Groundedness", benchmark: 90.6, live: 92.4 },
-    { metric: "Faithfulness", benchmark: 96.0, live: 94.2 },
-    { metric: "Citation prec.", benchmark: 94.0, live: 92.0 },
-    { metric: "Pass rate", benchmark: 85.9, live: 91.7 },
-  ];
+  // Unreported values show "—", never a made-up benchmark.
+  const radarData = comparisonData?.dual_radar ?? [];
+  const pct = (v: number | undefined) => (typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—");
+  const num = (v: number | undefined) => (typeof v === "number" ? v.toFixed(1) : "—");
 
-  const getDeltaBadge = (diff: number, isHigherBetter = true, isPct = true) => {
+  const getDeltaBadge = (diff: number | undefined, isHigherBetter = true, isPct = true) => {
+    if (typeof diff !== "number") {
+      return <span className="text-xs font-semibold text-fg-subtle">—</span>;
+    }
     const isPositive = diff > 0;
     const isZero = Math.abs(diff) < 0.001;
     const isGood = isHigherBetter ? isPositive : !isPositive;
@@ -101,16 +101,16 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Overall Pass Rate</span>
-            {getDeltaBadge(deltas.pass_rate?.diff ?? 0.058)}
+            {getDeltaBadge(deltas.pass_rate?.diff)}
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <div>
               <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
-              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{((deltas.pass_rate?.benchmark ?? 0.859) * 100).toFixed(1)}%</p>
+              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{pct(deltas.pass_rate?.benchmark)}</p>
             </div>
             <div className="text-right">
               <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Live Users</p>
-              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{((deltas.pass_rate?.live ?? 0.917) * 100).toFixed(1)}%</p>
+              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{pct(deltas.pass_rate?.live)}</p>
             </div>
           </div>
         </div>
@@ -120,16 +120,16 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Faithfulness (1–5)</span>
-            {getDeltaBadge(deltas.faithfulness?.diff ?? -0.1, true, false)}
+            {getDeltaBadge(deltas.faithfulness?.diff, true, false)}
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <div>
               <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
-              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{(deltas.faithfulness?.benchmark ?? 4.8).toFixed(1)}</p>
+              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{num(deltas.faithfulness?.benchmark)}</p>
             </div>
             <div className="text-right">
               <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Live Users</p>
-              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{(deltas.faithfulness?.live ?? 4.7).toFixed(1)}</p>
+              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{num(deltas.faithfulness?.live)}</p>
             </div>
           </div>
         </div>
@@ -139,16 +139,16 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Retrieval Recall</span>
-            {getDeltaBadge(deltas.retrieval_recall?.diff ?? -0.03)}
+            {getDeltaBadge(deltas.retrieval_recall?.diff)}
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <div>
               <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
-              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{((deltas.retrieval_recall?.benchmark ?? 0.980) * 100).toFixed(1)}%</p>
+              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{pct(deltas.retrieval_recall?.benchmark)}</p>
             </div>
             <div className="text-right">
               <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Live Users</p>
-              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{((deltas.retrieval_recall?.live ?? 0.950) * 100).toFixed(1)}%</p>
+              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{pct(deltas.retrieval_recall?.live)}</p>
             </div>
           </div>
         </div>
@@ -158,16 +158,16 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
           <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Citation Precision</span>
-            {getDeltaBadge(deltas.citation_precision?.diff ?? -0.02)}
+            {getDeltaBadge(deltas.citation_precision?.diff)}
           </div>
           <div className="flex items-baseline justify-between pt-1">
             <div>
               <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
-              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{((deltas.citation_precision?.benchmark ?? 0.940) * 100).toFixed(1)}%</p>
+              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{pct(deltas.citation_precision?.benchmark)}</p>
             </div>
             <div className="text-right">
               <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Live Users</p>
-              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{((deltas.citation_precision?.live ?? 0.920) * 100).toFixed(1)}%</p>
+              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{pct(deltas.citation_precision?.live)}</p>
             </div>
           </div>
         </div>

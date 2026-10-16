@@ -14,6 +14,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -22,13 +23,17 @@ import { useApiQuery } from "@/lib/query-cache";
 import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
 import {
   STAGES,
+  TRACE_OUTCOMES,
   governanceApi,
   type GovernanceMonitoring,
   type GovernanceStreamEvent,
   type LabelledCount,
   type QuotaMetrics,
   type Stage,
+  type TraceOutcome,
 } from "@/lib/governance-api";
+import { logsHref, tabHref, tracesHref } from "@/lib/governance-links";
+import { useCarryHref } from "@/lib/entity-routes";
 import {
   axisWidthFor,
   formatCount,
@@ -96,19 +101,41 @@ export function quotaUtilisation(
 
 // --- small pieces ---------------------------------------------------------------
 
-function StatTile({ label, value, caption, icon: Icon }: { label: string; value: string; caption: string; icon: LucideIcon }) {
+/** A count tile; it links to the rows behind the number (the hover lift promises a click). */
+function StatTile({
+  label,
+  value,
+  caption,
+  icon: Icon,
+  href,
+}: {
+  label: string;
+  value: string;
+  caption: string;
+  icon: LucideIcon;
+  href: string;
+}) {
+  const carry = useCarryHref();
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl border border-line bg-surface-card p-4 transition duration-150 hover:border-brand-300 hover:shadow-md motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none dark:hover:border-brand-700/60">
+    <Link
+      href={carry(href)}
+      aria-label={`${label}: ${value}. Open the rows behind it`}
+      className="group flex flex-col gap-1.5 rounded-xl border border-line bg-surface-card p-4 transition duration-150 hover:border-brand-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none dark:hover:border-brand-700/60"
+    >
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium text-fg-subtle">{label}</p>
-        <Icon className="h-4 w-4 text-fg-subtle" strokeWidth={1.75} aria-hidden="true" />
+        <Icon className="h-4 w-4 text-fg-subtle group-hover:text-accent-fg" strokeWidth={1.75} aria-hidden="true" />
       </div>
       <p className="text-2xl font-semibold tabular-nums text-fg">{value}</p>
       <p className="text-[11px] text-fg-subtle" data-testid="count-label">
         {caption}
       </p>
-    </div>
+    </Link>
   );
+}
+
+function isTraceOutcome(value: string): value is TraceOutcome {
+  return (TRACE_OUTCOMES as readonly string[]).includes(value);
 }
 
 function countCaption(c: LabelledCount | undefined): string {
@@ -166,8 +193,20 @@ function StageLatencyChart({ rows }: { rows: StageRow[] }) {
   );
 }
 
-function ShareBars({ data, label, emptyText }: { data: Record<string, number>; label: string; emptyText: string }) {
+function ShareBars({
+  data,
+  label,
+  emptyText,
+  hrefFor,
+}: {
+  data: Record<string, number>;
+  label: string;
+  emptyText: string;
+  /** Link for a row (its traces); rows without one stay plain text. */
+  hrefFor?: (name: string) => string | null;
+}) {
   const ct = useChartTheme();
+  const carry = useCarryHref();
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((s, [, v]) => s + v, 0);
   const max = Math.max(1, ...entries.map(([, v]) => v));
@@ -176,9 +215,19 @@ function ShareBars({ data, label, emptyText }: { data: Record<string, number>; l
     <ul className="space-y-2.5" aria-label={label}>
       {entries.map(([name, value], i) => (
         <li key={name} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 text-xs">
-          <span className="truncate text-fg-muted" title={name}>
-            {humanize(name)}
-          </span>
+          {hrefFor?.(name) ? (
+            <Link
+              href={carry(hrefFor(name) ?? "")}
+              title={`Open ${humanize(name)} traces`}
+              className="truncate rounded text-accent-fg hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            >
+              {humanize(name)}
+            </Link>
+          ) : (
+            <span className="truncate text-fg-muted" title={name}>
+              {humanize(name)}
+            </span>
+          )}
           <span className="h-2.5 overflow-hidden rounded-full bg-surface-muted" aria-hidden="true">
             <span
               className="block h-full rounded-full"
@@ -360,24 +409,26 @@ export default function MonitoringView() {
 
       {/* G8: a balanced 4 x 2 grid (no dead slot) at the same width as AI Usage. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={loading || undefined}>
-        <StatTile label="API requests" icon={Activity} value={formatCount(counts.api_requests?.value ?? m?.api_requests)} caption={countCaption(counts.api_requests)} />
-        <StatTile label="Queries" icon={Search} value={formatCount(counts.queries_24h?.value ?? m?.queries_24h)} caption={countCaption(counts.queries_24h)} />
-        <StatTile label="Active users" icon={Users} value={formatCount(counts.active_users?.value ?? m?.active_users)} caption={countCaption(counts.active_users)} />
-        <StatTile label="Traces" icon={FileSearch} value={formatCount(counts.traces_total?.value ?? m?.traces_total)} caption={countCaption(counts.traces_total)} />
+        <StatTile label="API requests" href={logsHref()} icon={Activity} value={formatCount(counts.api_requests?.value ?? m?.api_requests)} caption={countCaption(counts.api_requests)} />
+        <StatTile label="Queries" href={tabHref("Traces")} icon={Search} value={formatCount(counts.queries_24h?.value ?? m?.queries_24h)} caption={countCaption(counts.queries_24h)} />
+        <StatTile label="Active users" href="/admin/usage?tab=users" icon={Users} value={formatCount(counts.active_users?.value ?? m?.active_users)} caption={countCaption(counts.active_users)} />
+        <StatTile label="Traces" href={tabHref("Traces")} icon={FileSearch} value={formatCount(counts.traces_total?.value ?? m?.traces_total)} caption={countCaption(counts.traces_total)} />
         <StatTile
           label="Error rate"
+          href={tracesHref({ status: "failed" })}
           icon={AlertTriangle}
           value={formatPct(m?.error_rate, 2)}
           caption={`${formatCount(counts.errors?.value)} errors · ${countCaption(counts.errors)}`}
         />
-        <StatTile label="Average latency" icon={Timer} value={formatMs(m?.total_latency_ms ?? null)} caption={`end to end · ${windowH}h · latency records`} />
+        <StatTile label="Average latency" href={tabHref("Traces")} icon={Timer} value={formatMs(m?.total_latency_ms ?? null)} caption={`end to end · ${windowH}h · latency records`} />
         <StatTile
           label="p95 latency"
+          href={tracesHref({ latency_bucket: "slow" })}
           icon={Gauge}
           value={formatMs(total?.p95_ms ?? m?.p95_latency_ms ?? null)}
           caption={`${formatCount(total?.sample_count ?? 0)} samples · ${windowH}h · latency records`}
         />
-        <StatTile label="Active queries" icon={Loader} value={formatCount(counts.active_queries?.value ?? m?.active_queries)} caption={countCaption(counts.active_queries)} />
+        <StatTile label="Active queries" href={tabHref("Traces")} icon={Loader} value={formatCount(counts.active_queries?.value ?? m?.active_queries)} caption={countCaption(counts.active_queries)} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -505,7 +556,12 @@ export default function MonitoringView() {
             ],
           )}
         >
-          <ShareBars data={m?.guardrail_flag_breakdown ?? {}} label="Guardrail flags" emptyText="No guardrail flags in this window." />
+          <ShareBars
+            data={m?.guardrail_flag_breakdown ?? {}}
+            label="Guardrail flags"
+            emptyText="No guardrail flags in this window."
+            hrefFor={() => tracesHref({ status: "blocked" })}
+          />
         </ChartCard>
         <ChartCard
           title="Outcome mix"
@@ -521,7 +577,12 @@ export default function MonitoringView() {
             ],
           )}
         >
-          <ShareBars data={m?.outcome_mix ?? {}} label="Outcome mix" emptyText="No assistant turns in this window." />
+          <ShareBars
+            data={m?.outcome_mix ?? {}}
+            label="Outcome mix"
+            emptyText="No assistant turns in this window."
+            hrefFor={(name) => (isTraceOutcome(name) ? tracesHref({ outcome: name }) : null)}
+          />
         </ChartCard>
       </div>
 

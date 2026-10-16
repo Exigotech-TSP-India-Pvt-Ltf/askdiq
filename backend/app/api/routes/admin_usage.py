@@ -16,7 +16,7 @@ import io
 import logging
 import time
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -24,6 +24,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import (
     String,
     and_,
+    asc,
     case,
     cast,
     desc,
@@ -670,6 +671,8 @@ async def get_usage_users(
     sort_key = "cost_usd"
     if "queries" in sort:
         sort_key = "queries"
+    elif "sessions" in sort:
+        sort_key = "sessions"
     elif "tokens" in sort:
         sort_key = "total_tokens"
     items.sort(
@@ -724,6 +727,8 @@ _ALLOWED_SESSION_SORTS = {
     "cost_asc",
     "queries_desc",
     "queries_asc",
+    "tokens_desc",
+    "tokens_asc",
     "last_active_desc",
     "last_active_asc",
 }
@@ -847,6 +852,8 @@ async def get_usage_sessions(
             key=lambda x: x.get("queries") if x.get("queries") is not None else 0,
             reverse=reverse,
         )
+    elif "tokens" in sort:
+        items.sort(key=lambda x: x.get("total_tokens") or 0, reverse=reverse)
     else:
         items.sort(key=lambda x: x.get("last_active") or "", reverse=reverse)
 
@@ -857,6 +864,7 @@ async def get_usage_sessions(
             "title": x["title"],
             "ip_address": x["ip_address"],
             "queries": x["queries"],
+            "tokens": x["total_tokens"],
             "cost_usd": x["cost_usd"],
         }
         for x in top_3
@@ -904,7 +912,48 @@ _ALLOWED_QUERY_SORTS = {
     "cost_asc",
     "tokens_desc",
     "tokens_asc",
+    "latency_desc",
+    "latency_asc",
 }
+_DATE_ONLY_LEN = len("2026-01-31")
+
+
+def parse_usage_bound(
+    value: str | None, name: str, *, end: bool = False
+) -> datetime | None:
+    """ISO-8601 bound for the usage lists, as naive UTC (the stored form).
+
+    A date-only value (``2026-10-14``, what the dashboard's day links send)
+    covers that whole day: as an upper bound it ends just before midnight.
+    Invalid input is a 422, never a silently ignored filter.
+    """
+    if not value:
+        return None
+    raw = value.strip()
+    try:
+        if len(raw) == _DATE_ONLY_LEN:
+            day = date.fromisoformat(raw)
+            start = datetime(day.year, day.month, day.day)
+            return start + timedelta(days=1, microseconds=-1) if end else start
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail=f"Invalid {name} format. Use ISO 8601."
+        ) from None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+def usage_date_range(
+    from_date: str | None, to_date: str | None
+) -> tuple[datetime | None, datetime | None]:
+    """Validated ``(from, to)`` pair for the usage lists and export."""
+    lo = parse_usage_bound(from_date, "from_date")
+    hi = parse_usage_bound(to_date, "to_date", end=True)
+    if lo is not None and hi is not None and lo > hi:
+        raise HTTPException(status_code=422, detail="from_date must be before to_date.")
+    return lo, hi
 
 
 @router.get("/queries")
@@ -915,12 +964,19 @@ async def get_usage_queries(
     session_id: str | None = None,
     outcome: str | None = None,
     grounded: bool | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     sort: str = "created_at_desc",
     limit: int = 10,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
+    """Paginated turns with filters, sort and header stats for the Queries tab.
+
+    ``from_date`` / ``to_date`` take ISO-8601 datetimes or plain dates (a date
+    covers the whole UTC day).
+    """
     if sort not in _ALLOWED_QUERY_SORTS:
         raise HTTPException(
             status_code=422,
@@ -929,6 +985,7 @@ async def get_usage_queries(
     settings = get_settings()
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
         raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
+    lo, hi = usage_date_range(from_date, to_date)
 
     user_msg = aliased(ChatMessageRecord, name="user_turn")
     asst_msg = aliased(ChatMessageRecord, name="asst_turn")
@@ -978,6 +1035,8 @@ async def get_usage_queries(
         user_alias=user_msg,
         asst_alias=asst_msg,
         audience=audience,
+        from_date=lo,
+        to_date=hi,
         ip=ip,
         session_id=session_id,
         outcome=outcome,
@@ -985,19 +1044,19 @@ async def get_usage_queries(
         search=q,
     )
 
-    # Count total matching queries
-    count_sub = query.subquery()
-    total_count = (
-        await db.execute(select(func.count()).select_from(count_sub))
-    ).scalar() or 0
+    stats = await _query_stats(db, query)
+    total_count = stats["total_queries"]
 
-    # Sort
-    if sort == "cost_desc":
-        query = query.order_by(desc(asst_msg.cost_usd), desc(user_msg.created_at))
-    elif sort == "tokens_desc":
-        query = query.order_by(desc(asst_msg.total_tokens), desc(user_msg.created_at))
-    else:
-        query = query.order_by(desc(user_msg.created_at))
+    sort_column = {
+        "cost": asst_msg.cost_usd,
+        "tokens": asst_msg.total_tokens,
+        "latency": LatencyRecord.total_ms,
+        "created_at": user_msg.created_at,
+    }[sort.rsplit("_", 1)[0]]
+    direction = asc if sort.endswith("_asc") else desc
+    query = query.order_by(
+        direction(sort_column).nulls_last(), desc(user_msg.created_at)
+    )
 
     paged_rows = (await db.execute(query.limit(limit).offset(offset))).all()
 
@@ -1022,16 +1081,55 @@ async def get_usage_queries(
         for r in paged_rows
     ]
 
-    # Pre-table stats
     return {
         "items": items,
         "total": total_count,
         "limit": limit,
         "offset": offset,
-        "stats": {
-            "total_queries": total_count,
-        },
+        "stats": stats,
     }
+
+
+async def _query_stats(db: AsyncSession, query: Any) -> dict[str, Any]:
+    """Header stats of the Queries tab over every row matching the filters."""
+    sub = query.subquery()
+    outcome = func.coalesce(sub.c.outcome, "answered")
+    generation = outcome.in_(GENERATION_OUTCOMES)
+    agg = (
+        await db.execute(
+            select(
+                func.count().label("total"),
+                func.count().filter(generation).label("evaluated"),
+                func.count()
+                .filter(generation & sub.c.grounded.is_(True))
+                .label("passed"),
+                func.avg(sub.c.latency_ms).label("avg_latency_ms"),
+                func.avg(
+                    sub.c.prompt_tokens + sub.c.reasoning_tokens + sub.c.output_tokens
+                ).label("avg_tokens"),
+            )
+        )
+    ).one()
+    by_outcome = (
+        await db.execute(select(outcome, func.count()).group_by(outcome))
+    ).all()
+    evaluated = int(agg.evaluated or 0)
+    passed = int(agg.passed or 0)
+    stats: dict[str, Any] = {
+        "total_queries": int(agg.total or 0),
+        "outcomes": {str(k): int(v) for k, v in by_outcome},
+        "groundedness_evaluated_turns": evaluated,
+        "groundedness_passed_turns": passed,
+        "avg_latency_ms": _round_or_none(agg.avg_latency_ms),
+        "avg_tokens_per_query": _round_or_none(agg.avg_tokens),
+    }
+    if evaluated:
+        stats["groundedness_pass_rate"] = round(100 * passed / evaluated, 1)
+    return stats
+
+
+def _round_or_none(value: Any) -> float | None:
+    return None if value is None else round(float(value), 1)
 
 
 @router.get("/queries/{request_id}")
@@ -1167,11 +1265,15 @@ async def export_usage_csv(
     session_id: str | None = None,
     outcome: str | None = None,
     grounded: bool | None = None,
+    user_type: str | None = Query(None, alias="type"),
+    from_date: str | None = None,
+    to_date: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.USAGE_EXPORT)),
 ):
     """Stream CSV export with formula injection defense and cap truncation (Task 3.4)."""
     settings = get_settings()
+    lo, hi = usage_date_range(from_date, to_date)
     brand_slug = settings.brand_name.lower().replace(" ", "-")
     now_str = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     filename = f"{brand_slug}-{tab}-{audience}-{now_str}.csv"
@@ -1251,6 +1353,8 @@ async def export_usage_csv(
                 user_alias=user_msg,
                 asst_alias=asst_msg,
                 audience=audience,
+                from_date=lo,
+                to_date=hi,
                 ip=ip,
                 session_id=session_id,
                 outcome=outcome,
@@ -1305,11 +1409,12 @@ async def export_usage_csv(
             user_res = await get_usage_users(
                 audience=audience,
                 q=q,
+                user_type=user_type,
                 sort="cost_desc",
                 limit=settings.usage_export_max_rows,
                 offset=0,
                 db=db,
-                actor=user.email,
+                user=user,
             )
             for item in user_res["items"]:
                 writer.writerow(
@@ -1353,7 +1458,7 @@ async def export_usage_csv(
                 limit=settings.usage_export_max_rows,
                 offset=0,
                 db=db,
-                actor=user.email,
+                user=user,
             )
             for item in sess_res["items"]:
                 writer.writerow(

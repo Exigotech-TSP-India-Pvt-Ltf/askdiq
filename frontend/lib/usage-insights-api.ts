@@ -175,7 +175,7 @@ export function qualityRadarRows(report: LiveReportWithInsights | null | undefin
   };
 }
 
-/** Deep link for a run marker. */
+/** Deep link for a run marker (the live evaluation page reads `?run=`). */
 export function evalRunHref(runId: string): string {
-  return `/admin/evaluation?run=${encodeURIComponent(runId)}`;
+  return `/admin/evaluation-live?run=${encodeURIComponent(runId)}`;
 }

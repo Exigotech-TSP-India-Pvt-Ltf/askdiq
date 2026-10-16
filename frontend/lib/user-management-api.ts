@@ -409,11 +409,16 @@ export const userManagementApi = {
       body: { ids: ids.slice(0, BULK_APPROVE_MAX), role },
     }),
 
-  /** Newest first; non-auth actions are dropped client-side. */
+  /**
+   * Newest auth events (`category=auth` filters on the server, so query and
+   * ingest rows cannot crowd them out of `limit`); the client-side filter
+   * stays as a guard for older servers that ignore `category`.
+   */
   authAudit: async (limit: number, signal?: AbortSignal): Promise<AuditLogEntry[]> => {
-    const rows = await send<AuditLogEntry[]>(`/governance/audit-log?limit=${clamp(limit, 1, AUDIT_LIMIT_MAX)}`, {
-      signal,
-    });
+    const rows = await send<AuditLogEntry[]>(
+      `/governance/audit-log?category=auth&limit=${clamp(limit, 1, AUDIT_LIMIT_MAX)}`,
+      { signal },
+    );
     return rows.filter((row) => isAuthEvent(row.action));
   },
 };

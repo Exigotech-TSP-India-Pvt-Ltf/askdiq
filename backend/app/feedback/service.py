@@ -230,10 +230,11 @@ async def triage(
         raise HTTPException(status.HTTP_409_CONFLICT, DETAIL_STALE)
     current = row.triage_status
     target = body.triage_status
-    if target is None and body.review_note is None:
+    sent = body.model_fields_set
+    if target is None and not sent & {"review_note", "corrected_answer"}:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "Provide triage_status and/or review_note",
+            "Provide triage_status, review_note and/or corrected_answer",
         )
     if target is not None and not can_transition(current, target):
         raise HTTPException(
@@ -244,8 +245,10 @@ async def triage(
     now = datetime.utcnow()
     message_id = row.message_id
     values: dict[str, Any] = {"reviewed_by": actor, "reviewed_at": now}
-    if body.review_note is not None:
-        values["review_note"] = body.review_note
+    if "review_note" in sent:
+        values["review_note"] = body.review_note or None
+    if "corrected_answer" in sent:
+        values["corrected_answer"] = _mask(body.corrected_answer) or None
     case_id: str | None = None
     try:
         if target is TriageStatus.PROMOTED:

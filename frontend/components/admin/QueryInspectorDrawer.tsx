@@ -38,6 +38,7 @@ export function QueryInspectorDrawer({
 }: QueryInspectorDrawerProps) {
   const [data, setData] = useState<any>(initialData || null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "judge" | "sources" | "latency">("overview");
 
@@ -49,13 +50,15 @@ export function QueryInspectorDrawer({
 
     if (!initialData || !initialData.retrieved_chunks?.length) {
       setLoading(true);
+      setLoadError(null);
       api
         .evaluationRecordDetail(token, recordId)
         .then((res) => {
           setData(res);
           setLoading(false);
         })
-        .catch(() => {
+        .catch((err: unknown) => {
+          setLoadError(err instanceof Error && err.message ? err.message : "Couldn't load this record.");
           setLoading(false);
         });
     }
@@ -67,14 +70,16 @@ export function QueryInspectorDrawer({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Unreported values show "—", never a made-up score.
   const isPassed = data?.passed ?? true;
-  const faith = data?.faithfulness ?? 4.5;
-  const rel = data?.relevance ?? 4.8;
-  const comp = data?.completeness ?? 4.6;
-  const citPrec = data?.citation_precision !== undefined ? `${(data.citation_precision * 100).toFixed(1)}%` : "92.0%";
-  const citCov = data?.citation_coverage !== undefined ? `${(data.citation_coverage * 100).toFixed(1)}%` : "88.0%";
+  const score = (v: unknown, digits: number) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "—");
+  const share = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : "—");
+  const faith = score(data?.faithfulness, 1);
+  const rel = score(data?.relevance, 1);
+  const comp = score(data?.completeness, 1);
+  const citPrec = share(data?.citation_precision);
   const chunks = data?.retrieved_chunks ?? [];
-  const latency = data?.latency_ms ? formatLatencyMs(data.latency_ms) : "1.85 s";
+  const latency = data?.latency_ms ? formatLatencyMs(data.latency_ms) : "—";
 
   const requestId: string | null = data?.request_id || recordId;
 
@@ -172,6 +177,12 @@ export function QueryInspectorDrawer({
         </div>
       )}
 
+      {!loading && loadError && (
+        <p role="alert" className="mx-6 mt-4 rounded-lg border border-status-danger/40 bg-status-danger-bg p-3 text-xs text-status-danger-fg">
+          {loadError}. Showing what the list row already had.
+        </p>
+      )}
+
       {!loading && activeTab === "overview" && (
         <>
           {/* Query Box */}
@@ -203,7 +214,7 @@ export function QueryInspectorDrawer({
           <div className="grid grid-cols-3 gap-3">
             <div className="p-3 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Faithfulness</p>
-              <p className="text-lg font-black font-mono text-teal-600 dark:text-teal-400 mt-0.5">{Number(faith).toFixed(1)} / 5.0</p>
+              <p className="text-lg font-black font-mono text-teal-600 dark:text-teal-400 mt-0.5">{faith} / 5.0</p>
             </div>
             <div className="p-3 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Citation Prec.</p>
@@ -262,17 +273,17 @@ export function QueryInspectorDrawer({
             <div className="grid grid-cols-3 gap-3 pt-1">
               <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
                 <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-fg-muted">Faithfulness</p>
-                <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{Number(faith).toFixed(1)}</p>
+                <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{faith}</p>
                 <p className="text-[10px] text-slate-400 dark:text-fg-subtle mt-0.5">Claims backed by docs</p>
               </div>
               <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
                 <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-fg-muted">Relevance</p>
-                <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{Number(rel).toFixed(1)}</p>
+                <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{rel}</p>
                 <p className="text-[10px] text-slate-400 dark:text-fg-subtle mt-0.5">Direct query answer</p>
               </div>
               <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
                 <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-fg-muted">Completeness</p>
-                <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{Number(comp).toFixed(1)}</p>
+                <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{comp}</p>
                 <p className="text-[10px] text-slate-400 dark:text-fg-subtle mt-0.5">Coverage of facts</p>
               </div>
             </div>

@@ -128,7 +128,7 @@ describe("filter -> topic -> conversations journey", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove filter Services" }));
     expect(currentParams().get("intent")).toBeNull();
     await waitFor(() => expect(api.last("conversations")?.params.get("intent")).toBeNull());
-  });
+  }, 20_000); // first journey of the file pays the cold render cost
 
   it("drop-off click filters by issue code", async () => {
     renderPage("?tab=dropoff");
@@ -211,14 +211,18 @@ describe("Conversations per-turn expand", () => {
 });
 
 describe("pending classification", () => {
-  it("shows 'N turns pending classification' with progress when nothing is labelled yet", async () => {
+  it("shows 'N turns pending classification' with progress but still renders the charts when nothing is labelled yet", async () => {
     queryCache.clear();
     api = mockInsightsFetch({
       summary: { ...RECORDED.summary, conversations: 0, substantive_questions: 0, pending_classification: 12 },
       pending: { pending: 12, labelled: 3, total: 15, progress_pct: 20 },
     });
     renderPage();
-    expect(await screen.findByRole("heading", { name: "12 turns pending classification" })).toBeInTheDocument();
+    expect(await screen.findByText("12 turns pending classification.")).toBeInTheDocument();
+    expect(screen.getByText(/charts fill in as turns are labelled/)).toBeInTheDocument();
+    // Not a full-page empty state: the layout and the table stay on screen.
+    expect(screen.getByRole("heading", { name: "Daily volume" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Where conversations dropped" })).toBeInTheDocument();
     const bar = screen.getByRole("progressbar", { name: "Classification progress" });
     expect(bar).toHaveAttribute("aria-valuenow", "20");
     expect(bar).toHaveAttribute("aria-valuetext", "3 of 15 turns labelled");
