@@ -58,6 +58,11 @@ export interface SemanticTokens {
   "surface-muted": string;
   "surface-elevated": string;
   "surface-inverse": string;
+  /**
+   * Studio surface (Usage "Live Telemetry" cards, newplan §15.2): the brand-tinted
+   * top of every card gradient, table header rows and inset tiles.
+   */
+  "surface-studio": string;
   line: string;
   "line-strong": string;
   "line-brand": string;
@@ -91,6 +96,7 @@ export const semanticTokens: Record<ThemeName, SemanticTokens> = {
     "surface-muted": "#F1F5F9",
     "surface-elevated": "#FFFFFF",
     "surface-inverse": "#0A1C1A",
+    "surface-studio": "#F2FAF9",
     line: "#E2E8F0",
     "line-strong": "#CBD5E1",
     "line-brand": "#99DBD5",
@@ -119,13 +125,16 @@ export const semanticTokens: Record<ThemeName, SemanticTokens> = {
     "chart-track": "#E2E8F0",
   },
   dark: {
+    // Dark neutrals carry a slight brand (teal) hue so cards, table headers,
+    // popovers and inputs match the studio look instead of reading as slate.
     "surface-page": "#090D11",
-    "surface-card": "#0C0D10",
-    "surface-muted": "#0F1720",
-    "surface-elevated": "#131D27",
+    "surface-card": "#0B1113",
+    "surface-muted": "#0E1A1C",
+    "surface-elevated": "#112123",
     "surface-inverse": "#F1F5F9",
-    line: "#1E293B",
-    "line-strong": "#334155",
+    "surface-studio": "#071D1C",
+    line: "#1A3032",
+    "line-strong": "#2A4648",
     "line-brand": "#0F4A46",
     fg: "#F1F5F9",
     "fg-muted": "#A3B1C2",
@@ -146,7 +155,7 @@ export const semanticTokens: Record<ThemeName, SemanticTokens> = {
     "status-info": "#38BDF8",
     "status-info-fg": "#7DD3FC",
     "status-info-bg": "#082234",
-    "chart-grid": "#1E293B",
+    "chart-grid": "#1A3032",
     "chart-axis": "#8494A7",
     "chart-track": "#083038",
   },
@@ -267,10 +276,12 @@ export const chartTheme: Record<ThemeName, ChartTheme> = {
 
 /** Fixed Tailwind palette for the legacy `dark-*` classes (kept for compatibility). */
 export const legacyDarkPalette = {
+  // Mirrors the dark surface-muted / surface-elevated / line tokens so legacy
+  // `dark:bg-dark-surface` classes sit on the same brand-tinted neutrals.
   bg: "#090D11",
-  surface: "#0F1720",
-  card: "#131D27",
-  border: "#1E293B",
+  surface: "#0E1A1C",
+  card: "#112123",
+  border: "#1A3032",
   text: "#F1F5F9",
   muted: "#94A3B8",
 } as const;

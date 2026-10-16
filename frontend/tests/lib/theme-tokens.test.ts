@@ -7,6 +7,7 @@ import {
   chartTheme,
   contrastRatio,
   hexToRgbTriplet,
+  legacyDarkPalette,
   semanticTokens,
   type ThemeName,
 } from "@/lib/theme-tokens";
@@ -27,7 +28,7 @@ function cssBlock(selector: string): Record<string, string> {
 const AA_TEXT = 4.5;
 const AA_NON_TEXT = 3;
 const THEMES: ThemeName[] = ["light", "dark"];
-const SURFACES = ["surface-page", "surface-card", "surface-muted", "surface-elevated"] as const;
+const SURFACES = ["surface-page", "surface-card", "surface-muted", "surface-elevated", "surface-studio"] as const;
 const TEXT_TOKENS = [
   "fg",
   "fg-muted",
@@ -149,5 +150,46 @@ describe("contrast (WCAG AA) in both themes", () => {
   it("contrastRatio matches known WCAG values", () => {
     expect(contrastRatio("#000000", "#FFFFFF")).toBeCloseTo(21, 0);
     expect(contrastRatio("#777777", "#FFFFFF")).toBeCloseTo(4.48, 1);
+  });
+});
+
+describe("studio surface (Live Telemetry look rolled out to every card)", () => {
+  const ext = tailwindConfig.theme?.extend as {
+    backgroundImage: Record<string, string>;
+    boxShadow: Record<string, string>;
+  };
+
+  it("bg-studio and shadow-studio are built from theme variables only", () => {
+    expect(ext.backgroundImage.studio).toContain("var(--surface-studio)");
+    expect(ext.backgroundImage.studio).toContain("var(--surface-card)");
+    expect(ext.backgroundImage.studio).toContain("var(--brand-400)");
+    expect(ext.backgroundImage.studio).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(ext.boxShadow.studio).toBe("var(--shadow-studio)");
+    expect(ext.boxShadow["studio-hover"]).toBe("var(--shadow-studio-hover)");
+  });
+
+  it("defines the studio effects separately for light (:root) and dark (.dark)", () => {
+    const light = cssBlock(":root");
+    const dark = cssBlock(".dark");
+    for (const key of ["studio-glow-alpha", "shadow-studio", "shadow-studio-hover"]) {
+      expect(light[key], `light --${key}`).toBeTruthy();
+      expect(dark[key], `dark --${key}`).toBeTruthy();
+      expect(dark[key], `--${key} differs per theme`).not.toBe(light[key]);
+    }
+  });
+
+  it("dark neutrals carry the brand hue (green/blue channels above red), not slate", () => {
+    for (const key of ["surface-card", "surface-muted", "surface-elevated", "surface-studio", "line"] as const) {
+      const [r, g, b] = hexToRgbTriplet(semanticTokens.dark[key]).split(" ").map(Number);
+      expect(g, key).toBeGreaterThan(r);
+      expect(b, key).toBeGreaterThan(r);
+    }
+  });
+
+  it("legacy dark-* classes mirror the dark tokens so old pages match new ones", () => {
+    expect(legacyDarkPalette.bg).toBe(semanticTokens.dark["surface-page"]);
+    expect(legacyDarkPalette.surface).toBe(semanticTokens.dark["surface-muted"]);
+    expect(legacyDarkPalette.card).toBe(semanticTokens.dark["surface-elevated"]);
+    expect(legacyDarkPalette.border).toBe(semanticTokens.dark.line);
   });
 });
