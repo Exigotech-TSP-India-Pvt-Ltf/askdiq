@@ -62,6 +62,10 @@ from app.schemas.feedback import (
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
+# Stored turn outcomes a rating can sit on: the canonical ones plus the raw
+# "empty_llm_output" the orchestrator records for an empty LLM reply.
+FeedbackOutcome = Outcome | Literal["empty_llm_output"]
+
 MAX_OFFSET = 10_000
 MAX_SEARCH_CHARS = 200
 MAX_CURSOR_CHARS = 512
@@ -104,7 +108,7 @@ async def list_feedback(
     sort: FeedbackSort = Query(FeedbackSort.CREATED_AT_DESC),
     q: str | None = Query(None, max_length=MAX_SEARCH_CHARS),
     triage_status: TriageStatus | None = None,
-    outcome: Outcome | None = None,
+    outcome: FeedbackOutcome | None = None,
     grounded: bool | None = None,
     has_comment: bool | None = None,
     date_from: datetime | None = None,
