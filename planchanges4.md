@@ -1,8 +1,9 @@
 # AskDIQ: Admin Console Revamp, Phased Execution Plan (`planchanges4.md`)
 
-**Source:** [newplan.md](newplan.md) revision 3 (sections 1 to 17). Section numbers like "§7.5" refer to that file.
+**Source:** [newplan.md](newplan.md) revision 3.3 (sections 1 to 20). Section numbers like "§7.5" refer to that file.
 **Baseline:** `main` @ `9382178` (PR #13 merged). Every feature below is its own branch and its own PR into `main`. Nothing is pushed or merged to `main` directly.
-**Order:** backend phases **B0 to B7**, then frontend phases **F0 to F7**, then verification phase **V**. The PRs run in **14 merge waves** (section 8), worked in parallel sessions (section 9).
+**Order:** backend phases **B0 to B7**, then frontend phases **F0 to F7**, then the owner feedback round **F8** (rev 3.3), then verification phase **V**. The PRs run in **17 merge waves** (section 8), worked in parallel sessions (section 9).
+**Rev 3.3 (2026-10-16):** phase F8 added from the owner's review of the preview build (newplan §17). The release PR is now **PR-33**. `ci_local.ps1` must print PASS before any push.
 **Rev 3.1 constraints:**
 - No Redis. Shared state lives in Postgres.
 - At least 50 concurrent requests, all async, enforced by a CI gate.
@@ -66,9 +67,11 @@ FRONTEND
 ├── F4  Governance UI                                        PR-23
 ├── F5  Feedback UI + chat reason chips                      PR-24
 ├── F6  Analytics UI                                         PR-25
-└── F7  Settings UI: Branding & Taxonomy                     PR-26
+├── F7  Settings UI: Branding & Taxonomy                     PR-26
+└── F8  Owner feedback round: speed, data, AskDIQ widget,
+        shell UX, green open PRs (+ prod hotfix HF-01)       PR-27 … PR-32
 VERIFICATION
-└── V   E2E, performance & concurrency, OWASP audit, release PR-27
+└── V   E2E, performance & concurrency, OWASP audit, release PR-33
 ```
 
 ---
@@ -79,16 +82,18 @@ VERIFICATION
 
 | OWASP | Primary phase | Proof |
 |---|---|---|
-| A01 Broken Access Control | B2, F1 | Route-walk guard test; IDOR tests on detail routes; CSRF origin check |
-| A02 Security Misconfiguration | B1, F0 | Header assertion tests (backend, Next, nginx config lint); docs off in prod; mock-IdP startup guard |
-| A03 Software Supply Chain | B0 | `pip-audit`, `npm audit` in CI; exact pins for new deps |
+| A01 Broken Access Control | B2, F1, F8 | Route-walk guard test; IDOR tests on detail routes; CSRF origin check; F8: aggregation cache keyed by role, cross-role cache test |
+| A02 Security Misconfiguration | B1, F0, F8 | Header assertion tests (backend, Next, nginx config lint); docs off in prod; mock-IdP startup guard; F8: `Cache-Control: private` + `Vary` on authenticated GETs |
+| A03 Software Supply Chain | B0, F8 | `pip-audit`, `npm audit` in CI; exact pins for new deps (F8: widget markdown renderer, if any) |
 | A04 Cryptographic Failures | B2 | Hashed session ids; secure cookie flags; HSTS in prod |
-| A05 Injection | B1, B3–B7 | Allow-list sort/filter tests; LIKE-escape tests; SVG sanitizer tests; classifier prompt-injection tests; CSV formula tests |
-| A06 Insecure Design | All | Caps on limit/offset/export/backfill; last-superadmin rule; threat note per PR |
-| A07 Authentication Failures | B2 | Token validation negative tests (sig, iss, aud, tid, exp, nonce, state); session rotation; login rate limit |
+| A05 Injection | B1, B3–B7, F8 | Allow-list sort/filter tests; LIKE-escape tests; SVG sanitizer tests; classifier prompt-injection tests; CSV formula tests; F8: widget markdown XSS tests; HF-01 allow-listed `/query` filters |
+| A06 Insecure Design | All | Caps on limit/offset/export/backfill; last-superadmin rule; threat note per PR; F8: bounded fetch timeouts and retries, pool leak test |
+| A07 Authentication Failures | B2, F8 | Token validation negative tests (sig, iss, aud, tid, exp, nonce, state); session rotation; login rate limit; F8: logout revokes the session and clears the cookie |
 | A08 Integrity Failures | B5, B6 | Promotions in DB + audit; idempotent jobs |
 | A09 Logging & Alerting | B4 | New audit sources asserted; PII-masked detail; alert thresholds |
-| A10 Exceptional Conditions | B1 | problem+json handler; supervised tasks; fail-closed auth |
+| A10 Exceptional Conditions | B1, F8 | problem+json handler; supervised tasks; fail-closed auth; F8: fetch timeouts become `ErrorState`, never a hang |
+
+The owner's request listed A04/A10 for resource exhaustion and A03 for unsafe markdown. Those are the 2021 numbers. This plan uses the 2025 list, so they map to A06/A10 and A05 (plus A03 for any new dependency). See newplan §17.
 
 ### 2.2 Performance and concurrency techniques by phase
 
@@ -104,9 +109,12 @@ VERIFICATION
 | Pre-aggregation rollups | B6, B7 | – |
 | Keyset pagination + indexes | B4, B5, B6 | F4 cursor tables |
 | Streaming (exports, SSE) | B1 SSE helper, B4, B5 | F4 live SSE, pause on hidden tab |
-| Compression, ETag, Cache-Control | B1 | – |
+| Compression, ETag, Cache-Control | B1, F8 (role-scoped TTL cache) | – |
 | Load balancing (nginx `least_conn`, N workers) | B1 | – |
-| Code splitting, `LazyMotion`, memoization | – | F0, F3–F6 |
+| Code splitting, `LazyMotion`, memoization | – | F0, F3–F6, F8 (`next/dynamic`, no barrels, `optimizePackageImports`, lazy widget) |
+| Bounded timeouts and connection-leak guard (pool `checkedout()` back to baseline) | F8 | F8 (server fetch `AbortSignal.timeout`, no refresh loop) |
+| Streaming SSR (`<Suspense>` per card, parallel server fetch) | – | F8 |
+| EXPLAIN-driven indexes, SQL aggregation instead of Python loops | F8 | – |
 
 ---
 
@@ -124,73 +132,73 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 - [ ] **[Test]** Phase B0 complete: the full backend and frontend suites pass in the new CI on a PR.
 
 #### Task B0.1: Baseline health check on `main`
-- [ ] **[Dev]** Task B0.1: run all current checks on `main` and record the results.
-- [ ] **[Lint]** Task B0.1: record the current LINT-BE and LINT-FE results (including pre-existing failures).
-- [ ] **[Test]** Task B0.1: record the current TEST-BE and TEST-FE pass, fail and skip counts.
+- [x] **[Dev]** Task B0.1: run all current checks on `main` and record the results.
+- [x] **[Lint]** Task B0.1: record the current LINT-BE and LINT-FE results (including pre-existing failures).
+- [x] **[Test]** Task B0.1: record the current TEST-BE and TEST-FE pass, fail and skip counts.
 
 ##### Subtask B0.1.1: Backend baseline
-- [ ] **[Dev]** Run `alembic heads` (expect one head, `d6e7f8a9b0c1`) and `alembic upgrade head` on a scratch DB.
-- [ ] **[Lint]** Run `ruff check .`, `ruff format --check .` and `pylint app`, and save the output to the scratchpad.
-- [ ] **[Test]** Run `pytest -q` and note the DB-skipped tests.
+- [x] **[Dev]** Run `alembic heads` (expect one head, `d6e7f8a9b0c1`) and `alembic upgrade head` on a scratch DB.
+- [x] **[Lint]** Run `ruff check .`, `ruff format --check .` and `pylint app`, and save the output to the scratchpad.
+- [x] **[Test]** Run `pytest -q` and note the DB-skipped tests.
 
 ##### Subtask B0.1.2: Frontend baseline
-- [ ] **[Dev]** Run `npm ci --legacy-peer-deps` and `npm run build`.
-- [ ] **[Lint]** Run `npm run lint` and `npm run typecheck`.
-- [ ] **[Test]** Run `npm test` (vitest). This is not run in CI today.
+- [x] **[Dev]** Run `npm ci --legacy-peer-deps` and `npm run build`.
+- [x] **[Lint]** Run `npm run lint` and `npm run typecheck`.
+- [x] **[Test]** Run `npm test` (vitest). This is not run in CI today.
 
 ##### Subtask B0.1.3: Pending change on `main`
-- [ ] **[Dev]** Move the uncommitted `frontend/.env.local.example` change onto branch `chore/env-example-sync` (it is part of PR-01). Do not commit it to `main`.
-- [ ] **[Lint]** Check that the file has placeholders only and no real values.
-- [ ] **[Test]** `git status` on `main` is clean.
+- [x] **[Dev]** Move the uncommitted `frontend/.env.local.example` change onto branch `chore/env-example-sync` (it is part of PR-01). Do not commit it to `main`.
+- [x] **[Lint]** Check that the file has placeholders only and no real values.
+- [x] **[Test]** `git status` on `main` is clean.
 
 ---
 
 #### Task B0.2: CI workflow hardening (`.github/workflows/ci.yml`)
-- [ ] **[Dev]** Task B0.2: split into the `backend-lint`, `backend-tests`, `frontend-checks`, `fullstack-smoke` and `perf-smoke` jobs (newplan §16.2).
-- [ ] **[Lint]** Task B0.2: `actionlint` (run via `npx` / docker locally) is clean, and the YAML parses.
-- [ ] **[Test]** Task B0.2: the workflow passes on the PR-01 branch.
+- [x] **[Dev]** Task B0.2: split into the `backend-lint`, `backend-tests`, `frontend-checks`, `fullstack-smoke` and `perf-smoke` jobs (newplan §16.2).
+- [x] **[Lint]** Task B0.2: `actionlint` (run via `npx` / docker locally) is clean, and the YAML parses.
+- [x] **[Test]** Task B0.2: the workflow passes on the PR-01 branch.
 
 ##### Subtask B0.2.1: Triggers and concurrency
-- [ ] **[Dev]** Run on `pull_request` (to main), `push` (branches: main) and `workflow_dispatch`. Add `concurrency: ci-${{ github.ref }}` with `cancel-in-progress`. Keep `permissions: contents: read`.
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** Each PR push triggers exactly one run, and a superseded run is cancelled.
+- [x] **[Dev]** Run on `pull_request` (to main), `push` (branches: main) and `workflow_dispatch`. Add `concurrency: ci-${{ github.ref }}` with `cancel-in-progress`. Keep `permissions: contents: read`.
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** Each PR push triggers exactly one run, and a superseded run is cancelled.
 
 ##### Subtask B0.2.2: Backend lint job
-- [ ] **[Dev]** Add `ruff format --check .`, `pylint app`, `bandit -r app -ll` (already present) and `pip-audit -r requirements.txt --strict`.
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** The job is green. If `pip-audit` finds anything, bump the pin in this PR or record a justified, time-boxed `--ignore-vuln`.
+- [x] **[Dev]** Add `ruff format --check .`, `pylint app`, `bandit -r app -ll` (already present) and `pip-audit -r requirements.txt --strict`.
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** The job is green. If `pip-audit` finds anything, bump the pin in this PR or record a justified, time-boxed `--ignore-vuln`.
 
 ##### Subtask B0.2.3: Backend test job
-- [ ] **[Dev]** Run `alembic upgrade head`, then check that `alembic heads` returns exactly one line, then run `alembic downgrade -1 && alembic upgrade head`, then `pytest -q --cov=app --cov-report=xml --cov-fail-under=<baseline>`. Raise the coverage threshold to 80 % by phase V.
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** The job is green, and the coverage XML is uploaded as an artifact.
+- [x] **[Dev]** Run `alembic upgrade head`, then check that `alembic heads` returns exactly one line, then run `alembic downgrade -1 && alembic upgrade head`, then `pytest -q --cov=app --cov-report=xml --cov-fail-under=<baseline>`. Raise the coverage threshold to 80 % by phase V.
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** The job is green, and the coverage XML is uploaded as an artifact.
 
 ##### Subtask B0.2.4: Frontend job
-- [ ] **[Dev]** Add `npm test` (vitest) and `npm audit --audit-level=high --omit=dev` after the existing lint, tsc and build steps.
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** The job is green.
+- [x] **[Dev]** Add `npm test` (vitest) and `npm audit --audit-level=high --omit=dev` after the existing lint, tsc and build steps.
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** The job is green.
 
 ##### Subtask B0.2.5: Full-stack smoke job skeleton (no browser, no Playwright)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Add `backend/scripts/smoke_e2e.py`, an httpx `AsyncClient` with a cookie jar. For now it checks that `GET http://localhost:3000/` and `/api/proxy/health` both return 200. The sign-in steps are added in B2.8.
   - The CI job `fullstack-smoke` starts Postgres, runs `alembic upgrade head`, starts uvicorn in the background (test env vars) and `npm run build && npm run start` (port 3000), waits for health, then runs the script. On failure it uploads the server logs.
-- [ ] **[Lint]** Run LINT-BE on the script.
-- [ ] **[Test]** The job is green in CI.
+- [x] **[Lint]** Run LINT-BE on the script.
+- [x] **[Test]** The job is green in CI.
 
 ##### Subtask B0.2.6: Perf smoke job (label or nightly)
-- [ ] **[Dev]** Add a job gated on the `perf` label or a `schedule` that runs `run_admin_load_test.py --smoke` (the flag is added in B1.6).
-- [ ] **[Lint]** Run actionlint.
-- [ ] **[Test]** The job is skipped on normal PRs, and runs when the label is set.
+- [x] **[Dev]** Add a job gated on the `perf` label or a `schedule` that runs `run_admin_load_test.py --smoke` (the flag is added in B1.6).
+- [x] **[Lint]** Run actionlint.
+- [x] **[Test]** The job is skipped on normal PRs, and runs when the label is set.
 
 ---
 
 #### Task B0.3: Lint scope to CLAUDE.md (open item 10)
-- [ ] **[Dev]** Task B0.3: extend the ruff selection and add the pylint config.
-- [ ] **[Lint]** Task B0.3: zero findings on the whole backend after the fixes.
+- [x] **[Dev]** Task B0.3: extend the ruff selection and add the pylint config.
+- [x] **[Lint]** Task B0.3: zero findings on the whole backend after the fixes.
 - [ ] **[Test]** Task B0.3: the full suite still passes, so the fixes changed no behaviour.
 
 ##### Subtask B0.3.1: Ruff config
-- [ ] **[Dev]** In `backend/pyproject.toml`:
+- [x] **[Dev]** In `backend/pyproject.toml`:
   - Add `venv` to `exclude`.
   - Add `I`, `S`, `ASYNC`, `T20`, `N`, `PL`, `ARG`, `RET`, `FAST`.
   - Ignore `PLR0913` globally.
@@ -199,13 +207,13 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 - [ ] **[Test]** TEST-BE passes in full.
 
 ##### Subtask B0.3.2: Pylint config
-- [ ] **[Dev]** Add `[tool.pylint]` to `pyproject.toml`: py-version 3.14, `max-line-length=88`, `disable` only the checks that duplicate ruff (C0301, C0114 for tests), and `ignore-paths` for alembic and venv.
-- [ ] **[Lint]** `pylint app` scores 10.00, or the score is ratcheted and recorded with a plan to reach 10.
-- [ ] **[Test]** TEST-BE passes.
+- [x] **[Dev]** Add `[tool.pylint]` to `pyproject.toml`: py-version 3.14, `max-line-length=88`, `disable` only the checks that duplicate ruff (C0301, C0114 for tests), and `ignore-paths` for alembic and venv.
+- [x] **[Lint]** `pylint app` scores 10.00, or the score is ratcheted and recorded with a plan to reach 10.
+- [x] **[Test]** TEST-BE passes.
 
 ##### Subtask B0.3.3: VS Code workspace settings
-- [ ] **[Dev]** Create `.vscode/settings.json`: interpreter `backend/venv/Scripts/python.exe`, Ruff as the formatter, Pylint extension enabled, `ruff.path` pointing at the venv.
-- [ ] **[Lint]** JSON is valid.
+- [x] **[Dev]** Create `.vscode/settings.json`: interpreter `backend/venv/Scripts/python.exe`, Ruff as the formatter, Pylint extension enabled, `ruff.path` pointing at the venv.
+- [x] **[Lint]** JSON is valid.
 - [ ] **[Test]** Format-on-save works in VS Code (manual check).
 
 ---
@@ -216,13 +224,13 @@ Make every later PR able to go green for the right reasons. CI must run every ch
 - [ ] **[Test]** Task B0.4: PR-01 renders the template, and a test push to `main` is rejected once protection is on.
 
 ##### Subtask B0.4.1: `.github/pull_request_template.md`
-- [ ] **[Dev]** Sections: Summary, Plan task ids, Type, Screenshots (light and dark), Migration (with downgrade tested), Security (OWASP rows touched), Performance (budgets measured), Assumptions, Test evidence, Rollback, Checklist (Dev, Lint and Test boxes mirroring this plan).
-- [ ] **[Lint]** Check the markdown.
-- [ ] **[Test]** It appears on `gh pr create`.
+- [x] **[Dev]** Sections: Summary, Plan task ids, Type, Screenshots (light and dark), Migration (with downgrade tested), Security (OWASP rows touched), Performance (budgets measured), Assumptions, Test evidence, Rollback, Checklist (Dev, Lint and Test boxes mirroring this plan).
+- [x] **[Lint]** Check the markdown.
+- [x] **[Test]** It appears on `gh pr create`.
 
 ##### Subtask B0.4.2: Dependabot grouping
-- [ ] **[Dev]** Add `.github/dependabot.yml` with weekly, grouped minor and patch updates for pip, npm and github-actions. Dependabot is already raising PRs.
-- [ ] **[Lint]** YAML is valid.
+- [x] **[Dev]** Add `.github/dependabot.yml` with weekly, grouped minor and patch updates for pip, npm and github-actions. Dependabot is already raising PRs.
+- [x] **[Lint]** YAML is valid.
 - [ ] **[Test]** Dependabot shows the config as valid in the repo Insights.
 
 ##### Subtask B0.4.3: Branch protection (owner action)
@@ -261,153 +269,153 @@ Build the security and performance platform that every later feature uses (newpl
 - [ ] **[Test]** Phase B1 complete: unit, integration and concurrency tests pass.
 
 #### Task B1.1: Security headers and misconfiguration (A02)
-- [ ] **[Dev]** Task B1.1: add the security headers middleware and production hardening.
+- [x] **[Dev]** Task B1.1: add the security headers middleware and production hardening.
 - [ ] **[Lint]** Task B1.1: LINT-BE on `app/core/security_headers.py` and `main.py`.
 - [ ] **[Test]** Task B1.1: `tests/test_security_headers.py` passes.
 
 ##### Subtask B1.1.1: `SecurityHeadersMiddleware`
-- [ ] **[Dev]** Add a pure ASGI middleware that sets `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `X-Frame-Options: DENY` and `CSP: default-src 'none'; frame-ancestors 'none'` for API JSON. It adds HSTS only when `ENV=production`. Header values come from config.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Every route, including error responses, carries the headers. HSTS is absent in development and present in production.
+- [x] **[Dev]** Add a pure ASGI middleware that sets `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `X-Frame-Options: DENY` and `CSP: default-src 'none'; frame-ancestors 'none'` for API JSON. It adds HSTS only when `ENV=production`. Header values come from config.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Every route, including error responses, carries the headers. HSTS is absent in development and present in production.
 
 ##### Subtask B1.1.2: CORS and docs hardening
-- [ ] **[Dev]** Set `allow_headers` to an explicit list (`Content-Type`, `X-API-Key`, `X-Request-ID`, `X-Client-Id`, `If-None-Match`) and `allow_methods` to an explicit list. Disable `/docs`, `/redoc` and `/openapi.json` unless `ENV != production` or `ENABLE_API_DOCS=true`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A preflight with an unknown header is rejected, and docs return 404 in production mode.
+- [x] **[Dev]** Set `allow_headers` to an explicit list (`Content-Type`, `X-API-Key`, `X-Request-ID`, `X-Client-Id`, `If-None-Match`) and `allow_methods` to an explicit list. Disable `/docs`, `/redoc` and `/openapi.json` unless `ENV != production` or `ENABLE_API_DOCS=true`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A preflight with an unknown header is rejected, and docs return 404 in production mode.
 
 ##### Subtask B1.1.3: nginx hardening (`askdiq.conf`)
-- [ ] **[Dev]** Add the same headers with `always`, set `server_tokens off`, cap `client_max_body_size` at 15m (matching the proxy), and keep `proxy_set_header X-Forwarded-For $remote_addr`.
+- [x] **[Dev]** Add the same headers with `always`, set `server_tokens off`, cap `client_max_body_size` at 15m (matching the proxy), and keep `proxy_set_header X-Forwarded-For $remote_addr`.
 - [ ] **[Lint]** `docker run --rm nginx nginx -t` passes on the config.
 - [ ] **[Test]** `curl -I` against the compose stack shows the headers.
 
 ---
 
 #### Task B1.2: Exceptional conditions (A10)
-- [ ] **[Dev]** Task B1.2: add the global problem+json errors and task supervision.
-- [ ] **[Lint]** Task B1.2: LINT-BE.
-- [ ] **[Test]** Task B1.2: `tests/test_error_handling.py` passes.
+- [x] **[Dev]** Task B1.2: add the global problem+json errors and task supervision.
+- [x] **[Lint]** Task B1.2: LINT-BE.
+- [x] **[Test]** Task B1.2: `tests/test_error_handling.py` passes.
 
 ##### Subtask B1.2.1: Global exception handlers
-- [ ] **[Dev]** Handlers for `Exception`, `HTTPException` and `RequestValidationError` return `application/problem+json` with `type`, `title`, `status`, `request_id` and no stack or internals. Log with `request_id`, PII-masked.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A forced error returns 500 with a `request_id` and no traceback text. A 422 lists field errors without echoing secrets.
+- [x] **[Dev]** Handlers for `Exception`, `HTTPException` and `RequestValidationError` return `application/problem+json` with `type`, `title`, `status`, `request_id` and no stack or internals. Log with `request_id`, PII-masked.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A forced error returns 500 with a `request_id` and no traceback text. A 422 lists field errors without echoing secrets.
 
 ##### Subtask B1.2.2: Supervised background tasks
-- [ ] **[Dev]** Add `app/core/tasks.py` with `spawn(coro, name)` that keeps a strong reference, logs exceptions, and is drained on lifespan shutdown. Replace the bare `asyncio.create_task` in the latency middleware.
-- [ ] **[Lint]** Run LINT-BE (ruff `ASYNC`, `RUF006`).
-- [ ] **[Test]** A failing task is logged, not lost, and shutdown waits for in-flight tasks (bounded timeout).
+- [x] **[Dev]** Add `app/core/tasks.py` with `spawn(coro, name)` that keeps a strong reference, logs exceptions, and is drained on lifespan shutdown. Replace the bare `asyncio.create_task` in the latency middleware.
+- [x] **[Lint]** Run LINT-BE (ruff `ASYNC`, `RUF006`).
+- [x] **[Test]** A failing task is logged, not lost, and shutdown waits for in-flight tasks (bounded timeout).
 
 ##### Subtask B1.2.3: Outbound timeouts and fail-closed defaults
-- [ ] **[Dev]** Set an explicit timeout on every `AsyncAzureOpenAI` and httpx client (`OUTBOUND_TIMEOUT_SECONDS`). Add a circuit breaker (`app/core/circuit.py`, which opens after N failures in a window) around LLM calls.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A mocked timeout returns a graceful 503 or `llm_failed` outcome. The breaker opens, then half-opens.
+- [x] **[Dev]** Set an explicit timeout on every `AsyncAzureOpenAI` and httpx client (`OUTBOUND_TIMEOUT_SECONDS`). Add a circuit breaker (`app/core/circuit.py`, which opens after N failures in a window) around LLM calls.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A mocked timeout returns a graceful 503 or `llm_failed` outcome. The breaker opens, then half-opens.
 
 ---
 
 #### Task B1.3: Async job queue (Postgres `SKIP LOCKED`)
-- [ ] **[Dev]** Task B1.3: add the `jobs` table, enqueue API and worker runner.
-- [ ] **[Lint]** Task B1.3: LINT-BE on `app/jobs/`.
-- [ ] **[Test]** Task B1.3: `tests/test_jobs_queue.py` passes, including the concurrency cases.
+- [x] **[Dev]** Task B1.3: add the `jobs` table, enqueue API and worker runner.
+- [x] **[Lint]** Task B1.3: LINT-BE on `app/jobs/`.
+- [x] **[Test]** Task B1.3: `tests/test_jobs_queue.py` passes, including the concurrency cases.
 
 ##### Subtask B1.3.1: Migration `jobs`
-- [ ] **[Dev]** Columns: `id`, `type`, `payload` (JSONB), `status` (queued, running, done, failed, dead), `attempts`, `max_attempts`, `run_after`, `locked_by`, `locked_at`, `last_error`, `dedupe_key` (unique, nullable), `created_at` and `finished_at`. Index on `(status, run_after)`. Downgrade drops the table.
-- [ ] **[Lint]** Run LINT-BE on the migration (per-file ignores apply).
-- [ ] **[Test]** Upgrade, downgrade, then upgrade again on a scratch DB.
+- [x] **[Dev]** Columns: `id`, `type`, `payload` (JSONB), `status` (queued, running, done, failed, dead), `attempts`, `max_attempts`, `run_after`, `locked_by`, `locked_at`, `last_error`, `dedupe_key` (unique, nullable), `created_at` and `finished_at`. Index on `(status, run_after)`. Downgrade drops the table.
+- [x] **[Lint]** Run LINT-BE on the migration (per-file ignores apply).
+- [x] **[Test]** Upgrade, downgrade, then upgrade again on a scratch DB.
 
 ##### Subtask B1.3.2: Enqueue and claim
-- [ ] **[Dev]** Add `enqueue(type, payload, dedupe_key=None, run_after=None)` and `claim(batch)`, which runs `SELECT ... FOR UPDATE SKIP LOCKED LIMIT n`, then updates the rows to running. Retries use exponential backoff with jitter. A job becomes `dead` after `max_attempts`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** With 4 concurrent claimers and 100 jobs, each job runs exactly once. A dedupe key stops the same job being queued twice. Backoff timing is respected (`frozen_time`).
+- [x] **[Dev]** Add `enqueue(type, payload, dedupe_key=None, run_after=None)` and `claim(batch)`, which runs `SELECT ... FOR UPDATE SKIP LOCKED LIMIT n`, then updates the rows to running. Retries use exponential backoff with jitter. A job becomes `dead` after `max_attempts`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** With 4 concurrent claimers and 100 jobs, each job runs exactly once. A dedupe key stops the same job being queued twice. Backoff timing is respected (`frozen_time`).
 
 ##### Subtask B1.3.3: Worker runner
-- [ ] **[Dev]** Add a handler registry `@job_handler("insights.classify")`. The runner starts in the lifespan `TaskGroup` when `JOBS_WORKER_ENABLED=true`, or runs as a `python -m app.jobs.worker` service in compose. Concurrency comes from `JOBS_MAX_CONCURRENCY`. Shutdown is graceful, and a stale lock is reclaimed after `JOBS_LOCK_TIMEOUT_SECONDS`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A handler error records `last_error` and retries. A crashed worker's job is reclaimed.
+- [x] **[Dev]** Add a handler registry `@job_handler("insights.classify")`. The runner starts in the lifespan `TaskGroup` when `JOBS_WORKER_ENABLED=true`, or runs as a `python -m app.jobs.worker` service in compose. Concurrency comes from `JOBS_MAX_CONCURRENCY`. Shutdown is graceful, and a stale lock is reclaimed after `JOBS_LOCK_TIMEOUT_SECONDS`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A handler error records `last_error` and retries. A crashed worker's job is reclaimed.
 
 ---
 
 #### Task B1.4: Postgres-backed shared state (no Redis; newplan §13.6)
-- [ ] **[Dev]** Task B1.4: move the rate limiter, OIDC handshake state and cross-worker events onto Postgres, so multiple workers and replicas behave as one system.
-- [ ] **[Lint]** Task B1.4: LINT-BE.
-- [ ] **[Test]** Task B1.4: `tests/test_shared_state.py` passes, including the multi-instance cases.
+- [x] **[Dev]** Task B1.4: move the rate limiter, OIDC handshake state and cross-worker events onto Postgres, so multiple workers and replicas behave as one system.
+- [x] **[Lint]** Task B1.4: LINT-BE.
+- [x] **[Test]** Task B1.4: `tests/test_shared_state.py` passes, including the multi-instance cases.
 
 ##### Subtask B1.4.1: `StateBackend` interface and Memory implementation
-- [ ] **[Dev]** Add `app/core/state.py` with a `StateBackend` Protocol: `incr_window(key, window_s)`, `put_once(key, value, ttl)`, `take_once(key)`. Wrap the existing sliding window as `MemoryState`, used only in unit tests and single-process development.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The existing `test_rate_limit.py` and `test_single_flight.py` pass unchanged.
+- [x] **[Dev]** Add `app/core/state.py` with a `StateBackend` Protocol: `incr_window(key, window_s)`, `put_once(key, value, ttl)`, `take_once(key)`. Wrap the existing sliding window as `MemoryState`, used only in unit tests and single-process development.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The existing `test_rate_limit.py` and `test_single_flight.py` pass unchanged.
 
 ##### Subtask B1.4.2: `PostgresState`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Migration: UNLOGGED table `rate_limit_buckets(key text, window_start timestamptz, count int, PRIMARY KEY (key, window_start))`, and table `oidc_states(state_hash text primary key, payload jsonb, expires_at timestamptz)`.
   - `incr_window` runs one `INSERT ... ON CONFLICT DO UPDATE SET count = rate_limit_buckets.count + 1 RETURNING count`, summing 10 s sub-windows for the sliding minute.
   - `take_once` runs `DELETE ... WHERE state_hash = :h AND expires_at > now() RETURNING payload`.
   - A cleanup job (B1.3) deletes expired rows every minute.
   - It is the default when `ENV != test`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Two app instances (two engines) share one limit, so 10/min holds across both.
   - `take_once` is single use under 20 concurrent callers (exactly 1 gets the payload).
   - The rate-limit check adds under 3 ms p95 locally.
 
 ##### Subtask B1.4.3: LISTEN/NOTIFY event bus
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `app/core/events.py` keeps one dedicated asyncpg `LISTEN askdiq_events` connection per worker (it reconnects with backoff). `publish(topic, id)` sends a `NOTIFY` with a small JSON payload of ids only.
   - Subscribers register in-process queues.
   - It is used for cache invalidation (test-IP, branding, role changes) and SSE fan-out (B4.2.5).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** An event published on instance A reaches a subscriber on instance B within 1 s. A dropped listener connection reconnects and resubscribes.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** An event published on instance A reaches a subscriber on instance B within 1 s. A dropped listener connection reconnects and resubscribes.
 
 ##### Subtask B1.4.4: Configurable semaphores
-- [ ] **[Dev]** Replace the hard-coded `asyncio.Semaphore(4)` in `admin_usage.py` and `online_eval.py` with config (`usage_agg_max_concurrency`, `ONLINE_EVAL_MAX_CONCURRENCY`). Add a global `LLM_MAX_CONCURRENCY` semaphore (default 64, so it does not cap the 50-concurrency target) that returns 429 with `Retry-After` when saturated.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A saturation test returns 429 with `Retry-After`. The limits follow the config.
+- [x] **[Dev]** Replace the hard-coded `asyncio.Semaphore(4)` in `admin_usage.py` and `online_eval.py` with config (`usage_agg_max_concurrency`, `ONLINE_EVAL_MAX_CONCURRENCY`). Add a global `LLM_MAX_CONCURRENCY` semaphore (default 64, so it does not cap the 50-concurrency target) that returns 429 with `Retry-After` when saturated.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A saturation test returns 429 with `Retry-After`. The limits follow the config.
 
 ---
 
 #### Task B1.5: HTTP efficiency and parallel aggregation utility
-- [ ] **[Dev]** Task B1.5: add compression, ETag and cache headers, the pool settings, the `gather_scoped` helper and the SSE helper.
-- [ ] **[Lint]** Task B1.5: LINT-BE.
-- [ ] **[Test]** Task B1.5: `tests/test_http_efficiency.py` passes.
+- [x] **[Dev]** Task B1.5: add compression, ETag and cache headers, the pool settings, the `gather_scoped` helper and the SSE helper.
+- [x] **[Lint]** Task B1.5: LINT-BE.
+- [x] **[Test]** Task B1.5: `tests/test_http_efficiency.py` passes.
 
 ##### Subtask B1.5.1: GZip, ETag and Cache-Control
-- [ ] **[Dev]** Add `GZipMiddleware(minimum_size=1024)`, and a `cached_response()` helper that computes a weak ETag (hash of the JSON), returns 304 on `If-None-Match`, and sets `Cache-Control: private, max-age=<ttl>`. Apply it to the dashboard and usage summary.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A second request with the ETag gets 304. Large payloads are gzip-encoded.
+- [x] **[Dev]** Add `GZipMiddleware(minimum_size=1024)`, and a `cached_response()` helper that computes a weak ETag (hash of the JSON), returns 304 on `If-None-Match`, and sets `Cache-Control: private, max-age=<ttl>`. Apply it to the dashboard and usage summary.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A second request with the ETag gets 304. Large payloads are gzip-encoded.
 
 ##### Subtask B1.5.2: Pool and statement timeout
-- [ ] **[Dev]** Set `pool_pre_ping=True` from config. Add a `read_only_session()` dependency that sets `SET LOCAL statement_timeout = DASHBOARD_STATEMENT_TIMEOUT_MS`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A slow query (`pg_sleep`) is cancelled with a clean 503.
+- [x] **[Dev]** Set `pool_pre_ping=True` from config. Add a `read_only_session()` dependency that sets `SET LOCAL statement_timeout = DASHBOARD_STATEMENT_TIMEOUT_MS`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A slow query (`pg_sleep`) is cancelled with a clean 503.
 
 ##### Subtask B1.5.3: `gather_scoped` parallel helper
-- [ ] **[Dev]** Add `app/core/concurrency.py: gather_scoped(*factories, limit)`. It runs coroutines in an `asyncio.TaskGroup`, each with its **own** `AsyncSession` from the session factory, bounded by a semaphore, and propagates the first error and cancels the rest.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** 8 parallel queries never share a session, peak concurrency is at most `limit`, and cancellation propagates.
+- [x] **[Dev]** Add `app/core/concurrency.py: gather_scoped(*factories, limit)`. It runs coroutines in an `asyncio.TaskGroup`, each with its **own** `AsyncSession` from the session factory, bounded by a semaphore, and propagates the first error and cancels the rest.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** 8 parallel queries never share a session, peak concurrency is at most `limit`, and cancellation propagates.
 
 ##### Subtask B1.5.4: SSE helper
-- [ ] **[Dev]** Add `app/core/sse.py` with an `event_stream(generator, heartbeat=15s)` that returns a `StreamingResponse(media_type="text/event-stream")`, honours client disconnect, and sends `retry:` hints.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The heartbeat is emitted, the stream stops on disconnect, and nothing leaks (task count returns to baseline).
+- [x] **[Dev]** Add `app/core/sse.py` with an `event_stream(generator, heartbeat=15s)` that returns a `StreamingResponse(media_type="text/event-stream")`, honours client disconnect, and sends `retry:` hints.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The heartbeat is emitted, the stream stops on disconnect, and nothing leaks (task count returns to baseline).
 
 ##### Subtask B1.5.5: Async-only guard
-- [ ] **[Dev]** Remove the unused `embed_texts_sync` and `embed_text_sync`.
-- [ ] **[Lint]** Ruff `ASYNC` is clean.
-- [ ] **[Test]** `tests/test_async_only.py` walks `app.routes` and fails if any endpoint is a plain `def`.
+- [x] **[Dev]** Remove the unused `embed_texts_sync` and `embed_text_sync`.
+- [x] **[Lint]** Ruff `ASYNC` is clean.
+- [x] **[Test]** `tests/test_async_only.py` walks `app.routes` and fails if any endpoint is a plain `def`.
 
 ---
 
 #### Task B1.6: Load-balanced deployment topology
-- [ ] **[Dev]** Task B1.6: add the multi-replica compose, the nginx upstream and the worker count.
+- [x] **[Dev]** Task B1.6: add the multi-replica compose, the nginx upstream and the worker count.
 - [ ] **[Lint]** Task B1.6: `nginx -t` and `docker compose config` are both clean.
 - [ ] **[Test]** Task B1.6: the 2-replica stack passes the smoke load test.
 
 ##### Subtask B1.6.1: nginx upstream
-- [ ] **[Dev]** Add `upstream askdiq_api { least_conn; server askdiq-api-1:8000 max_fails=3 fail_timeout=10s; server askdiq-api-2:8000 max_fails=3 fail_timeout=10s; keepalive 32; }` and `proxy_next_upstream error timeout http_502 http_503`. Set `proxy_buffering off` on SSE paths.
+- [x] **[Dev]** Add `upstream askdiq_api { least_conn; server askdiq-api-1:8000 max_fails=3 fail_timeout=10s; server askdiq-api-2:8000 max_fails=3 fail_timeout=10s; keepalive 32; }` and `proxy_next_upstream error timeout http_502 http_503`. Set `proxy_buffering off` on SSE paths.
 - [ ] **[Lint]** Run `nginx -t`.
 - [ ] **[Test]** Killing one replica does not interrupt service. Requests are spread across both (check via `X-Upstream` in debug).
 
 ##### Subtask B1.6.2: Workers and replicas
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - In `Dockerfile.prod`, run `uvicorn --workers ${WEB_CONCURRENCY:-2}`, and update the comment there: the rate limiter is now shared through Postgres (B1.4).
   - Compose prod gets `api-1`, `api-2` and `worker`.
   - Size the pool: `replicas × workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) ≤ max_connections − 20`, with defaults of 2 × 2 × (10 + 5) = 60. Document this in `DEPLOYMENT.md`.
@@ -415,35 +423,35 @@ Build the security and performance platform that every later feature uses (newpl
 - [ ] **[Test]** The compose stack is healthy. The rate limit is enforced across both replicas (`smoke_e2e.py --rate-limit-check`).
 
 ##### Subtask B1.6.3: Load script upgrade
-- [ ] **[Dev]** Add `--smoke`, `--profile admin|chat`, `--concurrency` and `--duration` to `scripts/run_admin_load_test.py`. It writes a JSON report with p50, p95, p99 and error % per route, and exits non-zero if a §13.4 budget is breached.
-- [ ] **[Lint]** Run LINT-BE (`T20` is allowed in scripts).
+- [x] **[Dev]** Add `--smoke`, `--profile admin|chat`, `--concurrency` and `--duration` to `scripts/run_admin_load_test.py`. It writes a JSON report with p50, p95, p99 and error % per route, and exits non-zero if a §13.4 budget is breached.
+- [x] **[Lint]** Run LINT-BE (`T20` is allowed in scripts).
 - [ ] **[Test]** The smoke run passes locally.
 
 ---
 
 #### Task B1.7: Async-only audit and the 50-concurrency gate (newplan §13.5, §13.6)
-- [ ] **[Dev]** Task B1.7: remove every blocking call from async paths, and add the permanent 50+ concurrency test.
-- [ ] **[Lint]** Task B1.7: ruff `ASYNC` rules (ASYNC210, ASYNC230, ASYNC251 and others) report zero findings in `app/`.
-- [ ] **[Test]** Task B1.7: `tests/test_async_only.py` and `tests/test_concurrency_50.py` pass on every PR.
+- [x] **[Dev]** Task B1.7: remove every blocking call from async paths, and add the permanent 50+ concurrency test.
+- [x] **[Lint]** Task B1.7: ruff `ASYNC` rules (ASYNC210, ASYNC230, ASYNC251 and others) report zero findings in `app/`.
+- [x] **[Test]** Task B1.7: `tests/test_async_only.py` and `tests/test_concurrency_50.py` pass on every PR.
 
 ##### Subtask B1.7.1: Fix the known sync hotspots
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Wrap `json.loads(...read_text())` in `api/routes/metrics.py` (around lines 124 and 131) in `asyncio.to_thread`, or confirm the caller already offloads it.
   - Move the sync `open()` of `promoted_test_cases.json` in `evaluation/dataset_extra.py` (line 289) behind `to_thread` now. B5 replaces it with a DB read.
   - Fold `psutil.Process().memory_info()` in `api/routes/admin.py` (around lines 526 and 1093) into the same `to_thread` call as `cpu_percent`.
   - Remove the unused `requests` from `requirements.txt` (check with `rg "import requests"` first) and the unused `embed_*_sync` helpers.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The full TEST-BE suite passes.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The full TEST-BE suite passes.
 
 ##### Subtask B1.7.2: Event-loop blocking detector
-- [ ] **[Dev]** Add a test fixture that enables `loop.slow_callback_duration = 0.05` and asyncio debug mode, and fails the test if any callback blocks the loop for more than 50 ms during the API test suite.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** It passes on the full API test set, or the offenders are fixed.
+- [x] **[Dev]** Add a test fixture that enables `loop.slow_callback_duration = 0.05` and asyncio debug mode, and fails the test if any callback blocks the loop for more than 50 ms during the API test suite.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** It passes on the full API test set, or the offenders are fixed.
 
 ##### Subtask B1.7.3: `tests/test_concurrency_50.py` (CI gate)
-- [ ] **[Dev]** Fire 60 simultaneous requests through `asyncio.gather` at the ASGI app (real Postgres, `fake_llm` with a 1 s delay, `fake_embed`). The mix is 30 `/query`, 20 admin dashboard GETs and 10 feedback POSTs. Test users are exempted from the per-user limit through settings injection.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Dev]** Fire 60 simultaneous requests through `asyncio.gather` at the ASGI app (real Postgres, `fake_llm` with a 1 s delay, `fake_embed`). The mix is 30 `/query`, 20 admin dashboard GETs and 10 feedback POSTs. Test users are exempted from the per-user limit through settings injection.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - All 60 requests succeed (200 or 201).
   - Total wall time is under 3 s, which proves they ran concurrently rather than one by one (60 s).
   - No `QueuePool` timeout occurs.
@@ -475,46 +483,46 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 - [ ] **[Test]** Phase B2 complete: auth, RBAC and route-walk suites pass.
 
 #### Task B2.1: Data model and config
-- [ ] **[Dev]** Task B2.1: add the migration and settings.
-- [ ] **[Lint]** Task B2.1: LINT-BE.
-- [ ] **[Test]** Task B2.1: the migration round-trip and the settings validation tests pass.
+- [x] **[Dev]** Task B2.1: add the migration and settings.
+- [x] **[Lint]** Task B2.1: LINT-BE.
+- [x] **[Test]** Task B2.1: the migration round-trip and the settings validation tests pass.
 
 ##### Subtask B2.1.1: Migration
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Extend `users` with `entra_oid` (unique), `tenant_id`, `role` (enum, nullable), `status` (enum, default pending), `last_login_at`, `approved_by`, `approved_at` and `version`. Make `password_hash` nullable.
   - Create `access_requests` with a partial unique index (one `pending` request per user).
   - Create `auth_sessions` with `id_hash` (sha256), `user_id`, `created_at`, `expires_at`, `idle_expires_at`, `last_seen_at`, `revoked_at`, `ip_address` and `user_agent`. Index `(user_id, revoked_at)`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Upgrade, downgrade, upgrade. The partial unique index rejects a second pending request.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Upgrade, downgrade, upgrade. The partial unique index rejects a second pending request.
 
 ##### Subtask B2.1.2: Settings
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Add every variable in newplan §7.6 to `core/config.py`. Secrets get no default.
   - Add a `model_validator`: `ENTRA_*` is required unless `AUTH_DEV_MOCK`, and **startup fails if `AUTH_DEV_MOCK` and `ENV != development`**.
   - Remove the unused `api_jwt_secret`, and update CI env to `SESSION_SECRET`.
   - Update `backend/.env.example` and `frontend/.env.local.example`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Validator tests cover each rule, injected through env vars or fixtures (no `.env`).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Validator tests cover each rule, injected through env vars or fixtures (no `.env`).
 
 ---
 
 #### Task B2.2: OIDC client and mock IdP
-- [ ] **[Dev]** Task B2.2: add `app/auth/oidc.py`, the JWKS cache and `app/auth/mock_idp.py`.
-- [ ] **[Lint]** Task B2.2: LINT-BE.
-- [ ] **[Test]** Task B2.2: `tests/test_auth_oidc.py` passes, including all the negative token cases.
+- [x] **[Dev]** Task B2.2: add `app/auth/oidc.py`, the JWKS cache and `app/auth/mock_idp.py`.
+- [x] **[Lint]** Task B2.2: LINT-BE.
+- [x] **[Test]** Task B2.2: `tests/test_auth_oidc.py` passes, including all the negative token cases.
 
 ##### Subtask B2.2.1: Authorize URL with PKCE, state and nonce
-- [ ] **[Dev]** `build_authorize_url()` generates `state`, `nonce` and a PKCE verifier (S256), and stores them in `oidc_states` (B1.4.2) with a 10-minute TTL and one-time use, so the callback can land on any replica. It reads endpoints from the **discovery document** (`https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration`), not hard-coded URLs, and requests scopes `openid profile email`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The URL params are correct. A state is single-use, so replaying it gives 400.
+- [x] **[Dev]** `build_authorize_url()` generates `state`, `nonce` and a PKCE verifier (S256), and stores them in `oidc_states` (B1.4.2) with a 10-minute TTL and one-time use, so the callback can land on any replica. It reads endpoints from the **discovery document** (`https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration`), not hard-coded URLs, and requests scopes `openid profile email`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The URL params are correct. A state is single-use, so replaying it gives 400.
 
 ##### Subtask B2.2.2: Code exchange and ID token validation
-- [ ] **[Dev]** Exchange the code via `httpx.AsyncClient` (with timeout) using the client secret server-side. Validate with PyJWT (pinned) against the JWKS: `alg` allow-list RS256, `iss`, `aud`, `tid == ENTRA_TENANT_ID`, `exp`/`nbf` with a 60 s leeway, and `nonce`. Cache the JWKS in `StateBackend`, refreshing once on an unknown `kid`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Negative tests: bad signature, `alg=none`, wrong `iss`, `aud` or `tid`, expired token, bad nonce, unknown `kid` (refetch once, then fail). All fail closed.
+- [x] **[Dev]** Exchange the code via `httpx.AsyncClient` (with timeout) using the client secret server-side. Validate with PyJWT (pinned) against the JWKS: `alg` allow-list RS256, `iss`, `aud`, `tid == ENTRA_TENANT_ID`, `exp`/`nbf` with a 60 s leeway, and `nonce`. Cache the JWKS in `StateBackend`, refreshing once on an unknown `kid`.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Negative tests: bad signature, `alg=none`, wrong `iss`, `aud` or `tid`, expired token, bad nonce, unknown `kid` (refetch once, then fail). All fail closed.
 
 ##### Subtask B2.2.3: Entra-faithful mock IdP (development and test only)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Mounted only when `AUTH_DEV_MOCK=true`, at `/mock-idp/{tenant}/v2.0/...`. It provides discovery, authorize (renders a tiny "pick a user" form in development, and auto-approves with test-chosen claims in tests), token and JWKS endpoints.
   - The discovery document copies Microsoft's shape, and the issuer is `.../{tid}/v2.0`.
   - ID token claims: `ver "2.0"`, `oid`, `tid`, `sub`, `name`, `preferred_username`, `nonce`, `aud`, `iat`, `nbf` and `exp`. `email` is **omitted unless the test asks for it**.
@@ -522,8 +530,8 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
   - Codes are single use, and PKCE S256 is verified.
   - Errors use the OAuth shape `{error, error_description}`.
   - The OIDC client uses the **same code path** for mock and real. Only the discovery URL base differs (`AUTH_DEV_MOCK` switches it to `APP_BASE_URL`-relative).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - The real validator accepts mock tokens.
   - Email falls back to `preferred_username` when `email` is absent.
   - Key rotation works.
@@ -532,7 +540,7 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
   - `tests/fixtures/entra_discovery_v2.json` (a recorded public Microsoft discovery document) parses through the same code.
 
 ##### Subtask B2.2.4: `scripts/verify_sso_config.py` (owner preflight after filling in `.env`)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Load `Settings` the normal way, so it reads `.env` at runtime. The script never prints values, only the names of the checks.
   - Checks:
     - The required `ENTRA_*` and `SESSION_SECRET` values are present.
@@ -544,79 +552,79 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
     - The cookie `Secure` setting matches the URL scheme.
     - `SUPERADMIN_EMAILS` is not empty.
   - Exit code 0 only if every check passes.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Unit tests with httpx mocked: each failing condition gives a FAIL line and exit code 1, and **no secret appears in the output** (asserted).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Unit tests with httpx mocked: each failing condition gives a FAIL line and exit code 1, and **no secret appears in the output** (asserted).
 
 ---
 
 #### Task B2.3: Sessions, permissions and guards
-- [ ] **[Dev]** Task B2.3: add `app/auth/sessions.py`, `app/auth/permissions.py` and `app/auth/deps.py`.
-- [ ] **[Lint]** Task B2.3: LINT-BE.
-- [ ] **[Test]** Task B2.3: `tests/test_auth_rbac.py` and `tests/test_route_guards.py` pass.
+- [x] **[Dev]** Task B2.3: add `app/auth/sessions.py`, `app/auth/permissions.py` and `app/auth/deps.py`.
+- [x] **[Lint]** Task B2.3: LINT-BE.
+- [x] **[Test]** Task B2.3: `tests/test_auth_rbac.py` and `tests/test_route_guards.py` pass.
 
 ##### Subtask B2.3.1: Session lifecycle
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `create_session` uses `secrets.token_urlsafe(32)` and stores only the sha256.
   - It enforces absolute TTL (`SESSION_TTL_MINUTES`) and an idle TTL.
   - `last_seen_at` is written at most once a minute (to avoid a write storm).
   - Add `revoke` and `revoke_all(user_id)`.
   - Rotate the session on login.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Expiry, idle expiry, revocation and rotation tests. A raw id is never stored (assert on the DB value).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Expiry, idle expiry, revocation and rotation tests. A raw id is never stored (assert on the DB value).
 
 ##### Subtask B2.3.2: Permission table
-- [ ] **[Dev]** `Permission` is a `StrEnum` (`dashboard:read`, `documents:write`, `feedback:triage`, `feedback:export`, `eval:run`, `testip:write`, `usage:export`, `users:manage`, `audit:auth:read`, `branding:write`, `taxonomy:write`). `ROLE_PERMISSIONS` maps each role to its permissions exactly as newplan §7.3, plus `branding:write` and `taxonomy:write` for the superadmin.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A matrix test is generated from §7.3 for every role and permission.
+- [x] **[Dev]** `Permission` is a `StrEnum` (`dashboard:read`, `documents:write`, `feedback:triage`, `feedback:export`, `eval:run`, `testip:write`, `usage:export`, `users:manage`, `audit:auth:read`, `branding:write`, `taxonomy:write`). `ROLE_PERMISSIONS` maps each role to its permissions exactly as newplan §7.3, plus `branding:write` and `taxonomy:write` for the superadmin.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A matrix test is generated from §7.3 for every role and permission.
 
 ##### Subtask B2.3.3: Dependency family
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `current_user` resolves the proxy service key **and** the session cookie value forwarded by the proxy in `X-Session`. It loads the user and checks status on every request (cached permissions keyed by `user_id` and `version`, invalidated on change).
   - Add `require_active_user`, `require_role_or_chat` and `require_permission(p)`.
   - Replace `get_current_actor` in the ~44 route dependencies.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Each case returns the right code: no session 401, pending on a dashboard route 403, pending on chat 200, suspended anywhere 403, wrong role 403, right role 200.
   - A suspension takes effect on the next request.
 
 ##### Subtask B2.3.4: Route-walk guard test and IDOR checks
-- [ ] **[Dev]** Add an allow-list of public routes (`/health`, `/branding`, `/branding/assets/*`, `/auth/sso/*`, mock IdP in development).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Dev]** Add an allow-list of public routes (`/health`, `/branding`, `/branding/assets/*`, `/auth/sso/*`, mock IdP in development).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - `test_route_guards.py` iterates `app.routes` and fails if any non-allow-listed route lacks a guard dependency.
   - IDOR tests: a pending user cannot read another user's chat session.
 
 ##### Subtask B2.3.5: CSRF defence
-- [ ] **[Dev]** For cookie-authenticated state-changing requests, the backend requires an `X-Requested-With: askdiq` header (which the proxy adds) and an `Origin` in `APP_BASE_URL`, and rejects anything else with 403.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A cross-origin POST is rejected, and a same-origin POST passes.
+- [x] **[Dev]** For cookie-authenticated state-changing requests, the backend requires an `X-Requested-With: askdiq` header (which the proxy adds) and an `Origin` in `APP_BASE_URL`, and rejects anything else with 403.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A cross-origin POST is rejected, and a same-origin POST passes.
 
 ---
 
 #### Task B2.4: Auth and User Management routes
-- [ ] **[Dev]** Task B2.4: add `app/api/routes/auth.py` and `app/api/routes/user_management.py`, with the repository and service in `app/auth/`.
-- [ ] **[Lint]** Task B2.4: LINT-BE.
-- [ ] **[Test]** Task B2.4: `tests/test_auth_routes.py` and `tests/test_user_management.py` pass.
+- [x] **[Dev]** Task B2.4: add `app/api/routes/auth.py` and `app/api/routes/user_management.py`, with the repository and service in `app/auth/`.
+- [x] **[Lint]** Task B2.4: LINT-BE.
+- [x] **[Test]** Task B2.4: `tests/test_auth_routes.py` and `tests/test_user_management.py` pass.
 
 ##### Subtask B2.4.1: `/auth/*`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `GET /auth/sso/login` and `POST /auth/sso/callback`. The callback upserts on `oid`, bootstraps `SUPERADMIN_EMAILS`, applies the newplan §7.2 status rules, and audits `login_success` / `login_denied`.
   - `GET /auth/me` returns user, role, status, permissions and `access_contact_email`, and is cached.
   - `POST /auth/logout`.
   - `POST` and `GET /auth/access-request`.
   - Login endpoints are rate-limited per IP.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** First login creates a pending user. A superadmin email is made active. Logout revokes the server session. The login rate limit gives 429. Each step writes an audit row.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** First login creates a pending user. A superadmin email is made active. Logout revokes the server session. The login rate limit gives 429. Each step writes an audit row.
 
 ##### Subtask B2.4.2: `/admin/users-accounts` and `/admin/access-requests`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - List: paginated, with search (LIKE-escaped) and role and status filters (allow-list).
   - Approve with a role, reject with a note, and bulk approve (batched, in one transaction).
   - `PATCH` role and status with optimistic concurrency (a `version` mismatch gives 409).
   - Revoke sessions, and invite or pre-provision by email.
   - `GET /admin/users-accounts/stats` (KPIs, logins per day, funnel, role mix, time-to-approve histogram) for the F1 charts.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Self-demote or self-suspend gives 409, and removing the last active superadmin gives 409.
   - Two concurrent approvals: exactly one succeeds and the other gets 409.
   - Bulk approve is all-or-nothing.
@@ -625,14 +633,14 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 ---
 
 #### Task B2.5: Proxy contract (backend side)
-- [ ] **[Dev]** Document and validate the headers the Next proxy must send (`X-API-Key`, `X-Session`, `X-Requested-With`, `X-Forwarded-For`). Set `trust_proxy_headers` from env for deployment.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A missing service key gives 401 even with a valid session, so the backend cannot be called directly.
+- [x] **[Dev]** Document and validate the headers the Next proxy must send (`X-API-Key`, `X-Session`, `X-Requested-With`, `X-Forwarded-For`). Set `trust_proxy_headers` from env for deployment.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A missing service key gives 401 even with a valid session, so the backend cannot be called directly.
 
 #### Task B2.6: Phase B2 integration testing
-- [ ] **[Dev]** Create `tests/test_auth_flow_integration.py`. Mock IdP flow: new user logs in (pending), uses chat, gets 403 on dashboard, requests access, superadmin approves, the next request is authorized, the user is suspended, and the next request is denied.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass, and the route-walk and OWASP A01/A07 tests pass.
+- [x] **[Dev]** Create `tests/test_auth_flow_integration.py`. Mock IdP flow: new user logs in (pending), uses chat, gets 403 on dashboard, requests access, superadmin approves, the next request is authorized, the user is suspended, and the next request is denied.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass, and the route-walk and OWASP A01/A07 tests pass.
 
 #### Task B2.8: Go-live readiness for real Entra (testable now, switched on by `.env` later)
 - [ ] **[Dev]** Task B2.8: full-stack sign-in smoke against the mock, plus the owner's go-live checklist.
@@ -645,13 +653,13 @@ Close the open-admin hole (newplan §7.1) with server-enforced authentication an
 - [ ] **[Test]** Green in CI.
 
 ##### Subtask B2.8.2: Owner go-live checklist (add to `DEPLOYMENT.md`; nothing else changes in code)
-- [ ] **[Dev]** Write the checklist:
+- [x] **[Dev]** Write the checklist:
   1. In Entra, register a single-tenant app. Add the Web redirect URI `http://localhost:3000/auth/callback` (and the production HTTPS URL). Create a client secret. Grant `openid`, `profile` and `email`. Optionally add the `email` claim to the ID token.
   2. Fill in `backend/.env` (`ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_REDIRECT_URI`, `SESSION_SECRET`, `SUPERADMIN_EMAILS`, `ACCESS_CONTACT_EMAIL`, `AUTH_DEV_MOCK=false`) and `frontend/.env.local` (`APP_BASE_URL`, `SESSION_COOKIE_NAME`, `SESSION_COOKIE_SECURE`).
   3. Run `backend\venv\Scripts\python.exe scripts\verify_sso_config.py`. Every check must PASS.
   4. Run `npm run dev` (port 3000) and the backend, then sign in as a superadmin email. You should land on the dashboard.
   5. Sign in with a second account. You should get Chat plus Access Required. Approve it in User Management, and the second account should get the dashboard without signing in again.
-- [ ] **[Lint]** Check the markdown.
+- [x] **[Lint]** Check the markdown.
 - [ ] **[Test]** The owner runs it after the work is complete (tracked as V.5.3).
 
 #### Task B2.7: PRs
@@ -673,42 +681,42 @@ Make the brand runtime-configurable (newplan §14), with safe asset handling (A0
 - [ ] **[Test]** Phase B3 complete.
 
 #### Task B3.1: Model and migration
-- [ ] **[Dev]** Add `brand_settings` (a singleton enforced by a `CHECK (id = 1)`) and `brand_assets` (with a `sha256` primary key). Seed from the current config values and the Exigo Tech teal palette.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Migration round-trip. The seed matches the config defaults.
+- [x] **[Dev]** Add `brand_settings` (a singleton enforced by a `CHECK (id = 1)`) and `brand_assets` (with a `sha256` primary key). Seed from the current config values and the Exigo Tech teal palette. The seed also fills in the login copy fields (`login_eyebrow`, `login_headline`, `login_subtext`, `login_description`) with DeployIQ defaults, and leaves `privacy_url`, `terms_url` and `help_url` empty. The URLs are validated as `https://` or relative only, so a `javascript:` URL is impossible.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Migration round-trip. The seed matches the config defaults.
 
 #### Task B3.2: Branding service
-- [ ] **[Dev]** Task B3.2: add `app/branding/` with palette derivation, a contrast checker and an asset sanitizer.
-- [ ] **[Lint]** Task B3.2: LINT-BE.
-- [ ] **[Test]** Task B3.2: `tests/test_branding.py` passes.
+- [x] **[Dev]** Task B3.2: add `app/branding/` with palette derivation, a contrast checker and an asset sanitizer.
+- [x] **[Lint]** Task B3.2: LINT-BE.
+- [x] **[Test]** Task B3.2: `tests/test_branding.py` passes.
 
 ##### Subtask B3.2.1: Palette derivation and WCAG check
-- [ ] **[Dev]** Pure functions derive the 50 to 950 ramp (OKLCH lightness steps) and compute contrast ratios. A palette is rejected if `brand-600` on white or `brand-400` on `dark-bg` is below 4.5:1 for text.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** `#008080` passes with the expected ramp. `#FFFF00` is rejected with a reason.
+- [x] **[Dev]** Pure functions derive the 50 to 950 ramp (OKLCH lightness steps) and compute contrast ratios. A palette is rejected if `brand-600` on white or `brand-400` on `dark-bg` is below 4.5:1 for text.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** `#008080` passes with the expected ramp. `#FFFF00` is rejected with a reason.
 
 ##### Subtask B3.2.2: Asset validation
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Sniff magic bytes, ignoring the extension. Accept PNG, WebP or SVG up to 512 KB.
   - Check dimensions for PNG and WebP.
   - SVG goes through `defusedxml` (already a dependency): an allow-list of elements and attributes, with `script`, `foreignObject`, `on*` and external `href` / `xlink:href` stripped.
   - Store content-addressed.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** An SVG with `<script>`, `onload` or `javascript:` is neutralized. A polyglot PNG/HTML is rejected on MIME. A 600 KB file gives 413.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** An SVG with `<script>`, `onload` or `javascript:` is neutralized. A polyglot PNG/HTML is rejected on MIME. A 600 KB file gives 413.
 
 #### Task B3.3: Routes
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Move `/branding` from `main.py` to `app/api/routes/branding.py`. `GET /branding` is public, with ETag and `Cache-Control: public, max-age=300`.
   - `GET /branding/assets/{sha}` serves with `immutable`, `max-age=31536000`, the correct `Content-Type`, `nosniff`, and for SVG `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'`.
   - `PUT /admin/branding` (version check gives 409, audited) and `POST /admin/branding/assets` are `branding:write` only.
   - The cache is invalidated on update.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Public GET with 304 on the ETag. A non-superadmin gets 403. A concurrent update gets 409. An audit row is written. The OpenAPI schema is checked.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Public GET with 304 on the ETag. A non-superadmin gets 403. A concurrent update gets 409. An audit row is written. The OpenAPI schema is checked.
 
 #### Task B3.4: Phase B3 integration testing
-- [ ] **[Dev]** Create `tests/test_branding_integration.py`: upload a logo, update the palette, `GET /branding` reflects the change with a new ETag, and the asset URL serves safe headers.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** Create `tests/test_branding_integration.py`: upload a logo, update the palette, `GET /branding` reflects the change with a new ETag, and the asset URL serves safe headers.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass.
 
 #### Task B3.5: PR
 - **PR-08** `feat/branding-white-label-api`.
@@ -728,99 +736,99 @@ Fix every backend cause in newplan §4.1, add the endpoints in §4.5, and add th
 - [ ] **[Test]** Phase B4 complete.
 
 #### Task B4.1: Data correctness fixes
-- [ ] **[Dev]** Task B4.1: fix G3 to G7, G9 and G11 at the source.
-- [ ] **[Lint]** Task B4.1: LINT-BE.
-- [ ] **[Test]** Task B4.1: `tests/test_governance_defects.py` has one regression test per defect id.
+- [x] **[Dev]** Task B4.1: fix G3 to G7, G9 and G11 at the source.
+- [x] **[Lint]** Task B4.1: LINT-BE.
+- [x] **[Test]** Task B4.1: `tests/test_governance_defects.py` has one regression test per defect id.
 
 ##### Subtask B4.1.1: Units and nulls (G1, G2, G3)
-- [ ] **[Dev]** All latencies are returned in **ms**, with an explicit `unit` field. A null stage average returns `null` plus `sample_count: 0` instead of 0. The Overall tab uses the same total-latency field as Monitoring.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Fixtures with known values give the exact ms. A stage with no data gives null.
+- [x] **[Dev]** All latencies are returned in **ms**, with an explicit `unit` field. A null stage average returns `null` plus `sample_count: 0` instead of 0. The Overall tab uses the same total-latency field as Monitoring.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Fixtures with known values give the exact ms. A stage with no data gives null.
 
 ##### Subtask B4.1.2: Totals, status and ids (G4, G5, G9)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Traces return the real `total` (count over the filter).
   - `status` is derived from `chat_messages.outcome` and `guardrail_flags` (ok, ungrounded, blocked, failed).
   - `trace_id` is dropped from the response (it is set to `request_id` today), with a deprecation note in OpenAPI.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** 150 fixture traces give total 150. Each outcome maps to the right status.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** 150 fixture traces give total 150. Each outcome maps to the right status.
 
 ##### Subtask B4.1.3: Persisted error rate and labelled windows (G6, G7)
-- [ ] **[Dev]** The error rate comes from the DB (`outcome = llm_failed` plus 5xx audit rows), is audience-scoped, and drops the in-memory `METRICS`. Every count in the response carries `window` and `source` fields.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The error rate survives an app restart (no in-memory dependency). Audience scoping is applied.
+- [x] **[Dev]** The error rate comes from the DB (`outcome = llm_failed` plus 5xx audit rows), is audience-scoped, and drops the in-memory `METRICS`. Every count in the response carries `window` and `source` fields.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The error rate survives an app restart (no in-memory dependency). Audience scoping is applied.
 
 ##### Subtask B4.1.4: Structured log messages (G11)
-- [ ] **[Dev]** A per-action `summarize(action, detail) -> str` registry. `service` is derived from an action category map (auth, query, ingest, feedback, admin, system). The raw `detail` is returned as an object, not a JSON string.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** One summary test per action. An unknown action falls back safely.
+- [x] **[Dev]** A per-action `summarize(action, detail) -> str` registry. `service` is derived from an action category map (auth, query, ingest, feedback, admin, system). The raw `detail` is returned as an object, not a JSON string.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** One summary test per action. An unknown action falls back safely.
 
 ---
 
 #### Task B4.2: Endpoints (newplan §4.5)
-- [ ] **[Dev]** Task B4.2: implement the endpoints, all `async`, guarded with `dashboard:read`, with `gather_scoped` for multi-query responses.
-- [ ] **[Lint]** Task B4.2: LINT-BE.
-- [ ] **[Test]** Task B4.2: `tests/test_governance_endpoints.py` passes.
+- [x] **[Dev]** Task B4.2: implement the endpoints, all `async`, guarded with `dashboard:read`, with `gather_scoped` for multi-query responses.
+- [x] **[Lint]** Task B4.2: LINT-BE.
+- [x] **[Test]** Task B4.2: `tests/test_governance_endpoints.py` passes.
 
 ##### Subtask B4.2.1: `GET /governance/logs`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Keyset cursor on `(created_at, id)` plus `limit` (max 200).
   - Filters for `level`, `service`, `q` (LIKE-escaped, on the summary and action), `from` and `to`.
   - `level_counts` for the chips. A true `total`, or `total_estimate` above 100k rows.
   - Streaming `GET /governance/logs/export.csv` with formula neutralization.
   - A composite index migration.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The cursor walks 1,000 rows with no duplicates or gaps. An injection string in `q` is inert. CSV cells starting `=`, `+`, `-` or `@` are prefixed.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The cursor walks 1,000 rows with no duplicates or gaps. An injection string in `q` is inert. CSV cells starting `=`, `+`, `-` or `@` are prefixed.
 
 ##### Subtask B4.2.2: `GET /governance/traces` and `/{request_id}`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - The list has `status`, `outcome`, latency buckets, tokens, cost and the slowest stage.
   - The detail has stage timings (for the waterfall), sources with scores, flags and `conversation_id`.
   - Object-level guard on the detail.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The detail matches the fixture. An unknown id gives 404. The audience filter applies.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The detail matches the fixture. An unknown id gives 404. The audience filter applies.
 
 ##### Subtask B4.2.3: `GET /governance/monitoring` extension
-- [ ] **[Dev]** p50, p95 and p99 per stage (`percentile_cont`), 24 hourly buckets for latency, requests and errors, the Azure quota series, CPU and RAM, a guardrail flag breakdown, the outcome mix and online quality KPIs.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Percentiles over a known distribution are exact. All 24 buckets are present, including empty ones (zero-filled).
+- [x] **[Dev]** p50, p95 and p99 per stage (`percentile_cont`), 24 hourly buckets for latency, requests and errors, the Azure quota series, CPU and RAM, a guardrail flag breakdown, the outcome mix and online quality KPIs.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Percentiles over a known distribution are exact. All 24 buckets are present, including empty ones (zero-filled).
 
 ##### Subtask B4.2.4: `GET /governance/overview`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Health status (Healthy, Degraded or Incident), with thresholds from config.
   - KPIs with 24-hour sparklines, and recent incidents (CRITICAL and ALERT).
   - One call, computed with `gather_scoped` and wrapped in `cached_response`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Threshold boundary tests for each status. The response uses at most N queries (asserted through a SQLAlchemy event counter).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Threshold boundary tests for each status. The response uses at most N queries (asserted through a SQLAlchemy event counter).
 
 ##### Subtask B4.2.5: `GET /governance/stream` (SSE)
-- [ ] **[Dev]** Pushes health-status changes, new incidents and monitoring deltas every 5 s. One shared producer per worker fans out to subscribers (no per-client DB polling). Writers `NOTIFY` through the B1.4.3 event bus, so every replica receives events.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** With 50 subscribers, the DB query rate stays constant. A new incident reaches every subscriber.
+- [x] **[Dev]** Pushes health-status changes, new incidents and monitoring deltas every 5 s. One shared producer per worker fans out to subscribers (no per-client DB polling). Writers `NOTIFY` through the B1.4.3 event bus, so every replica receives events.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** With 50 subscribers, the DB query rate stays constant. A new incident reaches every subscriber.
 
 ---
 
 #### Task B4.3: Missing log sources (A09)
-- [ ] **[Dev]** Task B4.3: add insert-only audit events (the immutability trigger is respected).
-- [ ] **[Lint]** Task B4.3: LINT-BE.
-- [ ] **[Test]** Task B4.3: `tests/test_audit_sources.py` passes.
+- [x] **[Dev]** Task B4.3: add insert-only audit events (the immutability trigger is respected).
+- [x] **[Lint]** Task B4.3: LINT-BE.
+- [x] **[Test]** Task B4.3: `tests/test_audit_sources.py` passes.
 
 ##### Subtask B4.3.1: Request-level events
-- [ ] **[Dev]** Add `rate_limited` (429) in `rate_limit.py`, `server_error` (5xx) from the exception handler (B1.2.1), and `llm_call_failed` and retries as discrete rows. Use batched inserts through the supervised spawner so the request path is not blocked.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Each trigger writes exactly one row. `detail` passes the PII scan (`pii.py`).
+- [x] **[Dev]** Add `rate_limited` (429) in `rate_limit.py`, `server_error` (5xx) from the exception handler (B1.2.1), and `llm_call_failed` and retries as discrete rows. Use batched inserts through the supervised spawner so the request path is not blocked.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Each trigger writes exactly one row. `detail` passes the PII scan (`pii.py`).
 
 ##### Subtask B4.3.2: Lifecycle and admin events
-- [ ] **[Dev]** Session create, rotate and expire, document edit, audience and test-IP changes (where missing), branding and taxonomy changes, and the auth events from B2.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Assert the event per action. An update or delete on `audit_log` still raises (trigger regression).
+- [x] **[Dev]** Session create, rotate and expire, document edit, audience and test-IP changes (where missing), branding and taxonomy changes, and the auth events from B2.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Assert the event per action. An update or delete on `audit_log` still raises (trigger regression).
 
 ---
 
 #### Task B4.4: Phase B4 integration testing
-- [ ] **[Dev]** Create `tests/test_governance_integration.py`: seed 2k logs and 500 traces, then walk the cursor pagination, filters, overview, trace detail, export and SSE. Check the G1 to G13 regression ids.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass. `EXPLAIN` shows an index scan for the logs filters (assert the plan in the test, or record it in the PR).
+- [x] **[Dev]** Create `tests/test_governance_integration.py`: seed 2k logs and 500 traces, then walk the cursor pagination, filters, overview, trace detail, export and SSE. Check the G1 to G13 regression ids.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass. `EXPLAIN` shows an index scan for the logs filters (assert the plan in the test, or record it in the PR).
 
 #### Task B4.5: PRs
 - **PR-09** `fix/governance-data-correctness`: B4.1 and B4.3.
@@ -841,61 +849,61 @@ Fix F1 to F9 (newplan §5.3), build the durable triage loop with promotion, pref
 - [ ] **[Test]** Phase B5 complete.
 
 #### Task B5.1: Migration
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Extend `message_feedback` with `reason_tags` (JSONB), `corrected_answer`, `triage_status` (enum), `reviewed_by`, `reviewed_at`, `review_note`, `promoted_case_id` and `version`. Index `(triage_status, created_at)`.
   - Create the `eval_promoted_cases` table. A data step imports the existing `data/promoted_test_cases.json` idempotently.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Round-trip. The import is idempotent (running it twice gives no duplicates). `dataset_extra.py` reads from the DB, with the JSON as a fallback.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Round-trip. The import is idempotent (running it twice gives no duplicates). `dataset_extra.py` reads from the DB, with the JSON as a fallback.
 
 #### Task B5.2: Feedback domain (`app/feedback/`: repository and service)
-- [ ] **[Dev]** Task B5.2: add the triage state machine, promotion, bulk actions, export and analytics.
-- [ ] **[Lint]** Task B5.2: LINT-BE.
-- [ ] **[Test]** Task B5.2: `tests/test_feedback_loop.py` passes.
+- [x] **[Dev]** Task B5.2: add the triage state machine, promotion, bulk actions, export and analytics.
+- [x] **[Lint]** Task B5.2: LINT-BE.
+- [x] **[Test]** Task B5.2: `tests/test_feedback_loop.py` passes.
 
 ##### Subtask B5.2.1: Triage state machine
-- [ ] **[Dev]** Transitions: new to reviewed, promoted or dismissed; reviewed to promoted or dismissed; dismissed to new (reopen). Optimistic `version` check. Each transition is audited.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** An invalid transition gives 409. Two concurrent updates: one wins and the other gets 409.
+- [x] **[Dev]** Transitions: new to reviewed, promoted or dismissed; reviewed to promoted or dismissed; dismissed to new (reopen). Optimistic `version` check. Each transition is audited.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** An invalid transition gives 409. Two concurrent updates: one wins and the other gets 409.
 
 ##### Subtask B5.2.2: Chat-side upsert
-- [ ] **[Dev]** `POST /feedback` upserts on `(message_id, actor)` with `reason_tags` (Enum allow-list) and an optional `corrected_answer` (max 4,000 characters, PII-masked before storage). `actor` is the authenticated email (B2).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A second submission updates the row and does not insert a new one. An unknown tag gives 422. PII is masked.
+- [x] **[Dev]** `POST /feedback` upserts on `(message_id, actor)` with `reason_tags` (Enum allow-list) and an optional `corrected_answer` (max 4,000 characters, PII-masked before storage). `actor` is the authenticated email (B2).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A second submission updates the row and does not insert a new one. An unknown tag gives 422. PII is masked.
 
 ##### Subtask B5.2.3: Enriched list (F1, F9)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `GET /feedback` joins the user query, answer, outcome, grounded, flags, sources, latency, cost, actor, triage status and promoted id in **one** query (no N+1).
   - Filters: triage status, outcome, grounded, has-comment and date range. Keyset pagination.
   - `?message_id=` for deep-links.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A query-count assertion stays at or below 2 for 50 rows. Each filter is tested.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A query-count assertion stays at or below 2 for 50 rows. Each filter is tested.
 
 ##### Subtask B5.2.4: Analytics (F2, F3, F8)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Daily trend, rating distribution, by outcome, by intent (when B6 exists, otherwise omitted), top reasons, and the triage funnel.
   - **Disagreement** quadrant data and knowledge-gap candidates (low rating with low retrieval confidence).
   - An unfiltered `total` (F3).
   - Uses `gather_scoped` and `cached_response`.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The fixture gives exact counts. The total does not change when list filters are applied.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The fixture gives exact counts. The total does not change when list filters are applied.
 
 ##### Subtask B5.2.5: Bulk actions, promotion and export
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `POST /feedback/bulk` (reviewed, dismissed or promoted, max 200 ids, one transaction).
   - `POST /feedback/{id}/promote-to-test` writes to the DB table (F4, F5).
   - `GET /feedback/export?format=jsonl` streams preference pairs (prompt, chosen, rejected, rating, tags, source ids) and flags incomplete pairs.
   - `POST /feedback/golden/{id}/run` enqueues an eval job (B1.3).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Bulk is all-or-nothing.
   - The export streams with flat memory: 10k pairs keep RSS growth under 20 MB.
   - The run job is queued once (dedupe).
   - RBAC: an operator gets 403 on triage and export.
 
 #### Task B5.3: Phase B5 integration testing
-- [ ] **[Dev]** Create `tests/test_feedback_integration.py`: chat thumbs-down with reasons and a corrected answer, the row appears in the queue with the full context, it is triaged and promoted, it is visible in golden cases, the JSONL export contains it as a pair, and the analytics update.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** Create `tests/test_feedback_integration.py`: chat thumbs-down with reasons and a corrected answer, the row appears in the queue with the full context, it is triaged and promoted, it is visible in golden cases, the JSONL export contains it as a pair, and the analytics update.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass.
 
 #### Task B5.4: PR
 - **PR-11** `feat/feedback-rlhf-loop-api`.
@@ -915,75 +923,75 @@ Produce the labels and server-side aggregations the Analytics port needs (newpla
 - [ ] **[Test]** Phase B6 complete.
 
 #### Task B6.1: Migration
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Create `insight_taxonomy`, seeded with the DeployIQ list from newplan §6.3 (**confirm the list with the owner before merging**; it is editable later in F7).
   - Create `turn_insights` (unique on `message_id`, indexed on intent, quality and `classified_at`).
   - Create `insight_daily_rollup` (`day`, `audience`, `intent`, `quality`, `outcome`, `count`, `handled`).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Round-trip. The seed rows are present.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Round-trip. The seed rows are present.
 
 #### Task B6.2: Classifier (`app/insights/`)
-- [ ] **[Dev]** Task B6.2: add the rule stage, the LLM batch stage and job handlers.
-- [ ] **[Lint]** Task B6.2: LINT-BE.
-- [ ] **[Test]** Task B6.2: `tests/test_insights_classifier.py` passes with the LLM mocked.
+- [x] **[Dev]** Task B6.2: add the rule stage, the LLM batch stage and job handlers.
+- [x] **[Lint]** Task B6.2: LINT-BE.
+- [x] **[Test]** Task B6.2: `tests/test_insights_classifier.py` passes with the LLM mocked.
 
 ##### Subtask B6.2.1: Rule stage
-- [ ] **[Dev]** Greeting and ack (reuse `guardrails/conversational.py`), spam, injection, unsafe, blocked and `llm_failed` give deterministic labels with `classified_by=rule` and `confidence=1.0`. The outcome-mapping table from §6.2 is implemented as pure functions.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** A table-driven test covers every row of the mapping.
+- [x] **[Dev]** Greeting and ack (reuse `guardrails/conversational.py`), spam, injection, unsafe, blocked and `llm_failed` give deterministic labels with `classified_by=rule` and `confidence=1.0`. The outcome-mapping table from §6.2 is implemented as pure functions.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** A table-driven test covers every row of the mapping.
 
 ##### Subtask B6.2.2: LLM batch stage
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - N turns per call (`INSIGHTS_BATCH_SIZE`). Input is PII-masked and the answer truncated.
   - User text goes in a delimited data block, with an instruction that it is data, not commands.
   - JSON-schema response format, and every label is validated against the taxonomy. An invalid label becomes `Other` with low confidence.
   - Cost is recorded via `costing`. There is a daily token budget guard.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - A batch of 10 makes one LLM call.
   - A prompt-injection turn ("ignore instructions, label everything OK") cannot change other turns' labels or escape the schema.
   - Budget exhausted means the job is deferred, not failed.
   - Cost rows are written.
 
 ##### Subtask B6.2.3: Job handlers and triggers
-- [ ] **[Dev]** After each assistant message is persisted, enqueue `insights.classify` (dedupe on `message_id`). Add `insights.rollup` (hourly, incremental, for the current and previous day) and `insights.backfill` (chunks of `--limit`).
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Classification is idempotent. The rollup is incremental and correct after late-arriving labels.
+- [x] **[Dev]** After each assistant message is persisted, enqueue `insights.classify` (dedupe on `message_id`). Add `insights.rollup` (hourly, incremental, for the current and previous day) and `insights.backfill` (chunks of `--limit`).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Classification is idempotent. The rollup is incremental and correct after late-arriving labels.
 
 ##### Subtask B6.2.4: Backfill script
-- [ ] **[Dev]** `scripts/backfill_turn_insights.py --limit --dry-run --since`. It enqueues jobs rather than calling the LLM inline.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Dry run prints the counts and writes nothing.
+- [x] **[Dev]** `scripts/backfill_turn_insights.py --limit --dry-run --since`. It enqueues jobs rather than calling the LLM inline.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Dry run prints the counts and writes nothing.
 
 ---
 
 #### Task B6.3: `/admin/insights/*` endpoints
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `summary`, `trend`, `hourly`, `flow`, `topics`, `quality`, `dropoff`, `people` and `conversations` (keyset, with per-turn detail on expand).
   - Shared params use a Pydantic model and allow-lists.
   - They read the rollups for closed days, plus live data for today.
   - Conversation-level fields are computed at query time (§6.3).
   - Also return `pending_classification` and a `taxonomy` CRUD (`taxonomy:write`) for F7.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - `tests/test_insights_endpoints.py`: each endpoint against the **49-conversation fixture** that mirrors the HTML gives the expected numbers.
   - Audience scoping applies.
   - Taxonomy edits are audited, and renaming does not break existing labels (stable codes).
 
 #### Task B6.4: Phase B6 integration testing and HTML parity
-- [ ] **[Dev]** Task B6.4: real-data integration test and parity with `ExigoTech_Chatbot_Insights_standalone.html` (newplan §6.4).
-- [ ] **[Lint]** Task B6.4: LINT-BE.
-- [ ] **[Test]** Task B6.4: both suites pass.
+- [x] **[Dev]** Task B6.4: real-data integration test and parity with `ExigoTech_Chatbot_Insights_standalone.html` (newplan §6.4).
+- [x] **[Lint]** Task B6.4: LINT-BE.
+- [x] **[Test]** Task B6.4: both suites pass.
 
 ##### Subtask B6.4.1: Parity fixture loader
-- [ ] **[Dev]** `scripts/extract_insights_fixture.py` reads the root HTML, takes the `window.__EMBED__` conversations and exchanges, and writes `backend/tests/fixtures/insights_reference.json` (49 conversations and 117 exchanges, names already masked). A pytest fixture loads it into `chat_sessions`, `chat_messages` and `turn_insights`, using the HTML's own codes and labels.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** The loader is idempotent, and the row counts are 49 sessions and 117 user turns.
+- [x] **[Dev]** `scripts/extract_insights_fixture.py` reads the root HTML, takes the `window.__EMBED__` conversations and exchanges, and writes `backend/tests/fixtures/insights_reference.json` (49 conversations and 117 exchanges, names already masked). A pytest fixture loads it into `chat_sessions`, `chat_messages` and `turn_insights`, using the HTML's own codes and labels.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** The loader is idempotent, and the row counts are 49 sessions and 117 user turns.
 
 ##### Subtask B6.4.2: `tests/test_insights_parity.py`
-- [ ] **[Dev]** Assert that the endpoints reproduce the HTML's renderer formulas (`metrics()`, `flow()`, `treemap()`, `donut()`, `lollipop()`, `bubble()`, `trend()`, `radial()`) on the fixture.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]**
+- [x] **[Dev]** Assert that the endpoints reproduce the HTML's renderer formulas (`metrics()`, `flow()`, `treemap()`, `donut()`, `lollipop()`, `bubble()`, `trend()`, `radial()`) on the fixture.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]**
   - Outcome counts: Served 11, Partly served 14, Not served 22, Greeting only 2.
   - Handled exchanges: 62 out of 117.
   - Top drop issue: "No live job openings", 13 conversations.
@@ -993,9 +1001,9 @@ Produce the labels and server-side aggregations the Analytics port needs (newpla
   - Filter semantics match `passConv()`: the intent and quality filters keep a conversation if any turn matches.
 
 ##### Subtask B6.4.3: Live-data integration
-- [ ] **[Dev]** Create `tests/test_insights_integration.py`: seed conversations through the real `/query` pipeline (LLM mocked), run the worker (classifier mocked), roll up, query every endpoint, edit the taxonomy, and re-check.
-- [ ] **[Lint]** Run LINT-BE.
-- [ ] **[Test]** Pass. The summary on 100k turns returns in under 600 ms p95 locally (recorded).
+- [x] **[Dev]** Create `tests/test_insights_integration.py`: seed conversations through the real `/query` pipeline (LLM mocked), run the worker (classifier mocked), roll up, query every endpoint, edit the taxonomy, and re-check.
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** Pass. The summary on 100k turns returns in under 600 ms p95 locally (recorded).
 
 #### Task B6.5: PRs
 - **PR-12** `feat/insights-taxonomy-classifier`: B6.1 and B6.2.
@@ -1075,6 +1083,7 @@ Supply the backend data for every new chart in newplan §15.4 and the deep-link 
 - **Charts:** use `chartTheme` tokens. Hovering one series dims the others to 35 %. Each chart has a "View as table" fallback and works in light and dark.
 - **Motion:** use presets only, under 300 ms, with `reducedMotion="user"` and no per-row animation above 50 rows.
 - **Acceptance:** screenshots in light and dark at 1366 px and 1920 px, and keyboard-only navigation, for every touched page.
+- **Theme parity (newplan §15.2a):** every component a PR adds or touches must switch light to dark and back instantly, use only tokens, match the logo's teal palette in both themes, and pass AA contrast. The PR adds its rows to `frontend/docs/theme-audit.md`.
 
 ---
 
@@ -1088,122 +1097,138 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
 - [ ] **[Test]** Phase F0 complete: TEST-FE passes.
 
 #### Task F0.1: Tooling and security config
-- [ ] **[Dev]** Task F0.1: pin the port, add the Next security headers and tidy the scripts.
-- [ ] **[Lint]** Task F0.1: LINT-FE.
-- [ ] **[Test]** Task F0.1: `tests/lib/next-config.test.ts` passes.
+- [x] **[Dev]** Task F0.1: pin the port, add the Next security headers and tidy the scripts.
+- [x] **[Lint]** Task F0.1: LINT-FE.
+- [x] **[Test]** Task F0.1: `tests/lib/next-config.test.ts` passes.
 
 ##### Subtask F0.1.1: Port 3000 pin
-- [ ] **[Dev]** `"dev": "next dev --turbo -p 3000"`, `"dev:webpack": "next dev -p 3000"`, `"start": "next start -p 3000"`. Add `APP_BASE_URL` to `.env.local.example`.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** `"dev": "next dev --turbo -p 3000"`, `"dev:webpack": "next dev -p 3000"`, `"start": "next start -p 3000"`. Add `APP_BASE_URL` to `.env.local.example`.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** `npm run dev` serves on 3000 (manual). The `fullstack-smoke` job uses 3000.
 
 ##### Subtask F0.1.2: Security headers and CSP (A02, A05)
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `next.config.js`: `poweredByHeader: false`, and a `headers()` block with `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options: DENY`, `COOP` and HSTS in production.
   - A nonce-based CSP is set in `middleware.ts` (F1.1): `script-src 'self' 'nonce-…' 'strict-dynamic'`, `img-src 'self' data: blob:`, `connect-src 'self'` and `frame-ancestors 'none'`.
   - `optimizePackageImports: ['lucide-react','recharts']`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A config test asserts the `headers()` output, and a middleware unit test asserts that the CSP has a fresh nonce per request. `smoke_e2e.py` asserts the headers on a real `next start` response. A manual check in the browser console for CSP violations is noted in the PR.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A config test asserts the `headers()` output, and a middleware unit test asserts that the CSP has a fresh nonce per request. `smoke_e2e.py` asserts the headers on a real `next start` response. A manual check in the browser console for CSP violations is noted in the PR.
 
 ---
 
 #### Task F0.2: Motion layer (newplan §8, §15.3)
-- [ ] **[Dev]** Task F0.2: install `motion` (exact pin) and add `lib/motion.ts` and `MotionProvider`.
-- [ ] **[Lint]** Task F0.2: LINT-FE.
-- [ ] **[Test]** Task F0.2: `tests/lib/motion.test.tsx` passes.
+- [x] **[Dev]** Task F0.2: install `motion` (exact pin) and add `lib/motion.ts` and `MotionProvider`.
+- [x] **[Lint]** Task F0.2: LINT-FE.
+- [x] **[Test]** Task F0.2: `tests/lib/motion.test.tsx` passes.
 
 ##### Subtask F0.2.1: Install and provider
-- [ ] **[Dev]** `npm i motion@<exact>`. `MotionProvider` wraps `LazyMotion features={domAnimation} strict` and `MotionConfig reducedMotion="user"` in `app/layout.tsx`. Only `m.*` components are used.
-- [ ] **[Lint]** Run LINT-FE. ESLint `no-restricted-imports` blocks `motion` `motion.*` in favour of `m.*`.
-- [ ] **[Test]** With reduced motion emulated, the variants resolve to no transform.
+- [x] **[Dev]** `npm i motion@<exact>`. `MotionProvider` wraps `LazyMotion features={domAnimation} strict` and `MotionConfig reducedMotion="user"` in `app/layout.tsx`. Only `m.*` components are used.
+- [x] **[Lint]** Run LINT-FE. ESLint `no-restricted-imports` blocks `motion` `motion.*` in favour of `m.*`.
+- [x] **[Test]** With reduced motion emulated, the variants resolve to no transform.
 
 ##### Subtask F0.2.2: Presets
-- [ ] **[Dev]** `lib/motion.ts`: durations (120, 200 and 320 ms), `spring`, `ease`, and `fadeUp`, `stagger`, `drawer`, `toast`, `pop`, `countUp`, `cardHover` and `crossfade`.
-- [ ] **[Lint]** Run LINT-FE. No hard-coded durations remain outside `lib/motion.ts` (grep check in the test).
-- [ ] **[Test]** Preset unit tests.
+- [x] **[Dev]** `lib/motion.ts`: durations (120, 200 and 320 ms), `spring`, `ease`, and `fadeUp`, `stagger`, `drawer`, `toast`, `pop`, `countUp`, `cardHover` and `crossfade`.
+- [x] **[Lint]** Run LINT-FE. No hard-coded durations remain outside `lib/motion.ts` (grep check in the test).
+- [x] **[Test]** Preset unit tests.
 
 ---
 
 #### Task F0.3: Theme tokens, `BrandProvider` and `BrandLogo` (white-label, logo fix)
-- [ ] **[Dev]** Task F0.3: add CSS variables, the Tailwind var mapping, the runtime brand and the logo fixes (newplan §1.7 to §1.10, §14).
-- [ ] **[Lint]** Task F0.3: LINT-FE.
+- [x] **[Dev]** Task F0.3: add CSS variables, the Tailwind var mapping, the runtime brand and the logo fixes (newplan §1.7 to §1.10, §14).
+- [x] **[Lint]** Task F0.3: LINT-FE.
 - [ ] **[Test]** Task F0.3: `tests/components/BrandProvider.test.tsx` and `BrandLogo.test.tsx` pass.
 
 ##### Subtask F0.3.1: `lib/theme-tokens.ts` and CSS variables
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `:root` and `.dark` variables for the brand ramp, surfaces, borders, status colors (ok, warn #B7791F, danger #C0362C, info), and `chartTheme` (categorical, sequential and diverging).
   - `tailwind.config.ts` brand colors become `rgb(var(--brand-600) / <alpha-value>)`.
-- [ ] **[Lint]** Run LINT-FE. A grep test fails on new inline hex colors in `app/` and `components/`.
-- [ ] **[Test]** Snapshot tests of the token values for light and dark.
+- [x] **[Lint]** Run LINT-FE. A grep test fails on new inline hex colors in `app/` and `components/`.
+- [x] **[Test]** Snapshot tests of the token values for light and dark.
 
 ##### Subtask F0.3.2: Hard-coded colour audit (newplan §1.6)
-- [ ] **[Dev]** Replace `#f4fbfb`, `slate-*` and `gray-*` used for brand surfaces with tokens. Fix the un-themed `text-gray-900` in `conversations/[id]`.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** Replace `#f4fbfb`, `slate-*` and `gray-*` used for brand surfaces with tokens. Fix the un-themed `text-gray-900` in `conversations/[id]`.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Visual check in light and dark (screenshots in the PR).
 
 ##### Subtask F0.3.3: `BrandProvider`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - The server layout fetches `/branding` (revalidate 300). `generateMetadata` sets the title and favicon from the brand, so "DeployIQ" is no longer hard-coded in `app/layout.tsx`.
   - The provider writes the `--brand-*` variables and exposes `useBrand()`.
   - Chat sample questions come from the brand.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A mocked brand changes the CSS variables and the title. On a fetch failure the seeded defaults are used.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A mocked brand changes the CSS variables and the title. On a fetch failure the seeded defaults are used.
 
 ##### Subtask F0.3.4: Logo re-crop and dark variants
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Measure the artwork bbox, then re-crop the `exigotech-logo.svg` viewBox.
   - Create `exigotech-logo-dark.svg` and `exigotech-mark-dark.svg` (white wordmark, `brand-400` teal).
   - `BrandLogo variant="full|mark"` swaps light and dark with a `dark:hidden` / `hidden dark:block` pair, sized `h-10 w-auto max-w-[200px]` inside an `h-16` header.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]**
   - Vitest asserts that the re-cropped SVG viewBox aspect ratio is within 5 % of the tight PNG (about 4.06), so the artwork fills the box.
   - `BrandLogo` renders the right source per theme with the size classes.
   - A unit test proves that the dark variant contrast against `dark-bg` is at least 3:1.
   - A manual screenshot shows the logo at least 160 px wide in the expanded sidebar.
 
+##### Subtask F0.3.5: Light and dark theme parity audit and fix (newplan §15.2a, T1 to T6)
+- [x] **[Dev]**
+  - **Inventory.** Write `frontend/docs/theme-audit.md` listing every page and every shared component, with a light result, a dark result and a toggle result for each.
+  - **Fixes:**
+    - T1: add a `useChartTheme()` hook and move all 50 chart hex values onto it.
+    - T2: replace the un-themed `bg-white` and `text-gray-*` with tokens.
+    - T3: add a pre-paint theme script (with a CSP nonce).
+    - T4: add the System mode and cross-tab sync.
+    - T6: add dark status tokens.
+  - **Guard.** Add an ESLint `no-restricted-syntax` rule (or a vitest grep) that fails on new hex colours or `bg-white`/`text-gray-*` without `dark:` outside `lib/theme-tokens.ts`.
+- [x] **[Lint]** Run LINT-FE. The guard runs in CI and is clean.
+- [ ] **[Test]**
+  - `tests/lib/theme.test.tsx`: the toggle flips the `dark` class, re-renders chart colours through `useChartTheme`, syncs through the storage event, and System mode follows `matchMedia`.
+  - A contrast unit test checks every text and status token pair in both themes (AA).
+  - Light and dark screenshots of every page are attached to the PR, and each row of the audit table is ticked.
+
 ---
 
 #### Task F0.4: Chart kit (`components/charts/`)
-- [ ] **[Dev]** Task F0.4: consolidate `ChartCard` and build the catalogue components (newplan §15.4).
-- [ ] **[Lint]** Task F0.4: LINT-FE.
-- [ ] **[Test]** Task F0.4: `tests/components/charts/*.test.tsx` passes.
+- [x] **[Dev]** Task F0.4: consolidate `ChartCard` and build the catalogue components (newplan §15.4).
+- [x] **[Lint]** Task F0.4: LINT-FE.
+- [x] **[Test]** Task F0.4: `tests/components/charts/*.test.tsx` passes.
 
 ##### Subtask F0.4.1: `ChartCard` consolidation
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - One `ChartCard` (title, subtitle with window, actions slot, "View as table" toggle, and skeleton, empty and error states).
   - Replace the local copies in `MonitoringView.tsx:71`, `evaluation/page.tsx:107` and `evaluation-live/page.tsx:124`, and `AuroraChartCard`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** States render. The table toggle is accessible.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** States render. The table toggle is accessible.
 
 ##### Subtask F0.4.2: Catalogue components
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `Sparkline`, `KpiTrendCard`, `StackedArea`, `PercentileBand`, `Waterfall`, `CalendarHeatmap`, `RadialGauge`, `BulletChart`, `Funnel`, `QuadrantScatter`, `Histogram` and `Radar`.
   - All take typed data plus `onSelect(datum)` for drill-down, and read `chartTheme`.
   - Heavy charts (Sankey, Treemap) are loaded via `next/dynamic`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Each renders with fixture data, an empty array and a single point. `onSelect` fires on click and on Enter (keyboard).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Each renders with fixture data, an empty array and a single point. `onSelect` fires on click and on Enter (keyboard).
 
 ---
 
 #### Task F0.5: Data layer with cache, dedupe, prefetch and parallel fetch (newplan §13.3)
 - [ ] **[Dev]** Task F0.5: add `lib/query-cache.ts`, `useApiQuery`, `prefetch`, `useApiMutation` (optimistic updates) and type sync.
-- [ ] **[Lint]** Task F0.5: LINT-FE.
-- [ ] **[Test]** Task F0.5: `tests/lib/query-cache.test.ts` passes.
+- [x] **[Lint]** Task F0.5: LINT-FE.
+- [x] **[Test]** Task F0.5: `tests/lib/query-cache.test.ts` passes.
 
 ##### Subtask F0.5.1: Cache and dedupe
-- [ ] **[Dev]** A key-to-promise map dedupes in-flight requests. Stale-while-revalidate uses `staleTime`. `AbortController` fires on unmount or key change. Data revalidates on focus. `invalidate(prefix)` is provided.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** 5 simultaneous hooks with the same key make 1 fetch. A key change aborts the previous request. A stale entry returns immediately, then refreshes.
+- [x] **[Dev]** A key-to-promise map dedupes in-flight requests. Stale-while-revalidate uses `staleTime`. `AbortController` fires on unmount or key change. Data revalidates on focus. `invalidate(prefix)` is provided.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** 5 simultaneous hooks with the same key make 1 fetch. A key change aborts the previous request. A stale entry returns immediately, then refreshes.
 
 ##### Subtask F0.5.2: Prefetch
-- [ ] **[Dev]** `usePrefetchOnIntent(key, fetcher)` fires on hover or focus after a 120 ms delay, and cancels on leave. `prefetchNextPage` runs in `requestIdleCallback`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A quick hover-out does not fetch. A dwell fetches once.
+- [x] **[Dev]** `usePrefetchOnIntent(key, fetcher)` fires on hover or focus after a 120 ms delay, and cancels on leave. `prefetchNextPage` runs in `requestIdleCallback`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A quick hover-out does not fetch. A dwell fetches once.
 
 ##### Subtask F0.5.3: Optimistic mutation and undo
-- [ ] **[Dev]** `useApiMutation({ optimistic, rollback })` integrates with the toast undo (F0.6). A 409 conflict triggers a refetch and a "changed by someone else" toast.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** On failure the update rolls back. Undo restores the previous state.
+- [x] **[Dev]** `useApiMutation({ optimistic, rollback })` integrates with the toast undo (F0.6). A 409 conflict triggers a refetch and a "changed by someone else" toast.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** On failure the update rolls back. Undo restores the previous state.
 
 ##### Subtask F0.5.4: Types and API client
 - [ ] **[Dev]** Update `lib/types.ts` and `lib/api.ts` for every B2 to B7 endpoint. A test diffs the types against `backend/tests/snapshots/openapi.json`.
@@ -1213,50 +1238,50 @@ Build every shared primitive the feature pages need, so F1 to F7 only compose th
 ---
 
 #### Task F0.6: Global UX primitives (newplan §15.1)
-- [ ] **[Dev]** Task F0.6: build the shared interaction components.
-- [ ] **[Lint]** Task F0.6: LINT-FE.
-- [ ] **[Test]** Task F0.6: one component test file each passes.
+- [x] **[Dev]** Task F0.6: build the shared interaction components.
+- [x] **[Lint]** Task F0.6: LINT-FE.
+- [x] **[Test]** Task F0.6: one component test file each passes.
 
 ##### Subtask F0.6.1: `EntityLink`, `useDeepLink` and `DrawerShell`
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `EntityLink` has typed kinds (visitor, session, conversation, turn, trace, feedback, document, chunk, analytics), maps each to the §1 paths, and includes a copy-id button.
   - `useDeepLink` reads and writes URL params with `router.replace` and `scroll: false`.
   - `DrawerShell` provides Motion slide, backdrop, a focus trap, Esc to close, previous and next navigation, and an "Open full view" link.
   - Consolidate the two `QueryInspectorDrawer`s onto `DrawerShell`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Each kind gives the right href. Back and forward restore the state. Focus is trapped and then returned.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Each kind gives the right href. Back and forward restore the state. Focus is trapped and then returned.
 
 ##### Subtask F0.6.2: Toasts, `ConfirmDialog` and state components
-- [ ] **[Dev]** `ToastProvider` (`role="status"`, undo, pause on hover), `ConfirmDialog` (typed confirmation for destructive superadmin actions), `EmptyState`, `ErrorState` and `Skeleton`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Screen-reader announcements work. Typed confirmation blocks a mismatch.
+- [x] **[Dev]** `ToastProvider` (`role="status"`, undo, pause on hover), `ConfirmDialog` (typed confirmation for destructive superadmin actions), `EmptyState`, `ErrorState` and `Skeleton`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Screen-reader announcements work. Typed confirmation blocks a mismatch.
 
 ##### Subtask F0.6.3: `DateRangePicker` and `RangeProvider`
-- [ ] **[Dev]** Presets 24h, 7d, 30d and 90d, plus a custom range synced to `?from=&to=`. Placed in `DashboardHeader` next to the audience tabs.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The URL round-trips. Invalid ranges are clamped.
+- [x] **[Dev]** Presets 24h, 7d, 30d and 90d, plus a custom range synced to `?from=&to=`. Placed in `DashboardHeader` next to the audience tabs.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The URL round-trips. Invalid ranges are clamped.
 
 ##### Subtask F0.6.4: Command palette and shortcuts sheet
-- [ ] **[Dev]** `Ctrl/Cmd+K` opens the palette (pages plus `/admin/search` results, debounced 200 ms, arrow keys and Enter). `?` opens the shortcuts sheet. Shortcuts are disabled inside inputs.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Keyboard flow. Results are filtered by permission.
+- [x] **[Dev]** `Ctrl/Cmd+K` opens the palette (pages plus `/admin/search` results, debounced 200 ms, arrow keys and Enter). `?` opens the shortcuts sheet. Shortcuts are disabled inside inputs.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Keyboard flow. Results are filtered by permission.
 
 ##### Subtask F0.6.5: Table upgrades
-- [ ] **[Dev]** `TableToolbar` gets a column-visibility toggle, a density toggle (both kept in `localStorage`, wrapped in try/catch) and an export action. `TableCard` gets a cursor-pagination variant.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Preferences persist. The app works with storage blocked.
+- [x] **[Dev]** `TableToolbar` gets a column-visibility toggle, a density toggle (both kept in `localStorage`, wrapped in try/catch) and an export action. `TableCard` gets a cursor-pagination variant.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Preferences persist. The app works with storage blocked.
 
 ##### Subtask F0.6.6: Branded error pages and mobile sidebar
-- [ ] **[Dev]** `not-found.tsx` and `error.tsx` use `BrandLogo`. Below `md`, the sidebar becomes an off-canvas drawer with a hamburger in the header.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** `not-found.tsx` and `error.tsx` use `BrandLogo`. Below `md`, the sidebar becomes an off-canvas drawer with a hamburger in the header.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Render tests (the drawer opens and closes, focus is trapped), and a manual check at 390 px width (browser device toolbar) with no horizontal scroll, screenshot in the PR.
 
 ---
 
 #### Task F0.7: Phase F0 integration testing
-- [ ] **[Dev]** Create `tests/journeys/foundations.test.tsx` (vitest and Testing Library, `fetch` mocked). It checks: the brand loads and changes the CSS variables, `BrandLogo` swaps with the theme, the palette navigates by keyboard, a toast with undo works, and the deep-link round-trips (`useDeepLink` with a mocked router history).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass. `next build` shows the route JS delta within the §13.4 budget (recorded).
+- [x] **[Dev]** Create `tests/journeys/foundations.test.tsx` (vitest and Testing Library, `fetch` mocked). It checks: the brand loads and changes the CSS variables, `BrandLogo` swaps with the theme, the palette navigates by keyboard, a toast with undo works, and the deep-link round-trips (`useDeepLink` with a mocked router history).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass. `next build` shows the route JS delta within the §13.4 budget (recorded).
 
 #### Task F0.8: PRs
 - **PR-15** `feat/ui-foundations-motion-tokens-brand`: F0.1, F0.2 and F0.3.
@@ -1278,88 +1303,98 @@ Put the B2 security model into the UI (newplan §7.7, §7.8). The UI hides what 
 - [ ] **[Test]** Phase F1 complete.
 
 #### Task F1.1: Session plumbing
-- [ ] **[Dev]** Task F1.1: add `middleware.ts`, the callback route, proxy changes and the real `auth-context`.
-- [ ] **[Lint]** Task F1.1: LINT-FE.
-- [ ] **[Test]** Task F1.1: `tests/lib/auth-context.test.tsx` and `tests/lib/proxy.test.ts` pass.
+- [x] **[Dev]** Task F1.1: add `middleware.ts`, the callback route, proxy changes and the real `auth-context`.
+- [x] **[Lint]** Task F1.1: LINT-FE.
+- [x] **[Test]** Task F1.1: `tests/lib/auth-context.test.tsx` and `tests/lib/proxy.test.ts` pass.
 
 ##### Subtask F1.1.1: `app/auth/callback/route.ts`
-- [ ] **[Dev]** Forward `code` and `state` to `POST /auth/sso/callback`. Set the httpOnly session cookie (`SESSION_COOKIE_NAME`, SameSite=Lax, `Secure` from env, Path=/). Redirect to the `next` param only if it is same-origin (blocks open redirects).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** An external `next` URL is ignored. The cookie flags are correct.
+- [x] **[Dev]** Forward `code` and `state` to `POST /auth/sso/callback`. Set the httpOnly session cookie (`SESSION_COOKIE_NAME`, SameSite=Lax, `Secure` from env, Path=/). Redirect to the `next` param only if it is same-origin (blocks open redirects).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** An external `next` URL is ignored. The cookie flags are correct.
 
 ##### Subtask F1.1.2: Proxy forwards the session
-- [ ] **[Dev]** `app/api/proxy/[...path]/route.ts` reads the cookie and sends `X-Session`, `X-Requested-With: askdiq` and the service key. It never exposes cookies to the client. A 401 from the backend clears the cookie.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The headers are forwarded. Path traversal is still blocked (existing test kept).
+- [x] **[Dev]** `app/api/proxy/[...path]/route.ts` reads the cookie and sends `X-Session`, `X-Requested-With: askdiq` and the service key. It never exposes cookies to the client. A 401 from the backend clears the cookie.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The headers are forwarded. Path traversal is still blocked (existing test kept).
 
 ##### Subtask F1.1.3: `middleware.ts`
-- [ ] **[Dev]** With no cookie, a page request redirects to `/login?next=`. This is UX only. It also sets the CSP nonce (F0.1.2).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Redirects work. Static assets and `/login` are excluded.
+- [x] **[Dev]** With no cookie, a page request redirects to `/login?next=`. This is UX only. It also sets the CSP nonce (F0.1.2).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Redirects work. Static assets and `/login` are excluded.
 
 ##### Subtask F1.1.4: `auth-context.tsx`
-- [ ] **[Dev]** Replace the Guest stub with `GET /auth/me`, exposing `user`, `role`, `status`, `permissions` and `accessContactEmail`. The shape stays compatible (`token`, `user`, `isLoading`, `logout`). Add `usePermission(p)` and `<RequirePermission>`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Each status renders correctly. Logout calls the API, then redirects.
+- [x] **[Dev]** Replace the Guest stub with `GET /auth/me`, exposing `user`, `role`, `status`, `permissions` and `accessContactEmail`. The shape stays compatible (`token`, `user`, `isLoading`, `logout`). Add `usePermission(p)` and `<RequirePermission>`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Each status renders correctly. Logout calls the API, then redirects.
 
 ---
 
 #### Task F1.2: Auth pages
-- [ ] **[Dev]** Task F1.2: build the login, Access Required and suspended pages.
-- [ ] **[Lint]** Task F1.2: LINT-FE.
-- [ ] **[Test]** Task F1.2: component tests pass.
+- [x] **[Dev]** Task F1.2: build the login, Access Required and suspended pages.
+- [x] **[Lint]** Task F1.2: LINT-FE.
+- [x] **[Test]** Task F1.2: component tests pass.
 
 ##### Subtask F1.2.1: `/login`
-- [ ] **[Dev]** A split layout: brand gradient panel with `BrandLogo` and `login_headline`, and a card with a "Sign in with Microsoft" button (Microsoft logo, loading state). The error message comes from the `?error=` code (allow-listed messages only). Motion `fadeUp`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** An unknown error code shows a generic message, never reflecting raw input (XSS check).
+- [x] **[Dev]** Build the page to the newplan §7.7 "Login page design" spec. It follows the reference ET-HUB screenshot, but in **our logo and teal palette, not purple**:
+  - **Left panel:** teal gradient, animated hexagon outlines and rings, white `BrandLogo`, eyebrow, headline, copy and © footer.
+  - **Right panel:** "Welcome to {product}", description, the Microsoft sign-in button (hover lift, sheen, focus ring, loading spinner), the SINGLE SIGN-ON divider, the access text with an `ACCESS_CONTACT_EMAIL` mailto link, and the Privacy, Terms and Help links.
+  - **Motion:** staggered `fadeUp`, slow hexagon drift with pointer parallax, and `pop` on the error banner.
+  - **Other states:** dark mode, a single column on mobile, and reduced motion is static.
+  - **Data:** every string, URL and logo comes from `useBrand()`. The error message comes from the `?error=` code, using allow-listed messages only.
+- [x] **[Lint]** Run LINT-FE. The theme guard is clean (no hex colours, only tokens).
+- [x] **[Test]**
+  - An unknown error code shows a generic message and never reflects raw input (XSS check).
+  - The brand strings render from a mocked `/branding`, and empty `privacy_url`, `terms_url` or `help_url` hide their links.
+  - The button shows a spinner and is disabled after a click.
+  - With reduced motion, no animation variants are applied.
+  - Manual light and dark screenshots are compared side by side with the reference in the PR.
 
 ##### Subtask F1.2.2: Access Required page and suspended page
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - A stepper (requested, under review, approved) animated with Motion, and a request form (role and justification, max 500 characters).
   - The status polls `/auth/me` every 15 s (paused when the tab is hidden). On approval it transitions into the dashboard without a re-login.
   - The suspended page shows the contact email.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** An approval flip triggers the transition. Reduced motion disables the animation.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** An approval flip triggers the transition. Reduced motion disables the animation.
 
 ##### Subtask F1.2.3: Route gate in `(app)/layout.tsx`
-- [ ] **[Dev]** Pending or rejected users can use `/chat` and see the Access Required page on dashboard routes. Suspended users see the suspended page. Active users get the full shell.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A table-driven test covers each status x route pair.
+- [x] **[Dev]** Pending or rejected users can use `/chat` and see the Access Required page on dashboard routes. Suspended users see the suspended page. Active users get the full shell.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A table-driven test covers each status x route pair.
 
 ---
 
 #### Task F1.3: Sidebar and header
-- [ ] **[Dev]** Filter items by permission. Rename Users to **Visitors**. Add a **User Management** item (`UserCog`) with an animated pending badge, and a Settings item (`Settings2`, superadmin). Add a profile menu (avatar, name, email, role badge, theme light/dark/system, sign out) and a notification bell (SSE: access requests, incidents, feedback spikes).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Update `Sidebar.test.tsx` for each role. The badge count shows. The collapsed rail shows tooltips.
+- [x] **[Dev]** Filter items by permission. Rename Users to **Visitors**. Add a **User Management** item (`UserCog`) with an animated pending badge, and a Settings item (`Settings2`, superadmin). Add a profile menu (avatar, name, email, role badge, theme light/dark/system, sign out) and a notification bell (SSE: access requests, incidents, feedback spikes).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Update `Sidebar.test.tsx` for each role. The badge count shows. The collapsed rail shows tooltips.
 
 #### Task F1.4: User Management page (`/admin/user-management`)
-- [ ] **[Dev]** Task F1.4: build the KPI strip, charts and four tabs (newplan §7.8, §15.4).
-- [ ] **[Lint]** Task F1.4: LINT-FE.
-- [ ] **[Test]** Task F1.4: `tests/components/UserManagement.test.tsx` passes.
+- [x] **[Dev]** Task F1.4: build the KPI strip, charts and four tabs (newplan §7.8, §15.4).
+- [x] **[Lint]** Task F1.4: LINT-FE.
+- [x] **[Test]** Task F1.4: `tests/components/UserManagement.test.tsx` passes.
 
 ##### Subtask F1.4.1: KPIs and charts
-- [ ] **[Dev]** KPI cards for total, active, pending (highlighted) and suspended users, and logins in the last 24h, each with a sparkline. Charts: logins per day bar, access-request `Funnel`, role donut, time-to-approve `Histogram`. Clicking a segment filters the Users tab.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Drill-down sets the filters.
+- [x] **[Dev]** KPI cards for total, active, pending (highlighted) and suspended users, and logins in the last 24h, each with a sparkline. Charts: logins per day bar, access-request `Funnel`, role donut, time-to-approve `Histogram`. Clicking a segment filters the Users tab.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Drill-down sets the filters.
 
 ##### Subtask F1.4.2: Users tab and drawer
-- [ ] **[Dev]** A `TableCard` with search, a Filters popover (role, status) and pagination. The drawer shows profile, sessions, activity and audit entries. Actions: change role, suspend or reactivate, revoke sessions (`ConfirmDialog`) and invite. The disabled self and last-superadmin actions show the reason in a tooltip.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A 409 shows the conflict toast. Optimistic updates roll back on error.
+- [x] **[Dev]** A `TableCard` with search, a Filters popover (role, status) and pagination. The drawer shows profile, sessions, activity and audit entries. Actions: change role, suspend or reactivate, revoke sessions (`ConfirmDialog`) and invite. The disabled self and last-superadmin actions show the reason in a tooltip.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A 409 shows the conflict toast. Optimistic updates roll back on error.
 
 ##### Subtask F1.4.3: Access Requests, Roles & Permissions, and Audit Trail tabs
-- [ ] **[Dev]** Queue with approve (role select) and reject (note), multi-select bulk approve, keyboard `a` and `x`, and the decision history. The matrix renders from `/auth/me` and the permissions endpoint. The audit tab is filtered to auth events.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Bulk approve. An approved row animates out (`AnimatePresence`).
+- [x] **[Dev]** Queue with approve (role select) and reject (note), multi-select bulk approve, keyboard `a` and `x`, and the decision history. The matrix renders from `/auth/me` and the permissions endpoint. The audit tab is filtered to auth events.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Bulk approve. An approved row animates out (`AnimatePresence`).
 
 #### Task F1.5: Phase F1 integration and E2E
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - `tests/journeys/auth.test.tsx` (vitest, `/auth/me` mocked through each state): a new user sees Chat, then Access Required, submits a request, the status flips to approved, and the dashboard renders. A suspended user sees the suspended page.
   - `smoke_e2e.py --journey access`, against the real stack and mock IdP through port 3000: a new user requests access, the superadmin approves through the API, the user's next `/auth/me` is active, and a dashboard API returns 200. Then the user is suspended, and the next call returns 403.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass in CI.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass in CI.
 
 #### Task F1.6: PRs
 - **PR-18** `feat/ui-auth-gate-login`: F1.1, F1.2 and F1.3.
@@ -1380,23 +1415,23 @@ Make the quick structural changes from newplan §2 and §3.
 - [ ] **[Test]** Phase F2 complete.
 
 #### Task F2.1: Evaluation
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Remove "Evaluation" from `ADMIN_ITEMS`. `/admin/evaluation` and `/evaluation` call `redirect('/admin/evaluation-live')`.
   - `rg '/admin/evaluation"'` and update any deep-links.
   - Confirm that `EvaluationCompareMatrix` and benchmark features are reachable from Live, **or flag them in the PR before deleting anything**.
   - The `Sparkles` icon and tooltip show in the collapsed rail.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** `Sidebar.test.tsx` is updated. A vitest test asserts that the page modules call `redirect('/admin/evaluation-live')`. `smoke_e2e.py` asserts a 307 or 308 from `/admin/evaluation`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** `Sidebar.test.tsx` is updated. A vitest test asserts that the page modules call `redirect('/admin/evaluation-live')`. `smoke_e2e.py` asserts a 307 or 308 from `/admin/evaluation`.
 
 #### Task F2.2: Usage & Cost
-- [ ] **[Dev]** Remove the `overview` / `OverviewTab`. Live Telemetry becomes the first tab, renamed **Overview**, with `Sparkles` and the `Live` badge. The URL parser maps `live_telemetry` and `overall` to `overview`. Delete `OverviewTab.tsx` after an importer check.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Old bookmarks resolve. Tests referencing the old ids are updated.
+- [x] **[Dev]** Remove the `overview` / `OverviewTab`. Live Telemetry becomes the first tab, renamed **Overview**, with `Sparkles` and the `Live` badge. The URL parser maps `live_telemetry` and `overall` to `overview`. Delete `OverviewTab.tsx` after an importer check.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Old bookmarks resolve. Tests referencing the old ids are updated.
 
 #### Task F2.3: Phase F2 integration testing
-- [ ] **[Dev]** `tests/journeys/navigation.test.tsx` covers every sidebar item for each role, the collapsed rail tooltips and the Usage URL alias parsing. `smoke_e2e.py` covers the legacy URL redirects on the real server.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/navigation.test.tsx` covers every sidebar item for each role, the collapsed rail tooltips and the Usage URL alias parsing. `smoke_e2e.py` covers the legacy URL redirects on the real server.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F2.4: PR
 - **PR-20** `feat/ui-nav-eval-usage-cleanup`.
@@ -1416,18 +1451,18 @@ Fill every gap in the newplan §1 interactivity audit and every page row in the 
 - [ ] **[Test]** Phase F3 complete.
 
 #### Task F3.1: Dashboard (`admin/page.tsx`)
-- [ ] **[Dev]** Task F3.1: build the interactive dashboard.
-- [ ] **[Lint]** Task F3.1: LINT-FE.
+- [x] **[Dev]** Task F3.1: build the interactive dashboard.
+- [x] **[Lint]** Task F3.1: LINT-FE.
 - [ ] **[Test]** Task F3.1: `tests/components/Dashboard.test.tsx` passes.
 
 ##### Subtask F3.1.1: KPI cards
-- [ ] **[Dev]** `KpiTrendCard` with a sparkline, delta arrow, count-up and window label. Hover lift and arrow. A click deep-links pre-filtered (Feedback, Governance Monitoring, Usage, Usage queries). Prefetch on intent. A staggered entrance.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** `KpiTrendCard` with a sparkline, delta arrow, count-up and window label. Hover lift and arrow. A click deep-links pre-filtered (Feedback, Governance Monitoring, Usage, Usage queries). Prefetch on intent. A staggered entrance.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Each card's href is checked. The prefetch fires on dwell.
 
 ##### Subtask F3.1.2: Charts
-- [ ] **[Dev]** `StackedArea` of queries by outcome, `PercentileBand` latency, `BulletChart` for cost vs budget and forecast, `RadialGauge` for satisfaction, a mini `Treemap` of intents (to Analytics), a live activity feed (SSE) and a health pill. `DateRangePicker` drives everything. Widgets fetch in parallel with independent skeletons.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Dev]** `StackedArea` of queries by outcome, `PercentileBand` latency, `BulletChart` for cost vs budget and forecast, `RadialGauge` for satisfaction, a mini `Treemap` of intents (to Analytics), a live activity feed (SSE) and a health pill. `DateRangePicker` drives everything. Widgets fetch in parallel with independent skeletons.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** A segment click navigates with the filter. One slow widget does not block the others.
 
 ---
@@ -1454,11 +1489,11 @@ Fill every gap in the newplan §1 interactivity audit and every page row in the 
 - [ ] **[Test]** An operator sees no upload or delete controls. Chunk search is debounced.
 
 #### Task F3.5: Usage & Cost additions, Evaluation (Live) additions and Chat
-- [ ] **[Dev]**
+- [x] **[Dev]**
   - Usage gets the cost-by-stage `StackedArea`, a forecast line and a cache-hit `RadialGauge`.
   - Evaluation (Live) gets the quality `Radar` (current vs previous run) and a pass-rate trend with run markers.
   - Chat gets the brand header, a signed-in user chip, and an admin-only "View trace" link.
-- [ ] **[Lint]** Run LINT-FE.
+- [x] **[Lint]** Run LINT-FE.
 - [ ] **[Test]** Component tests. The trace link is hidden for users without a role.
 
 #### Task F3.6: Phase F3 integration testing
@@ -1485,29 +1520,29 @@ Show the B4 data with the newplan §4.2 layout and fix the UI side of G1, G8, G1
 - [ ] **[Test]** Phase F4 complete.
 
 #### Task F4.1: Overall tab
-- [ ] **[Dev]** A status banner (colour transition via Motion), KPI cards with 24h sparklines, a status timeline with incident markers (marker to Logs filtered), and a recent incidents list (new rows highlight briefly). The `InfoRow` list becomes a compact secondary section.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A banner state is shown for each health status. A marker click deep-links.
+- [x] **[Dev]** A status banner (colour transition via Motion), KPI cards with 24h sparklines, a status timeline with incident markers (marker to Logs filtered), and a recent incidents list (new rows highlight briefly). The `InfoRow` list becomes a compact secondary section.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A banner state is shown for each health status. A marker click deep-links.
 
 #### Task F4.2: Monitoring tab
-- [ ] **[Dev]** Axis `width` auto or tick formatter in ms or s (G1). Null stages show "no data" (G2). A balanced grid aligned to the AI Usage panel (G8). `PercentileBand` per stage, requests and errors timeline, `RadialGauge`s for CPU, RAM and Azure quota, guardrail flag bar, outcome mix, quality KPIs. SSE live updates replace 10 s polling and pause when the tab is hidden.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A tick-format unit test (0.18 ms to 1.2 s). The SSE reconnects with backoff.
+- [x] **[Dev]** Axis `width` auto or tick formatter in ms or s (G1). Null stages show "no data" (G2). A balanced grid aligned to the AI Usage panel (G8). `PercentileBand` per stage, requests and errors timeline, `RadialGauge`s for CPU, RAM and Azure quota, guardrail flag bar, outcome mix, quality KPIs. SSE live updates replace 10 s polling and pause when the tab is hidden.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A tick-format unit test (0.18 ms to 1.2 s). The SSE reconnects with backoff.
 
 #### Task F4.3: Traces tab
-- [ ] **[Dev]** A cursor `TableCard` with columns from §4.2 and filters (status, latency bucket, outcome, date). The drawer shows a stage `Waterfall`, sources with scores, flags and a conversation link. `?request_id=` opens the drawer.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The deep-link opens the drawer. Previous and next navigate.
+- [x] **[Dev]** A cursor `TableCard` with columns from §4.2 and filters (status, latency bucket, outcome, date). The drawer shows a stage `Waterfall`, sources with scores, flags and a conversation link. `?request_id=` opens the drawer.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The deep-link opens the drawer. Previous and next navigate.
 
 #### Task F4.4: Logs tab
-- [ ] **[Dev]** Server-side cursor pagination and filters (G12), level-count chips, the structured summary column with an expandable JSON viewer (rendered as text, never HTML), meaningful service values, CSV export, and an auto-refresh toggle (G13).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Deep pages are reachable beyond 2,000 rows. The JSON viewer escapes `<script>`.
+- [x] **[Dev]** Server-side cursor pagination and filters (G12), level-count chips, the structured summary column with an expandable JSON viewer (rendered as text, never HTML), meaningful service values, CSV export, and an auto-refresh toggle (G13).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Deep pages are reachable beyond 2,000 rows. The JSON viewer escapes `<script>`.
 
 #### Task F4.5: Phase F4 integration testing
-- [ ] **[Dev]** `tests/journeys/governance.test.tsx`: the overview incident links into Logs with filters, the trace drawer link targets the conversation, and the Logs cursor "next" uses the returned cursor. Attach G1 to G13 before and after screenshots (manual).
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/governance.test.tsx`: the overview incident links into Logs with filters, the trace drawer link targets the conversation, and the Logs cursor "next" uses the returned cursor. Attach G1 to G13 before and after screenshots (manual).
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F4.6: PR
 - **PR-23** `feat/ui-governance-revamp`.
@@ -1527,29 +1562,29 @@ Build the interactive human-feedback loop in newplan §5.4.
 - [ ] **[Test]** Phase F5 complete.
 
 #### Task F5.1: Chat feedback capture
-- [ ] **[Dev]** A thumbs-down pops in the reason chips (`pop` preset) and an optional "what should it have said?" box (with a character counter). Thumbs-up stays one click. An optimistic update shows a toast.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Tags are submitted. A resubmission updates the existing feedback.
+- [x] **[Dev]** A thumbs-down pops in the reason chips (`pop` preset) and an optional "what should it have said?" box (with a character counter). Thumbs-up stays one click. An optimistic update shows a toast.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Tags are submitted. A resubmission updates the existing feedback.
 
 #### Task F5.2: Overview tab
-- [ ] **[Dev]** KPIs (the unfiltered total), a satisfaction trend, rating distribution, outcome breakdown, reasons bar, triage `Funnel` and disagreement `QuadrantScatter`, plus the spike alert. **Every mark filters the queue**, and the active filters show as removable chips synced to the URL.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A click on each chart type sets the right filter chip.
+- [x] **[Dev]** KPIs (the unfiltered total), a satisfaction trend, rating distribution, outcome breakdown, reasons bar, triage `Funnel` and disagreement `QuadrantScatter`, plus the spike alert. **Every mark filters the queue**, and the active filters show as removable chips synced to the URL.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A click on each chart type sets the right filter chip.
 
 #### Task F5.3: Review Queue (triage workspace)
-- [ ] **[Dev]** Keyboard shortcuts `j`, `k`, `p`, `d`, `r` and `Enter`. Multi-select with bulk actions. The drawer shows the full exchange, labels, and "Write the correct answer". Optimistic updates with undo. Promoted rows animate out. Permission-gated (operators read-only). Next page prefetched while idle.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The keyboard flow works. A 409 conflict toast appears. An operator has no action controls.
+- [x] **[Dev]** Keyboard shortcuts `j`, `k`, `p`, `d`, `r` and `Enter`. Multi-select with bulk actions. The drawer shows the full exchange, labels, and "Write the correct answer". Optimistic updates with undo. Promoted rows animate out. Permission-gated (operators read-only). Next page prefetched while idle.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The keyboard flow works. A 409 conflict toast appears. An operator has no action controls.
 
 #### Task F5.4: Golden Cases, Preference Data and Knowledge Gaps tabs
-- [ ] **[Dev]** Golden Cases: last eval result, and "Run now" with a job progress chip. Preference Data: a preview, incomplete pairs flagged, and a JSONL download. Knowledge Gaps: ranked topics with "Open document" and "Add document".
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The job chip polls until done. The download triggers.
+- [x] **[Dev]** Golden Cases: last eval result, and "Run now" with a job progress chip. Preference Data: a preview, incomplete pairs flagged, and a JSONL download. Knowledge Gaps: ranked topics with "Open document" and "Add document".
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The job chip polls until done. The download triggers.
 
 #### Task F5.5: Phase F5 integration testing
-- [ ] **[Dev]** `tests/journeys/feedback.test.tsx`: thumbs-down with reasons sends the right payload, then keyboard triage in the queue (`j`, `k`, `p`) calls the right endpoints, and the promoted row leaves the queue. The real data flow (chat, queue, promote, export) is already covered by the backend `test_feedback_integration.py`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/feedback.test.tsx`: thumbs-down with reasons sends the right payload, then keyboard triage in the queue (`j`, `k`, `p`) calls the right endpoints, and the promoted row leaves the queue. The real data flow (chat, queue, promote, export) is already covered by the backend `test_feedback_integration.py`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F5.6: PR
 - **PR-24** `feat/ui-feedback-triage-workspace`.
@@ -1569,29 +1604,29 @@ Port the HTML's design (newplan §6) onto the B6 endpoints in light and dark.
 - [ ] **[Test]** Phase F6 complete.
 
 #### Task F6.1: Route, nav and filter bar
-- [ ] **[Dev]** Add `admin/analytics` with a sidebar item (`ChartColumnBig`) and `ANALYTICS_TABS` (Guide, Overview, Trend, Flow, Topics, Drop-off, Conversations) in `TabGroup` with the `layoutId` pill. The filter bar (period, user type, outcome, rating, search) is synced to the URL.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** The URL round-trips.
+- [x] **[Dev]** Add `admin/analytics` with a sidebar item (`ChartColumnBig`) and `ANALYTICS_TABS` (Guide, Overview, Trend, Flow, Topics, Drop-off, Conversations) in `TabGroup` with the `layoutId` pill. The filter bar (period, user type, outcome, rating, search) is synced to the URL.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** The URL round-trips.
 
 #### Task F6.2: Charts and KPIs
-- [ ] **[Dev]** KPI strip, `TrendChart`, `HourOfDayChart`, `FlowSankey`, `TopicsTreemap` (sized by volume, shaded by handled %), `QualityDonut`, `DropoffChart` (lollipop) and `PeopleBubble`. Charts are loaded with `next/dynamic`. Clicking a topic or drop-off filters Conversations.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Each chart renders the 49-conversation fixture and matches the reference numbers.
+- [x] **[Dev]** KPI strip, `TrendChart`, `HourOfDayChart`, `FlowSankey`, `TopicsTreemap` (sized by volume, shaded by handled %), `QualityDonut`, `DropoffChart` (lollipop) and `PeopleBubble`. Charts are loaded with `next/dynamic`. Clicking a topic or drop-off filters Conversations.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Each chart renders the 49-conversation fixture and matches the reference numbers.
 
 #### Task F6.3: Conversations tab, Guide tab and empty state
-- [ ] **[Dev]** Conversations uses a cursor `TableCard` with per-turn expand (height animation) and rows linking to `conversations/[id]`. The Guide tab has static metric definitions. The empty state reads "N turns pending classification" with a progress bar.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Expand and collapse are keyboard-accessible. The pending state renders.
+- [x] **[Dev]** Conversations uses a cursor `TableCard` with per-turn expand (height animation) and rows linking to `conversations/[id]`. The Guide tab has static metric definitions. The empty state reads "N turns pending classification" with a progress bar.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Expand and collapse are keyboard-accessible. The pending state renders.
 
 #### Task F6.4: Reference HTML and visual check
-- [ ] **[Dev]** Save the sanitized HTML to `frontend/tests/fixtures/analytics/` (newplan open item 1). Add `tests/journeys/analytics-parity.test.tsx`: render the page with API responses recorded from the backend parity fixture (B6.4) and assert the HTML's KPI values and chart totals (newplan §6.4). Put manual side-by-side screenshots (HTML vs port, light and dark) in the PR.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** Save the sanitized HTML to `frontend/tests/fixtures/analytics/` (newplan open item 1). Add `tests/journeys/analytics-parity.test.tsx`: render the page with API responses recorded from the backend parity fixture (B6.4) and assert the HTML's KPI values and chart totals (newplan §6.4). Put manual side-by-side screenshots (HTML vs port, light and dark) in the PR.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F6.5: Phase F6 integration testing
-- [ ] **[Dev]** `tests/journeys/analytics.test.tsx`: a filter change, then a topic click, then the Conversations tab filtered (URL params), then the row link targets `/admin/conversations/{id}`. Clicking a trend day toggles from = to = that day, as in the HTML's `setDay()`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/analytics.test.tsx`: a filter change, then a topic click, then the Conversations tab filtered (URL params), then the row link targets `/admin/conversations/{id}`. Clicking a trend day toggles from = to = that day, as in the HTML's `setDay()`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F6.6: PR
 - **PR-25** `feat/ui-analytics-insights`.
@@ -1611,25 +1646,192 @@ Give the superadmin runtime control of white-labelling and the taxonomy (newplan
 - [ ] **[Test]** Phase F7 complete.
 
 #### Task F7.1: Branding tab
-- [ ] **[Dev]** A form for names, emails, the login copy and sample questions. A colour picker with a live **contrast badge**. Logo uploads (light, dark, mark and favicon) with drag-and-drop and client-side type and size pre-checks. A **live preview** of the sidebar, login card and chat bubble in light and dark side by side. Save uses version conflict handling and a toast. A "Reset to defaults" action goes through `ConfirmDialog`.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A 422 contrast rejection shows the reason. A save updates the CSS variables app-wide without a reload.
+- [x] **[Dev]** A form for names, emails, the login copy and sample questions. A colour picker with a live **contrast badge**. Logo uploads (light, dark, mark and favicon) with drag-and-drop and client-side type and size pre-checks. A **live preview** of the sidebar, login card and chat bubble in light and dark side by side. Save uses version conflict handling and a toast. A "Reset to defaults" action goes through `ConfirmDialog`.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A 422 contrast rejection shows the reason. A save updates the CSS variables app-wide without a reload.
 
 #### Task F7.2: Insights Taxonomy tab
-- [ ] **[Dev]** An editable table for intents (code, label, colour, group), bot quality values and issues. Codes cannot be edited after creation. Rows can be reordered. Unused items can be archived, but not deleted.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** A duplicate code is rejected. An archived item disappears from the filters but historic labels still render.
+- [x] **[Dev]** An editable table for intents (code, label, colour, group), bot quality values and issues. Codes cannot be edited after creation. Rows can be reordered. Unused items can be archived, but not deleted.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** A duplicate code is rejected. An archived item disappears from the filters but historic labels still render.
 
 #### Task F7.3: Phase F7 integration testing
-- [ ] **[Dev]** `tests/journeys/settings.test.tsx`: saving a brand colour updates the CSS variables, the logo upload pre-check rejects a bad type, and an admin (non-superadmin) has no nav item. `smoke_e2e.py --journey branding` updates the brand through the proxy and checks that `/branding` and `generateMetadata` reflect it, then reverts.
-- [ ] **[Lint]** Run LINT-FE.
-- [ ] **[Test]** Pass.
+- [x] **[Dev]** `tests/journeys/settings.test.tsx`: saving a brand colour updates the CSS variables, the logo upload pre-check rejects a bad type, and an admin (non-superadmin) has no nav item. `smoke_e2e.py --journey branding` updates the brand through the proxy and checks that `/branding` and `generateMetadata` reflect it, then reverts.
+- [x] **[Lint]** Run LINT-FE.
+- [x] **[Test]** Pass.
 
 #### Task F7.4: PR
 - **PR-26** `feat/ui-settings-branding-taxonomy`.
 - [ ] **[Dev]** Raised per §1.3.
 - [ ] **[Lint]** CI lint is green.
 - [ ] **[Test]** CI is green, approved, and merged.
+
+---
+
+## Phase F8: Owner Feedback Round: Speed, Data, AskDIQ Widget, Shell UX (rev 3.3)
+
+### Objective
+Act on the owner's review of the preview build (newplan §17): fix the `/chat` hang and the pool leak, make every dashboard page fast on realistic data, add realistic demo data, ship the floating AskDIQ chat widget, fix the shell (flat nav, logout, light/dark only, dates, one Active users definition), and get every open PR green. It also records the production hotfix HF-01. This phase touches backend and frontend, so it uses both LINT-BE/TEST-BE and LINT-FE/TEST-FE.
+
+**Phase rules (in addition to §1.2 and §1.3):**
+- One PR per feature (PR-27 to PR-32), each from a fresh `main`. Never merge to `main`; PRs stay open for the owner.
+- `ci_local.ps1` (the full local mirror of `ci.yml`) must print **PASS** in the PR's worktree **before any push**. Push only green.
+- Async only, every outbound call has a timeout, at least 50 concurrent requests, no Redis, no Playwright.
+- White-label: every user-visible name comes from the brand config ("AskDIQ" is the `assistant_name`), never hard-coded. Tokens only, light and dark parity (newplan §15.2a).
+- Motion: presets from `lib/motion.ts`, under 300 ms, `reducedMotion="user"`.
+
+- [ ] **[Dev]** Phase F8 complete.
+- [ ] **[Lint]** Phase F8 complete.
+- [ ] **[Test]** Phase F8 complete.
+
+#### Task F8.1: Chat page fetch timeouts and the pool leak (newplan §17.1)
+- [ ] **[Dev]** Task F8.1: `/chat` never hangs, never loops, and never leaks a DB connection.
+- [ ] **[Lint]** Task F8.1: LINT-BE and LINT-FE.
+- [ ] **[Test]** Task F8.1: `tests/test_governance_overview_pool.py` and `tests/lib/server-fetch.test.ts` pass.
+
+##### Subtask F8.1.1: Bounded server fetch
+- [ ] **[Dev]** One `serverFetch()` helper for every server-side call from Next to the backend, with `AbortSignal.timeout(SERVER_FETCH_TIMEOUT_MS)` (default 10 s, in `.env.local.example`), never undici's 300 s default. A timeout becomes a typed `UpstreamTimeoutError`, and the page renders an `ErrorState` with retry and the `request_id` (A10).
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** A mocked backend that never answers makes the helper reject within the timeout. The `/chat` page renders the `ErrorState` and does not throw `HeadersTimeoutError`.
+
+##### Subtask F8.1.2: Remove the client refresh loop
+- [ ] **[Dev]** Find what calls `router.refresh()` (or re-mounts the route) on every render or error, causing `GET /chat?_rsc=...` about once a second. Remove it from render and unguarded effects. Retries use bounded exponential backoff (at most 3) and stop while the tab is hidden (A06).
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** A vitest test with a failing fetch counts refresh calls: at most 3 in 30 s of fake time, then none.
+
+##### Subtask F8.1.3: Connection leak in `app/governance/overview.py`
+- [ ] **[Dev]** Every connection or session is opened with `async with` and released on every path (success, exception, cancellation). No connection is held across unrelated `await`s. Parallel parts use `gather_scoped` with one session per task. `pool_timeout` and the statement timeout (B1.5.2) apply.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** `tests/test_governance_overview_pool.py`: record `engine.pool.checkedout()`, call `GET /governance/overview` 100 times (50 at once, including forced errors and cancelled clients), and assert the count returns to the baseline. No `QueuePool` timeout.
+
+#### Task F8.2: Dashboard load speed (newplan §17.2)
+- [ ] **[Dev]** Task F8.2: every dashboard page meets the targets on 10k+ seeded rows (F8.3): shell < 300 ms warm, page data p95 < 500 ms, also under 50 concurrent requests.
+- [ ] **[Lint]** Task F8.2: LINT-BE and LINT-FE.
+- [ ] **[Test]** Task F8.2: `tests/test_dashboard_perf_budget.py`, `tests/test_aggregation_cache_isolation.py` and the frontend bundle check pass.
+
+##### Subtask F8.2.1: Baseline measurement
+- [ ] **[Dev]** `scripts/measure_dashboard_speed.py` (httpx, async) records shell TTFB, page data time, first-load JS and the slowest query per page, on the dev server and on a production build, against the F8.3 data. The baseline table goes in the PR before any change.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** The script runs and prints a table. The before and after numbers are attached to the PR.
+
+##### Subtask F8.2.2: Frontend: bundle and rendering
+- [ ] **[Dev]**
+  - Turbopack for `next dev`. `experimental.optimizePackageImports` for `lucide-react`, `recharts`, `date-fns` and `motion`.
+  - No barrel imports in app code. `next/dynamic` for heavy charts, drawers, the command palette and the widget.
+  - Server widgets fetch in parallel (`Promise.all`), each card in its own `<Suspense>` boundary so the shell streams first.
+  - Client data through `useApiQuery` (SWR, dedupe, intent prefetch).
+- [ ] **[Lint]** Run LINT-FE. An ESLint `no-restricted-imports` rule blocks barrel imports.
+- [ ] **[Test]** `next build` first-load JS per dashboard route is at or under the baseline and inside the §13.4 budget. A vitest test asserts the cards render inside `Suspense` fallbacks.
+
+##### Subtask F8.2.3: Backend: queries, indexes and caches
+- [ ] **[Dev]**
+  - `EXPLAIN (ANALYZE, BUFFERS)` for every dashboard query; plans attached to the PR. Add only the indexes the plans justify, in one migration built `CONCURRENTLY`, with a working downgrade.
+  - Replace Python-side loops with SQL aggregation (`GROUP BY`, `date_trunc`, `FILTER`), and use the B6/B7 rollups where they exist.
+  - ETag plus a short TTL in-process cache (SingleFlight) on aggregation GETs. **The cache key includes the role and permission set**, plus the user id for user-scoped data. Responses are `Cache-Control: private` with `Vary: Cookie, X-Session` (A01, A02). GZip stays on (SSE excluded).
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]**
+  - `tests/test_dashboard_perf_budget.py`: page data p95 < 500 ms on 10k+ rows, and the same with 50 concurrent requests.
+  - `tests/test_aggregation_cache_isolation.py`: an operator never receives an admin's cached payload, and a 304 is returned only for the same role and ETag.
+  - Alembic upgrade, downgrade, upgrade.
+
+#### Task F8.3: Realistic demo data (newplan §17.3)
+- [ ] **[Dev]** Task F8.3: `backend/scripts/seed_realistic_activity.py`, deterministic, tagged, purgeable, dry run by default.
+- [ ] **[Lint]** Task F8.3: LINT-BE.
+- [ ] **[Test]** Task F8.3: `tests/test_seed_realistic_activity.py` passes.
+
+##### Subtask F8.3.1: Generator
+- [ ] **[Dev]** 10k+ messages across sessions over about 90 days, with weekday and business-hour patterns, a realistic intent mix, varied end-user identities and IPs, feedback with reasons, per-stage latency, token cost, evaluation records, insert-only audit events and the analytics rollups. `--seed` makes it deterministic. Default is a dry run that prints counts; `--apply` writes; `--purge` removes only rows with this script's seed tag. Refuses `ENV=production` unless `--allow-production` is passed, and prints the DB host first. Writes are batched and async.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** Same seed gives identical rows. Dry run writes nothing. Purge removes every tagged row and nothing else. The audit trigger is never disabled.
+
+##### Subtask F8.3.2: Fill fields the live path never writes
+- [ ] **[Dev]** List every column the dashboards read that the live `/query`, feedback and ingest paths leave null (in the PR). Fix the live path to write them, not only the seed.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** A live `/query` plus feedback round-trip in tests fills every listed column.
+
+#### Task F8.4: AskDIQ chat widget (newplan §17.4)
+- [ ] **[Dev]** Task F8.4: a floating launcher and a right-side drawer on every dashboard page, reusing the chat hooks.
+- [ ] **[Lint]** Task F8.4: LINT-FE.
+- [ ] **[Test]** Task F8.4: `tests/components/AskDiqWidget.test.tsx` passes.
+
+##### Subtask F8.4.1: Mascot asset and brand name
+- [ ] **[Dev]** Optimise the mascot (`frontend/Friendly Mint Hexagon Robot Mascot 1.png`) into `frontend/public/brand/askdiq-mascot.webp` plus a PNG fallback, used through `next/image`. The name "AskDIQ" comes from the brand config (`assistant_name`) everywhere; `rg` shows no hard-coded copies in components.
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** A test renders the widget with a different `assistant_name` and the new name appears everywhere.
+
+##### Subtask F8.4.2: Launcher
+- [ ] **[Dev]** Bottom-right floating button: slow idle float, soft teal glow (tokens), a one-time greeting bubble per session, an unread dot when a reply arrives while closed, and a keyboard shortcut listed in the `?` sheet. Every animation uses the Motion presets and stops with reduced motion.
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** The greeting shows once per session. The unread dot appears and clears. With reduced motion there is no animation.
+
+##### Subtask F8.4.3: Drawer
+- [ ] **[Dev]** Right-side, full-height drawer (Motion, under 300 ms), full screen on mobile. It reuses the existing chat hooks and components (streaming, sources, feedback chips), with no second chat implementation. Lazy-loaded with `next/dynamic` on first open or idle prefetch. Focus trap, `Esc` closes and returns focus to the launcher, `aria-live` for new messages. Markdown is rendered without `dangerouslySetInnerHTML`, raw HTML disabled, links limited to `https:` and relative URLs with `rel="noopener noreferrer"` (A05). Any new renderer dependency is pinned exactly (A03).
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** Focus trap and `Esc` work. A `<script>` and a `javascript:` link in a reply are rendered inert. The widget is not in the dashboard's first-load chunk.
+
+#### Task F8.5: Shell: navigation, logout, theme, dates, Active users (newplan §17.5)
+- [ ] **[Dev]** Task F8.5: the shell fixes plus one Active users definition used by every card.
+- [ ] **[Lint]** Task F8.5: LINT-BE and LINT-FE.
+- [ ] **[Test]** Task F8.5: the tests below pass.
+
+##### Subtask F8.5.1: Flat sidebar
+- [ ] **[Dev]** Remove the "ADMIN" group heading in `Sidebar.tsx`. One flat list, still role-filtered, with the collapsed rail tooltips kept.
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** `Sidebar.test.tsx`: no group heading, and each role sees the same items as before.
+
+##### Subtask F8.5.2: Logout end to end
+- [ ] **[Dev]** The menu action calls `POST /auth/logout` through the proxy. The backend revokes the session row and audits `logout`. The Next route clears the cookie (same name, path and flags, `Max-Age=0`). The client clears the query cache and redirects to `/login` (A07).
+- [ ] **[Lint]** Run LINT-BE and LINT-FE.
+- [ ] **[Test]** After logout, replaying the old cookie gets 401, and the back button lands on `/login`.
+
+##### Subtask F8.5.3: Light and dark only
+- [ ] **[Dev]** Remove "System" from the theme toggle and the stored values. A stored `system` value migrates to the current resolved theme on first load.
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** The toggle has exactly two options, and the stored-value migration test passes. The theme-tokens snapshot is updated deliberately.
+
+##### Subtask F8.5.4: Dates everywhere
+- [ ] **[Dev]** One `<DateTime>` component: relative text with the absolute local date, time and time zone in a tooltip and in `<time dateTime>`. Replace every raw timestamp in tables, drawers, cards and chart tooltips.
+- [ ] **[Lint]** Run LINT-FE. An `rg` check finds no other `toLocaleString` for timestamps in components.
+- [ ] **[Test]** Formatter tests for minutes, hours, days and older dates, and the tooltip content.
+
+##### Subtask F8.5.5: Active users definition
+- [ ] **[Dev]** One backend function: a distinct end user is the client id if present, otherwise the forwarded end-user IP (HF-01 `ip_address`), excluding test IPs, with at least one query in the window. It returns DAU (24 h), WAU (7 days), MAU (30 days) and active now (5 minutes). The dashboard, Visitors and Usage cards all call it, and each card's tooltip states the definition.
+- [ ] **[Lint]** Run LINT-BE and LINT-FE.
+- [ ] **[Test]** `tests/test_active_users.py`: identity fallback, test-IP exclusion, window edges, and the same value from every card endpoint for the same window.
+
+#### Task F8.6: Green open PRs
+- [ ] **[Dev]** List every open PR with its failing or flaky jobs. Reproduce each with `ci_local.ps1` in that PR's worktree. Fix the root cause on the PR's own branch, or in `chore/green-open-prs` when the cause is shared (CI config, a shared fixture). Never skip, `xfail`, add an unexplained `# noqa`, or lower a threshold.
+- [ ] **[Lint]** `ci_local.ps1` lint stages PASS for every open PR.
+- [ ] **[Test]** `ci_local.ps1` prints PASS for every open PR before its push, and GitHub CI is then green.
+
+#### Task F8.7: Production hotfix HF-01 (already deployed; newplan §17.7)
+- **HF-01** `hotfix/query-filters-ip-ingest`: commits `a795af3`, `27d516c`, `f9d76ed`.
+- [x] **[Dev]** Swagger `additionalProp1` filter no longer empties answers (allow-listed scalar filters). `no_sources` flag. KB markdown shipped in the image. Forwarded end-user `ip_address` honoured (`ALLOW_CLIENT_IP_OVERRIDE`, default `true`) on `/query`, `/sessions` and feedback. Per-IP rate limit uses the end-user IP. Swagger example restored. Prod migrations `5491a7bdb113` → `d6e7f8a9b0c1` applied after a backup. Usage backfill applied (41 rows).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** TEST-BE for the filter allow-list, `no_sources`, IP override and rate-limit keying.
+- Follow-up: raise a PR into `main` so `main` matches production (not merged by the agent). Tracked in the section 10 log.
+
+#### Task F8.8: Phase F8 integration testing
+- [ ] **[Dev]**
+  - `tests/test_owner_feedback_integration.py` (httpx, real Postgres, F8.3 data at 10k+ rows): every dashboard page's data endpoints under **50 concurrent requests** meet the F8.2 targets with no errors, and the pool returns to baseline afterwards.
+  - Widget chat round-trip through the proxy (fake LLM): send, stream, sources, feedback.
+  - Logout: session revoked, cookie cleared, old cookie gets 401.
+  - `tests/journeys/owner-feedback.test.tsx`: the widget opens, chats and closes with focus returned; theme toggles light and dark only; dates show relative text with an absolute tooltip; every Active users card shows the same number.
+  - `smoke_e2e.py --journey owner-feedback` runs the same checks through port 3000.
+- [ ] **[Lint]** Run LINT-BE and LINT-FE on the test files.
+- [ ] **[Test]** Pass, and `ci_local.ps1` prints PASS.
+
+#### Task F8.9: PRs
+- **PR-27** `fix/chat-page-fetch-timeouts`: F8.1.
+- **PR-28** `perf/dashboard-load-speed`: F8.2.
+- **PR-29** `feat/realistic-demo-data`: F8.3.
+- **PR-30** `feat/askdiq-chat-widget`: F8.4.
+- **PR-31** `fix/shell-nav-logout-theme-dates`: F8.5.
+- **PR-32** `chore/green-open-prs`: F8.6.
+- F8.8 lands in the last PR of the phase to merge.
+- [ ] **[Dev]** PR-27 to PR-32 raised per §1.3, each pushed only after `ci_local.ps1` PASS.
+- [ ] **[Lint]** CI lint is green.
+- [ ] **[Test]** CI tests are green and the PRs are left open for the owner (never merged to `main` by the agent).
 
 ---
 
@@ -1640,7 +1842,7 @@ Prove the whole system after development is complete: functional E2E journeys, t
 
 - [ ] **[Dev]** Phase V complete: all suites and reports are produced.
 - [ ] **[Lint]** Phase V complete: the whole repo is clean (LINT-BE and LINT-FE), with no suppressions added without a justification comment.
-- [ ] **[Test]** Phase V complete: every suite below passes, with reports attached to PR-27.
+- [ ] **[Test]** Phase V complete: every suite below passes, with reports attached to PR-33.
 
 #### Task V.1: End-to-end journeys (no browser automation: httpx through the real stack, plus vitest UI journeys)
 - [ ] **[Dev]** Task V.1: add `backend/tests/e2e/` (API journeys on real Postgres with the mock IdP), the `smoke_e2e.py --journey all` full-stack journeys through port 3000, and the seed script `scripts/seed_e2e.py`.
@@ -1675,7 +1877,7 @@ Prove the whole system after development is complete: functional E2E journeys, t
 - [ ] **[Test]** Pass.
 
 ##### Subtask V.1.4: Theming sweep (manual, no automated scanners)
-- [ ] **[Dev]** Take screenshots of every page in light and dark, with reduced motion on, keyboard-only and at 390 px, and attach them to PR-27.
+- [ ] **[Dev]** Take screenshots of every page in light and dark, with reduced motion on, keyboard-only and at 390 px, and attach them to PR-33.
 - [ ] **[Lint]** n/a.
 - [ ] **[Test]** The owner signs off on the screenshots.
 
@@ -1782,7 +1984,7 @@ Prove the whole system after development is complete: functional E2E journeys, t
 - [ ] **[Test]** The full newplan §11 Access checklist passes against real Entra. If a check fails, the preflight names which setting is wrong. No code change should be needed, because the mock matched Entra's contract.
 
 #### Task V.6: PR
-- **PR-27** `chore/release-verification`: the V.1 to V.5 test code, scripts and docs, with reports attached.
+- **PR-33** `chore/release-verification`: the V.1 to V.5 test code, scripts and docs, with reports attached.
 - [ ] **[Dev]** Raised per §1.3, with all reports linked.
 - [ ] **[Lint]** CI lint is green.
 - [ ] **[Test]** CI tests, `fullstack-smoke` and `perf-smoke` are all green, approved, and merged. **Release tagged** (`v<next>`) from `main` via GitHub Releases.
@@ -1819,7 +2021,14 @@ Prove the whole system after development is complete: functional E2E journeys, t
 | PR-24 | `feat/ui-feedback-triage-workspace` | F5 | PR-17 | ☐ |
 | PR-25 | `feat/ui-analytics-insights` | F6 | PR-17 | ☐ |
 | PR-26 | `feat/ui-settings-branding-taxonomy` | F7 | PR-19 | ☐ |
-| PR-27 | `chore/release-verification` | V | all | ☐ |
+| HF-01 | `hotfix/query-filters-ip-ingest` | F8 | – (deployed to prod) | ☐ PR into `main` |
+| PR-27 | `fix/chat-page-fetch-timeouts` | F8 | PR-10 | ☐ |
+| PR-28 | `perf/dashboard-load-speed` | F8 | PR-29, PR-16 | ☐ |
+| PR-29 | `feat/realistic-demo-data` | F8 | PR-14 | ☐ |
+| PR-30 | `feat/askdiq-chat-widget` | F8 | PR-27, PR-17 | ☐ |
+| PR-31 | `fix/shell-nav-logout-theme-dates` | F8 | PR-18, HF-01 | ☐ |
+| PR-32 | `chore/green-open-prs` | F8 | – | ☐ |
+| PR-33 | `chore/release-verification` | V | all | ☐ |
 
 Each PR branches from a fresh `main` once the wave before it has merged (section 8). No stacking.
 
@@ -1854,9 +2063,12 @@ PRs in the same wave are developed **in parallel** (one session and one worktree
 | W11 | PR-18 → PR-21 → PR-23 → PR-24 → PR-25 | Independent pages. Each one only flips its own nav flag. |
 | W12 | PR-19 → PR-20 → PR-22 | Need PR-18 (gate) or PR-21. |
 | W13 | PR-26 | Settings. |
-| W14 | PR-27 | Verification and release. |
+| W14 | PR-32 → HF-01 → PR-27 | Owner feedback round (F8). Green the open PRs first, bring `main` level with production, then fix the chat page. |
+| W15 | PR-29 → PR-31 | Demo data (needed to measure F8.2) and the shell fixes (Active users needs HF-01's `ip_address`). |
+| W16 | PR-28 → PR-30 | Speed work measured on the PR-29 data; the widget needs PR-27. |
+| W17 | PR-33 | Verification and release. |
 
-The longest wave has 5 PRs, so at most 5 sessions run at once. Total: 14 waves and 27 PRs.
+The longest wave has 5 PRs, so at most 5 sessions run at once. Total: 17 waves, 33 PRs and the HF-01 hotfix PR.
 
 ### 8.2 Merge rules (every PR)
 
@@ -1876,7 +2088,7 @@ The longest wave has 5 PRs, so at most 5 sessions run at once. Total: 14 waves a
 
 ### 8.3 Alembic migration re-link rule (parallel PRs that add migrations)
 
-The migration PRs are PR-04, PR-05 (none), PR-06, PR-08, PR-09, PR-11, PR-12, PR-13 (rollup) and PR-14.
+The migration PRs are PR-04, PR-05 (none), PR-06, PR-08, PR-09, PR-11, PR-12, PR-13 (rollup), PR-14 and PR-28 (EXPLAIN-driven indexes). Production moved from `5491a7bdb113` to `d6e7f8a9b0c1` with HF-01, so every F8 migration checks `alembic heads` against `d6e7f8a9b0c1` before it is pushed.
 - Each one creates its migration with `down_revision` set to the current `main` head at branch time.
 - When an earlier PR in the same wave merges first, the later PR's `alembic heads` shows 2 heads after the rebase. The fix is a one-line edit: set its `down_revision` to the new head. Then run `alembic heads`, which must print exactly 1. Run `alembic upgrade head`, then `alembic downgrade -1`, then `alembic upgrade head` on the worker's own database, push, and wait for green CI.
 - **Never** use `alembic merge` to create a merge revision. The chain stays linear, as in the existing repo history.
@@ -1890,9 +2102,9 @@ The migration PRs are PR-04, PR-05 (none), PR-06, PR-08, PR-09, PR-11, PR-12, PR
 | `backend/main.py` | PR-03 (middleware) | add their own `include_router` line only |
 | `backend/.env.example` / `frontend/.env.local.example` | each PR | append their own block |
 | `frontend/lib/api.ts`, `lib/types.ts` | **PR-16** | not touch, except for a type fix after PR-16 |
-| `frontend/components/Sidebar.tsx` | **PR-17** | flip their own `enabled` flag only |
+| `frontend/components/Sidebar.tsx` | **PR-17** (PR-31 removes the ADMIN group) | flip their own `enabled` flag only |
 | `frontend/components/admin/TabGroup.tsx` | PR-17 | add their own tab constant only |
-| `.github/workflows/ci.yml` | PR-01 | change it only in PR-27, or with owner approval |
+| `.github/workflows/ci.yml` | PR-01 | change it only in PR-33, or with owner approval |
 
 ---
 
@@ -1969,7 +2181,7 @@ HARD RULES
 - No Redis, no Playwright/axe/Lighthouse/ZAP, no new dependencies beyond newplan.md execution guide §4.
 - If blocked on an owner decision (e.g. taxonomy list before PR-12), record it in LEDGER.md,
   continue with every other PR that is not blocked, and list blockers in your final message.
-- Stop only when PR-27 is merged and green, or when everything left is blocked; then print a summary table.
+- Stop only when PR-33 is merged and green, or when everything left is blocked; then print a summary table.
 ```
 
 **Worker prompt** (the orchestrator fills in `PR-NN`):
@@ -2023,3 +2235,104 @@ Save the 9.4 orchestrator prompt as `C:\Projects\askdiq-wt\ORCHESTRATOR_PROMPT.m
 - Run `npm ci` once per worktree. The npm cache makes it quick.
 - Watch CI with `gh pr checks --watch` rather than polling.
 - Rebase right after each merge (8.2.3), so conflicts stay small.
+
+---
+
+## 10. Execution log (updated as work completes, 2026-10-15)
+
+**Owner decisions in effect:**
+- PRs are left open and unmerged for you to review and merge.
+- PRs form a dependency tree (see below).
+- Taxonomy: the proposed DeployIQ list.
+- Database tests run in GitHub CI.
+- No Redis and no Playwright.
+
+| PR | Plan id | Branch | Base | State | Notes |
+|---|---|---|---|---|---|
+| #14 | env | `chore/env-examples-rev3` | main | Open, CI green | All new env variables documented as placeholders. |
+| #15 | plan | `docs/plan-theme-parity-audit` | main | Open | This file: the plan, theme audit, login design and progress ticks. |
+| #19 | PR-01 | `chore/ci-hardening` | #14 | Open, **all jobs green** | New CI jobs: backend-lint (ruff, format, pylint ≥ 9.26, bandit, pip-audit), backend-tests (single alembic head, downgrade round-trip, coverage ≥ 78 %), frontend-checks (vitest and audit gate) and fullstack-smoke. CI also runs on stacked PRs. Adds `TEST_DATABASE_URL`, the PR template and Dependabot. **Your decision:** Next 14.2.35 and Starlette 0.38.6 have advisories, including **2 critical Next 14 RCEs** (Windows-hosted servers, and the AVIF image optimizer). They are on an allow-list that expires 2026-12-31; the fix is Next ≥ 15.5.24 or 16, and FastAPI ≥ 0.133 with Starlette ≥ 1.3.1. CODEOWNERS is not added. |
+| #16 | PR-02 | `chore/lint-scope-claude-md` | #14 | Open, CI green | Expanded ruff rules, zero findings. **Flagged per CLAUDE.md precedence:** FAST002 and FAST001 ignored (existing `Depends()` and `response_model` style); complexity limits ignored for about 50 handlers (follow-up). `GuardrailBlocked` renamed to `GuardrailBlockedError`. |
+| #17 | PR-03 | `feat/platform-security-headers-errors` | #16 | Open, CI green | Security headers, problem+json errors, `spawn()`/`drain()`, LLM circuit breaker, timeouts, nginx hardening. 50 tests. **Needs Docker:** `nginx -t`. A 422 `detail` is now a string, with field errors in `errors`. |
+| #18 | PR-04 | `feat/platform-jobs-state-http` | #17 | Open, CI green (twice) | Migrations `e7f8a9b0c1d2` and `f8a9b0c1d2e3`. Postgres job queue, shared state, LISTEN/NOTIFY, ETag, SSE-safe gzip, `gather_scoped`, LLM gate, **60-request concurrency gate**, and a deterministic loop-block detector. `requests` removed. |
+| #21 | PR-05 | `feat/platform-load-balancing` | #18 | Open, CI green | nginx `least_conn` upstream across 2 replicas plus an SSE location, compose with api-1, api-2 and a worker, and a budgeted load script. **Needs Docker:** `nginx -t`, `compose config`, the replica-kill test and the 2-replica smoke run. |
+| #20 | PR-06 | `feat/auth-sso-sessions-rbac` | #18 | Open, CI green | Migration `a9b0c1d2e3f4`. Entra SSO with a faithful mock, hashed sessions, RBAC on all 43 route dependencies, CSRF checks, `verify_sso_config.py`. **Your `.env` now needs `SESSION_SECRET`, plus either `ENTRA_*` or `AUTH_DEV_MOCK=true` with `ENV=development`.** |
+| #22 | PR-09 | `fix/governance-data-correctness` | #20 | Open, CI green | G1–G7, G9 and G11 fixed. New audit sources (rate_limited, server_error, llm_call_failed/llm_retry, session lifecycle, test_ip_updated). **Breaking:** `trace_id` removed; `service` is now a category; `error_rate` is 24h and DB-based. |
+| #23 | PR-12 | `feat/insights-taxonomy-classifier` | #20 | Open, CI green | Migration `4c1e9a7d2b65`. Taxonomy and the hybrid classifier via the job queue (PII-masked, injection-safe, daily budget, circuit breaker). HTML parity fixture: 49/117, Served 11, Partly 14, Not 22, handled 62. |
+| #24 | PR-15 | `feat/ui-foundations-motion-tokens-brand` | #19 | Open, **all 4 jobs green** | `motion` 14.3.0. Tokens, light/dark parity fixes T1–T6 (plus tooltips, documents and monitoring dark bugs), BrandProvider and BrandLogo with dark variants. 128 vitest tests. **Your review:** the off-canvas "ARTIFICIAL INTELLIGENCE" tagline was removed from the logo SVG. **Manual:** screenshots. |
+| #25 | PR-07 | `feat/auth-user-management-api` | #20 | Open, CI green | `/auth/*` routes, users-accounts and access-requests (`users:manage`), FOR UPDATE concurrency, 409 safeguards, auth audit events, the frontend contract and the go-live checklist in DEPLOYMENT.md. B2.8.1: the port-3000 smoke run comes with PR-18. |
+| #26 | PR-08 | `feat/branding-white-label-api` | #20 | Open, CI green | Migration `b0c1d2e3f4a5`. Branding API with an OKLCH palette and WCAG check, hardened PNG/WebP/SVG validation (polyglot-proof, allow-list SVG rebuild), login copy and URL fields, ETag and cross-worker invalidation. **Sibling migration with #23**: whichever merges second re-links its `down_revision` (§8.3). |
+| #29 | PR-10 | `feat/governance-endpoints-stream` | #22 | Open, CI green | Migration `72125f44984d` (keyset indexes, built CONCURRENTLY). Logs and traces keyset cursors, `/traces/page` envelope (the old array is kept), trace detail with waterfall, streaming CSV export, monitoring p50/p95/p99 and hourly series, overview (at most 6 queries, ETag), SSE stream with NOTIFY fan-out. **Sibling migration** with #23, #26 and #27. |
+| #27 | PR-11 | `feat/feedback-rlhf-loop-api` | #20 | Open, CI green (migration `5712ebd9d3c9`; sibling of #23 and #26 on `a9b0c1d2e3f4`, so re-link at merge) | Triage state machine with optimistic version, enriched one-query queue with a keyset cursor, analytics, bulk actions, promotion now stored in the DB (JSON imported), streaming JSONL preference export, golden-run job, and the online-eval FK race fix. Old response fields are kept. **Behaviour change:** promote-to-test no longer writes `data/promoted_test_cases.json`. |
+| #31 | PR-13 | `feat/insights-analytics-endpoints` | #23 | Open, CI green (814 backend tests) | `/admin/insights/*` endpoints match the HTML renderer exactly (13 filter cases), plus taxonomy CRUD. Summary p95 is 480 ms on 100k turns. **Your decision:** the ≥ 60 % user-type rule vs the HTML's plurality rule (conversation C10); the threshold is a constant. |
+| #30 | PR-16 | `feat/ui-chart-kit-data-layer` | #24 | Open, **all jobs green** | One ChartCard replacing 4 copies, with a "View as table" toggle. 12 keyboard-accessible SVG catalogue charts on chart tokens. Dynamic Treemap and Sankey. `useApiQuery` with dedupe, SWR, abort and focus refetch; intent and idle prefetch; optimistic mutations with undo and 409 handling. 234 vitest tests. F0.5.4 (OpenAPI type sync) is deferred until after B7. |
+| #32 | PR-17 | `feat/ui-global-ux-primitives` | #30 | Open, **all jobs green** (317 vitest tests) | EntityLink and useDeepLink, DrawerShell (both QueryInspectorDrawers consolidated), toasts with undo, a typed ConfirmDialog, state components, DateRangePicker (opt-in), Ctrl+K palette, `?` shortcuts sheet, table column and density preferences, cursor pagination, branded 404 and error pages, mobile off-canvas sidebar, profile menu and bell shells, nav pre-registration, layoutId pills. The route JS increase is at most 27 KB (budget 60). **Manual:** screenshots and a 390 px check. |
+| #33 | PR-25 | `feat/ui-analytics-insights` | #30 | Open, **all jobs green** (273 vitest tests) | Analytics page: a native port of the Insights HTML on the `/admin/insights` API, with URL-synced filters, cross-filtering, 6 KPIs, trend with setDay, radial hour-of-day, Sankey flow, treemap, donut, lollipop, bubbles, an expandable conversations table, a guide tour and a pending-classification state. Parity test on screen: 49 conversations, 106 questions, 48 % handled, 23 % served, 46 people, Served 11, Partly 14, Not 22. Two light-mode colours were swapped for AA contrast. **After merge:** set `enabled: true` on the Analytics nav item. **Manual:** side-by-side screenshots with the HTML. |
+| #35 | PR-19 | `feat/ui-user-management` | #32 | Open, **all 4 jobs green** (351 vitest tests) | KPI cards with sparklines, a funnel, a role donut and a histogram that drill into the Users tab. Users table and drawer with role change, suspend, revoke and invite (typed confirmation, optimistic updates, 409 toast, blocked self and last-superadmin changes). Access-request queue with bulk approve and `a`/`x` keys. Roles matrix and auth audit trail. **Note:** writes need PR-18's proxy header forwarding, and the temporary `useCan` shim is replaced by PR-18's `usePermission`. |
+| #34 | PR-24 | `feat/ui-feedback-triage-workspace` | #32 | Open, **all 4 jobs green** (349 vitest tests) | Chat reason chips and a "what should it have said?" box. Workspace tabs: Overview (every chart mark filters the queue), Review Queue (j/k/x/r/d/p keys, bulk actions, drawer, optimistic updates with 409 handling, read-only for operators), Golden Cases with Run now, Preference Data export, Knowledge Gaps. **Backend follow-ups queued for #27:** `PATCH` should accept `corrected_answer`; add reason-tag and sentiment list filters; add a golden-run job status endpoint; widen the undo transitions. |
+| #37 | PR-26 | `feat/ui-settings-branding-taxonomy` | #32 | Open, **all 4 jobs green** (364 vitest tests) | Branding editor: form, live contrast badge (palette matches the backend exactly), 5 logo upload slots, live light/dark preview of sidebar, login and chat, save with version and 409 handling, reset to defaults, brand changes applied app-wide without a reload. Taxonomy editor: immutable codes, reorder, archive. Public `/branding/assets/[sha]` passthrough; proxy forwards PUT. **Follow-up:** the `--journey branding` smoke step needs the backend chain. |
+| #36 | PR-23 | `feat/ui-governance-revamp` | #32 | Open, **all 4 jobs green** (358 vitest tests) | Overall: animated health banner, 8 KPI sparkline cards, status timeline with incident markers that open Logs, live incident list. Monitoring: G1 (ms/s axis), G2 (no data), G7 (window/source labels), G8 (4×2 grid), stage percentiles, gauges, SSE live updates with backoff and pause on hidden (G13). Traces: cursor table and waterfall drawer, `?request_id=` deep link. Logs: server paging (G12), level chips, JSON viewer, CSV, auto-refresh. **Note:** SSE and CSV rely on the cookie session from PR-18. `/admin/governance` first-load JS is 317 kB; check it against the §13.4 budget in phase V. |
+| #38 | PR-18 | `feat/ui-auth-gate-login` | #32 | Open, **all 4 jobs green** (491 vitest tests) | Server-side OIDC start and callback (state cookie, HttpOnly session, 8-step contract). Proxy forwards X-Session, X-Requested-With and Origin, handles every method and never exposes the session id. Nonce CSP middleware. Real auth context with fail-closed `usePermission`, `useCan` and `<RequirePermission>`. Branded teal split-screen `/login` (§7.7). Access Required stepper with polling, `/suspended` page, route gate, role-filtered sidebar and palette, pending-request badge and bell. **After the merge into the backend chain:** turn on the `--journey signin` smoke step in CI. The CSP `img-src` blocks external logo hosts. |
+| – | consolidation | – | after merges | Planned | Replace the 3 temporary permission helpers in #35, #34 and #37 with PR-18's `usePermission`/`useCan`, and flip the Analytics nav flag after #33. | Login and auth gate (teal split-screen per §7.7), User Management, Governance, Feedback workspace, Settings. |
+| #28 | PR-20 | `feat/ui-nav-eval-usage-cleanup` | #24 | Open, **all 4 jobs green** | Evaluation removed from the nav, and the old routes redirect with 307 (`force-dynamic`). Live Telemetry is now Usage "Overview" (aliases `live_telemetry` and `overall`). Users renamed to Visitors. **Your decision:** some offline-benchmark features are not in Evaluation Live (offline report view, deep-judge scores, abstention by category, KB eval, operational stats, test-case table), so the old page is kept unmounted as `LegacyEvaluationReport.tsx`. Port those features or drop them. |
+
+**Stack shape for review and merge: a dependency tree.** Each PR's base is the branch it depends on:
+- #14 → #19 (PR-01) → PR-15 → frontend PRs
+- #14 → #16 (PR-02) → #17 (PR-03) → #18 (PR-04) → {#21 (PR-05), #20 (PR-06)}
+- #20 (PR-06) → {PR-07, PR-08, #22 (PR-09) → PR-10, PR-11, #23 (PR-12) → PR-13}
+
+Merge a parent, then delete its branch, and GitHub retargets its children to `main`. Before the final merge, a **rebase sweep** brings PR-01's stricter CI and PR-04's flaky-test fix into every backend branch, so each one is green under the final CI.
+
+**Rebase sweep in progress:** the backend PRs are being turned into one linear chain, in this order: #19 → #16 → #17 → #18 → {#21, #20 → {#25, #23 → #31 → #26 → #27 → #22 → #29}}. This brings PR-01's stricter CI and PR-04's flaky-test fixes into every branch, and re-links the four sibling migrations into one alembic chain: `a9b0c1d2e3f4` → `4c1e9a7d2b65` → `b0c1d2e3f4a5` → `5712ebd9d3c9` → `72125f44984d`. The PR bases are being retargeted to match.
+
+**2026-10-16: local CI gate.** At your request, nothing is pushed unless `ci_local.ps1` (a full mirror of `ci.yml`, including a fresh Postgres DB per worktree and the full-stack smoke test) passes locally first. **Pushes are on hold until you set the `ASKDIQ_TEST_DB_ADMIN_URL` user environment variable.** Workers keep committing locally in the meantime.
+
+| – | PR-21 | `feat/ui-dashboard-interactive-charts` | #32 | **Committed locally (193059d), waiting on the local CI gate before push** | 8 drill-down KPI cards (sparkline, delta, count-up, prefetch), outcome stacked area, p50/p95 band, cost vs budget, satisfaction gauge, intents treemap, live activity feed, health pill, date range. Usage cost insights, eval radar and pass-rate trend, chat header and trace link. The old made-up placeholder numbers are removed. Contract for PR-14: `frontend/docs/contracts/dashboard-aggregations.md`. |
+| – | sweep | backend chain | – | **Done locally; pushes waiting on the local CI gate** | One linear chain with single migration line `a9b0c1d2e3f4 → 4c1e9a7d2b65 → bd75f2033c21 (new: planner statistics, summary 380 → 195 ms) → b0c1d2e3f4a5 → 5712ebd9d3c9 → 72125f44984d`. The perf gates run in their own CI step and pylint fail-under is 9.34. Seven PRs were briefly closed by a script bug and reopened (none merged). Diagnostic branches `sweep/*` are deleted. |
+| – | preview | `preview/all` (local only, never pushed) | – | Building | Everything combined in `C:\Projects\askdiq-wt\preview` so you can run it; see `PREVIEW_README.md`. |
+
+**2026-10-16: owner feedback round (phase F8, newplan rev 3.3).** The owner reviewed the preview build. Six PRs were planned (one per item), plus one production hotfix that is already live. Every push still waits for `ci_local.ps1` PASS, and nothing is merged to `main`.
+
+| – | HF-01 | `hotfix/query-filters-ip-ingest` | main | **Deployed to production**; PR into `main` still to raise | Commits `a795af3`, `27d516c`, `f9d76ed`. The Swagger `additionalProp1` filter emptied every answer: filters are now allow-listed scalars. `no_sources` flag. KB markdown shipped in the image. Forwarded end-user `ip_address` honoured (`ALLOW_CLIENT_IP_OVERRIDE`, default `true`) on `/query`, `/sessions` and feedback. Per-IP rate limit uses the end-user IP. Swagger example restored. Prod migrations `5491a7bdb113` → `d6e7f8a9b0c1` applied after a backup. Usage backfill applied (41 rows). |
+| – | PR-27 | `fix/chat-page-fetch-timeouts` | main | Planned | `/chat` `HeadersTimeoutError` (undici 300 s), `GET /chat?_rsc` loop about every 1 s, connection leak in `app/governance/overview.py`. Bounded timeouts and a pool leak test. A06, A10. |
+| – | PR-28 | `perf/dashboard-load-speed` | main | Planned | Baseline first. Shell < 300 ms warm, page data < 500 ms on 10k+ rows, also at 50 concurrent. Role-scoped caches (A01, A02). |
+| – | PR-29 | `feat/realistic-demo-data` | main | Planned | `seed_realistic_activity.py`: 10k+ rows, deterministic, tagged, purgeable, dry run by default. Fill the fields the live path never writes. |
+| – | PR-30 | `feat/askdiq-chat-widget` | main | Planned | Mascot launcher, Motion drawer, reused chat hooks, brand name from config, lazy-loaded, accessible, safe markdown (A05). |
+| – | PR-31 | `fix/shell-nav-logout-theme-dates` | main | Planned | Flat sidebar, logout end to end (A07), light/dark only, `<DateTime>` everywhere, one Active users definition (DAU/WAU/MAU/active now). |
+| – | PR-32 | `chore/green-open-prs` | main | Planned | Reproduce every red open PR with `ci_local.ps1`, fix root causes, push only after PASS. |
+
+Progress (2026-10-16):
+
+- **HF-01** `hotfix/query-filters-ip-ingest` (production hotfix, newplan §17.7)
+  - [x] **[Dev]** Allow-listed scalar filters, `no_sources`, KB markdown in the image, end-user `ip_address` override on `/query`, `/sessions` and feedback, per-IP rate limit on the end-user IP, Swagger example restored.
+  - [x] **[Lint]** LINT-BE clean.
+  - [x] **[Test]** TEST-BE passes for the hotfix.
+  - Production: migrations `5491a7bdb113` → `d6e7f8a9b0c1` applied with a backup; usage backfill applied (41 rows).
+- **PR-27** `fix/chat-page-fetch-timeouts` (F8.1)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-28** `perf/dashboard-load-speed` (F8.2)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-29** `feat/realistic-demo-data` (F8.3)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-30** `feat/askdiq-chat-widget` (F8.4)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-31** `fix/shell-nav-logout-theme-dates` (F8.5)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-32** `chore/green-open-prs` (F8.6)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **F8.8** Phase F8 integration testing (seeded dashboards under 50 concurrent requests, widget chat round-trip, logout, theme, dates)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
