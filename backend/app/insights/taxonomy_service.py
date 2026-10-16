@@ -1,4 +1,5 @@
-"""Taxonomy administration for F7 (newplan 6.3): list, create, edit, archive.
+"""Taxonomy administration for F7 (newplan 6.3): list, create, edit, archive,
+unarchive.
 
 Codes are stable identifiers stored on ``turn_insights``: they are immutable
 after creation and entries are archived, never deleted, so a rename or an
@@ -162,6 +163,19 @@ class TaxonomyService:
             row.is_active = False
             row.updated_at = func.now()
             await self._audit(audit, "insights_taxonomy_archived", row, {})
+            await self.db.commit()
+            await self.db.refresh(row)
+        return row
+
+    async def unarchive(
+        self, kind: TaxonomyKind, code: str, audit: AuditContext
+    ) -> InsightTaxonomy:
+        """Offer an archived entry to filters and the classifier again."""
+        row = await self._get(kind, code)
+        if not row.is_active:
+            row.is_active = True
+            row.updated_at = func.now()
+            await self._audit(audit, "insights_taxonomy_unarchived", row, {})
             await self.db.commit()
             await self.db.refresh(row)
         return row

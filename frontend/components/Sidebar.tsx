@@ -52,6 +52,8 @@ export interface NavItem {
    * without one (Chat) are open to every signed-in, non-suspended user.
    */
   permission?: Permission;
+  /** Visible with any one of these (when the page itself accepts either). */
+  anyPermission?: readonly Permission[];
   badgeKey?: NavBadgeKey;
   /** Extra palette search terms. */
   keywords?: string[];
@@ -87,7 +89,8 @@ const PLANNED_ITEMS: NavItem[] = [
     href: "/admin/settings",
     label: "Settings",
     icon: Settings2,
-    permission: "branding:write",
+    // The page opens with either permission (Branding or Taxonomy tab).
+    anyPermission: ["branding:write", "taxonomy:write"],
     keywords: ["branding", "taxonomy", "white-label"],
   },
 ];
@@ -99,7 +102,9 @@ export const isNavItemEnabled = (item: NavItem) => item.enabled !== false;
 
 /** Enabled and allowed for the signed-in role (deny by default). */
 export function canSeeNavItem(item: NavItem, permissions: readonly string[] | null | undefined): boolean {
-  return isNavItemEnabled(item) && (!item.permission || hasPermission(permissions, item.permission));
+  if (!isNavItemEnabled(item)) return false;
+  if (item.anyPermission) return item.anyPermission.some((p) => hasPermission(permissions, p));
+  return !item.permission || hasPermission(permissions, item.permission);
 }
 
 /** The items a user with `permissions` sees, in sidebar order. */

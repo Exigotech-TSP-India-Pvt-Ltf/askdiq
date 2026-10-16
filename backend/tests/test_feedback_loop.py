@@ -1192,3 +1192,15 @@ def test_daily_coverage_divides_ratings_by_that_days_answers() -> None:
     assert out[0]["answers"] == 0
     assert out[0]["coverage"] is None
     assert out[1]["coverage"] == 0.25
+
+
+def test_feedback_outcome_filter_accepts_empty_llm_output() -> None:
+    from pydantic import TypeAdapter, ValidationError
+
+    from app.api.routes.admin_feedback import FeedbackOutcome
+
+    adapter = TypeAdapter(FeedbackOutcome)
+    assert adapter.validate_python("empty_llm_output") == "empty_llm_output"
+    assert adapter.validate_python("llm_failed") == "llm_failed"
+    with pytest.raises(ValidationError):
+        adapter.validate_python("failed")

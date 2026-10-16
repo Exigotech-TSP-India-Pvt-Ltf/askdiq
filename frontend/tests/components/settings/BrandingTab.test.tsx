@@ -216,13 +216,68 @@ describe("Settings → Branding", { timeout: 15_000 }, () => {
     expect(await screen.findByText("Not a PNG, WebP or SVG image.")).toBeInTheDocument();
   });
 
-  it("Reset to defaults goes through ConfirmDialog and sends the seeded defaults", async () => {
-    const { calls } = installFetch(({ method, body }) =>
-      method === "GET"
-        ? json(branding({ product_name: "Contoso IQ", primary_hex: "#3355cc", palette: RAMP_3355CC, logo_light_asset_id: SHA_A }))
-        : method === "PUT"
-          ? json(branding({ version: 4 }))
-          : undefined,
+  it("Reset to defaults restores the server's seeded row (login copy, accent, tint, names)", async () => {
+    const seeded = {
+      product_name: "DeployIQ Server",
+      assistant_name: "AskDIQ",
+      company_name: "Exigo Tech",
+      support_email: "support@deployiq.com",
+      access_contact_email: null,
+      primary_hex: "#008080",
+      accent_hex: "#00584f",
+      tint_hex: "#eaf6f5",
+      logo_light_asset_id: null,
+      logo_dark_asset_id: null,
+      mark_light_asset_id: null,
+      mark_dark_asset_id: null,
+      favicon_asset_id: null,
+      login_eyebrow: "ASKDIQ",
+      login_headline: "Answers you can trust.",
+      login_subtext: "Cites every source.",
+      login_description: "Sign in with Microsoft.",
+      privacy_url: null,
+      terms_url: null,
+      help_url: null,
+      chat_sample_questions: ["What is the Essential Eight?"],
+    };
+    const { calls } = installFetch(({ method, url }) =>
+      method === "GET" && url.endsWith("/admin/branding/defaults")
+        ? json(seeded)
+        : method === "GET"
+          ? json(branding({ product_name: "Contoso IQ", primary_hex: "#3355cc", palette: RAMP_3355CC, logo_light_asset_id: SHA_A }))
+          : method === "PUT"
+            ? json(branding({ version: 4 }))
+            : undefined,
+    );
+    renderTab();
+    await loaded();
+    fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Reset branding to defaults?" });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Reset to defaults" }));
+    });
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
+    expect(calls.find((c) => c.method === "PUT")?.body).toMatchObject({
+      version: 3,
+      product_name: "DeployIQ Server",
+      accent_hex: "#00584f",
+      tint_hex: "#eaf6f5",
+      login_headline: "Answers you can trust.",
+      login_subtext: "Cites every source.",
+      logo_light_asset_id: null,
+    });
+    expect(await screen.findByText(/other users see it within about 5 minutes/i)).toBeInTheDocument();
+  });
+
+  it("Reset to defaults falls back to the built-in defaults when the server has none", async () => {
+    const { calls } = installFetch(({ method, url }) =>
+      method === "GET" && url.endsWith("/admin/branding/defaults")
+        ? json({ detail: "Not Found" }, 404)
+        : method === "GET"
+          ? json(branding({ product_name: "Contoso IQ", primary_hex: "#3355cc", palette: RAMP_3355CC, logo_light_asset_id: SHA_A }))
+          : method === "PUT"
+            ? json(branding({ version: 4 }))
+            : undefined,
     );
     renderTab();
     await loaded();
@@ -285,5 +340,14 @@ describe("Settings → Branding", { timeout: 15_000 }, () => {
     fail = false;
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));
     await loaded();
+  });
+});
+
+describe("Branding asset hint", () => {
+  it("mentions the 4096 px dimension limit the server enforces", async () => {
+    installFetch(({ method }) => (method === "GET" ? json(branding()) : undefined));
+    renderTab();
+    await loaded();
+    expect(screen.getAllByText(/4096 x 4096 px/).length).toBeGreaterThan(0);
   });
 });

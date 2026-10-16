@@ -141,3 +141,23 @@ describe("Feedback Overview data fidelity", () => {
     expect(screen.getAllByRole("button", { name: /^Reviewed: 6 / }).length).toBeGreaterThan(0);
   });
 });
+
+describe("Feedback outcomes", () => {
+  it("charts ratings on empty LLM replies instead of dropping them", async () => {
+    queryCache.clear();
+    installFetch((call) => {
+      if (call.path.startsWith("/admin/feedback/analytics")) {
+        return {
+          json: {
+            ...analyticsFixture,
+            feedback_by_outcome: { ...analyticsFixture.feedback_by_outcome, empty_llm_output: { positive: 0, negative: 2, total: 2 } },
+          },
+        };
+      }
+      if (call.path.startsWith("/admin/feedback?")) return { json: { ...page([]), total: 3 } };
+      return undefined;
+    });
+    await renderOverview();
+    expect(screen.getAllByRole("button", { name: /^Empty LLM reply: / }).length).toBeGreaterThan(0);
+  });
+});

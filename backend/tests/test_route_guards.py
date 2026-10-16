@@ -58,6 +58,9 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/admin/insights/taxonomy/{kind}/{code}/archive"): (
         Permission.TAXONOMY_WRITE
     ),
+    ("POST", "/admin/insights/taxonomy/{kind}/{code}/unarchive"): (
+        Permission.TAXONOMY_WRITE
+    ),
     ("PUT", "/admin/branding"): Permission.BRANDING_WRITE,
     ("POST", "/admin/branding/assets"): Permission.BRANDING_WRITE,
     ("POST", "/admin/feedback/bulk"): Permission.FEEDBACK_TRIAGE,
@@ -81,6 +84,7 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
 # GET routes needing more than dashboard:read.
 EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/usage/export": Permission.USAGE_EXPORT,
+    "/admin/branding/defaults": Permission.BRANDING_WRITE,
     "/admin/governance/logs/export.csv": Permission.USAGE_EXPORT,
     "/admin/feedback/export": Permission.FEEDBACK_EXPORT,
     "/auth/me": SIGNED_IN,

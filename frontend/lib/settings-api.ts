@@ -97,6 +97,8 @@ export const assetField = (slot: BrandAssetSlot): BrandAssetField => `${slot}_as
 
 /** Mirrors the server's upload rules (512 KB, PNG / WebP / SVG). */
 export const BRAND_ASSET_MAX_BYTES = 512 * 1024;
+/** Server cap on width and height (`BRANDING_ASSET_MAX_DIMENSION`). */
+export const BRAND_ASSET_MAX_DIMENSION = 4096;
 export const BRAND_ASSET_MIME_TYPES = ["image/png", "image/webp", "image/svg+xml"] as const;
 export type BrandAssetMime = (typeof BRAND_ASSET_MIME_TYPES)[number];
 export const MAX_SAMPLE_QUESTIONS = 8;
@@ -105,6 +107,32 @@ export const MAX_QUESTION_CHARS = 200;
 export type BrandAssetUrls = Record<BrandAssetSlot, string | null>;
 
 /** `GET /branding` / `PUT /admin/branding` response (`BrandingRead`). */
+/** `GET /admin/branding/defaults`: the seeded row ("Reset to defaults"). */
+export type BrandingDefaults = Pick<
+  BrandingRead,
+  | "product_name"
+  | "assistant_name"
+  | "company_name"
+  | "support_email"
+  | "access_contact_email"
+  | "primary_hex"
+  | "accent_hex"
+  | "tint_hex"
+  | "logo_light_asset_id"
+  | "logo_dark_asset_id"
+  | "mark_light_asset_id"
+  | "mark_dark_asset_id"
+  | "favicon_asset_id"
+  | "login_eyebrow"
+  | "login_headline"
+  | "login_subtext"
+  | "login_description"
+  | "privacy_url"
+  | "terms_url"
+  | "help_url"
+  | "chat_sample_questions"
+>;
+
 export interface BrandingRead {
   brand_name: string;
   brand_assistant_name: string;
@@ -180,6 +208,8 @@ export const BRANDING_KEY = "settings/branding";
 export const settingsApi = {
   getBranding: (signal?: AbortSignal) => request<BrandingRead>("/branding", { signal, cache: "no-store" }),
 
+  getBrandingDefaults: () => request<BrandingDefaults>("/admin/branding/defaults", { cache: "no-store" }),
+
   updateBranding: (body: BrandingUpdate) =>
     request<BrandingRead>("/admin/branding", { method: "PUT", body: JSON.stringify(body) }),
 
@@ -203,6 +233,9 @@ export const settingsApi = {
 
   archiveTaxonomy: (kind: TaxonomyKind, code: string) =>
     request<TaxonomyRead>(`${TAXONOMY_PATH}/${kind}/${encodeURIComponent(code)}/archive`, { method: "POST" }),
+
+  unarchiveTaxonomy: (kind: TaxonomyKind, code: string) =>
+    request<TaxonomyRead>(`${TAXONOMY_PATH}/${kind}/${encodeURIComponent(code)}/unarchive`, { method: "POST" }),
 };
 
 // ---------------------------------------------------------------------------
@@ -258,6 +291,7 @@ export type TaxonomyKind = (typeof TAXONOMY_KINDS)[number];
 export const TAXONOMY_CODE_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
 export const TAXONOMY_LABEL_MAX = 128;
 export const TAXONOMY_GROUP_MAX = 64;
+export const TAXONOMY_DESCRIPTION_MAX = 1000;
 export const TAXONOMY_SORT_MAX = 10_000;
 
 /**
@@ -310,6 +344,8 @@ export interface TaxonomyUpdate {
   color?: string | null;
   group?: string | null;
   sort_order?: number;
+  substantive?: boolean;
+  handled?: boolean;
 }
 
 export const TAXONOMY_KEY = "settings/taxonomy";

@@ -175,6 +175,32 @@ class BrandingUpdate(BaseModel):
         return self.model_dump(include=self.model_fields_set - {"version"})
 
 
+class BrandingDefaults(BaseModel):
+    """The seeded ``brand_settings`` values ("Reset to defaults" restores them)."""
+
+    product_name: str
+    assistant_name: str
+    company_name: str
+    support_email: str
+    access_contact_email: str | None = None
+    primary_hex: str
+    accent_hex: str | None = None
+    tint_hex: str | None = None
+    logo_light_asset_id: str | None = None
+    logo_dark_asset_id: str | None = None
+    mark_light_asset_id: str | None = None
+    mark_dark_asset_id: str | None = None
+    favicon_asset_id: str | None = None
+    login_eyebrow: str | None = None
+    login_headline: str | None = None
+    login_subtext: str | None = None
+    login_description: str | None = None
+    privacy_url: str | None = None
+    terms_url: str | None = None
+    help_url: str | None = None
+    chat_sample_questions: list[str]
+
+
 class BrandAssetUrls(BaseModel):
     logo_light: str | None = None
     logo_dark: str | None = None

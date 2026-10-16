@@ -34,6 +34,7 @@ import {
   assetUrlsFromBranding,
   brandFromForm,
   defaultBrandingForm,
+  formFromDefaults,
   diffBrandingForm,
   formFromBranding,
   fullBrandingPayload,
@@ -105,7 +106,8 @@ export function BrandingTab() {
       setShowErrors(false);
       toast.show({
         title: vars.reset ? "Branding reset to defaults" : "Branding saved",
-        description: "The new brand is live for everyone.",
+        // Other users' pages and browsers cache branding for up to 5 minutes.
+        description: "You see it now. Other users see it within about 5 minutes, or when they reload after that.",
         tone: "success",
       });
     },
@@ -205,7 +207,12 @@ export function BrandingTab() {
 
   async function resetToDefaults() {
     if (!server) return;
-    const defaults = defaultBrandingForm();
+    // The seeded row (login copy, accent, tint, BRAND_* names) comes from the
+    // server; the built-in form is only a fallback for an older backend.
+    const defaults = await settingsApi
+      .getBrandingDefaults()
+      .then(formFromDefaults)
+      .catch(() => defaultBrandingForm());
     await save.mutate({ body: { version: server.version, ...fullBrandingPayload(defaults) }, reset: true });
     setConfirmReset(false);
   }

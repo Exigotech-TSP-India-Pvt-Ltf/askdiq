@@ -33,6 +33,7 @@ export const PALETTE_PAGES: PaletteItem[] = NAV_ITEMS.filter(isNavItemEnabled).m
   keywords: item.keywords,
   hint: item.href,
   permission: item.permission,
+  anyPermission: item.anyPermission,
 }));
 
 const TOUR_HREF_PREFIX = "#tour:";

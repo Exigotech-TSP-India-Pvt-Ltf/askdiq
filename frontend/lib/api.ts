@@ -176,7 +176,6 @@ export const api = {
     return request<Record<string, any>>(`/metrics/evaluation/record/${recordId}`, { token, signal });
   },
 
-
   ingest: (
     token: string,
     body: {
@@ -211,27 +210,6 @@ export const api = {
       token,
     });
   },
-
-  submitFeedback: (
-    token: string,
-    sessionId: string,
-    messageId: string,
-    rating: number,
-    comment?: string
-  ) =>
-    request<{
-      id: string;
-      message_id: string;
-      actor: string;
-      rating: number;
-      comment: string | null;
-      created_at: string;
-      updated_at: string;
-    }>(`/sessions/${sessionId}/messages/${messageId}/feedback`, {
-      method: "POST",
-      token,
-      body: JSON.stringify({ rating, comment: comment ?? null }),
-    }),
 
   ingestFile: (
     token: string,

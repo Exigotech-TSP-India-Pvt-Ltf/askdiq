@@ -411,10 +411,13 @@ def test_openapi_documents_every_governance_route():
 def test_all_governance_routes_need_dashboard_read():
     from tests.test_route_guards import api_routes, requirement
 
+    # Bulk CSV export is an admin action (usage:export), like the Usage CSV.
+    exports = {f"{BASE}/logs/export.csv": str(Permission.USAGE_EXPORT)}
     routes = [r for r in api_routes() if r.path.startswith(f"{BASE}/")]
     assert len(routes) >= 8
     for route in routes:
-        assert requirement(route) == str(Permission.DASHBOARD_READ), route.path
+        expected = exports.get(route.path, str(Permission.DASHBOARD_READ))
+        assert requirement(route) == expected, route.path
 
 
 # ===========================================================================

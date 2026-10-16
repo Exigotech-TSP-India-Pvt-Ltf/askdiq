@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { NAV_ITEMS, Sidebar, isNavItemEnabled } from "@/components/Sidebar";
+import { NAV_ITEMS, Sidebar, canSeeNavItem, isNavItemEnabled } from "@/components/Sidebar";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { MobileNavProvider } from "@/lib/mobile-nav-context";
@@ -139,7 +139,7 @@ describe("Sidebar nav registry, icons and active indicator (PR-17)", () => {
     const um = NAV_ITEMS.find((item) => item.label === "User Management");
     expect(um?.badgeKey).toBe("pendingAccess");
     expect(um?.permission).toBe("users:manage");
-    expect(NAV_ITEMS.find((item) => item.label === "Settings")?.permission).toBe("branding:write");
+    expect(NAV_ITEMS.find((item) => item.label === "Settings")?.anyPermission).toEqual(["branding:write", "taxonomy:write"]);
     expect(screen.getByRole("link", { name: /user management/i })).toHaveAttribute("href", "/admin/user-management");
     expect(screen.getByRole("link", { name: /^analytics$/i })).toHaveAttribute("href", "/admin/analytics");
     expect(screen.getByRole("link", { name: /^settings$/i })).toHaveAttribute("href", "/admin/settings");
@@ -283,5 +283,14 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
     expect(screen.getByTestId("role-badge")).toHaveTextContent("Superadmin");
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(auth.logout).toHaveBeenCalled();
+  });
+});
+
+describe("Settings nav gating matches the page", () => {
+  const settings = NAV_ITEMS.find((item) => item.label === "Settings")!;
+  it("shows Settings with branding:write or taxonomy:write, hides it with neither", () => {
+    expect(canSeeNavItem(settings, ["branding:write"])).toBe(true);
+    expect(canSeeNavItem(settings, ["taxonomy:write"])).toBe(true);
+    expect(canSeeNavItem(settings, ["dashboard:read"])).toBe(false);
   });
 });

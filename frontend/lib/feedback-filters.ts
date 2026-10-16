@@ -164,6 +164,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   blocked: "Blocked",
   conversational: "Conversational",
   llm_failed: "LLM failed",
+  empty_llm_output: "Empty LLM reply",
 };
 
 export function outcomeLabel(outcome: string | null | undefined): string {
