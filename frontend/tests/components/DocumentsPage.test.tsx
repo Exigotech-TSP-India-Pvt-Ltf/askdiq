@@ -173,3 +173,12 @@ describe("Documents inventory", () => {
     expect(screen.getByText("Upload a .md or .docx file to add it to the knowledge base.")).toBeInTheDocument();
   });
 });
+
+describe("Documents deep link", () => {
+  it("?action=upload opens the upload dialog once and clears the param", async () => {
+    mockFetch(routes);
+    renderPage(<DocumentsPage />, { url: "/documents?action=upload" });
+    expect(await screen.findByRole("dialog", { name: /upload/i })).toBeInTheDocument();
+    await waitFor(() => expect(currentParams().get("action")).toBeNull());
+  });
+});

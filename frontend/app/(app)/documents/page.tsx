@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useCallback, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { m } from "motion/react";
@@ -127,6 +127,15 @@ function DocumentsContent() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
+
+  // `?action=upload` (e.g. Feedback > Knowledge gaps > Add document) opens the
+  // upload dialog once; the param is dropped so closing it does not reopen.
+  const action = get("action");
+  useEffect(() => {
+    if (action !== "upload") return;
+    if (canWrite) setUploadOpen(true);
+    set({ action: null });
+  }, [action, canWrite, set]);
 
   // URL state: ?q=&format=&status=&warnings=&sort=&page=
   const q = get("q") ?? "";
