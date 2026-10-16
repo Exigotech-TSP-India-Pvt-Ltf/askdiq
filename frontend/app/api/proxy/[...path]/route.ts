@@ -22,6 +22,8 @@ const CSRF_HEADER_VALUE = "askdiq";
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_NO_CONTENT = 204;
 const HTTP_NOT_MODIFIED = 304;
+/** Non-standard (nginx) status for a request the client abandoned. */
+const HTTP_CLIENT_CLOSED_REQUEST = 499;
 const HTTP_GATEWAY_TIMEOUT = 504;
 const MS_PER_SECOND = 1000;
 /** Upstream answers worth one more try (gateway / overload / timeout). */
@@ -222,9 +224,14 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
         { status: HTTP_GATEWAY_TIMEOUT, headers: { "Cache-Control": "no-store" } },
       );
     }
-    const cause = (err as { cause?: { code?: string }; code?: string; message?: string } | null) ?? {};
-    const code = cause.cause?.code || cause.code || "ECONNREFUSED";
-    console.error(`[Proxy] Failed to reach backend at ${targetUrl}: ${cause.message ?? String(err)}`);
+    if (req.signal.aborted) {
+      // The browser went away (navigation, reload, unmount): the upstream call
+      // was cancelled on purpose. Nothing failed and nobody reads this reply.
+      return new NextResponse(null, { status: HTTP_CLIENT_CLOSED_REQUEST });
+    }
+    const cause = (err as { cause?: { code?: string }; code?: string; message?: string; name?: string } | null) ?? {};
+    const code = cause.cause?.code || cause.code || cause.name || "ECONNREFUSED";
+    console.error(`[Proxy] Failed to reach backend at ${targetUrl} (${code}): ${cause.message || String(err)}`);
     return NextResponse.json(
       {
         detail: `Backend service is unreachable at ${BACKEND_URL} (${code}). Please ensure the FastAPI backend server is running.`,

@@ -206,12 +206,14 @@ describe("proxy bounds the wait for the backend (no 300 s HeadersTimeoutError ha
     backendHangs();
     const browser = new AbortController();
     const req = new NextRequest("http://localhost:3000/api/proxy/admin/governance/stream", { signal: browser.signal });
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const pending = GET(req, params("admin/governance/stream"));
     browser.abort();
     const res = await pending;
     expect((fetchMock.mock.calls[0][1] as RequestInit).signal?.aborted).toBe(true);
-    expect(res.status).toBe(502);
+    // A cancelled browser request is not a backend failure: 499, nothing logged.
+    expect(res.status).toBe(499);
+    expect(errors).not.toHaveBeenCalled();
   });
 });
 
