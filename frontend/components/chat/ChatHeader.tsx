@@ -43,7 +43,7 @@ export function ChatHeader() {
       <div className="flex min-w-0 items-center gap-3">
         <BrandLogo variant="mark" />
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-fg">{brand.productName} Assistant</h1>
+          <h1 className="truncate text-sm font-semibold text-fg">{brand.assistantName}</h1>
           <p className="truncate text-xs text-fg-subtle">
             Answers are grounded in your knowledge base and checked before delivery.
           </p>

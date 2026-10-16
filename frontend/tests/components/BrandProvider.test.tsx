@@ -199,7 +199,7 @@ describe("chat sample questions come from the brand", () => {
     Element.prototype.scrollTo = vi.fn() as unknown as typeof Element.prototype.scrollTo;
   });
 
-  it("renders the brand's questions and product name", () => {
+  it("renders the brand's questions and assistant name", () => {
     render(
       <BrandProvider brand={normalizeBrand(FUTURE_PAYLOAD)}>
         <ChatPage />
@@ -207,7 +207,7 @@ describe("chat sample questions come from the brand", () => {
     );
     expect(screen.getByText("How do I reset MFA?")).toBeInTheDocument();
     expect(screen.getByText("What is Zero Trust?")).toBeInTheDocument();
-    expect(screen.getByText("Contoso IQ Assistant")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Conti");
     expect(screen.queryByText(/DeployIQ/)).not.toBeInTheDocument();
   });
 

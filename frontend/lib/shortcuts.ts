@@ -10,6 +10,7 @@ export interface ShortcutDef {
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
   { keys: ["Ctrl / ⌘", "K"], description: "Open the command palette", group: "Global" },
+  { keys: ["Ctrl / ⌘", "/"], description: "Open or close the assistant chat drawer", group: "Global" },
   { keys: ["?"], description: "Show keyboard shortcuts", group: "Global" },
   { keys: ["↑", "↓"], description: "Move through palette results", group: "Overlays" },
   { keys: ["Enter"], description: "Open the selected result", group: "Overlays" },
@@ -35,4 +36,9 @@ export function isPaletteShortcut(event: KeyboardEvent): boolean {
 /** `?` with no Ctrl / Cmd / Alt, outside text fields. */
 export function isHelpShortcut(event: KeyboardEvent): boolean {
   return event.key === "?" && !event.ctrlKey && !event.metaKey && !event.altKey && !isTypingTarget(event.target);
+}
+
+/** Ctrl+/ on Windows / Linux, Cmd+/ on macOS: toggles the assistant chat drawer (works in fields). */
+export function isAskShortcut(event: KeyboardEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === "/";
 }
