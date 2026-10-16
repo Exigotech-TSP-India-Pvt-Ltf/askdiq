@@ -4,6 +4,7 @@ import re
 
 import numpy as np
 
+from app.core.config import get_settings
 from app.retrieval.embeddings import current_embedding_stage, embed_texts
 from app.schemas.query import SourceChunk
 
@@ -141,11 +142,18 @@ async def run_post_checks(
     answer: str,
     sources: list[SourceChunk],
     groundedness_threshold: float,
-    min_retrieval_score: float = 0.3,
+    min_retrieval_score: float | None = None,
 ) -> tuple[bool, float, list[str]]:
-    """Return (grounded, confidence, flags)."""
+    """Return (grounded, confidence, flags).
+
+    ``min_retrieval_score`` defaults to ``settings.min_retrieval_score``: the
+    same floor the retrieval gate uses, so an answer that passed retrieval is
+    never rejected afterwards by a stricter hidden threshold.
+    """
 
     flags: list[str] = []
+    if min_retrieval_score is None:
+        min_retrieval_score = get_settings().min_retrieval_score
 
     sources_ok, flag = check_has_sources(
         sources,
