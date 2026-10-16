@@ -44,7 +44,7 @@ describe("useUsageSummary", () => {
 
   it("surfaces a failure as a message", async () => {
     vi.spyOn(api, "getUsageSummary").mockRejectedValue(new Error("Backend down"));
-    const { result } = renderHook(() => useUsageSummary("session", "real"));
+    const { result } = renderHook(() => useUsageSummary("session", "users"));
     await waitFor(() => expect(result.current.error).toBe("Backend down"));
     expect(result.current.isLoading).toBe(false);
   });
@@ -52,12 +52,12 @@ describe("useUsageSummary", () => {
 
 describe("dashboard KPI intent prefetch", () => {
   it("warms the target page's own cache entry when it reads the same endpoint", () => {
-    expect(serializeKey(prefetchKey("/usage/summary", "real"))).toBe(serializeKey(usageKeys.summary("real")));
+    expect(serializeKey(prefetchKey("/usage/summary", "users"))).toBe(serializeKey(usageKeys.summary("users")));
     expect(serializeKey(prefetchKey("/governance/monitoring", "overview"))).toBe(
       serializeKey(governanceKeys.monitoring("overview")),
     );
-    expect(serializeKey(prefetchKey("/feedback/analytics", "test"))).toBe(
-      serializeKey(feedbackKeys.analytics("test")),
+    expect(serializeKey(prefetchKey("/feedback/analytics", "testing"))).toBe(
+      serializeKey(feedbackKeys.analytics("testing")),
     );
   });
 
