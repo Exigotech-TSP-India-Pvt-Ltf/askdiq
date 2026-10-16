@@ -240,3 +240,48 @@ async def test_sessions_page_limit_is_still_capped(raw_client: AsyncClient) -> N
 async def test_admin_list_limits_are_bounded(raw_client: AsyncClient, url: str) -> None:
     res = await raw_client.get(url)
     assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    ["/admin/users?status=bogus", "/admin/users?weekday=1", "/admin/users?hour=3"],
+)
+async def test_visitor_list_bad_filters_are_422_not_500(
+    raw_client: AsyncClient, url: str
+) -> None:
+    res = await raw_client.get(url)
+    assert res.status_code == 422
+
+
+def test_visitor_status_follows_last_activity() -> None:
+    from app.api.routes.admin import VISITOR_ACTIVE_WINDOW, visitor_status_label
+
+    now = datetime(2026, 10, 16, 12, 0)
+    assert visitor_status_label(now - timedelta(minutes=5), now) == "Active"
+    assert (
+        visitor_status_label(now - VISITOR_ACTIVE_WINDOW - timedelta(seconds=1), now)
+        == "Inactive"
+    )
+    assert visitor_status_label(None, now) == "Inactive"
+
+
+@pytest.mark.asyncio
+async def test_visitor_status_filter_and_message_counts(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tag = marker()
+    session = await make_session(db_session, f"{tag}@example.com", ip="198.51.100.77")
+    await make_exchange(db_session, session, turn=1, question=f"{tag} q")
+
+    active = await client.get("/admin/users?status=active&q=198.51.100.77")
+    inactive = await client.get("/admin/users?status=inactive&q=198.51.100.77")
+    assert active.status_code == inactive.status_code == 200
+    # The session was just used, so the visitor is active, not inactive.
+    assert [r["status"] for r in active.json()["items"]] == ["Active"]
+    assert inactive.json()["items"] == []
+
+    detail = await client.get("/admin/users/client-198.51.100.77")
+    assert detail.status_code == 200
+    counts = [c["message_count"] for c in detail.json()["conversations_data"]]
+    assert counts == [2]

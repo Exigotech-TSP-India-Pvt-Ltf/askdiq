@@ -101,12 +101,33 @@ _PAGE_MAX_LIMIT = get_settings().usage_page_max_limit
 _PAGE_MAX_OFFSET = get_settings().usage_max_offset
 
 
+# A visitor row is "Active" while its latest session activity is this recent
+# (the same 30-minute window the Visitors table used client-side).
+VISITOR_ACTIVE_WINDOW = timedelta(minutes=30)
+
+
+def visitor_status_label(last_active: datetime | None, now: datetime) -> str:
+    """ "Active" / "Inactive" from the latest activity (naive UTC)."""
+    if last_active is None:
+        return "Inactive"
+    return "Active" if now - last_active <= VISITOR_ACTIVE_WINDOW else "Inactive"
+
+
 @router.get("/users")
 async def list_users(
     audience: str = Query("overview"),
     include_test: bool | None = None,
     q: str | None = None,
-    status: str | None = None,
+    # Not named `status`: that would shadow fastapi.status used below.
+    visitor_status: str | None = Query(
+        None,
+        alias="status",
+        pattern="^(?i:all|active|inactive)$",
+        description=(
+            "`active`: last activity within the last "
+            f"{int(VISITOR_ACTIVE_WINDOW.total_seconds() // 60)} minutes."
+        ),
+    ),
     user_type: str | None = Query(None, alias="type"),
     sort: str = "last_active_desc",
     limit: int = Query(50, ge=1, le=_PAGE_MAX_LIMIT),
@@ -154,6 +175,8 @@ async def list_users(
         aud_scope = audience_scope(audience)
 
     test_ips, _, _ = await get_classified_ips(db)
+    wanted_status = (visitor_status or "all").lower()
+    now = datetime.utcnow()
 
     ip_rows = (
         await db.execute(
@@ -211,13 +234,17 @@ async def list_users(
         if slot_ips is not None and ip not in slot_ips:
             continue
 
+        row_status = visitor_status_label(row.last_active, now)
+        if wanted_status != "all" and row_status.lower() != wanted_status:
+            continue
+
         all_users.append(
             {
                 "id": f"client-{ip}",
                 "ip_address": ip,
                 "is_test": is_test,
                 "type": t_type,
-                "status": "Active",
+                "status": row_status,
                 "sessions": row.sessions,
                 "conversations": row.sessions,
                 "queries": queries_by_ip.get(ip, 0),
@@ -294,6 +321,19 @@ async def get_user(
 
         first_seen = min(s.created_at for s in sessions_res)
         last_active = max(s.last_activity_at for s in sessions_res)
+        message_counts = dict(
+            (
+                await db.execute(
+                    select(
+                        ChatMessageRecord.session_id, func.count(ChatMessageRecord.id)
+                    )
+                    .where(
+                        ChatMessageRecord.session_id.in_([s.id for s in sessions_res])
+                    )
+                    .group_by(ChatMessageRecord.session_id)
+                )
+            ).all()
+        )
 
         return {
             "id": user_id,
@@ -302,7 +342,7 @@ async def get_user(
             "ip_address": ip,
             "first_seen": first_seen,
             "last_active": last_active,
-            "status": "Active",
+            "status": visitor_status_label(last_active, datetime.utcnow()),
             "sessions": len(sessions_res),
             "conversations": len(sessions_res),
             "queries": query_count,
@@ -313,7 +353,7 @@ async def get_user(
                     "title": s.title,
                     "created_at": s.created_at,
                     "last_activity_at": s.last_activity_at,
-                    "message_count": 0,
+                    "message_count": message_counts.get(s.id, 0),
                 }
                 for s in sessions_res
             ],
@@ -376,7 +416,9 @@ async def get_user(
         "ip_address": ip_address,
         "first_seen": user.created_at,
         "last_active": last_activity or user.created_at,
-        "status": "Active",
+        "status": visitor_status_label(
+            last_activity or user.created_at, datetime.utcnow()
+        ),
         "sessions": len(conversation_rows),
         "conversations": len(conversation_rows),
         "queries": query_count,
