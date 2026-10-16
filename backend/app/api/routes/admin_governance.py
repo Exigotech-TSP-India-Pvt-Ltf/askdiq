@@ -28,7 +28,7 @@ from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import get_db, release_connection
 from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
@@ -184,6 +184,7 @@ async def governance_monitoring(
     active_users = (await db.scalar(q_active)) or 0
     errors = await persisted_error_counts(db, audience, since)
     traces_total = await count_traces(db, audience)
+    await release_connection(db)  # never hold a pool slot while waiting for more
 
     starts = timeseries.hour_starts(now)
     start = starts[0]

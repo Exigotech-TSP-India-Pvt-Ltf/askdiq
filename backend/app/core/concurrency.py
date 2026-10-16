@@ -87,6 +87,25 @@ class SingleFlight(Generic[T]):
 single_flight: SingleFlight[Any] = SingleFlight()
 
 
+_fanout: tuple[asyncio.AbstractEventLoop, asyncio.Semaphore] | None = None
+
+
+def fanout_slots() -> asyncio.Semaphore:
+    """Process-wide cap on sessions held by parallel aggregation.
+
+    ``pool_size + max_overflow - AGG_POOL_RESERVE`` (at least 1), so concurrent
+    dashboards queue here in order instead of draining the pool: sign-in
+    checks, ``/health`` and plain reads always find a connection.
+    """
+    global _fanout  # noqa: PLW0603 - one cap per process (per event loop)
+    loop = asyncio.get_running_loop()
+    if _fanout is None or _fanout[0] is not loop:
+        cfg = get_settings()
+        slots = cfg.db_pool_size + cfg.db_max_overflow - cfg.agg_pool_reserve
+        _fanout = (loop, asyncio.Semaphore(max(1, slots)))
+    return _fanout[1]
+
+
 async def gather_scoped(
     *factories: Callable[[AsyncSession], Awaitable[Any]],
     limit: int | None = None,
@@ -102,10 +121,11 @@ async def gather_scoped(
     if session_factory is None:
         session_factory = database.AsyncSessionLocal
     semaphore = asyncio.Semaphore(max(1, limit or get_settings().agg_max_concurrency))
+    shared = fanout_slots()
     results: list[Any] = [None] * len(factories)
 
     async def _run(index: int, factory: Callable[[AsyncSession], Awaitable[Any]]):
-        async with semaphore, session_factory() as session:
+        async with semaphore, shared, session_factory() as session:
             results[index] = await factory(session)
 
     try:

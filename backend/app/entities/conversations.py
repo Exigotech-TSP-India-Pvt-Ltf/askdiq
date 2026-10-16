@@ -28,6 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.concurrency import ScopedRunner
+from app.core.database import release_connection
 from app.dashboard.queries import outcome_sql
 from app.dashboard.window import DayRange, iso_z
 from app.governance.audience import build_audience_filter
@@ -222,6 +223,7 @@ async def conversation_stats(
     q: str | None,
 ) -> dict[str, Any]:
     conds = await session_conditions(db, audience, ip, q)
+    await release_connection(db)  # never hold a pool slot while waiting for more
     (bins, conversations, turns), by_day = await runner.gather(
         lambda s: turns_histogram(s, conds, days),
         lambda s: outcomes_by_day(s, conds, days),

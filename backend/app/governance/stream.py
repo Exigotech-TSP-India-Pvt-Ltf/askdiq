@@ -86,12 +86,19 @@ class GovernanceStreamHub:
         snapshot_fn: SnapshotFn | None = None,
         interval: float | None = None,
         bus: EventBus | None = None,
+        snapshot_timeout: float | None = None,
     ) -> None:
+        settings = get_settings()
         self._snapshot_fn = snapshot_fn or _default_snapshot
         self._interval = (
             interval
             if interval is not None
-            else get_settings().governance_stream_interval_seconds
+            else settings.governance_stream_interval_seconds
+        )
+        self._snapshot_timeout = (
+            snapshot_timeout
+            if snapshot_timeout is not None
+            else settings.governance_stream_snapshot_timeout_seconds
         )
         self._bus = bus
         self._subscribers: dict[str, set[asyncio.Queue[SSEEvent]]] = defaultdict(set)
@@ -149,9 +156,22 @@ class GovernanceStreamHub:
     # -- producer -------------------------------------------------------------
 
     async def tick(self, audience: str) -> None:
-        """Compute one snapshot and fan out the resulting events."""
+        """Compute one snapshot and fan out the resulting events.
+
+        Bounded by ``GOVERNANCE_STREAM_SNAPSHOT_TIMEOUT_SECONDS``: a stuck query
+        is cancelled (its session is still closed and its connection returned)
+        and the next tick tries again, instead of the producer hanging.
+        """
         try:
-            snapshot = await self._snapshot_fn(audience)
+            async with asyncio.timeout(self._snapshot_timeout):
+                snapshot = await self._snapshot_fn(audience)
+        except TimeoutError:
+            logger.warning(
+                "governance_stream_snapshot_timeout",
+                audience=audience,
+                timeout_seconds=self._snapshot_timeout,
+            )
+            return
         except Exception:
             logger.warning("governance_stream_snapshot_failed", exc_info=True)
             return
