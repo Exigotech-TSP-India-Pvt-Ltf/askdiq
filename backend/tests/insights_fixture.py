@@ -17,21 +17,31 @@ conversations and 117 exchanges, extracted by
   ``insight_taxonomy`` so parity is exact.
 
 PR-13 tests use the ``insights_reference_db`` fixture (import it from here).
+Inside its rolled-back transaction it first removes every other chat session
+and rollup row, so the dashboard endpoints see exactly the reference data.
+The HTML's "Great" rating comes from user feedback in our model (newplan 6.4),
+so a 5-star rating is seeded on those conversations.
 """
 
 from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.insights import get_parallel_runner
+from app.core.config import get_settings
+from app.core.database import get_db, read_only_session
 from app.insights.taxonomy import DEFAULT_TAXONOMY
+from main import app
 from tests.pg_helpers import new_engine, require_postgres
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "insights_reference.json"
@@ -256,13 +266,101 @@ async def load_reference_fixture(session: AsyncSession) -> dict[str, int]:
     return inserted
 
 
+_FEEDBACK_SQL = text(
+    """
+    INSERT INTO message_feedback (id, message_id, session_id, actor, rating)
+    VALUES (:id, :message_id, :session_id, :actor, :rating)
+    ON CONFLICT (message_id, actor) DO NOTHING RETURNING id
+    """
+)
+GREAT_RATING = 5
+
+
+async def load_reference_feedback(session: AsyncSession) -> int:
+    """A 5-star rating on the last reply of every conversation rated "Great"."""
+    data = load_reference()
+    last_turn: dict[str, str] = {}
+    for exchange in data["exchanges"]:
+        conv_id = exchange["conv_id"]
+        if int(exchange["turn"]) >= int(last_turn.get(conv_id, "0")):
+            last_turn[conv_id] = exchange["turn"]
+    inserted = 0
+    for conv in data["conversations"]:
+        if conv["experience_rating"] != "Great":
+            continue
+        conv_id = conv["conv_id"]
+        inserted += await _insert(
+            session,
+            _FEEDBACK_SQL,
+            {
+                "id": fixture_id("feedback", conv_id),
+                "message_id": fixture_id("assistant", conv_id, last_turn[conv_id]),
+                "session_id": session_id(conv_id),
+                "actor": person_email(conv["person"]),
+                "rating": GREAT_RATING,
+            },
+        )
+    await session.flush()
+    return inserted
+
+
+async def isolate_insights_data(session: AsyncSession) -> None:
+    """Remove other chat data and rollup rows inside the test transaction."""
+    await session.execute(
+        text("DELETE FROM chat_sessions WHERE user_email NOT LIKE :domain"),
+        {"domain": f"%@{FIXTURE_EMAIL_DOMAIN}"},
+    )
+    await session.execute(text("DELETE FROM insight_daily_rollup"))
+
+
 @pytest.fixture
 async def insights_reference_db(db_session: AsyncSession) -> AsyncSession:
-    """``db_session`` with the reference dataset loaded (rolled back after)."""
+    """``db_session`` with only the reference dataset (rolled back after)."""
     engine = new_engine()
     try:
         await require_postgres(engine)
     finally:
         await engine.dispose()
+    await isolate_insights_data(db_session)
     await load_reference_fixture(db_session)
+    await load_reference_feedback(db_session)
     return db_session
+
+
+SessionTask = Callable[[AsyncSession], Awaitable[Any]]
+
+
+def sequential_runner(session: AsyncSession) -> Callable[..., Awaitable[list[Any]]]:
+    """``gather_scoped`` stand-in: the tasks run in turn on the test session
+    (the fixture data is uncommitted, so other sessions cannot see it)."""
+
+    async def run(*tasks: SessionTask, **_kwargs: Any) -> list[Any]:
+        return [await task(session) for task in tasks]
+
+    return run
+
+
+@pytest.fixture
+async def insights_client(
+    insights_reference_db: AsyncSession,
+) -> AsyncIterator[AsyncClient]:
+    """API client whose every database access uses the fixture transaction."""
+
+    async def _db() -> AsyncIterator[AsyncSession]:
+        yield insights_reference_db
+
+    app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[read_only_session] = _db
+    app.dependency_overrides[get_parallel_runner] = lambda: sequential_runner(
+        insights_reference_db
+    )
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+            headers={"X-API-Key": get_settings().api_key_name or "ci-test-key"},
+        ) as client:
+            yield client
+    finally:
+        for dep in (get_db, read_only_session, get_parallel_runner):
+            app.dependency_overrides.pop(dep, None)

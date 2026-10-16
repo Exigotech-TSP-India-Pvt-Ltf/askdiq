@@ -49,6 +49,11 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/admin/feedback/{message_id}/promote-to-test"): (
         Permission.FEEDBACK_TRIAGE
     ),
+    ("POST", "/admin/insights/taxonomy"): Permission.TAXONOMY_WRITE,
+    ("PATCH", "/admin/insights/taxonomy/{kind}/{code}"): Permission.TAXONOMY_WRITE,
+    ("POST", "/admin/insights/taxonomy/{kind}/{code}/archive"): (
+        Permission.TAXONOMY_WRITE
+    ),
     ("POST", "/query"): CHAT,
     ("POST", "/sessions"): CHAT,
     ("PATCH", "/sessions/{session_id}"): CHAT,
