@@ -235,8 +235,10 @@ Page URL: `/admin/conversations?ip=&min_turns=&max_turns=&outcome=&day=&preview=
 ### `GET /documents/stats/citations`
 
 Query: `from`, `to`, `limit` (top-cited size, `1..50`, default 10). A **citation** = one assistant turn that
-listed the document among its sources (counted once per turn per document), from the
-`document_citation_daily` rollup.
+listed the document among its sources (counted once per turn per document). Computed live (no rollup
+table) from the `query` audit rows (`detail.sources[]`, or legacy `detail.source_ids[]`) and
+`evaluation_records.retrieved_chunks[]`; a source resolves to its document by chunk id, `document_id` or
+source name. The response also carries `"tz": "UTC"`.
 
 ```json
 {
@@ -310,6 +312,24 @@ Query: `limit` (`1..100`, default 20). Unknown document is `404`.
 
 - Rows = feedback with `rating <= 2` on turns that cited a chunk of this document, newest first; one row per
   (message, chunk). `message_id` deep-links to `/admin/feedback?message_id=`.
+
+### Document inventory and detail (owner fix; client: `frontend/lib/documents-api.ts`)
+
+- `GET /documents` (existing) adds: `content_sha256` (full; `content_hash` stays the 12-char prefix),
+  `canonical_format` (`"md"`), `standardized`, `converter`, `converter_version`, `original_size_bytes`,
+  `canonical_size_bytes`, `canonical_available`, `total_chunk_chars`, `chunk_strategies`,
+  `chunking_strategy`, `embedding_model`, `embedding_dim`, `ingested_at`, `ingested_by`,
+  `status` (`active | quarantined | empty`), `pii_redacted`, `pipeline_version`, `labels`. Timestamps are
+  UTC-aware. `null` = not recorded for that document (older ingests); an unchanged re-upload fills them.
+- `GET /documents/{id}`: the same fields plus `history[]` (ingest audit events, newest first, max 50,
+  `history_truncated`) and `chunk_stats` (`count`, `total_chars`, `min_chars`, `max_chars`, `avg_chars`).
+- `GET /documents/{id}/canonical`: `{document_id, source_name, format: "markdown", available, content,
+  size_bytes, content_sha256}`; `available: false` for documents ingested before the canonical text was
+  stored.
+- Chunk items also carry `word_count`, `content_hash` and `base_strategy`. Unknown documents are `404` on
+  every per-document route.
+- `POST /ingest/file` accepts `dry_run` / `force` as form fields or query parameters and returns
+  `original_size_bytes` / `canonical_size_bytes`.
 
 ## Deep links that read these params (newplan §1)
 
