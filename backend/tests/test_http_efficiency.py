@@ -70,6 +70,8 @@ async def test_second_request_with_etag_gets_304():
         etag = first.headers["etag"]
         assert etag.startswith('W/"')
         assert first.headers["cache-control"] == "private, max-age=15"
+        vary = {v.strip() for v in first.headers["vary"].split(",")}
+        assert {"Cookie", "X-Session", "X-API-Key"} <= vary
 
         # Warm path from here on: no callback may block the loop > 50 ms.
         async with LoopBlockingDetector():

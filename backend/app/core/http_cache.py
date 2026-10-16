@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 
+PRIVATE_VARY = "Cookie, X-Session, X-API-Key, X-Client-Id"
+
 
 def weak_etag(body: bytes) -> str:
     return f'W/"{hashlib.sha256(body).hexdigest()[:32]}"'
@@ -48,7 +50,9 @@ def cached_response(
         headers["Cache-Control"] = f"public, max-age={max_age}"
     else:
         headers["Cache-Control"] = f"private, max-age={max_age}"
-        headers["Vary"] = "X-API-Key, X-Client-Id"
+        # Per-user data: key the private cache on every credential carrier
+        # (session cookie / X-Session header, API key, legacy client id).
+        headers["Vary"] = PRIVATE_VARY
     if _etag_matches(request.headers.get("if-none-match"), etag):
         return Response(status_code=304, headers=headers)
     response.headers.update(headers)
