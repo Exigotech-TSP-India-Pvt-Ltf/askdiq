@@ -7,7 +7,7 @@ import { renderFormattedText } from "@/lib/format-text";
 import { useChat } from "@/lib/chat-context";
 import type { FeedbackDetails, ReasonTag } from "@/lib/feedback-api";
 import { FeedbackReasonPanel } from "@/components/chat/FeedbackReasonPanel";
-import { SourceChips } from "@/components/chat/SourceChips";
+import { SourceChips, citedSources } from "@/components/chat/SourceChips";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type FeedbackFn = (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
@@ -303,7 +303,7 @@ export function MessageBubble({
           )}
         </div>
 
-        {!message.pending && !message.error && <SourceChips sources={message.response?.sources} />}
+        {!message.pending && !message.error && <SourceChips sources={citedSources(message.response)} />}
 
         {!message.pending && !message.error && (
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
