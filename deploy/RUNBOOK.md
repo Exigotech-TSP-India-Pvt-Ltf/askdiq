@@ -415,3 +415,18 @@ Restore from `$BK` (`docker-compose.prod.yml`, `backend.env`, `frontend.env`,
 - Keep `$BK`, the dump and the rollback images for at least a week, then
   `docker image rm askdiq-api:rollback-<ts>` and delete old dumps.
 - `rm -rf ~/askdiq-release/<ts>` once the deploy is confirmed.
+
+
+## Keep the API self-healing (once, after the first deploy)
+
+Docker restarts a container that crashes (`restart: unless-stopped`) but not one
+that is alive and hung: the healthcheck only marks it `unhealthy`. Install the
+watchdog so an unhealthy `askdiq-*` container is restarted within a minute:
+
+```bash
+chmod +x /opt/askdiq/deploy-kit/askdiq-autoheal.sh
+( crontab -l 2>/dev/null; echo '* * * * * /opt/askdiq/deploy-kit/askdiq-autoheal.sh >> /var/log/askdiq-autoheal.log 2>&1' ) | crontab -
+docker inspect --format '{{.State.Health.Status}}' askdiq-api   # healthy
+```
+
+It only touches containers whose name starts with `askdiq-`; other apps on the host are never restarted.
