@@ -23,6 +23,7 @@ from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
 from app.core.request_meta import get_client_ip
+from app.dashboard import active_visitors
 from app.dashboard import activity as dashboard_activity
 from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
@@ -1579,25 +1580,13 @@ async def _dashboard_panels(db: AsyncSession, audience: str) -> dict:
 
 
 async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
-    since = datetime.utcnow() - timedelta(hours=24)
+    now = dashboard_window.utcnow()
     aud_sess = await build_audience_filter(db, ChatSession.created_ip, audience)
 
-    # 1. Total users: distinct IPs from ChatSession
-    q_users = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None)
-    )
-    if aud_sess is not None:
-        q_users = q_users.where(aud_sess)
-    users = await db.scalar(q_users)
-
-    # 2. Active users: distinct IPs active in last 24h
-    q_active = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None),
-        ChatSession.last_activity_at >= since,
-    )
-    if aud_sess is not None:
-        q_active = q_active.where(aud_sess)
-    active_users = await db.scalar(q_active)
+    # 1-2. Active visitors all time and in the last 24 h (shared definition).
+    users = await active_visitors.count_active(db, audience, None, now)
+    visitor_counts = await active_visitors.active_counts(db, audience, now)
+    active_users = visitor_counts["dau"]
 
     # 3. Sessions & Conversations
     q_sessions = select(func.count(ChatSession.id))
@@ -1657,6 +1646,7 @@ async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
         "error_rate": METRICS["errors"] * 100 / requests_total
         if requests_total
         else 0.0,
+        "active_visitors": active_visitors.summary(visitor_counts),
         **await _dashboard_panels(db, audience),
     }
 

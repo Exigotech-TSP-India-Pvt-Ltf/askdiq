@@ -86,6 +86,30 @@ class TopIntent(BaseModel):
     share: float
 
 
+class ActiveVisitorsPeriod(BaseModel):
+    value: int = Field(ge=0, description="Active visitors in the last `days` days.")
+    previous: int = Field(
+        ge=0, description="Active visitors in the equal window before."
+    )
+    delta: float | None = Field(
+        description="(value - previous) / previous; null when previous is 0."
+    )
+    days: int = Field(ge=1)
+
+
+class ActiveVisitors(BaseModel):
+    """Active visitors (``app.dashboard.active_visitors``): counts only, no IPs."""
+
+    definition: str
+    active_now: int = Field(
+        ge=0, description="Active visitors in the last `active_now_minutes`."
+    )
+    active_now_minutes: int = Field(ge=1)
+    dau: ActiveVisitorsPeriod
+    wau: ActiveVisitorsPeriod
+    mau: ActiveVisitorsPeriod
+
+
 class DashboardData(BaseModel):
     """``GET /admin/dashboard``. With ``window`` the KPI totals are for that window."""
 
@@ -110,6 +134,9 @@ class DashboardData(BaseModel):
     cost: DashboardCost | None = None
     satisfaction: DashboardSatisfaction | None = None
     top_intents: list[TopIntent] | None = None
+    active_visitors: ActiveVisitors | None = Field(
+        default=None, description="DAU / WAU / MAU and active-now, as of the request."
+    )
 
 
 # ---------------------------------------------------------------------------

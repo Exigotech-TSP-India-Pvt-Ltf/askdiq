@@ -180,12 +180,18 @@ async def test_visitor_stats_exact_numbers(client, db_session) -> None:
 
 async def test_visitor_stats_active_now_and_empty_range(client, db_session) -> None:
     now = datetime.utcnow()
-    await session_at(
+    session = await session_at(
         db_session, now - timedelta(hours=2), unique_ip(), last_activity_at=now
     )
+    await exchange(db_session, session, 0, now - timedelta(minutes=1))
     resp = await client.get("/admin/visitors/stats", params=_range(unique_day(), 2))
     data = resp.json()
     assert data["kpis"]["active_now"] >= 1
+    active = data["active_visitors"]
+    assert active["active_now"] == data["kpis"]["active_now"]
+    assert active["active_now_minutes"] == 5
+    assert active["dau"]["value"] >= 1
+    assert active["dau"]["days"] == 1
     assert data["kpis"]["visitors"] == 0
     assert data["kpis"]["avg_sessions_per_visitor"] is None
     assert [d["new"] for d in data["new_vs_returning"]] == [0, 0]

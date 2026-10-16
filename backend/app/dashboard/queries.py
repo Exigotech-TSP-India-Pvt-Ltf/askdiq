@@ -10,8 +10,9 @@ window (the sparkline) plus one row per period (current / previous totals
 for the KPI and its delta). Rows from the previous period have a NULL
 bucket, so a partial first bucket never mixes in previous-period data.
 
-Audience scoping follows the endpoint each number already appears on:
-messages and turns by the client IP of the user message (or its session),
+Audience scoping follows the endpoint each number already appears on
+(visitor counts follow ``app.dashboard.active_visitors``): messages and
+turns by the client IP of the user message (or its session),
 sessions by ``created_ip``, latency and error rate through the request's
 ``query`` audit row (``app.governance.timeseries``), feedback like the
 Feedback page.
@@ -39,6 +40,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.dashboard import active_visitors
 from app.dashboard.window import ACTIVE_SPAN, Bucket, Window
 from app.feedback.repository import CLIENT_IP as FEEDBACK_CLIENT_IP
 from app.feedback.repository import join_exchange
@@ -166,23 +168,22 @@ async def run_split(db: AsyncSession, inner: Select, measures: Measures) -> Spli
 
 
 async def messages_split(db: AsyncSession, audience: str, window: Window) -> Split:
-    """User messages: queries, distinct visitors and visitors active in the
-    last 24 h of each period (``active``)."""
+    """User messages: queries, active visitors (``visitors``) and visitors
+    active in the last 24 h of each period (``active``).
+
+    Visitors follow ``app.dashboard.active_visitors`` (identity, test IPs
+    excluded); queries follow the audience like before."""
     ts = ChatMessageRecord.created_at
     last_day = case(
         (ts >= window.start, ts >= window.end - ACTIVE_SPAN),
         else_=ts >= window.start - ACTIVE_SPAN,
     )
-    inner = (
-        select(
-            *tags(window, ts),
-            MESSAGE_IP.label("ip"),
-            case((last_day, MESSAGE_IP), else_=None).label("active_ip"),
-        )
-        .select_from(ChatMessageRecord)
-        .outerjoin(ChatSession, ChatMessageRecord.session_id == ChatSession.id)
-        .where(ChatMessageRecord.role == "user", in_range(window, ts))
-    )
+    identity = await active_visitors.identity_column(db, audience)
+    inner = active_visitors.user_queries(
+        *tags(window, ts),
+        identity.label("visitor"),
+        case((last_day, identity), else_=None).label("active_visitor"),
+    ).where(in_range(window, ts))
     aud = await build_audience_filter(db, MESSAGE_IP, audience)
     if aud is not None:
         inner = inner.where(aud)
@@ -191,8 +192,8 @@ async def messages_split(db: AsyncSession, audience: str, window: Window) -> Spl
         inner,
         lambda c: {
             "queries": func.count(),
-            "visitors": func.count(func.distinct(c.ip)),
-            "active": func.count(func.distinct(c.active_ip)),
+            "visitors": active_visitors.count_visitors(c.visitor),
+            "active": active_visitors.count_visitors(c.active_visitor),
         },
     )
 
@@ -200,24 +201,26 @@ async def messages_split(db: AsyncSession, audience: str, window: Window) -> Spl
 async def first_seen_per_bucket(
     db: AsyncSession, audience: str, window: Window
 ) -> dict[datetime, int]:
-    """Visitors by the bucket of their first message inside the window."""
+    """Active visitors by the bucket of their first query inside the window."""
     ts = ChatMessageRecord.created_at
-    inner = (
-        select(MESSAGE_IP.label("ip"), func.min(ts).label("first_at"))
-        .select_from(ChatMessageRecord)
-        .outerjoin(ChatSession, ChatMessageRecord.session_id == ChatSession.id)
+    rows = (
+        active_visitors.user_queries(
+            active_visitors.IDENTITY.label("visitor"), ts.label("ts")
+        )
         .where(
-            ChatMessageRecord.role == "user",
             ts >= window.start,
             ts < window.end,
-            MESSAGE_IP.isnot(None),
+            await active_visitors.visitor_filter(db, audience),
         )
-        .group_by(MESSAGE_IP)
+        .subquery()
     )
-    aud = await build_audience_filter(db, MESSAGE_IP, audience)
-    if aud is not None:
-        inner = inner.where(aud)
-    sub = inner.subquery()
+    # Grouped outside the CASE: its bound literals would differ in GROUP BY.
+    sub = (
+        select(rows.c.visitor, func.min(rows.c.ts).label("first_at"))
+        .where(rows.c.visitor.isnot(None))
+        .group_by(rows.c.visitor)
+        .subquery()
+    )
     bucket = trunc(window.bucket, sub.c.first_at)
     stmt = select(bucket, func.count()).group_by(bucket)
     return {row[0]: int(row[1]) for row in (await db.execute(stmt)).all()}

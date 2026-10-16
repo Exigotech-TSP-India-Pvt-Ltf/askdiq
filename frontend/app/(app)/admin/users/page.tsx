@@ -20,6 +20,7 @@ import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TableCard } from "@/components/admin/TableCard";
 import { formatNumber, TableBadge } from "@/components/admin/TableFormatters";
 import { StatCard } from "@/components/admin/insights/StatCard";
+import { ActiveVisitorsInfo, ActiveVisitorsPanel } from "@/components/admin/ActiveVisitorsPanel";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { CalendarHeatmap, type HeatCell } from "@/components/charts/CalendarHeatmap";
@@ -301,7 +302,14 @@ function VisitorsContent() {
               <StatCard title="Visitors" value={statsData.kpis.visitors} subtitle={range.label ?? undefined} icon={UsersIcon} />
               <StatCard title="New visitors" value={statsData.kpis.new_visitors} icon={UserPlus} />
               <StatCard title="Returning visitors" value={statsData.kpis.returning_visitors} icon={Repeat} />
-              <StatCard title="Active now" value={statsData.kpis.active_now} subtitle="Last 30 minutes" icon={UserCheck} />
+              <StatCard
+                title="Active visitors now"
+                value={statsData.kpis.active_now}
+                subtitle={`Last ${statsData.active_visitors?.active_now_minutes ?? 5} minutes`}
+                icon={UserCheck}
+                badge={<ActiveVisitorsInfo />}
+                className="overflow-visible"
+              />
             </>
           ) : (
             <>
@@ -311,6 +319,8 @@ function VisitorsContent() {
             </>
           )}
         </div>
+
+        <ActiveVisitorsPanel data={statsData?.active_visitors} showNow={false} />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <ChartCard

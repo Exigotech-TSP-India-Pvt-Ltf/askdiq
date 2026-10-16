@@ -15,7 +15,7 @@ from typing import Any
 
 from app.core.concurrency import ScopedRunner
 from app.core.config import get_settings
-from app.dashboard import queries
+from app.dashboard import active_visitors, queries
 from app.dashboard.queries import IntentCount, Split
 from app.dashboard.window import (
     Window,
@@ -97,9 +97,9 @@ def _at(split: Split, start: datetime) -> dict[str, Any]:
 def sparklines(window: Window, src: Sources) -> dict[str, list[dict[str, Any]]]:
     """One point per bucket for every KPI (null = no data in the bucket).
 
-    ``users`` is cumulative (distinct visitors so far in the window, so the
-    last point equals the KPI); ``active_users`` is distinct visitors per
-    bucket.
+    ``users`` is cumulative (active visitors so far in the window, so the
+    last point equals the KPI); ``active_users`` is active visitors per
+    bucket (``app.dashboard.active_visitors``).
     """
     starts = window.starts()
 
@@ -202,9 +202,10 @@ async def window_payload(
         lambda s: queries.exchanges_split(s, audience, window),
         lambda s: queries.top_intents(s, audience, window),
         lambda s: queries.daily_cost(s, audience, month_start, month_end),
+        lambda s: active_visitors.active_counts(s, audience, now),
     )
     src = Sources(*results[:8])
-    intents, month_daily = results[8], results[9]
+    intents, month_daily, visitor_counts = results[8], results[9], results[10]
     current = period_kpis(src, current=True)
     previous = period_kpis(src, current=False)
     forecast = month_forecast(
@@ -228,4 +229,5 @@ async def window_payload(
         "cost": forecast.summary(),
         "satisfaction": satisfaction(src.feedback),
         "top_intents": intents_payload(intents),
+        "active_visitors": active_visitors.summary(visitor_counts),
     }

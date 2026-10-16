@@ -202,7 +202,6 @@ _TURN_KEYS = (
     "grounded_known",
     "cost_usd",
     "cost_today_usd",
-    "active_ips",
     "recent_turns",
     "recent_failed",
 )
@@ -250,7 +249,6 @@ async def turns_rollup(
                 ),
                 0.0,
             ),
-            func.count(func.distinct(msg.ip_address)),
             n(recent),
             n(recent & failed),
         )

@@ -10,6 +10,7 @@
  *
  * Requests go through the same `/api/proxy` route and `ApiError` as `lib/api.ts`.
  */
+import type { ActiveVisitors } from "./active-visitors";
 import { ApiError } from "./api";
 import type { Audience, PageEnvelope } from "./types";
 
@@ -167,7 +168,7 @@ export interface VisitorStatsKpis {
   visitors: number;
   new_visitors: number;
   returning_visitors: number;
-  /** Visitors with activity in the last 30 minutes (independent of the range). */
+  /** Active visitors (>= 1 query, test IPs excluded) in the last 5 minutes (independent of the range). */
   active_now: number;
   sessions: number;
   queries: number;
@@ -199,6 +200,8 @@ export interface VisitorStats {
   kpis: VisitorStatsKpis;
   new_vs_returning: NewVsReturningDay[];
   heatmap: VisitorHeatCell[];
+  /** DAU / WAU / MAU and active now, as of the request (independent of the range). */
+  active_visitors?: ActiveVisitors;
 }
 
 export interface TimelineSession {

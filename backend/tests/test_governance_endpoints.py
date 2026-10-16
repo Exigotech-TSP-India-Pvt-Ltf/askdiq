@@ -850,6 +850,7 @@ async def _overview(client, **params) -> httpx.Response:
 
 
 async def test_overview_shape_and_bounded_query_count(client, db_session):
+    await _overview(client)  # warm the audience classification cache
     with QueryCounter(test_engine) as empty:
         await _overview(client)
     session = await chat_session(db_session)

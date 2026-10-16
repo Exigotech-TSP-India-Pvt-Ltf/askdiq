@@ -491,7 +491,7 @@ describe("Governance journey (F4.5)", () => {
     expect(errorTile.getAttribute("href")).toContain("tab=Traces");
     expect(errorTile.getAttribute("href")).toContain("status=failed");
     expect(screen.getByRole("link", { name: /^p95 latency:/ }).getAttribute("href")).toContain("latency_bucket=slow");
-    expect(screen.getByRole("link", { name: /^Active users:/ })).toHaveAttribute("href", "/admin/usage?tab=users");
+    expect(screen.getByRole("link", { name: /^Active visitors:/ })).toHaveAttribute("href", "/admin/usage?tab=users");
     fireEvent.click(errorTile);
   });
 

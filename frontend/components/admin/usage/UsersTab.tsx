@@ -188,9 +188,9 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       <section className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Total Unique Users"
+            title="Unique client IPs"
             value={stats.unique_users ?? data?.total ?? 0}
-            subtitle={`Audience: ${audience}`}
+            subtitle={`All time, audience: ${audience}`}
             icon={Users}
           />
 

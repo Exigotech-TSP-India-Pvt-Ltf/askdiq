@@ -59,7 +59,9 @@ Query: `audience`, `from`, `to`.
   ever session started that day; **returning** = active that day with an earlier first session. Each visitor
   counts once per day.
 - `kpis.visitors` = distinct visitors active in the range; `new_visitors + returning_visitors = visitors`.
-- `kpis.active_now` = visitors with activity in the last 30 minutes, independent of the range.
+- `kpis.active_now` = active visitors (>= 1 query, test IPs excluded; see
+  `dashboard-aggregations.md` "Active visitors") in the last 5 minutes, independent of the range.
+  The response also carries the optional `active_visitors` block (DAU / WAU / MAU) of that contract.
 - `avg_sessions_per_visitor` is `null` when `visitors` is 0.
 - `heatmap.weekday`: `0` = Monday ... `6` = Sunday. `hour`: `0..23`. `sessions` = sessions **started** in that
   slot within the range.
