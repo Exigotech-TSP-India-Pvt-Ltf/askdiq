@@ -88,6 +88,7 @@ const WINDOW_LABELS: Record<string, string> = {
   since_process_start: "since restart",
   all_time: "all time",
   now: "right now",
+  today_utc: "since 00:00 UTC",
 };
 
 /** "24h · chat turns" — where a count comes from and over which window (G7). */

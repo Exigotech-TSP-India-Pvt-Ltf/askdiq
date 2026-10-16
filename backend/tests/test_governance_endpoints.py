@@ -885,6 +885,8 @@ async def test_overview_shape_and_bounded_query_count(client, db_session):
         kpi = data["kpis"][name]
         assert len(kpi["sparkline"]) == 24, name
         assert kpi["window"] and kpi["source"], name
+    # Cost today sums from UTC midnight; it must not claim a rolling 24h.
+    assert data["kpis"]["cost_today"]["window"] == "today_utc"
     assert data["kpis"]["requests"]["value"] >= 300
 
 
