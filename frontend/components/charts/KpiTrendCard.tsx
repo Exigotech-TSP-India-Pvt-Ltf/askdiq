@@ -27,6 +27,8 @@ export interface KpiTrendCardProps {
   hint?: string;
   /** Time window of the value, e.g. "Last 7 days" (shown under the label). */
   windowLabel?: string;
+  /** Definition tip (e.g. `<InfoTip>`), rendered beside the header outside the card link. */
+  info?: React.ReactNode;
   className?: string;
 }
 
@@ -71,6 +73,7 @@ export function KpiTrendCard({
   tone = "brand",
   hint,
   windowLabel,
+  info,
   className = "",
 }: KpiTrendCardProps) {
   const header = (
@@ -98,7 +101,8 @@ export function KpiTrendCard({
   );
 
   return (
-    <div className={`${CARD} ${href ? CARD_INTERACTIVE : ""} ${className}`}>
+    <div className={`${CARD} ${href ? CARD_INTERACTIVE : ""} ${info ? "overflow-visible" : ""} ${className}`}>
+      {info && <div className="absolute right-10 top-5 z-10">{info}</div>}
       {href ? (
         <Link href={href} className="flex flex-col gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" {...intentHandlers}>
           {header}

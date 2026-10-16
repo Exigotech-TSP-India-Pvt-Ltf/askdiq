@@ -32,7 +32,9 @@ import {
 import { formatByUnit, formatCount, formatHour, windowSourceLabel } from "@/lib/governance-format";
 import { logsHref, tabHref, tracesHref } from "@/lib/governance-links";
 import { useGovernanceStream } from "@/lib/use-governance-stream";
+import { ActiveVisitorsInfo } from "@/components/admin/ActiveVisitorsPanel";
 import { KpiTrendCard } from "@/components/charts/KpiTrendCard";
+import { ACTIVE_VISITORS_LABEL } from "@/lib/active-visitors";
 import type { SparkPoint } from "@/components/charts/Sparkline";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton, SkeletonCard } from "@/components/ui/Skeleton";
@@ -59,7 +61,7 @@ const KPI_DEFS: readonly KpiDef[] = [
   { key: "error_rate", label: "Error rate", icon: AlertTriangle, goodDirection: "down", href: tracesHref({ status: "failed" }) },
   { key: "latency_p50", label: "Latency p50", icon: Timer, goodDirection: "down", href: tabHref("Monitoring") },
   { key: "latency_p95", label: "Latency p95", icon: Gauge, goodDirection: "down", href: tracesHref({ latency_bucket: "slow" }) },
-  { key: "active_users", label: "Active users", icon: Users, goodDirection: "up", href: "/admin/usage?tab=users" },
+  { key: "active_users", label: ACTIVE_VISITORS_LABEL, icon: Users, goodDirection: "up", href: "/admin/usage?tab=users" },
   { key: "groundedness", label: "Groundedness", icon: Sparkles, goodDirection: "up", href: tracesHref({ status: "ungrounded" }) },
   { key: "blocked_or_flagged", label: "Blocked or flagged", icon: ShieldAlert, goodDirection: "down", href: tracesHref({ status: "blocked" }) },
   { key: "cost_today", label: "Cost today", icon: DollarSign, goodDirection: "down", href: "/admin/usage?tab=queries" },
@@ -231,6 +233,7 @@ export default function OverallView() {
               href={def.href}
               tone={def.goodDirection === "down" && def.key === "error_rate" ? "danger" : "brand"}
               hint={windowSourceLabel(kpi.window, kpi.source)}
+              info={def.key === "active_users" ? <ActiveVisitorsInfo /> : undefined}
             />
           );
         })}

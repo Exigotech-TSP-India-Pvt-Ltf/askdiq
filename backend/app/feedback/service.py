@@ -403,6 +403,7 @@ def build_pair(row: Any) -> dict[str, Any]:
             if isinstance(c, dict) and c.get("chunk_id")
         ],
         "triage_status": row.triage_status,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
         "complete": not missing,
         "missing": missing,
     }

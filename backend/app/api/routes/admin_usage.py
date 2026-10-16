@@ -607,6 +607,8 @@ _ALLOWED_USER_SORTS = {
     "tokens_asc",
     "sessions_desc",
     "sessions_asc",
+    "last_active_desc",
+    "last_active_asc",
 }
 
 
@@ -654,6 +656,7 @@ async def get_usage_users(
             ).label("output_tokens"),
             func.coalesce(func.sum(asst_msg.total_tokens), 0).label("total_tokens"),
             func.coalesce(func.sum(asst_msg.cost_usd), 0.0).label("cost_usd"),
+            func.max(user_msg.created_at).label("last_active"),
         )
         .select_from(user_msg)
         .join(
@@ -701,22 +704,30 @@ async def get_usage_users(
                 "output_tokens": int(r.output_tokens),
                 "total_tokens": int(r.total_tokens),
                 "cost_usd": round(float(r.cost_usd), 6),
+                "last_active": r.last_active.isoformat() + "Z"
+                if r.last_active
+                else None,
             }
         )
 
     # Sort
     reverse = "asc" not in sort
     sort_key = "cost_usd"
-    if "queries" in sort:
+    if sort.startswith("last_active"):
+        # Same-format ISO-8601 strings sort chronologically.
+        items.sort(key=lambda x: x["last_active"] or "", reverse=reverse)
+        sort_key = ""
+    elif "queries" in sort:
         sort_key = "queries"
     elif "sessions" in sort:
         sort_key = "sessions"
     elif "tokens" in sort:
         sort_key = "total_tokens"
-    items.sort(
-        key=lambda x: x.get(sort_key) if x.get(sort_key) is not None else 0,
-        reverse=reverse,
-    )
+    if sort_key:
+        items.sort(
+            key=lambda x: x.get(sort_key) if x.get(sort_key) is not None else 0,
+            reverse=reverse,
+        )
 
     # Compute header intelligence stats
     top_3 = items[:3]

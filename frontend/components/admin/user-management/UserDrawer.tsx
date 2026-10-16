@@ -27,7 +27,8 @@ import {
   type Role,
   type UserAccount,
 } from "@/lib/user-management-api";
-import { GuardedButton, RoleBadge, StatusBadge, fieldClass, formatDateTime } from "./parts";
+import { GuardedButton, RoleBadge, StatusBadge, fieldClass } from "./parts";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useRevokeSessions, useUserChange } from "./use-user-actions";
 
 export const SELF_CHANGE_REASON = "You cannot change your own role or status.";
@@ -92,9 +93,7 @@ function AuditList({ entries, empty }: { entries: readonly AuditLogEntry[]; empt
               {auditSummary(e) ? ` · ${auditSummary(e)}` : ""}
             </p>
           </div>
-          <time dateTime={e.created_at} className="shrink-0 text-fg-subtle">
-            {formatDateTime(e.created_at)}
-          </time>
+          <RelativeTime value={e.created_at} className="shrink-0 text-fg-subtle" />
         </li>
       ))}
     </ol>
@@ -182,13 +181,19 @@ export function UserDrawer({
                   <StatusBadge status={user.status} />
                 </dd>
                 <dt className="text-fg-subtle">Last login</dt>
-                <dd className="text-fg">{formatDateTime(user.last_login_at)}</dd>
+                <dd className="text-fg">
+                  <RelativeTime value={user.last_login_at} display="absolute" />
+                </dd>
                 <dt className="text-fg-subtle">Created</dt>
-                <dd className="text-fg">{formatDateTime(user.created_at)}</dd>
+                <dd className="text-fg">
+                  <RelativeTime value={user.created_at} display="absolute" />
+                </dd>
                 <dt className="text-fg-subtle">Approved by</dt>
                 <dd className="truncate text-fg">{user.approved_by_email ?? "—"}</dd>
                 <dt className="text-fg-subtle">Approved</dt>
-                <dd className="text-fg">{formatDateTime(user.approved_at)}</dd>
+                <dd className="text-fg">
+                  <RelativeTime value={user.approved_at} display="absolute" />
+                </dd>
               </dl>
             </Section>
 
@@ -261,11 +266,11 @@ export function UserDrawer({
                     <li key={s.id} className="space-y-0.5 px-3 py-2 text-xs">
                       <p className="flex justify-between gap-2">
                         <span className="font-mono text-fg">{s.ip_address ?? "unknown IP"}</span>
-                        <span className="text-fg-subtle">last seen {formatDateTime(s.last_seen_at)}</span>
+                        <RelativeTime value={s.last_seen_at} prefix="last seen " className="text-fg-subtle" />
                       </p>
                       <p className="truncate text-fg-subtle">{s.user_agent ?? "unknown client"}</p>
                       <p className="text-fg-subtle">
-                        Started {formatDateTime(s.created_at)} · expires {formatDateTime(s.expires_at)}
+                        Started <RelativeTime value={s.created_at} /> · expires <RelativeTime value={s.expires_at} />
                       </p>
                     </li>
                   ))}

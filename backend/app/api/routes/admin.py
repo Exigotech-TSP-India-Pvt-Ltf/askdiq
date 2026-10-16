@@ -25,6 +25,7 @@ from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
 from app.core.request_meta import get_client_ip
+from app.dashboard import active_visitors
 from app.dashboard import activity as dashboard_activity
 from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
@@ -84,6 +85,15 @@ class TestIpPayload(BaseModel):
 # ============================================================================
 # USERS
 # ============================================================================
+
+
+# `sort` prefix -> visitor row field; unknown values sort by last activity.
+_VISITOR_SORT_FIELDS = {
+    "last_active": "last_active",
+    "first_seen": "first_seen",
+    "queries": "queries",
+    "sessions": "sessions",
+}
 
 
 @router.get("/users")
@@ -213,7 +223,9 @@ async def list_users(
         )
 
     reverse = "asc" not in sort
-    all_users.sort(key=lambda u: u.get("last_active") or "", reverse=reverse)
+    sort_field = _VISITOR_SORT_FIELDS.get(sort.rsplit("_", 1)[0], "last_active")
+    empty: str | int = 0 if sort_field in {"queries", "sessions"} else ""
+    all_users.sort(key=lambda u: u.get(sort_field) or empty, reverse=reverse)
 
     total = len(all_users)
     paged = all_users[offset : offset + limit]
@@ -442,11 +454,16 @@ async def list_conversations(
     if max_turns is not None:
         query = query.having(turn_count <= max_turns)
 
-    # Sort
-    if sort == "last_activity_asc":
-        query = query.order_by(ChatSession.last_activity_at.asc())
-    else:
-        query = query.order_by(ChatSession.last_activity_at.desc())
+    # Sort (unknown values fall back to the newest activity first)
+    sort_column = (
+        ChatSession.created_at
+        if sort.startswith("created_at_")
+        else ChatSession.last_activity_at
+    )
+    query = query.order_by(
+        sort_column.asc() if sort.endswith("_asc") else sort_column.desc(),
+        ChatSession.id,
+    )
 
     # Total count
     count_sub = query.subquery()
@@ -1598,25 +1615,13 @@ async def _dashboard_panels(db: AsyncSession, audience: str) -> dict:
 
 
 async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
-    since = datetime.utcnow() - timedelta(hours=24)
+    now = dashboard_window.utcnow()
     aud_sess = await build_audience_filter(db, ChatSession.created_ip, audience)
 
-    # 1. Total users: distinct IPs from ChatSession
-    q_users = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None)
-    )
-    if aud_sess is not None:
-        q_users = q_users.where(aud_sess)
-    users = await db.scalar(q_users)
-
-    # 2. Active users: distinct IPs active in last 24h
-    q_active = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None),
-        ChatSession.last_activity_at >= since,
-    )
-    if aud_sess is not None:
-        q_active = q_active.where(aud_sess)
-    active_users = await db.scalar(q_active)
+    # 1-2. Active visitors all time and in the last 24 h (shared definition).
+    users = await active_visitors.count_active(db, audience, None, now)
+    visitor_counts = await active_visitors.active_counts(db, audience, now)
+    active_users = visitor_counts["dau"]
 
     # 3. Sessions & Conversations
     q_sessions = select(func.count(ChatSession.id))
@@ -1676,6 +1681,7 @@ async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
         "error_rate": METRICS["errors"] * 100 / requests_total
         if requests_total
         else 0.0,
+        "active_visitors": active_visitors.summary(visitor_counts),
         **await _dashboard_panels(db, audience),
     }
 

@@ -20,6 +20,7 @@ import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TableCard } from "@/components/admin/TableCard";
 import { formatNumber, TableBadge } from "@/components/admin/TableFormatters";
 import { StatCard } from "@/components/admin/insights/StatCard";
+import { ActiveVisitorsInfo, ActiveVisitorsPanel } from "@/components/admin/ActiveVisitorsPanel";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { CalendarHeatmap, type HeatCell } from "@/components/charts/CalendarHeatmap";
@@ -28,6 +29,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, iconButton, secondaryButton } from "@/components/ui/styles";
 import { FilterChip, errorMessage, formatDay, useRangeParams } from "@/components/admin/entity/shared";
 import { useTableState } from "@/lib/use-table-state";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { entityHref } from "@/lib/entity-links";
 import { heatFilterLabel, useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
@@ -232,21 +234,14 @@ function VisitorsContent() {
     {
       key: "first_seen",
       header: "First Seen",
-      render: (u) => (
-        <span className="whitespace-nowrap text-xs text-fg-subtle">
-          {u.first_seen ? new Date(u.first_seen).toLocaleDateString() : "—"}
-        </span>
-      ),
+      sortable: true,
+      render: (u) => <RelativeTime value={u.first_seen} className="text-xs text-fg-subtle" />,
     },
     {
       key: "last_active",
       header: "Last Active",
       sortable: true,
-      render: (u) => (
-        <span className="whitespace-nowrap text-xs text-fg-subtle">
-          {u.last_active ? new Date(u.last_active).toLocaleString() : "—"}
-        </span>
-      ),
+      render: (u) => <RelativeTime value={u.last_active} className="text-xs text-fg-subtle" />,
     },
     {
       key: "actions",
@@ -307,7 +302,14 @@ function VisitorsContent() {
               <StatCard title="Visitors" value={statsData.kpis.visitors} subtitle={range.label ?? undefined} icon={UsersIcon} />
               <StatCard title="New visitors" value={statsData.kpis.new_visitors} icon={UserPlus} />
               <StatCard title="Returning visitors" value={statsData.kpis.returning_visitors} icon={Repeat} />
-              <StatCard title="Active now" value={statsData.kpis.active_now} subtitle="Last 30 minutes" icon={UserCheck} />
+              <StatCard
+                title="Active visitors now"
+                value={statsData.kpis.active_now}
+                subtitle={`Last ${statsData.active_visitors?.active_now_minutes ?? 5} minutes`}
+                icon={UserCheck}
+                badge={<ActiveVisitorsInfo />}
+                className="overflow-visible"
+              />
             </>
           ) : (
             <>
@@ -317,6 +319,8 @@ function VisitorsContent() {
             </>
           )}
         </div>
+
+        <ActiveVisitorsPanel data={statsData?.active_visitors} showNow={false} />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <ChartCard

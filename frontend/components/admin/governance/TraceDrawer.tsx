@@ -4,6 +4,7 @@ import React from "react";
 import { FileText, Flag, MessagesSquare } from "lucide-react";
 import { governanceApi, type GovernanceTraceDetail, type WaterfallStage } from "@/lib/governance-api";
 import { formatDateTime, formatMs, formatUsd, humanize } from "@/lib/governance-format";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useApiQuery } from "@/lib/query-cache";
 import type { Audience } from "@/lib/types";
 import { DrawerShell } from "@/components/ui/DrawerShell";
@@ -76,7 +77,9 @@ function TraceBody({ detail }: { detail: GovernanceTraceDetail }) {
         <Field label="Grounded">{detail.grounded === null ? "—" : detail.grounded ? "Yes" : "No"}</Field>
         <Field label="User">{detail.user_id ?? "—"}</Field>
         <Field label="Client IP">{detail.ip_address ?? "—"}</Field>
-        <Field label="Time">{formatDateTime(detail.timestamp)}</Field>
+        <Field label="Time">
+          <RelativeTime value={detail.timestamp} display="absolute" />
+        </Field>
       </dl>
 
       <Section title="Conversation" icon={MessagesSquare}>

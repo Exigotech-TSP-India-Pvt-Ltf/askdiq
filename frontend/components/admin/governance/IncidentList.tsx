@@ -5,7 +5,8 @@ import Link from "next/link";
 import { AnimatePresence, m } from "motion/react";
 import { ArrowUpRight, ShieldCheck } from "lucide-react";
 import type { GovernanceLogItem } from "@/lib/governance-api";
-import { formatDateTime, hourStart } from "@/lib/governance-format";
+import { hourStart } from "@/lib/governance-format";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { logsHref } from "@/lib/governance-links";
 import { fadeUp, useMotionVariants } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -70,7 +71,7 @@ export function IncidentList({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-fg">{item.summary}</span>
                   <span className="block truncate text-[11px] text-fg-subtle">
-                    {item.service} · {item.action} · {formatDateTime(item.created_at)}
+                    {item.service} · {item.action} · <RelativeTime value={item.created_at} />
                   </span>
                 </span>
                 <span className="sr-only">Open in Logs</span>

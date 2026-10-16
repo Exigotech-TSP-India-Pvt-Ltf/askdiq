@@ -20,7 +20,7 @@ import {
   type AuditLogEntry,
   type AuthEvent,
 } from "@/lib/user-management-api";
-import { formatDateTime } from "./parts";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { auditSummary } from "./UserDrawer";
 
 const DEFAULT_PAGE_SIZE: PageSize = 25;
@@ -73,11 +73,7 @@ export function AuthAuditTab({ entries, loading, error, onRetry, action, update 
     {
       key: "created_at",
       header: "When",
-      render: (e) => (
-        <time dateTime={e.created_at} className="whitespace-nowrap text-fg-subtle">
-          {formatDateTime(e.created_at)}
-        </time>
-      ),
+      render: (e) => <RelativeTime value={e.created_at} className="text-fg-subtle" />,
     },
     { key: "action", header: "Event", render: (e) => <EventBadge action={e.action} /> },
     { key: "actor", header: "Actor", render: (e) => <span className="text-fg">{e.actor}</span> },

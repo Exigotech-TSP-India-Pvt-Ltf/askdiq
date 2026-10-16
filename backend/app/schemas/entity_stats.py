@@ -12,6 +12,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from app.schemas.dashboard import ActiveVisitors
+
 
 class OutcomeName(StrEnum):
     ANSWERED = "answered"
@@ -30,7 +32,9 @@ class VisitorStatsKpis(BaseModel):
     visitors: int
     new_visitors: int
     returning_visitors: int
-    active_now: int = Field(description="Visitors active in the last 30 minutes.")
+    active_now: int = Field(
+        description="Active visitors (>= 1 query, test IPs excluded) in the last 5 minutes."
+    )
     sessions: int
     queries: int
     avg_sessions_per_visitor: float | None
@@ -55,6 +59,7 @@ class VisitorStats(BaseModel):
     kpis: VisitorStatsKpis
     new_vs_returning: list[NewVsReturningDay]
     heatmap: list[VisitorHeatCell]
+    active_visitors: ActiveVisitors | None = None
 
 
 class TimelineSession(BaseModel):

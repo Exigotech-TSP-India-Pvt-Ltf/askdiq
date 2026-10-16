@@ -8,6 +8,7 @@ import { DataTable, type ColumnDef } from "../DataTable";
 import { TableToolbar } from "../TableToolbar";
 import { Pagination } from "../Pagination";
 import { TableCard } from "../TableCard";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { StatCard, HighlightCard } from "../insights";
 import { Users, Shield, Cpu, Download, Sparkles } from "lucide-react";
 
@@ -50,6 +51,8 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       "tokens_asc",
       "sessions_desc",
       "sessions_asc",
+      "last_active_desc",
+      "last_active_asc",
     ],
     defaultFilters: { type: "all" },
   });
@@ -165,6 +168,12 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       align: "right",
       render: (r) => formatCurrency(r.cost_usd, 4),
     },
+    {
+      key: "last_active",
+      header: "Last Active",
+      sortable: true,
+      render: (r) => <RelativeTime value={r.last_active} className="text-xs text-fg-subtle" />,
+    },
   ];
 
   const exportUrl = `/api/proxy/admin/usage/export?tab=users&audience=${audience}&q=${encodeURIComponent(
@@ -179,9 +188,9 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       <section className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Total Unique Users"
+            title="Unique client IPs"
             value={stats.unique_users ?? data?.total ?? 0}
-            subtitle={`Audience: ${audience}`}
+            subtitle={`All time, audience: ${audience}`}
             icon={Users}
           />
 

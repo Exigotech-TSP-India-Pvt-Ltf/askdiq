@@ -28,7 +28,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | T1 | 50 chart hex colours in Recharts props (plus white `rgba(255,255,255,.95)` tooltips) never changed with the theme | `chartTheme` in `lib/theme-tokens.ts` + `useChartTheme()` / `chartTooltipStyle()`; every chart migrated |
 | T2 | Surfaces with no dark variant: `bg-white` / `text-gray-*` / `text-slate-900` in conversation detail, Monitoring, root page, OutcomePillBar, document modal, user not-found, table badges | Semantic tokens (`bg-surface-card`, `text-fg`, ...) that switch via CSS variables |
 | T3 | `ThemeProvider` set the `dark` class in `useEffect`, after first paint (flash) | Inline pre-paint script in `app/layout.tsx` `<head>` + `suppressHydrationWarning`; provider no longer overrides it before reading storage |
-| T4 | No `storage` listener (tabs drifted), no System mode | `storage` event sync, `light` / `dark` / `system` modes, live `matchMedia` change listener; `ThemeToggle` cycles Light -> Dark -> System |
+| T4 | No `storage` listener (tabs drifted) | `storage` event sync. Two themes only, `light` / `dark` (System mode removed): a missing or legacy `system` value is resolved once to the OS preference and persisted as an explicit `light` / `dark` (pre-paint script and provider), so the theme never changes on its own; `ThemeToggle` switches Light <-> Dark |
 | T5 | Single logo asset with `dark:brightness-110` | `BrandLogo` light/dark pair; new `exigotech-logo-dark.svg` and `exigotech-mark-dark.svg` |
 | T6 | Amber `#B7791F` and red `#C0362C` too dark on dark surfaces | Separate lifted dark status tokens (`#F2B84B`, `#F87171`, ...) and `*-fg` text variants, all AA-tested |
 | T7 | Owner (Oct 2026): only the Usage "Live Telemetry" cards looked right; other cards were flat near-black in dark | Studio look extracted into tokens (`surface-studio`, `bg-studio`, `shadow-studio` / `shadow-studio-hover`, per theme in `globals.css`) and `components/ui/StudioCard`; every shared card / chart / KPI / table container now uses it (see "Studio rollout") |
@@ -75,7 +75,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 |---|---|---|---|---|
 | `Sidebar` | Pass | Fixed (T5) | Pass | `BrandLogo` in an `h-16` header (`h-10 w-auto max-w-[200px]`, ~160 px wide). PR-20: "Evaluation" removed, "Users" -> "Visitors"; collapsed rail shows the Sparkles icon for Evaluation (Live) with its label as the `title` tooltip (same tokens in both themes) |
 | `brand/BrandLogo` (new) | Pass | Pass | Pass | CSS-only swap (`dark:hidden` / `hidden dark:block`), no flash |
-| `ThemeToggle` | Pass | Pass | Pass | Light -> Dark -> System; icon crossfade via Motion preset |
+| `ThemeToggle` | Pass | Pass | Pass | Light <-> Dark; icon crossfade via Motion preset |
 | `providers/MotionProvider` (new) | n/a | n/a | n/a | Same motion in both themes; `reducedMotion="user"` |
 | `ChatSessionList` | Pass | Pass | Pass | Existing `dark:` pairs |
 | `MessageBubble` | Pass | Pass | Pass | Existing `dark:` pairs |
@@ -127,7 +127,7 @@ Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in 
 | `ui/DateRangePicker` (PR-17) | Pass | Pass | Pass | Popover + native date inputs on `bg-surface-card`; active preset brand tint |
 | `ui/CommandPalette`, `ui/ShortcutsSheet` (PR-17) | Pass | Pass | Pass | Selected row `brand-50` / `dark:brand-950/60`; `kbd` chips `surface-muted` |
 | `ui/ActivePill` (in `TabGroup`, `AudienceScopeTabs`) (PR-17) | Pass | Pass | Pass | Sliding `bg-brand-gradient` pill (layoutId); same in both themes |
-| `shell/ProfileMenu`, `shell/NotificationBell`, `shell/HeaderUtilities` (PR-17) | Pass | Pass | Pass | Popovers on `surface-elevated`; theme radio (light / dark / system) applies instantly |
+| `shell/ProfileMenu`, `shell/NotificationBell`, `shell/HeaderUtilities` (PR-17) | Pass | Pass | Pass | Popovers on `surface-elevated`; theme radio (light / dark) applies instantly |
 | `shell/MobileTopBar`, `Sidebar` (mobile drawer) (PR-17) | Pass | Pass | Pass | `bg-surface-card`, `border-line`; nav items reuse the desktop classes |
 | `shell/BrandedStatusPage` (PR-17) | Pass | Pass | Pass | `BrandLogo` pair on `bg-surface-card` |
 | `admin/CursorPagination` (PR-17) | Pass | Pass | Pass | Mirrors `Pagination` (existing `dark:` pairs) |

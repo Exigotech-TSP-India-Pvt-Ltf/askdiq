@@ -34,8 +34,9 @@ export function setSessionCookie(response: NextResponse, session: string, expire
   response.cookies.set(sessionCookieName(), session, { ...baseOptions(secure), expires });
 }
 
-export function clearSessionCookie(response: NextResponse): void {
-  response.cookies.set(sessionCookieName(), "", { ...baseOptions(cookieSecureFromEnv()), maxAge: 0 });
+/** `secure` must match how the cookie was set, or HTTPS browsers may keep the old one. */
+export function clearSessionCookie(response: NextResponse, secure: boolean = cookieSecureFromEnv()): void {
+  response.cookies.set(sessionCookieName(), "", { ...baseOptions(secure), maxAge: 0 });
 }
 
 /** The `state` query parameter of an authorize URL, when well formed. */

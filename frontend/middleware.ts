@@ -68,6 +68,6 @@ export const config = {
   // Pages only: not API / auth route handlers, the dev mock IdP, public brand assets,
   // Next internals or static files. Kept as a plain string array so Turbopack can parse it.
   matcher: [
-    "/((?!api/|auth/callback|auth/login|mock-idp/|branding/assets/|_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest|woff2?)$).*)",
+    "/((?!api/|auth/callback|auth/login|auth/logout|mock-idp/|branding/assets/|_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest|woff2?)$).*)",
   ],
 };

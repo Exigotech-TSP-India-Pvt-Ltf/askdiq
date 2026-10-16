@@ -207,7 +207,6 @@ _TURN_KEYS = (
     "grounded_known",
     "cost_usd",
     "cost_today_usd",
-    "active_ips",
     "recent_turns",
     "recent_failed",
 )
@@ -255,8 +254,6 @@ async def turns_rollup(
                 ),
                 0.0,
             ),
-            # Assistant rows carry no IP (it lives on the user row / session).
-            func.count(func.distinct(ChatSession.created_ip)),
             n(recent),
             n(recent & failed),
         )

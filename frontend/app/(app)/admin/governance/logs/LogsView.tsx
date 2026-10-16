@@ -18,7 +18,8 @@ import {
   type GovernanceLogPage,
   type LogLevel,
 } from "@/lib/governance-api";
-import { formatCount, formatDateTime, formatHour, humanize } from "@/lib/governance-format";
+import { formatCount, formatHour, humanize } from "@/lib/governance-format";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { hourWindow, parseList, parseOne, rangeBounds } from "@/lib/governance-links";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
@@ -75,7 +76,7 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "created_at",
     header: "Time",
-    render: (log) => <span className="whitespace-nowrap font-mono text-[11px] text-fg-muted">{formatDateTime(log.created_at)}</span>,
+    render: (log) => <RelativeTime value={log.created_at} className="text-[11px] text-fg-muted" />,
   },
   {
     key: "level",

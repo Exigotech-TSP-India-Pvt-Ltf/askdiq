@@ -46,7 +46,7 @@ function ChartProbe() {
       <span data-testid="mode">{mode}</span>
       <span data-testid="resolved">{resolvedTheme}</span>
       <button onClick={toggleTheme}>toggle</button>
-      <button onClick={() => setTheme("system")}>system</button>
+      <button onClick={() => setTheme("dark")}>dark</button>
     </div>
   );
 }
@@ -114,32 +114,53 @@ describe("ThemeProvider (F0.3.5, T1/T4)", () => {
     expect(html()).not.toHaveClass("dark");
   });
 
-  it("System mode follows the OS setting live (matchMedia change)", async () => {
-    const media = installMatchMedia(false);
+  it("has no System mode: a missing preference resolves once to the OS setting, is persisted, and never follows the OS afterwards", async () => {
+    const media = installMatchMedia(true);
     render(
       <ThemeProvider>
         <ChartProbe />
       </ThemeProvider>,
     );
-    expect(screen.getByTestId("mode")).toHaveTextContent("system");
-    expect(html()).not.toHaveClass("dark");
+    expect(screen.getByTestId("mode")).toHaveTextContent("dark");
+    expect(html()).toHaveClass("dark");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
 
-    act(() => media.setDark(true));
+    act(() => media.setDark(false));
     expect(html()).toHaveClass("dark");
     expect(screen.getByTestId("resolved")).toHaveTextContent("dark");
     await waitFor(() => expect(screen.getByTestId("series").dataset.color).toBe(chartTheme.dark.categorical[0]));
+  });
 
-    act(() => media.setDark(false));
-    expect(html()).not.toHaveClass("dark");
+  it.each([
+    ["system", false, "light"],
+    ["system", true, "dark"],
+    ["bogus", false, "light"],
+  ])("migrates a legacy stored %s value (OS dark=%s) to an explicit %s", (stored, osDark, expected) => {
+    installMatchMedia(osDark);
+    window.localStorage.setItem(THEME_STORAGE_KEY, stored);
+    render(
+      <ThemeProvider>
+        <ChartProbe />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId("mode")).toHaveTextContent(expected);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(expected);
+    expect(html().classList.contains("dark")).toBe(expected === "dark");
+  });
 
-    // An explicit choice stops following the OS until System is chosen again.
-    fireEvent.click(screen.getByText("toggle"));
+  it("ignores a cross-tab write of a value that is not light or dark", () => {
+    installMatchMedia(false);
+    window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
+    render(
+      <ThemeProvider>
+        <ChartProbe />
+      </ThemeProvider>,
+    );
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY, newValue: "system" }));
+    });
     expect(screen.getByTestId("mode")).toHaveTextContent("dark");
-    act(() => media.setDark(false));
     expect(html()).toHaveClass("dark");
-    fireEvent.click(screen.getByText("system"));
-    expect(html()).not.toHaveClass("dark");
-    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("system");
   });
 
   it("restores a stored preference on mount", () => {
@@ -154,7 +175,7 @@ describe("ThemeProvider (F0.3.5, T1/T4)", () => {
     expect(screen.getByTestId("mode")).toHaveTextContent("dark");
   });
 
-  it("ThemeToggle cycles Light -> Dark -> System with an accessible label", () => {
+  it("ThemeToggle switches only between Light and Dark with an accessible label", () => {
     installMatchMedia(false);
     window.localStorage.setItem(THEME_STORAGE_KEY, "light");
     render(
@@ -168,11 +189,12 @@ describe("ThemeProvider (F0.3.5, T1/T4)", () => {
     fireEvent.click(button);
     expect(button).toHaveAttribute("data-theme-mode", "dark");
     expect(html()).toHaveClass("dark");
-    fireEvent.click(button);
-    expect(button).toHaveAttribute("data-theme-mode", "system");
-    expect(html()).not.toHaveClass("dark");
+    expect(button).toHaveAccessibleName(/switch to light mode/i);
     fireEvent.click(button);
     expect(button).toHaveAttribute("data-theme-mode", "light");
+    expect(html()).not.toHaveClass("dark");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+    expect(button).not.toHaveAccessibleName(/system/i);
   });
 });
 
@@ -199,14 +221,21 @@ describe("pre-paint theme script (T3)", () => {
     expect(html().style.colorScheme).toBe("dark");
   });
 
-  it("falls back to the OS setting when nothing (or System) is stored", () => {
-    installMatchMedia(true);
+  it("resolves a missing or legacy System preference once to the OS setting and persists it", () => {
+    const media = installMatchMedia(true);
     run();
     expect(html()).toHaveClass("dark");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    // Persisted: a later OS change no longer affects it.
+    media.setDark(false);
+    run();
+    expect(html()).toHaveClass("dark");
+
     window.localStorage.setItem(THEME_STORAGE_KEY, "system");
-    html().classList.remove("dark");
     run();
-    expect(html()).toHaveClass("dark");
+    expect(html()).not.toHaveClass("dark");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+    expect(html().style.colorScheme).toBe("light");
   });
 
   it("keeps light when light is stored even if the OS prefers dark", () => {
@@ -224,5 +253,7 @@ describe("pre-paint theme script (T3)", () => {
       },
     });
     expect(run).not.toThrow();
+    expect(html()).not.toHaveClass("dark");
+    expect(html().style.colorScheme).toBe("light");
   });
 });

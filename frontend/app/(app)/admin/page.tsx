@@ -2,6 +2,7 @@
 
 import { LayoutDashboard } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { ActiveVisitorsPanel } from "@/components/admin/ActiveVisitorsPanel";
 import { DashboardKpis } from "@/components/admin/dashboard/DashboardKpis";
 import {
   CostWidget,
@@ -52,6 +53,8 @@ export default function AdminDashboard() {
           onRetry={widget.onRetry}
           range={range}
         />
+
+        <ActiveVisitorsPanel data={summary.data?.active_visitors} />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <div className="xl:col-span-2">

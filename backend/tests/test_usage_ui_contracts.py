@@ -162,3 +162,26 @@ async def test_users_and_sessions_exports_stream_rows(
     lines = [line for line in res.text.lstrip("﻿").splitlines() if line]
     assert len(lines) >= 2  # header plus at least the seeded row
     assert "198.51.100.43" in res.text
+
+
+@pytest.mark.asyncio
+async def test_users_carry_last_active_and_sort_by_it(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tag = marker()
+    session = await make_session(db_session, f"{tag}@example.com", ip="198.51.100.44")
+    user_msg, _ = await make_exchange(db_session, session, turn=1, question=f"{tag} q")
+    user_msg.created_at = datetime(2026, 10, 14, 9, 30)
+    await db_session.commit()
+
+    mine = await client.get("/admin/usage/users?q=198.51.100.44&audience=overview")
+    assert mine.status_code == 200
+    assert mine.json()["items"][0]["last_active"] == "2026-10-14T09:30:00Z"
+
+    for order in ("desc", "asc"):
+        res = await client.get(
+            f"/admin/usage/users?sort=last_active_{order}&limit=50&audience=overview"
+        )
+        assert res.status_code == 200
+        stamps = [r["last_active"] for r in res.json()["items"] if r["last_active"]]
+        assert stamps == sorted(stamps, reverse=order == "desc")

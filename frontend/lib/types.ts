@@ -204,6 +204,8 @@ export interface UsageUserRow {
   output_tokens: number;
   total_tokens: number;
   cost_usd: number;
+  /** Most recent query from this IP (ISO 8601, UTC). */
+  last_active: string | null;
 }
 
 export interface UsageSessionRow {

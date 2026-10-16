@@ -8,6 +8,7 @@ import { DataTable, type ColumnDef } from "../DataTable";
 import { TableToolbar } from "../TableToolbar";
 import { Pagination } from "../Pagination";
 import { TableCard } from "../TableCard";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { StatCard, HighlightCard } from "../insights";
 import {
   MessageSquare,
@@ -201,11 +202,7 @@ export function SessionsTab({
       key: "last_active",
       header: "Last Active",
       sortable: true,
-      render: (r) => (
-        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-          {r.last_active ? new Date(r.last_active).toLocaleString() : "—"}
-        </span>
-      ),
+      render: (r) => <RelativeTime value={r.last_active} className="text-xs text-fg-subtle" />,
     },
     {
       key: "actions",

@@ -49,6 +49,17 @@ describe("Conversations list", () => {
     await waitFor(() => expect(currentParams().get("min_turns")).toBeNull());
   });
 
+  it("shows created and last-active times as <time> and sorts by created date", async () => {
+    const calls = mockFetch([listRoute, statsRoute]);
+    const { container } = renderPage(<ConversationsPage />);
+    await waitFor(() => expect(container.querySelector('time[datetime="2026-10-14T09:12:44.000Z"]')).not.toBeNull());
+    expect(container.querySelector('time[datetime="2026-10-14T09:31:02.000Z"]')).toHaveAttribute("title");
+    fireEvent.click(screen.getByRole("columnheader", { name: /created/i }));
+    await waitFor(() =>
+      expect(callsTo(calls, "/admin/conversations").at(-1)?.searchParams.get("sort")).toBe("created_at_desc"),
+    );
+  });
+
   it("the open-ended bin sends only min_turns", async () => {
     const calls = mockFetch([listRoute, statsRoute]);
     renderPage(<ConversationsPage />);

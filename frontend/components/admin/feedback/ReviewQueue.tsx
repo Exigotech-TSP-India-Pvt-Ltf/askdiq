@@ -43,6 +43,7 @@ import {
 } from "@/lib/feedback-filters";
 import type { Audience } from "@/lib/types";
 import { FeedbackDrawer } from "./FeedbackDrawer";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { ACTION_LABELS, STATUS_BADGE, canTransition, ratingTone, replaceItem, type TriageAction } from "./triage";
 
 const HTTP_CONFLICT_STATUS = 409;
@@ -554,7 +555,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-fg-subtle">
-                    {item.created_at ? new Date(item.created_at).toLocaleString() : "—"}
+                    <RelativeTime value={item.created_at} />
                   </td>
                   {canTriage ? (
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>

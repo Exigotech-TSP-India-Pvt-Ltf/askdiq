@@ -144,6 +144,7 @@ def _pair_row(**kw):
         "prompt": "What is X?",
         "answer": "X is Y.",
         "retrieved_chunks": [{"chunk_id": "c1"}, {"chunk_id": ""}, "junk"],
+        "created_at": datetime(2026, 10, 14, 9, 30),
     }
     return SimpleNamespace(**{**base, **kw})
 
@@ -166,6 +167,11 @@ def test_build_pair_shapes():
 
     masked = service.build_pair(_pair_row(prompt="mail me at jane.doe@example.com"))
     assert "jane.doe@example.com" not in masked["prompt"]
+
+
+def test_build_pair_carries_feedback_timestamp():
+    assert service.build_pair(_pair_row())["created_at"] == "2026-10-14T09:30:00"
+    assert service.build_pair(_pair_row(created_at=None))["created_at"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -820,6 +826,7 @@ async def test_export_jsonl_api(client, db_session):
     pairs = [json.loads(line) for line in r.text.splitlines() if line]
     assert all(p["complete"] for p in pairs)
     mine = next(p for p in pairs if p["feedback_id"] == str(row.id))
+    assert datetime.fromisoformat(mine.pop("created_at"))
     assert mine == {
         "feedback_id": str(row.id),
         "message_id": str(asst.id),

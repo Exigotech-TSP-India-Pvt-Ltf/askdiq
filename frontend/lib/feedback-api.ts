@@ -242,6 +242,8 @@ export interface PreferencePair {
   reason_tags: string[];
   source_ids: string[];
   triage_status: string;
+  /** When the rating was given (ISO 8601, UTC); absent from older exports. */
+  created_at?: string | null;
   complete: boolean;
   missing: string[];
 }
