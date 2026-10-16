@@ -1,0 +1,54 @@
+# Production image for askdiq-web (admin dashboard, Next.js 14 standalone).
+# Build context: ./frontend. Deployment runbook: deploy/RUNBOOK.md.
+#
+# Build-time vs run-time configuration:
+#   * The app reads NO NEXT_PUBLIC_* variables today, so nothing is baked into
+#     the client bundle. If one is ever added, declare it below as
+#     `ARG NEXT_PUBLIC_X` + `ENV NEXT_PUBLIC_X=$NEXT_PUBLIC_X` in the builder
+#     stage and pass it with `docker compose build --build-arg` (or compose
+#     `build.args`), because Next inlines NEXT_PUBLIC_* at `next build`.
+#   * Everything else is server-only and read per request at run time from
+#     the container environment (/opt/askdiq/frontend/.env via env_file):
+#     API_BASE_URL (http://askdiq-api:8000), API_KEY, APP_BASE_URL,
+#     SESSION_COOKIE_NAME, SESSION_COOKIE_SECURE, ACCESS_CONTACT_EMAIL,
+#     AUTH_DEV_MOCK. No secret is ever passed as a build arg.
+
+ARG NODE_IMAGE=node:20-alpine
+
+FROM ${NODE_IMAGE} AS deps
+WORKDIR /app
+# .npmrc carries legacy-peer-deps=true, which `npm ci` needs for this lockfile.
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci --no-audit --no-fund
+
+FROM ${NODE_IMAGE} AS builder
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# next.config.js sets output: "standalone".
+RUN npm run build
+
+FROM ${NODE_IMAGE} AS runner
+WORKDIR /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+
+# The base image ships an unprivileged `node` user (uid 1000).
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+USER node
+
+# Reached by et-platform-nginx-1 as askdiq-web:3000 on the askdiq_internal
+# network; the compose service publishes no host port.
+EXPOSE 3000
+
+# /login is public (no session needed) and rendered by the Next server itself.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "server.js"]
