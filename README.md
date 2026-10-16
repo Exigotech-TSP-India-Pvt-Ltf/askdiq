@@ -9,6 +9,10 @@ backend/    FastAPI service: chunking, retrieval, guardrails, LLM harness
 frontend/   Next.js 14 (App Router) chat UI, auth, documents, metrics
 ```
 
+Full technical documentation (architecture, API, database, configuration,
+security, deployment, development, website integration):
+[docs/technical/](docs/technical/README.md).
+
 ## Architecture
 
 ```mermaid
