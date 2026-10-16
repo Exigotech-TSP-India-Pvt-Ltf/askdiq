@@ -77,6 +77,7 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
 # GET routes needing more than dashboard:read.
 EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/usage/export": Permission.USAGE_EXPORT,
+    "/admin/governance/logs/export.csv": Permission.USAGE_EXPORT,
     "/admin/feedback/export": Permission.FEEDBACK_EXPORT,
     "/auth/me": SIGNED_IN,
     "/auth/access-request": CHAT,
