@@ -789,20 +789,36 @@ async def get_usage_sessions(
     q: str | None = None,
     ip: str | None = None,
     sort: str = "last_active_desc",
-    limit: int = 10,
-    offset: int = 0,
+    limit: int = Query(10, ge=1),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2)."""
+    settings = get_settings()
+    if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
+        raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
+    return await _usage_sessions_page(
+        db, audience=audience, q=q, ip=ip, sort=sort, limit=limit, offset=offset
+    )
+
+
+async def _usage_sessions_page(
+    db: AsyncSession,
+    *,
+    audience: Audience,
+    q: str | None,
+    ip: str | None,
+    sort: str,
+    limit: int,
+    offset: int,
+) -> dict:
+    """Sessions rows for the tab (page-capped) and the CSV export (export-capped)."""
     if sort not in _ALLOWED_SESSION_SORTS:
         raise HTTPException(
             status_code=422,
             detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(_ALLOWED_SESSION_SORTS)}",
         )
-    settings = get_settings()
-    if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
-        raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
 
     user_msg = aliased(ChatMessageRecord, name="user_turn")
     asst_msg = aliased(ChatMessageRecord, name="asst_turn")
@@ -1499,15 +1515,16 @@ async def export_usage_csv(
             out.seek(0)
             out.truncate(0)
 
-            sess_res = await get_usage_sessions(
+            # Not the page route: its 200-row page cap would reject the
+            # export size with a 422 after the CSV header was already sent.
+            sess_res = await _usage_sessions_page(
+                db,
                 audience=audience,
                 q=q,
                 ip=ip,
                 sort="cost_desc",
                 limit=settings.usage_export_max_rows,
                 offset=0,
-                db=db,
-                user=user,
             )
             for item in sess_res["items"]:
                 writer.writerow(
