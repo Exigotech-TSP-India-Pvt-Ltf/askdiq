@@ -11,7 +11,8 @@
     "serve": "next build && next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "audit:gate": "node scripts/audit-gate.mjs"
   },
   "dependencies": {
     "@swc/helpers": "^0.5.23",
@@ -41,5 +42,10 @@
     "typescript": "5.5.3",
     "vite": "^8.3.4",
     "vitest": "^5.0.4"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.30"
+    }
   }
 }

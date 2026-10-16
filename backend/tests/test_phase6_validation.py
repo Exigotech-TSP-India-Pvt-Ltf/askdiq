@@ -133,6 +133,7 @@ async def test_phase6_owasp_hostile_uploads_rejected(client: AsyncClient, fake_e
         assert res_traversal.json()["source_name"] == "passwd.md"
 
 
+@pytest.mark.db
 @pytest.mark.asyncio
 async def test_phase6_concurrency_load_stress_nonblocking(monkeypatch):
     """Subtask 6.2.1: 10 concurrent requests execute without blocking event loop or deadlocking pool."""
