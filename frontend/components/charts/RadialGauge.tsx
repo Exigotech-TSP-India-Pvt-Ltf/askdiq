@@ -90,7 +90,7 @@ export function RadialGauge({
   const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
   const color = toneFor(ct, value, bands, higherIsBetter);
 
-  return (
+  const frame = (
     <ChartFrame label={label} height={height}>
       {({ width, height: h }) => {
         const r = Math.max(10, Math.min(width / 2, h / 1.6) - 10);
@@ -123,14 +123,18 @@ export function RadialGauge({
             >
               {formatValue(value, max)}
             </text>
-            {caption && (
-              <text x={cx} y={cy + Math.max(14, r * 0.38)} textAnchor="middle" fontSize={11} fill={ct.axis}>
-                {caption}
-              </text>
-            )}
           </g>
         );
       }}
     </ChartFrame>
+  );
+  if (!caption) return frame;
+  return (
+    <div className="flex flex-col items-center">
+      {frame}
+      <p className="-mt-3 px-2 text-center text-xs tabular-nums text-fg-muted" data-testid="gauge-caption">
+        {caption}
+      </p>
+    </div>
   );
 }

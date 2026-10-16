@@ -153,6 +153,7 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
             value={cache.hit_ratio === null ? null : cache.hit_ratio * 100}
             max={100}
             higherIsBetter
+            height={200}
             formatValue={(v) => `${Math.round(v)}%`}
             caption={`${integer.format(cache.cached_prompt_tokens)} of ${integer.format(cache.prompt_tokens)} tokens`}
           />
