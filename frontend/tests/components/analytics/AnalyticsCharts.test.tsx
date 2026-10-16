@@ -215,7 +215,7 @@ describe("KPI strip and pending state", () => {
   });
 
   it("pending banner computes progress when the API sends none", () => {
-    render(<PendingState pending={{ pending: 1, labelled: 3, total: 4, progress_pct: null }} variant="banner" />);
+    render(<PendingState pending={{ pending: 1, labelled: 3, total: 4, progress_pct: null }} />);
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "75");
   });
 });
