@@ -194,7 +194,8 @@ export type OnlineQualityKpis = Partial<{
   sampled_count: number;
   violation_count: number;
   violation_rate: number;
-  mean_faithfulness: number;
+  /** null until something has been sampled. */
+  mean_faithfulness: number | null;
   secret_leak_count: number;
   pii_leak_count: number;
   unfaithful_count: number;

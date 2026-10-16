@@ -609,7 +609,7 @@ export default function MonitoringView() {
           <MiniStat label="Violation rate" value={quality.violation_rate === undefined ? "—" : formatPct(quality.violation_rate * 100)} />
           <MiniStat
             label="Mean faithfulness"
-            value={quality.mean_faithfulness === undefined ? "—" : `${quality.mean_faithfulness.toFixed(2)} / 5`}
+            value={typeof quality.mean_faithfulness === "number" ? `${quality.mean_faithfulness.toFixed(2)} / 5` : "—"}
           />
           <MiniStat label="Unfaithful" value={formatCount(quality.unfaithful_count ?? null)} />
           <MiniStat label="PII leaks" value={formatCount(quality.pii_leak_count ?? null)} />
