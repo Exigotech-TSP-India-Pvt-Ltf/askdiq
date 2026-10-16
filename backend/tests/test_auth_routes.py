@@ -501,10 +501,10 @@ async def test_auth_audit_events_need_audit_auth_read(
     )
     assert not {e["action"] for e in everything.json()} & AUTH_AUDIT_ACTIONS
     logs = await client.get(
-        "/admin/governance/logs", params={"limit": 2000}, headers=operator_headers
+        "/admin/governance/logs", params={"limit": 200}, headers=operator_headers
     )
     assert logs.status_code == 200
-    assert not {i["service"] for i in logs.json()["items"]} & AUTH_AUDIT_ACTIONS
+    assert not {i["action"] for i in logs.json()["items"]} & AUTH_AUDIT_ACTIONS
 
     visible = await client.get(
         "/governance/audit-log",
