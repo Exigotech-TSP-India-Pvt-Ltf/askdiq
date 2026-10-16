@@ -15,19 +15,14 @@ The kit never contains a compose file, an nginx conf or a `.env` outside
 
 ---
 
-> **STOP: deploy blocker for `preview/view` and anything built from it.**
+> **Public website check (resolved blocker).**
 >
-> In this code, `POST /query` and every `/sessions` route require a signed-in
-> SSO session (`require_role_or_chat`, `X-Session` header), not just the API
-> key. The public website calls `https://askdiq.ethub.co/query` and
-> `/sessions` with the API key only, so deploying this backend as it is would
-> make every public chat request fail with **401**.
->
-> Before deploying `preview/view` to production, the backend must keep an
-> API-key-only service path for the public website (for example a
-> service-key guard on `/query` and `/sessions` for that client, or a
-> dedicated public route), verified on a staging copy. Until then, do not
-> deploy this backend to production.
+> `POST /query` and the `/sessions` routes accept either a dashboard SSO
+> session or the website's API key (`X-API-Key` + `X-Client-Id`, forwarded
+> `ip_address`), via `require_chat_actor` (branch fix/public-api-key-path,
+> merged). Still verify after every deploy that an API-key-only `/query`
+> returns **200**; `deploy/server/deploy.sh` does this and stops with the
+> rollback command if it does not.
 >
 > Check before and after every deploy, from the server:
 >
@@ -424,8 +419,8 @@ that is alive and hung: the healthcheck only marks it `unhealthy`. Install the
 watchdog so an unhealthy `askdiq-*` container is restarted within a minute:
 
 ```bash
-chmod +x /opt/askdiq/deploy-kit/askdiq-autoheal.sh
-( crontab -l 2>/dev/null; echo '* * * * * /opt/askdiq/deploy-kit/askdiq-autoheal.sh >> /var/log/askdiq-autoheal.log 2>&1' ) | crontab -
+chmod +x /opt/askdiq/ops/askdiq-autoheal.sh
+( crontab -l 2>/dev/null; echo '* * * * * /opt/askdiq/ops/askdiq-autoheal.sh >> /var/log/askdiq-autoheal.log 2>&1' ) | crontab -
 docker inspect --format '{{.State.Health.Status}}' askdiq-api   # healthy
 ```
 
