@@ -54,6 +54,7 @@ describe("proxy forwards the session (F1.1.2)", () => {
     const headers = sentHeaders();
     expect(headers.get("X-Session")).toBe("sess-abc-123");
     expect(headers.get("X-API-Key")).toBe("service-key");
+    expect(headers.get("X-AskDIQ-Proxy")).toBe("1");
     expect(headers.get("X-Requested-With")).toBeNull();
   });
 

@@ -114,9 +114,30 @@ export async function fetchMe(signal?: AbortSignal): Promise<AuthMe | null> {
   }
 }
 
-/** `POST /auth/logout` (204). The proxy deletes the cookie. */
-export function logoutRequest(): Promise<void> {
-  return call<void>("/auth/logout", { method: "POST" });
+/**
+ * Same-origin sign-out route (app/auth/logout/route.ts): revokes the server
+ * session when the backend answers in time and always clears the cookie.
+ */
+export const LOGOUT_ROUTE = "/auth/logout";
+/** Sign-out never waits longer than this, even if the app server hangs. */
+export const LOGOUT_CLIENT_TIMEOUT_MS = 6000;
+
+/** `POST /auth/logout` (204). Rejects on failure or after `timeoutMs`. */
+export async function logoutRequest(timeoutMs: number = LOGOUT_CLIENT_TIMEOUT_MS): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(LOGOUT_ROUTE, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "X-Requested-With": "askdiq" },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new ApiError(res.statusText || "Sign out failed", res.status);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function fetchAccessRequestState(signal?: AbortSignal): Promise<AccessRequestState> {

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as callback } from "@/app/auth/callback/route";
 import { GET as startLogin } from "@/app/auth/login/route";
+import { LOGOUT_BACKEND_TIMEOUT_MS, POST as logout } from "@/app/auth/logout/route";
 import { postLoginPath } from "@/lib/auth-gate";
 
 const BACKEND = "http://backend.test:8000";
@@ -217,5 +218,79 @@ describe("postLoginPath", () => {
     expect(postLoginPath("active", "/admin")).toBe("/admin");
     expect(postLoginPath("pending", "/admin")).toBe("/chat");
     expect(postLoginPath("pending", "/chat?session=s1")).toBe("/chat?session=s1");
+  });
+});
+
+describe("/auth/logout (sign out never depends on the backend)", () => {
+  function logoutRequest(headers: Record<string, string> = {}, url = "http://localhost:3000/auth/logout") {
+    return new NextRequest(url, {
+      method: "POST",
+      headers: {
+        cookie: `askdiq_session=${SESSION}`,
+        origin: "http://localhost:3000",
+        "x-requested-with": "askdiq",
+        ...headers,
+      },
+    });
+  }
+
+  it("revokes the backend session with the service key, CSRF marker and Origin, then clears the cookie", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    const res = await logout(logoutRequest());
+    expect(res.status).toBe(204);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BACKEND}/auth/logout`);
+    expect(init.method).toBe("POST");
+    const sent = new Headers(init.headers);
+    expect(sent.get("X-Session")).toBe(SESSION);
+    expect(sent.get("X-API-Key")).toBe("service-key");
+    expect(sent.get("X-Requested-With")).toBe("askdiq");
+    expect(sent.get("Origin")).toBe("http://localhost:3000");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(cookieNamed(res, "askdiq_session")).toMatch(/Max-Age=0/i);
+    expect(cookieNamed(res, "askdiq_session")).toMatch(/HttpOnly/i);
+    expect(cookieNamed(res, "askdiq_session")).toMatch(/Path=\//i);
+    expect(res.headers.get("x-session-revoked")).toBe("1");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("clear-site-data")).toBe('"cache"');
+  });
+
+  it.each([
+    ["unreachable", () => fetchMock.mockRejectedValue(new TypeError("fetch failed"))],
+    ["erroring", () => fetchMock.mockResolvedValue(new Response("{}", { status: 500 }))],
+    ["timing out", () => fetchMock.mockRejectedValue(new DOMException("timeout", "TimeoutError"))],
+  ])("still clears the cookie when the backend is %s", async (_label, arrange) => {
+    arrange();
+    const res = await logout(logoutRequest());
+    expect(res.status).toBe(204);
+    expect(cookieNamed(res, "askdiq_session")).toMatch(/Max-Age=0/i);
+    expect(res.headers.get("x-session-revoked")).toBe("0");
+  });
+
+  it("bounds the backend call", () => {
+    expect(LOGOUT_BACKEND_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(LOGOUT_BACKEND_TIMEOUT_MS).toBeLessThanOrEqual(5000);
+  });
+
+  it("clears without calling the backend when there is no session cookie", async () => {
+    const res = await logout(logoutRequest({ cookie: "" }));
+    expect(res.status).toBe(204);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no CSRF marker", { "x-requested-with": "" }],
+    ["a foreign Origin", { origin: "https://evil.example" }],
+  ])("rejects a request with %s and keeps the cookie (forced sign-out CSRF)", async (_label, headers) => {
+    const res = await logout(logoutRequest(headers));
+    expect(res.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(cookieNamed(res, "askdiq_session")).toBe("");
+  });
+
+  it("clears a Secure cookie with Secure behind an HTTPS reverse proxy", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    const res = await logout(logoutRequest({ "x-forwarded-proto": "https" }));
+    expect(cookieNamed(res, "askdiq_session")).toMatch(/Secure/i);
   });
 });

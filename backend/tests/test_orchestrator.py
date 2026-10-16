@@ -86,12 +86,15 @@ async def test_pre_guardrail_blocks_before_any_retrieval_or_llm_call(monkeypatch
     assert response.sources == []
 
 
-async def test_off_topic_when_no_sources_retrieved(monkeypatch):
+async def test_no_sources_flag_when_nothing_retrieved(monkeypatch):
+    # Empty retrieval (empty KB or a filter matching no chunk) is reported as
+    # `no_sources`, distinct from `off_topic` (relevance below threshold).
     response = await _run(monkeypatch, sources=[])
 
     assert response.grounded is False
-    assert response.guardrail_flags == ["off_topic"]
+    assert response.guardrail_flags == ["no_sources"]
     assert response.sources == []
+    assert "knowledge base" in response.answer
 
 
 async def test_off_topic_when_retrieval_score_below_minimum(monkeypatch):

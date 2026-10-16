@@ -366,7 +366,7 @@ async def _write_exchange(
                 request_id=request_id,
                 actor=user_email,
                 action="query",
-                detail=audit_detail,
+                detail={**audit_detail, "message_id": str(assistant_message_id)},
                 ip_address=client_ip,
                 commit=False,
             )

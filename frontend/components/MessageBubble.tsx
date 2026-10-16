@@ -7,6 +7,7 @@ import { renderFormattedText } from "@/lib/format-text";
 import { useChat } from "@/lib/chat-context";
 import type { FeedbackDetails, ReasonTag } from "@/lib/feedback-api";
 import { FeedbackReasonPanel } from "@/components/chat/FeedbackReasonPanel";
+import { SourceChips, citedSources } from "@/components/chat/SourceChips";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type FeedbackFn = (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
@@ -84,14 +85,28 @@ function MessageSquareIcon() {
   );
 }
 
+/** Local time of a message ("14:05"), with the full date as the tooltip. */
+function MessageTime({ at }: { at: number }) {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return null;
+  return (
+    <time dateTime={date.toISOString()} title={date.toLocaleString()} className="tabular-nums">
+      {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+    </time>
+  );
+}
+
 export function MessageBubble({
   message,
   onDelete,
   onFeedback,
+  onRetry,
 }: {
   message: ChatMessage;
   onDelete?: () => void;
   onFeedback?: FeedbackFn;
+  /** Shown on a failed answer: re-sends the question. */
+  onRetry?: () => void;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
@@ -230,7 +245,10 @@ export function MessageBubble({
           <div className="rounded-2xl rounded-tr-sm bg-brand-600 px-4 py-2.5 text-sm text-white">
             {message.content}
           </div>
-          <div className="mt-1 flex items-center justify-end gap-2 text-ink/35">
+          <div className="mt-1 flex items-center justify-end gap-2 text-ink/35 dark:text-slate-500">
+            <span className="text-[11px]">
+              <MessageTime at={message.createdAt} />
+            </span>
             <button
               type="button"
               onClick={handleCopy}
@@ -268,11 +286,24 @@ export function MessageBubble({
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 dark:bg-slate-500" />
             </span>
           ) : message.error ? (
-            <span className="text-red-600 dark:text-red-400">{message.error}</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5" role="alert">
+              <span className="text-red-600 dark:text-red-400">{message.error}</span>
+              {onRetry ? (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="rounded-md border border-line px-2 py-0.5 text-xs font-medium text-fg-muted transition hover:border-brand-300 hover:text-fg focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  Retry
+                </button>
+              ) : null}
+            </div>
           ) : (
             renderFormattedText(message.content)
           )}
         </div>
+
+        {!message.pending && !message.error && <SourceChips sources={citedSources(message.response)} />}
 
         {!message.pending && !message.error && (
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
@@ -325,6 +356,7 @@ export function MessageBubble({
             )}
 
             <div className="ml-auto flex items-center gap-2 text-slate-400 dark:text-slate-500">
+              <MessageTime at={message.createdAt} />
               {/* Copy */}
               <button
                 type="button"

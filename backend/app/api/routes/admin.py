@@ -6,16 +6,18 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.admin_entities import router as entities_router
 from app.api.routes.admin_feedback import router as feedback_router
 from app.api.routes.admin_governance import router as governance_router
+from app.api.routes.admin_usage import USAGE_CARD_CACHE_PREFIX
 from app.api.routes.admin_usage import router as usage_router
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
+from app.core.cache import aggregation_cache
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, release_connection
@@ -23,6 +25,7 @@ from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
 from app.core.request_meta import get_client_ip
+from app.dashboard import active_visitors
 from app.dashboard import activity as dashboard_activity
 from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
@@ -82,6 +85,15 @@ class TestIpPayload(BaseModel):
 # ============================================================================
 # USERS
 # ============================================================================
+
+
+# `sort` prefix -> visitor row field; unknown values sort by last activity.
+_VISITOR_SORT_FIELDS = {
+    "last_active": "last_active",
+    "first_seen": "first_seen",
+    "queries": "queries",
+    "sessions": "sessions",
+}
 
 
 @router.get("/users")
@@ -211,7 +223,9 @@ async def list_users(
         )
 
     reverse = "asc" not in sort
-    all_users.sort(key=lambda u: u.get("last_active") or "", reverse=reverse)
+    sort_field = _VISITOR_SORT_FIELDS.get(sort.rsplit("_", 1)[0], "last_active")
+    empty: str | int = 0 if sort_field in {"queries", "sessions"} else ""
+    all_users.sort(key=lambda u: u.get(sort_field) or empty, reverse=reverse)
 
     total = len(all_users)
     paged = all_users[offset : offset + limit]
@@ -440,11 +454,16 @@ async def list_conversations(
     if max_turns is not None:
         query = query.having(turn_count <= max_turns)
 
-    # Sort
-    if sort == "last_activity_asc":
-        query = query.order_by(ChatSession.last_activity_at.asc())
-    else:
-        query = query.order_by(ChatSession.last_activity_at.desc())
+    # Sort (unknown values fall back to the newest activity first)
+    sort_column = (
+        ChatSession.created_at
+        if sort.startswith("created_at_")
+        else ChatSession.last_activity_at
+    )
+    query = query.order_by(
+        sort_column.asc() if sort.endswith("_asc") else sort_column.desc(),
+        ChatSession.id,
+    )
 
     # Total count
     count_sub = query.subquery()
@@ -588,22 +607,37 @@ def _r(v, d=0):
     return round(v, d) if isinstance(v, (int, float)) else None
 
 
-async def _latency_rows(db: AsyncSession, hours: int = 24 * 30):
+def _float_or_none(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+async def _latency_stats(db: AsyncSession, hours: int = 24 * 30) -> dict[str, Any]:
+    """Counts and stage averages over ``hours``, aggregated in SQL (one row)
+    instead of loading every ``latency_metrics`` row into Python."""
     since = datetime.utcnow() - timedelta(hours=hours)
-    return (
-        (
-            await db.execute(
-                select(LatencyRecord).where(LatencyRecord.created_at >= since)
-            )
+    row = (
+        await db.execute(
+            select(
+                func.count(LatencyRecord.id),
+                func.avg(LatencyRecord.llm_ms),
+                func.avg(LatencyRecord.embedding_ms),
+                func.count(LatencyRecord.reranker_ms),
+                func.avg(LatencyRecord.reranker_ms),
+            ).where(LatencyRecord.created_at >= since)
         )
-        .scalars()
-        .all()
-    )
+    ).one()
+    return {
+        "requests": int(row[0]),
+        "llm_ms": _float_or_none(row[1]),
+        "embedding_ms": _float_or_none(row[2]),
+        "reranker_requests": int(row[3]),
+        "reranker_ms": _float_or_none(row[4]),
+    }
 
 
-def _avg(rows, field):
-    vals = [getattr(r, field) for r in rows if getattr(r, field) is not None]
-    return sum(vals) / len(vals) if vals else None
+def _usage_card_key(name: str) -> str:
+    """Aggregation-cache key for a usage card; the permission scope is part of it."""
+    return f"{USAGE_CARD_CACHE_PREFIX}{Permission.DASHBOARD_READ.value}:{name}"
 
 
 async def _query_usage_rows(db: AsyncSession) -> list[dict]:
@@ -862,32 +896,42 @@ async def usage_llm(
 ):
     settings = get_settings()
 
-    rows = await _latency_rows(db)
-    query_rows = await _query_usage_rows(db)
-    in_tokens = sum(q["input_tokens"] for q in query_rows)
-    out_tokens = sum(q["output_tokens"] for q in query_rows)
-    cost = sum(q["cost_usd"] for q in query_rows)
-    failed = sum(1 for q in query_rows if q["grounded"] is False)
-    actual_count = sum(1 for q in query_rows if q["is_actual"])
-    return {
-        "provider": "Azure OpenAI",
-        "model": settings.azure_deployment_name,
-        "requests": len(rows),
-        "successful": max(len(rows) - failed, 0),
-        "failed": failed,
-        "input_tokens": in_tokens,
-        "output_tokens": out_tokens,
-        "total_tokens": in_tokens + out_tokens,
-        "average_latency_ms": _r(_avg(rows, "llm_ms")),
-        "cost": f"${cost:.4f}",
-        # How many of the queries counted above used the real Azure usage
-        # numbers vs. the legacy text-length estimate (pre-migration rows
-        # or exchanges with no actual LLM call).
-        "token_accounting": {
-            "actual": actual_count,
-            "estimated": len(query_rows) - actual_count,
-        },
-    }
+    async def compute() -> dict:
+        lat = await _latency_stats(db)
+        query_rows = await _query_usage_rows(db)
+        in_tokens = sum(q["input_tokens"] for q in query_rows)
+        out_tokens = sum(q["output_tokens"] for q in query_rows)
+        cost = sum(q["cost_usd"] for q in query_rows)
+        failed = sum(1 for q in query_rows if q["grounded"] is False)
+        actual_count = sum(1 for q in query_rows if q["is_actual"])
+        requests = lat["requests"]
+        return {
+            "provider": "Azure OpenAI",
+            "model": settings.azure_deployment_name,
+            "requests": requests,
+            "successful": max(requests - failed, 0),
+            "failed": failed,
+            "input_tokens": in_tokens,
+            "output_tokens": out_tokens,
+            "total_tokens": in_tokens + out_tokens,
+            "average_latency_ms": _r(lat["llm_ms"]),
+            "cost": f"${cost:.4f}",
+            # How many of the queries counted above used the real Azure usage
+            # numbers vs. the legacy text-length estimate (pre-migration rows
+            # or exchanges with no actual LLM call).
+            "token_accounting": {
+                "actual": actual_count,
+                "estimated": len(query_rows) - actual_count,
+            },
+        }
+
+    # Per-exchange cost accounting runs in Python over every exchange; the
+    # all-time totals are cached briefly and concurrent callers share one run.
+    return await aggregation_cache.get_or_compute(
+        _usage_card_key("llm"),
+        compute,
+        ttl=settings.usage_summary_cache_ttl_seconds,
+    )
 
 
 @router.get("/usage/embedding")
@@ -897,33 +941,41 @@ async def usage_embedding(
 ):
     settings = get_settings()
 
-    rows = await _latency_rows(db)
+    lat = await _latency_stats(db)
     docs = await db.scalar(select(func.count(Document.id)))
     chunks = await db.scalar(select(func.count(Chunk.id)))
     chunk_chars = await db.scalar(
         select(func.coalesce(func.sum(func.length(Chunk.content)), 0))
     )
-    q_msgs = (
-        (
-            await db.execute(
-                select(ChatMessageRecord.content).where(
-                    ChatMessageRecord.role == "user"
-                )
-            )
+    # SQL mirror of sum(_est_tokens(content)) over user turns: 0 for empty,
+    # else max(1, chars // 4). No message bodies leave the database.
+    content = ChatMessageRecord.content
+    q_count, q_tokens = (
+        await db.execute(
+            select(
+                func.count(ChatMessageRecord.id),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (or_(content.is_(None), content == ""), 0),
+                            else_=func.greatest(1, func.length(content) / 4),
+                        )
+                    ),
+                    0,
+                ),
+            ).where(ChatMessageRecord.role == "user")
         )
-        .scalars()
-        .all()
-    )
-    tokens = int((chunk_chars or 0) // 4) + sum(_est_tokens(c) for c in q_msgs)
+    ).one()
+    tokens = int((chunk_chars or 0) // 4) + int(q_tokens)
     return {
         "provider": "Azure OpenAI",
         "model": settings.embedding_model,
         "dimensions": settings.embedding_dim,
         "documents": docs or 0,
         "chunks": chunks or 0,
-        "requests": len(q_msgs) + (chunks or 0),
+        "requests": int(q_count) + (chunks or 0),
         "input_tokens": tokens,
-        "average_latency_ms": _r(_avg(rows, "embedding_ms")),
+        "average_latency_ms": _r(lat["embedding_ms"]),
         "cost": f"${tokens / 1e6 * 0.02:.4f}",
     }
 
@@ -935,8 +987,8 @@ async def usage_reranker(
 ):
     settings = get_settings()
 
-    rows = [r for r in await _latency_rows(db) if r.reranker_ms is not None]
-    avg_ms = _avg(rows, "reranker_ms")
+    lat = await _latency_stats(db)
+    avg_ms = lat["reranker_ms"]
     pool = max(
         settings.default_top_k * settings.retrieval_candidate_multiplier,
         settings.retrieval_candidate_min,
@@ -955,8 +1007,8 @@ async def usage_reranker(
     return {
         "provider": "Local cross-encoder" if settings.enable_reranker else "Disabled",
         "model": settings.reranker_model,
-        "queries": len(rows),
-        "requests": len(rows),
+        "queries": lat["reranker_requests"],
+        "requests": lat["reranker_requests"],
         "documents_per_query": pool,
         "top_n": settings.default_top_k,
         "average_latency_ms": _r(avg_ms),
@@ -1565,25 +1617,13 @@ async def _dashboard_panels(db: AsyncSession, audience: str) -> dict:
 
 
 async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
-    since = datetime.utcnow() - timedelta(hours=24)
+    now = dashboard_window.utcnow()
     aud_sess = await build_audience_filter(db, ChatSession.created_ip, audience)
 
-    # 1. Total users: distinct IPs from ChatSession
-    q_users = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None)
-    )
-    if aud_sess is not None:
-        q_users = q_users.where(aud_sess)
-    users = await db.scalar(q_users)
-
-    # 2. Active users: distinct IPs active in last 24h
-    q_active = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None),
-        ChatSession.last_activity_at >= since,
-    )
-    if aud_sess is not None:
-        q_active = q_active.where(aud_sess)
-    active_users = await db.scalar(q_active)
+    # 1-2. Active visitors all time and in the last 24 h (shared definition).
+    users = await active_visitors.count_active(db, audience, None, now)
+    visitor_counts = await active_visitors.active_counts(db, audience, now)
+    active_users = visitor_counts["dau"]
 
     # 3. Sessions & Conversations
     q_sessions = select(func.count(ChatSession.id))
@@ -1643,6 +1683,7 @@ async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
         "error_rate": METRICS["errors"] * 100 / requests_total
         if requests_total
         else 0.0,
+        "active_visitors": active_visitors.summary(visitor_counts),
         **await _dashboard_panels(db, audience),
     }
 

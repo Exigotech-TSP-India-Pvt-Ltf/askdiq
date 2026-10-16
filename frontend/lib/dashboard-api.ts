@@ -12,6 +12,7 @@
  * ratios as fractions 0..1 (`ratio`, `share`, `delta`). The legacy
  * `error_rate` is a percentage 0..100 (unchanged).
  */
+import type { ActiveVisitors } from "@/lib/active-visitors";
 import { ApiError } from "@/lib/api";
 import type { Audience } from "@/lib/types";
 import type { DateRange } from "@/lib/range-context";
@@ -150,6 +151,8 @@ export interface DashboardData {
   satisfaction?: DashboardSatisfaction;
   /** At most 8, highest count first. */
   top_intents?: TopIntent[];
+  /** DAU / WAU / MAU and active now, as of the request (independent of the window). */
+  active_visitors?: ActiveVisitors;
 }
 
 // ---------------------------------------------------------------------------

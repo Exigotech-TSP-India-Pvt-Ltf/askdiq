@@ -18,7 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.admin_usage import _sanitize_csv_cell
@@ -33,8 +33,9 @@ from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
 from app.core.sse import event_stream
+from app.dashboard import active_visitors
 from app.governance import logs, timeseries, traces
-from app.governance.audience import Audience, audience_scope, build_audience_filter
+from app.governance.audience import Audience, audience_scope
 from app.governance.audit import record_audit_event
 from app.governance.monitoring import (
     LATENCY_UNIT,
@@ -49,7 +50,7 @@ from app.governance.overview import overview_payload
 from app.governance.pagination import Cursor
 from app.governance.quota_series import quota_series
 from app.governance.stream import GovernanceStreamHub, get_governance_hub
-from app.models.db_models import ChatSession, LatencyRecord
+from app.models.db_models import LatencyRecord
 from app.schemas.governance import (
     GovernanceLogPage,
     GovernanceOverview,
@@ -174,14 +175,7 @@ async def governance_monitoring(
     stages = stage_latency_summary(records)
     avg_total_ms = sum(totals) / len(totals) if totals else None
 
-    aud_sess = await build_audience_filter(db, ChatSession.created_ip, audience)
-    q_active = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.created_ip.isnot(None),
-        ChatSession.last_activity_at >= since,
-    )
-    if aud_sess is not None:
-        q_active = q_active.where(aud_sess)
-    active_users = (await db.scalar(q_active)) or 0
+    active_users = await active_visitors.count_active(db, audience, since, now)
     errors = await persisted_error_counts(db, audience, since)
     traces_total = await count_traces(db, audience)
     await release_connection(db)  # never hold a pool slot while waiting for more
@@ -232,7 +226,7 @@ async def governance_monitoring(
                 "in_memory_counter" if process_counter else "latency_metrics",
             ),
             "queries_24h": labelled(len(records), window, "latency_metrics"),
-            "active_users": labelled(active_users, window, "chat_sessions"),
+            "active_users": labelled(active_users, window, active_visitors.SOURCE),
             "active_queries": labelled(
                 METRICS["active_queries"], "now", "in_memory_counter"
             ),

@@ -2,8 +2,9 @@
 
 Rows are written inside the caller's rolled-back ``db_session`` and timed in a
 random far-past window (``unique_day``) so window filters isolate them from
-rows other tests committed. Every IP is a random TEST-NET-2 address so
-per-visitor numbers are exact.
+rows other tests committed. Every IP is a random TEST-NET-2 address and
+sessions default to the anonymous actor, so each IP is one active visitor
+and per-visitor numbers are exact.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.governance.auth import DEFAULT_ACTOR
 from app.models.db_models import (
     AuditLog,
     ChatMessageRecord,
@@ -49,7 +51,7 @@ async def session_at(
     ip: str | None,
     *,
     title: str = "Fixture chat",
-    email: str = "b7-tests@example.com",
+    email: str = DEFAULT_ACTOR,
     last_activity_at: datetime | None = None,
 ) -> ChatSession:
     session = ChatSession(

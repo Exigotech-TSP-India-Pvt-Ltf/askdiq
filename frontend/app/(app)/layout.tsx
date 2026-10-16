@@ -7,6 +7,7 @@ import { MobileNavProvider } from "@/lib/mobile-nav-context";
 import { CommandCenter } from "@/components/shell/CommandCenter";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
 import { GateContent, useRouteGate } from "@/components/auth/RouteGate";
+import { AskDiqLauncher } from "@/components/askdiq/AskDiqLauncher";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Route gate (F1.2.3): login redirect, suspended page, Access Required in
@@ -29,9 +30,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 mounted across those route changes. */}
             <AudienceProvider>
               <ChatProvider>
-                <main className="min-h-0 flex-1 overflow-hidden bg-surface-page">
+                <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-surface-page">
                   <GateContent decision={gate.decision}>{children}</GateContent>
                 </main>
+                {/* Floating AskDIQ chat on every dashboard page (drawer is lazy-loaded). */}
+                <AskDiqLauncher />
               </ChatProvider>
             </AudienceProvider>
           </div>

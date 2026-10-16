@@ -33,14 +33,6 @@ export function RoleBadge({ role }: { role: Role | null }) {
   return <span className={`${CHIP} ${ROLE_TONE[role]}`}>{ROLE_LABEL[role]}</span>;
 }
 
-const dateTime = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
-
-export function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? "—" : dateTime.format(d);
-}
-
 const MINUTE = 60;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { cache } from "react";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { AuthProvider } from "@/lib/auth-context";
 import { ThemeProvider } from "@/lib/theme-context";
 import { BrandProvider } from "@/lib/brand-context";
 import { brandCssText, buildMetadata, type Brand } from "@/lib/brand";
 import { fetchBrand } from "@/lib/brand-server";
+import { sessionCookieName } from "@/lib/server/auth-cookies";
+import { preloadMe } from "@/lib/server/session-me";
 import { THEME_INIT_SCRIPT } from "@/lib/theme-script";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { ToastProvider } from "@/components/ui/ToastProvider";
@@ -24,11 +26,22 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const brand = await getBrand();
-  const brandCss = brandCssText(brand);
   // Per-request CSP nonce from middleware.ts (reading headers() renders the
   // shell per request, which a nonce needs; /branding stays in the data cache).
-  const nonce = headers().get("x-nonce") ?? undefined;
+  const requestHeaders = headers();
+  const nonce = requestHeaders.get("x-nonce") ?? undefined;
+  // Branding and the signed-in user load in parallel; with the user known on
+  // the server the first HTML already holds the shell and page skeletons
+  // (no spinner, no client /auth/me round trip before the page's own data).
+  const [brand, initialMe] = await Promise.all([
+    getBrand(),
+    preloadMe({
+      session: cookies().get(sessionCookieName())?.value,
+      forwardedFor: requestHeaders.get("x-forwarded-for"),
+      userAgent: requestHeaders.get("user-agent"),
+    }),
+  ]);
+  const brandCss = brandCssText(brand);
 
   return (
     // suppressHydrationWarning: the pre-paint script below changes the <html>
@@ -51,7 +64,7 @@ export default async function RootLayout({
           <BrandProvider brand={brand}>
             <MotionProvider>
               <ToastProvider>
-                <AuthProvider>{children}</AuthProvider>
+                <AuthProvider initialMe={initialMe}>{children}</AuthProvider>
               </ToastProvider>
             </MotionProvider>
           </BrandProvider>

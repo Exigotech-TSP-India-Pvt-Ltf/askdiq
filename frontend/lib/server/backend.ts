@@ -12,6 +12,13 @@ export function backendUrl(): string {
 }
 
 /**
+ * Marks requests from this proxy. The backend also accepts the service key
+ * alone (no session) from the public website's server; with this marker an
+ * anonymous browser behind the proxy can never take that path.
+ */
+export const PROXY_MARKER_HEADER = "X-AskDIQ-Proxy";
+
+/**
  * Default wait for the backend's response headers on reads (GET / HEAD /
  * OPTIONS). A last-resort safety net, far above any healthy response time.
  */
@@ -49,11 +56,12 @@ export function backendTimeoutMs(write: boolean): number {
     : positiveMs(process.env.BACKEND_TIMEOUT_MS, DEFAULT_BACKEND_TIMEOUT_MS);
 }
 
-/** `X-API-Key` (service key) and the client IP for the backend's audit trail. */
+/** `X-API-Key` (service key), the proxy marker and the client IP for the backend's audit trail. */
 export function backendHeaders(req: NextRequest): Headers {
   const headers = new Headers();
   const apiKey = process.env.API_KEY;
   if (apiKey) headers.set("X-API-Key", apiKey);
+  headers.set(PROXY_MARKER_HEADER, "1");
   const forwardedFor = req.headers.get("x-forwarded-for");
   if (forwardedFor) headers.set("X-Forwarded-For", forwardedFor);
   const userAgent = req.headers.get("user-agent");

@@ -12,6 +12,7 @@ import {
   type FeedbackItem,
 } from "@/lib/feedback-api";
 import { outcomeLabel } from "@/lib/feedback-filters";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { ACTION_LABELS, STATUS_BADGE, canTransition, ratingTone, type TriageAction } from "./triage";
 
 export interface FeedbackDrawerProps {
@@ -260,7 +261,12 @@ export function FeedbackDrawer({
             {item.reviewed_by ? (
               <p className="text-[11px] text-fg-subtle">
                 Reviewed by {item.reviewed_by}
-                {item.reviewed_at ? ` on ${new Date(item.reviewed_at).toLocaleString()}` : ""}
+                {item.reviewed_at ? (
+                  <>
+                    {" "}
+                    <RelativeTime value={item.reviewed_at} />
+                  </>
+                ) : null}
               </p>
             ) : null}
           </Section>

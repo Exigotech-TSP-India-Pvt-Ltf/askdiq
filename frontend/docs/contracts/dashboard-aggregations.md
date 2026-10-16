@@ -44,8 +44,8 @@ days client side.
 
 | Field | Type | Meaning today |
 |---|---|---|
-| `users` | int | Distinct client IPs (all time) |
-| `active_users` | int | Distinct IPs active in the last 24 h |
+| `users` | int | Active visitors (all time; see "Active visitors" below) |
+| `active_users` | int | Active visitors in the last 24 h (= `active_visitors.dau.value`) |
 | `sessions`, `conversations` | int | Chat sessions (all time) |
 | `queries` | int | User messages (all time) |
 | `feedback` | int | Feedback audit entries (all time) |
@@ -77,6 +77,23 @@ today's windows ("All time", "Last 24 hours", "Since server start").
 | `cost` | `DashboardCost` | Current calendar month (UTC), independent of `from`/`to` |
 | `satisfaction` | `DashboardSatisfaction` | Ratings in the window |
 | `top_intents` | `TopIntent[]` | At most 8, count descending, from the insights rollup |
+| `active_visitors` | `ActiveVisitors` | DAU / WAU / MAU (+ previous equal window and delta) and active now (5 min), as of the request, independent of `from`/`to`; also sent without a window |
+
+**Active visitors** (backend `app.dashboard.active_visitors`, the only place it is computed):
+distinct end-user identities with at least one user query in the period. Identity = the session
+actor (client id / signed-in user) when present and not the default/anonymous actor
+(`default@local`, `anonymous`), else the query's client IP. Queries from test IPs
+(`DEV_TEST_IPS` + `test_ip_configs`) are excluded on every audience except `testing`, where only
+test traffic is counted. With a window, `users` is active visitors in the window and
+`active_users` active visitors in its last 24 h. The same count feeds the Visitors page
+(`active_now`, `active_visitors`) and the governance `active_users` KPIs. Counts only: no IPs or
+ids are returned.
+
+```ts
+ActiveVisitorsPeriod = { value: int; previous: int; delta: number | null; days: int }
+ActiveVisitors = { definition: string; active_now: int; active_now_minutes: int;
+                   dau: ActiveVisitorsPeriod; wau: ActiveVisitorsPeriod; mau: ActiveVisitorsPeriod }
+```
 
 KPI keys: `users`, `active_users`, `sessions`, `queries`, `feedback`, `avg_latency_ms`,
 `error_rate` (percent, like the KPI), `cost_usd`.
@@ -208,8 +225,8 @@ A pass-rate marker opens `/admin/evaluation?run={run_id}`.
 
 | Element | Link |
 |---|---|
-| Total Users card | `/admin/users` |
-| Active Users card | `/admin/usage?tab=users` |
+| Active visitors card | `/admin/users` |
+| Active visitors (24h) card | `/admin/usage?tab=users` |
 | Sessions card | `/admin/usage?tab=sessions` |
 | Queries card | `/admin/usage?tab=queries` |
 | Feedback card | `/admin/feedback` |

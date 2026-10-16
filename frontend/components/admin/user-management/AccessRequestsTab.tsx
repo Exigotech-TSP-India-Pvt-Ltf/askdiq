@@ -37,7 +37,8 @@ import {
   type BulkApproveResult,
   type Role,
 } from "@/lib/user-management-api";
-import { RoleBadge, fieldClass, formatDateTime, formatWaiting } from "./parts";
+import { RoleBadge, fieldClass, formatWaiting } from "./parts";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useConflictToast } from "./use-user-actions";
 
 const DEFAULT_PAGE_SIZE: PageSize = 25;
@@ -327,7 +328,10 @@ function PendingQueue({ listKey, items }: { listKey: string; items: readonly Acc
                 <td className="max-w-xs px-3 py-2.5">
                   <p className="line-clamp-2 text-fg-muted">{r.justification || "—"}</p>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{formatWaiting(r.waiting_seconds)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
+                  {formatWaiting(r.waiting_seconds)}
+                  <RelativeTime value={r.created_at} display="absolute" className="block text-[11px] text-fg-subtle" />
+                </td>
                 <td className="px-3 py-2.5">
                   <select
                     aria-label={`Role for ${r.user_email}`}
@@ -452,6 +456,7 @@ function DecisionHistory({ items }: { items: readonly AccessRequest[] }) {
           <th scope="col" className="px-3 py-2.5 font-semibold">Requested</th>
           <th scope="col" className="px-3 py-2.5 font-semibold">Decision</th>
           <th scope="col" className="px-3 py-2.5 font-semibold">Decided by</th>
+          <th scope="col" className="px-3 py-2.5 font-semibold">Submitted</th>
           <th scope="col" className="px-3 py-2.5 font-semibold">Decided</th>
           <th scope="col" className="px-3 py-2.5 font-semibold">Note</th>
         </tr>
@@ -470,7 +475,12 @@ function DecisionHistory({ items }: { items: readonly AccessRequest[] }) {
               <RequestStatus status={r.status} />
             </td>
             <td className="px-3 py-2.5">{r.decided_by_email ?? "—"}</td>
-            <td className="whitespace-nowrap px-3 py-2.5">{formatDateTime(r.decided_at)}</td>
+            <td className="whitespace-nowrap px-3 py-2.5">
+              <RelativeTime value={r.created_at} />
+            </td>
+            <td className="whitespace-nowrap px-3 py-2.5">
+              <RelativeTime value={r.decided_at} />
+            </td>
             <td className="max-w-xs px-3 py-2.5">{r.decision_note ?? "—"}</td>
           </tr>
         ))}

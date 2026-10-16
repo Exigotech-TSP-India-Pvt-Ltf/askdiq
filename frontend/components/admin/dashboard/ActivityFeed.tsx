@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { entityHref } from "@/lib/entity-links";
@@ -49,12 +50,9 @@ export function activityHref(e: ActivityEvent): string | null {
   return null;
 }
 
-const time = new Intl.DateTimeFormat("en-AU", { hour: "2-digit", minute: "2-digit" });
-
 function EventRow({ event }: { event: ActivityEvent }) {
   const Icon = TYPE_ICON[event.type] ?? MessageSquare;
   const href = activityHref(event);
-  const at = new Date(event.at);
   const body = (
     <>
       <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${TYPE_TONE[event.type] ?? TYPE_TONE.admin}`}>
@@ -62,9 +60,7 @@ function EventRow({ event }: { event: ActivityEvent }) {
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-xs font-medium text-fg">{event.summary}</span>
-        <time dateTime={event.at} className="text-[11px] text-fg-subtle">
-          {Number.isNaN(at.getTime()) ? event.at : time.format(at)}
-        </time>
+        <RelativeTime value={event.at} fallback={event.at} className="text-[11px] text-fg-subtle" />
       </span>
       {href && (
         <ArrowUpRight

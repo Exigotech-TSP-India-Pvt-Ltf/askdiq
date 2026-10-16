@@ -17,7 +17,8 @@ import {
   type GovernanceTraceItem,
   type GovernanceTracePage,
 } from "@/lib/governance-api";
-import { formatCount, formatDateTime, formatMs, formatUsd, humanize } from "@/lib/governance-format";
+import { formatCount, formatMs, formatUsd, humanize } from "@/lib/governance-format";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { parseOne, rangeBounds } from "@/lib/governance-links";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
@@ -69,7 +70,7 @@ function traceColumns(open: (id: string) => void): ColumnDef<GovernanceTraceItem
     {
       key: "timestamp",
       header: "Time",
-      render: (t) => <span className="whitespace-nowrap text-xs text-fg-muted">{formatDateTime(t.timestamp)}</span>,
+      render: (t) => <RelativeTime value={t.timestamp} className="text-xs text-fg-muted" />,
     },
     {
       key: "user_id",

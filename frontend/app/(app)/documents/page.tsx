@@ -31,9 +31,10 @@ import { RadialGauge } from "@/components/charts/RadialGauge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { CountUp } from "@/components/ui/CountUp";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, iconButton } from "@/components/ui/styles";
-import { ToneChip, errorMessage, formatDateTime, useRangeParams } from "@/components/admin/entity/shared";
+import { ToneChip, errorMessage, useRangeParams } from "@/components/admin/entity/shared";
 import { entityHref } from "@/lib/entity-links";
 import { useCan } from "@/lib/use-can";
 import { useDeepLink } from "@/lib/use-deep-link";
@@ -299,7 +300,7 @@ function DocumentsContent() {
       sortable: true,
       render: (doc) => (
         <div className="flex flex-col whitespace-nowrap">
-          <span className="text-fg-muted">{formatDateTime(ingestedAt(doc))}</span>
+          <RelativeTime value={ingestedAt(doc)} className="text-fg-muted" />
           <span className="max-w-[200px] truncate text-[10px] text-fg-subtle" title={doc.ingested_by ?? undefined}>
             {doc.ingested_by ? `by ${doc.ingested_by}` : "by —"}
             {doc.ingest_count && doc.ingest_count > 1 ? ` · ${doc.ingest_count} ingests` : ""}
@@ -407,7 +408,7 @@ function DocumentsContent() {
             label="Last Ingestion Event"
             caption={latest ? `${latest.source_name}${latest.ingested_by ? ` · ${latest.ingested_by}` : ""}` : undefined}
           >
-            <span className="text-sm font-semibold">{latest ? formatDateTime(ingestedAt(latest)) : "—"}</span>
+            <RelativeTime value={latest ? ingestedAt(latest) : null} className="text-sm font-semibold" />
           </Kpi>
           <Kpi
             icon={totals.quarantined ? ShieldAlert : AlertTriangle}

@@ -13,17 +13,23 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { ActiveVisitorsInfo } from "@/components/admin/ActiveVisitorsPanel";
 import { KpiTrendCard } from "@/components/charts/KpiTrendCard";
 import type { SparkPoint } from "@/components/charts/Sparkline";
 import { CountUp } from "@/components/ui/CountUp";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { useAuth } from "@/lib/auth-context";
+import { ACTIVE_VISITORS_LABEL } from "@/lib/active-visitors";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
 import { useCarryHref } from "@/lib/entity-routes";
-import { usePrefetchOnIntent } from "@/lib/query-cache";
+import { usePrefetchOnIntent, type QueryKey } from "@/lib/query-cache";
+import { feedbackKeys } from "@/lib/feedback-api";
+import { governanceKeys } from "@/lib/governance-api";
+import { usageKeys } from "@/lib/use-usage-data";
+import type { Audience } from "@/lib/types";
 import type { DateRange } from "@/lib/range-context";
 import {
   bucketLabel,
@@ -32,6 +38,24 @@ import {
   type DashboardKpiKey,
   type SeriesPoint,
 } from "@/lib/dashboard-api";
+
+/**
+ * Cache key for a KPI's intent prefetch: the target page's own query key when
+ * it reads the same endpoint, so a hover-warmed response renders the page
+ * instantly instead of only warming the server.
+ */
+export function prefetchKey(path: string, audience: Audience): QueryKey {
+  switch (path) {
+    case "/usage/summary":
+      return usageKeys.summary(audience);
+    case "/governance/monitoring":
+      return governanceKeys.monitoring(audience);
+    case "/feedback/analytics":
+      return feedbackKeys.analytics(audience);
+    default:
+      return ["prefetch", path, audience];
+  }
+}
 
 const integer = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
 const usd = new Intl.NumberFormat("en", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -48,28 +72,35 @@ export interface KpiDef {
   format: (value: number) => string;
   /** Window of the legacy value, when the server ignores `from` / `to`. */
   legacyWindow: string;
+  /** Window of the windowed value when it is not the whole range. */
+  rangeWindow?: string;
+  /** Shows the "Active visitors" definition tip. */
+  activeVisitors?: boolean;
 }
 
 export const DASHBOARD_KPIS: readonly KpiDef[] = [
   {
     key: "users",
-    label: "Total Users",
+    label: ACTIVE_VISITORS_LABEL,
     icon: Users,
     href: "/admin/users",
     prefetchPath: "/users",
     goodDirection: "up",
     format: (v) => integer.format(v),
     legacyWindow: "All time",
+    activeVisitors: true,
   },
   {
     key: "active_users",
-    label: "Active Users",
+    label: `${ACTIVE_VISITORS_LABEL} (24h)`,
     icon: UserCheck,
     href: "/admin/usage?tab=users",
     prefetchPath: "/usage/summary",
     goodDirection: "up",
     format: (v) => integer.format(v),
     legacyWindow: "Last 24 hours",
+    rangeWindow: "Last 24 hours of the range",
+    activeVisitors: true,
   },
   {
     key: "sessions",
@@ -155,7 +186,8 @@ export function kpiTrend(data: DashboardData, key: DashboardKpiKey): SparkPoint[
 
 function windowLabelFor(def: KpiDef, data: DashboardData, range: DateRange): string {
   if (def.key === "cost_usd") return data.cost_usd !== undefined && data.window ? range.label : "Month to date";
-  return data.window ? range.label : def.legacyWindow;
+  if (!data.window) return def.legacyWindow;
+  return def.rangeWindow ?? range.label;
 }
 
 function KpiCard({ def, data, range }: { def: KpiDef; data: DashboardData; range: DateRange }) {
@@ -164,7 +196,7 @@ function KpiCard({ def, data, range }: { def: KpiDef; data: DashboardData; range
   const router = useRouter();
   // Keep the dashboard's date range on the target page.
   const href = useCarryHref()(def.href);
-  const intent = usePrefetchOnIntent(["prefetch", def.prefetchPath, audience], (signal) =>
+  const intent = usePrefetchOnIntent(prefetchKey(def.prefetchPath, audience), (signal) =>
     dashboardApi.prefetch(token, def.prefetchPath, audience, signal),
   );
   const value = kpiValue(data, def.key);
@@ -182,6 +214,7 @@ function KpiCard({ def, data, range }: { def: KpiDef; data: DashboardData; range
       onSelect={() => router.push(href)}
       intentHandlers={intent}
       windowLabel={windowLabelFor(def, data, range)}
+      info={def.activeVisitors ? <ActiveVisitorsInfo /> : undefined}
       hint={value === null ? "Not reported by the server" : legacyTrendOnly ? "Trend: last 7 days" : undefined}
       tone={def.goodDirection === "down" && def.key === "error_rate" ? "danger" : "brand"}
       className="h-full"

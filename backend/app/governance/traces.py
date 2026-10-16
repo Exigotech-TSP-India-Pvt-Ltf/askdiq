@@ -175,7 +175,14 @@ def _laterals() -> tuple[Any, Any]:
     return turn, audit
 
 
-async def _base(db: AsyncSession, f: TraceFilters, *columns: Any) -> Select:
+def _needs_laterals(f: TraceFilters) -> bool:
+    """True when a filter reads the turn / query-audit lateral columns."""
+    return f.audience != "overview" or bool(f.statuses or f.outcomes or f.q)
+
+
+async def _base(
+    db: AsyncSession, f: TraceFilters, *columns: Any, laterals: bool = True
+) -> Select:
     turn, audit = _laterals()
     cols = columns or (
         LatencyRecord,
@@ -194,12 +201,9 @@ async def _base(db: AsyncSession, f: TraceFilters, *columns: Any) -> Select:
         audit.c.ip_address,
         audit.c.detail,
     )
-    stmt = (
-        select(*cols)
-        .select_from(LatencyRecord)
-        .outerjoin(turn, true())
-        .outerjoin(audit, true())
-    )
+    stmt = select(*cols).select_from(LatencyRecord)
+    if laterals:
+        stmt = stmt.outerjoin(turn, true()).outerjoin(audit, true())
     if f.audience != "overview":
         aud = await build_audience_filter(db, audit.c.ip_address, f.audience)
         if aud is not None:
@@ -251,7 +255,11 @@ async def fetch_page(
 
 
 async def count(db: AsyncSession, f: TraceFilters, cap: int) -> Total:
-    return await bounded_total(db, await _base(db, f, LatencyRecord.id), cap)
+    # Both laterals are LEFT JOIN ... LIMIT 1, so they never change the row
+    # count: skip them unless a filter reads their columns (an unfiltered
+    # count then scans latency_metrics alone instead of 2 lookups per row).
+    stmt = await _base(db, f, LatencyRecord.id, laterals=_needs_laterals(f))
+    return await bounded_total(db, stmt, cap)
 
 
 def slowest_stage(record: LatencyRecord) -> dict[str, Any] | None:

@@ -25,6 +25,7 @@ import {
   STAGES,
   TRACE_OUTCOMES,
   governanceApi,
+  governanceKeys,
   type GovernanceMonitoring,
   type GovernanceStreamEvent,
   type LabelledCount,
@@ -53,6 +54,8 @@ import { RadialGauge } from "@/components/charts/RadialGauge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { stageLabel } from "@/components/admin/governance/TraceDrawer";
 import { LiveIndicator } from "@/components/admin/governance/badges";
+import { ActiveVisitorsInfo } from "@/components/admin/ActiveVisitorsPanel";
+import { ACTIVE_VISITORS_LABEL } from "@/lib/active-visitors";
 
 /** SSE events arrive every few seconds; refetch the full snapshot at most this often. */
 export const MONITORING_REFETCH_MIN_MS = 5_000;
@@ -108,15 +111,18 @@ function StatTile({
   caption,
   icon: Icon,
   href,
+  info,
 }: {
   label: string;
   value: string;
   caption: string;
   icon: LucideIcon;
   href: string;
+  /** Definition tip, rendered beside the tile (outside its link). */
+  info?: React.ReactNode;
 }) {
   const carry = useCarryHref();
-  return (
+  const tile = (
     <Link
       href={carry(href)}
       aria-label={`${label}: ${value}. Open the rows behind it`}
@@ -131,6 +137,13 @@ function StatTile({
         {caption}
       </p>
     </Link>
+  );
+  if (!info) return tile;
+  return (
+    <div className="relative">
+      {tile}
+      <div className="absolute right-10 top-4 z-10">{info}</div>
+    </div>
   );
 }
 
@@ -336,7 +349,7 @@ export default function MonitoringView() {
   const { audience } = useAudience();
   const ct = useChartTheme();
   const query = useApiQuery<GovernanceMonitoring>(
-    ["admin/governance/monitoring", audience],
+    governanceKeys.monitoring(audience),
     (signal) => governanceApi.monitoring(token, audience, signal),
     { enabled: Boolean(token), revalidateOnFocus: false },
   );
@@ -411,7 +424,7 @@ export default function MonitoringView() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={loading || undefined}>
         <StatTile label="API requests" href={logsHref()} icon={Activity} value={formatCount(counts.api_requests?.value ?? m?.api_requests)} caption={countCaption(counts.api_requests)} />
         <StatTile label="Queries" href={tabHref("Traces")} icon={Search} value={formatCount(counts.queries_24h?.value ?? m?.queries_24h)} caption={countCaption(counts.queries_24h)} />
-        <StatTile label="Active users" href="/admin/usage?tab=users" icon={Users} value={formatCount(counts.active_users?.value ?? m?.active_users)} caption={countCaption(counts.active_users)} />
+        <StatTile label={ACTIVE_VISITORS_LABEL} info={<ActiveVisitorsInfo />} href="/admin/usage?tab=users" icon={Users} value={formatCount(counts.active_users?.value ?? m?.active_users)} caption={countCaption(counts.active_users)} />
         <StatTile label="Traces" href={tabHref("Traces")} icon={FileSearch} value={formatCount(counts.traces_total?.value ?? m?.traces_total)} caption={countCaption(counts.traces_total)} />
         <StatTile
           label="Error rate"

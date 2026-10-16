@@ -74,7 +74,7 @@ describe("Golden Cases tab", () => {
 });
 
 const PAIRS = [
-  { feedback_id: "f1", message_id: "m1", prompt: "Q1", chosen: "Better", rejected: "Worse", rating: 1, reason_tags: ["wrong"], source_ids: [], triage_status: "new", complete: true, missing: [] },
+  { feedback_id: "f1", message_id: "m1", prompt: "Q1", chosen: "Better", rejected: "Worse", rating: 1, reason_tags: ["wrong"], source_ids: [], triage_status: "new", created_at: "2026-10-14T09:30:00", complete: true, missing: [] },
   { feedback_id: "f2", message_id: "m2", prompt: "Q2", chosen: null, rejected: "Bad", rating: 1, reason_tags: [], source_ids: [], triage_status: "new", complete: false, missing: ["chosen"] },
 ];
 
@@ -108,6 +108,9 @@ describe("Preference Data tab", () => {
     const incomplete = screen.getAllByTestId("pair-row").filter((r) => r.getAttribute("data-complete") === "false");
     expect(incomplete).toHaveLength(1);
     expect(within(incomplete[0]).getByText("Incomplete: chosen")).toBeInTheDocument();
+    const [complete] = screen.getAllByTestId("pair-row").filter((r) => r.getAttribute("data-complete") === "true");
+    expect(complete.querySelector("time")).toHaveAttribute("datetime", "2026-10-14T09:30:00.000Z");
+    expect(within(incomplete[0]).getByText("—")).toBeInTheDocument();
     expect(screen.getByLabelText("Preview counts")).toHaveTextContent("1 complete · 1 incomplete");
     expect(calls[0].path).toContain("format=jsonl");
 

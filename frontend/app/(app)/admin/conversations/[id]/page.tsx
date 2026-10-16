@@ -11,6 +11,7 @@ import { ChartCard } from "@/components/charts/ChartCard";
 import { StackedBar, type BarSegment } from "@/components/charts/StackedBar";
 import { Waterfall, type WaterfallStep } from "@/components/charts/Waterfall";
 import { EntityLink } from "@/components/ui/EntityLink";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
@@ -337,7 +338,7 @@ function TurnCard({ turn, conversationId, highlighted, canPromote, promoting, on
             {f}
           </ToneChip>
         ))}
-        <span className="text-[11px] text-fg-subtle">{formatDateTime(turn.createdAt)}</span>
+        <RelativeTime value={turn.createdAt} className="text-[11px] text-fg-subtle" />
         {d ? (
           <span className="text-[11px] text-fg-subtle">
             · {formatMs(d.total_ms)} · {formatUsd(d.cost_usd)}

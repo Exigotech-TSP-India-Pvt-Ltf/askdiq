@@ -7,7 +7,7 @@
  * does the same for variants applied outside Motion components.
  */
 import { useMemo, useSyncExternalStore } from "react";
-import type { Transition, Variant, Variants } from "motion/react";
+import type { TargetAndTransition, Transition, Variant, Variants } from "motion/react";
 
 /** Durations in seconds (Motion's unit). */
 export const duration = {
@@ -192,3 +192,35 @@ export function useMotionVariants(variants: Variants): Variants {
   const reduced = usePrefersReducedMotion();
   return useMemo(() => (reduced ? reduceVariants(variants) : variants), [reduced, variants]);
 }
+
+/* ------------------------------------------------------------------------ */
+/* AskDIQ launcher (components/askdiq). Idle loops are decoration, not UI     */
+/* feedback, so the 300 ms cap does not apply; callers render them static    */
+/* when the user prefers reduced motion.                                      */
+/* ------------------------------------------------------------------------ */
+
+/** Mascot "breathing": a slow 4 px float with a hint of scale. */
+export const mascotFloat: { animate: TargetAndTransition; transition: Transition } = {
+  animate: { y: [0, -4, 0], scale: [1, 1.02, 1] },
+  transition: { duration: 3.6, ease: "easeInOut", repeat: Infinity },
+};
+
+/** Soft brand pulse ring behind the launcher. */
+export const pulseRing: { animate: TargetAndTransition; transition: Transition } = {
+  animate: { scale: [1, 1.45], opacity: [0.45, 0] },
+  transition: { duration: 2.4, ease: "easeOut", repeat: Infinity, repeatDelay: 0.6 },
+};
+
+/** Hover tilt / press for the launcher. */
+export const mascotHover: TargetAndTransition = { rotate: -8, scale: 1.06, transition: spring };
+export const mascotTap: TargetAndTransition = { scale: 0.94, transition: spring };
+
+/** Greeting bubble: pops in from the launcher corner. */
+export const greeting: Variants = {
+  hidden: { opacity: 0, y: 8, scale: 0.92 },
+  visible: { opacity: 1, y: 0, scale: 1, transition: spring },
+  exit: { opacity: 0, y: 4, scale: 0.96, transition: tween(duration.fast) },
+};
+
+/** Delay before the once-per-session greeting appears (ms). */
+export const greetingDelayMs = 1200;

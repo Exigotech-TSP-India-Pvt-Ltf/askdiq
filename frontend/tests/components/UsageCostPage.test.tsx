@@ -97,6 +97,7 @@ const mockUsersResponse: PageEnvelope<UsageUserRow> = {
       output_tokens: 600,
       total_tokens: 10800,
       cost_usd: 0.035,
+      last_active: "2026-10-16T01:00:00Z",
     },
     {
       ip_address: "127.0.0.1",
@@ -110,6 +111,7 @@ const mockUsersResponse: PageEnvelope<UsageUserRow> = {
       output_tokens: 200,
       total_tokens: 3500,
       cost_usd: 0.01,
+      last_active: null,
     },
   ],
   total: 2,
@@ -264,6 +266,46 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     expect(screen.getByText("127.0.0.1")).toBeInTheDocument();
     expect(screen.getByText("Production")).toBeInTheDocument();
     expect(screen.getByText("Test IP")).toBeInTheDocument();
+  });
+
+  it("shows when each IP was last active and sorts the Users table by it", async () => {
+    const { container } = render(<UsageCostPage />);
+    await waitFor(() => expect(screen.getByText(LIVE_TELEMETRY_HEADING)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("tab", { name: /all users/i }));
+    await waitFor(() => expect(screen.getByText("127.0.0.1")).toBeInTheDocument());
+
+    const stamp = container.querySelector('time[datetime="2026-10-16T01:00:00.000Z"]');
+    expect(stamp).not.toBeNull();
+    expect(stamp?.getAttribute("title")).toMatch(/2026/);
+
+    const header = screen.getByRole("columnheader", { name: /last active/i });
+    fireEvent.click(header);
+    await waitFor(() =>
+      expect(api.getUsageUsers).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ sort: "last_active_desc" }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("shows when each query was asked and sorts the Queries table by it", async () => {
+    const { container } = render(<UsageCostPage />);
+    await waitFor(() => expect(screen.getByText(LIVE_TELEMETRY_HEADING)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("tab", { name: /all queries/i }));
+    await waitFor(() => expect(screen.getByText("How is Essential Eight implemented?")).toBeInTheDocument());
+
+    expect(container.querySelector("tbody time[datetime]")?.textContent).toBe("just now");
+    const header = screen.getByRole("columnheader", { name: /asked/i });
+    expect(header).toHaveAttribute("aria-sort", "descending");
+    fireEvent.click(header);
+    await waitFor(() =>
+      expect(api.getUsageQueries).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ sort: "created_at_asc" }),
+        expect.anything(),
+      ),
+    );
   });
 
   it("navigates to All Sessions tab and displays session metrics", async () => {

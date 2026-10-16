@@ -1,7 +1,9 @@
 """Visitor stats and per-visitor timeline (B7.2).
 
 A visitor is one client IP, grouped on ``chat_sessions.created_ip`` exactly
-like ``GET /admin/users``. Days are UTC. The stats run as four single
+like ``GET /admin/users``. ``active_now`` and ``active_visitors`` use the
+shared active-visitor definition (``app.dashboard.active_visitors``). Days
+are UTC. The stats run as four single
 statements in parallel (``gather_scoped``); the timeline reads one visitor.
 """
 
@@ -9,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -23,6 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.concurrency import ScopedRunner
+from app.dashboard import active_visitors
 from app.dashboard.queries import ASST, USER_TURN, pairs
 from app.dashboard.window import DayRange, iso_z, money, ratio
 from app.governance.audience import build_audience_filter
@@ -35,7 +38,6 @@ from app.models.db_models import (
     User,
 )
 
-ACTIVE_NOW = timedelta(minutes=30)
 CLIENT_PREFIX = "client-"
 MAX_SESSIONS = 200
 MAX_QUERIES = 100
@@ -149,14 +151,6 @@ async def query_count(db: AsyncSession, audience: str, days: DayRange) -> int:
     return int(await db.scalar(stmt) or 0)
 
 
-async def active_now(db: AsyncSession, audience: str, now: datetime) -> int:
-    scope = await _visitor_scope(db, audience)
-    stmt = select(func.count(func.distinct(ChatSession.created_ip))).where(
-        ChatSession.last_activity_at >= now - ACTIVE_NOW, *scope
-    )
-    return int(await db.scalar(stmt) or 0)
-
-
 async def visitor_stats(
     runner: ScopedRunner, audience: str, days: DayRange, now: datetime
 ) -> dict[str, Any]:
@@ -164,7 +158,7 @@ async def visitor_stats(
         lambda s: new_vs_returning(s, audience, days),
         lambda s: session_heatmap(s, audience, days),
         lambda s: query_count(s, audience, days),
-        lambda s: active_now(s, audience, now),
+        lambda s: active_visitors.active_counts(s, audience, now),
     )
     sessions = sum(n for _, _, n in heat)
     return {
@@ -175,7 +169,7 @@ async def visitor_stats(
             "visitors": visitors,
             "new_visitors": new,
             "returning_visitors": visitors - new,
-            "active_now": live,
+            "active_now": live["active_now"],
             "sessions": sessions,
             "queries": queries,
             "avg_sessions_per_visitor": ratio(sessions, visitors),
@@ -189,6 +183,7 @@ async def visitor_stats(
             for d in days.days()
         ],
         "heatmap": [{"weekday": w, "hour": h, "sessions": n} for w, h, n in heat],
+        "active_visitors": active_visitors.summary(live),
     }
 
 

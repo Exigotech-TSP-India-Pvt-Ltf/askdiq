@@ -34,7 +34,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.governance.audience import build_audience_filter
 from app.governance.monitoring import LATENCY_UNIT, QUERY_ACTION, STAGE_FIELDS
 from app.governance.traces import normalized_outcome_sql, status_sql
-from app.models.db_models import AuditLog, ChatMessageRecord, LatencyRecord
+from app.models.db_models import (
+    AuditLog,
+    ChatMessageRecord,
+    ChatSession,
+    LatencyRecord,
+)
 
 HOURS = 24
 PERCENTILES: tuple[float, ...] = (0.5, 0.95, 0.99)
@@ -202,7 +207,6 @@ _TURN_KEYS = (
     "grounded_known",
     "cost_usd",
     "cost_today_usd",
-    "active_ips",
     "recent_turns",
     "recent_failed",
 )
@@ -250,11 +254,11 @@ async def turns_rollup(
                 ),
                 0.0,
             ),
-            func.count(func.distinct(msg.ip_address)),
             n(recent),
             n(recent & failed),
         )
         .select_from(msg)
+        .join(ChatSession, ChatSession.id == msg.session_id)
         .where(msg.role == "assistant", msg.created_at >= start)
         .group_by(func.rollup(hour))
     )

@@ -49,24 +49,44 @@ def _text_array(values: Sequence[str]) -> Any:
     return cast(array(sorted(values), type_=Text), ARRAY(Text))
 
 
-def _detail_jsonb() -> Any:
-    return cast(AuditLog.detail, JSONB)
+def flags_sql() -> Any:
+    """``detail.guardrail_flags`` as ``jsonb`` (for ``?|``).
+
+    ``detail`` is a ``json`` column: only the small flags array is converted,
+    never the whole document (casting every row's ``detail`` to ``jsonb`` once
+    per CASE branch made the level chips the slowest query on the Logs tab).
+    """
+    return cast(AuditLog.detail["guardrail_flags"], JSONB)
 
 
-def level_sql() -> Any:
-    """SQL mirror of ``log_summary.level_for`` over ``audit_log`` columns."""
-    detail = _detail_jsonb()
-    flags = detail["guardrail_flags"]
+def grounded_sql() -> Any:
+    """``detail.grounded`` as ``jsonb`` (so only a JSON ``false`` matches)."""
+    return cast(AuditLog.detail["grounded"], JSONB)
+
+
+def level_sql(
+    flags: Any | None = None,
+    grounded: Any | None = None,
+    action: Any | None = None,
+) -> Any:
+    """SQL mirror of ``log_summary.level_for`` over ``audit_log`` columns.
+
+    Pass precomputed ``flags`` / ``grounded`` / ``action`` columns (from a
+    subquery) to extract them once per row instead of once per branch.
+    """
+    flags = flags_sql() if flags is None else flags
+    grounded = grounded_sql() if grounded is None else grounded
+    action = AuditLog.action if action is None else action
     whens: list[tuple[ColumnElement[bool], str]] = [
         (func.coalesce(flags.has_any(_text_array(names)), False), level)
         for level, names in LEVEL_FLAGS
     ]
-    whens.append((detail["grounded"] == cast(literal("false"), JSONB), "WARNING"))
+    whens.append((grounded == cast(literal("false"), JSONB), "WARNING"))
     by_level: dict[str, list[str]] = {}
-    for action, level in LEVEL_BY_ACTION.items():
-        by_level.setdefault(level, []).append(action)
+    for action_name, level in LEVEL_BY_ACTION.items():
+        by_level.setdefault(level, []).append(action_name)
     whens.extend(
-        (AuditLog.action.in_(sorted(actions)), level)
+        (action.in_(sorted(actions)), level)
         for level, actions in sorted(by_level.items())
     )
     return case(*whens, else_="INFO")
@@ -170,9 +190,21 @@ async def level_counts_and_total(
     ``cap`` rows (``capped``) and the total is the planner estimate.
     """
     conds = await _conditions(db, f, with_level=False)
-    level = level_sql().label("level")
-    newest = _ordered(select(level).where(*conds)).limit(cap + 1).subquery()
-    grouped = select(newest.c.level, func.count()).group_by(newest.c.level)
+    # The LIMIT keeps this subquery from being flattened, so each row's flags
+    # and grounded values are extracted once; the CASE then runs on them.
+    newest = (
+        _ordered(
+            select(
+                flags_sql().label("flags"),
+                grounded_sql().label("grounded"),
+                AuditLog.action.label("action"),
+            ).where(*conds)
+        )
+        .limit(cap + 1)
+        .subquery()
+    )
+    level = level_sql(newest.c.flags, newest.c.grounded, newest.c.action).label("level")
+    grouped = select(level, func.count()).group_by(level)
     counts = dict.fromkeys(LEVELS, 0)
     for name, n in (await db.execute(grouped)).all():
         counts[str(name)] = int(n)

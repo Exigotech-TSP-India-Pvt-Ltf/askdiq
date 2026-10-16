@@ -12,6 +12,7 @@ import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
 import type { FeedbackAnalytics, KnowledgeGap } from "@/lib/feedback-api";
 import type { FilterPatch } from "@/lib/feedback-filters";
 import { useCan } from "@/lib/use-can";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 
 export interface KnowledgeGapsTabProps {
   analytics: FeedbackAnalytics | undefined;
@@ -73,7 +74,7 @@ export function KnowledgeGapsTab({ analytics, loading, error, onRetry, onFilter 
             <p className="mt-0.5 text-[11px] text-fg-subtle">
               {gap.count} low rating{gap.count === 1 ? "" : "s"} · avg {gap.avg_rating.toFixed(1)} stars · retrieval confidence{" "}
               {gap.avg_confidence === null ? "unknown" : gap.avg_confidence.toFixed(2)}
-              {gap.last_seen ? ` · last seen ${new Date(gap.last_seen).toLocaleDateString()}` : ""}
+              {gap.last_seen ? <RelativeTime value={gap.last_seen} prefix=" · last seen " /> : null}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

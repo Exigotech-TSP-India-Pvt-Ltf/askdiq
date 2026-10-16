@@ -2,18 +2,7 @@
 
 import { useState, type KeyboardEvent } from "react";
 import type { ChatSessionSummary } from "@/lib/types";
-import { parseServerDate } from "@/lib/time";
-
-function relativeTime(iso: string): string {
-  const diffMs = Date.now() - parseServerDate(iso).getTime();
-  const minutes = Math.round(diffMs / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
-}
+import { RelativeTime } from "@/components/ui/RelativeTime";
 
 function PencilIcon() {
   return (
@@ -49,6 +38,7 @@ export function ChatSessionList({
   onNew,
   onRename,
   onDelete,
+  className = "w-64 shrink-0 border-r border-ink/10 bg-ink/[0.015] dark:border-white/10 dark:bg-dark-surface/60",
 }: {
   sessions: ChatSessionSummary[];
   activeSessionId: string | null;
@@ -56,6 +46,8 @@ export function ChatSessionList({
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
+  /** Container sizing / surface (the /chat sidebar by default; the AskDIQ drawer passes its own). */
+  className?: string;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
@@ -78,7 +70,7 @@ export function ChatSessionList({
   }
 
   return (
-    <div className="flex w-64 shrink-0 flex-col border-r border-ink/10 dark:border-white/10 bg-ink/[0.015] dark:bg-dark-surface/60">
+    <div className={`flex flex-col ${className}`}>
       <div className="p-3">
         <button
           onClick={onNew}
@@ -123,12 +115,12 @@ export function ChatSessionList({
                   <p className="truncate font-medium">{session.title}</p>
                 )}
                 <p className="mt-0.5 truncate text-[10px] text-ink/40 dark:text-slate-400">
-                  {relativeTime(session.last_activity_at)}
+                  <RelativeTime value={session.last_activity_at} />
                   {session.is_expired ? " · expired" : ""}
                 </p>
               </div>
 
-              <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
+              <div className="flex shrink-0 items-center gap-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

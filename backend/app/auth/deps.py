@@ -13,11 +13,22 @@ request it must send:
   origin must equal ``APP_BASE_URL``'s origin).
 - ``X-Forwarded-For``: the client IP; honoured only when
   ``TRUST_PROXY_HEADERS=true`` (set it in deployment behind the proxy).
+- ``X-AskDIQ-Proxy: 1``: marks the request as coming from the proxy, so it can
+  never fall through to the website (API-key) chat path below.
+
+Website contract (docs/technical/10-website-integration.md): the public website
+calls the chat routes (``/query``, ``/sessions``, feedback) server-to-server
+with ``X-API-Key`` and an optional per-visitor ``X-Client-Id`` and no session.
+``require_chat_actor`` accepts either caller: a session (actor = email, CSRF
+enforced as above) or the service key alone (actor = the sanitised client id,
+never email-shaped, so a visitor id can never name an SSO user's sessions).
 
 Dependency family (deny by default):
 
 - ``current_user``: service key + session; any status (used by ``/auth/me``).
-- ``require_role_or_chat``: signed in and not suspended (Chat, own sessions).
+- ``require_role_or_chat``: signed in and not suspended.
+- ``require_chat_actor``: chat routes; a session as above, or the website's
+  service key alone (see "Website contract").
 - ``require_active_user``: active with a role (any dashboard route).
 - ``require_permission(p)``: active and the role grants ``p``.
 
@@ -41,10 +52,13 @@ from app.auth.principal import AuthUser
 from app.auth.sessions import SessionService
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.governance.auth import DEFAULT_ACTOR, sanitize_client_id
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 CSRF_HEADER = "x-requested-with"
 CSRF_HEADER_VALUE = "askdiq"
+SESSION_HEADER = "x-session"
+PROXY_HEADER = "x-askdiq-proxy"
 GUARD_ATTR = "__auth_guard__"
 PERMISSION_ATTR = "__auth_permission__"
 
@@ -67,6 +81,16 @@ session_header = APIKeyHeader(
     name="X-Session",
     scheme_name="Session",
     description="Session id forwarded by the proxy from the session cookie.",
+    auto_error=False,
+)
+
+client_id_header = APIKeyHeader(
+    name="X-Client-Id",
+    scheme_name="ClientId",
+    description=(
+        "Website callers only: stable per-visitor id (UUID recommended) that "
+        "owns chat sessions and keys the per-visitor rate limit."
+    ),
     auto_error=False,
 )
 
@@ -160,3 +184,41 @@ def require_permission(permission: Permission) -> Callable[..., Awaitable[AuthUs
     dependency.__name__ = f"require_permission_{permission.name.lower()}"
     setattr(dependency, PERMISSION_ATTR, permission)
     return _guard(dependency)
+
+
+def api_key_actor(client_id: str | None) -> str:
+    """Actor for a website (API-key) caller: the sanitised ``X-Client-Id``.
+
+    SSO actors are emails, so an email-shaped client id is replaced by the
+    shared default actor: a visitor id can never own an SSO user's sessions.
+    """
+    actor = sanitize_client_id(client_id)
+    if "@" in actor and actor != DEFAULT_ACTOR:
+        return DEFAULT_ACTOR
+    return actor
+
+
+@_guard
+async def require_chat_actor(
+    request: Request,
+    _service: None = Depends(require_service_key),
+    user: AuthUser | None = Depends(authenticate_session),
+    client_id: str | None = Security(client_id_header),
+) -> str:
+    """Chat guard for the dashboard (session) and the website (service key).
+
+    Both need a valid ``X-API-Key``. With ``X-Session`` the request is a
+    cookie session (CSRF-checked in ``authenticate_session``) and the actor is
+    the user's email. Without one, the key alone authenticates the website and
+    the actor is ``api_key_actor(X-Client-Id)``. A request that carries a
+    session header or the proxy marker never takes the API-key path, so an
+    invalid session or an anonymous browser behind the proxy still gets 401.
+    """
+    if user is not None:
+        request.state.auth_user = user
+        if user.status not in CHAT_STATUSES:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, DETAIL_SUSPENDED)
+        return user.email
+    if SESSION_HEADER in request.headers or request.headers.get(PROXY_HEADER):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, DETAIL_UNAUTHENTICATED)
+    return api_key_actor(client_id)

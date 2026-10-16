@@ -16,6 +16,7 @@ import { ChartCard } from "@/components/charts/ChartCard";
 import { KpiTrendCard } from "@/components/charts/KpiTrendCard";
 import { Waterfall, type WaterfallStep } from "@/components/charts/Waterfall";
 import { EntityLink } from "@/components/ui/EntityLink";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
@@ -156,11 +157,11 @@ function VisitorDetailContent() {
         </div>
       ),
     },
-    { key: "created_at", header: "Started", render: (c) => <span className="text-xs text-fg-muted">{formatDateTime(c.created_at)}</span> },
+    { key: "created_at", header: "Started", render: (c) => <RelativeTime value={c.created_at} className="text-xs text-fg-muted" /> },
     {
       key: "last_activity_at",
       header: "Last Activity",
-      render: (c) => <span className="text-xs text-fg-muted">{formatDateTime(c.last_activity_at)}</span>,
+      render: (c) => <RelativeTime value={c.last_activity_at} className="text-xs text-fg-muted" />,
     },
     { key: "message_count", header: "Messages", align: "right", render: (c) => formatNumber(c.message_count ?? 0) },
   ];
@@ -187,7 +188,7 @@ function VisitorDetailContent() {
     },
     { key: "latency_ms", header: "Latency", align: "right", render: (q) => formatMs(q.latency_ms) },
     { key: "cost_usd", header: "Cost", align: "right", render: (q) => formatUsd(q.cost_usd) },
-    { key: "created_at", header: "When", render: (q) => <span className="text-xs text-fg-subtle">{formatDateTime(q.created_at)}</span> },
+    { key: "created_at", header: "When", render: (q) => <RelativeTime value={q.created_at} className="text-xs text-fg-subtle" /> },
   ];
 
   if (visitor.isLoading) {
@@ -374,7 +375,7 @@ function VisitorDetailContent() {
                           {t.replace(/_/g, " ")}
                         </ToneChip>
                       ))}
-                      <span className="ml-auto text-[11px] text-fg-subtle">{formatDateTime(f.created_at)}</span>
+                      <RelativeTime value={f.created_at} className="ml-auto text-[11px] text-fg-subtle" />
                     </div>
                     {f.comment ? <p className="mt-2 text-xs text-fg-muted">{f.comment}</p> : null}
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px]">

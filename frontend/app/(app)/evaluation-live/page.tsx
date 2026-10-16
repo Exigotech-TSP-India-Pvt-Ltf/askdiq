@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
@@ -27,10 +28,11 @@ import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, EVALUATION_LIVE_TABS } from "@/components/admin/TabGroup";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
+import { Pagination, type PageSize } from "@/components/admin/Pagination";
 import { QueryInspectorDrawer } from "@/components/admin/QueryInspectorDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
-import { PassRateTrendCard, QualityRadarCard } from "@/components/admin/evaluation/QualityCharts";
+import { SkeletonCard } from "@/components/ui/Skeleton";
 import {
   Bar,
   BarChart,
@@ -44,6 +46,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+// The radar (polar Recharts) and the trend card sit below the fold: split out.
+const QualityRadarCard = dynamic(
+  () => import("@/components/admin/evaluation/QualityCharts").then((mod) => mod.QualityRadarCard),
+  { ssr: false, loading: () => <SkeletonCard label="Loading chart" className="h-80" /> },
+);
+const PassRateTrendCard = dynamic(
+  () => import("@/components/admin/evaluation/QualityCharts").then((mod) => mod.PassRateTrendCard),
+  { ssr: false, loading: () => <SkeletonCard label="Loading chart" className="h-80" /> },
+);
 
 
 const pct = (v: unknown) =>
@@ -138,6 +150,8 @@ export default function EvaluationLivePage() {
   const [search, setSearch] = useState("");
   const [filterOutcome, setFilterOutcome] = useState<string>("all");
   const [filterGrounded, setFilterGrounded] = useState<string>("all");
+  const [casePage, setCasePage] = useState(1);
+  const [casePageSize, setCasePageSize] = useState<PageSize>(25);
 
   // Selected query for inspector drawer
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
@@ -545,11 +559,14 @@ export default function EvaluationLivePage() {
         {/* Domain Tab 4: Query & Case Explorer */}
         {activeTab === "explorer" && (
           <TableCard
-            title={`Evaluated Queries & Test Cases (${filteredCases.length})`}
             toolbar={
               <TableToolbar
+                title={`Evaluated Queries & Test Cases (${filteredCases.length})`}
                 search={search}
-                onSearchChange={setSearch}
+                onSearchChange={(v) => {
+                  setSearch(v);
+                  setCasePage(1);
+                }}
                 searchPlaceholder="Search queries, answers, IDs..."
                 filters={[
                   {
@@ -561,7 +578,10 @@ export default function EvaluationLivePage() {
                       { label: "Passed Only", value: "passed" },
                       { label: "Failed Only", value: "failed" },
                     ],
-                    onChange: (v) => setFilterOutcome(v),
+                    onChange: (v) => {
+                      setFilterOutcome(v);
+                      setCasePage(1);
+                    },
                   },
                   {
                     id: "grounded",
@@ -572,9 +592,25 @@ export default function EvaluationLivePage() {
                       { label: "Grounded Only", value: "grounded" },
                       { label: "Ungrounded Fallback", value: "ungrounded" },
                     ],
-                    onChange: (v) => setFilterGrounded(v),
+                    onChange: (v) => {
+                      setFilterGrounded(v);
+                      setCasePage(1);
+                    },
                   },
                 ]}
+              />
+            }
+            pagination={
+              <Pagination
+                page={Math.min(casePage, Math.max(1, Math.ceil(filteredCases.length / casePageSize)))}
+                pageCount={Math.ceil(filteredCases.length / casePageSize)}
+                totalItems={filteredCases.length}
+                pageSize={casePageSize}
+                onPageChange={setCasePage}
+                onPageSizeChange={(size) => {
+                  setCasePageSize(size);
+                  setCasePage(1);
+                }}
               />
             }
           >
@@ -594,7 +630,12 @@ export default function EvaluationLivePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCases.map((c: any) => (
+                  {filteredCases
+                    .slice(
+                      (Math.min(casePage, Math.max(1, Math.ceil(filteredCases.length / casePageSize))) - 1) * casePageSize,
+                      Math.min(casePage, Math.max(1, Math.ceil(filteredCases.length / casePageSize))) * casePageSize,
+                    )
+                    .map((c: any) => (
                     <tr
                       key={c.id}
                       onClick={() => handleRowClick(c)}

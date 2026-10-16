@@ -24,11 +24,14 @@ export function useCursorStack(resetKey: string) {
     setState((s) => ({ key: resetKey, stack: s.stack.length > 1 ? s.stack.slice(0, -1) : s.stack }));
   }, [resetKey]);
 
+  const reset = useCallback(() => setState({ key: resetKey, stack: [null] }), [resetKey]);
+
   return {
     cursor: stack[stack.length - 1],
     page: stack.length,
     hasPrev: stack.length > 1,
     next,
     prev,
+    reset,
   };
 }

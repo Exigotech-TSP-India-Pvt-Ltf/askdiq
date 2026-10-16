@@ -11,6 +11,7 @@ import {
 } from "react";
 import { api, ApiError } from "./api";
 import { useAuth } from "./auth-context";
+import { useBrand } from "./brand-context";
 import { submitMessageFeedback, type FeedbackDetails } from "./feedback-api";
 import { parseServerDate } from "./time";
 import type { ChatMessage, ChatMessageOut, ChatSessionSummary } from "./types";
@@ -42,6 +43,8 @@ interface ChatContextValue {
   /** Upserts the rating; `details` carries thumbs-down reason chips and the corrected answer. */
   submitFeedback: (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
   deleteExchange: (messageId: string) => void;
+  /** Re-sends the question behind a failed answer (the failed pair is dropped first). */
+  retryExchange: (assistantMessageId: string) => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
   startNewSession: () => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
@@ -62,6 +65,7 @@ const ChatContext = createContext<ChatContextValue | undefined>(undefined);
  */
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
+  const { assistantName } = useBrand();
 
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -189,7 +193,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 error:
                   err instanceof ApiError
                     ? err.message
-                    : "DeployIQ couldn't answer that just now. Please try again.",
+                    : `${assistantName} couldn't answer that just now. Please try again.`,
               }
             : message
         )
@@ -220,6 +224,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       // Already removed locally; a stale row surviving server-side isn't
       // worth surfacing an error for here.
     });
+  }
+
+  async function retryExchange(assistantMessageId: string) {
+    const index = messages.findIndex((m) => m.id === assistantMessageId);
+    const question = index > 0 ? messages[index - 1] : undefined;
+    if (!question || question.role !== "user" || !messages[index].error) return;
+    // A failed turn has no server ids to delete, so it is only dropped locally.
+    setMessages((prev) => prev.filter((m) => m.id !== assistantMessageId && m.id !== question.id));
+    await sendQuery(question.content);
   }
 
   async function selectSession(sessionId: string) {
@@ -293,6 +306,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sendQuery,
       submitFeedback,
       deleteExchange,
+      retryExchange,
       selectSession,
       startNewSession,
       renameSession,

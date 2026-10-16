@@ -28,7 +28,8 @@ import {
   type UserSortKey,
 } from "@/lib/user-management-api";
 import type { DeepLinkUpdate } from "@/lib/use-deep-link";
-import { RoleBadge, StatusBadge, formatDateTime } from "./parts";
+import { RoleBadge, StatusBadge } from "./parts";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { InviteUserDialog } from "./InviteUserDialog";
 import { UserDrawer } from "./UserDrawer";
 import { DEFAULT_SORT, type UmUrlState } from "./use-um-url";
@@ -97,7 +98,7 @@ export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersT
       key: "last_login_at",
       header: "Last login",
       sortable: true,
-      render: (u) => <span className="whitespace-nowrap text-fg-subtle">{formatDateTime(u.last_login_at)}</span>,
+      render: (u) => <RelativeTime value={u.last_login_at} className="text-fg-subtle" />,
     },
     {
       key: "approved_by_email",
@@ -108,7 +109,7 @@ export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersT
       key: "created_at",
       header: "Created",
       sortable: true,
-      render: (u) => <span className="whitespace-nowrap text-fg-subtle">{formatDateTime(u.created_at)}</span>,
+      render: (u) => <RelativeTime value={u.created_at} className="text-fg-subtle" />,
     },
   ];
 

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { AnimatePresence, m } from "motion/react";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { useTheme, type ThemeMode } from "@/lib/theme-context";
 import { crossfade } from "@/lib/motion";
 
@@ -11,12 +11,12 @@ interface ThemeToggleProps {
   size?: "sm" | "md";
 }
 
-const NEXT_MODE: Record<ThemeMode, ThemeMode> = { light: "dark", dark: "system", system: "light" };
-const LABEL: Record<ThemeMode, string> = { light: "Light", dark: "Dark", system: "System" };
+const NEXT_MODE: Record<ThemeMode, ThemeMode> = { light: "dark", dark: "light" };
+const LABEL: Record<ThemeMode, string> = { light: "Light", dark: "Dark" };
 
 /**
- * Cycles Light -> Dark -> System (follows the OS live). The icon shows the
- * current preference; the label announces both the current and next mode.
+ * Switches between the two themes, Light and Dark (there is no System mode).
+ * The icon shows the mode a click switches to; the label announces both.
  */
 export function ThemeToggle({ className = "", size = "md" }: ThemeToggleProps) {
   const { mode, setTheme } = useTheme();
@@ -24,9 +24,8 @@ export function ThemeToggle({ className = "", size = "md" }: ThemeToggleProps) {
   const label = `Theme: ${LABEL[mode]}. Switch to ${LABEL[next].toLowerCase()} mode`;
 
   const btnSize = size === "sm" ? "h-8 w-8" : "h-9 w-9";
-  const Icon = mode === "dark" ? Sun : mode === "system" ? Monitor : Moon;
-  const iconColor =
-    mode === "dark" ? "text-status-warn" : mode === "system" ? "text-accent-fg" : "text-fg-muted";
+  const Icon = mode === "dark" ? Sun : Moon;
+  const iconColor = mode === "dark" ? "text-status-warn" : "text-fg-muted";
 
   return (
     <button

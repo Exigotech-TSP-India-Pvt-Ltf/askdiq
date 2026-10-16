@@ -6,7 +6,7 @@ import {
   THEME_STORAGE_KEY,
   applyTheme,
   isThemeMode,
-  resolveTheme,
+  resolveStoredMode,
   type ResolvedTheme,
   type ThemeMode,
 } from "@/lib/theme-script";
@@ -14,11 +14,11 @@ import {
 export type { ResolvedTheme, ThemeMode } from "@/lib/theme-script";
 
 interface ThemeContextType {
-  /** The theme actually shown ("light" | "dark"). Kept for existing callers. */
+  /** The theme shown ("light" | "dark"). Kept for existing callers. */
   theme: ResolvedTheme;
-  /** Same as `theme`; explicit name for new code. */
+  /** Same as `theme`. */
   resolvedTheme: ResolvedTheme;
-  /** The user's preference, including "system" (follows the OS live). */
+  /** The user's choice; always "light" or "dark" (there is no "system" mode). */
   mode: ThemeMode;
   toggleTheme: () => void;
   setTheme: (mode: ThemeMode) => void;
@@ -26,72 +26,71 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-function readStoredMode(): ThemeMode {
+function systemPrefersDark(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia(DARK_QUERY).matches;
+}
+
+function persist(mode: ThemeMode): void {
   try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return isThemeMode(stored) ? stored : "system";
+    window.localStorage.setItem(THEME_STORAGE_KEY, mode);
   } catch {
-    return "system"; // storage blocked (private mode, sandboxed iframe)
+    // Storage unavailable (private mode, sandboxed iframe): applies to this tab only.
   }
 }
 
-function getMediaQuery(): MediaQueryList | null {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return null;
-  return window.matchMedia(DARK_QUERY);
+/**
+ * Reads the stored choice; a missing or legacy "system" value is resolved once
+ * to the OS preference and persisted (see lib/theme-script.ts).
+ */
+function readStoredMode(): ThemeMode {
+  let stored: string | null = null;
+  try {
+    stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    // storage blocked
+  }
+  const mode = resolveStoredMode(stored, systemPrefersDark());
+  if (stored !== mode) persist(mode);
+  return mode;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setMode] = useState<ThemeMode>("system");
-  const [systemDark, setSystemDark] = useState(false);
+  const [mode, setMode] = useState<ThemeMode>("light");
   // Until storage has been read, the pre-paint script (app/layout.tsx) owns the
   // <html> class; applying our SSR default here would flash the wrong theme.
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     setMode(readStoredMode());
-    const mq = getMediaQuery();
-    setSystemDark(mq?.matches ?? false);
     setReady(true);
-
-    // T4: follow the OS setting live while in System mode.
-    const onSystemChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
-    mq?.addEventListener?.("change", onSystemChange);
 
     // T4: keep every open tab on the same theme.
     const onStorage = (event: StorageEvent) => {
       if (event.key !== THEME_STORAGE_KEY && event.key !== null) return;
-      setMode(isThemeMode(event.newValue) ? event.newValue : "system");
+      if (isThemeMode(event.newValue)) setMode(event.newValue);
     };
     window.addEventListener("storage", onStorage);
-
-    return () => {
-      mq?.removeEventListener?.("change", onSystemChange);
-      window.removeEventListener("storage", onStorage);
-    };
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const resolvedTheme = resolveTheme(mode, systemDark);
-
   useEffect(() => {
-    if (ready) applyTheme(resolvedTheme);
-  }, [ready, resolvedTheme]);
+    if (ready) applyTheme(mode);
+  }, [ready, mode]);
 
   const setTheme = useCallback((next: ThemeMode) => {
+    if (!isThemeMode(next)) return;
     setMode(next);
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, next);
-    } catch {
-      // Storage unavailable: the choice still applies for this tab.
-    }
+    persist(next);
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setTheme(resolvedTheme === "dark" ? "light" : "dark");
-  }, [resolvedTheme, setTheme]);
+    setTheme(mode === "dark" ? "light" : "dark");
+  }, [mode, setTheme]);
 
   const value = useMemo<ThemeContextType>(
-    () => ({ theme: resolvedTheme, resolvedTheme, mode, toggleTheme, setTheme }),
-    [resolvedTheme, mode, toggleTheme, setTheme],
+    () => ({ theme: mode, resolvedTheme: mode, mode, toggleTheme, setTheme }),
+    [mode, toggleTheme, setTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -103,7 +102,7 @@ export function useTheme(): ThemeContextType {
     return {
       theme: "light",
       resolvedTheme: "light",
-      mode: "system",
+      mode: "light",
       toggleTheme: () => {},
       setTheme: () => {},
     };

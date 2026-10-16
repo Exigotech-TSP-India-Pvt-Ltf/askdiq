@@ -45,6 +45,7 @@ describe("Access Requests tab", () => {
     await waitFor(() => expect(row("r-1")).toBeInTheDocument());
     expect(within(row("r-1")).getByText("carol@contoso.example")).toBeInTheDocument();
     expect(within(row("r-1")).getByText("2h 0m")).toBeInTheDocument();
+    expect(row("r-1").querySelector("time")).toHaveAttribute("datetime", "2026-10-14T08:00:00.000Z");
     expect(within(row("r-3")).getByText("Evaluation runs")).toBeInTheDocument();
     expect(screen.queryByTestId("request-row-r-9")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("tab", { name: /Access Requests/ })).toHaveTextContent("3"));
@@ -153,6 +154,10 @@ describe("Access Requests tab", () => {
     expect(await screen.findByText("Decision history")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("old@contoso.example")).toBeInTheDocument());
     expect(server.callsTo("GET", "/admin/access-requests").at(-1)?.query.get("status")).toBe("all");
+    const decided = screen.getByText("old@contoso.example").closest("tr") as HTMLElement;
+    const times = Array.from(decided.querySelectorAll("time")).map((t) => t.getAttribute("datetime"));
+    expect(times).toEqual(["2026-10-14T08:00:00.000Z", "2026-10-01T10:00:00.000Z"]);
+    expect(screen.getByRole("columnheader", { name: "Submitted" })).toBeInTheDocument();
   });
 });
 

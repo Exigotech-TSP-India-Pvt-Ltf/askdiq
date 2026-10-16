@@ -18,7 +18,8 @@ import {
   type GovernanceLogPage,
   type LogLevel,
 } from "@/lib/governance-api";
-import { formatCount, formatDateTime, formatHour, humanize } from "@/lib/governance-format";
+import { formatCount, formatHour, humanize } from "@/lib/governance-format";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { hourWindow, parseList, parseOne, rangeBounds } from "@/lib/governance-links";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
@@ -60,7 +61,7 @@ async function downloadCsv(href: string): Promise<string | null> {
   }
 }
 
-export const LOGS_PAGE_SIZE = 50;
+export const LOGS_PAGE_SIZE = 25;
 
 const SERVICE_LABEL: Record<string, string> = {
   auth: "Authentication",
@@ -75,7 +76,7 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "created_at",
     header: "Time",
-    render: (log) => <span className="whitespace-nowrap font-mono text-[11px] text-fg-muted">{formatDateTime(log.created_at)}</span>,
+    render: (log) => <RelativeTime value={log.created_at} className="text-[11px] text-fg-muted" />,
   },
   {
     key: "level",
@@ -147,12 +148,13 @@ export default function LogsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [levels.join(","), service, q, from, to],
   );
-  const filterKey = [audience, filters.level.join(","), service, q, from, to].join("|");
+  const [pageSize, setPageSize] = useState<number>(LOGS_PAGE_SIZE);
+  const filterKey = [audience, filters.level.join(","), service, q, from, to, pageSize].join("|");
   const pager = useCursorStack(filterKey);
 
   const query = useApiQuery<GovernanceLogPage>(
     ["admin/governance/logs", filterKey, pager.cursor],
-    (signal) => governanceApi.logs(token, { ...filters, audience, limit: LOGS_PAGE_SIZE, cursor: pager.cursor }, signal),
+    (signal) => governanceApi.logs(token, { ...filters, audience, limit: pageSize, cursor: pager.cursor }, signal),
     { enabled: Boolean(token) },
   );
   const page = query.data;
@@ -272,6 +274,11 @@ export default function LogsView() {
         pageItemCount: items.length,
         itemLabel: "entries",
         isLoading: query.isValidating,
+        page: pager.page,
+        totalItems: page?.total,
+        pageSize,
+        onPageSizeChange: setPageSize,
+        onFirst: pager.reset,
       }}
     >
       <DataTable
