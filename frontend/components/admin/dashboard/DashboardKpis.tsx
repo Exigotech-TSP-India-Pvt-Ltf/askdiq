@@ -23,7 +23,11 @@ import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
 import { useCarryHref } from "@/lib/entity-routes";
-import { usePrefetchOnIntent } from "@/lib/query-cache";
+import { usePrefetchOnIntent, type QueryKey } from "@/lib/query-cache";
+import { feedbackKeys } from "@/lib/feedback-api";
+import { governanceKeys } from "@/lib/governance-api";
+import { usageKeys } from "@/lib/use-usage-data";
+import type { Audience } from "@/lib/types";
 import type { DateRange } from "@/lib/range-context";
 import {
   bucketLabel,
@@ -32,6 +36,24 @@ import {
   type DashboardKpiKey,
   type SeriesPoint,
 } from "@/lib/dashboard-api";
+
+/**
+ * Cache key for a KPI's intent prefetch: the target page's own query key when
+ * it reads the same endpoint, so a hover-warmed response renders the page
+ * instantly instead of only warming the server.
+ */
+export function prefetchKey(path: string, audience: Audience): QueryKey {
+  switch (path) {
+    case "/usage/summary":
+      return usageKeys.summary(audience);
+    case "/governance/monitoring":
+      return governanceKeys.monitoring(audience);
+    case "/feedback/analytics":
+      return feedbackKeys.analytics(audience);
+    default:
+      return ["prefetch", path, audience];
+  }
+}
 
 const integer = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
 const usd = new Intl.NumberFormat("en", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -164,7 +186,7 @@ function KpiCard({ def, data, range }: { def: KpiDef; data: DashboardData; range
   const router = useRouter();
   // Keep the dashboard's date range on the target page.
   const href = useCarryHref()(def.href);
-  const intent = usePrefetchOnIntent(["prefetch", def.prefetchPath, audience], (signal) =>
+  const intent = usePrefetchOnIntent(prefetchKey(def.prefetchPath, audience), (signal) =>
     dashboardApi.prefetch(token, def.prefetchPath, audience, signal),
   );
   const value = kpiValue(data, def.key);

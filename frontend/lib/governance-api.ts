@@ -365,6 +365,11 @@ async function getJson<T>(path: string, token: string | null, signal?: AbortSign
 // Endpoints
 // ---------------------------------------------------------------------------
 
+/** Shared query-cache keys (the page and the dashboard's intent prefetch use the same entry). */
+export const governanceKeys = {
+  monitoring: (audience: Audience) => ["admin/governance/monitoring", audience] as const,
+};
+
 export const governanceApi = {
   overview: (token: string | null, audience: Audience, signal?: AbortSignal) =>
     getJson<GovernanceOverview>(

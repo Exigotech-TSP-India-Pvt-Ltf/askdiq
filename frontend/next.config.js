@@ -29,7 +29,7 @@ const nextConfig = {
   // only the files needed to run, into .next/standalone.
   output: "standalone",
   experimental: {
-    optimizePackageImports: ["lucide-react", "recharts"],
+    optimizePackageImports: ["lucide-react", "recharts", "motion"],
   },
   // The retired Evaluation page (newplan 2.3). A config redirect answers with a
   // real 307 + Location before the (app) layout starts streaming; the page-level

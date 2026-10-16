@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
@@ -30,7 +31,7 @@ import { TableToolbar } from "@/components/admin/TableToolbar";
 import { QueryInspectorDrawer } from "@/components/admin/QueryInspectorDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
-import { PassRateTrendCard, QualityRadarCard } from "@/components/admin/evaluation/QualityCharts";
+import { SkeletonCard } from "@/components/ui/Skeleton";
 import {
   Bar,
   BarChart,
@@ -44,6 +45,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+// The radar (polar Recharts) and the trend card sit below the fold: split out.
+const QualityRadarCard = dynamic(
+  () => import("@/components/admin/evaluation/QualityCharts").then((mod) => mod.QualityRadarCard),
+  { ssr: false, loading: () => <SkeletonCard label="Loading chart" className="h-80" /> },
+);
+const PassRateTrendCard = dynamic(
+  () => import("@/components/admin/evaluation/QualityCharts").then((mod) => mod.PassRateTrendCard),
+  { ssr: false, loading: () => <SkeletonCard label="Loading chart" className="h-80" /> },
+);
 
 
 const pct = (v: unknown) =>
