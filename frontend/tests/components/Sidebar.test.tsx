@@ -22,6 +22,8 @@ beforeEach(() => {
   // Admin by default; the role matrix below switches roles per case.
   signInAs("admin");
   queryCache.clear();
+  // The collapsed preference persists; each test starts expanded.
+  window.localStorage.clear();
 });
 
 afterEach(() => {
@@ -67,12 +69,48 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
     expect(screen.getByText("Visitors").closest("a")).toHaveAttribute("href", "/admin/users");
   });
 
-  it("renders the Admin accordion button with uppercase tracking and text-[11px]", () => {
+  it("shows one flat list with no collapsible group header (no ADMIN submenu)", () => {
+    signInAs("superadmin");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
     render(<Sidebar />);
 
-    const adminButton = screen.getByRole("button", { name: /admin/i });
-    expect(adminButton).toBeInTheDocument();
-    expect(adminButton.className).toContain("text-[11px]");
+    const nav = screen.getAllByRole("navigation", { name: "Main" })[0];
+    expect(within(nav).queryAllByRole("button")).toHaveLength(0);
+    expect(within(nav).queryByText(/^admin$/i)).toBeNull();
+    expect(nav.querySelector("[aria-expanded]")).toBeNull();
+    expect(within(nav).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual([
+      "Dashboard",
+      "Chat",
+      "Documents",
+      "Visitors",
+      "Usage & Cost",
+      "Conversation Logs",
+      "Feedback",
+      "Evaluation (Live)",
+      "Governance",
+      "Analytics",
+      "User Management",
+      "Settings",
+    ]);
+  });
+
+  it("collapsed rail still offers Sign out", () => {
+    render(<Sidebar />);
+    fireEvent.click(screen.getByTitle("Collapse sidebar"));
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(auth.logout).toHaveBeenCalled();
+  });
+
+  it("Sign out shows a busy state and ignores repeat clicks while signing out", () => {
+    auth.logout.mockReset();
+    auth.logout.mockReturnValue(new Promise<void>(() => undefined));
+    render(<Sidebar />);
+    const button = screen.getByRole("button", { name: "Sign out" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(auth.logout).toHaveBeenCalledTimes(1);
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
   });
 
   it("toggles sidebar collapsed state on expand/collapse button click", () => {

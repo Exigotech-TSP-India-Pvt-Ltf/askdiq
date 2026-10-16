@@ -8,15 +8,14 @@ import { AnimatePresence, m } from "motion/react";
 import { useAuth } from "@/lib/auth-context";
 import {
   ChevronLeft,
-  ChevronDown,
   LayoutDashboard,
+  Loader2,
   LogOut,
   MessageSquare,
   FileText,
   Users,
   MessagesSquare,
   ThumbsUp,
-  Shield,
   ShieldCheck,
   CircleDollarSign,
   Sparkles,
@@ -38,7 +37,6 @@ import { usePendingAccessCount } from "@/lib/use-shell-notifications";
 import { pop } from "@/lib/motion";
 
 const COLLAPSED_STORAGE_KEY = "deployiq.sidebar.collapsed";
-const ADMIN_EXPANDED_STORAGE_KEY = "deployiq.sidebar.adminExpanded";
 
 /** Count badges a nav item can show (fed by the access-request count). */
 export type NavBadgeKey = "pendingAccess";
@@ -210,13 +208,10 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
   // and first client render both start expanded, avoiding a hydration
   // mismatch — the stored preference is then applied right after mount.
   const [collapsed, setCollapsed] = useState(false);
-  // Controls whether the Admin section's items are expanded (shown) or
-  // collapsed (hidden) when its header is clicked.
-  const [adminExpanded, setAdminExpanded] = useState(true);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     setCollapsed(readStorage(COLLAPSED_STORAGE_KEY) === "1");
-    setAdminExpanded(readStorage(ADMIN_EXPANDED_STORAGE_KEY) !== "0");
   }, []);
 
   function toggleCollapsed() {
@@ -227,13 +222,26 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
     });
   }
 
-  function toggleAdminExpanded() {
-    setAdminExpanded((prev) => {
-      const next = !prev;
-      writeStorage(ADMIN_EXPANDED_STORAGE_KEY, next ? "1" : "0");
-      return next;
-    });
+  function signOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    // logout() always ends on /login (bounded wait); reset only if it ever returns here.
+    void Promise.resolve(logout()).finally(() => setSigningOut(false));
   }
+
+  const signOutButton = (
+    <button
+      type="button"
+      onClick={signOut}
+      disabled={signingOut}
+      aria-busy={signingOut}
+      title={signingOut ? "Signing out…" : "Sign out"}
+      aria-label="Sign out"
+      className={`rounded-md p-1.5 text-ink/40 dark:text-slate-400 hover:bg-ink/5 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white transition disabled:cursor-wait disabled:opacity-60 ${focusRing}`}
+    >
+      {signingOut ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogOut className="h-4 w-4" aria-hidden="true" />}
+    </button>
+  );
 
   return (
     <>
@@ -274,34 +282,8 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
         </div>
 
         <nav aria-label="Main" className={`flex-1 space-y-0.5 overflow-y-auto py-4 ${collapsed ? "px-2" : "px-3"}`}>
-          {collapsed ? (
-            <NavList items={items} pathname={pathname} collapsed badges={badges} layoutId="sidebar-active" />
-          ) : (
-            <>
-              <button
-                onClick={toggleAdminExpanded}
-                aria-expanded={adminExpanded}
-                className={`flex w-full items-center justify-between rounded-md px-3 pb-2 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink/40 dark:text-slate-400 hover:text-ink/70 dark:hover:text-slate-200 ${focusRing}`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <Shield className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
-                  <span>Admin</span>
-                </span>
-                <ChevronDown
-                  className={`h-3.5 w-3.5 transition-transform ${adminExpanded ? "" : "-rotate-90"}`}
-                />
-              </button>
-              {adminExpanded && (
-                <NavList
-                  items={items}
-                  pathname={pathname}
-                  collapsed={false}
-                  badges={badges}
-                  layoutId="sidebar-active"
-                />
-              )}
-            </>
-          )}
+          {/* One flat, permission-filtered list: no group headers. */}
+          <NavList items={items} pathname={pathname} collapsed={collapsed} badges={badges} layoutId="sidebar-active" />
         </nav>
 
         <div className="border-t border-ink/10 dark:border-white/10 p-3">
@@ -314,6 +296,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
               >
                 {user ? initials(user.full_name) : "—"}
               </div>
+              {signOutButton}
             </div>
           ) : (
             <div className="flex items-center gap-3 rounded-lg px-2 py-1">
@@ -335,14 +318,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
               </div>
               <div className="flex items-center gap-1">
                 <ThemeToggle size="sm" />
-                <button
-                  onClick={() => void logout()}
-                  title="Sign out"
-                  aria-label="Sign out"
-                  className={`rounded-md p-1.5 text-ink/40 dark:text-slate-400 hover:bg-ink/5 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white transition ${focusRing}`}
-                >
-                  <LogOut className="h-4 w-4" />
-                </button>
+                {signOutButton}
               </div>
             </div>
           )}
