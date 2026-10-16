@@ -21,6 +21,40 @@ import { entityHref } from "@/lib/entity-links";
 import { DrawerShell } from "@/components/ui/DrawerShell";
 import { CopyButton } from "@/components/ui/CopyButton";
 
+type GuardrailTone = "ok" | "bad" | "unknown";
+
+const GUARDRAIL_DOT: Record<GuardrailTone, string> = {
+  ok: "bg-emerald-500",
+  bad: "bg-rose-500",
+  unknown: "bg-slate-400",
+};
+
+/** Guardrail status from the record's flags and booleans; "Not available" when it was never checked. */
+export function guardrailRows(
+  data: { safety_passed?: unknown; grounded?: unknown } | null | undefined,
+  flags: readonly string[],
+): { label: string; value: string; tone: GuardrailTone }[] {
+  const scanned = typeof data?.safety_passed === "boolean";
+  const scan = (flag: string, hit: string, clean: string) =>
+    flags.includes(flag)
+      ? { value: hit, tone: "bad" as const }
+      : scanned
+        ? { value: clean, tone: "ok" as const }
+        : { value: "Not available", tone: "unknown" as const };
+  const grounded =
+    data?.grounded === true
+      ? { value: "Verified", tone: "ok" as const }
+      : data?.grounded === false
+        ? { value: "Not grounded", tone: "bad" as const }
+        : { value: "Not evaluated", tone: "unknown" as const };
+  return [
+    { label: "PII Leakage", ...scan("pii_leak_detected", "Detected", "Clean") },
+    { label: "Secret Scanning", ...scan("secret_leak_detected", "Detected", "Clean") },
+    { label: "Prompt Injection", ...scan("unsafe_input_detected", "Blocked", "None detected") },
+    { label: "Groundedness", ...grounded },
+  ];
+}
+
 interface QueryInspectorDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -71,7 +105,8 @@ export function QueryInspectorDrawer({
   };
 
   // Unreported values show "—", never a made-up score.
-  const isPassed = data?.passed ?? true;
+  const passed: boolean | null = typeof data?.passed === "boolean" ? data.passed : null;
+  const isPassed = passed !== false;
   const score = (v: unknown, digits: number) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "—");
   const share = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : "—");
   const faith = score(data?.faithfulness, 1);
@@ -82,6 +117,9 @@ export function QueryInspectorDrawer({
   const latency = data?.latency_ms ? formatLatencyMs(data.latency_ms) : "—";
 
   const requestId: string | null = data?.request_id || recordId;
+  const flags: string[] = Array.isArray(data?.guardrail_flags) ? data.guardrail_flags : [];
+  const judgeRan = typeof data?.faithfulness === "number" || Boolean(data?.judge_reason);
+  const guardrails = guardrailRows(data, flags);
 
   const title = (
     <>
@@ -93,7 +131,7 @@ export function QueryInspectorDrawer({
         }`}
       >
         {isPassed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-        {isPassed ? "Evaluation Passed" : "Issue Detected"}
+        {passed === null ? "Not evaluated" : passed ? "Evaluation Passed" : "Issue Detected"}
       </span>
       <span className="text-xs font-normal font-mono text-slate-500 dark:text-fg-muted truncate max-w-[200px]">
         ID: {requestId}
@@ -226,34 +264,30 @@ export function QueryInspectorDrawer({
             </div>
           </div>
 
-          {/* Security & Safety Audit Status */}
+          {/* Security & Safety Audit Status: from the record's own flags */}
           <div className="p-4 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-teal-300 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              {guardrails.some((g) => g.tone === "bad") ? (
+                <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+              ) : (
+                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              )}
               Security & Governance Guardrails
             </p>
-            <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-slate-500 dark:text-fg-muted">PII Leakage:</span>
-                <span className="font-semibold text-fg">Clean</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-slate-500 dark:text-fg-muted">Secret Scanning:</span>
-                <span className="font-semibold text-fg">Clean</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-slate-500 dark:text-fg-muted">Prompt Injection:</span>
-                <span className="font-semibold text-fg">Compliant</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-slate-500 dark:text-fg-muted">Groundedness:</span>
-                <span className="font-semibold text-fg">Verified</span>
-              </div>
+            <div className="grid grid-cols-2 gap-2 text-xs pt-1" data-testid="inspector-guardrails">
+              {guardrails.map((g) => (
+                <div key={g.label} className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${GUARDRAIL_DOT[g.tone]}`} />
+                  <span className="text-slate-500 dark:text-fg-muted">{g.label}:</span>
+                  <span className="font-semibold text-fg">{g.value}</span>
+                </div>
+              ))}
             </div>
+            {flags.length > 0 ? (
+              <p className="text-[11px] text-fg-muted">
+                Flags: <span className="font-mono">{flags.join(", ")}</span>
+              </p>
+            ) : null}
           </div>
         </>
       )}
@@ -293,7 +327,9 @@ export function QueryInspectorDrawer({
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Judge Rationale & Synthesis</label>
             <div className="p-4 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-fg leading-relaxed select-text">
-              {data?.judge_reason || "Every factual claim stated in the generated answer was directly cross-referenced against the retrieved ACSC and Zero Trust compliance context. No unsupported claims or hallucinations detected."}
+              {data?.judge_reason || (
+                <span className="text-fg-muted">No judge rationale recorded. The LLM judge did not run for this answer.</span>
+              )}
             </div>
           </div>
 
@@ -309,10 +345,15 @@ export function QueryInspectorDrawer({
                   </div>
                 ))}
               </div>
-            ) : (
+            ) : judgeRan ? (
               <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Zero unsupported claims detected. Full 100% semantic grounding.</span>
+                <span>The judge reported no unsupported claims.</span>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl border border-line text-xs text-fg-muted flex items-center gap-2">
+                <HelpCircle className="w-4 h-4" />
+                <span>Not evaluated: the LLM judge did not run for this answer.</span>
               </div>
             )}
           </div>
@@ -366,57 +407,10 @@ export function QueryInspectorDrawer({
               <span className="text-sm font-black text-teal-600 dark:text-teal-400 font-mono">{latency}</span>
             </div>
 
-            <div className="space-y-2 pt-2 text-xs">
-              <div>
-                <div className="flex justify-between text-fg-muted mb-1">
-                  <span>Query Embedding</span>
-                  <span className="font-mono">110 ms</span>
-                </div>
-                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
-                  <div className="h-full bg-teal-500 rounded-full" style={{ width: "8%" }} />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-fg-muted mb-1">
-                  <span>Vector Search Retrieval</span>
-                  <span className="font-mono">180 ms</span>
-                </div>
-                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
-                  <div className="h-full bg-cyan-500 rounded-full" style={{ width: "12%" }} />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-fg-muted mb-1">
-                  <span>Cross-Encoder Reranker</span>
-                  <span className="font-mono">140 ms</span>
-                </div>
-                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
-                  <div className="h-full bg-amber-500 rounded-full" style={{ width: "10%" }} />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-fg-muted mb-1">
-                  <span>LLM Generation (Azure OpenAI)</span>
-                  <span className="font-mono">1,380 ms</span>
-                </div>
-                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
-                  <div className="h-full bg-teal-600 rounded-full" style={{ width: "65%" }} />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-fg-muted mb-1">
-                  <span>Post-Guardrail Safety Scan</span>
-                  <span className="font-mono">35 ms</span>
-                </div>
-                <div className="h-1.5 w-full bg-chart-track rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: "5%" }} />
-                </div>
-              </div>
-            </div>
+            <p className="text-xs text-fg-muted" data-testid="inspector-stage-latency">
+              Per-stage timings are not available on evaluation records; only the end-to-end total is stored. Open the
+              full trace for the measured embedding, retrieval, rerank and LLM stages.
+            </p>
           </div>
         </div>
       )}

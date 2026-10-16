@@ -136,3 +136,58 @@ describe("evaluation inspector never shows made-up scores", () => {
     expect(screen.queryByText("1.85 s")).toBeNull();
   });
 });
+
+describe("inspectors show recorded data, not canned values", () => {
+  it("evaluation inspector: guardrails come from the record's flags; stage timings say not available", async () => {
+    render(
+      <MotionProvider>
+        <EvaluationInspector
+          isOpen
+          onClose={() => undefined}
+          recordId="rec-2"
+          initialData={{ ...record, safety_passed: false, grounded: false, guardrail_flags: ["pii_leak_detected"] }}
+          token="t"
+        />
+      </MotionProvider>,
+    );
+    const guardrails = await screen.findByTestId("inspector-guardrails");
+    expect(guardrails).toHaveTextContent("PII Leakage:Detected");
+    expect(guardrails).toHaveTextContent("Secret Scanning:Clean");
+    expect(guardrails).toHaveTextContent("Groundedness:Not grounded");
+
+    fireEvent.click(screen.getByRole("button", { name: /latency & ops/i }));
+    expect(screen.getByTestId("inspector-stage-latency")).toHaveTextContent(/not available/i);
+    expect(screen.queryByText("1,380 ms")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /llm judge breakdown/i }));
+    expect(screen.queryByText(/ACSC and Zero Trust/)).toBeNull();
+    expect(screen.getByText(/not evaluated/i)).toBeInTheDocument();
+  });
+
+  it("evaluation inspector: an unscanned record shows Not available, never Clean", async () => {
+    render(
+      <MotionProvider>
+        <EvaluationInspector isOpen onClose={() => undefined} recordId="rec-3" initialData={record} token="t" />
+      </MotionProvider>,
+    );
+    const guardrails = await screen.findByTestId("inspector-guardrails");
+    expect(guardrails).toHaveTextContent("PII Leakage:Not available");
+    expect(guardrails).not.toHaveTextContent("Clean");
+  });
+
+  it("usage inspector: reads `latencies` and bills only the uncached prompt at the prompt rate", async () => {
+    vi.spyOn(api, "getQueryDetail").mockResolvedValue({
+      query: "Cached?",
+      cost_usd: 0.001,
+      tokens: { prompt: 1000, cached_prompt: 400, reasoning: 0, visible: 10, query_embed: 0, guardrail_embed: 0, total_billed: 1010 },
+      latencies: { total_ms: 1500, embedding_ms: 100, retrieval_ms: 200, llm_ms: 1100, reranker_ms: null },
+    } as never);
+    render(<UsageHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Inspect" }));
+    const stages = await screen.findByTestId("usage-latency-stages");
+    expect(stages).toHaveTextContent("1,500 ms total");
+    expect(stages).toHaveTextContent("1,100 ms");
+    const uncachedRow = screen.getByText("2. Prompt Context (Uncached)").closest("tr");
+    expect(uncachedRow).toHaveTextContent("600");
+  });
+});
