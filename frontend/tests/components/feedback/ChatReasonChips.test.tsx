@@ -128,3 +128,33 @@ describe("submitMessageFeedback payload", () => {
     expect(calls[0].body).toEqual({ rating: 1, comment: "Outdated" });
   });
 });
+
+describe("Delete exchange", () => {
+  it("asks for confirmation before deleting", async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    render(
+      <Providers>
+        <MessageBubble message={message} onDelete={onDelete} />
+      </Providers>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /delete this exchange/i }));
+    expect(onDelete).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Delete this exchange?");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows the server failure instead of hiding it", async () => {
+    const onDelete = vi.fn().mockRejectedValue(new Error("Message not found"));
+    render(
+      <Providers>
+        <MessageBubble message={message} onDelete={onDelete} />
+      </Providers>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /delete this exchange/i }));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    expect(await screen.findByText(/couldn't delete this exchange: message not found/i)).toBeInTheDocument();
+  });
+});

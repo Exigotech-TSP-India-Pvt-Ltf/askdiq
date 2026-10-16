@@ -20,8 +20,9 @@ function newId() {
   return Math.random().toString(36).slice(2);
 }
 
-function toChatMessage(m: ChatMessageOut): ChatMessage {
+function toChatMessage(m: ChatMessageOut, sessionId: string): ChatMessage {
   return {
+    sessionId,
     id: m.id,
     role: m.role,
     content: m.content,
@@ -42,7 +43,8 @@ interface ChatContextValue {
   sendQuery: (text: string) => Promise<void>;
   /** Upserts the rating; `details` carries thumbs-down reason chips and the corrected answer. */
   submitFeedback: (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
-  deleteExchange: (messageId: string) => void;
+  /** Removes a question/answer pair; restores it and rejects if the server delete fails. */
+  deleteExchange: (messageId: string) => Promise<void>;
   /** Re-sends the question behind a failed answer (the failed pair is dropped first). */
   retryExchange: (assistantMessageId: string) => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
@@ -81,7 +83,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       try {
         const detail = await api.getSession(token, sessionId);
         setActiveSessionId(detail.id);
-        setMessages(detail.messages.map(toChatMessage));
+        setMessages(detail.messages.map((m) => toChatMessage(m, detail.id)));
       } catch {
         // Session may have been deleted elsewhere — fall back to a blank slate.
         setActiveSessionId(null);
@@ -168,10 +170,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               pending: false,
               content: response.answer,
               response,
+              sessionId: response.session_id || null,
             };
           }
           if (message.id === userMessage.id) {
-            return { ...message, id: response.user_message_id || message.id };
+            return {
+              ...message,
+              id: response.user_message_id || message.id,
+              sessionId: response.session_id || null,
+            };
           }
           return message;
         })
@@ -203,9 +210,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  function deleteExchange(messageId: string) {
-    if (!token || !activeSessionId) return;
+  async function deleteExchange(messageId: string) {
+    const target = messages.find((m) => m.id === messageId);
+    const sessionId = target?.sessionId ?? activeSessionId;
+    if (!token || !sessionId) return;
 
+    const before = messages;
     setMessages((prev) => {
       const index = prev.findIndex((m) => m.id === messageId);
       if (index === -1) return prev;
@@ -218,12 +228,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       return prev.filter((m) => m.id !== messageId && m.id !== pairId);
     });
 
-    // Best-effort backend delete — the pair is matched server-side by the
-    // shared turn_index, so any one of the two message ids is enough.
-    api.deleteExchange(token, activeSessionId, messageId).catch(() => {
-      // Already removed locally; a stale row surviving server-side isn't
-      // worth surfacing an error for here.
-    });
+    // The pair is matched server-side by the shared turn_index, so any one of
+    // the two message ids is enough. A failure puts the pair back so the
+    // screen never disagrees with what a reload would show.
+    try {
+      await api.deleteExchange(token, sessionId, messageId);
+    } catch (err) {
+      setMessages(before);
+      throw err;
+    }
   }
 
   async function retryExchange(assistantMessageId: string) {
@@ -274,15 +287,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const submitFeedback = useCallback(
     async (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => {
+      const target = messages.find((m) => m.id === messageId);
+      // Rate in the message's own session: an expired session rotates to a
+      // new one, and the older messages still live in the old session.
+      const sessionId = target?.sessionId ?? activeSessionId;
       // Never report "thanks" for a rating that was not sent.
-      if (!token || !activeSessionId) throw new Error("Open a saved chat to rate its answers.");
-      const prevRating = messages.find((m) => m.id === messageId)?.feedbackRating;
+      if (!token || !sessionId) throw new Error("Open a saved chat to rate its answers.");
+      const prevRating = target?.feedbackRating;
       // Optimistic update
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, feedbackRating: rating } : m))
       );
       try {
-        await submitMessageFeedback(token, activeSessionId, messageId, { rating, comment, ...details });
+        await submitMessageFeedback(token, sessionId, messageId, { rating, comment, ...details });
       } catch (err) {
         // Rollback on failure
         setMessages((prev) =>
