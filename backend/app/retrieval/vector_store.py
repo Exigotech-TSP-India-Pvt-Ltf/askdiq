@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from app.core.config import get_settings
-from app.models.db_models import Chunk
+from app.models.db_models import Chunk, Document
 from app.retrieval.reranker import rerank
 
 settings = get_settings()
@@ -48,6 +48,17 @@ def usable_filters(filters: dict | None) -> dict[str, str]:
     if dropped:
         logger.info("retrieval_filters_ignored keys=%s", dropped[:10])
     return kept
+
+
+def quarantined_document_ids():
+    """Ids of documents the ingest scan quarantined (prompt-injection hits).
+
+    Their chunks stay stored so an admin can inspect them, but retrieval must
+    never cite them.
+    """
+    return select(Document.id).where(
+        Document.doc_metadata["quarantined"].as_string() == "true"
+    )
 
 
 class VectorStore:
@@ -93,6 +104,7 @@ class VectorStore:
             Chunk,
             Chunk.embedding.cosine_distance(query_embedding).label("distance"),
         ).options(defer(Chunk.embedding))
+        stmt = stmt.where(Chunk.document_id.not_in(quarantined_document_ids()))
 
         for key, value in usable_filters(filters).items():
             stmt = stmt.where(Chunk.chunk_metadata[key].as_string() == value)

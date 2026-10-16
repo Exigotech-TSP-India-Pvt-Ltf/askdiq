@@ -68,3 +68,33 @@ def test_select_diverse_chunks_never_returns_duplicate_chunk_ids():
 
     ids = [chunk.id for chunk, _ in selected]
     assert len(ids) == len(set(ids))
+
+
+class _CapturingSession:
+    def __init__(self) -> None:
+        self.statements: list = []
+
+    async def execute(self, stmt):
+        self.statements.append(stmt)
+
+        class _Result:
+            @staticmethod
+            def all():
+                return []
+
+        return _Result()
+
+    async def commit(self) -> None:
+        return None
+
+
+async def test_similarity_search_excludes_quarantined_documents():
+    from sqlalchemy.dialects import postgresql
+
+    session = _CapturingSession()
+    rows = await VectorStore(session).similarity_search([0.1, 0.2], top_k=3)
+
+    assert rows == []
+    sql = str(session.statements[0].compile(dialect=postgresql.dialect()))
+    assert "NOT IN" in sql
+    assert "documents.doc_metadata ->>" in sql
