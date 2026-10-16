@@ -26,7 +26,11 @@ import {
   ChevronDown,
   ExternalLink,
 } from "lucide-react";
-import { useChartTheme } from "@/lib/use-chart-theme";
+import { useChartTheme, useResolvedThemeClass } from "@/lib/use-chart-theme";
+
+/** Milliseconds → seconds for display (e.g. 1116 → "1.12"). */
+const toSeconds = (ms: number | null | undefined): string =>
+  typeof ms === "number" && Number.isFinite(ms) ? (ms / 1000).toFixed(2) : "—";
 import {
   OutcomeBadge,
   formatTokens,
@@ -57,9 +61,16 @@ export function InteractiveOverviewTab({
 }: InteractiveOverviewTabProps) {
   // Token pipeline colours (prompt, reasoning, output) from the chart theme.
   const ct = useChartTheme();
-  const [promptColor, reasoningColor, outputColor] = [ct.categorical[0], ct.categorical[1], ct.status.ok];
-  const dot = (color: string, blur = 6) => ({ backgroundColor: color, boxShadow: `0 0 ${blur}px ${color}` });
-  const glow = (color: string) => ({ filter: `drop-shadow(0 0 4px ${color})` });
+  const isDark = useResolvedThemeClass() === "dark";
+  // Dark keeps the original glowing teal trio. Light uses three clearly distinct
+  // palette colours (teal / amber / indigo) without glow, so the rings and the
+  // Prompt / Reasoning / Output rows don't blur into one dark teal.
+  const [promptColor, reasoningColor, outputColor] = isDark
+    ? [ct.categorical[0], ct.categorical[1], ct.status.ok]
+    : [ct.categorical[0], ct.categorical[2], ct.categorical[5]];
+  const dot = (color: string, blur = 6) =>
+    isDark ? { backgroundColor: color, boxShadow: `0 0 ${blur}px ${color}` } : { backgroundColor: color };
+  const glow = (color: string) => (isDark ? { filter: `drop-shadow(0 0 4px ${color})` } : {});
   // Navigation & Drilldown State
   const [activeDomainFilter, setActiveDomainFilter] = useState<"all" | "costs" | "tokens" | "quality">("all");
   const [selectedOutcome, setSelectedOutcome] = useState<string>("all");
@@ -148,8 +159,11 @@ export function InteractiveOverviewTab({
   const embedPct = ((embedTokens / totalTokens) * 100).toFixed(1);
 
   // Speedometer geometry
-  const p50 = quality.latency?.p50_ms ?? 1100;
-  const p95 = quality.latency?.p95_ms ?? 2950;
+  // Real percentiles only; the needle rests at 0 when the server reports none.
+  const p50Ms = quality.latency?.p50_ms ?? null;
+  const p95Ms = quality.latency?.p95_ms ?? null;
+  const p50 = p50Ms ?? 0;
+  const p95 = p95Ms ?? 0;
   const maxScaleLatency = 4000;
   const p50Angle = Math.min(Math.max((p50 / maxScaleLatency) * 180 - 90, -90), 90);
   const p95Angle = Math.min(Math.max((p95 / maxScaleLatency) * 180 - 90, -90), 90);
@@ -246,9 +260,9 @@ export function InteractiveOverviewTab({
               <span className="text-[11px] text-teal-200 font-medium">Median Turn Speed (P50)</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-extrabold font-mono text-cyan-300 drop-shadow-[0_0_8px_rgba(103,232,249,0.4)]">
-                  {Math.round(p50)}
+                  {toSeconds(p50Ms)}
                 </span>
-                <span className="text-[10px] text-cyan-100">ms / query</span>
+                <span className="text-[10px] text-cyan-100">s / query</span>
               </div>
             </div>
 
@@ -735,8 +749,8 @@ export function InteractiveOverviewTab({
                 <div className="mt-1 text-center">
                   <span className="text-[10px] text-slate-400 dark:text-zinc-400 block font-medium">Turn Speedometer</span>
                   <div className="flex items-center gap-2 text-xs font-mono">
-                    <span className="text-cyan-600 dark:text-cyan-400 font-bold" title="Median P50">P50: {Math.round(p50)}ms</span>
-                    <span className="text-amber-600 dark:text-amber-400 font-bold" title="Tail P95">P95: {Math.round(p95)}ms</span>
+                    <span className="text-cyan-600 dark:text-cyan-400 font-bold" title="Median P50">P50: {toSeconds(p50Ms)}s</span>
+                    <span className="text-amber-600 dark:text-amber-400 font-bold" title="Tail P95">P95: {toSeconds(p95Ms)}s</span>
                   </div>
                 </div>
               </div>
@@ -966,7 +980,7 @@ export function InteractiveOverviewTab({
 
                     {/* Latency */}
                     <td className="px-3 py-3 text-right font-mono text-slate-600 dark:text-zinc-400 whitespace-nowrap">
-                      {q.latency_ms ? `${q.latency_ms} ms` : "—"}
+                      {q.latency_ms ? `${toSeconds(q.latency_ms)} s` : "—"}
                     </td>
 
                     {/* Cost */}
