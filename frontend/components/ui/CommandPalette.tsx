@@ -16,6 +16,8 @@ export interface PaletteItem {
   hint?: string;
   /** Permission needed to see the item; checked with `canAccess`. */
   permission?: string;
+  /** Shown when any one of these is allowed. */
+  anyPermission?: readonly string[];
 }
 
 /**
@@ -99,7 +101,9 @@ export function CommandPalette({ open, onClose, pages, searchProvider, canAccess
   }, [query, open, searchProvider]);
 
   const results = useMemo(() => {
-    const allowed = (item: PaletteItem) => !item.permission || (canAccess ? canAccess(item.permission) : true);
+    const can = (permission: string) => (canAccess ? canAccess(permission) : true);
+    const allowed = (item: PaletteItem) =>
+      item.anyPermission ? item.anyPermission.some(can) : !item.permission || can(item.permission);
     const q = query.trim();
     const pageHits = pages.filter((p) => allowed(p) && matches(p, q)).map((p) => ({ ...p, group: p.group ?? "Pages" }));
     const remoteHits = remote.filter(allowed).map((r) => ({ ...r, group: r.group ?? "Results" }));
