@@ -185,3 +185,25 @@ async def test_users_carry_last_active_and_sort_by_it(
         assert res.status_code == 200
         stamps = [r["last_active"] for r in res.json()["items"] if r["last_active"]]
         assert stamps == sorted(stamps, reverse=order == "desc")
+
+
+def test_query_inspector_route_is_declared_once() -> None:
+    from fastapi.routing import APIRoute
+
+    from main import app
+
+    matches = [
+        r
+        for r in app.routes
+        if isinstance(r, APIRoute)
+        and r.path == "/admin/usage/queries/{request_id}"
+        and "GET" in r.methods
+    ]
+    assert len(matches) == 1
+    assert matches[0].endpoint.__module__ == "app.api.routes.admin_usage"
+
+
+@pytest.mark.asyncio
+async def test_sessions_page_limit_is_still_capped(client: AsyncClient) -> None:
+    res = await client.get("/admin/usage/sessions?limit=10000")
+    assert res.status_code == 422
