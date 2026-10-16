@@ -106,11 +106,10 @@ async def test_full_sign_in_approval_and_suspension_journey(
         headers=boss_headers,
     )
     assert suspended.status_code == 200
-    assert (await client.get(DASHBOARD, headers=headers)).status_code == 403
-    assert (await client.get(CHAT, headers=headers)).status_code == 403
-    me = await client.get("/auth/me", headers=headers)
-    assert me.status_code == 200
-    assert me.json()["status"] == "suspended"
+    # Suspension revokes every session at once: the old cookie is dead.
+    assert (await client.get(DASHBOARD, headers=headers)).status_code == 401
+    assert (await client.get(CHAT, headers=headers)).status_code == 401
+    assert (await client.get("/auth/me", headers=headers)).status_code == 401
 
     # 7. Signing in again is refused while suspended.
     again = await sso_sign_in(client, newcomer)

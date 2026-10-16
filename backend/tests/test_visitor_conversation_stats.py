@@ -576,8 +576,20 @@ async def test_conversation_list_sorts_by_date(client, db_session, sort, first) 
 )
 async def test_visitor_list_sorts_by_date(client, db_session, sort, first) -> None:
     ips = (await _seed_sort_pair(db_session))["ips"]
-    resp = await client.get("/admin/users", params={"sort": sort, "limit": 10_000})
-    assert resp.status_code == 200, resp.text
-    rows = [u for u in resp.json()["items"] if u["ip_address"] in ips]
+    # `limit` is capped (USAGE_PAGE_MAX_LIMIT), so walk every page in order.
+    page_size = get_settings().usage_page_max_limit
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        resp = await client.get(
+            "/admin/users",
+            params={"sort": sort, "limit": page_size, "offset": offset},
+        )
+        assert resp.status_code == 200, resp.text
+        items = resp.json()["items"]
+        rows += [u for u in items if u["ip_address"] in ips]
+        if len(items) < page_size:
+            break
+        offset += page_size
     assert [u["ip_address"] for u in rows] == [ips[first], ips[1 - first]]
     assert all(u["first_seen"] and u["last_active"] for u in rows)
