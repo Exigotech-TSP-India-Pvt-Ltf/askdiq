@@ -68,7 +68,10 @@ $required = @(
   'backend/scripts/ingest_real_docs.py', 'backend/alembic.ini', 'backend/requirements.txt',
   'frontend/Dockerfile.prod', 'frontend/.dockerignore', 'frontend/package-lock.json', 'frontend/.npmrc',
   'deploy-kit/deploy/RUNBOOK.md', 'deploy-kit/deploy/docker-compose.prod.example.yml',
-  'deploy-kit/deploy/nginx/askdiq-admin.conf.example', 'deploy-kit/deploy/frontend.env.prod.example'
+  'deploy-kit/deploy/nginx/askdiq-admin.conf.example', 'deploy-kit/deploy/frontend.env.prod.example',
+  'deploy-kit/deploy/DEPLOYMENT_GUIDE.md', 'deploy-kit/deploy/server/deploy.sh', 'deploy-kit/deploy/server/rollback.sh',
+  'deploy-kit/deploy/compose/askdiq-web.service.yml', 'deploy-kit/deploy/nginx/askdiq-admin.append.conf',
+  'deploy-kit/deploy/askdiq-autoheal.sh'
 )
 foreach ($r in $required) { if ($r -notin $entries) { $problems += "missing: $r" } }
 $kb = @($entries | Where-Object { $_ -match '^backend/data/real_docs/[^/]+\.md$' })

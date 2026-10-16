@@ -1,0 +1,44 @@
+# askdiq-web service block for /opt/askdiq/docker-compose.prod.yml.
+#
+# Paste ONLY the `askdiq-web:` block (everything under `services:` below)
+# into the server file under its existing `services:` key, at the same indent
+# as `askdiq-api:`. Never copy this file over the server compose file.
+# The `networks:` section at the bottom is for reference / standalone linting:
+# the server file already declares both external networks; do not duplicate.
+#
+# No `ports:` on purpose: et-platform-nginx-1 reaches askdiq-web:3000 on the
+# external askdiq_internal network. Debug only (then remove):
+#   ports: ["127.0.0.1:5500:3000"]     # loopback, never 0.0.0.0
+services:
+  askdiq-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    image: askdiq-web:latest
+    container_name: askdiq-web
+    env_file:
+      - /opt/askdiq/frontend/.env
+    restart: unless-stopped
+    depends_on:
+      askdiq-api:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    stop_grace_period: 15s
+    networks:
+      - askdiq_internal
+
+networks:
+  askdiq_internal:
+    external: true
+    name: askdiq_internal
