@@ -15,6 +15,31 @@ The kit never contains a compose file, an nginx conf or a `.env` outside
 
 ---
 
+> **STOP: deploy blocker for `preview/view` and anything built from it.**
+>
+> In this code, `POST /query` and every `/sessions` route require a signed-in
+> SSO session (`require_role_or_chat`, `X-Session` header), not just the API
+> key. The public website calls `https://askdiq.ethub.co/query` and
+> `/sessions` with the API key only, so deploying this backend as it is would
+> make every public chat request fail with **401**.
+>
+> Before deploying `preview/view` to production, the backend must keep an
+> API-key-only service path for the public website (for example a
+> service-key guard on `/query` and `/sessions` for that client, or a
+> dedicated public route), verified on a staging copy. Until then, do not
+> deploy this backend to production.
+>
+> Check before and after every deploy, from the server:
+>
+> ```bash
+> curl -s -o /dev/null -w '%{http_code}\n' -X POST https://askdiq.ethub.co/query \
+>   -H 'Content-Type: application/json' -H "X-API-Key: <public site key>" -d '{"query":"ping"}'
+> ```
+>
+> This must print `200` before the deploy and still print `200` after it. A
+> `401` after the deploy means the public website is down: roll the backend
+> back immediately (section 8).
+
 ## 0. Decisions before the first dashboard deploy
 
 1. **Dashboard domain.** Recommended: a subdomain such as
@@ -290,6 +315,10 @@ docker exec askdiq-api python -m alembic heads
 
 # API health (through nginx)
 curl -fsS https://askdiq.ethub.co/health
+
+# Public website path (API key only, no session): must still be 200, see the STOP box at the top
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://askdiq.ethub.co/query \
+  -H 'Content-Type: application/json' -H "X-API-Key: <public site key>" -d '{"query":"ping"}'
 
 # Dashboard reachable from the nginx container by name
 docker exec et-platform-nginx-1 wget -qO- -S http://askdiq-web:3000/login 2>&1 | head -1
