@@ -11,6 +11,7 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { iconButton, primaryButton, secondaryButton } from "@/components/ui/styles";
 import { fadeUp, useMotionVariants } from "@/lib/motion";
+import { useCursorStack } from "@/lib/use-cursor-stack";
 import { isTypingTarget } from "@/lib/shortcuts";
 import { errorStatus, invalidate, queryCache, useApiMutation, useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
 import {
@@ -86,9 +87,10 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
     [audience, filters],
   );
   const baseSignature = feedbackListPath(baseParams);
-  const [cursors, setCursors] = useState<(string | null)[]>([null]);
-  useEffect(() => setCursors([null]), [baseSignature]);
-  const cursor = cursors[cursors.length - 1] ?? null;
+  // Reset to page 1 in the same render as a filter / sort change: an old
+  // cursor sent with a new sort is rejected (422) by the keyset API.
+  const pager = useCursorStack(baseSignature);
+  const cursor = pager.cursor ?? null;
 
   const params = useMemo(() => ({ ...baseParams, cursor }), [baseParams, cursor]);
   const listKey = feedbackKeys.list(feedbackListPath(params));
@@ -599,10 +601,10 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
         }
         toolbar={toolbar}
         cursor={{
-          hasPrev: cursors.length > 1,
+          hasPrev: pager.hasPrev,
           hasNext: Boolean(nextCursor),
-          onPrev: () => setCursors((c) => (c.length > 1 ? c.slice(0, -1) : c)),
-          onNext: () => nextCursor && setCursors((c) => [...c, nextCursor]),
+          onPrev: pager.prev,
+          onNext: () => pager.next(nextCursor),
           pageItemCount: rows.length,
           itemLabel: "ratings",
           isLoading: isValidating,

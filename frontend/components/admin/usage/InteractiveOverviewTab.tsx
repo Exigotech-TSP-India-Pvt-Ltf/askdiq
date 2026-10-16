@@ -27,6 +27,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useChartTheme } from "@/lib/use-chart-theme";
+import { usePrefersReducedMotion } from "@/lib/motion";
 import {
   OutcomeBadge,
   formatTokens,
@@ -62,6 +63,18 @@ export function InteractiveOverviewTab({
   const glow = (color: string) => ({ filter: `drop-shadow(0 0 4px ${color})` });
   // Navigation & Drilldown State
   const [activeDomainFilter, setActiveDomainFilter] = useState<"all" | "costs" | "tokens" | "quality">("all");
+  const reducedMotion = usePrefersReducedMotion();
+  /** Telemetry Focus: highlight one card, dim the others and bring it into view. */
+  const focusDomain = (id: "all" | "costs" | "tokens" | "quality") => {
+    setActiveDomainFilter(id);
+    if (id !== "all") {
+      document
+        .getElementById(`telemetry-${id}`)
+        ?.scrollIntoView?.({ behavior: reducedMotion ? "auto" : "smooth", block: "nearest" });
+    }
+  };
+  const dimUnless = (id: "costs" | "tokens" | "quality") =>
+    activeDomainFilter !== "all" && activeDomainFilter !== id ? "opacity-60" : "";
   const [selectedOutcome, setSelectedOutcome] = useState<string>("all");
   const [selectedStageDetail, setSelectedStageDetail] = useState<"llm" | "embed" | "savings" | null>(null);
   const [tokenViewMode, setTokenViewMode] = useState<"absolute" | "percentage">("absolute");
@@ -292,7 +305,8 @@ export function InteractiveOverviewTab({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveDomainFilter(tab.id as any)}
+                  aria-pressed={activeDomainFilter === tab.id}
+                  onClick={() => focusDomain(tab.id as "all" | "costs" | "tokens" | "quality")}
                   className={`px-3 py-1 text-xs rounded-lg font-medium transition ${
                     activeDomainFilter === tab.id
                       ? "bg-brand-50 text-brand-950 font-bold shadow-sm"
@@ -316,7 +330,8 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 1: FINANCIAL COST ECONOMICS — LIVE FINANCIAL ACCOUNTING */}
         {/* ----------------------------------------------------------------------- */}
         <div
-          className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white p-6 text-slate-900 shadow-card dark:bg-surface-card dark:text-white dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
+          id="telemetry-costs"
+          className={`${dimUnless("costs")} relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white p-6 text-slate-900 shadow-card dark:bg-surface-card dark:text-white dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
             activeDomainFilter === "costs"
               ? "ring-2 ring-teal-500 border-teal-500 dark:ring-teal-400/80 dark:border-teal-400/60"
               : ""
@@ -496,7 +511,8 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 2: TOKEN VOLUME TELEMETRY — COGNITIVE PIPELINE */}
         {/* ----------------------------------------------------------------------- */}
         <div
-          className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 shadow-card dark:border-teal-500/25 dark:bg-gradient-to-br dark:from-brand-950/95 dark:via-surface-muted/98 dark:to-surface-page dark:text-white dark:shadow-2xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
+          id="telemetry-tokens"
+          className={`${dimUnless("tokens")} relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 shadow-card dark:border-teal-500/25 dark:bg-gradient-to-br dark:from-brand-950/95 dark:via-surface-muted/98 dark:to-surface-page dark:text-white dark:shadow-2xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
             activeDomainFilter === "tokens"
               ? "ring-2 ring-teal-500 border-teal-500 dark:ring-teal-400/80 dark:border-teal-400/60"
               : "dark:shadow-[0_0_30px_rgba(20,184,166,0.12),inset_0_1px_0_0_rgba(45,212,191,0.25)]"
@@ -666,7 +682,8 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 3: GENERATION QUALITY & LATENCY — TELEMETRY COCKPIT */}
         {/* ----------------------------------------------------------------------- */}
         <div
-          className={`relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 dark:text-white shadow-card dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
+          id="telemetry-quality"
+          className={`${dimUnless("quality")} relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 dark:text-white shadow-card dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
             activeDomainFilter === "quality"
               ? "ring-2 ring-cyan-500 border-cyan-500 dark:ring-cyan-400/80 dark:border-cyan-400/60"
               : ""
