@@ -74,6 +74,16 @@ describe("Visitors list", () => {
     await waitFor(() => expect(currentParams().get("weekday")).toBeNull());
   });
 
+  it("shows first-seen / last-active as <time> and sorts by first seen", async () => {
+    const calls = mockFetch([listRoute, statsRoute]);
+    const { container } = renderPage(<VisitorsPage />);
+    await screen.findByRole("link", { name: IP });
+    expect(container.querySelector('time[datetime="2026-10-01T00:00:00.000Z"]')).toHaveAttribute("title");
+    expect(container.querySelector('time[datetime="2026-10-14T09:31:02.000Z"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole("columnheader", { name: /first seen/i }));
+    await waitFor(() => expect(callsTo(calls, "/admin/users").at(-1)?.searchParams.get("sort")).toBe("first_seen_desc"));
+  });
+
   it("links the IP to the visitor detail and 'view sessions' to Usage sessions", async () => {
     mockFetch([listRoute, statsRoute]);
     renderPage(<VisitorsPage />);

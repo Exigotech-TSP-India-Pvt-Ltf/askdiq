@@ -489,6 +489,7 @@ async def stream_pair_rows(
                 MessageFeedback.reason_tags,
                 MessageFeedback.corrected_answer,
                 MessageFeedback.triage_status,
+                MessageFeedback.created_at,
                 UserMessage.content.label("prompt"),
                 ChatMessageRecord.content.label("answer"),
                 ev.c.retrieved_chunks,

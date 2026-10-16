@@ -180,6 +180,9 @@ describe("Dashboard: charts (F3.1.2)", () => {
       "/admin/governance?tab=Traces&request_id=req-123",
     );
     expect(screen.getByText("Thumbs down on an answer").closest("a")).toHaveAttribute("href", "/admin/feedback?message_id=msg-7");
+    const when = screen.getByText("Query answered in 2.1 s").closest("a")?.querySelector("time");
+    expect(when).toHaveAttribute("datetime", "2026-10-16T12:59:00.000Z");
+    expect(when?.getAttribute("title")).toMatch(/2026/);
     expect(await screen.findByRole("link", { name: /System health: Degraded/ })).toHaveAttribute(
       "href",
       "/admin/governance?tab=Overall",

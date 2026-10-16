@@ -5,6 +5,7 @@ import { AlertTriangle, Download, FileJson, Lock } from "lucide-react";
 import { TableCard } from "@/components/admin/TableCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { primaryButton } from "@/components/ui/styles";
@@ -85,6 +86,7 @@ export function PreferenceDataTab({ token, canExport }: PreferenceDataTabProps) 
             <th scope="col" className="px-3 py-2.5">Chosen</th>
             <th scope="col" className="px-3 py-2.5">Rejected</th>
             <th scope="col" className="px-3 py-2.5">Rating</th>
+            <th scope="col" className="px-3 py-2.5">Rated</th>
             <th scope="col" className="px-4 py-2.5">Quality</th>
           </tr>
         </thead>
@@ -108,6 +110,9 @@ export function PreferenceDataTab({ token, canExport }: PreferenceDataTabProps) 
               <td className="px-3 py-3 tabular-nums text-fg-muted">
                 {p.rating}
                 {p.reason_tags.length > 0 ? <p className="text-[11px] text-fg-subtle">{p.reason_tags.map(reasonLabel).join(", ")}</p> : null}
+              </td>
+              <td className="px-3 py-3 text-fg-subtle">
+                <RelativeTime value={p.created_at} />
               </td>
               <td className="px-4 py-3">
                 {p.complete ? (

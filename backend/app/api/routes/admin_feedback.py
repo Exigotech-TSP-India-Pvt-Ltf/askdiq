@@ -237,7 +237,8 @@ def _golden(r: EvalPromotedCase) -> GoldenCase:
         **_READ_ERRORS,
         200: {
             "description": "One JSON object per line: prompt, chosen, rejected, "
-            "rating, reason_tags, source_ids, complete, missing",
+            "rating, reason_tags, source_ids, triage_status, created_at, "
+            "complete, missing",
             "content": {"application/x-ndjson": {}},
         },
     },

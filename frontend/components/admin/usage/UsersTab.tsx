@@ -8,6 +8,7 @@ import { DataTable, type ColumnDef } from "../DataTable";
 import { TableToolbar } from "../TableToolbar";
 import { Pagination } from "../Pagination";
 import { TableCard } from "../TableCard";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { StatCard, HighlightCard } from "../insights";
 import { Users, Shield, Cpu, Download, Sparkles } from "lucide-react";
 
@@ -50,6 +51,8 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       "tokens_asc",
       "sessions_desc",
       "sessions_asc",
+      "last_active_desc",
+      "last_active_asc",
     ],
     defaultFilters: { type: "all" },
   });
@@ -164,6 +167,12 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
       sortable: true,
       align: "right",
       render: (r) => formatCurrency(r.cost_usd, 4),
+    },
+    {
+      key: "last_active",
+      header: "Last Active",
+      sortable: true,
+      render: (r) => <RelativeTime value={r.last_active} className="text-xs text-fg-subtle" />,
     },
   ];
 

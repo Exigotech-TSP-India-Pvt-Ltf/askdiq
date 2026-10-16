@@ -14,6 +14,7 @@ import { ChartCard } from "@/components/charts/ChartCard";
 import { Histogram, type HistogramBin } from "@/components/charts/Histogram";
 import { StackedBar, type BarSegment } from "@/components/charts/StackedBar";
 import { EntityLink } from "@/components/ui/EntityLink";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { focusRing, iconButton } from "@/components/ui/styles";
 import { FilterChip, errorMessage, formatDay, useRangeParams } from "@/components/admin/entity/shared";
 import { ConversationPreviewDrawer } from "@/components/admin/entity/ConversationPreviewDrawer";
@@ -64,7 +65,7 @@ function ConversationsContent() {
   const { page, pageSize, offset, sort, search, audience, setPage, setPageSize, setSort, setSearchInput } = useTableState({
     tableKey: "convs",
     defaultSort: "last_activity_desc",
-    allowedSorts: ["last_activity_desc", "last_activity_asc"],
+    allowedSorts: ["last_activity_desc", "last_activity_asc", "created_at_desc", "created_at_asc"],
   });
 
   const list = useApiQuery(
@@ -182,19 +183,14 @@ function ConversationsContent() {
     {
       key: "created_at",
       header: "Created",
-      render: (c) => (
-        <span className="whitespace-nowrap text-xs text-fg-subtle">{c.created_at ? new Date(c.created_at).toLocaleString() : "—"}</span>
-      ),
+      sortable: true,
+      render: (c) => <RelativeTime value={c.created_at} className="text-xs text-fg-subtle" />,
     },
     {
       key: "last_activity",
       header: "Last Active",
       sortable: true,
-      render: (c) => (
-        <span className="whitespace-nowrap text-xs text-fg-subtle">
-          {c.last_activity_at ? new Date(c.last_activity_at).toLocaleString() : "—"}
-        </span>
-      ),
+      render: (c) => <RelativeTime value={c.last_activity_at} className="text-xs text-fg-subtle" />,
     },
     {
       key: "preview",

@@ -8,6 +8,7 @@ import { DataTable, type ColumnDef } from "../DataTable";
 import { TableToolbar } from "../TableToolbar";
 import { Pagination } from "../Pagination";
 import { TableCard } from "../TableCard";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import dynamic from "next/dynamic";
 import { StatCard, OutcomePillBar } from "../insights";
 
@@ -239,6 +240,12 @@ export function QueriesTab({
           </span>
         </div>
       ),
+    },
+    {
+      key: "created_at",
+      header: "Asked",
+      sortable: true,
+      render: (r) => <RelativeTime value={r.created_at} className="text-xs text-fg-subtle" />,
     },
     {
       key: "ip_address",

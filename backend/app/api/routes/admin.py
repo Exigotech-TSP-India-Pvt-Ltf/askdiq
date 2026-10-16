@@ -84,6 +84,15 @@ class TestIpPayload(BaseModel):
 # ============================================================================
 
 
+# `sort` prefix -> visitor row field; unknown values sort by last activity.
+_VISITOR_SORT_FIELDS = {
+    "last_active": "last_active",
+    "first_seen": "first_seen",
+    "queries": "queries",
+    "sessions": "sessions",
+}
+
+
 @router.get("/users")
 async def list_users(
     audience: str = Query("overview"),
@@ -211,7 +220,9 @@ async def list_users(
         )
 
     reverse = "asc" not in sort
-    all_users.sort(key=lambda u: u.get("last_active") or "", reverse=reverse)
+    sort_field = _VISITOR_SORT_FIELDS.get(sort.rsplit("_", 1)[0], "last_active")
+    empty: str | int = 0 if sort_field in {"queries", "sessions"} else ""
+    all_users.sort(key=lambda u: u.get(sort_field) or empty, reverse=reverse)
 
     total = len(all_users)
     paged = all_users[offset : offset + limit]
@@ -440,11 +451,16 @@ async def list_conversations(
     if max_turns is not None:
         query = query.having(turn_count <= max_turns)
 
-    # Sort
-    if sort == "last_activity_asc":
-        query = query.order_by(ChatSession.last_activity_at.asc())
-    else:
-        query = query.order_by(ChatSession.last_activity_at.desc())
+    # Sort (unknown values fall back to the newest activity first)
+    sort_column = (
+        ChatSession.created_at
+        if sort.startswith("created_at_")
+        else ChatSession.last_activity_at
+    )
+    query = query.order_by(
+        sort_column.asc() if sort.endswith("_asc") else sort_column.desc(),
+        ChatSession.id,
+    )
 
     # Total count
     count_sub = query.subquery()

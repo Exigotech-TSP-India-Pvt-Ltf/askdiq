@@ -30,10 +30,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
-import { SectionCard, ToneChip, errorMessage, formatDateTime, formatDay, ratingTone } from "@/components/admin/entity/shared";
+import { SectionCard, ToneChip, errorMessage, formatDay, ratingTone } from "@/components/admin/entity/shared";
 import { useApiQuery } from "@/lib/query-cache";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { crossfade, fadeUp, stagger, useMotionVariants, usePrefersReducedMotion } from "@/lib/motion";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import {
   CHUNK_SEARCH_DEBOUNCE_MS,
   MAX_CHUNK_QUERY_CHARS,
@@ -106,7 +107,7 @@ function ChunkCard({ chunk, highlighted }: { chunk: ChunkRow; highlighted: boole
           </span>
         ) : null}
         {chunk.low_rated_hits ? <ToneChip tone="danger">{chunk.low_rated_hits} low-rated</ToneChip> : null}
-        {chunk.last_hit_at ? <span className="text-[11px] text-fg-subtle">last cited {formatDateTime(chunk.last_hit_at)}</span> : null}
+        {chunk.last_hit_at ? <RelativeTime value={chunk.last_hit_at} prefix="last cited " className="text-[11px] text-fg-subtle" /> : null}
         <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-fg-subtle">
           <code className="font-mono" title={chunk.id}>
             {chunk.id.slice(0, 8)}
@@ -214,9 +215,13 @@ function MetadataCard({ doc, detail }: { doc: DocumentInventoryItem; detail: Doc
           {doc.embedding_model ? `${doc.embedding_model}${doc.embedding_dim ? ` · ${doc.embedding_dim} dims` : ""}` : "—"}
         </Field>
         <Field label="Pipeline">{doc.pipeline_version ?? "—"}</Field>
-        <Field label="Last ingested">{formatDateTime(ingestedAt(doc))}</Field>
+        <Field label="Last ingested">
+          <RelativeTime value={ingestedAt(doc)} display="absolute" />
+        </Field>
         <Field label="Ingested by">{doc.ingested_by ?? "—"}</Field>
-        <Field label="First added">{formatDateTime(doc.created_at)}</Field>
+        <Field label="First added">
+          <RelativeTime value={doc.created_at} display="absolute" />
+        </Field>
         <Field label="Ingests">{(doc.ingest_count ?? 1).toLocaleString()}</Field>
         {labels.length ? (
           <Field label="Labels">
@@ -356,7 +361,9 @@ function HistoryTab({ detail }: { detail: DocumentDetail | null }) {
           <tbody className="divide-y divide-line text-fg-muted">
             {detail.history.map((ev, i) => (
               <tr key={`${ev.at}-${i}`}>
-                <td className="whitespace-nowrap px-3 py-2">{formatDateTime(ev.at)}</td>
+                <td className="whitespace-nowrap px-3 py-2">
+                  <RelativeTime value={ev.at} />
+                </td>
                 <td className="max-w-[200px] truncate px-3 py-2" title={ev.actor}>
                   {ev.actor}
                 </td>
@@ -619,7 +626,7 @@ function DocumentDetailContent() {
                               {r.replace(/_/g, " ")}
                             </ToneChip>
                           ))}
-                          <span className="ml-auto text-[11px] text-fg-subtle">{formatDateTime(item.created_at)}</span>
+                          <RelativeTime value={item.created_at} className="ml-auto text-[11px] text-fg-subtle" />
                         </div>
                         {item.query ? <p className="mt-1.5 line-clamp-2 text-fg">{item.query}</p> : null}
                         {item.comment ? <p className="mt-1 text-fg-muted">“{item.comment}”</p> : null}

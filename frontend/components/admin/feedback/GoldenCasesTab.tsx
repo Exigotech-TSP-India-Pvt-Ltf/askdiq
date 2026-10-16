@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
 import { pop, useMotionVariants } from "@/lib/motion";
 import { useApiQuery } from "@/lib/query-cache";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import {
   feedbackKeys,
   listGoldenCases,
@@ -81,7 +82,7 @@ function LastResult({ c }: { c: GoldenCase }) {
         {c.last_run_passed ? "Passed" : "Failed"}
       </span>
       <p className="text-[11px] text-fg-subtle">
-        {new Date(c.last_run_at).toLocaleString()}
+        <RelativeTime value={c.last_run_at} />
         {detail?.confidence !== undefined && detail?.confidence !== null ? ` · confidence ${detail.confidence.toFixed(2)}` : ""}
         {detail?.error ? ` · ${detail.error}` : ""}
       </p>
@@ -193,7 +194,7 @@ export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS }: Golde
                   {c.reference_answer ? <p className="text-[11px] text-status-ok-fg">Has reference answer</p> : null}
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-fg-subtle">
-                  {new Date(c.promoted_at).toLocaleDateString()}
+                  <RelativeTime value={c.promoted_at} />
                   <p className="text-[11px]">{c.promoted_by}</p>
                 </td>
                 <td className="px-3 py-3">

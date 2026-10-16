@@ -64,6 +64,8 @@ export const VISITOR_SORTS = [
   "queries_asc",
   "sessions_desc",
   "sessions_asc",
+  "first_seen_desc",
+  "first_seen_asc",
 ] as const;
 
 /** `sort` values for `GET /documents/{id}/chunks`. */

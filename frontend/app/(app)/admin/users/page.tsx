@@ -28,6 +28,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, iconButton, secondaryButton } from "@/components/ui/styles";
 import { FilterChip, errorMessage, formatDay, useRangeParams } from "@/components/admin/entity/shared";
 import { useTableState } from "@/lib/use-table-state";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { entityHref } from "@/lib/entity-links";
 import { heatFilterLabel, useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
@@ -232,21 +233,14 @@ function VisitorsContent() {
     {
       key: "first_seen",
       header: "First Seen",
-      render: (u) => (
-        <span className="whitespace-nowrap text-xs text-fg-subtle">
-          {u.first_seen ? new Date(u.first_seen).toLocaleDateString() : "—"}
-        </span>
-      ),
+      sortable: true,
+      render: (u) => <RelativeTime value={u.first_seen} className="text-xs text-fg-subtle" />,
     },
     {
       key: "last_active",
       header: "Last Active",
       sortable: true,
-      render: (u) => (
-        <span className="whitespace-nowrap text-xs text-fg-subtle">
-          {u.last_active ? new Date(u.last_active).toLocaleString() : "—"}
-        </span>
-      ),
+      render: (u) => <RelativeTime value={u.last_active} className="text-xs text-fg-subtle" />,
     },
     {
       key: "actions",

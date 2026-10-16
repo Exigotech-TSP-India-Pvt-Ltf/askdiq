@@ -3,10 +3,11 @@
 import React, { useMemo } from "react";
 import { DrawerShell } from "@/components/ui/DrawerShell";
 import { EntityLink } from "@/components/ui/EntityLink";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { SkeletonText } from "@/components/ui/Skeleton";
-import { ToneChip, errorMessage, formatDateTime, outcomeTone } from "@/components/admin/entity/shared";
+import { ToneChip, errorMessage, outcomeTone } from "@/components/admin/entity/shared";
 import { entityHref } from "@/lib/entity-links";
 import { useApiQuery } from "@/lib/query-cache";
 import { getConversation } from "@/lib/entity-stats-api";
@@ -61,7 +62,8 @@ export function ConversationPreviewDrawer({ token, conversationId, onClose, onPr
         <ol className="space-y-4" aria-label="Turn timeline">
           {header ? (
             <li className="text-[11px] text-fg-subtle">
-              Started {formatDateTime(header.created_at)} · last activity {formatDateTime(header.last_activity_at)}
+              Started <RelativeTime value={header.created_at} display="absolute" /> · last activity{" "}
+              <RelativeTime value={header.last_activity_at} />
             </li>
           ) : null}
           {turns.map((t) => {
@@ -78,7 +80,7 @@ export function ConversationPreviewDrawer({ token, conversationId, onClose, onPr
                   </EntityLink>
                   {outcome ? <ToneChip tone={outcomeTone(outcome)}>{outcome}</ToneChip> : null}
                   {t.grounded === false ? <ToneChip tone="warn">not grounded</ToneChip> : null}
-                  <span className="ml-auto text-fg-subtle">{formatDateTime(t.createdAt)}</span>
+                  <RelativeTime value={t.createdAt} className="ml-auto text-fg-subtle" />
                 </div>
                 <p className="mt-1.5 text-xs font-semibold text-fg">{excerpt(t.question)}</p>
                 <p className="mt-1 whitespace-pre-wrap text-xs text-fg-muted">{excerpt(t.answer)}</p>

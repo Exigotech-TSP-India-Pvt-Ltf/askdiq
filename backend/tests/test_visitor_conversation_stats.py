@@ -526,3 +526,52 @@ async def test_conversation_detail_turns(client, db_session, monkeypatch) -> Non
     assert missing.json()["focus_turn"] is None
     bad = await client.get(f"/admin/conversations/{session.id}", params={"turn": -1})
     assert bad.status_code == 422
+
+
+async def _seed_sort_pair(db) -> dict:
+    """`early` started first but was active last; `late` is the reverse."""
+    d0, tag = unique_day(), marker()
+    early_ip, late_ip = unique_ip(), unique_ip()
+    early = await session_at(
+        db, d0, early_ip, title=f"{tag} early", last_activity_at=d0 + timedelta(days=3)
+    )
+    late = await session_at(db, d0 + timedelta(days=1), late_ip, title=f"{tag} late")
+    return {"tag": tag, "early": early, "late": late, "ips": [early_ip, late_ip]}
+
+
+@pytest.mark.parametrize(
+    ("sort", "first"),
+    [
+        ("created_at_desc", "late"),
+        ("created_at_asc", "early"),
+        ("last_activity_desc", "early"),
+        ("last_activity_asc", "late"),
+    ],
+)
+async def test_conversation_list_sorts_by_date(client, db_session, sort, first) -> None:
+    seed = await _seed_sort_pair(db_session)
+    resp = await client.get(
+        "/admin/conversations", params={"q": seed["tag"], "sort": sort}
+    )
+    assert resp.status_code == 200, resp.text
+    ids = [r["id"] for r in resp.json()["items"]]
+    other = "early" if first == "late" else "late"
+    assert ids == [str(seed[first].id), str(seed[other].id)]
+
+
+@pytest.mark.parametrize(
+    ("sort", "first"),
+    [
+        ("first_seen_desc", 1),
+        ("first_seen_asc", 0),
+        ("last_active_desc", 0),
+        ("last_active_asc", 1),
+    ],
+)
+async def test_visitor_list_sorts_by_date(client, db_session, sort, first) -> None:
+    ips = (await _seed_sort_pair(db_session))["ips"]
+    resp = await client.get("/admin/users", params={"sort": sort, "limit": 10_000})
+    assert resp.status_code == 200, resp.text
+    rows = [u for u in resp.json()["items"] if u["ip_address"] in ips]
+    assert [u["ip_address"] for u in rows] == [ips[first], ips[1 - first]]
+    assert all(u["first_seen"] and u["last_active"] for u in rows)

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { DataTable, type ColumnDef } from "../DataTable";
+import { RelativeTime } from "@/components/ui/RelativeTime";
 import { Pagination } from "../Pagination";
 import { TableToolbar } from "../TableToolbar";
 
@@ -164,7 +165,7 @@ export function TestIpManager({
       header: "Configured At",
       render: (r) => (
         <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-          {r.created_at ? new Date(r.created_at).toLocaleDateString() : "—"}
+          <RelativeTime value={r.created_at} />
         </span>
       ),
     },
