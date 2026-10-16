@@ -161,7 +161,7 @@ Revamp line (`preview/view`) differences, same handler shape
 | Step | `preview/view` |
 |---|---|
 | Admission | Route dependency `llm_capacity` holds one of `LLM_MAX_CONCURRENCY=64` slots or returns 429 + `Retry-After: 2`. |
-| Auth | `rate_limited_actor` -> `require_role_or_chat` -> `current_user`: needs `X-API-Key` **and** a valid SSO session in `X-Session`; actor is the user's email. `X-Client-Id` is ignored as identity. |
+| Auth | `rate_limited_actor` -> `require_chat_actor`: needs `X-API-Key`, then either a valid SSO session in `X-Session` (actor = user's email, CSRF on writes) or, for the website (no `X-Session`, no `X-AskDIQ-Proxy` marker), actor = sanitised `X-Client-Id` (email-shaped ids map to `default@local`). |
 | Rate limits | Per user and per IP, both inside `rate_limited_actor`, through the shared Postgres state backend. The IP is `get_client_ip` (X-Forwarded-For only when `TRUST_PROXY_HEADERS=true`). |
 | `ip_address` in body | Honoured only when `ENV != production`. |
 | Filters | Every key applied as `chunk_metadata[key] == value` (no allow-list; the hotfix allow-list is not merged). |
@@ -169,9 +169,8 @@ Revamp line (`preview/view`) differences, same handler shape
 | LLM call | Wrapped by the circuit breaker (`get_llm_breaker().guard()`). |
 | After write | Exchange write also enqueues `insights.classify` in the same transaction. |
 
-Known gap: there is no API-key-only `/query` route on `preview/view`, so the website widget
-cannot call the revamp backend as it does production. This must be resolved before the
-revamp line replaces production (see [In-flight work](11-in-flight-work.md)).
+The website widget keeps the production contract on `preview/view`: `X-API-Key` + `X-Client-Id`
+on the same paths, no session (see [Website integration](10-website-integration.md)).
 
 ### 4.2 Query pipeline detail (`run_query`)
 
@@ -542,7 +541,7 @@ append), so behind nginx the forwarded value is the nginx client.
 |---|---|---|
 | `backend/app` packages | `api chunking core db evaluation governance guardrails harness ingestion models retrieval schemas` | adds `auth branding dashboard documents entities feedback insights jobs` |
 | `backend/app/core` | no `circuit`, `events`, `sse`, `state`, `tasks`, `http_cache`, `compression`, `exceptions`, `security_headers` | all present |
-| `/query` auth | `X-API-Key` + `X-Client-Id` (`app/governance/auth.py` `get_current_actor`) | `X-API-Key` + SSO session |
+| `/query` auth | `X-API-Key` + `X-Client-Id` (`app/governance/auth.py` `get_current_actor`) | `X-API-Key` + SSO session, or `X-API-Key` + `X-Client-Id` (`require_chat_actor`) |
 | Filters | allow-listed (`RETRIEVAL_FILTER_KEYS`) | unfiltered keys applied |
 | Body `ip_address` | used when valid and `ALLOW_CLIENT_IP_OVERRIDE` (config default true; `.env.example` false; prod value Unverified) | used only outside production |
 | DB pool | `pool_pre_ping=False`, recycle 1800 | pre-ping on, configurable |

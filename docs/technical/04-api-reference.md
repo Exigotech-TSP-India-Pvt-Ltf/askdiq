@@ -73,6 +73,7 @@ non-public route has no guard).
 | service key | `require_service_key` | `X-API-Key` | 401 `Access Denied!` |
 | signed-in | `current_user` | service key + valid `X-Session` (+ CSRF on writes); any status incl. suspended | 401 `Not authenticated.`; 403 `Cross-site request rejected.` |
 | chat | `require_role_or_chat` | signed-in and status in `active, pending, rejected` | 403 `Account suspended.` |
+| chat-or-key | `require_chat_actor` | service key, then either a session as **chat** (actor = email) or, with no `X-Session` and no `X-AskDIQ-Proxy` marker, the key alone (actor = sanitised `X-Client-Id`) | 401 `Access Denied!` / `Not authenticated.`; 403 as **chat** |
 | perm `<p>` | `require_permission(p)` | signed-in, status `active`, role grants `p` | 403 `Account suspended.` / `Dashboard access requires approval.` / `Insufficient permissions.` |
 
 The user row is reloaded on every request, so role/status changes apply to the next call.
@@ -285,9 +286,9 @@ The response is a plain dict (no response model). There is no separate liveness 
 
 ## 8. Query and chat sessions
 
-All routes in this section are **chat**-guarded on `preview/view`: SSO session required. There is no API-key-only
-chat route on this branch; production behaves differently ([section 21](#21-production-contract-hotfix-branch)).
-Sessions are scoped to the signed-in user's email; another user's session id gives 404.
+All routes in this section are **chat-or-key**-guarded: the dashboard calls them with an SSO session, the public
+website server-to-server with `X-API-Key` + `X-Client-Id` (contract: [Website integration](10-website-integration.md)).
+Sessions are scoped to the actor (email, or client id); another actor's session id gives 404.
 
 ### POST /query
 
@@ -808,9 +809,8 @@ single-key API. Commits: `a795af3`, `27d516c`, `f9d76ed`. Public integration gui
 | `/query` LLM capacity gate | none | `llm_capacity` 429 |
 | Feedback body | `rating`, `comment`, `ip_address` (no `reason_tags`, `corrected_answer`) | see section 8 |
 
-There is currently no route on `preview/view` that a website frontend can call with only the API key; merging
-`preview/view` to production as-is would break the website chat integration. Flagged in
-[In-flight work](11-in-flight-work.md).
+`preview/view` keeps this contract for the website on the same paths (`require_chat_actor`): `X-API-Key` +
+`X-Client-Id`, no session. Errors there use problem+json, which still carries `detail`.
 
 ### Hotfix behaviour
 
@@ -821,7 +821,7 @@ There is currently no route on `preview/view` that a website frontend can call w
 | `ip_address` on `/query` | `resolve_client_ip(request, body.ip_address)`: when `ALLOW_CLIENT_IP_OVERRIDE` is true and the value is a valid IPv4/IPv6 (first hop of a comma list, normalised), it is used; else `get_client_ip()` (TCP peer, or first `X-Forwarded-For` hop with `TRUST_PROXY_HEADERS=true`). Settings default is `true`; `.env.example` ships `false` (Unverified: value set in prod `.env`). |
 | `ip_address` on sessions and feedback | New optional field on `CreateSessionRequest` and `UserFeedbackRequest`, resolved the same way; stored against the session / feedback and used for the feedback per-IP limit. |
 | Per-IP limit on the end-user IP | `rate_limited_actor` now enforces only the per-user limit; `/query` calls `enforce_ip_rate_limit(client_ip)` after resolving the forwarded IP (30/min, in-process window). |
-| Swagger example | `QueryRequest` example `{"query": "What is the Trust Center?", "session_id": null, "ip_address": "203.0.113.10"}` (no `filters`). |
+| Swagger example | `QueryRequest` example `{"query": "What is the Trust Center?", "session_id": "", "ip_address": "203.0.113.10"}` (`""` = no session; null would be dropped from the served OpenAPI) (no `filters`). |
 
 ## 22. In-flight route and contract changes
 
