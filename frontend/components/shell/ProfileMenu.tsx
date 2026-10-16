@@ -2,7 +2,7 @@
 
 import React, { useEffect, useId } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { Check, LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { Check, LogOut, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useTheme, type ThemeMode } from "@/lib/theme-context";
 import { pop, useMotionVariants } from "@/lib/motion";
@@ -12,7 +12,6 @@ import { focusRing, menuItem, popoverPanel } from "@/components/ui/styles";
 const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: React.ElementType }[] = [
   { mode: "light", label: "Light", icon: Sun },
   { mode: "dark", label: "Dark", icon: Moon },
-  { mode: "system", label: "System", icon: Monitor },
 ];
 
 function initials(name: string | undefined | null): string {
@@ -34,7 +33,7 @@ interface ProfileMenuProps {
 
 /**
  * Avatar menu (newplan §15.1): name, email, role badge slot, theme
- * (light / dark / system) and sign out. Arrow keys move between items.
+ * (light / dark) and sign out. Arrow keys move between items.
  */
 export function ProfileMenu({ roleBadge, onSignOut }: ProfileMenuProps) {
   const { user, logout } = useAuth();
