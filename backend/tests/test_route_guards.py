@@ -23,6 +23,7 @@ from app.auth.deps import (
     is_guard,
     require_active_user,
     require_role_or_chat,
+    require_service_key,
 )
 from app.auth.permissions import Permission, Role, UserStatus
 from app.auth.principal import AuthUser
@@ -35,6 +36,8 @@ PUBLIC_PATHS = frozenset({"/health", "/branding"})
 PUBLIC_PREFIXES = ("/branding/assets/", "/auth/sso/", "/mock-idp/")
 DOCS_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
 CHAT = "chat"
+SIGNED_IN = "signed-in"  # any status, incl. suspended (/auth/me, logout)
+MANAGE = Permission.USERS_MANAGE
 
 # Every state-changing route and the (admin-level) permission it needs.
 EXPECTED_WRITES: dict[tuple[str, str], str] = {
@@ -57,11 +60,27 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("DELETE", "/sessions/{session_id}"): CHAT,
     ("DELETE", "/sessions/{session_id}/messages/{message_id}"): CHAT,
     ("POST", "/sessions/{session_id}/messages/{message_id}/feedback"): CHAT,
+    ("POST", "/auth/logout"): SIGNED_IN,
+    ("POST", "/auth/access-request"): CHAT,
+    ("POST", "/admin/users-accounts/invite"): MANAGE,
+    ("PATCH", "/admin/users-accounts/{user_id}"): MANAGE,
+    ("POST", "/admin/users-accounts/{user_id}/revoke-sessions"): MANAGE,
+    ("POST", "/admin/access-requests/bulk-approve"): MANAGE,
+    ("POST", "/admin/access-requests/{request_id}/approve"): MANAGE,
+    ("POST", "/admin/access-requests/{request_id}/reject"): MANAGE,
 }
 # GET routes needing more than dashboard:read.
 EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/usage/export": Permission.USAGE_EXPORT,
+    "/auth/me": SIGNED_IN,
+    "/auth/access-request": CHAT,
+    "/admin/users-accounts": MANAGE,
+    "/admin/users-accounts/stats": MANAGE,
+    "/admin/users-accounts/{user_id}": MANAGE,
+    "/admin/access-requests": MANAGE,
 }
+# Open to every signed-in user, whatever their status.
+SIGNED_IN_ROUTES = frozenset({("GET", "/auth/me"), ("POST", "/auth/logout")})
 
 
 def is_public(path: str) -> bool:
@@ -87,7 +106,7 @@ def requirement(route: APIRoute) -> str | None:
     if require_active_user in calls:
         return "active"
     if current_user in calls:
-        return "signed-in"
+        return SIGNED_IN
     return None
 
 
@@ -136,12 +155,26 @@ def test_public_allow_list_matches_reality() -> None:
             assert requirement(route) is None
 
 
-def test_mock_idp_is_the_only_public_prefix_present_in_development() -> None:
+def test_public_prefixes_are_sso_and_the_dev_mock_idp() -> None:
     prefixes = {
         p for r in api_routes() for p in PUBLIC_PREFIXES if r.path.startswith(p)
     }
-    assert prefixes <= {"/mock-idp/"}
+    assert prefixes <= {"/mock-idp/", "/auth/sso/"}
+    assert "/auth/sso/" in prefixes
     assert ("/mock-idp/" in prefixes) is get_settings().auth_dev_mock
+
+
+def test_sso_routes_still_require_the_service_key() -> None:
+    """Public to users (no session yet), but only callable by the proxy."""
+    sso = [r for r in api_routes() if r.path.startswith("/auth/sso/")]
+    assert {r.path for r in sso} == {"/auth/sso/login", "/auth/sso/callback"}
+    for route in sso:
+        assert require_service_key in dependency_calls(route.dependant), route.path
+
+
+def test_signed_in_routes_are_only_me_and_logout() -> None:
+    signed_in = {(m, p) for m, p, req in guarded_endpoints() if req == SIGNED_IN}
+    assert signed_in == SIGNED_IN_ROUTES
 
 
 def test_write_routes_require_admin_level_permissions() -> None:
@@ -249,7 +282,7 @@ async def test_pending_user_gets_403_on_every_dashboard_route(
     raw_client: httpx.AsyncClient, pending_user: None
 ) -> None:
     for method, path, req in guarded_endpoints():
-        if req == CHAT:
+        if req in {CHAT, SIGNED_IN}:
             continue
         response = await _call(raw_client, method, path, _key())
         assert response.status_code == 403, (method, path)
@@ -259,7 +292,9 @@ async def test_pending_user_gets_403_on_every_dashboard_route(
 async def test_suspended_user_gets_403_everywhere(
     raw_client: httpx.AsyncClient, suspended_user: None
 ) -> None:
-    for method, path, _ in guarded_endpoints():
+    for method, path, req in guarded_endpoints():
+        if req == SIGNED_IN:
+            continue  # /auth/me and logout let the UI show the suspended page
         response = await _call(raw_client, method, path, _key())
         assert response.status_code == 403, (method, path)
         assert response.json()["detail"] == "Account suspended."
@@ -271,10 +306,29 @@ async def test_operator_gets_403_on_admin_level_routes(
     admin_level = [
         (m, p)
         for m, p, req in guarded_endpoints()
-        if req not in {CHAT, Permission.DASHBOARD_READ}
+        if req not in {CHAT, SIGNED_IN, Permission.DASHBOARD_READ}
     ]
     assert admin_level
     for method, path in admin_level:
         response = await _call(raw_client, method, path, _key())
         assert response.status_code == 403, (method, path)
         assert response.json()["detail"] == "Insufficient permissions."
+
+
+async def test_admin_gets_403_on_user_management_routes(
+    raw_client: httpx.AsyncClient, admin_user: None
+) -> None:
+    manage = [(m, p) for m, p, req in guarded_endpoints() if req == MANAGE]
+    assert len(manage) == 10
+    for method, path in manage:
+        response = await _call(raw_client, method, path, _key())
+        assert response.status_code == 403, (method, path)
+        assert response.json()["detail"] == "Insufficient permissions."
+
+
+async def test_sso_routes_without_service_key_get_401(
+    raw_client: httpx.AsyncClient,
+) -> None:
+    for method, path in (("GET", "/auth/sso/login"), ("POST", "/auth/sso/callback")):
+        response = await raw_client.request(method, path)
+        assert response.status_code == 401, path

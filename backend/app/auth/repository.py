@@ -63,3 +63,20 @@ class AuthSessionRepository:
             .values(revoked_at=now)
         )
         return int(result.rowcount or 0)
+
+    async def list_live_for_user(
+        self, user_id: uuid.UUID, now: datetime, limit: int
+    ) -> list[AuthSession]:
+        """Unrevoked, unexpired sessions, most recently used first."""
+        stmt = (
+            select(AuthSession)
+            .where(
+                AuthSession.user_id == user_id,
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > now,
+                AuthSession.idle_expires_at > now,
+            )
+            .order_by(AuthSession.last_seen_at.desc())
+            .limit(limit)
+        )
+        return list((await self._db.execute(stmt)).scalars().all())
