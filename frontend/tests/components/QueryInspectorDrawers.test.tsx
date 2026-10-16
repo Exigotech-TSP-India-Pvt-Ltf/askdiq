@@ -114,3 +114,25 @@ describe("QueryInspectorDrawer copies share DrawerShell (F0.6.1)", () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("evaluation inspector never shows made-up scores", () => {
+  it("unreported metrics render as a dash and a failed load is reported", async () => {
+    vi.spyOn(api, "evaluationRecordDetail").mockRejectedValue(new ApiError("Record not found", 404));
+    render(
+      <MotionProvider>
+        <EvaluationInspector
+          isOpen
+          onClose={() => undefined}
+          recordId="rec-404"
+          initialData={{ ...record, retrieved_chunks: [] }}
+          token="t"
+        />
+      </MotionProvider>,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Record not found");
+    expect(screen.getByText("— / 5.0")).toBeInTheDocument();
+    expect(screen.queryByText("4.5 / 5.0")).toBeNull();
+    expect(screen.queryByText("92.0%")).toBeNull();
+    expect(screen.queryByText("1.85 s")).toBeNull();
+  });
+});
