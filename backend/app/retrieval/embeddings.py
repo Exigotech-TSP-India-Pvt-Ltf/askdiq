@@ -17,6 +17,8 @@ _embedding_client = AsyncAzureOpenAI(
     api_key=settings.azure_openai_api_key,
     azure_endpoint=settings.azure_openai_endpoint,
     api_version=settings.azure_openai_api_version,
+    timeout=settings.outbound_timeout_seconds,
+    max_retries=settings.azure_openai_max_retries,
 )
 
 

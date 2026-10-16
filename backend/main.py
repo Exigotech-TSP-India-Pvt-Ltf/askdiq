@@ -18,9 +18,12 @@ from app.api.routes import (
     sessions,
 )
 from app.core.concurrency import configure_thread_pool
-from app.core.config import configure_logging, get_settings
+from app.core.config import Settings, configure_logging, get_settings
 from app.core.database import init_db
+from app.core.exceptions import register_exception_handlers
 from app.core.middleware import LatencyMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.tasks import drain as drain_background_tasks
 from app.harness.prompts import call_llm
 from app.retrieval.embeddings import embed_text
 from app.retrieval.reranker import preload_reranker
@@ -66,29 +69,52 @@ async def lifespan(_app: FastAPI):
     configure_thread_pool()
     await _startup_azure_health_check()
     await asyncio.to_thread(preload_reranker)
-    yield
+    try:
+        yield
+    finally:
+        # Let supervised fire-and-forget work (e.g. latency persistence)
+        # finish, bounded so shutdown can never hang.
+        await drain_background_tasks(settings.task_drain_timeout_seconds)
 
 
-is_prod = settings.env == "production"
+def api_docs_enabled(cfg: Settings) -> bool:
+    """Docs are public outside production; in production only on opt-in."""
+    return cfg.env != "production" or cfg.enable_api_docs
+
+
+def docs_urls(cfg: Settings) -> dict[str, str | None]:
+    """FastAPI docs/redoc/openapi URLs, or None (404) when docs are disabled."""
+    enabled = api_docs_enabled(cfg)
+    return {
+        "docs_url": "/docs" if enabled else None,
+        "redoc_url": "/redoc" if enabled else None,
+        "openapi_url": "/openapi.json" if enabled else None,
+    }
+
+
 app = FastAPI(
     title=f"{settings.brand_name} RAG Backend",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url=None if is_prod else "/docs",
-    redoc_url=None if is_prod else "/redoc",
-    openapi_url=None if is_prod else "/openapi.json",
+    **docs_urls(settings),
 )
 
+register_exception_handlers(app)
+
 # Allow the Next.js dev server / deployed frontend to call these APIs directly.
+# Explicit header/method allow-lists (no wildcards, OWASP A02).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_methods=settings.cors_allow_methods,
+    allow_headers=settings.cors_allow_headers,
 )
 
 app.add_middleware(LatencyMiddleware)
+# Added last so it is the outermost user middleware: every response,
+# including CORS preflights and handled errors, carries the headers.
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(health.router, tags=["health"])
 app.include_router(query.router, tags=["query"])

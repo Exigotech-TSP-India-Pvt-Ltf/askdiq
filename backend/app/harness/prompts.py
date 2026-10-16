@@ -7,6 +7,7 @@ from http import HTTPStatus
 import tiktoken
 from openai import AsyncAzureOpenAI
 
+from app.core.circuit import CircuitOpenError, get_llm_breaker
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.quota import quota_monitor
@@ -23,6 +24,7 @@ _client = AsyncAzureOpenAI(
     api_version=settings.azure_openai_api_version,
     azure_deployment=settings.azure_deployment_name,
     timeout=settings.azure_openai_request_timeout,
+    max_retries=settings.azure_openai_max_retries,
 )
 
 # The tokenizer matches the gpt-5-mini model family.
@@ -230,17 +232,22 @@ async def call_llm(
 
     t_start = time.perf_counter()
     try:
-        response = await _client.chat.completions.create(
-            model=settings.azure_deployment_name,
-            messages=[
-                {"role": "system", "content": get_system_prompt()},
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            reasoning_effort=settings.llm_reasoning_effort,
-        )
+        # Fails fast with CircuitOpenError while Azure is unhealthy; the
+        # orchestrator turns that into its graceful `llm_failed` outcome.
+        async with get_llm_breaker().guard():
+            response = await _client.chat.completions.create(
+                model=settings.azure_deployment_name,
+                messages=[
+                    {"role": "system", "content": get_system_prompt()},
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+                reasoning_effort=settings.llm_reasoning_effort,
+            )
+    except CircuitOpenError:
+        raise
     except Exception as exc:
         status_code = getattr(exc, "status_code", None)
         is_429 = status_code == HTTPStatus.TOO_MANY_REQUESTS or "429" in str(exc)
