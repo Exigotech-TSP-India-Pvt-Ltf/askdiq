@@ -42,7 +42,12 @@ export function useFeedbackUrl(): FeedbackUrlState {
   const filters = useMemo(() => parseFilters(new URLSearchParams(search)), [search]);
   const chips = useMemo(() => activeChips(filters), [filters]);
 
-  const setTab = useCallback((next: FeedbackTab) => set({ tab: next === "overview" ? null : next }), [set]);
+  // Switching tab drops a message deep link; otherwise `message_id` would keep
+  // resolving the page back to the queue and Overview could not be reached.
+  const setTab = useCallback(
+    (next: FeedbackTab) => set({ tab: next === "overview" ? null : next, message_id: null }),
+    [set],
+  );
 
   const applyFilters = useCallback(
     (patch: FilterPatch, { openQueue = false }: { openQueue?: boolean } = {}) => {

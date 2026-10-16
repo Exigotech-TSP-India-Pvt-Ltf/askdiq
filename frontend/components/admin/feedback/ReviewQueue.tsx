@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { iconButton, primaryButton, secondaryButton } from "@/components/ui/styles";
 import { fadeUp, useMotionVariants } from "@/lib/motion";
 import { isTypingTarget } from "@/lib/shortcuts";
-import { invalidate, queryCache, useApiMutation, useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
+import { errorStatus, invalidate, queryCache, useApiMutation, useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
 import {
   FEEDBACK_KEY_PREFIX,
   MAX_BULK_IDS,
@@ -43,6 +43,8 @@ import {
 import type { Audience } from "@/lib/types";
 import { FeedbackDrawer } from "./FeedbackDrawer";
 import { ACTION_LABELS, STATUS_BADGE, canTransition, ratingTone, replaceItem, type TriageAction } from "./triage";
+
+const HTTP_CONFLICT_STATUS = 409;
 
 export const QUEUE_PAGE_SIZE = 25;
 
@@ -156,6 +158,20 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
     invalidate(feedbackKeys.golden);
   }, []);
 
+  // 409s get the shared conflict toast; every other failure is reported here
+  // (the optimistic change has already been rolled back).
+  const reportError = useCallback(
+    (err: unknown) => {
+      if (errorStatus(err) === HTTP_CONFLICT_STATUS) return;
+      toast.show({
+        title: "Action failed",
+        description: err instanceof Error && err.message ? err.message : "The server rejected the change.",
+        tone: "error",
+      });
+    },
+    [toast],
+  );
+
   const triage = useApiMutation<TriageVars, FeedbackItem, FeedbackPage>({
     mutationFn: ({ item, patch }) => triageFeedback(token, item.id, patch),
     optimistic: {
@@ -171,6 +187,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
       setItem(server.id, () => server);
       afterTriage();
     },
+    onError: reportError,
   });
 
   const promote = useApiMutation<FeedbackItem, Awaited<ReturnType<typeof promoteToTest>>, FeedbackPage>({
@@ -183,6 +200,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
       setItem(item.id, (it) => ({ ...it, triage_status: "promoted", promoted_case_id: res.case_id }));
       afterTriage();
     },
+    onError: reportError,
   });
 
   const bulk = useApiMutation<{ ids: string[]; action: TriageAction }, Awaited<ReturnType<typeof bulkTriage>>, FeedbackPage>({
@@ -194,6 +212,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
     },
     invalidate: [feedbackKeys.listPrefix],
     onSuccess: () => afterTriage(),
+    onError: reportError,
   });
 
   const busy = triage.isPending || promote.isPending || bulk.isPending;
@@ -258,7 +277,8 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: R
     async (item: FeedbackItem, answer: string) => {
       const res = await triage.mutate({ item, patch: { version: item.version, corrected_answer: answer || null } });
       if (!res) return;
-      if ((res.corrected_answer ?? "") === answer) {
+      // Stored PII-masked, so compare presence rather than the exact text.
+      if (Boolean(res.corrected_answer) === Boolean(answer)) {
         toast.show({ title: "Correct answer saved", description: "It is now the chosen side of this preference pair.", tone: "success" });
       } else {
         toast.show({
