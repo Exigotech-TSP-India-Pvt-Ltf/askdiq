@@ -15,6 +15,7 @@ from sqlalchemy import (
     Identity,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -507,3 +508,82 @@ class InsightLlmUsage(Base):
     total_tokens: Mapped[int] = mapped_column(Integer)
     cost_usd: Mapped[float] = mapped_column(Float)
     token_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class BrandAsset(Base):
+    """Content-addressed brand image (PNG, WebP or sanitized SVG)."""
+
+    __tablename__ = "brand_assets"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    mime: Mapped[str] = mapped_column(String(32))
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "mime IN ('image/png', 'image/webp', 'image/svg+xml')",
+            name="ck_brand_assets_mime",
+        ),
+        CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="ck_brand_assets_sha256"),
+    )
+
+
+def _asset_fk() -> Mapped[str | None]:
+    return mapped_column(
+        String(64),
+        ForeignKey("brand_assets.sha256", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
+class BrandSettings(Base):
+    """The single white-label row (``id = 1``); newplan section 14."""
+
+    __tablename__ = "brand_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    product_name: Mapped[str] = mapped_column(String(80))
+    assistant_name: Mapped[str] = mapped_column(String(80))
+    company_name: Mapped[str] = mapped_column(String(120))
+    support_email: Mapped[str] = mapped_column(String(320))
+    access_contact_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    primary_hex: Mapped[str] = mapped_column(String(7))
+    accent_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    tint_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    logo_light_asset_id: Mapped[str | None] = _asset_fk()
+    logo_dark_asset_id: Mapped[str | None] = _asset_fk()
+    mark_light_asset_id: Mapped[str | None] = _asset_fk()
+    mark_dark_asset_id: Mapped[str | None] = _asset_fk()
+    favicon_asset_id: Mapped[str | None] = _asset_fk()
+    login_eyebrow: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    login_headline: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    login_subtext: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    login_description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    privacy_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    terms_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    help_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    chat_sample_questions: Mapped[list] = mapped_column(
+        JSON, default=list, server_default=text("'[]'")
+    )
+    updated_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_brand_settings_singleton"),
+        CheckConstraint(
+            "primary_hex ~ '^#[0-9a-f]{6}$' "
+            "AND (accent_hex IS NULL OR accent_hex ~ '^#[0-9a-f]{6}$') "
+            "AND (tint_hex IS NULL OR tint_hex ~ '^#[0-9a-f]{6}$')",
+            name="ck_brand_settings_hex",
+        ),
+    )

@@ -156,6 +156,14 @@ class Settings(BaseSettings):
     brand_name: str = "DeployIQ"
     brand_assistant_name: str = "AskDIQ"
     brand_support_email: str = "support@deployiq.com"
+    # Runtime branding (newplan section 14). The DB row overrides these.
+    brand_company_name: str = "Exigo Tech"
+    # Public GET /branding: in-process cache TTL and browser max-age.
+    branding_cache_ttl_seconds: int = Field(default=60, ge=1)
+    branding_http_max_age_seconds: int = Field(default=300, ge=0)
+    # Brand asset uploads (PNG, WebP or sanitized SVG).
+    branding_asset_max_bytes: int = Field(default=512 * 1024, ge=1024)
+    branding_asset_max_dimension: int = Field(default=4096, ge=16)
 
     # Token Pricing Defaults (USD per million tokens)
     price_embed_per_million: float = 0.02

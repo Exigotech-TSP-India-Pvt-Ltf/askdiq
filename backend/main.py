@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import (
     admin,
     auth,
+    branding,
     documents,
     governance,
     health,
@@ -135,19 +136,10 @@ app.include_router(metrics.router, tags=["metrics"])
 app.include_router(governance.router, tags=["governance"])
 app.include_router(admin.router, tags=["admin"])
 app.include_router(insights.router)
+app.include_router(branding.router)
+app.include_router(branding.admin_router)
 app.include_router(auth.router)
 app.include_router(user_management.router)
 # Local mock Entra IdP, only with AUTH_DEV_MOCK=true (settings refuse it
 # outside ENV=development).
 mount_mock_idp(app, settings)
-
-
-@app.get("/branding", tags=["branding"])
-async def get_branding() -> dict[str, str]:
-    """Public unauthenticated branding details for frontend runtime customization."""
-    cfg = get_settings()
-    return {
-        "brand_name": cfg.brand_name,
-        "brand_assistant_name": cfg.brand_assistant_name,
-        "brand_support_email": cfg.brand_support_email,
-    }
