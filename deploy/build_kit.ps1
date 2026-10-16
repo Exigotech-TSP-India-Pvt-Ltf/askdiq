@@ -29,9 +29,9 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 try {
   $src = Join-Path $stage 'src.tar'
   $docs = Join-Path $stage 'docs.tar'
-  & git -C $repo archive --format=tar -o $src $Ref -- backend frontend
+  & git -C $repo -c core.autocrlf=false -c core.eol=lf archive --format=tar -o $src $Ref -- backend frontend
   if ($LASTEXITCODE -ne 0) { throw 'git archive backend/frontend failed' }
-  & git -C $repo archive --format=tar --prefix=deploy-kit/ -o $docs $Ref -- deploy
+  & git -C $repo -c core.autocrlf=false -c core.eol=lf archive --format=tar --prefix=deploy-kit/ -o $docs $Ref -- deploy
   if ($LASTEXITCODE -ne 0) { throw 'git archive deploy failed' }
   $root = Join-Path $stage 'root'
   New-Item -ItemType Directory -Force -Path $root | Out-Null
