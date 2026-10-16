@@ -2,8 +2,9 @@
 
 import React, { useEffect, useId } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { Check, LogOut, Moon, Sun } from "lucide-react";
+import { Check, HelpCircle, LogOut, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useBrand } from "@/lib/brand-context";
 import { useTheme, type ThemeMode } from "@/lib/theme-context";
 import { pop, useMotionVariants } from "@/lib/motion";
 import { usePopover } from "@/lib/use-popover";
@@ -33,7 +34,8 @@ interface ProfileMenuProps {
 
 /**
  * Avatar menu (newplan §15.1): name, email, role badge slot, theme
- * (light / dark) and sign out. Arrow keys move between items.
+ * (light / dark), Help (branding `help_url`, hidden when unset) and sign
+ * out. Arrow keys move between items.
  */
 export function ProfileMenu({ roleBadge, onSignOut }: ProfileMenuProps) {
   const { user, logout } = useAuth();
@@ -42,6 +44,7 @@ export function ProfileMenu({ roleBadge, onSignOut }: ProfileMenuProps) {
   const variants = useMotionVariants(pop);
   const menuId = useId();
   const name = user?.full_name || "Signed out";
+  const helpUrl = useBrand().links.help;
 
   useEffect(() => {
     if (!open) return;
@@ -121,6 +124,20 @@ export function ProfileMenu({ roleBadge, onSignOut }: ProfileMenuProps) {
               ))}
             </div>
             <div className="mt-1.5 border-t border-line pt-1.5">
+              {helpUrl ? (
+                <a
+                  href={helpUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  role="menuitem"
+                  tabIndex={-1}
+                  onClick={() => close(false)}
+                  className={menuItem}
+                >
+                  <HelpCircle className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                  Help
+                </a>
+              ) : null}
               <button
                 type="button"
                 role="menuitem"
