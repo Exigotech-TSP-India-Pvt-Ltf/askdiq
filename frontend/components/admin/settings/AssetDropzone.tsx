@@ -4,7 +4,7 @@
 import React, { useId, useRef, useState } from "react";
 import { ImageUp, Loader2, Trash2 } from "lucide-react";
 import { focusRing, iconButton } from "@/components/ui/styles";
-import { BRAND_ASSET_MAX_BYTES, BRAND_ASSET_MIME_TYPES, checkAssetFile } from "@/lib/settings-api";
+import { BRAND_ASSET_MAX_BYTES, BRAND_ASSET_MAX_DIMENSION, BRAND_ASSET_MIME_TYPES, checkAssetFile } from "@/lib/settings-api";
 
 interface AssetDropzoneProps {
   label: string;
@@ -100,7 +100,8 @@ export function AssetDropzone({ label, hint, src, custom, tone, busy, error, onF
           {error}
         </p>
       ) : (
-        <p className="text-[11px] text-fg-subtle">{hint ?? `PNG, WebP or SVG, up to ${BRAND_ASSET_MAX_BYTES / 1024} KB.`}</p>
+        <p className="text-[11px] text-fg-subtle">{hint ??
+            `PNG, WebP or SVG, up to ${BRAND_ASSET_MAX_BYTES / 1024} KB and ${BRAND_ASSET_MAX_DIMENSION} x ${BRAND_ASSET_MAX_DIMENSION} px.`}</p>
       )}
     </div>
   );

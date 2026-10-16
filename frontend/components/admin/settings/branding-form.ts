@@ -13,6 +13,7 @@ import {
   isSafeLink,
   type BrandAssetSlot,
   type BrandAssetUrls,
+  type BrandingDefaults,
   type BrandingRead,
   type BrandingUpdate,
 } from "@/lib/settings-api";
@@ -66,7 +67,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // eslint-disable-next-line no-control-regex -- the server rejects control characters in single-line fields
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 
-export function formFromBranding(b: BrandingRead): BrandingForm {
+export function formFromBranding(b: BrandingDefaults): BrandingForm {
   return {
     product_name: b.product_name,
     assistant_name: b.assistant_name,
@@ -92,7 +93,12 @@ export function formFromBranding(b: BrandingRead): BrandingForm {
   };
 }
 
-/** The seeded Exigo Tech defaults ("Reset to defaults"). */
+/** The server's seeded row as a form ("Reset to defaults"). */
+export function formFromDefaults(d: BrandingDefaults): BrandingForm {
+  return formFromBranding(d);
+}
+
+/** Built-in fallback when the server defaults cannot be loaded (older backend). */
 export function defaultBrandingForm(): BrandingForm {
   const d = DEFAULT_BRAND;
   return {
