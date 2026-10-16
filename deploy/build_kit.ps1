@@ -12,6 +12,10 @@ param(
   [string]$OutDir = ''
 )
 $ErrorActionPreference = 'Stop'
+# Windows bsdtar (handles C:\ paths and -z); a GNU tar from Git Bash earlier on
+# PATH reads 'C:' as a remote host.
+$tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+if (-not (Test-Path $tar)) { $tar = 'tar' }
 
 $repo = (& git -C $PSScriptRoot rev-parse --show-toplevel).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'not inside the askdiq git repository' }
@@ -35,19 +39,19 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'git archive deploy failed' }
   $root = Join-Path $stage 'root'
   New-Item -ItemType Directory -Force -Path $root | Out-Null
-  & tar -xf $src -C $root
-  & tar -xf $docs -C $root
+  & $tar -xf $src -C $root
+  & $tar -xf $docs -C $root
   if ($LASTEXITCODE -ne 0) { throw 'tar extract failed' }
   Set-Content -Path (Join-Path $root 'deploy-kit\KIT_VERSION') -Value "commit=$((& git -C $repo rev-parse $Ref).Trim())`nbuilt=$((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))" -Encoding ascii
   if (Test-Path $kit) { Remove-Item -Force $kit }
-  & tar -czf $kit -C $root backend frontend deploy-kit
+  & $tar -czf $kit -C $root backend frontend deploy-kit
   if ($LASTEXITCODE -ne 0) { throw 'tar create failed' }
 } finally {
   Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
 }
 
 # ---- verify the contents ----
-$entries = & tar -tzf $kit | ForEach-Object { $_.TrimStart('.', '/') } | Where-Object { $_ }
+$entries = & $tar -tzf $kit | ForEach-Object { $_.TrimStart('.', '/') } | Where-Object { $_ }
 $problems = @()
 $tops = $entries | ForEach-Object { ($_ -split '/')[0] } | Sort-Object -Unique
 foreach ($t in $tops) { if ($t -notin @('backend', 'frontend', 'deploy-kit')) { $problems += "unexpected top-level entry: $t" } }
