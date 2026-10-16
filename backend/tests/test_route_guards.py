@@ -54,6 +54,9 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/admin/insights/taxonomy/{kind}/{code}/archive"): (
         Permission.TAXONOMY_WRITE
     ),
+    ("POST", "/admin/insights/taxonomy/{kind}/{code}/unarchive"): (
+        Permission.TAXONOMY_WRITE
+    ),
     ("PUT", "/admin/branding"): Permission.BRANDING_WRITE,
     ("POST", "/admin/branding/assets"): Permission.BRANDING_WRITE,
     ("POST", "/admin/feedback/bulk"): Permission.FEEDBACK_TRIAGE,

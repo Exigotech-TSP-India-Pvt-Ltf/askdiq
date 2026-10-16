@@ -404,8 +404,9 @@ async def update_taxonomy(
     code: str = Path(pattern=CODE_PATTERN, description="Stable code."),
     db: AsyncSession = Depends(get_db),
 ) -> TaxonomyRead:
-    """Label, description, colour, group and order are editable; existing
-    labels keep their code, so renaming never breaks them. Audited."""
+    """Label, description, colour, group, order and the substantive /
+    handled flags are editable; existing labels keep their code, so renaming
+    never breaks them. Audited."""
     try:
         row = await TaxonomyService(db).update(
             kind, code, payload, _audit(request, user)
@@ -432,6 +433,28 @@ async def archive_taxonomy(
     stored keep their code and label. Entries are never deleted. Audited."""
     try:
         row = await TaxonomyService(db).archive(kind, code, _audit(request, user))
+    except TaxonomyError as exc:
+        raise _taxonomy_http_error(exc) from None
+    return TaxonomyRead.model_validate(row)
+
+
+@router.post(
+    "/taxonomy/{kind}/{code}/unarchive",
+    response_model=TaxonomyRead,
+    summary="Unarchive a taxonomy entry",
+    responses=WRITE_ERRORS,
+)
+async def unarchive_taxonomy(
+    request: Request,
+    user: AuthUser = Depends(write_guard),
+    kind: TaxonomyKind = Path(description="Taxonomy kind."),
+    code: str = Path(pattern=CODE_PATTERN, description="Stable code."),
+    db: AsyncSession = Depends(get_db),
+) -> TaxonomyRead:
+    """Makes an archived entry active again (filters and classifier). A no-op
+    on an active entry. Audited."""
+    try:
+        row = await TaxonomyService(db).unarchive(kind, code, _audit(request, user))
     except TaxonomyError as exc:
         raise _taxonomy_http_error(exc) from None
     return TaxonomyRead.model_validate(row)
