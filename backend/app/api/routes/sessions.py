@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import sessions as session_service
 from app.core.database import get_db
 from app.core.rate_limit import enforce_feedback_rate_limit
-from app.core.request_meta import get_client_ip
+from app.core.request_meta import resolve_client_ip
 from app.governance.auth import get_current_actor
 from app.schemas.session import (
     ChatSessionDetail,
@@ -40,7 +40,7 @@ async def create_session(
     actor: str = Depends(get_current_actor),
 ) -> ChatSessionSummary:
     return await session_service.create_session(
-        db, actor, body.title, client_ip=get_client_ip(request)
+        db, actor, body.title, client_ip=resolve_client_ip(request, body.ip_address)
     )
 
 
@@ -98,7 +98,7 @@ async def submit_feedback(
     actor: str = Depends(get_current_actor),
 ) -> UserFeedbackResponse:
     """Submit or update satisfaction rating and optional comment for an assistant turn (Subtask 1.3.2)."""
-    client_ip = get_client_ip(request)
+    client_ip = resolve_client_ip(request, body.ip_address)
     enforce_feedback_rate_limit(actor, client_ip, limit=30)
     req_id = getattr(request.state, "request_id", None)
 

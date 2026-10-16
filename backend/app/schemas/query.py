@@ -14,7 +14,15 @@ class QueryRequest(BaseModel):
     # Swagger "Try it out" pre-fills this example; it deliberately omits
     # `filters`, whose generic placeholder used to empty every answer.
     model_config = ConfigDict(
-        json_schema_extra={"examples": [{"query": "What is the Trust Center?"}]}
+        json_schema_extra={
+            "examples": [
+                {
+                    "query": "What is the Trust Center?",
+                    "session_id": None,
+                    "ip_address": "203.0.113.10",
+                }
+            ]
+        }
     )
 
     query: str = Field(..., min_length=1, max_length=2000)

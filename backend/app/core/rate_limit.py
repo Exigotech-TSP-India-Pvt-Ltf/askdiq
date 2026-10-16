@@ -112,13 +112,14 @@ def enforce_ip_rate_limit(ip: str) -> None:
 
 
 async def rate_limited_actor(
-    request: Request, actor: str = Depends(get_current_actor)
+    actor: str = Depends(get_current_actor),
 ) -> str:
     """Drop-in replacement for `get_current_actor` that also enforces the
-    per-user AND per-IP rate limits — use as the auth dependency on
+    per-user rate limit (per-IP is applied by the route) — use as the auth dependency on
     throttled routes."""
     enforce_rate_limit(actor)
-    enforce_ip_rate_limit(get_client_ip(request))
+    # The per-IP limit is applied by the route once the end-user IP (possibly
+    # forwarded in the body) is known; see app.api.routes.query.
     return actor
 
 

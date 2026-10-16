@@ -34,13 +34,13 @@ def test_empty_filters_apply_nothing(value: dict | None) -> None:
     assert usable_filters(value) == {}
 
 
-def test_swagger_example_omits_filters_and_ip() -> None:
-    examples = QueryRequest.model_json_schema()["examples"]
-    assert examples == [{"query": "What is the Trust Center?"}]
+def test_swagger_example_keeps_session_and_ip_but_omits_filters() -> None:
+    (example,) = QueryRequest.model_json_schema()["examples"]
+    assert set(example) == {"query", "session_id", "ip_address"}
 
 
-def test_client_ip_override_is_off_by_default() -> None:
-    assert Settings.model_fields["allow_client_ip_override"].default is False
+def test_client_ip_override_is_on_by_default() -> None:
+    assert Settings.model_fields["allow_client_ip_override"].default is True
 
 
 async def test_body_ip_is_ignored_unless_override_enabled(
@@ -66,6 +66,7 @@ async def test_body_ip_is_ignored_unless_override_enabled(
         (" 2001:db8::1 ", "2001:db8::1"),
         ("not-an-ip", None),
         ("1.2.3.4; DROP TABLE", None),
+        ("198.51.100.7, 10.0.0.1", "198.51.100.7"),
         ("", None),
         (None, None),
     ],
@@ -117,3 +118,28 @@ def test_knowledge_base_markdown_is_not_excluded_from_the_image() -> None:
     assert "!data/real_docs/*.md" in rules
     assert rules.index("!data/real_docs/*.md") > rules.index("*.md")
     assert any((BACKEND / "data" / "real_docs").glob("*.md"))
+
+
+async def test_session_create_and_feedback_store_forwarded_ip(
+    client, monkeypatch
+) -> None:
+    monkeypatch.setattr(get_settings(), "allow_client_ip_override", True)
+    resp = await client.post(
+        "/sessions",
+        json={"title": "ip test", "ip_address": "198.51.100.23"},
+        headers={"X-Client-Id": "ip_session_tester"},
+    )
+    assert resp.status_code == 201
+
+
+def test_rate_limit_per_ip_uses_forwarded_ip(monkeypatch) -> None:
+    from starlette.requests import Request
+
+    from app.core.request_meta import resolve_client_ip
+
+    monkeypatch.setattr(get_settings(), "allow_client_ip_override", True)
+    request = Request({"type": "http", "headers": [], "client": ("10.0.0.5", 1)})
+    assert resolve_client_ip(request, "198.51.100.9") == "198.51.100.9"
+    assert resolve_client_ip(request, "junk") == "10.0.0.5"
+    monkeypatch.setattr(get_settings(), "allow_client_ip_override", False)
+    assert resolve_client_ip(request, "198.51.100.9") == "10.0.0.5"

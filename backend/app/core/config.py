@@ -90,10 +90,10 @@ class Settings(BaseSettings):
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).
     retrieval_filter_keys: list[str] = ["source_type", "corpus", "ingestion_source"]
-    # Honour `ip_address` in /query bodies: set true when a trusted server-side
-    # caller (the website frontend, which holds the API key) forwards the real
-    # end user's IP. Only valid IPv4/IPv6 values are accepted. Off by default.
-    allow_client_ip_override: bool = False
+    # Honour `ip_address` in request bodies (/query, /sessions, feedback): the
+    # website frontend calls server-to-server and forwards each end user's IP,
+    # which is stored against that user. Only valid IPv4/IPv6 values are used.
+    allow_client_ip_override: bool = True
     # Extra LLM generation attempts (beyond the first) on empty/failed/ungrounded output.
     # Each retry is a full LLM call (~5-8s) — capped at 1 (not 2) so a run of
     # bad luck can't stack 3 LLM calls into one request's tail latency.

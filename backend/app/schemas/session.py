@@ -38,6 +38,9 @@ class ChatSessionDetail(ChatSessionSummary):
 
 class CreateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=256)
+    ip_address: str | None = Field(
+        default=None, description="End user's IP address (forwarded by the frontend)."
+    )
 
 
 class RenameSessionRequest(BaseModel):
@@ -52,6 +55,9 @@ class UserFeedbackRequest(BaseModel):
         default=None,
         max_length=1000,
         description="Optional user comment (max 1000 chars)",
+    )
+    ip_address: str | None = Field(
+        default=None, description="End user's IP address (forwarded by the frontend)."
     )
 
     @field_validator("comment", mode="after")

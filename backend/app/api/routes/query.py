@@ -1,12 +1,11 @@
-import ipaddress
-
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.rate_limit import rate_limited_actor
-from app.core.request_meta import get_client_ip
+from app.core.rate_limit import enforce_ip_rate_limit, rate_limited_actor
+from app.core.request_meta import resolve_client_ip
+from app.core.request_meta import valid_ip as _valid_ip  # noqa: F401  (re-export)
 from app.core.sessions import (
     load_recent_history,
     resolve_session_for_query,
@@ -23,16 +22,6 @@ router = APIRouter()
 settings = get_settings()
 
 
-def _valid_ip(value: str | None) -> str | None:
-    """Return the normalised IP if `value` is a valid IPv4/IPv6 address, else None."""
-    if not value:
-        return None
-    try:
-        return str(ipaddress.ip_address(value.strip()))
-    except ValueError:
-        return None
-
-
 @router.post("/query", response_model=QueryResponse)
 async def query(
     request: Request,
@@ -45,12 +34,10 @@ async def query(
     embedding_tokens_sink.set(embed_sink)
 
     vector_store = VectorStore(db)
-    # A trusted server-side caller (e.g. the website frontend, which already holds
-    # the API key) passes the real end user's IP in the body; otherwise the API
-    # would only ever see the caller's own address. Honoured only when
-    # ALLOW_CLIENT_IP_OVERRIDE=true and only if it is a valid IP address.
-    override = _valid_ip(body.ip_address) if settings.allow_client_ip_override else None
-    client_ip = override or get_client_ip(request)
+    # The website frontend calls server-to-server and passes each end user's IP
+    # in the body; it is stored against that user and used for the per-IP limit.
+    client_ip = resolve_client_ip(request, body.ip_address)
+    enforce_ip_rate_limit(client_ip)
 
     session = await resolve_session_for_query(db, actor, body.session_id, client_ip)
     history = await load_recent_history(db, session)
