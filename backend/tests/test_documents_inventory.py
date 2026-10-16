@@ -23,7 +23,7 @@ from app.documents.inventory import (
     infer_original_format,
     ingest_event,
 )
-from app.ingestion.service import provenance_extras
+from app.ingestion.service import backfill_provenance, provenance_extras
 from app.models.db_models import AuditLog, Chunk, Document
 from app.schemas.document import DocumentChunkItem
 from tests.feedback_helpers import make_exchange, make_feedback, make_session, marker
@@ -169,6 +169,40 @@ def test_provenance_extras_markdown_is_not_standardized() -> None:
     assert extras["standardized"] is False
     assert extras["converter"] == "markdown-normalizer"
     assert extras["canonical_size_bytes"] == 4
+
+
+def _backfill(meta: dict, converted_from: str) -> dict:
+    return backfill_provenance(
+        meta,
+        converted_from=converted_from,
+        original_filename=f"x.{converted_from}",
+        original_size_bytes=99,
+        canonical_markdown="abc\n",
+        pii_found=[],
+    )
+
+
+def test_backfill_provenance_fills_gaps_only() -> None:
+    out = _backfill({"corpus": "c", "embedding_model": "kept"}, "docx")
+    assert out["corpus"] == "c"
+    assert out["embedding_model"] == "kept"
+    assert out["original_format"] == "docx"
+    assert out["standardized"] is True
+    assert out["original_size_bytes"] == 99
+    assert out["canonical_size_bytes"] == 4
+    assert "chunking_strategy" not in out
+
+
+def test_backfill_provenance_keeps_stored_origin() -> None:
+    out = _backfill({"original_format": "docx", "original_filename": "A.docx"}, "md")
+    assert out["original_format"] == "docx"
+    assert out["standardized"] is True
+    assert out["converter"] == "mammoth+gfm"
+    assert out["original_filename"] == "A.docx"
+    assert "original_size_bytes" not in out  # the .md upload is not the original
+    legacy = _backfill({"original_format": "markdown"}, "md")
+    assert legacy["standardized"] is False
+    assert legacy["original_size_bytes"] == 99
 
 
 # ---------------------------------------------------------------------------
@@ -349,19 +383,33 @@ async def test_unchanged_reupload_backfills_canonical(
     mk = marker()
     payload = await _upload_docx(client, f"{mk}.docx", f"Backfill {mk}")
     doc_id = uuid.UUID(payload["document_id"])
+    # Simulate a row ingested before canonical text and provenance were kept.
     await db_session.execute(
-        update(Document).where(Document.id == doc_id).values(canonical_markdown=None)
+        update(Document)
+        .where(Document.id == doc_id)
+        .values(canonical_markdown=None, doc_metadata={"corpus": "legacy"})
     )
     await db_session.commit()
     before = (await client.get(f"/documents/{doc_id}/canonical")).json()
     assert before["available"] is False
     assert before["content"] is None
+    legacy = (await client.get(f"/documents/{doc_id}")).json()
+    assert legacy["original_size_bytes"] is None
+    assert legacy["canonical_available"] is False
 
     again = await _upload_docx(client, f"{mk}.docx", f"Backfill {mk}")
     assert again["status"] == "unchanged"
     after = (await client.get(f"/documents/{doc_id}/canonical")).json()
     assert after["available"] is True
     assert f"Backfill {mk}" in after["content"]
+    row = (await client.get(f"/documents/{doc_id}")).json()
+    assert row["canonical_available"] is True
+    assert row["standardized"] is True
+    assert row["converted_from"] == "docx"
+    assert row["converter"] == "mammoth+gfm"
+    assert row["original_size_bytes"] == payload["original_size_bytes"]
+    assert row["canonical_size_bytes"] == after["size_bytes"]
+    assert row["labels"] == {"corpus": "legacy"}
 
 
 async def test_citations_hits_and_low_rated(client, db_session, fake_embed) -> None:

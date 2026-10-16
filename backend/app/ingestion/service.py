@@ -63,6 +63,42 @@ def provenance_extras(
     }
 
 
+def backfill_provenance(
+    meta: dict,
+    *,
+    converted_from: str,
+    original_filename: str,
+    original_size_bytes: int,
+    canonical_markdown: str,
+    pii_found: list[str],
+) -> dict:
+    """``meta`` plus provenance it never recorded (unchanged re-upload).
+
+    Stored values always win. The origin is the stored one when known, so a
+    .md re-upload of a .docx-born document does not flip it to "native"; the
+    original size is only filled when this upload has that origin. Nothing
+    was re-chunked, so chunking fields are not guessed.
+    """
+    stored = meta.get("original_format") or meta.get("converted_from")
+    origin = "md" if stored in ("md", "markdown") else (stored or converted_from)
+    extras = provenance_extras(
+        converted_from=origin,
+        original_size_bytes=original_size_bytes,
+        canonical_markdown=canonical_markdown,
+        requested_strategy="",
+        strategy_used="",
+        pii_found=pii_found,
+    )
+    for key in ("chunking_strategy", "chunking_strategy_requested"):
+        extras.pop(key)
+    if origin != converted_from:
+        extras.pop("original_size_bytes")
+    extras["original_format"] = origin
+    if origin == converted_from:
+        extras["original_filename"] = original_filename
+    return {**extras, **meta}
+
+
 async def ingest_text(
     db: AsyncSession,
     *,
@@ -138,7 +174,14 @@ async def ingest_text(
         )
         if not dry_run:
             existing.doc_metadata = {
-                **(existing.doc_metadata or {}),
+                **backfill_provenance(
+                    existing.doc_metadata or {},
+                    converted_from=converted_from,
+                    original_filename=original_filename or canonical_name,
+                    original_size_bytes=original_size_bytes,
+                    canonical_markdown=normalized_content,
+                    pii_found=pii_found,
+                ),
                 "last_checked_at": datetime.utcnow().isoformat(),
             }
             # Same hash = same canonical text: store it if it predates the column.
