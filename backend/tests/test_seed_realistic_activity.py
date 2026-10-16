@@ -271,3 +271,62 @@ def test_rollup_days_cover_window() -> None:
     days = seed.rollup_days(cfg)
     assert days == sorted(days)
     assert len(days) >= 11
+
+
+# --- production guard --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+asyncpg://u:p@localhost:5432/askdiq",
+        "postgresql+asyncpg://u:p@127.0.0.1/askdiq",
+        "postgresql+asyncpg://u:p@[::1]/askdiq",
+        "postgresql+asyncpg://u:p@10.0.0.5/askdiq",
+        "postgresql+asyncpg://u:p@askdiq-dev-db.internal/askdiq",
+        "postgresql+asyncpg://u:p@host.docker.internal/askdiq",
+    ],
+)
+def test_guard_allows_local_and_dev_databases(url: str) -> None:
+    assert seed.production_guard("development", url, override=False) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+asyncpg://u:p@et-platform-postgres-1/askdiq",
+        "postgresql+asyncpg://u:p@askdiq.postgres.database.azure.com/askdiq",
+        "postgresql+asyncpg://u:p@20.211.4.4/askdiq",
+        "not a url",
+    ],
+)
+def test_guard_refuses_non_dev_hosts_without_override(url: str) -> None:
+    reason = seed.production_guard("development", url, override=False)
+    assert reason is not None
+    assert "u:p" not in reason  # never echoes credentials
+    assert seed.production_guard("development", url, override=True) is None
+
+
+def test_guard_refuses_production_env_even_on_localhost() -> None:
+    url = "postgresql+asyncpg://u:p@localhost/askdiq"
+    assert seed.production_guard("production", url, override=False) is not None
+    assert seed.production_guard("production", url, override=True) is None
+
+
+def test_cli_override_flag() -> None:
+    assert seed.parse_args([seed.OVERRIDE_FLAG]).not_prod is True
+    assert seed.parse_args([]).not_prod is False
+
+
+async def test_amain_refuses_before_touching_the_database(monkeypatch) -> None:
+    class _Prod:
+        env = "production"
+        database_url = "postgresql+asyncpg://u:p@localhost/askdiq"
+        online_eval_sample_rate = 0.1
+
+    def _no_engine(*_a: object, **_k: object) -> None:
+        raise AssertionError("engine must not be created")
+
+    monkeypatch.setattr(seed, "get_settings", _Prod)
+    monkeypatch.setattr(seed, "create_async_engine", _no_engine)
+    assert await seed.amain(seed.parse_args(["--apply"])) == 2
