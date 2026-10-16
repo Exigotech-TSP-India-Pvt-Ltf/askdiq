@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as callback } from "@/app/auth/callback/route";
 import { GET as startLogin } from "@/app/auth/login/route";
-import { LOGOUT_BACKEND_TIMEOUT_MS, POST as logout } from "@/app/auth/logout/route";
+import { POST as logout } from "@/app/auth/logout/route";
+import { LOGOUT_BACKEND_TIMEOUT_MS } from "@/lib/server/backend";
 import { postLoginPath } from "@/lib/auth-gate";
 
 const BACKEND = "http://backend.test:8000";

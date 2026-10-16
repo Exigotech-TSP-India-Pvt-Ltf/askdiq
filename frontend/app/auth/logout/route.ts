@@ -4,13 +4,11 @@
 // Kept apart from /api/proxy so the sign-out bound below is independent of
 // the proxy's own timeouts.
 import { NextResponse, type NextRequest } from "next/server";
-import { appOrigin, backendHeaders, backendUrl } from "@/lib/server/backend";
+import { LOGOUT_BACKEND_TIMEOUT_MS, appOrigin, backendHeaders, backendUrl } from "@/lib/server/backend";
 import { clearSessionCookie, cookieSecureFromEnv, sessionCookieName } from "@/lib/server/auth-cookies";
 
 export const dynamic = "force-dynamic";
 
-/** Upper bound on waiting for the backend to revoke the session. */
-export const LOGOUT_BACKEND_TIMEOUT_MS = 4000;
 const CSRF_HEADER = "x-requested-with";
 const CSRF_HEADER_VALUE = "askdiq";
 
