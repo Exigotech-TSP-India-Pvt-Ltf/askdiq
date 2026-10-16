@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
+import { useDeepLink } from "@/lib/use-deep-link";
 import {
   CheckCircle2,
   Target,
@@ -127,7 +128,12 @@ export default function EvaluationLivePage() {
   const [r, setR] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  // Tab and the selected run (pass-rate trend marker) live in the URL.
+  const { get, set } = useDeepLink();
+  const rawTab = get("tab");
+  const activeTab = EVALUATION_LIVE_TABS.some((t) => t.id === rawTab) ? (rawTab as string) : "overview";
+  const setActiveTab = (tab: string) => set({ tab: tab === "overview" ? null : tab });
+  const selectedRun = get("run");
   const [compareMode, setCompareMode] = useState(false);
   const [search, setSearch] = useState("");
   const [filterOutcome, setFilterOutcome] = useState<string>("all");
@@ -144,6 +150,7 @@ export default function EvaluationLivePage() {
       .evaluationReportLive(token, audience, compareMode)
       .then((data) => {
         setR(data);
+        setError(null);
         setLoading(false);
       })
       .catch((err) => {
@@ -237,6 +244,25 @@ export default function EvaluationLivePage() {
           <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {selectedRun && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-2 rounded-xl border border-status-info/40 bg-status-info-bg p-3 text-xs text-status-info-fg"
+          >
+            <span>
+              Run <span className="font-mono font-semibold">{selectedRun}</span> selected from the pass-rate trend. Per-run case
+              lists are not reported by the server, so the figures below are the latest evaluation.
+            </span>
+            <button
+              type="button"
+              onClick={() => set({ run: null })}
+              className="ml-auto rounded-md border border-status-info/40 px-2 py-0.5 font-semibold hover:bg-surface-card focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            >
+              Clear
+            </button>
           </div>
         )}
 

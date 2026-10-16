@@ -55,13 +55,14 @@ interface KpiDef {
 
 const KPI_DEFS: readonly KpiDef[] = [
   { key: "requests", label: "Requests", icon: Activity, goodDirection: "up", href: tabHref("Monitoring") },
-  { key: "error_rate", label: "Error rate", icon: AlertTriangle, goodDirection: "down", href: logsHref({ level: ["ERROR", "CRITICAL"] }) },
+  // The error rate counts failed turns, so its rows are the failed traces.
+  { key: "error_rate", label: "Error rate", icon: AlertTriangle, goodDirection: "down", href: tracesHref({ status: "failed" }) },
   { key: "latency_p50", label: "Latency p50", icon: Timer, goodDirection: "down", href: tabHref("Monitoring") },
   { key: "latency_p95", label: "Latency p95", icon: Gauge, goodDirection: "down", href: tracesHref({ latency_bucket: "slow" }) },
-  { key: "active_users", label: "Active users", icon: Users, goodDirection: "up", href: tabHref("Traces") },
+  { key: "active_users", label: "Active users", icon: Users, goodDirection: "up", href: "/admin/usage?tab=users" },
   { key: "groundedness", label: "Groundedness", icon: Sparkles, goodDirection: "up", href: tracesHref({ status: "ungrounded" }) },
   { key: "blocked_or_flagged", label: "Blocked or flagged", icon: ShieldAlert, goodDirection: "down", href: tracesHref({ status: "blocked" }) },
-  { key: "cost_today", label: "Cost today", icon: DollarSign, goodDirection: "down", href: tabHref("Traces") },
+  { key: "cost_today", label: "Cost today", icon: DollarSign, goodDirection: "down", href: "/admin/usage?tab=queries" },
 ];
 
 function sparkPoints(kpi: Kpi, hours: readonly string[]): SparkPoint[] {

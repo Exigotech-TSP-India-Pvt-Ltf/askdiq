@@ -1,6 +1,7 @@
 "use client";
 
 import { m } from "motion/react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CircleDollarSign,
@@ -21,6 +22,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
+import { useCarryHref } from "@/lib/entity-routes";
 import { usePrefetchOnIntent } from "@/lib/query-cache";
 import type { DateRange } from "@/lib/range-context";
 import {
@@ -159,6 +161,9 @@ function windowLabelFor(def: KpiDef, data: DashboardData, range: DateRange): str
 function KpiCard({ def, data, range }: { def: KpiDef; data: DashboardData; range: DateRange }) {
   const { token } = useAuth();
   const { audience } = useAudience();
+  const router = useRouter();
+  // Keep the dashboard's date range on the target page.
+  const href = useCarryHref()(def.href);
   const intent = usePrefetchOnIntent(["prefetch", def.prefetchPath, audience], (signal) =>
     dashboardApi.prefetch(token, def.prefetchPath, audience, signal),
   );
@@ -173,7 +178,8 @@ function KpiCard({ def, data, range }: { def: KpiDef; data: DashboardData; range
       delta={data.deltas?.[def.key] ?? null}
       goodDirection={def.goodDirection}
       trend={trend}
-      href={def.href}
+      href={href}
+      onSelect={() => router.push(href)}
       intentHandlers={intent}
       windowLabel={windowLabelFor(def, data, range)}
       hint={value === null ? "Not reported by the server" : legacyTrendOnly ? "Trend: last 7 days" : undefined}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export type DeepLinkUpdate = Record<string, string | number | null | undefined>;
@@ -34,9 +34,17 @@ export function useDeepLink() {
 
   const get = useCallback((key: string): string | null => new URLSearchParams(search).get(key), [search]);
 
+  // Several `set` calls in one tick (e.g. a toolbar "Reset all" clearing each
+  // filter in turn) must compose: each merges onto the URL the previous call
+  // wrote, not onto the render-time `search`, or only the last one sticks.
+  const pending = useRef<{ base: string; next: string } | null>(null);
+
   const set = useCallback(
     (update: DeepLinkUpdate, { history = "replace" }: DeepLinkOptions = {}) => {
-      const href = `${pathname ?? ""}${mergeSearch(search, update)}`;
+      const base = pending.current?.base === search ? pending.current.next : search;
+      const merged = mergeSearch(base, update);
+      pending.current = { base: search, next: merged.replace(/^\?/, "") };
+      const href = `${pathname ?? ""}${merged}`;
       if (history === "push") router.push(href, { scroll: false });
       else router.replace(href, { scroll: false });
     },

@@ -7,6 +7,7 @@ import { ChatSessionList } from "@/components/ChatSessionList";
 import { useBrand } from "@/lib/brand-context";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { TraceLink } from "@/components/chat/TraceLink";
+import { useToast } from "@/components/ui/ToastProvider";
 
 export default function ChatPage() {
   // Chat state (sessions, messages, sending, the send/delete functions)
@@ -33,6 +34,22 @@ export default function ChatPage() {
   const suggestedPrompts = brand.chatSampleQuestions;
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const toast = useToast();
+
+  /** Session actions report failures instead of failing silently. */
+  function reported<A extends unknown[]>(title: string, action: (...args: A) => Promise<void>) {
+    return async (...args: A) => {
+      try {
+        await action(...args);
+      } catch (err) {
+        toast.show({
+          title,
+          description: err instanceof Error && err.message ? err.message : "Please try again.",
+          tone: "error",
+        });
+      }
+    };
+  }
 
   /*
    * ---------------------------------------------------------
@@ -61,10 +78,10 @@ export default function ChatPage() {
       <ChatSessionList
         sessions={sessions}
         activeSessionId={activeSessionId}
-        onSelect={selectSession}
-        onNew={startNewSession}
-        onRename={renameSession}
-        onDelete={removeSession}
+        onSelect={reported("Couldn't open that chat", selectSession)}
+        onNew={reported("Couldn't start a new chat", startNewSession)}
+        onRename={reported("Couldn't rename the chat", renameSession)}
+        onDelete={reported("Couldn't delete the chat", removeSession)}
       />
 
       <div className="flex h-full flex-1 flex-col bg-surface-page">

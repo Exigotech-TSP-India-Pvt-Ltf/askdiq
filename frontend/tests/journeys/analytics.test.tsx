@@ -128,7 +128,7 @@ describe("filter -> topic -> conversations journey", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove filter Services" }));
     expect(currentParams().get("intent")).toBeNull();
     await waitFor(() => expect(api.last("conversations")?.params.get("intent")).toBeNull());
-  });
+  }, 20_000); // first journey of the file pays the cold render cost
 
   it("drop-off click filters by issue code", async () => {
     renderPage("?tab=dropoff");

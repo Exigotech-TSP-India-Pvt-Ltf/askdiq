@@ -69,6 +69,20 @@ describe("mergeSearch", () => {
 });
 
 describe("useDeepLink (F0.6.1)", () => {
+  it("composes several writes in one tick (a toolbar 'Reset all' clears every filter)", () => {
+    history.reset("/admin/governance?tab=Logs&level=ERROR&service=system&q=boom");
+    const { result } = renderHook(() => useDeepLink());
+    act(() => {
+      result.current.set({ q: null });
+      result.current.set({ service: null });
+      result.current.set({ level: null });
+    });
+    expect(history.current()).toBe("/admin/governance?tab=Logs");
+    // A later write after the URL settled starts from the new URL.
+    act(() => result.current.set({ level: "INFO" }));
+    expect(history.current()).toBe("/admin/governance?tab=Logs&level=INFO");
+  });
+
   it("writes with router.replace and scroll:false, keeping other params", () => {
     history.reset("/admin/conversations/c-1?audience=users");
     const { result } = renderHook(() => useDeepLink());

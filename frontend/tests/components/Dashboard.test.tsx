@@ -88,14 +88,14 @@ describe("activity links", () => {
 });
 
 describe("HealthPill", () => {
-  it("shows the governance health with the audience and links to Monitoring", async () => {
+  it("shows the governance health with the audience and links to the governance overview", async () => {
     const fetchMock = vi.fn((_input: RequestInfo | URL) =>
       Promise.resolve(new Response(JSON.stringify({ health: { status: "Incident", window_minutes: 15 } }))),
     );
     vi.stubGlobal("fetch", fetchMock);
     render(<HealthPill />);
     const pill = await screen.findByRole("link", { name: /System health: Incident/ });
-    expect(pill).toHaveAttribute("href", "/admin/governance?tab=Monitoring");
+    expect(pill).toHaveAttribute("href", "/admin/governance?tab=Overall");
     expect(pill.className).toContain("bg-status-danger-bg");
     expect(String(fetchMock.mock.calls[0][0])).toBe("/api/proxy/admin/governance/overview?audience=users");
   });

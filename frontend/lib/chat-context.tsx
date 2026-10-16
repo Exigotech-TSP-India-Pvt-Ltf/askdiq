@@ -260,7 +260,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const submitFeedback = useCallback(
     async (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => {
-      if (!token || !activeSessionId) return;
+      // Never report "thanks" for a rating that was not sent.
+      if (!token || !activeSessionId) throw new Error("Open a saved chat to rate its answers.");
       const prevRating = messages.find((m) => m.id === messageId)?.feedbackRating;
       // Optimistic update
       setMessages((prev) =>

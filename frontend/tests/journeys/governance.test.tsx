@@ -484,6 +484,17 @@ describe("Governance journey (F4.5)", () => {
     expect(callsTo("monitoring").length).toBe(before + 1);
   });
 
+  it("Monitoring count tiles and outcome rows link to the rows behind them", async () => {
+    renderPage("/admin/governance?tab=Monitoring");
+    await screen.findByText("1,119");
+    const errorTile = screen.getByRole("link", { name: /^Error rate:/ });
+    expect(errorTile.getAttribute("href")).toContain("tab=Traces");
+    expect(errorTile.getAttribute("href")).toContain("status=failed");
+    expect(screen.getByRole("link", { name: /^p95 latency:/ }).getAttribute("href")).toContain("latency_bucket=slow");
+    expect(screen.getByRole("link", { name: /^Active users:/ })).toHaveAttribute("href", "/admin/usage?tab=users");
+    fireEvent.click(errorTile);
+  });
+
   it("switching tabs keeps state in the URL and only ranged tabs show the date picker", async () => {
     renderPage("/admin/governance?tab=Monitoring");
     await screen.findByText("1,119");
