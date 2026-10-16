@@ -27,3 +27,11 @@ export function parseUsageTab(param: string | null | undefined): UsageTabId {
     ? USAGE_TAB_ALIASES[param]
     : DEFAULT_USAGE_TAB;
 }
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** `?from=` / `?to=` day (YYYY-MM-DD) from a deep link; anything else is ignored. */
+export function parseUsageDay(param: string | null | undefined): string {
+  if (!param || !DAY_RE.test(param)) return "";
+  return Number.isNaN(Date.parse(`${param}T00:00:00Z`)) ? "" : param;
+}

@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const CASES: [EntityRef, string][] = [
   [{ kind: "visitor", id: "10.0.0.7" }, "/admin/usage?tab=sessions&ip=10.0.0.7"],
-  [{ kind: "session", id: "s-1" }, "/admin/usage?tab=sessions&session=s-1"],
+  [{ kind: "session", id: "s-1" }, "/admin/usage?tab=queries&session=s-1"],
   [{ kind: "conversation", id: "c-1" }, "/admin/conversations/c-1"],
   [{ kind: "turn", id: "m-9", conversationId: "c-1" }, "/admin/conversations/c-1?turn=m-9"],
   [{ kind: "trace", id: "req-1" }, "/admin/governance?tab=Traces&request_id=req-1"],

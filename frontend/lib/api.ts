@@ -331,6 +331,9 @@ export const api = {
       session_id?: string;
       outcome?: string;
       grounded?: boolean;
+      /** ISO datetime or YYYY-MM-DD (a day covers the whole UTC day). */
+      from_date?: string;
+      to_date?: string;
       sort?: string;
       limit?: number;
       offset?: number;
@@ -342,6 +345,8 @@ export const api = {
     if (params.q) qs.set("q", params.q);
     if (params.ip) qs.set("ip", params.ip);
     if (params.session_id) qs.set("session_id", params.session_id);
+    if (params.from_date) qs.set("from_date", params.from_date);
+    if (params.to_date) qs.set("to_date", params.to_date);
     if (params.outcome) qs.set("outcome", params.outcome);
     if (params.grounded !== undefined) qs.set("grounded", String(params.grounded));
     if (params.sort) qs.set("sort", params.sort);

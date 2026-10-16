@@ -814,9 +814,9 @@ export function InteractiveOverviewTab({
 
                 <button
                   type="button"
-                  onClick={() => setSelectedOutcome(selectedOutcome === "blocked_guardrail" ? "all" : "blocked_guardrail")}
+                  onClick={() => setSelectedOutcome(selectedOutcome === "blocked" ? "all" : "blocked")}
                   className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border transition ${
-                    selectedOutcome === "blocked_guardrail"
+                    selectedOutcome === "blocked"
                       ? "bg-rose-600 text-white font-bold border-rose-700 shadow-sm"
                       : "bg-rose-50 border-rose-100 text-rose-800 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-500/25 dark:text-rose-300 dark:hover:bg-rose-950/60"
                   }`}
@@ -825,7 +825,7 @@ export function InteractiveOverviewTab({
                     <XCircle className="w-3.5 h-3.5" />
                     <span>Blocked</span>
                   </span>
-                  <span className="font-mono">{outcomes.blocked_guardrail ?? 0}</span>
+                  <span className="font-mono">{outcomes.blocked ?? 0}</span>
                 </button>
 
                 <button

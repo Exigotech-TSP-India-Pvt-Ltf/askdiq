@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { PageEnvelope, UsageQueryRow } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useTableState } from "@/lib/use-table-state";
@@ -39,17 +39,38 @@ interface QueriesTabProps {
   token: string;
   initialSessionId?: string;
   initialIp?: string;
+  /** Day range from a deep link (YYYY-MM-DD, inclusive). */
+  fromDay?: string;
+  toDay?: string;
+  /** Sets the IP filter; "" clears it. */
   onSelectIp?: (ip: string) => void;
+  /** Sets the session filter; "" clears it. */
   onSelectSession?: (sessionId: string) => void;
+  onClearDays?: () => void;
+}
+
+/** Toolbar pills and "Reset" send "all"; the clear option sends "". */
+const isClear = (value: string) => value === "" || value === "all";
+
+function dayRangeLabel(from: string, to: string): string {
+  if (from && to) return from === to ? `Day: ${from}` : `Days: ${from} – ${to}`;
+  return from ? `From ${from}` : `Until ${to}`;
 }
 
 export function QueriesTab({
   token,
   initialSessionId,
   initialIp,
+  fromDay = "",
+  toDay = "",
   onSelectIp,
   onSelectSession,
+  onClearDays,
 }: QueriesTabProps) {
+  // IP, session and days are owned by the page URL (props), so a filter can
+  // be cleared here and set again from a link without the two fighting.
+  const sessionFilter = initialSessionId ?? "";
+  const ipFilter = initialIp ?? "";
   const {
     page,
     pageSize,
@@ -78,8 +99,6 @@ export function QueriesTab({
       "latency_asc",
     ],
     defaultFilters: {
-      session_id: initialSessionId || "",
-      ip: initialIp || "",
       outcome: "all",
       grounded: "all",
     },
@@ -90,18 +109,15 @@ export function QueriesTab({
   const [error, setError] = useState<string | null>(null);
   const [inspectRequestId, setInspectRequestId] = useState<string | null>(null);
 
-  // Sync initialSessionId / initialIp if changed externally
+  // A new IP / session / day filter starts from the first page.
+  const firstRun = useRef(true);
   useEffect(() => {
-    if (initialSessionId !== undefined && initialSessionId !== filters.session_id) {
-      setFilter("session_id", initialSessionId);
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
     }
-  }, [initialSessionId, filters.session_id, setFilter]);
-
-  useEffect(() => {
-    if (initialIp !== undefined && initialIp !== filters.ip) {
-      setFilter("ip", initialIp);
-    }
-  }, [initialIp, filters.ip, setFilter]);
+    setPage(1);
+  }, [sessionFilter, ipFilter, fromDay, toDay, setPage]);
 
   const fetchData = React.useCallback(async () => {
     setIsLoading(true);
@@ -112,8 +128,10 @@ export function QueriesTab({
         {
           audience,
           q: search || undefined,
-          session_id: filters.session_id || undefined,
-          ip: filters.ip || undefined,
+          session_id: sessionFilter || undefined,
+          ip: ipFilter || undefined,
+          from_date: fromDay || undefined,
+          to_date: toDay || undefined,
           outcome: filters.outcome !== "all" ? filters.outcome : undefined,
           grounded:
             filters.grounded === "true"
@@ -139,8 +157,10 @@ export function QueriesTab({
     token,
     audience,
     search,
-    filters.session_id,
-    filters.ip,
+    sessionFilter,
+    ipFilter,
+    fromDay,
+    toDay,
     filters.outcome,
     filters.grounded,
     sort,
@@ -285,7 +305,7 @@ export function QueriesTab({
       render: (r) => formatCurrency(r.cost_usd, 4),
     },
     {
-      key: "latency_ms",
+      key: "latency",
       header: "Latency",
       sortable: true,
       align: "right",
@@ -312,13 +332,14 @@ export function QueriesTab({
     },
   ];
 
-  const exportUrl = `/api/proxy/admin/usage/export?tab=queries&audience=${audience}&q=${encodeURIComponent(
-    search
-  )}${filters.session_id ? `&session_id=${encodeURIComponent(filters.session_id)}` : ""}${
-    filters.ip ? `&ip=${encodeURIComponent(filters.ip)}` : ""
-  }${filters.outcome !== "all" ? `&outcome=${encodeURIComponent(filters.outcome)}` : ""}${
-    filters.grounded !== "all" ? `&grounded=${encodeURIComponent(filters.grounded)}` : ""
-  }`;
+  const exportParams = new URLSearchParams({ tab: "queries", audience, q: search });
+  if (sessionFilter) exportParams.set("session_id", sessionFilter);
+  if (ipFilter) exportParams.set("ip", ipFilter);
+  if (fromDay) exportParams.set("from_date", fromDay);
+  if (toDay) exportParams.set("to_date", toDay);
+  if (filters.outcome !== "all") exportParams.set("outcome", filters.outcome);
+  if (filters.grounded !== "all") exportParams.set("grounded", filters.grounded);
+  const exportUrl = `/api/proxy/admin/usage/export?${exportParams.toString()}`;
 
   return (
     <div className="space-y-6">
@@ -399,31 +420,51 @@ export function QueriesTab({
                   ],
                   onChange: (val) => setFilter("grounded", val),
                 },
-                ...(filters.session_id
+                ...(sessionFilter
                   ? [
                       {
                         id: "session_id",
-                        label: `Session: ${filters.session_id.slice(0, 8)}...`,
-                        value: filters.session_id,
+                        label: `Session: ${sessionFilter.slice(0, 8)}...`,
+                        value: sessionFilter,
                         options: [
-                          { label: `Session: ${filters.session_id}`, value: filters.session_id },
+                          { label: `Session: ${sessionFilter}`, value: sessionFilter },
                           { label: "Clear Session Filter", value: "" },
                         ],
-                        onChange: (val: string) => setFilter("session_id", val),
+                        onChange: (val: string) => {
+                          if (isClear(val)) onSelectSession?.("");
+                        },
                       },
                     ]
                   : []),
-                ...(filters.ip
+                ...(ipFilter
                   ? [
                       {
                         id: "ip",
-                        label: `IP: ${filters.ip}`,
-                        value: filters.ip,
+                        label: `IP: ${ipFilter}`,
+                        value: ipFilter,
                         options: [
-                          { label: `IP: ${filters.ip}`, value: filters.ip },
+                          { label: `IP: ${ipFilter}`, value: ipFilter },
                           { label: "Clear IP Filter", value: "" },
                         ],
-                        onChange: (val: string) => setFilter("ip", val),
+                        onChange: (val: string) => {
+                          if (isClear(val)) onSelectIp?.("");
+                        },
+                      },
+                    ]
+                  : []),
+                ...(fromDay || toDay
+                  ? [
+                      {
+                        id: "days",
+                        label: dayRangeLabel(fromDay, toDay),
+                        value: "days",
+                        options: [
+                          { label: dayRangeLabel(fromDay, toDay), value: "days" },
+                          { label: "Clear Date Filter", value: "" },
+                        ],
+                        onChange: (val: string) => {
+                          if (isClear(val)) onClearDays?.();
+                        },
                       },
                     ]
                   : []),

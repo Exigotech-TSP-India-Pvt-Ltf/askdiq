@@ -89,7 +89,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
   }, [fetchData]);
 
   const stats = data?.stats || {};
-  const topUsers = (stats.top_3_users || []) as Array<{
+  const topUsers = (stats.top_users || []) as Array<{
     ip_address: string;
     queries: number;
     cost_usd: number;
@@ -169,7 +169,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
 
   const exportUrl = `/api/proxy/admin/usage/export?tab=users&audience=${audience}&q=${encodeURIComponent(
     search
-  )}`;
+  )}${filters.type !== "all" ? `&type=${encodeURIComponent(filters.type)}` : ""}`;
 
   return (
     <div className="space-y-6">
@@ -194,7 +194,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
 
           <StatCard
             title="Total Queries"
-            value={stats.total_queries ?? 0}
+            value={stats.queries_driven ?? 0}
             subtitle="Turns processed"
             icon={Sparkles}
           />
