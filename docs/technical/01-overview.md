@@ -51,10 +51,10 @@ this in mind.
 | Background work | In-process tasks only | Postgres job queue + worker, LISTEN/NOTIFY event bus, SSE |
 | Alembic head | `d6e7f8a9b0c1` | See [Database](05-database.md#migration-history) |
 
-Known gap: on `preview/view` there is no API-key-only route for the public widget; `/query`
-requires an SSO session. The website flow therefore works on the production line only. See
-[Architecture: the website query flow](02-architecture.md#41-website-query-flow-post-query)
-and [Deployment](08-deployment-operations.md#2-code-in-production-vs-code-in-the-repo).
+On `preview/view` the chat routes accept both callers on the same paths
+(`require_chat_actor`, `backend/app/auth/deps.py`): an SSO session from the dashboard proxy, or the
+website server's `X-API-Key` alone with `X-Client-Id` as the actor. See
+[Website integration](10-website-integration.md).
 
 ## Users
 

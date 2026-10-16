@@ -45,7 +45,7 @@ base with SSO and RBAC). Code is the source of truth; plan intent (`newplan.md` 
 | Security headers | None from the app (`SecurityHeadersMiddleware` absent); nginx may add them (Unverified for prod) | Backend middleware + Next headers + nonce CSP + `askdiq.conf` |
 | Errors | FastAPI defaults | RFC 9457 problem+json, no internals |
 | Rate-limit state | In-process memory (per worker) | Postgres shared state (all workers/replicas) |
-| Public website `/query` | Yes: server-to-server with the API key | No API-key-only route: every chat route needs an SSO session |
+| Public website `/query` | Yes: server-to-server with the API key | Yes, same contract on chat routes only (`require_chat_actor`); the dashboard proxy adds `X-AskDIQ-Proxy: 1`, so a browser behind it always needs a session |
 
 The website integration contract is in [Website integration](10-website-integration.md).
 

@@ -13,12 +13,14 @@ class ChatTurn(BaseModel):
 class QueryRequest(BaseModel):
     # Swagger "Try it out" pre-fills this example; it deliberately omits
     # `filters`, whose generic placeholder used to empty every answer.
+    # `session_id` is "" rather than null: FastAPI drops null values from the
+    # served OpenAPI document, which hid the field; "" means "no session".
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
                 {
                     "query": "What is the Trust Center?",
-                    "session_id": None,
+                    "session_id": "",
                     "ip_address": "203.0.113.10",
                 }
             ]

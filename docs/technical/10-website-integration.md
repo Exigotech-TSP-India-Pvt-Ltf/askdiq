@@ -4,7 +4,9 @@ The contract the website frontend team uses to put AskDIQ on the public
 website: how to call `POST /query` and the session/feedback routes from
 your server, what to send, what comes back, the rate limits, and how to
 handle errors. It describes the API **as deployed on `askdiq.ethub.co`
-today** (`main` + branch `hotfix/query-filters-ip-ingest`).
+today** (`main` + branch `hotfix/query-filters-ip-ingest`). The admin-console
+revamp (`preview/view`) keeps the same contract on the same paths; the
+differences are listed in [section 10](#10-upcoming-changes).
 
 Contents
 
@@ -51,7 +53,14 @@ sequenceDiagram
 
 `X-Client-Id` partitions chat sessions and rate limits; it is not a
 security boundary (`backend/app/governance/auth.py`). Do not put emails or
-other personal data in it.
+other personal data in it. From the revamp onwards an email-shaped id
+(anything containing `@`) is treated like a missing id (`default@local`), so a
+visitor id can never name a dashboard user's sessions.
+
+Do **not** send `X-Session`, `X-Requested-With` or `X-AskDIQ-Proxy`: those are
+the dashboard's own headers. On the revamp a request carrying `X-Session` or
+`X-AskDIQ-Proxy` is treated as a dashboard request and needs a valid session
+(401 otherwise).
 
 ### End-user IP (`ip_address`)
 
@@ -293,12 +302,21 @@ export async function POST(req: Request) {
 
 ## 10. Upcoming changes
 
-- **In progress (integration branch `preview/view`)**: the admin-console
-  revamp requires a signed-in SSO session (`X-Session`) on `/query` and
-  `/sessions`, and returns `application/problem+json` errors. As it stands it
-  has no API-key-only route for the public widget. Before the revamp ships to
-  `askdiq.ethub.co`, the AskDIQ team must provide a public chat route that keeps
-  this contract (API key + `X-Client-Id` + `ip_address`). The website team will
-  be told before any change; until then this document is the contract.
-- The Swagger example for `/query` now shows only `query`, `session_id` and
-  `ip_address` (the old generic `filters` example emptied answers).
+- **Admin-console revamp (`preview/view`)**: same paths, headers and bodies.
+  `/query`, `/sessions*` and feedback accept either a dashboard SSO session or
+  this contract (`X-API-Key` compared in constant time + `X-Client-Id`, no
+  session; `require_chat_actor` in `backend/app/auth/deps.py`). If the server's
+  `API_KEY_NAME` is empty, every call gets 401. Differences you may notice:
+  - Errors are `application/problem+json`; the `detail` field is still there
+    with the same texts (`Access Denied!`, rate-limit messages).
+  - Extra 429 when the assistant is at capacity
+    (`The assistant is at capacity. Please retry shortly.`, `Retry-After`).
+    Handle it like any 429.
+  - Rate-limit counters are shared by all workers (Postgres), not per process.
+  - Email-shaped `X-Client-Id` values map to `default@local` (section 2).
+  - Feedback also accepts optional `reason_tags` and `corrected_answer`.
+  - Only the chat routes accept the key alone; every admin route needs a
+    dashboard session.
+- The Swagger example for `/query` shows only `query`, `session_id` (`""`
+  means "no session") and `ip_address` (the old generic `filters` example
+  emptied answers).
