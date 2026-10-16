@@ -461,6 +461,10 @@ async def ingest_text(
             "quarantined": quarantined,
             "embedding_tokens": est_embed_tokens,
             "embedding_cost_usd": est_cost,
+            # Keys the usage/activity readers use (same values, additive).
+            "cost_usd": est_cost,
+            "document_id": str(document.id),
+            "total_chunks": len(new_chunks),
         },
         ip_address=client_ip,
         commit=False,

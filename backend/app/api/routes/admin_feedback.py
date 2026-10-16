@@ -42,7 +42,7 @@ from app.feedback.jobs import enqueue_golden_run
 from app.governance.audience import audience_scope, build_audience_filter
 from app.governance.audit import record_audit_event
 from app.governance.outcomes import Outcome
-from app.models.db_models import ChatMessageRecord, EvalPromotedCase
+from app.models.db_models import ChatSession, EvalPromotedCase
 from app.schemas.feedback import (
     MAX_PAGE_LIMIT,
     FeedbackAnalytics,
@@ -180,7 +180,7 @@ async def get_feedback_analytics(
     ``by_intent`` is present only once turn insights exist."""
     scope = audience_scope(audience)
     aud_feedback = await build_audience_filter(db, repo.CLIENT_IP, scope)
-    aud_queries = await build_audience_filter(db, ChatMessageRecord.ip_address, scope)
+    aud_queries = await build_audience_filter(db, ChatSession.created_ip, scope)
     payload = await analytics.compute_analytics(
         aud_feedback, aud_queries, session_factory
     )
