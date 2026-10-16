@@ -362,22 +362,37 @@ async def check_signin_pending_forbidden(ctx: SmokeContext) -> CheckResult:
 
 
 async def check_signin_logout(ctx: SmokeContext) -> CheckResult:
-    name = "signin: sign out revokes the session (/auth/me -> 401)"
+    name = (
+        "signin: sign out revokes the session and clears the cookie (/auth/me -> 401)"
+    )
 
     async def step() -> CheckResult:
         origin = "{0.scheme}://{0.netloc}".format(urlsplit(ctx.frontend_url))
+        session = ctx.client.cookies.get(SESSION_COOKIE) or ""
+        # The UI's sign-out route (frontend app/auth/logout), not the generic proxy.
         response = await ctx.client.post(
-            f"{ctx.frontend_url}/api/proxy/auth/logout",
-            headers={"Origin": origin},
+            f"{ctx.frontend_url}/auth/logout",
+            headers={"Origin": origin, "X-Requested-With": "askdiq"},
             follow_redirects=False,
         )
-        after = await _get(ctx, f"{ctx.frontend_url}/api/proxy/auth/me")
+        cleared = "max-age=0" in _set_cookie(response, SESSION_COOKIE).lower()
+        # Replaying the old session id proves the server revoked it.
+        replay = await ctx.client.get(
+            f"{ctx.frontend_url}/api/proxy/auth/me",
+            headers={"Cookie": f"{SESSION_COOKIE}={session}"},
+            follow_redirects=False,
+        )
         ok = (
             response.status_code == HTTP_NO_CONTENT
-            and after.status_code == HTTP_UNAUTHORIZED
+            and cleared
+            and bool(session)
+            and replay.status_code == HTTP_UNAUTHORIZED
         )
         return CheckResult(
-            name, ok, f"logout -> {response.status_code}, me -> {after.status_code}"
+            name,
+            ok,
+            f"logout -> {response.status_code}, cookie cleared={cleared}, "
+            f"replayed session -> {replay.status_code}",
         )
 
     return await _guard(name, step)

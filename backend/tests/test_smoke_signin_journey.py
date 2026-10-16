@@ -33,8 +33,15 @@ FORM = (
 class FakeStack:
     """Minimal stand-in for Next.js (port 3000) + FastAPI with the mock IdP."""
 
-    def __init__(self, *, has_auth: bool = True, session_flags: str = COOKIE_FLAGS):
+    def __init__(
+        self,
+        *,
+        has_auth: bool = True,
+        session_flags: str = COOKIE_FLAGS,
+        revokes: bool = True,
+    ):
         self.has_auth = has_auth
+        self.revokes = revokes
         self.session_flags = session_flags
         self.signed_in = False
         self.posted_email = ""
@@ -81,10 +88,13 @@ class FakeStack:
             return httpx.Response(
                 403, json={"detail": "Dashboard access requires approval."}
             )
-        if path == "/api/proxy/auth/logout":
+        if path == "/auth/logout" and request.method == "POST":
             assert request.headers["origin"] == FRONTEND
-            self.signed_in = False
-            return httpx.Response(204)
+            assert request.headers["x-requested-with"] == "askdiq"
+            if self.revokes:
+                self.signed_in = False
+            cleared = f"askdiq_session=; Max-Age=0{COOKIE_FLAGS}"
+            return httpx.Response(204, headers={"set-cookie": cleared})
         return httpx.Response(404)
 
 
@@ -151,3 +161,11 @@ async def test_run_only_adds_the_journey_when_asked(
     assert len(results) == 3
     assert seen[-1].startswith("smoke-")
     assert seen[-1].endswith("@example.com")
+
+
+async def test_signin_journey_flags_a_sign_out_that_leaves_the_session_live() -> None:
+    results = await run_journey(FakeStack(revokes=False))
+    failed = [r.name for r in results if not r.ok]
+    assert failed == [
+        "signin: sign out revokes the session and clears the cookie (/auth/me -> 401)"
+    ]

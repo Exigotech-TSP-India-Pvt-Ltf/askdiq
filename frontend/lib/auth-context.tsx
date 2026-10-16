@@ -58,14 +58,27 @@ function valueFor(
   };
 }
 
-/** Signs out on the server (revokes the session), then leaves for /login. */
-async function signOut(): Promise<void> {
-  try {
-    await logoutRequest();
-  } catch {
-    // The proxy clears the cookie on 401 too; leave for /login regardless.
-  }
-  redirectTo("/login");
+let signingOut: Promise<void> | null = null;
+
+/**
+ * Signs out (the route revokes the server session and clears the cookie),
+ * then replaces the current history entry with /login so Back cannot return
+ * to the signed-in page. Bounded by LOGOUT_CLIENT_TIMEOUT_MS and single-flight:
+ * a hung backend or a double click never leaves the user stuck signed in.
+ */
+function signOut(): Promise<void> {
+  if (signingOut) return signingOut;
+  signingOut = (async () => {
+    try {
+      await logoutRequest();
+    } catch {
+      // Timed out or failed: leave for /login regardless.
+    }
+    redirectTo("/login", { replace: true });
+  })().finally(() => {
+    signingOut = null;
+  });
+  return signingOut;
 }
 
 const SIGNED_OUT: AuthContextValue = valueFor(null, false, undefined, signOut, async () => null);
@@ -109,6 +122,16 @@ export function AuthProvider({ children, initialMe }: AuthProviderProps) {
     if (initialMe !== undefined) return;
     refresh().catch(() => undefined);
   }, [initialMe, refresh]);
+
+  // Back/Forward cache: a page restored after sign-out must not stay usable.
+  // Re-check the session; a 401 sends the route gate to /login.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) refresh().catch(() => undefined);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [refresh]);
 
   const value = useMemo(() => valueFor(me, isLoading, error, signOut, refresh), [me, isLoading, error, refresh]);
 
