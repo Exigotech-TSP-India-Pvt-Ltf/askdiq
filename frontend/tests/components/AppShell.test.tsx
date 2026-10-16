@@ -7,6 +7,8 @@ import { ProfileMenu } from "@/components/shell/ProfileMenu";
 import { NotificationBell } from "@/components/shell/NotificationBell";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { ThemeProvider } from "@/lib/theme-context";
+import { BrandProvider } from "@/lib/brand-context";
+import { DEFAULT_BRAND } from "@/lib/brand";
 import NotFound from "@/app/not-found";
 import ErrorPage from "@/app/error";
 import { LayoutDashboard } from "lucide-react";
@@ -70,6 +72,32 @@ describe("ProfileMenu (F0.6 shell)", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(trigger).toHaveFocus();
+  });
+});
+
+describe("ProfileMenu Help link", () => {
+  it("links to the branding help URL and is hidden when it is unset", async () => {
+    const { unmount } = render(
+      <BrandProvider brand={{ ...DEFAULT_BRAND, links: { ...DEFAULT_BRAND.links, help: "https://help.example.com/askdiq" } }}>
+        <MotionProvider>
+          <ProfileMenu />
+        </MotionProvider>
+      </BrandProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /account menu/i }));
+    const help = await screen.findByRole("menuitem", { name: "Help" });
+    expect(help).toHaveAttribute("href", "https://help.example.com/askdiq");
+    expect(help).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    unmount();
+
+    render(
+      <MotionProvider>
+        <ProfileMenu />
+      </MotionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /account menu/i }));
+    await screen.findByRole("menu");
+    expect(screen.queryByRole("menuitem", { name: "Help" })).toBeNull();
   });
 });
 

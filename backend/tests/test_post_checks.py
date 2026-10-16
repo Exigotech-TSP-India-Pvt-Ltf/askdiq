@@ -293,3 +293,24 @@ async def test_run_post_checks_grounded_end_to_end(monkeypatch):
     )
     assert grounded is True
     assert flags == []
+
+
+async def test_run_post_checks_defaults_to_the_retrieval_gate_minimum(monkeypatch):
+    """A source scoring between the gate (0.15) and the old hidden 0.3 passes."""
+
+    async def _fake_embed(texts):
+        return [[1.0, 0.0] for _ in texts]
+
+    monkeypatch.setattr(post_checks, "embed_texts", _fake_embed)
+    floor = post_checks.get_settings().min_retrieval_score
+
+    grounded, _confidence, flags = await run_post_checks(
+        "Deploy IQ does X.", [_source("Deploy IQ does X.", score=floor + 0.01)], 0.55
+    )
+    assert grounded is True
+    assert "low_retrieval_confidence" not in flags
+
+    grounded, _confidence, flags = await run_post_checks(
+        "Deploy IQ does X.", [_source("Deploy IQ does X.", score=floor - 0.01)], 0.55
+    )
+    assert grounded is False

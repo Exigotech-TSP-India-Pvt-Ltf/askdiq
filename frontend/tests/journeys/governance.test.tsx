@@ -66,8 +66,10 @@ vi.mock("next/navigation", async () => {
   };
 });
 
+const permissions = vi.hoisted(() => ({ granted: true }));
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({ token: "t", user: null, isLoading: false, logout: vi.fn() }),
+  usePermission: () => permissions.granted,
 }));
 
 vi.mock("@/lib/audience-context", () => ({
@@ -459,6 +461,17 @@ describe("Governance journey (F4.5)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^error/i }));
     expect(history.current()).toContain("level=ERROR");
+  });
+
+  it("Logs hides the CSV export without usage:export", async () => {
+    permissions.granted = false;
+    try {
+      renderPage("/admin/governance?tab=Logs");
+      await screen.findByText("Event p0-0");
+      expect(screen.queryByTestId("logs-export")).not.toBeInTheDocument();
+    } finally {
+      permissions.granted = true;
+    }
   });
 
   it("Monitoring labels each count, shows no-data stages and refreshes from SSE", async () => {

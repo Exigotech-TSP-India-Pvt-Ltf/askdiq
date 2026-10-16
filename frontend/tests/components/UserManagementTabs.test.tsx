@@ -12,6 +12,8 @@ import { UserManagementPage } from "@/components/admin/user-management/UserManag
 import { permissionDrift } from "@/components/admin/user-management/RolesMatrixTab";
 import { usersQuery, userManagementApi } from "@/lib/user-management-api";
 import { memoryRouter } from "../helpers/memory-router";
+import { useApiQuery } from "@/lib/query-cache";
+import { PENDING_ACCESS_QUERY_KEY } from "@/lib/use-shell-notifications";
 import {
   ME,
   deferred,
@@ -59,6 +61,25 @@ describe("Access Requests tab", () => {
     await waitFor(() => expect(screen.queryByTestId("request-row-r-2")).not.toBeInTheDocument());
     expect(server.callsTo("POST", "/admin/access-requests/r-2/approve")[0].body).toEqual({ role: "admin" });
     expect(await screen.findByText("Access approved")).toBeInTheDocument();
+  });
+
+  it("an approval refreshes the sidebar badge count at once", async () => {
+    const badgeFetch = vi.fn().mockResolvedValue(3);
+    function BadgeProbe() {
+      useApiQuery<number>(PENDING_ACCESS_QUERY_KEY, badgeFetch);
+      return null;
+    }
+    server = setupUserManagement("/admin/user-management?tab=requests", fixtures());
+    renderWithProviders(
+      <>
+        <BadgeProbe />
+        <UserManagementPage />
+      </>,
+    );
+    await waitFor(() => expect(row("r-2")).toBeInTheDocument());
+    await waitFor(() => expect(badgeFetch).toHaveBeenCalledTimes(1));
+    fireEvent.click(within(row("r-2")).getByRole("button", { name: "Approve dave@contoso.example" }));
+    await waitFor(() => expect(badgeFetch).toHaveBeenCalledTimes(2));
   });
 
   it("an approved row leaves through AnimatePresence (still mounted while it exits)", async () => {

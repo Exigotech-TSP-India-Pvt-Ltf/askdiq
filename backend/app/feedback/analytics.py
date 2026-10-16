@@ -99,6 +99,46 @@ def _coverage(aud: ColumnElement[bool] | None) -> Factory:
     return run
 
 
+def _answers_per_day(aud: ColumnElement[bool] | None, since: datetime) -> Factory:
+    """Assistant answers per UTC day: the denominator of daily coverage."""
+
+    async def run(db: AsyncSession) -> dict[str, int]:
+        day = cast(ChatMessageRecord.created_at, Date).label("day")
+        stmt = (
+            select(day, func.count(ChatMessageRecord.id))
+            .select_from(ChatMessageRecord)
+            .join(ChatSession, ChatMessageRecord.session_id == ChatSession.id)
+            .where(
+                ChatMessageRecord.role == "assistant",
+                ChatMessageRecord.created_at >= since,
+            )
+        )
+        if aud is not None:
+            stmt = stmt.where(aud)
+        rows = (await db.execute(stmt.group_by(day))).all()
+        return {d.isoformat(): int(n) for d, n in rows}
+
+    return run
+
+
+def with_daily_coverage(
+    trend: list[dict[str, Any]], answers: dict[str, int]
+) -> list[dict[str, Any]]:
+    """Add ``answers`` and ``coverage`` (ratings / answers, 0-1) to each day."""
+    return [
+        {
+            **point,
+            "answers": answers.get(point["day"], 0),
+            "coverage": (
+                round(point["total"] / answers[point["day"]], 4)
+                if answers.get(point["day"])
+                else None
+            ),
+        }
+        for point in trend
+    ]
+
+
 def _trend(aud: ColumnElement[bool] | None, since: datetime) -> Factory:
     async def run(db: AsyncSession) -> list[dict[str, Any]]:
         day = cast(MessageFeedback.created_at, Date).label("day")
@@ -317,6 +357,7 @@ async def compute_analytics(
         disagreement,
         gaps,
         by_intent,
+        answers_by_day,
     ) = await gather_scoped(
         _summary(aud_feedback),
         _coverage(aud_queries),
@@ -332,6 +373,7 @@ async def compute_analytics(
             settings.feedback_gap_limit,
         ),
         _by_intent(aud_feedback),
+        _answers_per_day(aud_queries, since),
         session_factory=session_factory,
     )
     total = summary["total"]
@@ -345,7 +387,7 @@ async def compute_analytics(
         "negative_ratio": _ratio(summary["neg"], total),
         "feedback_rate": _ratio(total, total_queries),
         "feedback_by_outcome": by_outcome,
-        "daily_trend": trend,
+        "daily_trend": with_daily_coverage(trend, answers_by_day),
         "rating_distribution": distribution,
         "top_reasons": reasons,
         "triage_funnel": funnel,

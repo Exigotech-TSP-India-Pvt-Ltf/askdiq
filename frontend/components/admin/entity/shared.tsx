@@ -3,7 +3,7 @@
 import React from "react";
 import { X } from "lucide-react";
 import { ApiError } from "@/lib/api";
-import { toIsoDay, useRange } from "@/lib/range-context";
+import { rangeUtcDays, useRange } from "@/lib/range-context";
 import { focusRing } from "@/components/ui/styles";
 import type { RangeParams } from "@/lib/entity-stats-api";
 
@@ -41,11 +41,11 @@ export function formatMs(value: number | null | undefined): string {
   return value >= 1000 ? `${(value / 1000).toFixed(2)} s` : `${Math.round(value)} ms`;
 }
 
-/** The global range (admin layout) as `from` / `to` days; empty outside a RangeProvider. */
+/** The global range (admin layout) as inclusive UTC `from` / `to` days; empty outside a RangeProvider. */
 export function useRangeParams(): RangeParams & { label: string | null } {
   const ctx = useRange();
   if (!ctx) return { label: null };
-  return { from: toIsoDay(ctx.range.from), to: toIsoDay(ctx.range.to), label: ctx.range.label };
+  return { ...rangeUtcDays(ctx.range), label: ctx.range.label };
 }
 
 /** Removable chip for a filter set from a chart (heatmap cell, histogram bin, bar segment). */

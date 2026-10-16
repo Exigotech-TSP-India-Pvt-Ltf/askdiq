@@ -121,4 +121,5 @@ async def submit_feedback(
         request_id=req_id,
         reason_tags=[t.value for t in body.reason_tags],
         corrected_answer=body.corrected_answer,
+        details_sent=bool({"reason_tags", "corrected_answer"} & body.model_fields_set),
     )

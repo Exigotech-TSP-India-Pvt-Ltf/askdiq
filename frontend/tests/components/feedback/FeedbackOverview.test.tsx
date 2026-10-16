@@ -113,3 +113,31 @@ describe("Feedback Overview", () => {
     await waitFor(() => expect(bar()).toHaveAttribute("fill", chartTheme.dark.status.ok));
   });
 });
+
+describe("Feedback Overview data fidelity", () => {
+  it("the Coverage sparkline plots daily ratings / answers, not the ratings count", async () => {
+    queryCache.clear();
+    installFetch((call) => {
+      if (call.path.startsWith("/admin/feedback/analytics")) {
+        return {
+          json: {
+            ...analyticsFixture,
+            daily_trend: analyticsFixture.daily_trend.map((p, i) => ({ ...p, answers: 100, coverage: [0.1, 0.14, 0.18][i] })),
+          },
+        };
+      }
+      if (call.path.startsWith("/admin/feedback?")) return { json: { ...page([]), total: 3 } };
+      return undefined;
+    });
+    await renderOverview();
+    const sparkline = screen.getByRole("group", { name: "Coverage trend" });
+    expect(within(sparkline).getAllByRole("button", { name: /^2026-10-14: 18$/ }).length).toBeGreaterThan(0);
+  });
+
+  it("funnel stages show the rows in each status, matching what a click filters to", async () => {
+    await renderOverview();
+    // Fixture: new 30, reviewed 6, promoted 4 (not cumulative 40 / 10 / 4).
+    expect(screen.getAllByRole("button", { name: /^New: 30 / }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /^Reviewed: 6 / }).length).toBeGreaterThan(0);
+  });
+});

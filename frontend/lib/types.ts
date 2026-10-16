@@ -74,6 +74,12 @@ export interface ChatMessage {
   feedbackRating?: number | null;
   /** Saved answers' request id (the live `response` carries its own). */
   requestId?: string | null;
+  /**
+   * Session the message is stored in. An expired session rotates to a new one
+   * mid-conversation, so the messages above the rotation still belong to the
+   * old session and must be rated/deleted there, not in the active one.
+   */
+  sessionId?: string | null;
 }
 
 export interface StageTokenBreakdown {

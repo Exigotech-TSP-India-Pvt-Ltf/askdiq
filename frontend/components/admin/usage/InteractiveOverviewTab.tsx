@@ -499,7 +499,7 @@ export function InteractiveOverviewTab({
 
                 {selectedStageDetail === "savings" && (
                   <div className="space-y-1 text-[11px] text-status-ok-fg">
-                    <p>Cached prompt tokens are billed at 50% discount (${pricing.price_cached_per_million || 0.0625}/1M vs ${pricing.price_prompt_per_million}/1M).</p>
+                    <p>Cached prompt tokens are billed at 50% discount (${pricing.price_cached_per_million || 0.125}/1M vs ${pricing.price_prompt_per_million}/1M).</p>
                     <p className="font-bold text-fg">Total net saved: ${financial.stage_costs.cached_savings_usd.toFixed(4)}</p>
                   </div>
                 )}

@@ -8,6 +8,7 @@ import { useChat } from "@/lib/chat-context";
 import type { FeedbackDetails, ReasonTag } from "@/lib/feedback-api";
 import { FeedbackReasonPanel } from "@/components/chat/FeedbackReasonPanel";
 import { SourceChips, citedSources } from "@/components/chat/SourceChips";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type FeedbackFn = (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
@@ -103,7 +104,8 @@ export function MessageBubble({
   onRetry,
 }: {
   message: ChatMessage;
-  onDelete?: () => void;
+  /** Deletes the question/answer pair; a rejection is shown under the bubble. */
+  onDelete?: () => void | Promise<void>;
   onFeedback?: FeedbackFn;
   /** Shown on a failed answer: re-sends the question. */
   onRetry?: () => void;
@@ -120,6 +122,8 @@ export function MessageBubble({
   const [reasonsOpen, setReasonsOpen] = useState(false);
   const [reasons, setReasons] = useState<ReasonTag[]>([]);
   const [correctedAnswer, setCorrectedAnswer] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const toast = useToast();
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -238,6 +242,40 @@ export function MessageBubble({
     }
   };
 
+  const confirmDelete = async () => {
+    if (!onDelete) return;
+    setDeleteError(null);
+    try {
+      await onDelete();
+    } catch (err: unknown) {
+      setDeleteError(
+        err instanceof Error && err.message
+          ? `Couldn't delete this exchange: ${err.message}`
+          : "Couldn't delete this exchange. Please try again.",
+      );
+    } finally {
+      setConfirmingDelete(false);
+    }
+  };
+
+  const deleteDialog = onDelete ? (
+    <ConfirmDialog
+      open={confirmingDelete}
+      title="Delete this exchange?"
+      description="The question and its answer are removed from this chat. This cannot be undone."
+      confirmLabel="Delete"
+      tone="danger"
+      onConfirm={confirmDelete}
+      onCancel={() => setConfirmingDelete(false)}
+    />
+  ) : null;
+
+  const deleteErrorNotice = deleteError ? (
+    <p className="text-[11px] text-rose-600 dark:text-rose-400" role="alert">
+      {deleteError}
+    </p>
+  ) : null;
+
   if (isUser) {
     return (
       <div className="flex justify-end">
@@ -261,7 +299,7 @@ export function MessageBubble({
             {onDelete && (
               <button
                 type="button"
-                onClick={onDelete}
+                onClick={() => setConfirmingDelete(true)}
                 className="inline-flex items-center gap-1 text-[11px] transition hover:text-ink/70"
                 aria-label="Delete this exchange"
               >
@@ -270,6 +308,8 @@ export function MessageBubble({
               </button>
             )}
           </div>
+          {deleteErrorNotice}
+          {deleteDialog}
         </div>
       </div>
     );
@@ -372,7 +412,7 @@ export function MessageBubble({
               {onDelete && (
                 <button
                   type="button"
-                  onClick={onDelete}
+                  onClick={() => setConfirmingDelete(true)}
                   className="inline-flex items-center gap-1 transition hover:text-slate-700 dark:hover:text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   aria-label="Delete this exchange"
                 >
@@ -383,6 +423,9 @@ export function MessageBubble({
             </div>
           </div>
         )}
+
+        {deleteErrorNotice}
+        {deleteDialog}
 
         {/* Feedback Error Notice */}
         {feedbackError && (

@@ -21,7 +21,7 @@ from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.request_meta import get_client_ip
-from app.ingestion.docx_converter import convert_docx
+from app.ingestion.docx_converter import convert_docx, screen_markdown
 from app.ingestion.service import ingest_text
 from app.schemas.document import IngestRequest, IngestResponse
 
@@ -52,13 +52,16 @@ async def ingest_json(
 
     effective_dry_run = dry_run or body.dry_run
     effective_force = force or body.force
+    content, warnings, quarantined = screen_markdown(body.content)
 
     try:
         result = await ingest_text(
             db,
             source_name=body.source_name,
             source_type=body.source_type,
-            content=body.content,
+            content=content,
+            warnings=warnings,
+            quarantined=quarantined,
             chunking_strategy=body.chunking_strategy,
             metadata=body.metadata,
             original_filename=body.source_name,
@@ -142,6 +145,8 @@ async def ingest_file(
             raise HTTPException(
                 status_code=422, detail="File is not valid UTF-8 text"
             ) from exc
+        text_content, screen_warnings, quarantined = screen_markdown(text_content)
+        warnings.extend(screen_warnings)
     else:
         raise HTTPException(
             status_code=415,

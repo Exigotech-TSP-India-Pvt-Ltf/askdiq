@@ -96,17 +96,42 @@ _VISITOR_SORT_FIELDS = {
 }
 
 
+# Bounds shared with the Usage tables (USAGE_PAGE_MAX_LIMIT / USAGE_MAX_OFFSET).
+_PAGE_MAX_LIMIT = get_settings().usage_page_max_limit
+_PAGE_MAX_OFFSET = get_settings().usage_max_offset
+
+
+# A visitor row is "Active" while its latest session activity is this recent
+# (the same 30-minute window the Visitors table used client-side).
+VISITOR_ACTIVE_WINDOW = timedelta(minutes=30)
+
+
+def visitor_status_label(last_active: datetime | None, now: datetime) -> str:
+    """ "Active" / "Inactive" from the latest activity (naive UTC)."""
+    if last_active is None:
+        return "Inactive"
+    return "Active" if now - last_active <= VISITOR_ACTIVE_WINDOW else "Inactive"
+
+
 @router.get("/users")
 async def list_users(
     audience: str = Query("overview"),
     include_test: bool | None = None,
     q: str | None = None,
-    # Accepted for compatibility (unused); aliased so it does not shadow `fastapi.status`.
-    status_filter: str | None = Query(None, alias="status"),
+    # Not named `status`: that would shadow fastapi.status used below.
+    visitor_status: str | None = Query(
+        None,
+        alias="status",
+        pattern="^(?i:all|active|inactive)$",
+        description=(
+            "`active`: last activity within the last "
+            f"{int(VISITOR_ACTIVE_WINDOW.total_seconds() // 60)} minutes."
+        ),
+    ),
     user_type: str | None = Query(None, alias="type"),
     sort: str = "last_active_desc",
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=_PAGE_MAX_LIMIT),
+    offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
     weekday: int | None = Query(
         None, ge=0, le=6, description="Heatmap filter: session start weekday (0 = Mon)."
     ),
@@ -150,6 +175,8 @@ async def list_users(
         aud_scope = audience_scope(audience)
 
     test_ips, _, _ = await get_classified_ips(db)
+    wanted_status = (visitor_status or "all").lower()
+    now = datetime.utcnow()
 
     ip_rows = (
         await db.execute(
@@ -207,13 +234,17 @@ async def list_users(
         if slot_ips is not None and ip not in slot_ips:
             continue
 
+        row_status = visitor_status_label(row.last_active, now)
+        if wanted_status != "all" and row_status.lower() != wanted_status:
+            continue
+
         all_users.append(
             {
                 "id": f"client-{ip}",
                 "ip_address": ip,
                 "is_test": is_test,
                 "type": t_type,
-                "status": "Active",
+                "status": row_status,
                 "sessions": row.sessions,
                 "conversations": row.sessions,
                 "queries": queries_by_ip.get(ip, 0),
@@ -290,6 +321,19 @@ async def get_user(
 
         first_seen = min(s.created_at for s in sessions_res)
         last_active = max(s.last_activity_at for s in sessions_res)
+        message_counts = dict(
+            (
+                await db.execute(
+                    select(
+                        ChatMessageRecord.session_id, func.count(ChatMessageRecord.id)
+                    )
+                    .where(
+                        ChatMessageRecord.session_id.in_([s.id for s in sessions_res])
+                    )
+                    .group_by(ChatMessageRecord.session_id)
+                )
+            ).all()
+        )
 
         return {
             "id": user_id,
@@ -298,7 +342,7 @@ async def get_user(
             "ip_address": ip,
             "first_seen": first_seen,
             "last_active": last_active,
-            "status": "Active",
+            "status": visitor_status_label(last_active, datetime.utcnow()),
             "sessions": len(sessions_res),
             "conversations": len(sessions_res),
             "queries": query_count,
@@ -309,7 +353,7 @@ async def get_user(
                     "title": s.title,
                     "created_at": s.created_at,
                     "last_activity_at": s.last_activity_at,
-                    "message_count": 0,
+                    "message_count": message_counts.get(s.id, 0),
                 }
                 for s in sessions_res
             ],
@@ -372,7 +416,9 @@ async def get_user(
         "ip_address": ip_address,
         "first_seen": user.created_at,
         "last_active": last_activity or user.created_at,
-        "status": "Active",
+        "status": visitor_status_label(
+            last_activity or user.created_at, datetime.utcnow()
+        ),
         "sessions": len(conversation_rows),
         "conversations": len(conversation_rows),
         "queries": query_count,
@@ -401,8 +447,8 @@ async def list_conversations(
     q: str | None = None,
     ip: str | None = None,
     sort: str = "last_activity_desc",
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=_PAGE_MAX_LIMIT),
+    offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
     min_turns: int | None = Query(
         None, ge=1, description="Inclusive turn-count floor."
     ),
@@ -1418,100 +1464,6 @@ async def usage_cost_breakdown(
             "actual": actual_count,
             "estimated": len(filtered) - actual_count,
         },
-    }
-
-
-@router.get("/usage/queries/{request_id}")
-async def get_query_usage_detail(
-    request_id: str,
-    db: AsyncSession = Depends(get_db),
-    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
-):
-    """Subtask 2.5.5: Return full single-query record with stage tokens, pricing snapshot, and latency."""
-    # 1. Fetch assistant message and session
-    result = await db.execute(
-        select(ChatMessageRecord, ChatSession)
-        .join(ChatSession, ChatMessageRecord.session_id == ChatSession.id)
-        .where(
-            ChatMessageRecord.request_id == request_id,
-            ChatMessageRecord.role == "assistant",
-        )
-    )
-    row = result.first()
-    if not row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Query with request_id '{request_id}' not found",
-        )
-    assistant_msg, session = row
-
-    # 2. Fetch corresponding user message in the same turn
-    user_res = await db.execute(
-        select(ChatMessageRecord).where(
-            ChatMessageRecord.session_id == session.id,
-            ChatMessageRecord.turn_index == assistant_msg.turn_index,
-            ChatMessageRecord.role == "user",
-        )
-    )
-    user_msg = user_res.scalar_one_or_none()
-
-    # 3. Fetch latency metrics
-    lat_res = await db.execute(
-        select(LatencyRecord).where(LatencyRecord.request_id == request_id)
-    )
-    lat_record = lat_res.scalar_one_or_none()
-    latency_dict = (
-        {
-            "total_ms": lat_record.total_ms,
-            "embedding_ms": lat_record.embedding_ms,
-            "retrieval_ms": lat_record.retrieval_ms,
-            "guardrail_pre_ms": lat_record.guardrail_pre_ms,
-            "llm_ms": lat_record.llm_ms,
-            "guardrail_post_ms": lat_record.guardrail_post_ms,
-            "reranker_ms": lat_record.reranker_ms,
-        }
-        if lat_record
-        else None
-    )
-
-    in_tok = assistant_msg.prompt_tokens or 0
-    out_tok = assistant_msg.completion_tokens or 0
-    reasoning_tok = assistant_msg.reasoning_tokens or 0
-    visible_tok = max(0, out_tok - reasoning_tok)
-    q_embed_tok = assistant_msg.embedding_tokens or 0
-    g_embed_tok = assistant_msg.guardrail_tokens or 0
-
-    return {
-        "request_id": request_id,
-        "session_id": str(session.id),
-        "session_title": session.title,
-        "user_email": session.user_email,
-        "ip_address": (user_msg.ip_address if user_msg else None)
-        or session.created_ip
-        or "Unknown",
-        "query": user_msg.content if user_msg else "",
-        "answer": assistant_msg.content,
-        "grounded": assistant_msg.grounded,
-        "guardrail_flags": assistant_msg.guardrail_flags or [],
-        "created_at": assistant_msg.created_at.isoformat() + "Z"
-        if assistant_msg.created_at
-        else None,
-        "tokens": {
-            "query_embed": q_embed_tok,
-            "guardrail_embed": g_embed_tok,
-            "total_embed": q_embed_tok + g_embed_tok,
-            "prompt": in_tok,
-            "reasoning": reasoning_tok,
-            "visible": visible_tok,
-            "completion": out_tok,
-            "total_llm": assistant_msg.total_tokens or (in_tok + out_tok),
-            "total_billed": q_embed_tok
-            + g_embed_tok
-            + (assistant_msg.total_tokens or (in_tok + out_tok)),
-        },
-        "cost_usd": assistant_msg.cost_usd,
-        "token_details": assistant_msg.token_details or {},
-        "latency": latency_dict,
     }
 
 

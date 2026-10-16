@@ -113,13 +113,17 @@ def _rate(num: float, den: float) -> float:
 
 
 def _kpi(
-    value: Any, unit: str | None, sparkline: list[Any], source: str
+    value: Any,
+    unit: str | None,
+    sparkline: list[Any],
+    source: str,
+    window: str = "24h",
 ) -> dict[str, Any]:
     return {
         "value": value,
         "unit": unit,
         "sparkline": sparkline,
-        "window": "24h",
+        "window": window,
         "source": source,
     }
 
@@ -193,6 +197,8 @@ def build_kpis(
             "USD",
             [float(v or 0.0) for v in hourly(turns, "cost_usd")],
             f"{turns_src}.cost_usd",
+            # The value sums from 00:00 UTC, not over the trailing 24 hours.
+            window="today_utc",
         ),
     }
 

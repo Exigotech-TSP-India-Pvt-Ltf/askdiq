@@ -122,6 +122,10 @@ export interface TrendPoint {
   positive: number;
   negative: number;
   avg_rating: number | null;
+  /** Assistant answers that day (coverage denominator). */
+  answers?: number;
+  /** Ratings / answers that day (0-1); null with no answers. */
+  coverage?: number | null;
 }
 
 export interface CountItem {
@@ -333,13 +337,20 @@ export interface MessageFeedbackPayload extends FeedbackDetails {
   comment?: string | null;
 }
 
-/** Upserts the caller's rating of one assistant message (a resubmission updates it). */
+/**
+ * Upserts the caller's rating of one assistant message (a resubmission updates it).
+ *
+ * Reason tags and the corrected answer are sent only when the caller supplies
+ * them: omitting both tells the server to keep the stored details on a
+ * negative rating (a note saved on a reloaded thumbs-down must not wipe them).
+ */
 export function submitMessageFeedback(
   token: string,
   sessionId: string,
   messageId: string,
   payload: MessageFeedbackPayload,
 ): Promise<UserFeedbackResponse> {
+  const hasDetails = payload.reason_tags !== undefined || payload.corrected_answer !== undefined;
   const corrected = payload.corrected_answer?.trim();
   return json<UserFeedbackResponse>(
     `/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/feedback`,
@@ -349,8 +360,12 @@ export function submitMessageFeedback(
       body: {
         rating: payload.rating,
         comment: payload.comment?.trim() ? payload.comment.trim() : null,
-        reason_tags: Array.from(new Set(payload.reason_tags ?? [])),
-        corrected_answer: corrected ? corrected.slice(0, MAX_CORRECTED_ANSWER_CHARS) : null,
+        ...(hasDetails
+          ? {
+              reason_tags: Array.from(new Set(payload.reason_tags ?? [])),
+              corrected_answer: corrected ? corrected.slice(0, MAX_CORRECTED_ANSWER_CHARS) : null,
+            }
+          : {}),
       },
     },
   );

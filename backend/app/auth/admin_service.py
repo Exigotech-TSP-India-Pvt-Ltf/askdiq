@@ -212,6 +212,11 @@ class UserAdminService:
                 )
             if new_status != old_status:
                 event = self._status_event(old_status, new_status)
+                revoked: int | None = None
+                if event is AuthEvent.USER_SUSPENDED:
+                    # Sign the user out everywhere now, in the same transaction,
+                    # instead of relying on the per-request status check alone.
+                    revoked = await self._sessions.revoke_all(user.id)
                 if event is AuthEvent.ACCESS_APPROVED:
                     user.approved_by = actor.id
                     user.approved_at = now
@@ -227,6 +232,9 @@ class UserAdminService:
                         "to_status": new_status,
                         "role": new_role,
                         "access_request_id": str(pending.id) if pending else None,
+                        **(
+                            {"sessions_revoked": revoked} if revoked is not None else {}
+                        ),
                     },
                 )
             approver = await self._users.approver_email(user)

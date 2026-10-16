@@ -105,4 +105,56 @@ describe("submitMessageFeedback payload", () => {
     expect(calls[1].path).toBe(calls[0].path);
     expect(calls[1].body).toEqual({ rating: 1, comment: null, reason_tags: ["incomplete"], corrected_answer: null });
   });
+
+  it("omits reason tags and corrected answer when none are given, so a note keeps the stored ones", async () => {
+    const calls = installFetch((call) =>
+      call.method === "POST"
+        ? {
+            json: {
+              message_id: "m-1",
+              session_id: "s-1",
+              rating: 1,
+              comment: "Outdated",
+              reason_tags: ["wrong"],
+              corrected_answer: "Better.",
+              triage_status: "new",
+              created_at: "",
+              updated_at: "",
+            },
+          }
+        : undefined,
+    );
+    await submitMessageFeedback("t", "s-1", "m-1", { rating: 1, comment: "Outdated" });
+    expect(calls[0].body).toEqual({ rating: 1, comment: "Outdated" });
+  });
+});
+
+describe("Delete exchange", () => {
+  it("asks for confirmation before deleting", async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    render(
+      <Providers>
+        <MessageBubble message={message} onDelete={onDelete} />
+      </Providers>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /delete this exchange/i }));
+    expect(onDelete).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Delete this exchange?");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows the server failure instead of hiding it", async () => {
+    const onDelete = vi.fn().mockRejectedValue(new Error("Message not found"));
+    render(
+      <Providers>
+        <MessageBubble message={message} onDelete={onDelete} />
+      </Providers>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /delete this exchange/i }));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    expect(await screen.findByText(/couldn't delete this exchange: message not found/i)).toBeInTheDocument();
+  });
 });

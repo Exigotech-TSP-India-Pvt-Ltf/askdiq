@@ -320,8 +320,13 @@ async def upsert_chat_feedback(
     reason_tags: list[str],
     corrected_answer: str | None,
     now: datetime,
+    keep_details: bool = False,
 ) -> Any:
-    """One row per (message, actor): insert, or replace the user's fields."""
+    """One row per (message, actor): insert, or replace the user's fields.
+
+    ``keep_details`` leaves an existing row's ``reason_tags`` and
+    ``corrected_answer`` untouched (the client did not send them).
+    """
     stmt = pg_insert(MessageFeedback).values(
         id=uuid.uuid4(),
         message_id=message_id,
@@ -334,16 +339,17 @@ async def upsert_chat_feedback(
         created_at=now,
         updated_at=now,
     )
+    set_: dict[str, Any] = {
+        "rating": stmt.excluded.rating,
+        "comment": stmt.excluded.comment,
+        "updated_at": stmt.excluded.updated_at,
+        "version": MessageFeedback.version + 1,
+    }
+    if not keep_details:
+        set_["reason_tags"] = stmt.excluded.reason_tags
+        set_["corrected_answer"] = stmt.excluded.corrected_answer
     stmt = stmt.on_conflict_do_update(
-        constraint="uq_message_feedback_message_actor",
-        set_={
-            "rating": stmt.excluded.rating,
-            "comment": stmt.excluded.comment,
-            "reason_tags": stmt.excluded.reason_tags,
-            "corrected_answer": stmt.excluded.corrected_answer,
-            "updated_at": stmt.excluded.updated_at,
-            "version": MessageFeedback.version + 1,
-        },
+        constraint="uq_message_feedback_message_actor", set_=set_
     ).returning(
         MessageFeedback.id,
         MessageFeedback.message_id,

@@ -9,6 +9,12 @@ import { useDeepLink } from "@/lib/use-deep-link";
  *   preset  -> `?range=24h|30d|90d` (7d is the default and leaves the URL clean)
  *   custom  -> `?from=YYYY-MM-DD&to=YYYY-MM-DD`
  * Invalid or out-of-bounds values are clamped, never trusted.
+ *
+ * One convention end to end: calendar days are **UTC days**, as the server
+ * buckets them. A custom `from`..`to` means those UTC dates (the Dashboard
+ * sends their UTC midnights; day-based endpoints get the same dates), and a
+ * preset sent to a day-based endpoint becomes the N UTC days ending today
+ * (`rangeUtcDays`). Presets sent as instants stay rolling windows.
  */
 export type RangePreset = "24h" | "7d" | "30d" | "90d";
 export type RangeKind = RangePreset | "custom";
@@ -55,6 +61,31 @@ export function toIsoDay(date: Date): string {
   const mo = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${mo}-${d}`;
+}
+
+/** `YYYY-MM-DD` of the UTC day that contains `date`. */
+export function toUtcIsoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/** UTC midnight of a picked calendar day (`day` holds the date in its local fields). */
+export function utcMidnight(day: Date, addDays = 0): Date {
+  return new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate() + addDays));
+}
+
+const PRESET_DAYS: Record<RangePreset, number> = { "24h": 1, "7d": 7, "30d": 30, "90d": 90 };
+
+/**
+ * The range as inclusive UTC days for day-based endpoints. Custom ranges are
+ * the picked dates; "Last N days" is exactly N UTC days ending today, and
+ * "Last 24 hours" is the UTC days the last 24 hours touch.
+ */
+export function rangeUtcDays(range: DateRange): { from: string; to: string } {
+  if (range.kind === "custom") return { from: toIsoDay(range.from), to: toIsoDay(range.to) };
+  const to = toUtcIsoDay(range.to);
+  const first =
+    range.kind === "24h" ? range.from : new Date(range.to.getTime() - (PRESET_DAYS[range.kind] - 1) * DAY_MS);
+  return { from: toUtcIsoDay(first), to };
 }
 
 function parseIsoDay(value: string | null): Date | null {

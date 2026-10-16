@@ -585,8 +585,15 @@ async def record_feedback(
     request_id: str | None = None,
     reason_tags: list[str] | None = None,
     corrected_answer: str | None = None,
+    details_sent: bool = True,
 ) -> UserFeedbackResponse:
-    """Upsert feedback for an assistant message and record an audit event (Subtasks 1.3.2 & 1.3.3)."""
+    """Upsert feedback for an assistant message and record an audit event (Subtasks 1.3.2 & 1.3.3).
+
+    ``details_sent=False`` means the client sent neither ``reason_tags`` nor
+    ``corrected_answer`` (e.g. a note saved on a reloaded thumbs-down). For a
+    negative rating the stored details are then kept instead of being wiped;
+    a positive rating always clears them (they describe what was wrong).
+    """
     session = await _get_owned_session(db, session_id, actor)
 
     mid = _parse_uuid(message_id)
@@ -610,10 +617,12 @@ async def record_feedback(
 
     now = datetime.utcnow()
     clean_comment = comment.strip() if comment else None
+    # Stored and audited masked: free text can carry emails, phones, etc.
     redacted_comment = redact_pii(clean_comment)[0] if clean_comment else None
     tags = [str(t) for t in (reason_tags or [])]
     # The "better answer" becomes training data: mask PII before it is stored.
     masked_answer = redact_pii(corrected_answer)[0] if corrected_answer else None
+    keep_details = not details_sent and rating <= _NEGATIVE_RATING_MAX
 
     # Atomic upsert on (message_id, actor): a resubmission updates the row.
     feedback_row = await feedback_repo.upsert_chat_feedback(
@@ -622,10 +631,11 @@ async def record_feedback(
         session_id=session.id,
         actor=actor,
         rating=rating,
-        comment=clean_comment,
+        comment=redacted_comment,
         reason_tags=tags,
         corrected_answer=masked_answer,
         now=now,
+        keep_details=keep_details,
     )
 
     # Append audit event with expected keys
@@ -646,8 +656,8 @@ async def record_feedback(
         detail={
             "rating": rating,
             "comment": redacted_comment,
-            "reason_tags": tags,
-            "has_corrected_answer": masked_answer is not None,
+            "reason_tags": list(feedback_row.reason_tags or []),
+            "has_corrected_answer": feedback_row.corrected_answer is not None,
             "conversation_id": str(session.id),
             "message_id": str(mid),
         },

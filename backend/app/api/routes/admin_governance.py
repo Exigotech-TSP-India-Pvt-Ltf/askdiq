@@ -471,7 +471,8 @@ def _csv_line(values: list[Any]) -> str:
         "Streams every row matching the `/governance/logs` filters (newest "
         "first, at most `GOVERNANCE_EXPORT_MAX_ROWS`) with flat memory. Cells "
         "starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` "
-        "(formula-injection safe). The export itself is audited."
+        "(formula-injection safe). The export itself is audited. Needs "
+        "`usage:export` (bulk data export, admin and up)."
     ),
     response_class=StreamingResponse,
     responses={
@@ -489,7 +490,7 @@ async def governance_logs_export(
     audience: Audience = Depends(audience_scope),
     db: AsyncSession = Depends(get_db),
     runner: ScopedRunner = Depends(get_scoped_runner),
-    user: AuthUser = Depends(read_guard),
+    user: AuthUser = Depends(require_permission(Permission.USAGE_EXPORT)),
 ) -> StreamingResponse:
     filters = _log_filters(user, audience, level, service, q, date_from, date_to)
     settings = get_settings()

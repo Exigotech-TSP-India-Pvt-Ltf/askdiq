@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { Clock, Download, RefreshCw, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useCan } from "@/lib/use-can";
 import { useAudience } from "@/lib/audience-context";
 import { useApiQuery } from "@/lib/query-cache";
 import { useDeepLink } from "@/lib/use-deep-link";
@@ -170,6 +171,8 @@ export default function LogsView() {
 
   const total = page ? `${page.total_is_estimate ? "≈ " : ""}${formatCount(page.total)} entries` : undefined;
   const exportHref = logsExportUrl({ ...filters, audience });
+  // Bulk export is an admin action (usage:export), like the Usage CSV.
+  const canExport = useCan("usage:export");
   const toast = useToast();
 
   return (
@@ -192,6 +195,7 @@ export default function LogsView() {
             <RefreshCw className={`h-4 w-4 ${live ? "motion-safe:animate-spin" : ""}`} strokeWidth={1.75} aria-hidden="true" />
             Auto-refresh {autoRefresh ? (live ? "on" : "paused") : "off"}
           </button>
+          {canExport ? (
           <a
             href={exportHref}
             download
@@ -207,6 +211,7 @@ export default function LogsView() {
             <Download className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
             Export CSV
           </a>
+          ) : null}
         </>
       }
       toolbar={

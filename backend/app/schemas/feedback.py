@@ -232,6 +232,13 @@ class TrendPoint(BaseModel):
     positive: int
     negative: int
     avg_rating: float | None
+    answers: int = Field(
+        default=0, description="Assistant answers that UTC day (audience-scoped)."
+    )
+    coverage: float | None = Field(
+        default=None,
+        description="Ratings / answers that day (0-1); null with no answers.",
+    )
 
 
 class CountItem(BaseModel):

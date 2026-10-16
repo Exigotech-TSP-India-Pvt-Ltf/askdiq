@@ -147,9 +147,9 @@ describe("Dashboard: KPI cards (F3.1.1)", () => {
     const call = urls().find((u) => u.startsWith("/api/proxy/admin/dashboard?"));
     expect(call).toBeDefined();
     const params = new URL(call!, "http://x").searchParams;
-    expect(new Date(params.get("from")!).getDate()).toBe(1);
-    // `to` is inclusive in the picker, so the request ends at the next midnight.
-    expect(new Date(params.get("to")!).getDate()).toBe(15);
+    // Picked dates are UTC days: from = 1 Oct 00:00Z, to (inclusive) = 15 Oct 00:00Z.
+    expect(params.get("from")).toBe("2026-10-01T00:00:00.000Z");
+    expect(params.get("to")).toBe("2026-10-15T00:00:00.000Z");
   });
 });
 

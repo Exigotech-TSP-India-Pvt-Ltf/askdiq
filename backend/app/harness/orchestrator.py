@@ -77,9 +77,14 @@ def _fallback_response(
             f"I can help with questions about the {brand} platform, Zero Trust, "
             "Essential Eight, Responsible AI, governance, and data handling."
         )
+    elif "llm_call_failed" in flags or "empty_llm_output" in flags:
+        answer = "I couldn't generate an answer just now. Please try again in a moment."
     else:
+        # Ungrounded answers (low retrieval confidence, possible hallucination,
+        # unsupported figures): the question was fine, the evidence was not.
         answer = (
-            "Seems like you have made a typo, could you please rephrase your question? "
+            f"I couldn't find enough support in the {brand} knowledge base to answer "
+            "that confidently. Try asking about a more specific topic. "
             f"I can help with questions about the {brand} platform, Zero Trust, "
             "Essential Eight, Responsible AI, governance, and data handling."
         )
@@ -379,6 +384,7 @@ async def run_query(
             answer,
             sources,
             settings.groundedness_threshold,
+            settings.min_retrieval_score,
         )
         guardrail_post_ms += (time.perf_counter() - t_post) * 1000
 
