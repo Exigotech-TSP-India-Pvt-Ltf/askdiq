@@ -29,7 +29,8 @@ from datetime import UTC
 
 from app.core.config import configure_logging
 from app.core.database import AsyncSessionLocal, engine
-from app.evaluation.dataset import ALL_DOCS, EVAL_CASES
+from app.evaluation.dataset import ALL_DOCS, EVAL_CASES, EvalCase
+from app.evaluation.dataset_extra import load_promoted_cases, merge_cases
 from app.evaluation.evaluator import STAGES, EvalResult, run_evaluation
 from app.retrieval.vector_store import VectorStore
 
@@ -285,8 +286,10 @@ def _to_json(report) -> dict:
     return {**report.summary(), "cases": [r.to_dict() for r in report.results]}
 
 
-def _select_cases(ids: list[str] | None, types: list[str] | None):
-    cases = EVAL_CASES
+def _select_cases(
+    ids: list[str] | None, types: list[str] | None, promoted: list | None = None
+):
+    cases = merge_cases(EVAL_CASES, promoted or [])
     if ids:
         unknown = set(ids) - {c.id for c in cases}
         if unknown:
@@ -311,7 +314,8 @@ async def main(args: argparse.Namespace) -> int:
         await engine.dispose()
         return 0
 
-    cases = _select_cases(args.ids, args.types)
+    # Golden cases promoted from feedback (DB, JSON fallback).
+    cases = _select_cases(args.ids, args.types, await load_promoted_cases(EvalCase))
     total = len(cases) * max(1, args.repeat)
     counter = {"i": 0}
 

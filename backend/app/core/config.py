@@ -271,6 +271,12 @@ class Settings(BaseSettings):
     jobs_shutdown_timeout_seconds: float = 30.0
     jobs_retention_days: int = 7
     state_cleanup_interval_seconds: int = 60
+    # Feedback / RLHF loop (PR-11).
+    feedback_trend_days: int = Field(default=30, ge=1, le=365)
+    # Retrieval confidence below this marks a low-rated turn as a knowledge gap.
+    feedback_gap_confidence_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    feedback_gap_limit: int = Field(default=10, ge=1, le=100)
+    feedback_export_batch_size: int = Field(default=500, ge=10, le=5000)
 
     # --- Insights (PR-12) ---
     # Turns per classifier LLM call.

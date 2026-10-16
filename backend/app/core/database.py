@@ -44,6 +44,15 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Dependency: the factory ``gather_scoped`` opens one session per task from.
+
+    A dependency (not a module global) so tests can route parallel
+    aggregation through their transactional session.
+    """
+    return AsyncSessionLocal
+
+
 def is_statement_timeout(exc: BaseException) -> bool:
     """True when ``exc`` is Postgres cancelling a statement (statement_timeout)."""
     if not isinstance(exc, DBAPIError):

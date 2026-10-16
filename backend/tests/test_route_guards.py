@@ -56,6 +56,9 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ),
     ("PUT", "/admin/branding"): Permission.BRANDING_WRITE,
     ("POST", "/admin/branding/assets"): Permission.BRANDING_WRITE,
+    ("POST", "/admin/feedback/bulk"): Permission.FEEDBACK_TRIAGE,
+    ("PATCH", "/admin/feedback/{feedback_id}"): Permission.FEEDBACK_TRIAGE,
+    ("POST", "/admin/feedback/golden/{case_id}/run"): Permission.FEEDBACK_TRIAGE,
     ("POST", "/query"): CHAT,
     ("POST", "/sessions"): CHAT,
     ("PATCH", "/sessions/{session_id}"): CHAT,
@@ -74,6 +77,7 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
 # GET routes needing more than dashboard:read.
 EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/usage/export": Permission.USAGE_EXPORT,
+    "/admin/feedback/export": Permission.FEEDBACK_EXPORT,
     "/auth/me": SIGNED_IN,
     "/auth/access-request": CHAT,
     "/admin/users-accounts": MANAGE,
