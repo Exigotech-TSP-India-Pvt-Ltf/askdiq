@@ -187,6 +187,22 @@ async def test_users_carry_last_active_and_sort_by_it(
         assert stamps == sorted(stamps, reverse=order == "desc")
 
 
+@pytest.fixture
+async def raw_client():
+    """No DB override: for validation errors raised before any query."""
+    from httpx import ASGITransport
+
+    from app.core.config import get_settings
+    from main import app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+        headers={"X-API-Key": get_settings().api_key_name or "ci-test-key"},
+    ) as ac:
+        yield ac
+
+
 def test_query_inspector_route_is_declared_once() -> None:
     from fastapi.routing import APIRoute
 
@@ -204,6 +220,23 @@ def test_query_inspector_route_is_declared_once() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sessions_page_limit_is_still_capped(client: AsyncClient) -> None:
-    res = await client.get("/admin/usage/sessions?limit=10000")
+async def test_sessions_page_limit_is_still_capped(raw_client: AsyncClient) -> None:
+    res = await raw_client.get("/admin/usage/sessions?limit=10000")
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/admin/users?limit=100000",
+        "/admin/users?limit=0",
+        "/admin/users?offset=-1",
+        "/admin/conversations?limit=100000",
+        "/admin/conversations?offset=99999999",
+        "/admin/usage/users?limit=100000",
+    ],
+)
+async def test_admin_list_limits_are_bounded(raw_client: AsyncClient, url: str) -> None:
+    res = await raw_client.get(url)
     assert res.status_code == 422

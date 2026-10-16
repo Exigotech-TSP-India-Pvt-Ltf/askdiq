@@ -598,6 +598,9 @@ async def _compute_usage_summary(
 # ============================================================================
 
 
+_PAGE_MAX_LIMIT = get_settings().usage_page_max_limit
+_PAGE_MAX_OFFSET = get_settings().usage_max_offset
+
 _ALLOWED_USER_SORTS = {
     "cost_desc",
     "cost_asc",
@@ -618,11 +621,33 @@ async def get_usage_users(
     q: str | None = None,
     user_type: str | None = Query(None, alias="type"),
     sort: str = "cost_desc",
-    limit: int = 10,
-    offset: int = 0,
+    limit: int = Query(10, ge=1, le=_PAGE_MAX_LIMIT),
+    offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
+    return await _usage_users_page(
+        db,
+        audience=audience,
+        q=q,
+        user_type=user_type,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def _usage_users_page(
+    db: AsyncSession,
+    *,
+    audience: Audience,
+    q: str | None,
+    user_type: str | None,
+    sort: str,
+    limit: int,
+    offset: int,
+) -> dict:
+    """Users rows for the tab (page-capped) and the CSV export (export-capped)."""
     if sort not in _ALLOWED_USER_SORTS:
         raise HTTPException(
             status_code=422,
@@ -1471,15 +1496,14 @@ async def export_usage_csv(
             out.seek(0)
             out.truncate(0)
 
-            user_res = await get_usage_users(
+            user_res = await _usage_users_page(
+                db,
                 audience=audience,
                 q=q,
                 user_type=user_type,
                 sort="cost_desc",
                 limit=settings.usage_export_max_rows,
                 offset=0,
-                db=db,
-                user=user,
             )
             for item in user_res["items"]:
                 writer.writerow(

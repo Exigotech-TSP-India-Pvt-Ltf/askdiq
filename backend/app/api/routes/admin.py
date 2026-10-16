@@ -96,6 +96,11 @@ _VISITOR_SORT_FIELDS = {
 }
 
 
+# Bounds shared with the Usage tables (USAGE_PAGE_MAX_LIMIT / USAGE_MAX_OFFSET).
+_PAGE_MAX_LIMIT = get_settings().usage_page_max_limit
+_PAGE_MAX_OFFSET = get_settings().usage_max_offset
+
+
 @router.get("/users")
 async def list_users(
     audience: str = Query("overview"),
@@ -104,8 +109,8 @@ async def list_users(
     status: str | None = None,
     user_type: str | None = Query(None, alias="type"),
     sort: str = "last_active_desc",
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=_PAGE_MAX_LIMIT),
+    offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
     weekday: int | None = Query(
         None, ge=0, le=6, description="Heatmap filter: session start weekday (0 = Mon)."
     ),
@@ -400,8 +405,8 @@ async def list_conversations(
     q: str | None = None,
     ip: str | None = None,
     sort: str = "last_activity_desc",
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=_PAGE_MAX_LIMIT),
+    offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
     min_turns: int | None = Query(
         None, ge=1, description="Inclusive turn-count floor."
     ),
