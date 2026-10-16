@@ -354,6 +354,15 @@ async def test_live_evaluation_runs_are_utc_days(client, db_session) -> None:
     trend = data["pass_rate_trend"]
     assert trend[-1]["run_id"] == qd["current_run"]["run_id"]
     assert trend[-2]["pass_rate"] == 0.5
+    # Unmeasured live metrics are absent, never constants or multiples.
+    assert data["retrieval"]["mrr"] is None
+    assert data["retrieval"]["recall@1"] is None
+    assert data["citation"]["quality"]["correct_document"] is None
+    assert data["safety"]["injection_compliance_rate"] is None
+    assert data["robustness"]["by_perturbation"] == {}
+    assert data["abstention"]["false_abstention_rate"] is None
+    assert "embedding" not in data["operational"]["latency_ms"]
+    assert "retrieval.mrr" in data["not_measured"]
 
 
 async def test_benchmark_runs_come_from_report_files(

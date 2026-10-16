@@ -214,7 +214,10 @@ export default function EvaluationLivePage() {
 
   const latencyBars = useMemo(() => {
     const stageMap: Record<string, any> = r?.operational?.latency_ms ?? {};
-    return Object.entries(stageMap).map(([k, v]: [string, any]) => ({
+    // Only measured stages: the API omits stages it has no timings for.
+    return Object.entries(stageMap)
+      .filter(([, v]) => v && typeof v === "object")
+      .map(([k, v]: [string, any]) => ({
       stage: label(k),
       p50: ((v.p50 ?? 0) / 1000).toFixed(2),
       p95: ((v.p95 ?? 0) / 1000).toFixed(2),
@@ -470,8 +473,8 @@ export default function EvaluationLivePage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
                 <Stat label="Citation Precision" value={pct(r?.citation?.precision)} />
                 <Stat label="Citation Coverage" value={pct(r?.citation?.coverage)} />
-                <Stat label="Correct Document" value={r?.citation?.quality?.correct_document !== false ? "100.0%" : "—"} />
-                <Stat label="Current Version" value={r?.citation?.quality?.current_version !== false ? "100.0%" : "—"} />
+                <Stat label="Correct Document" value={r?.citation?.quality?.correct_document === true ? "100.0%" : "—"} />
+                <Stat label="Current Version" value={r?.citation?.quality?.current_version === true ? "100.0%" : "—"} />
               </div>
             </div>
 
@@ -482,9 +485,11 @@ export default function EvaluationLivePage() {
                 Live Evaluation Quality Rationale
               </h4>
               <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                Evaluator continuously scores assistant responses against retrieved enterprise documents. 
-                Answers maintain a mean faithfulness of <strong className="text-teal-700 dark:text-teal-300 font-bold font-mono">{num(r?.judge?.faithfulness, 2)} / 5.0</strong> with zero hallucinated security guidelines.
-                Citation precision remains high at <strong className="text-emerald-600 dark:text-emerald-400 font-bold font-mono">{pct(r?.citation?.precision)}</strong>, indicating virtually all claims have verifiable source lineage.
+                The evaluator scores assistant responses against the retrieved documents. Mean faithfulness is{" "}
+                <strong className="text-teal-700 dark:text-teal-300 font-bold font-mono">{num(r?.judge?.faithfulness, 2)} / 5.0</strong>{" "}
+                and citation precision (word overlap with the sources) is{" "}
+                <strong className="text-emerald-600 dark:text-emerald-400 font-bold font-mono">{pct(r?.citation?.precision)}</strong>.
+                Without the LLM judge (ONLINE_EVAL_ENABLED) faithfulness is a heuristic, not a judged score.
               </p>
             </div>
           </div>
@@ -522,6 +527,13 @@ export default function EvaluationLivePage() {
                     </tr>
                   </thead>
                   <tbody>
+                    {Object.keys(r?.robustness?.by_perturbation ?? {}).length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-3.5 py-4 text-center text-fg-muted" data-testid="robustness-not-measured">
+                          Not measured: robustness comes from the benchmark suite, not live traffic.
+                        </td>
+                      </tr>
+                    ) : null}
                     {Object.entries(r?.robustness?.by_perturbation ?? {}).map(([k, v]: any) => (
                       <tr key={k} className="border-b border-teal-100/50 dark:border-teal-500/10 even:bg-surface-muted/30 dark:even:bg-white/[0.015] hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07] transition-colors">
                         <td className="px-3.5 py-2.5 font-bold text-slate-900 dark:text-white">{label(k)}</td>

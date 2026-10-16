@@ -79,7 +79,7 @@ export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) 
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Live Production vs Baseline Benchmark Suite</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Comparing real user traffic telemetry against the 69 golden reference test cases</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Comparing real user traffic against the latest benchmark report</p>
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs">
