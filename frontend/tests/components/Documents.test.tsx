@@ -124,10 +124,15 @@ describe("Document detail", () => {
     fireEvent.click(await screen.findByRole("button", { name: "#1 5 Oct: 2" }));
     await waitFor(() => expect(currentParams().get("chunk")).toBe(chunks[0].id));
 
-    const list = screen.getByRole("list", { name: "Low-rated citations" });
+    fireEvent.click(screen.getByRole("tab", { name: /Citations/ }));
+    await waitFor(() => expect(currentParams().get("tab")).toBe("citations"));
+    const list = await screen.findByRole("list", { name: "Low-rated citations" });
     expect(within(list).getByRole("link", { name: "Open in Feedback" })).toHaveAttribute("href", `/admin/feedback?message_id=${ASSISTANT_MSG}`);
     fireEvent.click(within(list).getByRole("button", { name: "Chunk 4" }));
     await waitFor(() => expect(currentParams().get("chunk")).toBe(CHUNK_ID));
+    // Jumping to a chunk returns to the Chunks tab.
+    expect(currentParams().get("tab")).toBeNull();
+    expect(await screen.findByRole("article", { name: "Chunk 4" })).toBeInTheDocument();
   });
 
   it("renders chunks from an older backend (no hits, no low-rated endpoint)", async () => {
@@ -138,6 +143,11 @@ describe("Document detail", () => {
     renderPage(<DocumentDetailPage />, { url: `/documents/${DOC_ID}` });
     expect(await screen.findByText("Annual leave is 20 days per year.")).toBeInTheDocument();
     expect(screen.getByText("Chunk hit counts are not available yet")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Citations/ }));
     expect(await screen.findByText("Low-rated citations are not available yet")).toBeInTheDocument();
+    // No detail or canonical endpoint either: metadata comes from the inventory row.
+    expect(screen.getByRole("region", { name: "Document metadata" })).toHaveTextContent("Native Markdown");
+    fireEvent.click(screen.getByRole("tab", { name: /Canonical Markdown/ }));
+    expect(await screen.findByText("The canonical Markdown was not stored for this document")).toBeInTheDocument();
   });
 });

@@ -2,6 +2,8 @@
 
 import React from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, AlertCircle, Inbox } from "lucide-react";
+import { m } from "motion/react";
+import { fadeUp, useMotionVariants } from "@/lib/motion";
 import type { TableDensity } from "@/lib/use-table-preferences";
 
 const CELL_PADDING: Record<TableDensity, string> = {
@@ -35,6 +37,8 @@ export interface DataTableProps<T> {
   nested?: boolean;
   /** Row density from `useTablePreferences` / the TableToolbar toggle. */
   density?: TableDensity;
+  /** Rows fade up as they mount (page changes, new data); off by default. */
+  animateRows?: boolean;
   className?: string;
 }
 
@@ -52,8 +56,12 @@ export function DataTable<T extends Record<string, any>>({
   onRowClick,
   nested = true,
   density = "comfortable",
+  animateRows = false,
   className = "",
 }: DataTableProps<T>) {
+  const rowVariants = useMotionVariants(fadeUp);
+  const Row = animateRows ? m.tr : "tr";
+  const rowMotion = animateRows ? { variants: rowVariants, initial: "hidden", animate: "visible" } : {};
   const getRowKey = (row: T, idx: number): string => {
     if (typeof keyField === "function") return keyField(row);
     if (keyField in row && row[keyField] !== undefined) return String(row[keyField]);
@@ -200,7 +208,8 @@ export function DataTable<T extends Record<string, any>>({
                 const isClickable = Boolean(onRowClick);
 
                 return (
-                  <tr
+                  <Row
+                    {...rowMotion}
                     key={rowKey}
                     onClick={() => isClickable && onRowClick?.(row)}
                     className={`transition-colors duration-150 ${
@@ -232,7 +241,7 @@ export function DataTable<T extends Record<string, any>>({
                         </td>
                       );
                     })}
-                  </tr>
+                  </Row>
                 );
               })
             )}
