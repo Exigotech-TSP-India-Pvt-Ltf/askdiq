@@ -1,8 +1,9 @@
 # AskDIQ: Admin Console Revamp, Phased Execution Plan (`planchanges4.md`)
 
-**Source:** [newplan.md](newplan.md) revision 3 (sections 1 to 17). Section numbers like "§7.5" refer to that file.
+**Source:** [newplan.md](newplan.md) revision 3.3 (sections 1 to 20). Section numbers like "§7.5" refer to that file.
 **Baseline:** `main` @ `9382178` (PR #13 merged). Every feature below is its own branch and its own PR into `main`. Nothing is pushed or merged to `main` directly.
-**Order:** backend phases **B0 to B7**, then frontend phases **F0 to F7**, then verification phase **V**. The PRs run in **14 merge waves** (section 8), worked in parallel sessions (section 9).
+**Order:** backend phases **B0 to B7**, then frontend phases **F0 to F7**, then the owner feedback round **F8** (rev 3.3), then verification phase **V**. The PRs run in **17 merge waves** (section 8), worked in parallel sessions (section 9).
+**Rev 3.3 (2026-10-16):** phase F8 added from the owner's review of the preview build (newplan §17). The release PR is now **PR-33**. `ci_local.ps1` must print PASS before any push.
 **Rev 3.1 constraints:**
 - No Redis. Shared state lives in Postgres.
 - At least 50 concurrent requests, all async, enforced by a CI gate.
@@ -66,9 +67,11 @@ FRONTEND
 ├── F4  Governance UI                                        PR-23
 ├── F5  Feedback UI + chat reason chips                      PR-24
 ├── F6  Analytics UI                                         PR-25
-└── F7  Settings UI: Branding & Taxonomy                     PR-26
+├── F7  Settings UI: Branding & Taxonomy                     PR-26
+└── F8  Owner feedback round: speed, data, AskDIQ widget,
+        shell UX, green open PRs (+ prod hotfix HF-01)       PR-27 … PR-32
 VERIFICATION
-└── V   E2E, performance & concurrency, OWASP audit, release PR-27
+└── V   E2E, performance & concurrency, OWASP audit, release PR-33
 ```
 
 ---
@@ -79,16 +82,18 @@ VERIFICATION
 
 | OWASP | Primary phase | Proof |
 |---|---|---|
-| A01 Broken Access Control | B2, F1 | Route-walk guard test; IDOR tests on detail routes; CSRF origin check |
-| A02 Security Misconfiguration | B1, F0 | Header assertion tests (backend, Next, nginx config lint); docs off in prod; mock-IdP startup guard |
-| A03 Software Supply Chain | B0 | `pip-audit`, `npm audit` in CI; exact pins for new deps |
+| A01 Broken Access Control | B2, F1, F8 | Route-walk guard test; IDOR tests on detail routes; CSRF origin check; F8: aggregation cache keyed by role, cross-role cache test |
+| A02 Security Misconfiguration | B1, F0, F8 | Header assertion tests (backend, Next, nginx config lint); docs off in prod; mock-IdP startup guard; F8: `Cache-Control: private` + `Vary` on authenticated GETs |
+| A03 Software Supply Chain | B0, F8 | `pip-audit`, `npm audit` in CI; exact pins for new deps (F8: widget markdown renderer, if any) |
 | A04 Cryptographic Failures | B2 | Hashed session ids; secure cookie flags; HSTS in prod |
-| A05 Injection | B1, B3–B7 | Allow-list sort/filter tests; LIKE-escape tests; SVG sanitizer tests; classifier prompt-injection tests; CSV formula tests |
-| A06 Insecure Design | All | Caps on limit/offset/export/backfill; last-superadmin rule; threat note per PR |
-| A07 Authentication Failures | B2 | Token validation negative tests (sig, iss, aud, tid, exp, nonce, state); session rotation; login rate limit |
+| A05 Injection | B1, B3–B7, F8 | Allow-list sort/filter tests; LIKE-escape tests; SVG sanitizer tests; classifier prompt-injection tests; CSV formula tests; F8: widget markdown XSS tests; HF-01 allow-listed `/query` filters |
+| A06 Insecure Design | All | Caps on limit/offset/export/backfill; last-superadmin rule; threat note per PR; F8: bounded fetch timeouts and retries, pool leak test |
+| A07 Authentication Failures | B2, F8 | Token validation negative tests (sig, iss, aud, tid, exp, nonce, state); session rotation; login rate limit; F8: logout revokes the session and clears the cookie |
 | A08 Integrity Failures | B5, B6 | Promotions in DB + audit; idempotent jobs |
 | A09 Logging & Alerting | B4 | New audit sources asserted; PII-masked detail; alert thresholds |
-| A10 Exceptional Conditions | B1 | problem+json handler; supervised tasks; fail-closed auth |
+| A10 Exceptional Conditions | B1, F8 | problem+json handler; supervised tasks; fail-closed auth; F8: fetch timeouts become `ErrorState`, never a hang |
+
+The owner's request listed A04/A10 for resource exhaustion and A03 for unsafe markdown. Those are the 2021 numbers. This plan uses the 2025 list, so they map to A06/A10 and A05 (plus A03 for any new dependency). See newplan §17.
 
 ### 2.2 Performance and concurrency techniques by phase
 
@@ -104,9 +109,12 @@ VERIFICATION
 | Pre-aggregation rollups | B6, B7 | – |
 | Keyset pagination + indexes | B4, B5, B6 | F4 cursor tables |
 | Streaming (exports, SSE) | B1 SSE helper, B4, B5 | F4 live SSE, pause on hidden tab |
-| Compression, ETag, Cache-Control | B1 | – |
+| Compression, ETag, Cache-Control | B1, F8 (role-scoped TTL cache) | – |
 | Load balancing (nginx `least_conn`, N workers) | B1 | – |
-| Code splitting, `LazyMotion`, memoization | – | F0, F3–F6 |
+| Code splitting, `LazyMotion`, memoization | – | F0, F3–F6, F8 (`next/dynamic`, no barrels, `optimizePackageImports`, lazy widget) |
+| Bounded timeouts and connection-leak guard (pool `checkedout()` back to baseline) | F8 | F8 (server fetch `AbortSignal.timeout`, no refresh loop) |
+| Streaming SSR (`<Suspense>` per card, parallel server fetch) | – | F8 |
+| EXPLAIN-driven indexes, SQL aggregation instead of Python loops | F8 | – |
 
 ---
 
@@ -1660,6 +1668,173 @@ Give the superadmin runtime control of white-labelling and the taxonomy (newplan
 
 ---
 
+## Phase F8: Owner Feedback Round: Speed, Data, AskDIQ Widget, Shell UX (rev 3.3)
+
+### Objective
+Act on the owner's review of the preview build (newplan §17): fix the `/chat` hang and the pool leak, make every dashboard page fast on realistic data, add realistic demo data, ship the floating AskDIQ chat widget, fix the shell (flat nav, logout, light/dark only, dates, one Active users definition), and get every open PR green. It also records the production hotfix HF-01. This phase touches backend and frontend, so it uses both LINT-BE/TEST-BE and LINT-FE/TEST-FE.
+
+**Phase rules (in addition to §1.2 and §1.3):**
+- One PR per feature (PR-27 to PR-32), each from a fresh `main`. Never merge to `main`; PRs stay open for the owner.
+- `ci_local.ps1` (the full local mirror of `ci.yml`) must print **PASS** in the PR's worktree **before any push**. Push only green.
+- Async only, every outbound call has a timeout, at least 50 concurrent requests, no Redis, no Playwright.
+- White-label: every user-visible name comes from the brand config ("AskDIQ" is the `assistant_name`), never hard-coded. Tokens only, light and dark parity (newplan §15.2a).
+- Motion: presets from `lib/motion.ts`, under 300 ms, `reducedMotion="user"`.
+
+- [ ] **[Dev]** Phase F8 complete.
+- [ ] **[Lint]** Phase F8 complete.
+- [ ] **[Test]** Phase F8 complete.
+
+#### Task F8.1: Chat page fetch timeouts and the pool leak (newplan §17.1)
+- [ ] **[Dev]** Task F8.1: `/chat` never hangs, never loops, and never leaks a DB connection.
+- [ ] **[Lint]** Task F8.1: LINT-BE and LINT-FE.
+- [ ] **[Test]** Task F8.1: `tests/test_governance_overview_pool.py` and `tests/lib/server-fetch.test.ts` pass.
+
+##### Subtask F8.1.1: Bounded server fetch
+- [ ] **[Dev]** One `serverFetch()` helper for every server-side call from Next to the backend, with `AbortSignal.timeout(SERVER_FETCH_TIMEOUT_MS)` (default 10 s, in `.env.local.example`), never undici's 300 s default. A timeout becomes a typed `UpstreamTimeoutError`, and the page renders an `ErrorState` with retry and the `request_id` (A10).
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** A mocked backend that never answers makes the helper reject within the timeout. The `/chat` page renders the `ErrorState` and does not throw `HeadersTimeoutError`.
+
+##### Subtask F8.1.2: Remove the client refresh loop
+- [ ] **[Dev]** Find what calls `router.refresh()` (or re-mounts the route) on every render or error, causing `GET /chat?_rsc=...` about once a second. Remove it from render and unguarded effects. Retries use bounded exponential backoff (at most 3) and stop while the tab is hidden (A06).
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** A vitest test with a failing fetch counts refresh calls: at most 3 in 30 s of fake time, then none.
+
+##### Subtask F8.1.3: Connection leak in `app/governance/overview.py`
+- [ ] **[Dev]** Every connection or session is opened with `async with` and released on every path (success, exception, cancellation). No connection is held across unrelated `await`s. Parallel parts use `gather_scoped` with one session per task. `pool_timeout` and the statement timeout (B1.5.2) apply.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** `tests/test_governance_overview_pool.py`: record `engine.pool.checkedout()`, call `GET /governance/overview` 100 times (50 at once, including forced errors and cancelled clients), and assert the count returns to the baseline. No `QueuePool` timeout.
+
+#### Task F8.2: Dashboard load speed (newplan §17.2)
+- [ ] **[Dev]** Task F8.2: every dashboard page meets the targets on 10k+ seeded rows (F8.3): shell < 300 ms warm, page data p95 < 500 ms, also under 50 concurrent requests.
+- [ ] **[Lint]** Task F8.2: LINT-BE and LINT-FE.
+- [ ] **[Test]** Task F8.2: `tests/test_dashboard_perf_budget.py`, `tests/test_aggregation_cache_isolation.py` and the frontend bundle check pass.
+
+##### Subtask F8.2.1: Baseline measurement
+- [ ] **[Dev]** `scripts/measure_dashboard_speed.py` (httpx, async) records shell TTFB, page data time, first-load JS and the slowest query per page, on the dev server and on a production build, against the F8.3 data. The baseline table goes in the PR before any change.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** The script runs and prints a table. The before and after numbers are attached to the PR.
+
+##### Subtask F8.2.2: Frontend: bundle and rendering
+- [ ] **[Dev]**
+  - Turbopack for `next dev`. `experimental.optimizePackageImports` for `lucide-react`, `recharts`, `date-fns` and `motion`.
+  - No barrel imports in app code. `next/dynamic` for heavy charts, drawers, the command palette and the widget.
+  - Server widgets fetch in parallel (`Promise.all`), each card in its own `<Suspense>` boundary so the shell streams first.
+  - Client data through `useApiQuery` (SWR, dedupe, intent prefetch).
+- [ ] **[Lint]** Run LINT-FE. An ESLint `no-restricted-imports` rule blocks barrel imports.
+- [ ] **[Test]** `next build` first-load JS per dashboard route is at or under the baseline and inside the §13.4 budget. A vitest test asserts the cards render inside `Suspense` fallbacks.
+
+##### Subtask F8.2.3: Backend: queries, indexes and caches
+- [ ] **[Dev]**
+  - `EXPLAIN (ANALYZE, BUFFERS)` for every dashboard query; plans attached to the PR. Add only the indexes the plans justify, in one migration built `CONCURRENTLY`, with a working downgrade.
+  - Replace Python-side loops with SQL aggregation (`GROUP BY`, `date_trunc`, `FILTER`), and use the B6/B7 rollups where they exist.
+  - ETag plus a short TTL in-process cache (SingleFlight) on aggregation GETs. **The cache key includes the role and permission set**, plus the user id for user-scoped data. Responses are `Cache-Control: private` with `Vary: Cookie, X-Session` (A01, A02). GZip stays on (SSE excluded).
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]**
+  - `tests/test_dashboard_perf_budget.py`: page data p95 < 500 ms on 10k+ rows, and the same with 50 concurrent requests.
+  - `tests/test_aggregation_cache_isolation.py`: an operator never receives an admin's cached payload, and a 304 is returned only for the same role and ETag.
+  - Alembic upgrade, downgrade, upgrade.
+
+#### Task F8.3: Realistic demo data (newplan §17.3)
+- [ ] **[Dev]** Task F8.3: `backend/scripts/seed_realistic_activity.py`, deterministic, tagged, purgeable, dry run by default.
+- [ ] **[Lint]** Task F8.3: LINT-BE.
+- [ ] **[Test]** Task F8.3: `tests/test_seed_realistic_activity.py` passes.
+
+##### Subtask F8.3.1: Generator
+- [ ] **[Dev]** 10k+ messages across sessions over about 90 days, with weekday and business-hour patterns, a realistic intent mix, varied end-user identities and IPs, feedback with reasons, per-stage latency, token cost, evaluation records, insert-only audit events and the analytics rollups. `--seed` makes it deterministic. Default is a dry run that prints counts; `--apply` writes; `--purge` removes only rows with this script's seed tag. Refuses `ENV=production` unless `--allow-production` is passed, and prints the DB host first. Writes are batched and async.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** Same seed gives identical rows. Dry run writes nothing. Purge removes every tagged row and nothing else. The audit trigger is never disabled.
+
+##### Subtask F8.3.2: Fill fields the live path never writes
+- [ ] **[Dev]** List every column the dashboards read that the live `/query`, feedback and ingest paths leave null (in the PR). Fix the live path to write them, not only the seed.
+- [ ] **[Lint]** Run LINT-BE.
+- [ ] **[Test]** A live `/query` plus feedback round-trip in tests fills every listed column.
+
+#### Task F8.4: AskDIQ chat widget (newplan §17.4)
+- [ ] **[Dev]** Task F8.4: a floating launcher and a right-side drawer on every dashboard page, reusing the chat hooks.
+- [ ] **[Lint]** Task F8.4: LINT-FE.
+- [ ] **[Test]** Task F8.4: `tests/components/AskDiqWidget.test.tsx` passes.
+
+##### Subtask F8.4.1: Mascot asset and brand name
+- [ ] **[Dev]** Optimise the mascot (`frontend/Friendly Mint Hexagon Robot Mascot 1.png`) into `frontend/public/brand/askdiq-mascot.webp` plus a PNG fallback, used through `next/image`. The name "AskDIQ" comes from the brand config (`assistant_name`) everywhere; `rg` shows no hard-coded copies in components.
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** A test renders the widget with a different `assistant_name` and the new name appears everywhere.
+
+##### Subtask F8.4.2: Launcher
+- [ ] **[Dev]** Bottom-right floating button: slow idle float, soft teal glow (tokens), a one-time greeting bubble per session, an unread dot when a reply arrives while closed, and a keyboard shortcut listed in the `?` sheet. Every animation uses the Motion presets and stops with reduced motion.
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** The greeting shows once per session. The unread dot appears and clears. With reduced motion there is no animation.
+
+##### Subtask F8.4.3: Drawer
+- [ ] **[Dev]** Right-side, full-height drawer (Motion, under 300 ms), full screen on mobile. It reuses the existing chat hooks and components (streaming, sources, feedback chips), with no second chat implementation. Lazy-loaded with `next/dynamic` on first open or idle prefetch. Focus trap, `Esc` closes and returns focus to the launcher, `aria-live` for new messages. Markdown is rendered without `dangerouslySetInnerHTML`, raw HTML disabled, links limited to `https:` and relative URLs with `rel="noopener noreferrer"` (A05). Any new renderer dependency is pinned exactly (A03).
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** Focus trap and `Esc` work. A `<script>` and a `javascript:` link in a reply are rendered inert. The widget is not in the dashboard's first-load chunk.
+
+#### Task F8.5: Shell: navigation, logout, theme, dates, Active users (newplan §17.5)
+- [ ] **[Dev]** Task F8.5: the shell fixes plus one Active users definition used by every card.
+- [ ] **[Lint]** Task F8.5: LINT-BE and LINT-FE.
+- [ ] **[Test]** Task F8.5: the tests below pass.
+
+##### Subtask F8.5.1: Flat sidebar
+- [ ] **[Dev]** Remove the "ADMIN" group heading in `Sidebar.tsx`. One flat list, still role-filtered, with the collapsed rail tooltips kept.
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** `Sidebar.test.tsx`: no group heading, and each role sees the same items as before.
+
+##### Subtask F8.5.2: Logout end to end
+- [ ] **[Dev]** The menu action calls `POST /auth/logout` through the proxy. The backend revokes the session row and audits `logout`. The Next route clears the cookie (same name, path and flags, `Max-Age=0`). The client clears the query cache and redirects to `/login` (A07).
+- [ ] **[Lint]** Run LINT-BE and LINT-FE.
+- [ ] **[Test]** After logout, replaying the old cookie gets 401, and the back button lands on `/login`.
+
+##### Subtask F8.5.3: Light and dark only
+- [ ] **[Dev]** Remove "System" from the theme toggle and the stored values. A stored `system` value migrates to the current resolved theme on first load.
+- [ ] **[Lint]** Run LINT-FE.
+- [ ] **[Test]** The toggle has exactly two options, and the stored-value migration test passes. The theme-tokens snapshot is updated deliberately.
+
+##### Subtask F8.5.4: Dates everywhere
+- [ ] **[Dev]** One `<DateTime>` component: relative text with the absolute local date, time and time zone in a tooltip and in `<time dateTime>`. Replace every raw timestamp in tables, drawers, cards and chart tooltips.
+- [ ] **[Lint]** Run LINT-FE. An `rg` check finds no other `toLocaleString` for timestamps in components.
+- [ ] **[Test]** Formatter tests for minutes, hours, days and older dates, and the tooltip content.
+
+##### Subtask F8.5.5: Active users definition
+- [ ] **[Dev]** One backend function: a distinct end user is the client id if present, otherwise the forwarded end-user IP (HF-01 `ip_address`), excluding test IPs, with at least one query in the window. It returns DAU (24 h), WAU (7 days), MAU (30 days) and active now (5 minutes). The dashboard, Visitors and Usage cards all call it, and each card's tooltip states the definition.
+- [ ] **[Lint]** Run LINT-BE and LINT-FE.
+- [ ] **[Test]** `tests/test_active_users.py`: identity fallback, test-IP exclusion, window edges, and the same value from every card endpoint for the same window.
+
+#### Task F8.6: Green open PRs
+- [ ] **[Dev]** List every open PR with its failing or flaky jobs. Reproduce each with `ci_local.ps1` in that PR's worktree. Fix the root cause on the PR's own branch, or in `chore/green-open-prs` when the cause is shared (CI config, a shared fixture). Never skip, `xfail`, add an unexplained `# noqa`, or lower a threshold.
+- [ ] **[Lint]** `ci_local.ps1` lint stages PASS for every open PR.
+- [ ] **[Test]** `ci_local.ps1` prints PASS for every open PR before its push, and GitHub CI is then green.
+
+#### Task F8.7: Production hotfix HF-01 (already deployed; newplan §17.7)
+- **HF-01** `hotfix/query-filters-ip-ingest`: commits `a795af3`, `27d516c`, `f9d76ed`.
+- [x] **[Dev]** Swagger `additionalProp1` filter no longer empties answers (allow-listed scalar filters). `no_sources` flag. KB markdown shipped in the image. Forwarded end-user `ip_address` honoured (`ALLOW_CLIENT_IP_OVERRIDE`, default `true`) on `/query`, `/sessions` and feedback. Per-IP rate limit uses the end-user IP. Swagger example restored. Prod migrations `5491a7bdb113` → `d6e7f8a9b0c1` applied after a backup. Usage backfill applied (41 rows).
+- [x] **[Lint]** Run LINT-BE.
+- [x] **[Test]** TEST-BE for the filter allow-list, `no_sources`, IP override and rate-limit keying.
+- Follow-up: raise a PR into `main` so `main` matches production (not merged by the agent). Tracked in the section 10 log.
+
+#### Task F8.8: Phase F8 integration testing
+- [ ] **[Dev]**
+  - `tests/test_owner_feedback_integration.py` (httpx, real Postgres, F8.3 data at 10k+ rows): every dashboard page's data endpoints under **50 concurrent requests** meet the F8.2 targets with no errors, and the pool returns to baseline afterwards.
+  - Widget chat round-trip through the proxy (fake LLM): send, stream, sources, feedback.
+  - Logout: session revoked, cookie cleared, old cookie gets 401.
+  - `tests/journeys/owner-feedback.test.tsx`: the widget opens, chats and closes with focus returned; theme toggles light and dark only; dates show relative text with an absolute tooltip; every Active users card shows the same number.
+  - `smoke_e2e.py --journey owner-feedback` runs the same checks through port 3000.
+- [ ] **[Lint]** Run LINT-BE and LINT-FE on the test files.
+- [ ] **[Test]** Pass, and `ci_local.ps1` prints PASS.
+
+#### Task F8.9: PRs
+- **PR-27** `fix/chat-page-fetch-timeouts`: F8.1.
+- **PR-28** `perf/dashboard-load-speed`: F8.2.
+- **PR-29** `feat/realistic-demo-data`: F8.3.
+- **PR-30** `feat/askdiq-chat-widget`: F8.4.
+- **PR-31** `fix/shell-nav-logout-theme-dates`: F8.5.
+- **PR-32** `chore/green-open-prs`: F8.6.
+- F8.8 lands in the last PR of the phase to merge.
+- [ ] **[Dev]** PR-27 to PR-32 raised per §1.3, each pushed only after `ci_local.ps1` PASS.
+- [ ] **[Lint]** CI lint is green.
+- [ ] **[Test]** CI tests are green and the PRs are left open for the owner (never merged to `main` by the agent).
+
+---
+
 ## 5. Phase V: Verification (End-to-End, Performance, Concurrency, OWASP) and Release
 
 ### Objective
@@ -1667,7 +1842,7 @@ Prove the whole system after development is complete: functional E2E journeys, t
 
 - [ ] **[Dev]** Phase V complete: all suites and reports are produced.
 - [ ] **[Lint]** Phase V complete: the whole repo is clean (LINT-BE and LINT-FE), with no suppressions added without a justification comment.
-- [ ] **[Test]** Phase V complete: every suite below passes, with reports attached to PR-27.
+- [ ] **[Test]** Phase V complete: every suite below passes, with reports attached to PR-33.
 
 #### Task V.1: End-to-end journeys (no browser automation: httpx through the real stack, plus vitest UI journeys)
 - [ ] **[Dev]** Task V.1: add `backend/tests/e2e/` (API journeys on real Postgres with the mock IdP), the `smoke_e2e.py --journey all` full-stack journeys through port 3000, and the seed script `scripts/seed_e2e.py`.
@@ -1702,7 +1877,7 @@ Prove the whole system after development is complete: functional E2E journeys, t
 - [ ] **[Test]** Pass.
 
 ##### Subtask V.1.4: Theming sweep (manual, no automated scanners)
-- [ ] **[Dev]** Take screenshots of every page in light and dark, with reduced motion on, keyboard-only and at 390 px, and attach them to PR-27.
+- [ ] **[Dev]** Take screenshots of every page in light and dark, with reduced motion on, keyboard-only and at 390 px, and attach them to PR-33.
 - [ ] **[Lint]** n/a.
 - [ ] **[Test]** The owner signs off on the screenshots.
 
@@ -1809,7 +1984,7 @@ Prove the whole system after development is complete: functional E2E journeys, t
 - [ ] **[Test]** The full newplan §11 Access checklist passes against real Entra. If a check fails, the preflight names which setting is wrong. No code change should be needed, because the mock matched Entra's contract.
 
 #### Task V.6: PR
-- **PR-27** `chore/release-verification`: the V.1 to V.5 test code, scripts and docs, with reports attached.
+- **PR-33** `chore/release-verification`: the V.1 to V.5 test code, scripts and docs, with reports attached.
 - [ ] **[Dev]** Raised per §1.3, with all reports linked.
 - [ ] **[Lint]** CI lint is green.
 - [ ] **[Test]** CI tests, `fullstack-smoke` and `perf-smoke` are all green, approved, and merged. **Release tagged** (`v<next>`) from `main` via GitHub Releases.
@@ -1846,7 +2021,14 @@ Prove the whole system after development is complete: functional E2E journeys, t
 | PR-24 | `feat/ui-feedback-triage-workspace` | F5 | PR-17 | ☐ |
 | PR-25 | `feat/ui-analytics-insights` | F6 | PR-17 | ☐ |
 | PR-26 | `feat/ui-settings-branding-taxonomy` | F7 | PR-19 | ☐ |
-| PR-27 | `chore/release-verification` | V | all | ☐ |
+| HF-01 | `hotfix/query-filters-ip-ingest` | F8 | – (deployed to prod) | ☐ PR into `main` |
+| PR-27 | `fix/chat-page-fetch-timeouts` | F8 | PR-10 | ☐ |
+| PR-28 | `perf/dashboard-load-speed` | F8 | PR-29, PR-16 | ☐ |
+| PR-29 | `feat/realistic-demo-data` | F8 | PR-14 | ☐ |
+| PR-30 | `feat/askdiq-chat-widget` | F8 | PR-27, PR-17 | ☐ |
+| PR-31 | `fix/shell-nav-logout-theme-dates` | F8 | PR-18, HF-01 | ☐ |
+| PR-32 | `chore/green-open-prs` | F8 | – | ☐ |
+| PR-33 | `chore/release-verification` | V | all | ☐ |
 
 Each PR branches from a fresh `main` once the wave before it has merged (section 8). No stacking.
 
@@ -1881,9 +2063,12 @@ PRs in the same wave are developed **in parallel** (one session and one worktree
 | W11 | PR-18 → PR-21 → PR-23 → PR-24 → PR-25 | Independent pages. Each one only flips its own nav flag. |
 | W12 | PR-19 → PR-20 → PR-22 | Need PR-18 (gate) or PR-21. |
 | W13 | PR-26 | Settings. |
-| W14 | PR-27 | Verification and release. |
+| W14 | PR-32 → HF-01 → PR-27 | Owner feedback round (F8). Green the open PRs first, bring `main` level with production, then fix the chat page. |
+| W15 | PR-29 → PR-31 | Demo data (needed to measure F8.2) and the shell fixes (Active users needs HF-01's `ip_address`). |
+| W16 | PR-28 → PR-30 | Speed work measured on the PR-29 data; the widget needs PR-27. |
+| W17 | PR-33 | Verification and release. |
 
-The longest wave has 5 PRs, so at most 5 sessions run at once. Total: 14 waves and 27 PRs.
+The longest wave has 5 PRs, so at most 5 sessions run at once. Total: 17 waves, 33 PRs and the HF-01 hotfix PR.
 
 ### 8.2 Merge rules (every PR)
 
@@ -1903,7 +2088,7 @@ The longest wave has 5 PRs, so at most 5 sessions run at once. Total: 14 waves a
 
 ### 8.3 Alembic migration re-link rule (parallel PRs that add migrations)
 
-The migration PRs are PR-04, PR-05 (none), PR-06, PR-08, PR-09, PR-11, PR-12, PR-13 (rollup) and PR-14.
+The migration PRs are PR-04, PR-05 (none), PR-06, PR-08, PR-09, PR-11, PR-12, PR-13 (rollup), PR-14 and PR-28 (EXPLAIN-driven indexes). Production moved from `5491a7bdb113` to `d6e7f8a9b0c1` with HF-01, so every F8 migration checks `alembic heads` against `d6e7f8a9b0c1` before it is pushed.
 - Each one creates its migration with `down_revision` set to the current `main` head at branch time.
 - When an earlier PR in the same wave merges first, the later PR's `alembic heads` shows 2 heads after the rebase. The fix is a one-line edit: set its `down_revision` to the new head. Then run `alembic heads`, which must print exactly 1. Run `alembic upgrade head`, then `alembic downgrade -1`, then `alembic upgrade head` on the worker's own database, push, and wait for green CI.
 - **Never** use `alembic merge` to create a merge revision. The chain stays linear, as in the existing repo history.
@@ -1917,9 +2102,9 @@ The migration PRs are PR-04, PR-05 (none), PR-06, PR-08, PR-09, PR-11, PR-12, PR
 | `backend/main.py` | PR-03 (middleware) | add their own `include_router` line only |
 | `backend/.env.example` / `frontend/.env.local.example` | each PR | append their own block |
 | `frontend/lib/api.ts`, `lib/types.ts` | **PR-16** | not touch, except for a type fix after PR-16 |
-| `frontend/components/Sidebar.tsx` | **PR-17** | flip their own `enabled` flag only |
+| `frontend/components/Sidebar.tsx` | **PR-17** (PR-31 removes the ADMIN group) | flip their own `enabled` flag only |
 | `frontend/components/admin/TabGroup.tsx` | PR-17 | add their own tab constant only |
-| `.github/workflows/ci.yml` | PR-01 | change it only in PR-27, or with owner approval |
+| `.github/workflows/ci.yml` | PR-01 | change it only in PR-33, or with owner approval |
 
 ---
 
@@ -1996,7 +2181,7 @@ HARD RULES
 - No Redis, no Playwright/axe/Lighthouse/ZAP, no new dependencies beyond newplan.md execution guide §4.
 - If blocked on an owner decision (e.g. taxonomy list before PR-12), record it in LEDGER.md,
   continue with every other PR that is not blocked, and list blockers in your final message.
-- Stop only when PR-27 is merged and green, or when everything left is blocked; then print a summary table.
+- Stop only when PR-33 is merged and green, or when everything left is blocked; then print a summary table.
 ```
 
 **Worker prompt** (the orchestrator fills in `PR-NN`):
@@ -2105,3 +2290,49 @@ Merge a parent, then delete its branch, and GitHub retargets its children to `ma
 | – | PR-21 | `feat/ui-dashboard-interactive-charts` | #32 | **Committed locally (193059d), waiting on the local CI gate before push** | 8 drill-down KPI cards (sparkline, delta, count-up, prefetch), outcome stacked area, p50/p95 band, cost vs budget, satisfaction gauge, intents treemap, live activity feed, health pill, date range. Usage cost insights, eval radar and pass-rate trend, chat header and trace link. The old made-up placeholder numbers are removed. Contract for PR-14: `frontend/docs/contracts/dashboard-aggregations.md`. |
 | – | sweep | backend chain | – | **Done locally; pushes waiting on the local CI gate** | One linear chain with single migration line `a9b0c1d2e3f4 → 4c1e9a7d2b65 → bd75f2033c21 (new: planner statistics, summary 380 → 195 ms) → b0c1d2e3f4a5 → 5712ebd9d3c9 → 72125f44984d`. The perf gates run in their own CI step and pylint fail-under is 9.34. Seven PRs were briefly closed by a script bug and reopened (none merged). Diagnostic branches `sweep/*` are deleted. |
 | – | preview | `preview/all` (local only, never pushed) | – | Building | Everything combined in `C:\Projects\askdiq-wt\preview` so you can run it; see `PREVIEW_README.md`. |
+
+**2026-10-16: owner feedback round (phase F8, newplan rev 3.3).** The owner reviewed the preview build. Six PRs were planned (one per item), plus one production hotfix that is already live. Every push still waits for `ci_local.ps1` PASS, and nothing is merged to `main`.
+
+| – | HF-01 | `hotfix/query-filters-ip-ingest` | main | **Deployed to production**; PR into `main` still to raise | Commits `a795af3`, `27d516c`, `f9d76ed`. The Swagger `additionalProp1` filter emptied every answer: filters are now allow-listed scalars. `no_sources` flag. KB markdown shipped in the image. Forwarded end-user `ip_address` honoured (`ALLOW_CLIENT_IP_OVERRIDE`, default `true`) on `/query`, `/sessions` and feedback. Per-IP rate limit uses the end-user IP. Swagger example restored. Prod migrations `5491a7bdb113` → `d6e7f8a9b0c1` applied after a backup. Usage backfill applied (41 rows). |
+| – | PR-27 | `fix/chat-page-fetch-timeouts` | main | Planned | `/chat` `HeadersTimeoutError` (undici 300 s), `GET /chat?_rsc` loop about every 1 s, connection leak in `app/governance/overview.py`. Bounded timeouts and a pool leak test. A06, A10. |
+| – | PR-28 | `perf/dashboard-load-speed` | main | Planned | Baseline first. Shell < 300 ms warm, page data < 500 ms on 10k+ rows, also at 50 concurrent. Role-scoped caches (A01, A02). |
+| – | PR-29 | `feat/realistic-demo-data` | main | Planned | `seed_realistic_activity.py`: 10k+ rows, deterministic, tagged, purgeable, dry run by default. Fill the fields the live path never writes. |
+| – | PR-30 | `feat/askdiq-chat-widget` | main | Planned | Mascot launcher, Motion drawer, reused chat hooks, brand name from config, lazy-loaded, accessible, safe markdown (A05). |
+| – | PR-31 | `fix/shell-nav-logout-theme-dates` | main | Planned | Flat sidebar, logout end to end (A07), light/dark only, `<DateTime>` everywhere, one Active users definition (DAU/WAU/MAU/active now). |
+| – | PR-32 | `chore/green-open-prs` | main | Planned | Reproduce every red open PR with `ci_local.ps1`, fix root causes, push only after PASS. |
+
+Progress (2026-10-16):
+
+- **HF-01** `hotfix/query-filters-ip-ingest` (production hotfix, newplan §17.7)
+  - [x] **[Dev]** Allow-listed scalar filters, `no_sources`, KB markdown in the image, end-user `ip_address` override on `/query`, `/sessions` and feedback, per-IP rate limit on the end-user IP, Swagger example restored.
+  - [x] **[Lint]** LINT-BE clean.
+  - [x] **[Test]** TEST-BE passes for the hotfix.
+  - Production: migrations `5491a7bdb113` → `d6e7f8a9b0c1` applied with a backup; usage backfill applied (41 rows).
+- **PR-27** `fix/chat-page-fetch-timeouts` (F8.1)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-28** `perf/dashboard-load-speed` (F8.2)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-29** `feat/realistic-demo-data` (F8.3)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-30** `feat/askdiq-chat-widget` (F8.4)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-31** `fix/shell-nav-logout-theme-dates` (F8.5)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **PR-32** `chore/green-open-prs` (F8.6)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**
+- **F8.8** Phase F8 integration testing (seeded dashboards under 50 concurrent requests, widget chat round-trip, logout, theme, dates)
+  - [ ] **[Dev]**
+  - [ ] **[Lint]**
+  - [ ] **[Test]**

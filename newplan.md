@@ -3,6 +3,7 @@
 **Status:** analysis only. No application code has been changed.
 - Revision 2 added SSO and role-based access, User Management, the Motion animation layer, and a page-by-page interactivity audit.
 - **Revision 3 (2026-10-15)** re-validated the plan against `main`. It adds: OWASP Top 10:2025 controls (section 12); the async, concurrency, performance and load-balancing design (section 13); full white-labelling (section 14); a senior UI/UX gap audit with a dashboard-wide chart catalogue (section 15); and the CI and per-feature PR workflow (section 16). The phased execution checklist lives in `planchanges4.md`.
+- **Revision 3.3 (2026-10-16)** adds the owner feedback round (section 17): chat page fetch timeouts and a connection leak, dashboard load speed, realistic demo data, the floating AskDIQ chat widget, and shell fixes (flat sidebar, logout, light/dark only, dates, one Active users definition). It also records the production hotfix `hotfix/query-filters-ip-ingest`. It runs as phase **F8** in `planchanges4.md`, before the verification phase V.
 
 **Baseline:** the earlier working tree was merged to `main` as PR #13 (`9382178`). The old "commit 78 files" step is **done**. All new work branches from `main`, with one branch and one PR per feature, and never a direct push to `main` (section 16).
 **Stack:** Next.js 14 (App Router) and Tailwind with a `brand` teal palette and `dark-*` tokens. Recharts 3 is already installed. The backend is FastAPI (fully async: asyncpg, `AsyncSession`, `AsyncAzureOpenAI`), Postgres/pgvector and Azure `gpt-5-mini`.
@@ -759,6 +760,7 @@ Phase 1 comes first because it is a security fix: today anyone who reaches port 
 - Performance (rev 3): the budgets in section 13.4 hold under the load profile in 13.5, with results attached to the release PR.
 - White-label (rev 3): changing the brand in the Branding settings updates name, logos, palette and favicon without a rebuild, and the brand palette passes WCAG AA contrast in light and dark.
 - CI and PR (rev 3): every feature merged through its own PR with all required checks green (section 16). Nothing was pushed directly to `main`.
+- Owner feedback round (rev 3.3): `/chat` loads with no `HeadersTimeoutError` and no `_rsc` refresh loop, the DB pool returns to baseline after the overview route, every dashboard page meets the 17.2 targets on 10k+ seeded rows under 50 concurrent requests, the AskDIQ widget completes a chat round-trip, logout ends the server session, only light and dark themes exist, every date shows relative plus absolute time, and every Active users card agrees (section 17).
 
 ---
 
@@ -770,16 +772,16 @@ Each row is enforced in code and proven by a test. Existing controls are kept an
 
 | OWASP 2025 | Risk in this app today | Control | Phase |
 |---|---|---|---|
-| **A01 Broken Access Control** | Any visitor to port 3000 has full admin access through the proxy's shared key (7.1). IDOR on `/conversations/{id}`, `/feedback/{id}`, `/admin/users-accounts/{id}`. | Session-based authentication. A `require_permission()` guard on every route. A route-walk test fails the build if a route has no guard. Deny by default. Object-level checks on detail routes. CSRF protection: SameSite=Lax plus an `Origin` / `X-Requested-With` check on state-changing proxy calls. | B2 |
-| **A02 Security Misconfiguration** | No CSP, HSTS, `X-Frame-Options`, `nosniff` or `Referrer-Policy` headers anywhere (app, Next or nginx). CORS allows all headers. Docs (`/docs`, `/openapi.json`) are public. | `SecurityHeadersMiddleware` (backend), `headers()` in `next.config.js`, and the same headers in `askdiq.conf`. A strict CSP with nonces for Next. Narrow CORS `allow_headers`. Docs disabled when `ENV=production`. A startup guard rejects `AUTH_DEV_MOCK` outside development. | B1 |
+| **A01 Broken Access Control** | Any visitor to port 3000 has full admin access through the proxy's shared key (7.1). IDOR on `/conversations/{id}`, `/feedback/{id}`, `/admin/users-accounts/{id}`. | Session-based authentication. A `require_permission()` guard on every route. A route-walk test fails the build if a route has no guard. Deny by default. Object-level checks on detail routes. CSRF protection: SameSite=Lax plus an `Origin` / `X-Requested-With` check on state-changing proxy calls. | B2, F8 |
+| **A02 Security Misconfiguration** | No CSP, HSTS, `X-Frame-Options`, `nosniff` or `Referrer-Policy` headers anywhere (app, Next or nginx). CORS allows all headers. Docs (`/docs`, `/openapi.json`) are public. | `SecurityHeadersMiddleware` (backend), `headers()` in `next.config.js`, and the same headers in `askdiq.conf`. A strict CSP with nonces for Next. Narrow CORS `allow_headers`. Docs disabled when `ENV=production`. A startup guard rejects `AUTH_DEV_MOCK` outside development. | B1, F8 |
 | **A03 Software Supply Chain Failures** | `pip-audit` is installed but never run. No `npm audit`. Caret ranges in `package.json`. | CI runs `pip-audit` and `npm audit --audit-level=high`. Exact pins for new dependencies. Dependabot (already active) is grouped weekly. Actions pinned to a major version, with `permissions: contents: read`. | B0 |
 | **A04 Cryptographic Failures** | `api_jwt_secret` is a leftover. Session ids must not be guessable. | `secrets.token_urlsafe(32)` session ids, stored **hashed** (SHA-256) in `auth_sessions`. HMAC-signed cookie. `Secure` cookie and HSTS in production. TLS only at nginx. The unused JWT secret is removed. | B2 |
-| **A05 Injection** (includes XSS and prompt injection) | Search, sort and filter params. LLM classifier input. Brand SVG upload. | Already in place: parameterized SQLAlchemy and sort allow-lists (`query_builders.py`). New: allow-lists for every new filter and sort, `LIKE` escaping, and Pydantic `Literal` / `Enum` for every enum param. Classifier output constrained by JSON schema and validated against the taxonomy, with the user text placed in a delimited data block (prompt injection). No `dangerouslySetInnerHTML`. Brand logos accept PNG or WebP, or SVG after sanitizing (strip `<script>`, `on*`, external `href`), and are served with `Content-Type` set and `nosniff`. CSV export neutralizes formula prefixes. | B1, B3, B4, B6 |
-| **A06 Insecure Design** | Unbounded exports and backfills. Lock-out risk. | Hard caps (`limit <= 200`, `offset <= 10k`, export 10k rows, backfill `--limit`). Rate limits on auth endpoints. The last-superadmin rule. A threat model note in each feature PR. | All |
-| **A07 Authentication Failures** | No authentication at all. | OIDC code flow with PKCE, plus `state`, `nonce`, `iss`, `aud`, `tid` and `exp` checks. Session rotation on login. Idle and absolute timeouts. Server-side revocation. Rate limit plus audit on `login_denied`. | B2 |
+| **A05 Injection** (includes XSS and prompt injection) | Search, sort and filter params. LLM classifier input. Brand SVG upload. | Already in place: parameterized SQLAlchemy and sort allow-lists (`query_builders.py`). New: allow-lists for every new filter and sort, `LIKE` escaping, and Pydantic `Literal` / `Enum` for every enum param. Classifier output constrained by JSON schema and validated against the taxonomy, with the user text placed in a delimited data block (prompt injection). No `dangerouslySetInnerHTML`. Brand logos accept PNG or WebP, or SVG after sanitizing (strip `<script>`, `on*`, external `href`), and are served with `Content-Type` set and `nosniff`. CSV export neutralizes formula prefixes. | B1, B3, B4, B6, F8 |
+| **A06 Insecure Design** | Unbounded exports and backfills. Lock-out risk. | Hard caps (`limit <= 200`, `offset <= 10k`, export 10k rows, backfill `--limit`). Rate limits on auth endpoints. The last-superadmin rule. A threat model note in each feature PR. | All (F8: fetch timeouts, pool bounds) |
+| **A07 Authentication Failures** | No authentication at all. | OIDC code flow with PKCE, plus `state`, `nonce`, `iss`, `aud`, `tid` and `exp` checks. Session rotation on login. Idle and absolute timeouts. Server-side revocation. Rate limit plus audit on `login_denied`. | B2, F8 |
 | **A08 Software or Data Integrity Failures** | Promoted cases in a mutable JSON file (F5). Untrusted label writes. | Promotions moved to the DB with an audit row. The immutable `audit_log` trigger is kept. Jobs are idempotent (unique key per `message_id` and job type). | B5, B6 |
 | **A09 Security Logging and Alerting Failures** | Auth, 429 and 5xx events are not logged (4.3). | All of the events in 4.3 and 7.5 go to `audit_log`, PII masked through `governance/pii.py`. Alert rules feed the Governance status banner. `request_id` is correlated end to end. | B4 |
-| **A10 Mishandling of Exceptional Conditions** | Unhandled exceptions could leak stack traces. Fire-and-forget `asyncio.create_task` can drop errors silently. | A global exception handler returns a problem+json body with the `request_id` and no internals. Background tasks run in a supervised `TaskGroup` or job runner that logs and records failures. External calls fail closed (an auth error means deny). Timeouts on every outbound call. | B1 |
+| **A10 Mishandling of Exceptional Conditions** | Unhandled exceptions could leak stack traces. Fire-and-forget `asyncio.create_task` can drop errors silently. | A global exception handler returns a problem+json body with the `request_id` and no internals. Background tasks run in a supervised `TaskGroup` or job runner that logs and records failures. External calls fail closed (an auth error means deny). Timeouts on every outbound call. | B1, F8 |
 
 **OWASP LLM Top 10 (RAG and classifier):**
 - LLM01 prompt injection: existing flags, plus delimiting in the classifier.
@@ -1103,11 +1105,115 @@ Triggers: `pull_request` to `main`, `push` to `main` only, and `workflow_dispatc
 | **F5** | Feedback UI and chat reason chips. |
 | **F6** | Analytics UI. |
 | **F7** | Settings UI (Branding and Taxonomy). |
+| **F8** | Owner feedback round (rev 3.3): chat page timeouts and connection leak, dashboard load speed, realistic demo data, AskDIQ chat widget, shell UX (nav, logout, theme, dates, Active users), green open PRs (section 17). |
 | **V** | End-to-end, performance and concurrency, OWASP verification, and release. |
 
 ---
 
-## 17. Revision 3.1 change log (2026-10-15)
+## 17. Owner feedback round: speed, data, AskDIQ widget, shell UX (rev 3.3)
+
+The owner reviewed the preview build (`preview/view`) on 2026-10-16. This section is the design for phase **F8** in `planchanges4.md`. Every item is its own PR from a fresh `main`, uses the per-feature routine in 16.4, and is pushed only after `ci_local.ps1` (the local mirror of `ci.yml`) prints PASS. Nothing is merged to `main` by the agent. All constraints from revision 3.1 still apply: no Redis, no Playwright, async only, and at least 50 concurrent requests.
+
+> **OWASP numbering note.** This plan uses the **2025** list (12.1). Resource exhaustion maps to **A06 Insecure Design** (missing bounds) and **A10 Mishandling of Exceptional Conditions** (unhandled timeouts); A04 in 2025 is Cryptographic Failures. Unsafe markdown (XSS) maps to **A05 Injection**, plus **A03 Supply Chain** for any new renderer dependency (exact pin, `npm audit`).
+
+### 17.1 Chat page fetch timeouts and connection leak (`fix/chat-page-fetch-timeouts`)
+
+**Symptoms seen:**
+- The `/chat` server render throws `HeadersTimeoutError` after undici's default 300 s headers timeout, because a server-side fetch to the backend never answers.
+- The browser then loops `GET /chat?_rsc=...` about once a second (a client `router.refresh()` or effect that re-fires on every render or error).
+- The backend pool runs out: `app/governance/overview.py` checks out connections that are not returned on every path, so later requests wait on `QueuePool` until they time out.
+
+**Design:**
+- Every server-side fetch in Next goes through one helper with an `AbortSignal.timeout()` (default 10 s from config, never the 300 s undici default) and maps a timeout to a typed error. The page renders an `ErrorState` with retry instead of hanging.
+- Remove the refresh loop: no `router.refresh()` inside render or unguarded effects. Retries use bounded exponential backoff (at most 3), and stop when the tab is hidden.
+- `overview.py`: every session or connection is opened with `async with` (or one `Depends(get_db)` session per request). No connection is held across `await` on unrelated work. `gather_scoped` gives each parallel task its own session under the semaphore (13.2). Add `pool_timeout` and the statement timeout from B1.5.2.
+- **Leak test:** record `engine.pool.checkedout()` before, call the overview route 100 times (50 at once, including forced errors and client cancels), and assert the count returns to the baseline.
+- **OWASP:** A06 (bounded timeouts, retry caps) and A10 (timeouts become problem+json and an `ErrorState`, never a hang or a stack trace).
+
+### 17.2 Dashboard load speed (`perf/dashboard-load-speed`)
+
+**Measure first.** Record a baseline per page (shell TTFB, page data time, first-load JS, slowest query) with the dev server and with a production build, on the 17.3 seeded data. Attach it to the PR together with the after numbers.
+
+**Targets:**
+
+| Metric | Target |
+|---|---|
+| App shell (layout, sidebar, header), warm | < 300 ms |
+| Page data, any dashboard page, with 10k+ rows | < 500 ms (p95) |
+| Under 50 concurrent requests | Same targets, error rate < 0.5 % (13.4, 13.5) |
+
+**Frontend techniques:**
+- Turbopack for `next dev`. `experimental.optimizePackageImports` for `lucide-react`, `recharts`, `date-fns` and `motion`.
+- No barrel imports in app code (import from the file). `next/dynamic` for heavy charts, drawers, the command palette and the widget.
+- Fetch page widgets in parallel (`Promise.all` on the server, not one after another), and stream with `<Suspense>` boundaries per card so the shell paints first.
+- SWR caching through the F0 data layer (`useApiQuery`: dedupe, stale-while-revalidate, prefetch on intent).
+
+**Backend techniques:**
+- Run `EXPLAIN (ANALYZE, BUFFERS)` on each dashboard query, and add only the indexes the plans justify (built `CONCURRENTLY`, with a downgrade).
+- Move Python-side loops into SQL aggregation (`GROUP BY`, `date_trunc`, `FILTER`), and use the B6/B7 rollups where they exist.
+- ETag plus a short TTL in-process cache for the aggregation GETs. **The cache key includes the role and permission set** (and the user id where the data is user-scoped), so one role never sees another role's cached data. Responses are `Cache-Control: private` with `Vary: Cookie` and `X-Session`.
+- GZip stays on (B1.5.1), SSE excluded.
+- **OWASP:** A01 (cache isolation by role, tested), A02 (cache headers: `private`, never shared caches for authenticated data).
+
+### 17.3 Realistic demo data (`feat/realistic-demo-data`)
+
+- New `backend/scripts/seed_realistic_activity.py` (beside `seed_comprehensive_deployiq_data.py`). It writes **10k+** realistic messages across sessions over about 90 days, with weekday and business-hour patterns, a realistic intent mix, varied end-user identities and IPs, feedback with reasons, latency per stage, token cost, evaluation records, audit events and the analytics rollups.
+- **Deterministic:** a fixed `--seed`, so the same data comes out every run.
+- **Dry run by default:** it prints the counts it would write. `--apply` writes. `--purge` removes only rows it created.
+- **Tagged:** every row carries a seed tag (a metadata field or a dedicated `seed_batch` column where one exists), so purge never touches real data.
+- `audit_log` is insert only (the immutability trigger stays). Purge of seeded audit rows is done only through a seed-scoped path that the trigger allows, or the seeded audit rows are written to a seed-only partition; never by disabling the trigger.
+- Refuses to run when `ENV=production` unless `--allow-production` is also passed, and then prints the target DB host first.
+- **Fill fields the live path never writes:** list the columns the dashboards read that the live `/query`, feedback and ingest paths leave null, and fix the live path to write them (not only the seed).
+
+### 17.4 AskDIQ chat widget (`feat/askdiq-chat-widget`)
+
+- **Asset:** the owner's mascot image (`frontend/Friendly Mint Hexagon Robot Mascot 1.png`) is optimised and moved to `frontend/public/brand/` (a WebP plus a PNG fallback with a kebab-case name). It is used through `next/image`.
+- **Launcher:** a floating button at the bottom right of every dashboard page. Creative but calm: a slow idle float, a soft teal glow, a one-time greeting bubble ("Hi, I'm AskDIQ") per session, an unread dot when a reply arrives while the drawer is closed, and a keyboard shortcut (shown in the `?` sheet). All of it respects reduced motion.
+- **Drawer:** a right-side, full-height drawer animated with the Motion presets (under 300 ms), resizable on wide screens, full screen on mobile. It reuses the existing chat hooks and components (no second chat implementation), including streaming, sources and feedback chips.
+- **Naming:** "AskDIQ" everywhere, read from the brand config (`assistant_name`), never hard-coded in components.
+- **Performance:** lazy-loaded with `next/dynamic` on first open or on idle prefetch, so the launcher adds almost nothing to first-load JS.
+- **Accessibility:** focus trap, `Esc` closes and returns focus to the launcher, `aria-live` for new messages, labelled controls, AA contrast in both themes.
+- **Security:** markdown is rendered without `dangerouslySetInnerHTML`, raw HTML is disabled, links get `rel="noopener noreferrer"` and only `https:` or relative URLs are allowed (A05). Any renderer dependency is pinned exactly (A03).
+
+### 17.5 Shell: navigation, logout, theme, dates, Active users (`fix/shell-nav-logout-theme-dates`)
+
+- **Flat sidebar:** remove the "ADMIN" group heading. One flat list, in the agreed order, still filtered by role.
+- **Logout end to end:** the menu action calls `POST /auth/logout` through the proxy. The backend revokes the server session row. The Next route clears the session cookie (same name, path and flags, `Max-Age=0`). The client clears the query cache and redirects to `/login`. Back-button and old-cookie replays get 401 (A07).
+- **Theme:** only Light and Dark. Remove "System" from the toggle and the stored value. A stored `system` value is migrated to the current resolved theme on first load.
+- **Dates:** one `<DateTime>` component used everywhere a timestamp is shown: relative text ("5 min ago") with the absolute local date and time (with time zone) in a tooltip and in `title`/`<time dateTime>`. Tables, drawers, cards, exports and charts use the same formatter.
+- **Active users (one definition, used by every card):**
+  - **Identity:** a distinct end user is the client id when one is present, otherwise the forwarded end-user IP (the hotfix `ip_address`).
+  - **Exclusions:** IPs on the test-IP list are excluded.
+  - **Activity:** at least one query in the window.
+  - **Windows:** DAU (24 h), WAU (7 days), MAU (30 days) and active now (last 5 minutes).
+  - One backend function computes it, and every card, chart and tooltip calls that function, so the numbers always agree. A test asserts that the dashboard, Visitors and Usage cards return the same value for the same window.
+
+### 17.6 Green open PRs (`chore/green-open-prs`)
+
+Audit every open PR. Reproduce each red or flaky job with `ci_local.ps1` in that PR's worktree. Fix the root cause on the PR's own branch (or in this chore branch when the cause is shared, such as CI config or a shared fixture). Never skip, `xfail` or loosen a threshold. Push only after the local mirror prints PASS.
+
+### 17.7 Production hotfix already deployed (`hotfix/query-filters-ip-ingest`)
+
+Commits `a795af3`, `27d516c` and `f9d76ed`, deployed to production on 2026-10-16:
+- The Swagger example's `additionalProp1` filter reached the retriever and emptied every answer. Filters are now an allow-list of scalar keys, and unknown keys are ignored.
+- A `no_sources` flag is returned when retrieval finds nothing.
+- The KB markdown is shipped inside the image.
+- The forwarded end-user `ip_address` is honoured (`ALLOW_CLIENT_IP_OVERRIDE`, default `true`) on `/query`, `/sessions` and feedback. The per-IP rate limit keys on that end-user IP.
+- The Swagger example is restored.
+- Production migrations `5491a7bdb113` → `d6e7f8a9b0c1` were applied after a backup. The usage backfill was applied (41 rows).
+
+The hotfix still needs a normal PR into `main` so `main` matches production. That PR is raised for review and not merged by the agent.
+
+---
+
+## 18. Revision 3.3 change log (2026-10-16)
+
+- Added section 17 (owner feedback round) and phase **F8** in `planchanges4.md`, placed before verification phase V. The release PR is renumbered from PR-27 to PR-33.
+- Recorded the production hotfix (17.7) in the execution log.
+- Verification checklist (section 11) and execution order (16.5) updated.
+- OWASP mappings use the 2025 numbering (see the note at the top of section 17).
+
+## 19. Revision 3.1 change log (2026-10-15)
 
 - **Redis removed.** Shared state moved to Postgres (13.6). Multi-worker and multi-replica load balancing are kept.
 - **Hard target of at least 50 concurrent requests.** It is tested at 50 and 100, with a CI gate (`test_concurrency_50.py`). An async-only audit lists the known sync hotspots.
@@ -1116,7 +1222,7 @@ Triggers: `pull_request` to `main`, `push` to `main` only, and `workflow_dispatc
 - **Analytics.** The HTML renderer was read, and section 6.4 maps every field, KPI, chart and filter to our tables, with a 49-conversation parity fixture. The `GRE` and `ACK` codes are kept.
 - **Merges.** Merge waves, squash merges and the migration re-link rule are in `planchanges4.md` sections 8 and 9, along with the parallel execution guide.
 
-## 18. Revision 3 change log
+## 20. Revision 3 change log
 
 - The baseline commit is marked done (PR #13). Branching moves to one feature, one PR, and no direct push to `main`.
 - The reference HTML folder moves out of the git-ignored `/backend/docs/`.
