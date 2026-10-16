@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
@@ -17,7 +18,14 @@ from app.schemas.governance import AuditLogEntry
 router = APIRouter()
 
 
-@router.get("/governance/audit-log", response_model=list[AuditLogEntry])
+@router.get(
+    "/governance/audit-log",
+    response_model=list[AuditLogEntry],
+    description=(
+        "Newest first. Auth events (newplan §7.5) are only included for "
+        "callers with `audit:auth:read` (superadmin)."
+    ),
+)
 async def list_audit_log(
     limit: int = Query(default=100, ge=1, le=500),
     action: str | None = Query(
@@ -30,6 +38,9 @@ async def list_audit_log(
 
     if action:
         stmt = stmt.where(AuditLog.action == action)
+    # Auth events (sign-ins, approvals, role changes) need `audit:auth:read`.
+    if not user.has(Permission.AUDIT_AUTH_READ):
+        stmt = stmt.where(AuditLog.action.not_in(AUTH_AUDIT_ACTIONS))
 
     rows = (await db.execute(stmt)).scalars().all()
 

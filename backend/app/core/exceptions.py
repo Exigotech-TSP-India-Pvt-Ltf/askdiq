@@ -172,7 +172,42 @@ async def unhandled_exception_handler(
     return response
 
 
+class DomainError(Exception):
+    """A service-layer failure that maps to an HTTP status.
+
+    Services raise these instead of ``HTTPException`` so business logic stays
+    free of the web framework; the handler below renders problem+json.
+    ``detail`` must be safe to show to the caller.
+    """
+
+    status_code: int = 400
+
+    def __init__(self, detail: str, *, extra: dict[str, Any] | None = None) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.extra = extra
+
+
+class NotFoundError(DomainError):
+    status_code = 404
+
+
+class ConflictError(DomainError):
+    status_code = 409
+
+
+class ForbiddenError(DomainError):
+    status_code = 403
+
+
+async def domain_exception_handler(
+    request: Request, exc: DomainError
+) -> ProblemJSONResponse:
+    return problem_response(request, exc.status_code, exc.detail, extra=exc.extra)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(DomainError, domain_exception_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)

@@ -324,6 +324,8 @@ class Settings(BaseSettings):
     oidc_state_ttl_seconds: int = Field(default=600, ge=60)
     oidc_metadata_cache_seconds: int = Field(default=3600, ge=60)
     oidc_clock_skew_seconds: int = Field(default=60, ge=0, le=300)
+    # Per-client-IP cap on /auth/sso/login + /auth/sso/callback (OWASP A07).
+    auth_login_rate_limit_per_minute: int = Field(default=10, ge=1)
 
     @model_validator(mode="after")
     def _validate_auth(self) -> Self:
