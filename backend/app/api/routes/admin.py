@@ -101,7 +101,8 @@ async def list_users(
     audience: str = Query("overview"),
     include_test: bool | None = None,
     q: str | None = None,
-    status: str | None = None,
+    # Accepted for compatibility (unused); aliased so it does not shadow `fastapi.status`.
+    status_filter: str | None = Query(None, alias="status"),
     user_type: str | None = Query(None, alias="type"),
     sort: str = "last_active_desc",
     limit: int = 50,

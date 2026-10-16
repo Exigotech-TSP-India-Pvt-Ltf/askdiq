@@ -6,6 +6,8 @@
 import type { NextRequest } from "next/server";
 
 const DEFAULT_BACKEND_URL = "http://127.0.0.1:8000";
+/** Upper bound on waiting for the backend to revoke a session at sign-out (app/auth/logout). */
+export const LOGOUT_BACKEND_TIMEOUT_MS = 4000;
 
 export function backendUrl(): string {
   return (process.env.API_BASE_URL ?? DEFAULT_BACKEND_URL).replace(/\/+$/, "");
