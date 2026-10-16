@@ -260,6 +260,26 @@ class Settings(BaseSettings):
     http_cache_max_age_seconds: int = 15
     sse_heartbeat_seconds: float = 15.0
     sse_retry_ms: int = 3000
+
+    # --- Governance endpoints & live stream (PR-10, newplan §4.5) ---
+    # Above this many matching rows, list totals switch to a planner estimate.
+    governance_exact_count_cap: int = Field(default=100_000, ge=1)
+    governance_export_max_rows: int = Field(default=100_000, ge=1)
+    # Upper bounds (ms) of the fast / moderate / slow trace latency buckets.
+    governance_latency_buckets_ms: list[int] = [1000, 3000, 10000]
+    # Health status thresholds (value >= threshold -> that status).
+    governance_health_window_minutes: int = Field(default=60, ge=1)
+    governance_health_error_rate_degraded_pct: float = 2.0
+    governance_health_error_rate_incident_pct: float = 10.0
+    governance_health_p95_degraded_ms: float = 8000.0
+    governance_health_p95_incident_ms: float = 20000.0
+    governance_health_quota_degraded_pct: float = 80.0
+    governance_health_quota_incident_pct: float = 95.0
+    governance_incidents_window_hours: int = Field(default=24, ge=1)
+    governance_incidents_limit: int = Field(default=10, ge=1, le=100)
+    governance_stream_interval_seconds: float = Field(default=5.0, gt=0)
+    governance_quota_sample_seconds: float = Field(default=60.0, gt=0)
+    governance_quota_series_points: int = Field(default=60, ge=1)
     # Background jobs (Postgres SKIP LOCKED queue).
     jobs_worker_enabled: bool = True
     jobs_max_concurrency: int = 4

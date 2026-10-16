@@ -89,7 +89,7 @@ export default function LogsView({ hideHeader = false }: { hideHeader?: boolean 
     setLoading(true);
     const qs = audience && audience !== "overview" ? `&audience=${audience}` : "";
     api
-      .adminGet<{ total: number; items: Log[] }>(token, `/governance/logs?limit=2000${qs}`)
+      .adminGet<{ total: number; items: Log[] }>(token, `/governance/logs?limit=200${qs}`)
       .then((data) => {
         setLogs(data.items);
         setLastUpdated(new Date());

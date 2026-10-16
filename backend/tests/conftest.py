@@ -6,6 +6,7 @@ import hashlib
 import os
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from functools import cache
 from unittest.mock import patch
 
@@ -28,6 +29,7 @@ from sqlalchemy.pool import NullPool
 from app.auth.deps import authenticate_session
 from app.auth.permissions import Role, UserStatus
 from app.auth.principal import AuthUser
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, get_session_factory
 from app.governance.auth import sanitize_client_id
@@ -180,6 +182,16 @@ def shared_session_factory(
     return _factory
 
 
+def shared_session_runner(session: AsyncSession) -> ScopedRunner:
+    """A ScopedRunner whose every task borrows ``session`` (limit=1: sequential)."""
+
+    @asynccontextmanager
+    async def _borrow() -> AsyncGenerator[AsyncSession, None]:
+        yield session
+
+    return ScopedRunner(session_factory=_borrow, limit=1)
+
+
 @pytest.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Test client with database dependency override and valid default auth."""
@@ -189,6 +201,11 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_session_factory] = lambda: shared_session_factory(
+        db_session
+    )
+    # Parallel-aggregation routes (gather_scoped) share the transactional
+    # session too, one task at a time, so they see rows seeded by the test.
+    app.dependency_overrides[get_scoped_runner] = lambda: shared_session_runner(
         db_session
     )
     transport = ASGITransport(app=app)

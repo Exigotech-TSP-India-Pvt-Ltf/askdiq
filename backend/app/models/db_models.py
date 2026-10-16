@@ -143,6 +143,11 @@ class LatencyRecord(Base):
     guardrail_post_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     reranker_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    __table_args__ = (
+        # Governance traces keyset pagination (migration 72125f44984d).
+        Index("ix_latency_metrics_created_id", "created_at", "id"),
+    )
+
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
@@ -162,6 +167,10 @@ class AuditLog(Base):
     __table_args__ = (
         Index("ix_audit_log_ip_created", "ip_address", "created_at"),
         Index("ix_audit_log_created_action", "created_at", "action"),
+        # Governance keyset pagination and joins (migration 72125f44984d).
+        Index("ix_audit_log_created_id", "created_at", "id"),
+        Index("ix_audit_log_action_created_id", "action", "created_at", "id"),
+        Index("ix_audit_log_request_action", "request_id", "action"),
     )
 
 
@@ -242,6 +251,7 @@ class ChatMessageRecord(Base):
         Index("ix_chat_messages_session_turn", "session_id", "turn_index"),
         Index("ix_chat_messages_created_at", "created_at"),
         Index("ix_chat_messages_ip_created", "ip_address", "created_at"),
+        Index("ix_chat_messages_request_role", "request_id", "role"),
     )
 
 

@@ -30,6 +30,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.middleware import LatencyMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.tasks import drain as drain_background_tasks
+from app.governance.stream import get_governance_hub
 from app.harness.prompts import call_llm
 from app.jobs.runtime import start_platform_services
 from app.retrieval.embeddings import embed_text
@@ -81,6 +82,8 @@ async def lifespan(_app: FastAPI):
     try:
         yield
     finally:
+        # Stop the shared governance SSE producers before the event bus.
+        await get_governance_hub().aclose()
         await platform_services.aclose()
         # Let supervised fire-and-forget work (e.g. latency persistence)
         # finish, bounded so shutdown can never hang.

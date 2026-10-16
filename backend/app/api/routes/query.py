@@ -111,6 +111,15 @@ async def query(
             "grounded": response.grounded,
             "guardrail_flags": response.guardrail_flags,
             "source_ids": [s.chunk_id for s in response.sources],
+            # Retrieval scores for the governance trace drawer (ids, no content).
+            "sources": [
+                {
+                    "chunk_id": s.chunk_id,
+                    "document_id": s.document_id,
+                    "score": round(float(s.score), 4),
+                }
+                for s in response.sources
+            ],
             "cost_usd": cost_usd,
             "outcome": response.outcome,
             "tokens": merged_details.get("tokens", {}),
