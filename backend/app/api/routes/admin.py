@@ -12,6 +12,7 @@ from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.admin_usage import router as usage_router
+from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
@@ -709,6 +710,11 @@ async def governance_logs(
     if aud_log is not None:
         q_total = q_total.where(aud_log)
         q_rows = q_rows.where(aud_log)
+    if not user.has(Permission.AUDIT_AUTH_READ):
+        # Auth events (newplan §7.5) are superadmin-only (`audit:auth:read`).
+        hide_auth = AuditLog.action.not_in(AUTH_AUDIT_ACTIONS)
+        q_total = q_total.where(hide_auth)
+        q_rows = q_rows.where(hide_auth)
     total = await db.scalar(q_total)
     rows = (await db.execute(q_rows)).scalars().all()
     return {
