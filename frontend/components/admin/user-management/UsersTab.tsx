@@ -122,6 +122,7 @@ export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersT
 
   return (
     <>
+      <div data-tour="user-management-users-table">
       <TableCard
         title="Users"
         description="Everyone who has signed in or been invited"
@@ -131,12 +132,13 @@ export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersT
           </span>
         }
         headerActions={
-          <button type="button" className={primaryButton} onClick={() => setInviting(true)}>
+          <button type="button" className={primaryButton} onClick={() => setInviting(true)} data-tour="user-management-invite">
             <UserPlus className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
             Invite user
           </button>
         }
         toolbar={
+          <div data-tour="user-management-users-toolbar">
           <TableToolbar
             search={url.q}
             onSearchChange={(value) => update({ q: value.trim() || null, page: null })}
@@ -162,6 +164,7 @@ export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersT
               },
             ]}
           />
+          </div>
         }
         pagination={
           <Pagination
@@ -191,6 +194,7 @@ export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersT
           emptySubMessage="Clear the search or filters, or invite someone."
         />
       </TableCard>
+      </div>
 
       <UserDrawer
         userId={url.user}

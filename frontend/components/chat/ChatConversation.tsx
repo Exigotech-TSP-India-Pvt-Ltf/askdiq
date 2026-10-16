@@ -55,6 +55,7 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
     const brand = useBrand();
     const layout = LAYOUT[variant];
     const scrollRef = useRef<HTMLDivElement>(null);
+    const tour = (id: string) => (variant === "page" ? `chat-${id}` : undefined);
 
     useEffect(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -71,6 +72,7 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
           ref={scrollRef}
           className={`scrollbar-thin min-h-0 flex-1 overflow-y-auto ${layout.scroll}`}
           aria-busy={loadingMessages || undefined}
+          data-tour={tour("messages")}
         >
           {messages.length === 0 ? (
             <div className="mx-auto flex h-full max-w-lg flex-col items-center justify-center text-center">
@@ -79,7 +81,7 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
               <p className="mt-1.5 text-sm text-ink/55 dark:text-slate-400">
                 Try a question about Essential Eight, Zero Trust, governance, or how the platform works.
               </p>
-              <div className={`mt-6 grid w-full gap-2 ${layout.prompts}`}>
+              <div className={`mt-6 grid w-full gap-2 ${layout.prompts}`} data-tour={tour("prompts")}>
                 {brand.chatSampleQuestions.map((prompt) => (
                   <button
                     key={prompt}
@@ -114,6 +116,7 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
 
         <form
           onSubmit={onSubmit}
+          data-tour={tour("composer")}
           className={`border-t border-ink/10 bg-white dark:border-white/10 dark:bg-dark-surface ${layout.composer}`}
         >
           <div className={`mx-auto flex items-end gap-2 ${layout.column}`}>

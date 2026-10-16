@@ -198,6 +198,7 @@ export default function TracesView() {
 
   return (
     <>
+      <div data-tour="governance-traces-table">
       <TableCard
         title="Request traces"
         description="Every /query request with its derived status, latency, tokens and cost. Select a row for the stage waterfall."
@@ -209,6 +210,7 @@ export default function TracesView() {
         headerActions={
           <button
             type="button"
+            data-tour="governance-traces-autorefresh"
             aria-pressed={autoRefresh}
             onClick={() => setAutoRefresh((v) => !v)}
             className={`inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium transition-colors ${
@@ -220,6 +222,7 @@ export default function TracesView() {
           </button>
         }
         toolbar={
+          <div data-tour="governance-traces-filters">
           <TableToolbar
             search={q}
             onSearchChange={(v) => set({ q: v || null })}
@@ -250,6 +253,7 @@ export default function TracesView() {
             ]}
             countLabel={rangeCtx ? `Range: ${rangeCtx.range.label}` : undefined}
           />
+          </div>
         }
         cursor={{
           hasPrev: pager.hasPrev,
@@ -272,6 +276,7 @@ export default function TracesView() {
           emptyMessage="No request traces match these filters."
         />
       </TableCard>
+      </div>
 
       <TraceDrawer
         requestId={requestId}

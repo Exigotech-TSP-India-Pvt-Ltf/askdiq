@@ -318,7 +318,7 @@ export function MessageBubble({
   return (
     <div className="flex justify-start">
       <div className="relative max-w-[80%] space-y-2">
-        <div className="rounded-2xl rounded-tl-sm border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-sm">
+        <div data-tour="chat-answer" className="rounded-2xl rounded-tl-sm border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-sm">
           {message.pending ? (
             <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400" role="status" aria-label="Thinking">
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 dark:bg-slate-500 [animation-delay:-0.3s]" />
@@ -331,6 +331,7 @@ export function MessageBubble({
               {onRetry ? (
                 <button
                   type="button"
+                  data-tour="chat-retry"
                   onClick={onRetry}
                   className="rounded-md border border-line px-2 py-0.5 text-xs font-medium text-fg-muted transition hover:border-brand-300 hover:text-fg focus:outline-none focus:ring-1 focus:ring-brand-500"
                 >
@@ -346,7 +347,7 @@ export function MessageBubble({
         {!message.pending && !message.error && <SourceChips sources={citedSources(message.response)} />}
 
         {!message.pending && !message.error && (
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]" data-tour="chat-feedback">
             {/* Feedback: Thumbs Up */}
             <button
               type="button"
@@ -395,7 +396,7 @@ export function MessageBubble({
               </button>
             )}
 
-            <div className="ml-auto flex items-center gap-2 text-slate-400 dark:text-slate-500">
+            <div className="ml-auto flex items-center gap-2 text-slate-400 dark:text-slate-500" data-tour="chat-message-actions">
               <MessageTime at={message.createdAt} />
               {/* Copy */}
               <button

@@ -19,7 +19,7 @@ export function PendingState({ pending, nothingLabelled = false }: { pending: Pe
   const pct = progress(pending);
   const title = `${fmtInt(pending.pending)} turns pending classification`;
   return (
-    <div role="status" className="flex flex-col gap-2 rounded-xl border border-status-info/40 bg-status-info-bg p-3 sm:flex-row sm:items-center">
+    <div role="status" data-tour="analytics-pending" className="flex flex-col gap-2 rounded-xl border border-status-info/40 bg-status-info-bg p-3 sm:flex-row sm:items-center">
       <Hourglass className="h-4 w-4 shrink-0 text-status-info-fg" strokeWidth={1.75} aria-hidden="true" />
       <p className="text-xs text-status-info-fg">
         <span className="font-semibold">{title}.</span>{" "}

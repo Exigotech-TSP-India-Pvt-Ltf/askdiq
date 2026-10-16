@@ -1,0 +1,154 @@
+"use client";
+
+import React, { useEffect, useId, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+import { AnimatePresence, m } from "motion/react";
+import { Compass, LayoutDashboard, MapPin } from "lucide-react";
+import { TOURS } from "@/lib/tour/registry";
+import { tourIdForPath } from "@/lib/tour/routes";
+import { hasSeenTour, markTourSeen } from "@/lib/tour/dom";
+import { pop, useMotionVariants } from "@/lib/motion";
+import { focusRing, menuItem, popoverPanel } from "@/components/ui/styles";
+import { useTourOptional, type TourContextValue } from "@/components/tour/TourProvider";
+
+export type TourLauncherVariant = "header" | "mobile" | "floating";
+
+interface TourLauncherProps {
+  /** `header`: desktop header slot. `mobile`: the mobile top bar. `floating`: pages without a header slot. */
+  variant?: TourLauncherVariant;
+}
+
+/** Icon-only "Take the tour" button with a small menu: this page's tour or the dashboard basics. */
+export function TourLauncher({ variant = "header" }: TourLauncherProps) {
+  const tour = useTourOptional();
+  if (!tour) return null;
+  return <TourLauncherInner tour={tour} variant={variant} />;
+}
+
+function TourLauncherInner({ tour, variant }: { tour: TourContextValue; variant: TourLauncherVariant }) {
+  const pathname = usePathname() ?? "";
+  const pageId = tourIdForPath(pathname);
+  const [open, setOpen] = useState(false);
+  const [hint, setHint] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  const variants = useMotionVariants(pop);
+  const { registerHeaderLauncher, headerLaunchers, start } = tour;
+
+  useEffect(() => (variant === "header" ? registerHeaderLauncher() : undefined), [variant, registerHeaderLauncher]);
+
+  // First visit: a subtle pulse on the launcher (never auto-opens the tour). Only a visible
+  // launcher claims the hint, so the hidden mobile/desktop twin doesn't swallow it.
+  useEffect(() => {
+    setHint(false);
+  }, [pageId]);
+  useEffect(() => {
+    if (!pageId || hasSeenTour(pageId)) return;
+    const el = rootRef.current;
+    if (!el || el.getClientRects().length === 0) return;
+    markTourSeen(pageId);
+    setHint(true);
+  }, [pageId, headerLaunchers]);
+  useEffect(() => {
+    if (!hint) return;
+    const timer = window.setTimeout(() => setHint(false), 12000);
+    return () => window.clearTimeout(timer);
+  }, [hint]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (!pageId) return null;
+  if (variant === "floating" && headerLaunchers > 0) return null;
+
+  const pageTour = TOURS[pageId];
+  const hasPageTour = pageId !== "shell" && pageTour.steps.length > 0;
+
+  const launch = (id: typeof pageId) => {
+    setOpen(false);
+    setHint(false);
+    start(id);
+  };
+
+  const wrapper =
+    variant === "floating" ? "fixed right-6 top-24 z-30 hidden md:block" : "relative";
+
+  return (
+    <div ref={rootRef} className={wrapper} data-tour="shell-tour-launcher">
+      <div className="relative">
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => {
+            setHint(false);
+            setOpen((o) => !o);
+          }}
+          aria-label="Take the tour"
+          title="Take the tour"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? menuId : undefined}
+          data-testid="tour-launcher"
+          className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface-card text-brand-700 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 dark:text-brand-300 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 ${focusRing}`}
+        >
+          <Compass className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+        </button>
+        {hint ? (
+          <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5" data-testid="tour-hint" aria-hidden="true">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-75 motion-reduce:animate-none" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-500 ring-2 ring-surface-card" />
+          </span>
+        ) : null}
+      </div>
+      <AnimatePresence>
+        {open ? (
+          <m.div
+            id={menuId}
+            role="menu"
+            aria-label="Product tours"
+            variants={variants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className={`absolute right-0 z-50 mt-2 w-56 origin-top-right ${popoverPanel}`}
+          >
+            <p className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Product tours</p>
+            {hasPageTour ? (
+              <button type="button" role="menuitem" className={menuItem} onClick={() => launch(pageId)}>
+                <MapPin className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" strokeWidth={1.75} aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block font-medium text-fg">Tour this page</span>
+                  <span className="block truncate text-[11px] text-fg-subtle">{pageTour.title}</span>
+                </span>
+              </button>
+            ) : null}
+            <button type="button" role="menuitem" className={menuItem} onClick={() => launch("shell")}>
+              <LayoutDashboard className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" strokeWidth={1.75} aria-hidden="true" />
+              <span className="min-w-0">
+                <span className="block font-medium text-fg">Dashboard basics</span>
+                <span className="block truncate text-[11px] text-fg-subtle">Navigation, filters and tools</span>
+              </span>
+            </button>
+          </m.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}

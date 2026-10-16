@@ -172,7 +172,7 @@ function MetadataCard({ doc, detail }: { doc: DocumentInventoryItem; detail: Doc
   const stats = detail?.chunk_stats;
   const labels = Object.entries(doc.labels ?? {});
   return (
-    <section aria-label="Document metadata" className="rounded-xl border border-line bg-surface-card p-5 shadow-sm">
+    <section aria-label="Document metadata" data-tour="documents-detail-metadata" className="rounded-xl border border-line bg-surface-card p-5 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <FormatBadge
           convertedFrom={originalFormat(doc)}
@@ -512,10 +512,13 @@ function DocumentDetailContent() {
 
         {notFound ? null : (
           <>
-            <TabGroup<Tab> tabs={tabs} activeTab={tab} onChange={(next) => set({ tab: next === "chunks" ? null : next, chunk: null })} ariaLabel="Document sections" />
+            <div data-tour="documents-detail-tabs">
+              <TabGroup<Tab> tabs={tabs} activeTab={tab} onChange={(next) => set({ tab: next === "chunks" ? null : next, chunk: null })} ariaLabel="Document sections" />
+            </div>
 
             {tab === "chunks" ? (
               <div className="space-y-6">
+                <div data-tour="documents-detail-heatmap">
                 <ChartCard
                   title="Chunk hits by week"
                   subtitle="Most cited chunks over the last 8 weeks; select a cell to jump to the chunk"
@@ -542,8 +545,9 @@ function DocumentDetailContent() {
                     label="Chunk hits by week"
                   />
                 </ChartCard>
+                </div>
 
-                <section aria-label="Chunks" className="space-y-4">
+                <section aria-label="Chunks" data-tour="documents-detail-chunks" className="space-y-4">
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="relative min-w-[240px] flex-1">
                       <span className="sr-only">Search chunks</span>
@@ -596,7 +600,11 @@ function DocumentDetailContent() {
               </div>
             ) : null}
 
-            {tab === "markdown" && token ? <CanonicalTab token={token} id={id} sourceName={doc?.source_name ?? "document.md"} /> : null}
+            {tab === "markdown" && token ? (
+              <div data-tour="documents-detail-markdown">
+                <CanonicalTab token={token} id={id} sourceName={doc?.source_name ?? "document.md"} />
+              </div>
+            ) : null}
 
             {tab === "citations" ? (
               <SectionCard

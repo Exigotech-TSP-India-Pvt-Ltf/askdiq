@@ -87,6 +87,7 @@ export function AuthAuditTab({ entries, loading, error, onRetry, action, update 
   ];
 
   return (
+    <div data-tour="user-management-audit-table">
     <TableCard
       title="Auth audit trail"
       description="Who approved whom, role changes, suspensions and denied sign-ins. Newest first."
@@ -137,5 +138,6 @@ export function AuthAuditTab({ entries, loading, error, onRetry, action, update 
         emptySubMessage="Sign-ins, approvals and role changes appear here."
       />
     </TableCard>
+    </div>
   );
 }

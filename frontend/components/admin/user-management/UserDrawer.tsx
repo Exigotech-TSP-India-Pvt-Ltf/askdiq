@@ -198,7 +198,7 @@ export function UserDrawer({
             </Section>
 
             <Section title="Actions" icon={KeyRound}>
-              <div className="space-y-3 rounded-xl border border-line bg-surface-card p-4">
+              <div data-tour="user-management-drawer-actions" className="space-y-3 rounded-xl border border-line bg-surface-card p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <label htmlFor="um-role-select" className="text-xs text-fg-muted">
                     Role

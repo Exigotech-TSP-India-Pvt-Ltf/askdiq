@@ -56,7 +56,9 @@ export function FeedbackWorkspace() {
         icon={ThumbsUp}
       />
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-5 p-4 sm:p-6 lg:p-8">
-        <TabGroup tabs={tabs} activeTab={tab} onChange={setTab} ariaLabel="Feedback sections" />
+        <div data-tour="feedback-tabs">
+          <TabGroup tabs={tabs} activeTab={tab} onChange={setTab} ariaLabel="Feedback sections" />
+        </div>
         {showChips ? (
           <FilterChips
             chips={chips}
@@ -66,7 +68,7 @@ export function FeedbackWorkspace() {
           />
         ) : null}
 
-        <div role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
+        <div data-tour="feedback-panel" role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
           {tab === "overview" ? (
             <FeedbackOverview
               analytics={analytics.data}

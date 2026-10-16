@@ -70,13 +70,15 @@ export function UserManagementPage() {
 function Shell({ children, badge }: { children: React.ReactNode; badge?: number | null }) {
   return (
     <div className="flex min-h-full flex-col bg-surface-page text-fg">
-      <DashboardHeader
-        title="User Management"
-        subtitle="Accounts, access requests, roles and the sign-in audit trail"
-        icon={UserCog}
-        showAudienceTabs={false}
-        badgeCount={badge ? `${badge} pending` : null}
-      />
+      <div data-tour="user-management-header">
+        <DashboardHeader
+          title="User Management"
+          subtitle="Accounts, access requests, roles and the sign-in audit trail"
+          icon={UserCog}
+          showAudienceTabs={false}
+          badgeCount={badge ? `${badge} pending` : null}
+        />
+      </div>
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-4 sm:p-6 lg:p-8">{children}</div>
     </div>
   );
@@ -113,12 +115,14 @@ function UserManagementContent({ meId }: { meId: string | undefined }) {
         onDrill={drill}
       />
 
-      <TabGroup<UmTab>
-        tabs={tabs}
-        activeTab={url.tab}
-        onChange={(tab) => update({ tab: tab === "users" ? null : tab, user: null, page: null })}
-        ariaLabel="User Management sections"
-      />
+      <div data-tour="user-management-tabs">
+        <TabGroup<UmTab>
+          tabs={tabs}
+          activeTab={url.tab}
+          onChange={(tab) => update({ tab: tab === "users" ? null : tab, user: null, page: null })}
+          ariaLabel="User Management sections"
+        />
+      </div>
 
       <AnimatePresence mode="wait" initial={false}>
         <m.div key={url.tab} role="tabpanel" aria-label={tabs.find((t) => t.id === url.tab)?.label} variants={panel} initial="hidden" animate="visible" exit="exit">

@@ -185,7 +185,7 @@ export function InteractiveOverviewTab({
       {/* ========================================================================= */}
       {/* 1. CHATBOT LIVE TELEMETRY COMMAND BAR (Signature Command Center) */}
       {/* ========================================================================= */}
-      <div className="relative overflow-hidden rounded-2xl border border-teal-500/30 bg-gradient-to-r from-brand-600 via-brand-800 to-brand-950 p-6 text-white shadow-xl transition-all">
+      <div data-tour="usage-command-bar" className="relative overflow-hidden rounded-2xl border border-teal-500/30 bg-gradient-to-r from-brand-600 via-brand-800 to-brand-950 p-6 text-white shadow-xl transition-all">
         {/* Ambient Glow Orbs */}
         <div className="absolute right-0 top-0 -mt-12 -mr-12 h-64 w-64 rounded-full bg-teal-400/20 blur-3xl pointer-events-none" />
         <div className="absolute left-1/4 bottom-0 -mb-12 h-40 w-40 rounded-full bg-cyan-400/20 blur-2xl pointer-events-none" />
@@ -237,7 +237,7 @@ export function InteractiveOverviewTab({
           </div>
 
           {/* Core Chatbot Health Metrics Strip (Frosted Translucent Tiles - NOT White) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div data-tour="usage-kpis" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {/* Metric 1: Total Turns Processed */}
             <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-xs">
               <span className="text-[11px] text-teal-200 font-medium">Conversational Turns</span>
@@ -261,7 +261,7 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Metric 3: P50 Median Latency */}
-            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-xs">
+            <div data-tour="usage-latency-p50" className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-xs">
               <span className="text-[11px] text-teal-200 font-medium">Median Turn Speed (P50)</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-extrabold font-mono text-cyan-300 drop-shadow-[0_0_8px_rgba(103,232,249,0.4)]">
@@ -272,7 +272,7 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Metric 4: Total Platform Net Cost */}
-            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-xs">
+            <div data-tour="usage-net-spend" className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-xs">
               <span className="text-[11px] text-teal-200 font-medium">Net Platform Spend</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-extrabold font-mono text-white">
@@ -283,7 +283,7 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Metric 5: Average Cost / Turn */}
-            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between col-span-2 sm:col-span-1 shadow-xs">
+            <div data-tour="usage-cost-per-turn" className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between col-span-2 sm:col-span-1 shadow-xs">
               <span className="text-[11px] text-teal-200 font-medium">Avg Cost / Turn</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-extrabold font-mono text-amber-300 drop-shadow-[0_0_8px_rgba(252,211,77,0.4)]">
@@ -295,7 +295,7 @@ export function InteractiveOverviewTab({
           </div>
 
           {/* Quick Domain Filter Selector */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/15">
+          <div data-tour="usage-focus" className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/15">
             <span className="text-xs text-teal-200 font-medium flex items-center gap-1.5">
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span>Telemetry Focus:</span>
@@ -335,7 +335,7 @@ export function InteractiveOverviewTab({
         {/* ----------------------------------------------------------------------- */}
         {/* DOMAIN 1: FINANCIAL COST ECONOMICS — LIVE FINANCIAL ACCOUNTING */}
         {/* ----------------------------------------------------------------------- */}
-        <div
+        <div data-tour="usage-waterfall"
           id="telemetry-costs"
           className={`${dimUnless("costs")} relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white p-6 text-slate-900 shadow-card dark:bg-surface-card dark:text-white dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
             activeDomainFilter === "costs"
@@ -516,7 +516,7 @@ export function InteractiveOverviewTab({
         {/* ----------------------------------------------------------------------- */}
         {/* DOMAIN 2: TOKEN VOLUME TELEMETRY — COGNITIVE PIPELINE */}
         {/* ----------------------------------------------------------------------- */}
-        <div
+        <div data-tour="usage-token-rings"
           id="telemetry-tokens"
           className={`${dimUnless("tokens")} relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 shadow-card dark:border-teal-500/25 dark:bg-gradient-to-br dark:from-brand-950/95 dark:via-surface-muted/98 dark:to-surface-page dark:text-white dark:shadow-2xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
             activeDomainFilter === "tokens"
@@ -687,7 +687,7 @@ export function InteractiveOverviewTab({
         {/* ----------------------------------------------------------------------- */}
         {/* DOMAIN 3: GENERATION QUALITY & LATENCY — TELEMETRY COCKPIT */}
         {/* ----------------------------------------------------------------------- */}
-        <div
+        <div data-tour="usage-latency-cockpit"
           id="telemetry-quality"
           className={`${dimUnless("quality")} relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 dark:text-white shadow-card dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
             activeDomainFilter === "quality"
@@ -881,7 +881,7 @@ export function InteractiveOverviewTab({
       {/* ========================================================================= */}
       {/* 3. REAL CHATBOT CONVERSATIONAL QUERY STREAM (Option 2 Aurora Glass) */}
       {/* ========================================================================= */}
-      <div className="rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl space-y-4 transition-all hover:border-teal-400 dark:hover:border-teal-400/60">
+      <div data-tour="usage-feed" className="rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl space-y-4 transition-all hover:border-teal-400 dark:hover:border-teal-400/60">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-teal-100 dark:border-teal-500/20 pb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">

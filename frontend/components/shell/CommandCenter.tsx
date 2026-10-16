@@ -7,6 +7,10 @@ import { NAV_ITEMS, isNavItemEnabled } from "@/components/Sidebar";
 import { isHelpShortcut, isPaletteShortcut } from "@/lib/shortcuts";
 import { useAuth } from "@/lib/auth-context";
 import { hasPermission, isPermission } from "@/lib/permissions";
+import { Compass } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useTourOptional } from "@/components/tour/TourProvider";
+import { tourIdForPath } from "@/lib/tour/routes";
 
 interface CommandCenterValue {
   openPalette: () => void;
@@ -31,6 +35,30 @@ export const PALETTE_PAGES: PaletteItem[] = NAV_ITEMS.filter(isNavItemEnabled).m
   permission: item.permission,
 }));
 
+const TOUR_HREF_PREFIX = "#tour:";
+const PAGE_TOUR_HREF = `${TOUR_HREF_PREFIX}page`;
+const SHELL_TOUR_HREF = `${TOUR_HREF_PREFIX}shell`;
+
+/** "Product tours" palette actions (shown only inside a TourProvider). */
+export const PALETTE_TOURS: PaletteItem[] = [
+  {
+    id: PAGE_TOUR_HREF,
+    label: "Tour this page",
+    href: PAGE_TOUR_HREF,
+    group: "Product tours",
+    icon: Compass,
+    keywords: ["tour", "guide", "walkthrough", "help", "onboarding"],
+  },
+  {
+    id: SHELL_TOUR_HREF,
+    label: "Dashboard basics tour",
+    href: SHELL_TOUR_HREF,
+    group: "Product tours",
+    icon: Compass,
+    keywords: ["tour", "guide", "walkthrough", "help", "onboarding", "basics"],
+  },
+];
+
 interface CommandCenterProps {
   children: React.ReactNode;
   /** `/admin/search` results once that endpoint exists (newplan §15.1). */
@@ -50,6 +78,20 @@ export function CommandCenter({ children, searchProvider, canAccess: canAccessOv
       canAccessOverride ? canAccessOverride(permission) : isPermission(permission) && hasPermission(permissions, permission),
     [canAccessOverride, permissions],
   );
+  const tour = useTourOptional();
+  const router = useRouter();
+  const onNavigate = useCallback(
+    (href: string) => {
+      if (!href.startsWith(TOUR_HREF_PREFIX)) {
+        router.push(href);
+        return;
+      }
+      const id = href === SHELL_TOUR_HREF ? "shell" : tourIdForPath(window.location.pathname);
+      if (id) tour?.start(id);
+    },
+    [router, tour],
+  );
+  const pages = useMemo(() => (tour ? [...PALETTE_PAGES, ...PALETTE_TOURS] : PALETTE_PAGES), [tour]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
@@ -86,7 +128,8 @@ export function CommandCenter({ children, searchProvider, canAccess: canAccessOv
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        pages={PALETTE_PAGES}
+        pages={pages}
+        onNavigate={tour ? onNavigate : undefined}
         searchProvider={searchProvider}
         canAccess={canAccess}
       />

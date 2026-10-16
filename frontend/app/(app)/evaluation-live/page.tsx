@@ -235,12 +235,14 @@ export default function EvaluationLivePage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
+      <div data-tour="evaluation-header">
       <DashboardHeader
         title="RAG Evaluation (Live)"
         subtitle="Continuous production evaluation, live query audit, and benchmark comparative scorecard"
         icon={Sparkles}
       >
         <button
+          data-tour="evaluation-compare"
           onClick={() => setCompareMode(!compareMode)}
           className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm ${
             compareMode
@@ -255,6 +257,7 @@ export default function EvaluationLivePage() {
           )}
         </button>
       </DashboardHeader>
+      </div>
 
       <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
         {error && (
@@ -289,7 +292,7 @@ export default function EvaluationLivePage() {
         )}
 
         {/* Standardized Tab Navigation */}
-        <div className="flex items-center justify-between overflow-x-auto pb-1">
+        <div data-tour="evaluation-tabs" className="flex items-center justify-between overflow-x-auto pb-1">
           <TabGroup
             tabs={EVALUATION_LIVE_TABS}
             activeTab={activeTab}
@@ -302,7 +305,7 @@ export default function EvaluationLivePage() {
         {activeTab === "overview" && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Unified 6-stat hero grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div data-tour="evaluation-overview-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               <HeroStat label="Pass rate" value={pct(r?.pass_rate)} icon={CheckCircle2} />
               <HeroStat label="Cases total" value={String(r?.n_cases ?? "—")} icon={Target} />
               <HeroStat label="Retrieval recall" value={pct(r?.retrieval_recall)} icon={ShieldCheck} />
@@ -312,7 +315,7 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Radar and Outcomes */}
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <div data-tour="evaluation-overview-radar" className="grid grid-cols-1 gap-6 xl:grid-cols-3">
               <div className="xl:col-span-2">
                 <QualityRadarCard report={r} loading={loading} />
               </div>
@@ -352,10 +355,12 @@ export default function EvaluationLivePage() {
               </ChartCard>
             </div>
 
-            <PassRateTrendCard report={r} loading={loading} />
+            <div data-tour="evaluation-overview-trend">
+              <PassRateTrendCard report={r} loading={loading} />
+            </div>
 
             {/* Category breakdown & Stage Latency */}
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <div data-tour="evaluation-overview-breakdown" className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <ChartCard
                 title="Pass rate by query type"
                 subtitle="Distribution of passing answers per intent"
@@ -421,7 +426,7 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Retrieval Detailed Performance Grid */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div data-tour="evaluation-overview-retrieval" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Retrieval Ranking Metrics</h3>
@@ -443,7 +448,7 @@ export default function EvaluationLivePage() {
         {activeTab === "judge" && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* LLM Judge Hero Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div data-tour="evaluation-judge-kpis" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <HeroStat
                 label="Faithfulness (LLM Judge)"
                 value={`${num(r?.judge?.faithfulness, 2)} / 5.0`}
@@ -462,7 +467,7 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Citation & Attribution Matrix */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div data-tour="evaluation-judge-citations" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <div>
@@ -482,7 +487,7 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Semantic Quality Insights */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-teal-50/30 dark:bg-teal-950/20 backdrop-blur-md p-6 shadow-card dark:shadow-xl space-y-3">
+            <div data-tour="evaluation-judge-rationale" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-teal-50/30 dark:bg-teal-950/20 backdrop-blur-md p-6 shadow-card dark:shadow-xl space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-teal-900 dark:text-teal-300 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                 Live Evaluation Quality Rationale
@@ -502,7 +507,7 @@ export default function EvaluationLivePage() {
         {activeTab === "safety" && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Safety Scorecard */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div data-tour="evaluation-safety-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <HeroStat label="Safety Passed" value={pct(r?.safety?.passed)} icon={ShieldCheck} />
               <HeroStat label="PII Leakage Rate" value={pct(r?.safety?.pii_leakage_rate)} icon={ShieldAlert} />
               <HeroStat label="Secret Exposure Rate" value={pct(r?.safety?.secret_exposure_rate)} icon={ShieldAlert} />
@@ -510,7 +515,7 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Robustness by Perturbation */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div data-tour="evaluation-safety-robustness" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Adversarial Robustness & Stability</h3>
@@ -553,7 +558,7 @@ export default function EvaluationLivePage() {
             </div>
 
             {/* Abstention Analysis */}
-            <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
+            <div data-tour="evaluation-safety-abstention" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
               <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
               <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90">Abstention & Refusal Quality</h3>
@@ -570,6 +575,7 @@ export default function EvaluationLivePage() {
 
         {/* Domain Tab 4: Query & Case Explorer */}
         {activeTab === "explorer" && (
+          <div data-tour="evaluation-explorer">
           <TableCard
             toolbar={
               <TableToolbar
@@ -626,7 +632,7 @@ export default function EvaluationLivePage() {
               />
             }
           >
-            <div className="overflow-x-auto">
+            <div data-tour="evaluation-explorer-table" className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-surface-studio text-fg-muted dark:text-brand-200 border-b border-line-brand/70 dark:border-brand-500/20 font-bold">
                   <tr>
@@ -701,6 +707,7 @@ export default function EvaluationLivePage() {
               </table>
             </div>
           </TableCard>
+          </div>
         )}
       </div>
 

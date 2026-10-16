@@ -32,6 +32,7 @@ export function RolesMatrixTab({ me }: { me: Me | undefined }) {
   const rows: readonly Permission[] = Array.from(new Set<Permission>([...PERMISSIONS, ...(me?.permissions ?? [])]));
 
   return (
+    <div data-tour="user-management-roles-matrix">
     <TableCard
       title="Roles & permissions"
       description="Read-only. The API enforces exactly this table; the UI hides what a role cannot do."
@@ -91,5 +92,6 @@ export function RolesMatrixTab({ me }: { me: Me | undefined }) {
         </tbody>
       </table>
     </TableCard>
+    </div>
   );
 }

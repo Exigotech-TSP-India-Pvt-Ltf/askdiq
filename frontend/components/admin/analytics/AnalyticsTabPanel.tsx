@@ -73,24 +73,26 @@ export function AnalyticsTabPanel({ tab, ...card }: CardProps & { tab: Analytics
       content = (
         <>
           <TrendCard {...card} />
-          <div className={GRID}>
+          <div className={GRID} data-tour="analytics-row-hour-flow">
             <HourCard {...card} />
             <FlowCard {...card} />
           </div>
-          <div className={GRID}>
+          <div className={GRID} data-tour="analytics-row-topics-quality">
             <TopicsCard {...card} />
             <QualityCard {...card} />
           </div>
-          <div className={GRID}>
+          <div className={GRID} data-tour="analytics-row-dropoff-people">
             <DropoffCard {...card} />
             <PeopleCard {...card} />
           </div>
-          <ConversationsTable state={card.state} filters={card.filters} update={card.update} />
+          <div data-tour="analytics-conversations">
+            <ConversationsTable state={card.state} filters={card.filters} update={card.update} />
+          </div>
         </>
       );
   }
   return (
-    <m.div key={tab} variants={variants} initial="hidden" animate="visible" className="flex flex-col gap-4">
+    <m.div key={tab} variants={variants} initial="hidden" animate="visible" className="flex flex-col gap-4" data-tour="analytics-content">
       {content}
     </m.div>
   );

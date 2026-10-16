@@ -210,15 +210,15 @@ export default function OverallView() {
 
   return (
     <m.div className="space-y-6" variants={container} initial="hidden" animate="visible">
-      <div className="flex justify-end">
+      <div className="flex justify-end" data-tour="governance-live">
         <LiveIndicator status={stream.status} updatedAt={stream.lastEventAt || overview.updatedAt} />
       </div>
 
-      <m.div variants={item}>
+      <m.div variants={item} data-tour="governance-health">
         <HealthBanner health={data.health} />
       </m.div>
 
-      <m.div variants={item} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <m.div variants={item} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="governance-kpis">
         {KPI_DEFS.map((def) => {
           const kpi = data.kpis[def.key];
           if (!kpi) return null;
@@ -239,7 +239,7 @@ export default function OverallView() {
         })}
       </m.div>
 
-      <m.section variants={item} aria-labelledby="gov-timeline" className="rounded-xl border border-line bg-surface-card p-6">
+      <m.section variants={item} aria-labelledby="gov-timeline" data-tour="governance-timeline" className="rounded-xl border border-line bg-surface-card p-6">
         <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
           <div>
             <h2 id="gov-timeline" className="text-base font-semibold text-fg">
@@ -264,6 +264,7 @@ export default function OverallView() {
         <m.section
           variants={item}
           aria-labelledby="gov-incidents"
+          data-tour="governance-incidents"
           className="rounded-xl border border-line bg-surface-card p-6 xl:col-span-2"
         >
           <div className="mb-3 flex items-center justify-between gap-2">
@@ -275,7 +276,7 @@ export default function OverallView() {
           <IncidentList items={incidents} freshIds={freshIds} />
         </m.section>
 
-        <m.section variants={item} aria-labelledby="gov-glance" className="rounded-xl border border-line bg-surface-card p-6">
+        <m.section variants={item} aria-labelledby="gov-glance" data-tour="governance-glance" className="rounded-xl border border-line bg-surface-card p-6">
           <h2 id="gov-glance" className="text-base font-semibold text-fg">
             At a glance
           </h2>

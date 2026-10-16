@@ -54,6 +54,7 @@ export function AnalyticsView() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 px-4 py-5 sm:px-6">
+      <div data-tour="analytics-tabs" className="self-start">
       <TabGroup
         tabs={ANALYTICS_TABS}
         activeTab={state.tab}
@@ -63,8 +64,10 @@ export function AnalyticsView() {
         ariaLabel="Analytics sections"
         className="self-start"
       />
+      </div>
       {!onGuide && (
         <>
+          <div data-tour="analytics-filters">
           <FilterBar
             state={state}
             update={update}
@@ -72,6 +75,7 @@ export function AnalyticsView() {
             userTypes={flow.data?.user_types.map((t) => t.name)}
             chipLabels={labels}
           />
+          </div>
           {backlog > 0 && pending.data && <PendingState pending={pending.data} nothingLabelled={nothingLabelled} />}
           {summary.error ? (
             <p role="alert" className="rounded-xl border border-status-danger/40 bg-status-danger-bg p-3 text-xs text-status-danger-fg">
@@ -82,7 +86,7 @@ export function AnalyticsView() {
           )}
         </>
       )}
-      <div role="tabpanel" aria-label={ANALYTICS_TABS.find((t) => t.id === state.tab)?.label}>
+      <div role="tabpanel" data-tour="analytics-panel" aria-label={ANALYTICS_TABS.find((t) => t.id === state.tab)?.label}>
         <AnalyticsTabPanel tab={state.tab} state={state} filters={filters} update={update} learnLabel={learnLabel} />
       </div>
     </div>

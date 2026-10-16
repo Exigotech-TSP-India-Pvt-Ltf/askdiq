@@ -226,6 +226,7 @@ export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS }: Golde
   }
 
   return (
+    <div data-tour="feedback-golden">
     <TableCard
       title="Golden cases"
       description="Answers promoted from feedback into the regression suite, with their last evaluation."
@@ -250,5 +251,6 @@ export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS }: Golde
     >
       {body}
     </TableCard>
+    </div>
   );
 }

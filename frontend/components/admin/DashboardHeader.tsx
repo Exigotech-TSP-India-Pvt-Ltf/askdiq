@@ -100,9 +100,15 @@ export function DashboardHeader({
         {centerSlot !== undefined ? (
           centerSlot
         ) : showAudienceTabs ? (
-          <AudienceScopeTabs />
+          <div data-tour="shell-audience">
+            <AudienceScopeTabs />
+          </div>
         ) : null}
-        {showDateRange ? <DateRangePicker /> : null}
+        {showDateRange ? (
+          <div data-tour="shell-date-range">
+            <DateRangePicker />
+          </div>
+        ) : null}
       </div>
 
       {/* Right Column: Actions + palette, notifications and profile (theme

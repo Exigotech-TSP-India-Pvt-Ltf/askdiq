@@ -185,8 +185,10 @@ export function TaxonomyTab() {
   return (
     <m.div className="space-y-4" variants={panelVariants} initial="hidden" animate="visible">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <TabGroup tabs={tabs} activeTab={kind} onChange={setKind} ariaLabel="Taxonomy kind" />
-        <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-fg-muted">
+        <div data-tour="settings-taxonomy-kinds">
+          <TabGroup tabs={tabs} activeTab={kind} onChange={setKind} ariaLabel="Taxonomy kind" />
+        </div>
+        <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-fg-muted" data-tour="settings-taxonomy-show-archived">
           <input
             type="checkbox"
             checked={showArchived}
@@ -202,7 +204,7 @@ export function TaxonomyTab() {
         filters and the classifier; conversations already labelled keep showing its label.
       </p>
 
-      <div className="overflow-x-auto rounded-2xl border border-line bg-surface-card shadow-sm">
+      <div className="overflow-x-auto rounded-2xl border border-line bg-surface-card shadow-sm" data-tour="settings-taxonomy-table">
         {query.isLoading ? (
           <SkeletonRows rows={6} columns={5} label="Loading taxonomy" />
         ) : visible.length === 0 ? (
@@ -454,7 +456,7 @@ function AddTaxonomyEntry({ kind, items, nextOrder, onCreated }: AddProps) {
   }
 
   return (
-    <form onSubmit={submit} noValidate aria-label={`Add ${KIND_NOUN[kind]}`} className="rounded-2xl border border-line bg-surface-card p-4 shadow-sm">
+    <form onSubmit={submit} noValidate aria-label={`Add ${KIND_NOUN[kind]}`} data-tour="settings-taxonomy-add" className="rounded-2xl border border-line bg-surface-card p-4 shadow-sm">
       <h3 className="mb-3 text-xs font-bold text-fg">Add {KIND_NOUN[kind]}</h3>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[10rem_minmax(0,1fr)_9rem_minmax(0,1fr)_auto] lg:items-end">
         <label className="space-y-1 text-xs font-semibold text-fg">

@@ -74,7 +74,7 @@ export interface KpiStripProps {
 
 export function KpiStrip({ summary, loading = false }: KpiStripProps) {
   return (
-    <section aria-label="Key figures" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+    <section aria-label="Key figures" data-tour="analytics-kpis" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
       {KPIS.map((k) => {
         const Icon = k.icon;
         return (

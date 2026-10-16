@@ -60,7 +60,7 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
   );
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3" data-testid="cost-insights">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3" data-testid="cost-insights" data-tour="usage-cost-insights">
       <ChartCard
         variant="aurora"
         title="Cost by stage"

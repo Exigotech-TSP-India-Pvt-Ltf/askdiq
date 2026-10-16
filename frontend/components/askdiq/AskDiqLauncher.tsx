@@ -169,6 +169,7 @@ export function AskDiqLauncher() {
             <m.button
               ref={buttonRef}
               type="button"
+              data-tour="shell-chat-widget"
               onClick={open ? closeDrawer : openDrawer}
               onPointerEnter={preloadDrawer}
               onFocus={preloadDrawer}

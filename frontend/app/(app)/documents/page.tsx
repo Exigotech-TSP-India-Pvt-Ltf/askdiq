@@ -353,6 +353,7 @@ function DocumentsContent() {
             e.stopPropagation();
             setPendingDelete({ id: doc.document_id, name: doc.source_name });
           }}
+          data-tour="documents-delete"
           className={`${iconButton} hover:text-status-danger`}
           aria-label={`Delete ${doc.source_name}`}
         >
@@ -374,6 +375,7 @@ function DocumentsContent() {
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-page text-fg">
+      <div data-tour="documents-header">
       <DashboardHeader
         title="Knowledge Base Documents"
         subtitle="Every uploaded .md and .docx file, standardized to canonical Markdown, chunked and embedded"
@@ -384,6 +386,7 @@ function DocumentsContent() {
           canWrite ? (
             <button
               type="button"
+              data-tour="documents-upload"
               onClick={() => setUploadOpen(true)}
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-gradient px-3.5 py-1.5 text-xs font-semibold text-white shadow-brand-glow transition hover:opacity-90 ${focusRing}`}
             >
@@ -393,9 +396,10 @@ function DocumentsContent() {
           ) : undefined
         }
       />
+      </div>
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
-        <m.div variants={gridVariants} initial="hidden" animate="visible" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <m.div data-tour="documents-kpis" variants={gridVariants} initial="hidden" animate="visible" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Kpi
             icon={FileText}
             label="Total Canonical Documents"
@@ -443,10 +447,12 @@ function DocumentsContent() {
           </Kpi>
         </m.div>
 
+        <div data-tour="documents-inventory">
         <TableCard
           title="Document inventory"
           description="Every canonical document with its original format, sizes, chunks, hash and ingestion provenance. Select a document for its Markdown and chunks."
           toolbar={
+            <div data-tour="documents-toolbar">
             <TableToolbar
               search={q}
               onSearchChange={(v) => set({ q: v || null, page: null })}
@@ -497,8 +503,10 @@ function DocumentsContent() {
               density={prefs.density}
               onDensityChange={prefs.setDensity}
             />
+            </div>
           }
           pagination={
+            <div data-tour="documents-pagination">
             <Pagination
               page={safePage}
               pageCount={pageCount}
@@ -510,6 +518,7 @@ function DocumentsContent() {
                 set({ page: null });
               }}
             />
+            </div>
           }
         >
           <DataTable
@@ -538,8 +547,9 @@ function DocumentsContent() {
             }
           />
         </TableCard>
+        </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div data-tour="documents-charts" className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <ChartCard
             title="Most cited documents"
             subtitle="Answers that cited each document; select a bar to open it"

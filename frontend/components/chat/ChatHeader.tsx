@@ -39,7 +39,7 @@ export function UserChip() {
 export function ChatHeader() {
   const brand = useBrand();
   return (
-    <header className="flex h-20 shrink-0 items-center justify-between gap-4 border-b border-line bg-surface-card px-6">
+    <header data-tour="chat-header" className="flex h-20 shrink-0 items-center justify-between gap-4 border-b border-line bg-surface-card px-6">
       <div className="flex min-w-0 items-center gap-3">
         <BrandLogo variant="mark" />
         <div className="min-w-0">

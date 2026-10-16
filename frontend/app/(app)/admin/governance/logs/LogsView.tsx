@@ -176,6 +176,7 @@ export default function LogsView() {
   const toast = useToast();
 
   return (
+    <div data-tour="governance-logs-table">
     <TableCard
       title="Governance logs"
       description="Audit, security and pipeline events, filtered and paged on the server."
@@ -186,6 +187,7 @@ export default function LogsView() {
         <>
           <button
             type="button"
+            data-tour="governance-logs-autorefresh"
             aria-pressed={autoRefresh}
             onClick={() => setAutoRefresh((v) => !v)}
             className={`inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium transition-colors ${
@@ -201,6 +203,7 @@ export default function LogsView() {
             download
             className={secondaryButton}
             data-testid="logs-export"
+            data-tour="governance-logs-export"
             onClick={(e) => {
               e.preventDefault();
               void downloadCsv(exportHref).then((message) => {
@@ -216,7 +219,7 @@ export default function LogsView() {
       }
       toolbar={
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by level">
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by level" data-tour="governance-logs-levels">
             {LOG_LEVELS.map((level) => {
               const active = levels.includes(level);
               const count = page?.level_counts?.[level];
@@ -252,6 +255,7 @@ export default function LogsView() {
               </span>
             ) : null}
           </div>
+          <div data-tour="governance-logs-search">
           <TableToolbar
             search={q}
             onSearchChange={(v) => set({ q: v || null })}
@@ -269,6 +273,7 @@ export default function LogsView() {
             onClearAll={() => set({ level: null, at: null })}
             countLabel={hour ? undefined : rangeCtx ? `Range: ${rangeCtx.range.label}` : undefined}
           />
+          </div>
         </div>
       }
       cursor={{
@@ -296,5 +301,6 @@ export default function LogsView() {
         emptyMessage="No log entries match these filters."
       />
     </TableCard>
+    </div>
   );
 }
