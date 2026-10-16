@@ -43,8 +43,12 @@ Services defined in [docker-compose.yml](docker-compose.yml):
 
 ## 3. One-off setup (migrations + backfill + ingestion)
 
-Not baked into the backend image's `CMD`, so container restarts never
-silently re-run them. Run once the `backend` container is healthy:
+For this local stack (`backend/Dockerfile`) they are not baked into the
+image's `CMD`, so container restarts never silently re-run them. The
+production image (`backend/Dockerfile.prod`) runs them automatically in its
+entrypoint instead (migrations under an advisory lock, idempotent ingestion;
+see [deploy/RUNBOOK.md](deploy/RUNBOOK.md)). Locally, run once the `backend`
+container is healthy:
 
 ```bash
 # 1. Apply database migrations (including d5e6f7a8b9c0 for usage outcome tracking)

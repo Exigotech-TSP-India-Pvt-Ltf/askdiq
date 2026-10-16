@@ -1,0 +1,84 @@
+# AskDIQ admin dashboard (askdiq-web, Next.js) behind et-platform-nginx-1.
+#
+# REFERENCE ONLY. The et-platform nginx owner reviews and applies this; the
+# deploy kit never writes into the nginx config directory. Find that
+# directory with:
+#   docker inspect et-platform-nginx-1 --format '{{range .Mounts}}{{.Destination}}{{println}}{{end}}'
+# and copy the TLS lines / shared includes from the existing askdiq conf there.
+#
+# Replace askdiq-admin.ethub.co with the chosen dashboard domain (DNS + a
+# certificate for it are needed first).
+#
+# Upstream: askdiq-web:3000 on the shared askdiq_internal network (the
+# container publishes no host port). The name is resolved per request through
+# Docker's embedded DNS (resolver 127.0.0.11), so `nginx -t` / reload never
+# fail with "host not found" while askdiq-web is stopped: that would block
+# reloads for every other site on this shared proxy.
+#
+# Security headers: Next.js sets them itself, including a per-request nonce
+# Content-Security-Policy, HSTS, X-Frame-Options and nosniff. Do NOT add a CSP
+# here or copy the API conf's `proxy_hide_header Content-Security-Policy` /
+# `default-src 'none'`: that would break every page.
+#
+# No WebSocket/HMR upgrade handling: that is only for `next dev`.
+
+server {
+    listen 80;
+    server_name askdiq-admin.ethub.co;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name askdiq-admin.ethub.co;
+
+    # Replace with the certificate paths used by the other site confs.
+    ssl_certificate     /etc/letsencrypt/live/askdiq-admin.ethub.co/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/askdiq-admin.ethub.co/privkey.pem;
+    # include /etc/nginx/snippets/ssl-params.conf;
+
+    server_tokens off;
+    # Matches the Next.js proxy body cap (15 MB, document uploads).
+    client_max_body_size 15m;
+
+    resolver 127.0.0.11 valid=30s ipv6=off;
+    set $askdiq_web http://askdiq-web:3000;
+
+    # Live governance feed (Server-Sent Events through the Next.js proxy):
+    # stream each event immediately and keep the connection open. The API
+    # sends a keepalive comment every SSE_HEARTBEAT_SECONDS.
+    location = /api/proxy/admin/governance/stream {
+        proxy_pass $askdiq_web;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Connection "";
+
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    location / {
+        proxy_pass $askdiq_web;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # The client IP, set (not appended) so a browser cannot spoof it; the
+        # Next.js proxy forwards it to the API for audit and rate limits.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Connection "";
+
+        # Chat answers and exports can take a while.
+        proxy_read_timeout 120s;
+    }
+}
