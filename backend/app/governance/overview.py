@@ -167,7 +167,7 @@ def build_kpis(
             int(t.get("active_ips") or 0),
             None,
             [int(v or 0) for v in hourly(turns, "active_ips")],
-            f"{turns_src}.ip_address",
+            "chat_sessions.created_ip",
         ),
         "groundedness": _kpi(
             _rate(int(t.get("grounded") or 0), int(t.get("grounded_known") or 0))
