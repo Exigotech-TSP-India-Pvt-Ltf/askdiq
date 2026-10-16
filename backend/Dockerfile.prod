@@ -52,4 +52,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
 # The entrypoint runs the pre-start steps only for a uvicorn command, then
 # `exec`s CMD unchanged; other commands (the job worker) are exec'd directly.
 ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
-CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1}"]
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1} --timeout-graceful-shutdown 20"]

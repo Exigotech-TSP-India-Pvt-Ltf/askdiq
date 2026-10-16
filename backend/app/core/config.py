@@ -281,6 +281,9 @@ class Settings(BaseSettings):
     http_cache_max_age_seconds: int = 15
     sse_heartbeat_seconds: float = 15.0
     sse_retry_ms: int = 3000
+    # Each SSE response ends after this long and the browser reconnects (retry),
+    # so open streams can never block a server reload or graceful shutdown.
+    sse_max_stream_seconds: float = 120.0
 
     # --- Governance endpoints & live stream (PR-10, newplan §4.5) ---
     # Above this many matching rows, list totals switch to a planner estimate.

@@ -82,7 +82,7 @@ Copy-Item .env.local.example .env.local      # API_BASE_URL, API_KEY (= backend 
 
 | Process | Command (from) | Port |
 |---|---|---|
-| Backend API | `venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000` (`backend/`) | 8000 |
+| Backend API | `venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000 --timeout-graceful-shutdown 5` (`backend/`) | 8000 |
 | Frontend | `npm run dev` (`frontend/`; `next dev --turbo -p 3000`; `dev:webpack` without turbo) | 3000 |
 | Frontend (prod build) | `npm run serve` (`next build && next start -p 3000`) | 3000 |
 | Job worker | In-process by default (`JOBS_WORKER_ENABLED=true`, started from the FastAPI lifespan via `app/jobs/runtime.py`); standalone: `venv\Scripts\python.exe -m app.jobs.worker` with `JOBS_WORKER_ENABLED=false` on the API | n/a |

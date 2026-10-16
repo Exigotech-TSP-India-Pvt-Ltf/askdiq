@@ -70,16 +70,25 @@ async def _frames(
     source: AsyncIterator[Any],
     heartbeat: float,
     retry_ms: int,
+    max_seconds: float,
 ) -> AsyncIterator[str]:
     queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=100)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max_seconds
     pump = asyncio.create_task(_pump(source, queue), name="sse-pump")
     try:
         yield f"retry: {retry_ms}\n\n"
         while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                # Bounded lifetime: the client reconnects after `retry_ms`.
+                return
             try:
-                item = await asyncio.wait_for(queue.get(), timeout=heartbeat)
+                item = await asyncio.wait_for(
+                    queue.get(), timeout=min(heartbeat, remaining)
+                )
             except TimeoutError:
-                if await request.is_disconnected():
+                if await request.is_disconnected() or loop.time() >= deadline:
                     return
                 yield KEEPALIVE_FRAME
                 continue
@@ -112,6 +121,7 @@ def event_stream(
             source,
             heartbeat if heartbeat is not None else settings.sse_heartbeat_seconds,
             retry_ms if retry_ms is not None else settings.sse_retry_ms,
+            settings.sse_max_stream_seconds,
         ),
         media_type=SSE_MEDIA_TYPE,
         headers={
