@@ -67,8 +67,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!state || !expected || !safeEqual(state, expected)) {
     return toLogin(req, params.get("error") ? "idp_denied" : state ? "state_mismatch" : "expired");
   }
-  if (params.get("error")) return toLogin(req, "idp_denied");
-  if (!code || code.length > MAX_CODE_LENGTH) return toLogin(req, "expired");
+  // An IdP error reply carries no code, so it ends here too; the reason only
+  // picks which message the login page shows.
+  if (!code || code.length > MAX_CODE_LENGTH) {
+    return toLogin(req, params.has("error") ? "idp_denied" : "expired");
+  }
 
   const headers = backendHeaders(req);
   headers.set("Content-Type", "application/json");
