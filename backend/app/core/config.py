@@ -182,6 +182,9 @@ class Settings(BaseSettings):
     usage_export_max_rows: int = 10_000
     usage_max_range_days: int = 400
     usage_agg_max_concurrency: int = 4
+    # Monthly spend budget (USD) drawn on the dashboard cost bullet and the
+    # usage forecast. Unset (None) = no budget line.
+    monthly_cost_budget_usd: float | None = Field(default=None, ge=0)
     test_ip_max_entries: int = 500
 
     # Azure Quota Limits (Verified from live Azure headers: 1M TPM, 1,000 RPM)

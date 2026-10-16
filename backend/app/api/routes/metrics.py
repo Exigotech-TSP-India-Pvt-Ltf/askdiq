@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging_config import get_logger
 from app.core.stats import percentile
+from app.dashboard import eval_series
 from app.governance.audience import build_audience_filter
 from app.models.db_models import (
     ChatMessageRecord,
@@ -110,8 +111,12 @@ async def latency_report(
 EVAL_REPORT_DIR = Path(__file__).resolve().parents[3] / "reports"
 
 
+def _eval_report_dirs() -> list[Path]:
+    return [EVAL_REPORT_DIR, Path(__file__).resolve().parents[3]]
+
+
 def _read_latest_eval_report(prefer_rich: bool = True) -> tuple[dict, str] | None:
-    search_dirs = [EVAL_REPORT_DIR, Path(__file__).resolve().parents[3]]
+    search_dirs = _eval_report_dirs()
     candidates: list[Path] = []
     for d in search_dirs:
         if d.exists():
@@ -676,6 +681,9 @@ async def live_evaluation_report(
             "deltas": deltas,
             "dual_radar": dual_radar,
         }
+        # B7.4: benchmark runs are the evaluation report files.
+        runs = await eval_series.report_runs(_eval_report_dirs())
+        res_data.update(eval_series.insight_fields(runs))
         return res_data
 
     # Return Live Users data with comparison payload attached
@@ -683,6 +691,8 @@ async def live_evaluation_report(
         "deltas": deltas,
         "dual_radar": dual_radar,
     }
+    # B7.4: live "runs" are UTC days of online evaluation records.
+    live_data.update(eval_series.insight_fields(await eval_series.live_runs(db)))
     return live_data
 
 

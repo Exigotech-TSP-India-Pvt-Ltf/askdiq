@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
@@ -14,13 +15,18 @@ from app.api.routes.admin_usage import router as usage_router
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
 from app.core.request_meta import get_client_ip
+from app.dashboard import activity as dashboard_activity
+from app.dashboard import service as dashboard_service
+from app.dashboard import window as dashboard_window
 from app.governance.audience import (
+    Audience,
     audience_scope,
     build_audience_filter,
     get_classified_ips,
@@ -54,6 +60,7 @@ from app.models.db_models import (
     LatencyRecord,
     User,
 )
+from app.schemas.dashboard import ActivityFeed, DashboardData
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = get_logger(__name__)
@@ -1392,15 +1399,99 @@ async def get_query_usage_detail(
 # ============================================================================
 
 
-@router.get("/dashboard")
+_DASHBOARD_ERRORS: dict[int | str, dict[str, Any]] = {
+    304: {"description": "ETag matched (`If-None-Match`)."},
+    401: {"description": "Not authenticated."},
+    403: {"description": "Missing `dashboard:read`."},
+    422: {"description": "Invalid audience, window or limit."},
+}
+
+
+@router.get(
+    "/dashboard",
+    summary="Dashboard KPIs, sparklines and chart series",
+    responses={200: {"model": DashboardData}, **_DASHBOARD_ERRORS},
+)
 async def admin_dashboard(
     request: Request,
-    audience: str = Query("overview"),
+    audience: Audience = Depends(audience_scope),
+    window_from: datetime | None = Query(
+        None,
+        alias="from",
+        description="Window start, ISO 8601 (UTC when no offset), inclusive.",
+    ),
+    window_to: datetime | None = Query(
+        None,
+        alias="to",
+        description="Window end, ISO 8601 (UTC when no offset), exclusive.",
+    ),
+    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
+) -> Response:
+    """Dashboard KPIs; weak ETag + `Cache-Control: private` (304 on match).
+
+    Without `from`/`to` the KPIs keep their legacy windows (all time, last
+    24 h, since process start). With a window the KPI totals are computed for
+    it and the response adds `window`, `sparklines`, `deltas` (vs the
+    equal-length previous window), `cost_usd`, `queries_by_outcome`,
+    `latency_series`, `cost` (current UTC month), `satisfaction` and
+    `top_intents`. `to <= from` or a span above `USAGE_MAX_RANGE_DAYS` is 422.
+    """
+    now = dashboard_window.utcnow()
+    window = dashboard_window.resolve_window(
+        window_from,
+        window_to,
+        now=now,
+        max_days=get_settings().usage_max_range_days,
+    )
+    if window is None:
+        return cached_response(request, await _dashboard_payload(db, audience))
+    payload = {
+        **await _dashboard_panels(db, audience),
+        **await dashboard_service.window_payload(runner, audience, window, now),
+    }
+    return cached_response(request, payload)
+
+
+@router.get(
+    "/dashboard/activity",
+    summary="Live activity feed (newest audit events)",
+    responses={200: {"model": ActivityFeed}, **_DASHBOARD_ERRORS},
+)
+async def admin_dashboard_activity(
+    request: Request,
+    audience: Audience = Depends(audience_scope),
+    limit: int = Query(
+        dashboard_activity.DEFAULT_LIMIT, ge=1, le=dashboard_activity.MAX_LIMIT
+    ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> Response:
-    """Dashboard KPIs; weak ETag + `Cache-Control: private` (304 on match)."""
-    return cached_response(request, await _dashboard_payload(db, audience))
+    """Newest query, feedback, error, guardrail, document and admin events.
+
+    Summaries are PII-free (no emails, IPs or query text); auth events are
+    never listed. Weak ETag, so an unchanged feed polls as a 304.
+    """
+    items = await dashboard_activity.recent_activity(db, audience, limit)
+    feed = ActivityFeed.model_validate(
+        {
+            "items": items,
+            "generated_at": dashboard_window.iso_z(dashboard_window.utcnow()),
+        }
+    )
+    return cached_response(request, feed.model_dump(mode="json"))
+
+
+async def _dashboard_panels(db: AsyncSession, audience: str) -> dict:
+    """The non-KPI dashboard fields (pipeline, governance text, trends)."""
+    since = datetime.utcnow() - timedelta(hours=24)
+    return {
+        "pipeline": await _pipeline_status(db),
+        "governance": await _governance_status(db, since),
+        "query_trend": await _query_trend(db, audience),
+        "latency_breakdown": await _latency_breakdown(db, audience),
+    }
 
 
 async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
@@ -1482,10 +1573,7 @@ async def _dashboard_payload(db: AsyncSession, audience: str) -> dict:
         "error_rate": METRICS["errors"] * 100 / requests_total
         if requests_total
         else 0.0,
-        "pipeline": await _pipeline_status(db),
-        "governance": await _governance_status(db, since),
-        "query_trend": await _query_trend(db, audience),
-        "latency_breakdown": await _latency_breakdown(db, audience),
+        **await _dashboard_panels(db, audience),
     }
 
 
