@@ -3,7 +3,16 @@
 import hashlib
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_permission
@@ -82,10 +91,18 @@ async def ingest_file(
     chunking_strategy: str = Form("auto"),
     force: bool = Form(False),
     dry_run: bool = Form(False),
+    force_query: bool = Query(False, alias="force"),
+    dry_run_query: bool = Query(False, alias="dry_run"),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DOCUMENTS_WRITE)),
 ) -> IngestResponse:
-    """Server-side file ingestion endpoint supporting .md, .markdown, and .docx formats."""
+    """Server-side file ingestion endpoint supporting .md, .markdown, and .docx formats.
+
+    ``dry_run`` / ``force`` are accepted as form fields or query parameters
+    (the dashboard sends query parameters); either one set to true applies.
+    """
+    force = force or force_query
+    dry_run = dry_run or dry_run_query
     req_id = getattr(request.state, "request_id", "unknown")
     client_ip = get_client_ip(request)
     filename = file.filename or "uploaded_document.md"

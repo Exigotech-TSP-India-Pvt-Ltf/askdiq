@@ -469,3 +469,22 @@ async def test_unknown_document_is_404(client) -> None:
 async def test_invalid_parameters_are_422(client, path: str, params: dict) -> None:
     res = await client.get(path, params=params)
     assert res.status_code == 422
+
+
+@pytest.mark.parametrize("via", ["query", "form"])
+async def test_dry_run_flag_never_persists(client, db_session, fake_embed, via) -> None:
+    """The dashboard sends ``dry_run`` as a query parameter; it must not ingest."""
+    mk = marker()
+    files = {"file": (f"{mk}.md", f"# Title\n\nBody {mk}\n".encode(), "text/markdown")}
+    if via == "query":
+        res = await client.post("/ingest/file?dry_run=true", files=files)
+    else:
+        res = await client.post("/ingest/file", files=files, data={"dry_run": "true"})
+    assert res.status_code == 200, res.text
+    assert res.json()["dry_run"] is True
+    assert res.json()["status"] == "new"
+    stored = await db_session.scalar(
+        select(Document).where(Document.source_name == f"{mk}.md")
+    )
+    assert stored is None
+    assert fake_embed["calls"] == []
