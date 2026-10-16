@@ -366,7 +366,7 @@ async def test_session_turn_statistics_exist(db_session):
     statistics for the user-turn join used by every insights query."""
     kinds = await db_session.scalar(
         text(
-            "SELECT stxkind FROM pg_statistic_ext "
+            "SELECT CAST(stxkind AS text[]) FROM pg_statistic_ext "
             "WHERE stxname = 'stx_chat_messages_session_turn' "
             "AND stxrelid = 'chat_messages'::regclass"
         )
