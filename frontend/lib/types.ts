@@ -29,6 +29,8 @@ export interface QueryResponse {
   request_id: string;
   latency_ms: number;
   guardrail_flags: string[];
+  /** "answered" | "ungrounded" | "blocked" | "conversational" | "llm_failed" (app/governance/outcomes.py). */
+  outcome?: string;
   session_id: string;
   session_title: string;
   user_message_id: string;

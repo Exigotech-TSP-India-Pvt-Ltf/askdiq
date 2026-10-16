@@ -1,7 +1,7 @@
 "use client";
 
 import { FileText } from "lucide-react";
-import type { SourceChunk } from "@/lib/types";
+import type { QueryResponse, SourceChunk } from "@/lib/types";
 
 /** Chips shown under an answer; more than this collapse into "+N". */
 const MAX_CHIPS = 4;
@@ -32,7 +32,19 @@ export function sourceChips(sources: readonly SourceChunk[] | undefined): Source
 }
 
 /**
- * Citations for a live answer. Names and excerpts are rendered as React text
+ * Sources are citations only for a grounded, answered reply. A fallback /
+ * no-answer reply (ungrounded or low-confidence, llm_failed, blocked,
+ * conversational) still carries the retrieved chunks, but they did not back
+ * the text shown, so no chips are rendered for it.
+ */
+export function citedSources(response: QueryResponse | undefined): SourceChunk[] {
+  if (!response?.grounded) return [];
+  if ((response.outcome ?? "answered") !== "answered") return [];
+  return response.sources ?? [];
+}
+
+/**
+ * Citations for a live answer (pass `citedSources(response)`). Names and excerpts are rendered as React text
  * (escaped), never as HTML, so a crafted document name cannot inject markup.
  */
 export function SourceChips({ sources }: { sources: readonly SourceChunk[] | undefined }) {

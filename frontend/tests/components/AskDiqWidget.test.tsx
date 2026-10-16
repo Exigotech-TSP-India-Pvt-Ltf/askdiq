@@ -24,7 +24,7 @@ vi.mock("@/lib/chat-context", () => ({ useChat: useChatSpy }));
 import { AskDiqLauncher } from "@/components/askdiq/AskDiqLauncher";
 import { AskDiqDrawer } from "@/components/askdiq/AskDiqDrawer";
 import { ChatHeader } from "@/components/chat/ChatHeader";
-import { sourceChips } from "@/components/chat/SourceChips";
+import { citedSources, sourceChips } from "@/components/chat/SourceChips";
 import { MessageBubble } from "@/components/MessageBubble";
 import ChatPage from "@/app/(app)/chat/page";
 import { GREETING_DISMISSED_KEY, GREETING_SEEN_KEY } from "@/lib/askdiq-widget";
@@ -361,6 +361,38 @@ describe("source chips", () => {
     const chips = sourceChips([src("1", "a", 0.2, "a.md"), src("2", "b", 0.9), src("3", "a", 0.8, "a.md")]);
     expect(chips.map((c) => c.name)).toEqual(["Knowledge base", "a.md"]);
     expect(chips[0].excerpt.length).toBeLessThanOrEqual(161);
+  });
+
+  it("shows no chips under fallback / no-answer replies", () => {
+    const base = {
+      answer: "I couldn't find that in the knowledge base.",
+      sources: [{ chunk_id: "1", document_id: "d", content: "c", score: 0.3, metadata: { source_name: "weak.md" } }],
+      grounded: true,
+      confidence: 0.2,
+      request_id: "r",
+      latency_ms: 1,
+      guardrail_flags: [],
+      session_id: "s",
+      session_title: "t",
+      user_message_id: "u",
+      assistant_message_id: "m",
+    };
+    const cases = [
+      { ...base, grounded: false },
+      { ...base, outcome: "ungrounded" },
+      { ...base, outcome: "llm_failed" },
+      { ...base, outcome: "blocked" },
+      { ...base, outcome: "conversational" },
+    ];
+    for (const response of cases) {
+      expect(citedSources(response)).toEqual([]);
+      const { unmount } = render(
+        <MessageBubble message={{ id: "m", role: "assistant", content: response.answer, createdAt: 0, response }} />,
+      );
+      expect(screen.queryByRole("list", { name: "Sources" })).not.toBeInTheDocument();
+      unmount();
+    }
+    expect(citedSources({ ...base, outcome: "answered" })).toHaveLength(1);
   });
 
   it("renders a hostile source name as text, not markup", () => {
