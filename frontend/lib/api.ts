@@ -398,7 +398,9 @@ export const api = {
 
   deleteTestIp: (token: string, ipAddress: string) =>
     request<{ deleted: boolean; ip_address: string }>(
-      `/admin/usage/test-ips/${encodeURIComponent(ipAddress)}`,
+      // Encode per segment: a CIDR's "/" must stay a path separator (the
+      // proxy rejects %2F; the backend route is `{ip_address:path}`).
+      `/admin/usage/test-ips/${ipAddress.split("/").map(encodeURIComponent).join("/")}`,
       { method: "DELETE", token }
     ),
 

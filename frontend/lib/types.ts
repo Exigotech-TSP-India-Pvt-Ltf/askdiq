@@ -50,6 +50,7 @@ export interface ChatMessageOut {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  request_id?: string | null;
   grounded?: boolean | null;
   guardrail_flags?: string[] | null;
   feedback_rating?: number | null;
@@ -69,6 +70,8 @@ export interface ChatMessage {
   pending?: boolean;
   error?: string;
   feedbackRating?: number | null;
+  /** Saved answers' request id (the live `response` carries its own). */
+  requestId?: string | null;
 }
 
 export interface StageTokenBreakdown {

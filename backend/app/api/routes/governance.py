@@ -3,6 +3,8 @@ every query/ingest — makes governance data actually visible, not just
 recorded and forgotten.
 """
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +33,13 @@ async def list_audit_log(
     action: str | None = Query(
         default=None, description="Filter by action, e.g. 'query' or 'ingest'"
     ),
+    category: Literal["auth"] | None = Query(
+        default=None,
+        description=(
+            "`auth`: sign-in, access and role events only, so they are not "
+            "crowded out of `limit` by query / ingest rows."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> list[AuditLogEntry]:
@@ -38,6 +47,8 @@ async def list_audit_log(
 
     if action:
         stmt = stmt.where(AuditLog.action == action)
+    if category == "auth":
+        stmt = stmt.where(AuditLog.action.in_(AUTH_AUDIT_ACTIONS))
     # Auth events (sign-ins, approvals, role changes) need `audit:auth:read`.
     if not user.has(Permission.AUDIT_AUTH_READ):
         stmt = stmt.where(AuditLog.action.not_in(AUTH_AUDIT_ACTIONS))

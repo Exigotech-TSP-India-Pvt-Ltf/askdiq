@@ -513,3 +513,27 @@ async def test_auth_audit_events_need_audit_auth_read(
     )
     assert visible.status_code == 200
     assert len(visible.json()) >= 1
+
+    # category=auth keeps only auth events (they are not crowded out of
+    # `limit` by query rows), and stays empty without audit:auth:read.
+    db_session.add(AuditLog(request_id="r-cat", actor="x@example.com", action="query"))
+    await db_session.commit()
+    auth_only = await client.get(
+        "/governance/audit-log",
+        params={"category": "auth", "limit": 500},
+        headers=boss_headers,
+    )
+    assert auth_only.status_code == 200
+    actions = {e["action"] for e in auth_only.json()}
+    assert actions
+    assert actions <= AUTH_AUDIT_ACTIONS
+    operator_auth = await client.get(
+        "/governance/audit-log",
+        params={"category": "auth"},
+        headers=operator_headers,
+    )
+    assert operator_auth.json() == []
+    bad = await client.get(
+        "/governance/audit-log", params={"category": "nope"}, headers=boss_headers
+    )
+    assert bad.status_code == 422

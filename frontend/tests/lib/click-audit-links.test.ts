@@ -2,7 +2,9 @@
  * Link contracts from the click audit (frontend/docs/interaction-audit.md):
  * every href a click produces is parsed back by its target into the same state.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { api } from "@/lib/api";
+import { userManagementApi } from "@/lib/user-management-api";
 import { parseFilters } from "@/lib/feedback-filters";
 import { entityHref } from "@/lib/entity-links";
 import { tracesHref } from "@/lib/governance-links";
@@ -43,5 +45,30 @@ describe("click audit link contracts", () => {
 
   it("trace links can filter by outcome", () => {
     expect(tracesHref({ outcome: "ungrounded" })).toBe("/admin/governance?tab=Traces&outcome=ungrounded");
+  });
+
+  describe("request paths", () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const stubFetch = (body: unknown) => {
+      const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
+        Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      return fetchMock;
+    };
+
+    it("deleting a CIDR test-IP rule keeps its slash as a path separator (no %2F)", async () => {
+      const fetchMock = stubFetch({ deleted: true, ip_address: "10.0.0.0/24" });
+      await api.deleteTestIp("t", "10.0.0.0/24");
+      const url = String(fetchMock.mock.calls[0][0]);
+      expect(url).toContain("/admin/usage/test-ips/10.0.0.0/24");
+      expect(url).not.toContain("%2F");
+    });
+
+    it("the auth audit trail asks the server for auth events only", async () => {
+      const fetchMock = stubFetch([]);
+      await userManagementApi.authAudit(500);
+      expect(String(fetchMock.mock.calls[0][0])).toContain("/governance/audit-log?category=auth&limit=500");
+    });
   });
 });

@@ -146,7 +146,7 @@ export default function ChatPage() {
                 />
                 {message.role === "assistant" && (
                   <div className="mt-1 pl-1">
-                    <TraceLink requestId={message.response?.request_id} />
+                    <TraceLink requestId={message.response?.request_id ?? message.requestId} />
                   </div>
                 )}
               </div>

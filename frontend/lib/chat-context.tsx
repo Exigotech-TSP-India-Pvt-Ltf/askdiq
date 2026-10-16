@@ -26,6 +26,7 @@ function toChatMessage(m: ChatMessageOut): ChatMessage {
     content: m.content,
     createdAt: parseServerDate(m.created_at).getTime(),
     feedbackRating: m.feedback_rating,
+    requestId: m.request_id ?? null,
   };
 }
 
