@@ -44,6 +44,14 @@ server {
     resolver 127.0.0.11 valid=30s ipv6=off;
     set $askdiq_web http://askdiq-web:3000;
 
+    # REQUIRED. Next.js 14 standalone builds the signed-out redirect in
+    # middleware.ts from its own listen address, not from Host or
+    # X-Forwarded-Host, so it answers e.g.
+    #   Location: http://localhost:3000/login?next=%2Fadmin
+    # (verified locally). Rewrite any such internal origin to the public one.
+    # Redirects from route handlers already use APP_BASE_URL and are untouched.
+    proxy_redirect ~^https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0|askdiq-web)(?::[0-9]+)?(/.*)?$ https://$host$1;
+
     # Live governance feed (Server-Sent Events through the Next.js proxy):
     # stream each event immediately and keep the connection open. The API
     # sends a keepalive comment every SSE_HEARTBEAT_SECONDS.

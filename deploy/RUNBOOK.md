@@ -301,7 +301,11 @@ docker exec askdiq-web node -e "fetch('http://askdiq-api:8000/health').then(r=>c
 After the nginx owner has applied the server block and reloaded
 (`docker exec et-platform-nginx-1 nginx -t && docker exec et-platform-nginx-1 nginx -s reload`):
 
-1. `https://<dashboard-domain>/login` shows "Sign in with Microsoft".
+1. `https://<dashboard-domain>/login` shows "Sign in with Microsoft", and
+   `curl -sI https://<dashboard-domain>/admin | grep -i '^location'` shows
+   `https://<dashboard-domain>/login?next=%2Fadmin`. If it shows
+   `localhost:3000`, the `proxy_redirect` line of the nginx block is missing:
+   the Next.js middleware builds that redirect from its own listen address.
 2. Sign in with a `SUPERADMIN_EMAILS` account: lands on the dashboard. In the
    browser dev tools the `askdiq_session` cookie shows `HttpOnly`, `Secure`,
    `SameSite=Lax`.
