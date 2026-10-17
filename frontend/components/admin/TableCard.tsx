@@ -41,7 +41,7 @@ export function TableCard({
     >
       {/* Optional Top Card Header (Title / Subtitle / Header Actions) */}
       {hasCardHeader && (
-        <div className={`relative z-10 flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4 ${studioDivider}`}>
+        <div className={`relative z-20 flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4 ${studioDivider}`}>
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
               {typeof title === "string" ? (
@@ -63,7 +63,8 @@ export function TableCard({
 
       {/* Toolbar Slot (Integrated Search & Single Filters Popover) */}
       {toolbar && (
-        <div className={`relative z-10 border-b bg-surface-studio/40 px-4 py-3 dark:bg-white/[0.02] sm:px-5 ${studioDivider}`}>
+        // z-30 keeps the filter / column popovers above the table slot below (same-z siblings paint in DOM order).
+        <div className={`relative z-30 border-b bg-surface-studio/40 px-4 py-3 dark:bg-white/[0.02] sm:px-5 ${studioDivider}`}>
           {toolbar}
         </div>
       )}

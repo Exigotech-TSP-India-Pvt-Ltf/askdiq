@@ -62,7 +62,7 @@ async function downloadCsv(href: string): Promise<string | null> {
   }
 }
 
-export const LOGS_PAGE_SIZE = 25;
+export const LOGS_PAGE_SIZE = 10;
 
 const SERVICE_LABEL: Record<string, string> = {
   auth: "Authentication",

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { RefreshCw, Timer } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
@@ -27,7 +27,7 @@ import { TraceStatusBadge } from "@/components/admin/governance/badges";
 import { TraceDrawer, stageLabel } from "@/components/admin/governance/TraceDrawer";
 import { focusRing } from "@/components/ui/styles";
 
-export const TRACES_PAGE_SIZE = 50;
+export const TRACES_PAGE_SIZE = 10;
 
 const LATENCY_LABEL: Record<string, string> = {
   fast: "Fast",
@@ -71,15 +71,6 @@ function traceColumns(open: (id: string) => void): ColumnDef<GovernanceTraceItem
       key: "timestamp",
       header: "Time",
       render: (t) => <RelativeTime value={t.timestamp} className="text-xs text-fg-muted" />,
-    },
-    {
-      key: "user_id",
-      header: "User",
-      render: (t) => (
-        <span className="font-mono text-xs text-fg-muted" title={t.user_id ?? undefined}>
-          {shortId(t.user_id, 12)}
-        </span>
-      ),
     },
     {
       key: "ip_address",
@@ -160,7 +151,8 @@ export default function TracesView() {
   const requestId = get("request_id");
   const [autoRefresh, setAutoRefresh] = React.useState(false);
 
-  const filterKey = [audience, status, outcome, latencyBucket, q, from, to].join("|");
+  const [pageSize, setPageSize] = useState<number>(TRACES_PAGE_SIZE);
+  const filterKey = [audience, status, outcome, latencyBucket, q, from, to, pageSize].join("|");
   const pager = useCursorStack(filterKey);
 
   const query = useApiQuery<GovernanceTracePage>(
@@ -170,7 +162,7 @@ export default function TracesView() {
         token,
         {
           audience,
-          limit: TRACES_PAGE_SIZE,
+          limit: pageSize,
           cursor: pager.cursor,
           status: status ? [status] : undefined,
           outcome: outcome ? [outcome] : undefined,
@@ -263,6 +255,11 @@ export default function TracesView() {
           pageItemCount: items.length,
           itemLabel: "traces",
           isLoading: query.isValidating,
+          page: pager.page,
+          totalItems: page?.total,
+          pageSize,
+          onPageSizeChange: setPageSize,
+          onFirst: pager.reset,
         }}
       >
         <DataTable
