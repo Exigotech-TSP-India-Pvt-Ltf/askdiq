@@ -231,7 +231,7 @@ function trace(i: number) {
 }
 
 // The Logs tab's default rows-per-page (LOGS_PAGE_SIZE in LogsView).
-const LOG_PAGE_SIZE = 25;
+const LOG_PAGE_SIZE = 10;
 
 function logsPage(cursor: string | null, limit = LOG_PAGE_SIZE) {
   const pageNo = cursor ? Number(cursor.slice(1)) : 0;
@@ -276,7 +276,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
       total: 1119,
       total_estimate: null,
       total_is_estimate: false,
-      limit: 50,
+      limit: 10,
       next_cursor: "t2",
       has_more: true,
     });
@@ -352,7 +352,7 @@ describe("Governance journey (F4.5)", () => {
     calls.length = 0;
     renderPage(href.replace("http://localhost", ""));
     await screen.findByText("Event p0-0");
-    const req = callsTo("logs").find((u) => u.searchParams.get("limit") === "25");
+    const req = callsTo("logs").find((u) => u.searchParams.get("limit") === "10");
     expect(req?.searchParams.getAll("level")).toEqual(["CRITICAL", "ALERT"]);
     expect(req?.searchParams.get("from")).toBe(new Date(LAST_HOUR).toISOString());
     expect(req?.searchParams.get("to")).toBe(new Date(new Date(LAST_HOUR).getTime() + HOUR_MS).toISOString());
@@ -410,6 +410,15 @@ describe("Governance journey (F4.5)", () => {
     await waitFor(() => expect(history.current()).not.toContain("request_id"));
   });
 
+  it("Traces has no User column and pages 10 at a time with a rows-per-page selector", async () => {
+    renderPage("/admin/governance?tab=Traces");
+    await screen.findByRole("button", { name: "req-0" });
+    expect(screen.queryByRole("columnheader", { name: "User" })).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "IP" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/rows per page/i)).toHaveValue("10");
+    expect(screen.getByTestId("cursor-page")).toHaveTextContent("Page 1 of 112");
+  });
+
   it("opens the drawer from a row button (keyboard reachable)", async () => {
     renderPage("/admin/governance?tab=Traces");
     const button = await screen.findByRole("button", { name: "req-0" });
@@ -417,16 +426,16 @@ describe("Governance journey (F4.5)", () => {
     expect(history.current()).toContain("request_id=req-0");
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     const page = callsTo("traces/page")[0];
-    expect(page.searchParams.get("limit")).toBe("50");
+    expect(page.searchParams.get("limit")).toBe("10");
     expect(page.searchParams.get("from")).toBeTruthy();
   });
 
   it("Logs 'Older' uses the returned cursor; deep pages beyond 2,000 rows are reachable", async () => {
     renderPage("/admin/governance?tab=Logs");
     await screen.findByText("Event p0-0");
-    expect(callsTo("logs").find((u) => u.searchParams.get("limit") === "25")?.searchParams.has("cursor")).toBe(false);
+    expect(callsTo("logs").find((u) => u.searchParams.get("limit") === "10")?.searchParams.has("cursor")).toBe(false);
 
-    expect(screen.getByTestId("cursor-page")).toHaveTextContent("Page 1 of 240");
+    expect(screen.getByTestId("cursor-page")).toHaveTextContent("Page 1 of 600");
 
     // Rows per page restarts paging from the newest page at the new size.
     fireEvent.change(screen.getByLabelText(/rows per page/i), { target: { value: "100" } });

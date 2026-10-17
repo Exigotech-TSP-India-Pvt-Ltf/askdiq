@@ -59,6 +59,25 @@ export function backendTimeoutMs(write: boolean): number {
 }
 
 /** `X-API-Key` (service key), the proxy marker and the client IP for the backend's audit trail. */
+const IP_RE = /^[0-9a-fA-F:.]{2,45}$/;
+
+/**
+ * The dashboard user's IP: first hop of X-Forwarded-For (set by nginx), else
+ * X-Real-IP, else the socket address Next exposes. Null when none is a valid IP.
+ */
+export function browserIp(req: NextRequest): string | null {
+  const candidates = [
+    req.headers.get("x-forwarded-for")?.split(",")[0],
+    req.headers.get("x-real-ip"),
+    (req as NextRequest & { ip?: string }).ip,
+  ];
+  for (const raw of candidates) {
+    const value = raw?.trim().replace(/^::ffff:/i, "");
+    if (value && IP_RE.test(value)) return value;
+  }
+  return null;
+}
+
 export function backendHeaders(req: NextRequest): Headers {
   const headers = new Headers();
   const apiKey = process.env.API_KEY;
@@ -66,6 +85,10 @@ export function backendHeaders(req: NextRequest): Headers {
   headers.set(PROXY_MARKER_HEADER, "1");
   const forwardedFor = req.headers.get("x-forwarded-for");
   if (forwardedFor) headers.set("X-Forwarded-For", forwardedFor);
+  else {
+    const ip = browserIp(req);
+    if (ip) headers.set("X-Forwarded-For", ip);
+  }
   const userAgent = req.headers.get("user-agent");
   if (userAgent) headers.set("User-Agent", userAgent);
   return headers;

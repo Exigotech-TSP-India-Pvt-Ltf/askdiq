@@ -5,8 +5,8 @@ import { DELETE, GET, POST } from "@/app/api/proxy/[...path]/route";
 
 const BACKEND = "http://backend.test:8000";
 
-function request(path: string, init: { method?: string; cookie?: string; origin?: string; body?: string } = {}) {
-  const headers: Record<string, string> = {};
+function request(path: string, init: { method?: string; cookie?: string; origin?: string; body?: string; headers?: Record<string, string> } = {}) {
+  const headers: Record<string, string> = { ...init.headers };
   if (init.cookie) headers.cookie = init.cookie;
   if (init.origin) headers.origin = init.origin;
   return new NextRequest(`http://localhost:3000/api/proxy/${path}`, {
@@ -133,6 +133,34 @@ describe("proxy forwards the session (F1.1.2)", () => {
     expect(sentHeaders().get("If-None-Match")).toBe('W/"v0"');
     expect(res.headers.get("etag")).toBe('W/"v1"');
     expect(res.headers.get("cache-control")).toBe("private, max-age=0");
+  });
+});
+
+describe("proxy identifies the dashboard user's IP", () => {
+  const sentBody = () => JSON.parse(Buffer.from(fetchMock.mock.calls[0][1].body as Buffer).toString("utf8"));
+
+  it("falls back to X-Real-IP when no X-Forwarded-For is present", async () => {
+    backendReturns(200, {});
+    await GET(request("auth/me", { headers: { "x-real-ip": "203.0.113.7" } }), params("auth/me"));
+    expect(sentHeaders().get("X-Forwarded-For")).toBe("203.0.113.7");
+  });
+
+  it("stamps the first X-Forwarded-For hop on a chat query as ip_address", async () => {
+    backendReturns(200, {});
+    await POST(
+      request("query", { method: "POST", body: JSON.stringify({ query: "hi" }), headers: { "x-forwarded-for": "198.51.100.4, 10.0.0.1" } }),
+      params("query"),
+    );
+    expect(sentBody()).toEqual({ query: "hi", ip_address: "198.51.100.4" });
+  });
+
+  it("never overrides an ip_address the caller already sent, nor stamps other paths", async () => {
+    backendReturns(200, {});
+    await POST(
+      request("query", { method: "POST", body: JSON.stringify({ query: "hi", ip_address: "192.0.2.1" }), headers: { "x-real-ip": "198.51.100.4" } }),
+      params("query"),
+    );
+    expect(sentBody().ip_address).toBe("192.0.2.1");
   });
 });
 

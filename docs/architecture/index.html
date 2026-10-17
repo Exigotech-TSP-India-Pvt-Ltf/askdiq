@@ -528,14 +528,19 @@ def("p_eval", { name: "Online eval sampling", kind: "step", status: "live", ms: 
 def("d_browser", { name: "Admin browser", kind: "person", status: "preview",
   desc: "React client. Data hooks (useApiQuery in lib/query-cache.ts) dedupe requests and keep stale-while-revalidate caches. Governance opens an EventSource on the stream route. The browser never holds the API key or a token, only the httpOnly session cookie.",
   files: ["frontend/lib/api.ts", "frontend/lib/query-cache.ts", "frontend/lib/use-dashboard.ts", "frontend/lib/governance-api.ts"],
-  rel: ["d_middleware", "d_proxy", "admins"] });
+  rel: ["d_middleware", "d_tables", "d_proxy", "admins"] });
+def("d_tables", { name: "Admin table kit", kind: "module", status: "preview", sub: "TableCard · TableToolbar · pagination",
+  desc: "Every admin table is a TableCard (header, toolbar, grid, footer) over DataTable. The toolbar sits above the grid in stacking order so the Filters and Columns popovers are never covered by rows. Pages default to 10 rows with a 10/25/50/100 selector. Offset tables use Pagination (numbered pages); cursor endpoints (governance traces and logs) use CursorPagination with useCursorStack, which shows Page X of Y from the bounded total. Traces list Request, Time, IP, Query, Status, Latency, Slowest stage, Tokens and Cost (no User column).",
+  tech: ["React", "Tailwind tokens"],
+  files: ["frontend/components/admin/TableCard.tsx", "frontend/components/admin/TableToolbar.tsx", "frontend/components/admin/DataTable.tsx", "frontend/components/admin/Pagination.tsx", "frontend/components/admin/CursorPagination.tsx", "frontend/lib/use-cursor-stack.ts"],
+  rel: ["d_browser", "d_proxy", "d_routes"] });
 def("d_middleware", { name: "middleware.ts", kind: "module", status: "preview",
   desc: "Redirects page requests without a session cookie to /login. A UX redirect only; the real boundary is the backend check on every proxied call. The shell branch updates it for logout.",
   files: ["frontend/middleware.ts", "frontend/lib/auth-gate.ts", "frontend/lib/safe-redirect.ts"],
   sec: { A01: "Open-redirect safe return paths (safe-redirect.ts)." },
   rel: ["d_proxy", "d_browser"] });
 def("d_proxy", { name: "/api/proxy/[...path]", kind: "route", status: "preview", sub: "Next route handler",
-  desc: "Reads the httpOnly askdiq_session cookie and forwards it as X-Session, adds the server-only X-API-Key, forwards X-Client-Id and X-Forwarded-For, and on POST/PATCH/DELETE adds X-Requested-With: askdiq plus the browser Origin for the CSRF check. Backend Set-Cookie is dropped; a 401 clears the cookie.",
+  desc: "Reads the httpOnly askdiq_session cookie and forwards it as X-Session, adds the server-only X-API-Key, forwards X-Client-Id, and X-Forwarded-For (the first hop, else X-Real-IP, so the dashboard user is identified; POST /query also gets that IP as ip_address so traces and logs show the Client IP). On POST/PATCH/DELETE adds X-Requested-With: askdiq plus the browser Origin for the CSRF check. Backend Set-Cookie is dropped; a 401 clears the cookie.",
   files: ["frontend/app/api/proxy/[...path]/route.ts", "frontend/lib/server/backend.ts", "frontend/lib/server/auth-cookies.ts"],
   env: ["API_BASE_URL", "API_KEY", "SESSION_COOKIE_NAME=askdiq_session", "BACKEND_TIMEOUT_MS=60000 (branch)", "BACKEND_WRITE_TIMEOUT_MS=180000 (branch)", "BACKEND_RETRIES=2 (branch)"],
   note: "fix/chat-page-fetch-timeouts (uncommitted): bounded wait for response headers, then 504; idempotent calls retried with jittered backoff; SSE never cut once headers arrive.",
@@ -783,13 +788,15 @@ var VIEWS = [
      { label: "askdiq-api", x: 530, y: 30, w: 720, h: 700, cls: "zone" }],
    nodes: [
      ["d_browser", 20, 320, 180, 90], ["w_widget", 20, 540, 180, 110],
-     ["d_middleware", 240, 90, 240, 90], ["d_proxy", 240, 310, 240, 110], ["d_callback", 240, 560, 240, 110],
+     ["d_middleware", 240, 70, 240, 90], ["d_tables", 240, 185, 240, 100], ["d_proxy", 240, 310, 240, 110], ["d_callback", 240, 560, 240, 110],
      ["d_authdeps", 555, 310, 210, 110],
      ["d_routes", 790, 120, 200, 100], ["d_sse", 790, 470, 200, 100],
      ["d_cache", 1025, 60, 200, 90], ["d_ro", 1025, 250, 200, 110], ["d_events", 1025, 440, 200, 100], ["d_jobs", 1025, 610, 200, 90],
      ["postgres", 1290, 260, 230, 110], ["d_insights", 1290, 560, 230, 110], ["entra", 580, 600, 210, 90]],
    edges: [
      { f: "d_browser", t: "d_middleware", l: "page request", curve: 20 },
+     { f: "d_browser", t: "d_tables", l: "render pages", curve: -20 },
+     { f: "d_tables", t: "d_proxy", l: "limit · cursor / offset" },
      { f: "d_browser", t: "d_proxy", l: "fetch /api/proxy/*" },
      { f: "d_proxy", t: "d_authdeps", l: "X-API-Key · X-Session · CSRF" },
      { f: "d_callback", t: "entra", l: "code + state" },

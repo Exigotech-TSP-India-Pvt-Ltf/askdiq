@@ -8,7 +8,7 @@
 // client and backend `Set-Cookie` headers are dropped. A 401 or a sign-out
 // deletes the cookie.
 import { NextRequest, NextResponse } from "next/server";
-import { backendHeaders, backendRetries, backendTimeoutMs, backendUrl } from "@/lib/server/backend";
+import { backendHeaders, backendRetries, browserIp, backendTimeoutMs, backendUrl } from "@/lib/server/backend";
 import {
   clearSessionCookie,
   sessionCookieName,
@@ -35,6 +35,21 @@ const PASS_THROUGH_HEADERS = ["content-type", "content-disposition", "etag", "ca
 const BLOCKED_PATHS = new Set(["auth/sso/callback"]);
 const SSO_LOGIN_PATH = "auth/sso/login";
 const LOGOUT_PATH = "auth/logout";
+const QUERY_PATH = "query";
+
+/** Stamps the dashboard user's IP on a chat query so traces and logs show who asked. */
+function withClientIp(body: Buffer, ip: string | null): Buffer {
+  if (!ip) return body;
+  try {
+    const parsed = JSON.parse(body.toString("utf8")) as Record<string, unknown>;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && !parsed.ip_address) {
+      return Buffer.from(JSON.stringify({ ...parsed, ip_address: ip }));
+    }
+  } catch {
+    // not JSON: forward untouched
+  }
+  return body;
+}
 
 function proxyHeaders(req: NextRequest): Headers {
   const headers = backendHeaders(req);
@@ -182,6 +197,7 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
       return NextResponse.json({ detail: "Payload exceeds maximum allowed size (15MB)" }, { status: 413 });
     }
     bodyBuffer = Buffer.from(arrayBuf);
+    if (joined === QUERY_PATH && req.method === "POST") bodyBuffer = withClientIp(bodyBuffer, browserIp(req));
   }
 
   const timeoutMs = backendTimeoutMs(hasBody);
