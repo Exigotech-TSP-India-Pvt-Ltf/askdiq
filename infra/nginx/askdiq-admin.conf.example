@@ -6,7 +6,7 @@
 #   docker inspect et-platform-nginx-1 --format '{{range .Mounts}}{{.Destination}}{{println}}{{end}}'
 # and copy the TLS lines / shared includes from the existing askdiq conf there.
 #
-# Replace askdiq-admin.ethub.co with the chosen dashboard domain (DNS + a
+# Replace askdiqui.ethub.co with the chosen dashboard domain (DNS + a
 # certificate for it are needed first).
 #
 # Upstream: askdiq-web:3000 on the shared askdiq_internal network (the
@@ -24,17 +24,17 @@
 
 server {
     listen 80;
-    server_name askdiq-admin.ethub.co;
+    server_name askdiqui.ethub.co;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl;
-    server_name askdiq-admin.ethub.co;
+    server_name askdiqui.ethub.co;
 
     # Replace with the certificate paths used by the other site confs.
-    ssl_certificate     /etc/letsencrypt/live/askdiq-admin.ethub.co/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/askdiq-admin.ethub.co/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/askdiqui.ethub.co/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/askdiqui.ethub.co/privkey.pem;
     # include /etc/nginx/snippets/ssl-params.conf;
 
     server_tokens off;

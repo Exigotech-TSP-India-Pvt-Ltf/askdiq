@@ -1,7 +1,7 @@
 /**
  * Additive contract for the Usage & Cost and Evaluation (Live) chart
  * additions (planchanges4 B7.4 / F3.5, newplan §15.4). Written contract:
- * `frontend/docs/contracts/dashboard-aggregations.md` (sections 4 and 5).
+ * `docs/technical/frontend/contracts/dashboard-aggregations.md` (sections 4 and 5).
  *
  * No new endpoints: the fields are added, optional, to responses the pages
  * already fetch (`GET /admin/usage/summary` and `GET /metrics/evaluation/live`),

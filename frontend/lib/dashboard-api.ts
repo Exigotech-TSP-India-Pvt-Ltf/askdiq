@@ -1,7 +1,7 @@
 /**
  * Typed client and contract for the Dashboard aggregations (planchanges4
  * B7.1 / F3.1, newplan §1 and §15.4). The written contract is
- * `frontend/docs/contracts/dashboard-aggregations.md`; keep the two in sync.
+ * `docs/technical/frontend/contracts/dashboard-aggregations.md`; keep the two in sync.
  *
  * Backward compatible by design: every field the backend returns today is
  * kept as is, every new field is optional. The page renders the existing data

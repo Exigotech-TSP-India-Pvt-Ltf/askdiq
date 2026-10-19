@@ -273,7 +273,9 @@ async def test_docs_served_in_development(no_db_client: AsyncClient) -> None:
 
 
 def test_nginx_conf_hardening() -> None:
-    conf = (REPO_ROOT / "askdiq.conf").read_text(encoding="utf-8")
+    conf = (REPO_ROOT / "infra" / "scale-out" / "askdiq-api.conf").read_text(
+        encoding="utf-8"
+    )
     assert "server_tokens off;" in conf
     assert "client_max_body_size 15m;" in conf
     assert "proxy_set_header X-Forwarded-For $remote_addr;" in conf

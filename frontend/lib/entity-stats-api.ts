@@ -2,7 +2,7 @@
  * Typed client for the entity pages (planchanges4 F3.2 to F3.4): Visitors,
  * Conversations and Documents, list and detail.
  *
- * Contract: `frontend/docs/contracts/entity-stats.md` (the backend PR-14,
+ * Contract: `docs/technical/frontend/contracts/entity-stats.md` (the backend PR-14,
  * planchanges4 B7.2 / B7.3, implements it). Every new endpoint and field is
  * ADDITIVE: the pages keep rendering existing data when an endpoint answers
  * 404 / 405 / 501 (not deployed yet), and the charts fed by it show their

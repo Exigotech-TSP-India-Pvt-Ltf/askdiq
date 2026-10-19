@@ -1,5 +1,5 @@
 # Production image for askdiq-web (admin dashboard, Next.js 14 standalone).
-# Build context: ./frontend. Deployment runbook: deploy/RUNBOOK.md.
+# Build context: ./frontend. Deployment runbook: docs/deployment/runbook.md.
 #
 # Build-time vs run-time configuration:
 #   * The app reads NO NEXT_PUBLIC_* variables today, so nothing is baked into

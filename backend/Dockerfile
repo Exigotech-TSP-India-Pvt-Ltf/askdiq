@@ -2,7 +2,7 @@
 #
 # Runtime deps only: run `alembic upgrade head` and
 # `python scripts/ingest_real_docs.py` as one-off commands after the
-# container is up (see docker-compose.yml comments) — not baked into CMD,
+# container is up (see infra/docker-compose.yml) — not baked into CMD,
 # so restarting the container never silently re-runs migrations/ingestion.
 FROM python:3.14-slim
 

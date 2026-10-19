@@ -336,7 +336,7 @@ The browser calls these through the Next proxy, `/api/proxy/admin/...` (`fronten
 - **UTC everywhere on the charts.** Buckets and axis labels use UTC days and hours, while the date picker's custom range uses local days. Activity times are local.
 - **Fixed windows.** **Cost vs budget** always shows the current UTC month, and **RAG pipeline** always the last 24 h, with no audience filter.
 - **Feedback sources differ between modes.** Windowed numbers use `message_feedback`. Legacy (no-window) mode counted `audit_log` rows containing "feedback", which also matched admin actions such as `feedback_triaged`.
-- **Contract doc drift** (`frontend/docs/contracts/dashboard-aggregations.md`):
+- **Contract doc drift** (`docs/technical/frontend/contracts/dashboard-aggregations.md`):
   - Section 6 lists the health pill under `/admin/governance?tab=Monitoring`, but the code links to `?tab=Overall`.
   - It says top intents come "from the insights rollup", but the code reads `turn_insights` directly.
   - It does not state that windowed **Feedback** counts `message_feedback` rows.

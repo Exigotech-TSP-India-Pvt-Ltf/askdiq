@@ -1,6 +1,6 @@
 """Visitors and conversations entity-page stats under ``/admin`` (B7.2).
 
-Contract: ``frontend/docs/contracts/entity-stats.md``. Every route is async,
+Contract: ``docs/technical/frontend/contracts/entity-stats.md``. Every route is async,
 guarded with ``dashboard:read`` and audience-scoped; ranges are inclusive UTC
 days (default: the last 7 days). Stats use ``gather_scoped`` and an ETag;
 the per-visitor timeline is not cached. Routers only validate and delegate.

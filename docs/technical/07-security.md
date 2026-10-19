@@ -4,8 +4,8 @@ Scope: how AskDIQ authenticates callers and users, authorizes them (RBAC), defen
 injection and abuse, handles errors, PII, audit, client IPs and secrets, and how its controls map
 to the OWASP Top 10:2025. It documents two code lines that differ sharply: `main` plus
 `hotfix/query-filters-ip-ingest` (what production runs) and `preview/view` (9115c45, the documented
-base with SSO and RBAC). Code is the source of truth; plan intent (`newplan.md` section 12,
-`planchanges4.md` section 2.1) is noted where it differs.
+base with SSO and RBAC). Code is the source of truth; plan intent (`docs/archive/newplan.md` section 12,
+`docs/archive/planchanges4.md` section 2.1) is noted where it differs.
 
 ## Contents
 
@@ -42,7 +42,7 @@ base with SSO and RBAC). Code is the source of truth; plan intent (`newplan.md` 
 | User identity | `X-Client-Id` header (client-chosen, sanitized) | Entra ID user (email), from server-side session |
 | Authorization | None beyond the key: any key holder can call admin routes | Role -> permission table, deny by default |
 | CSRF | n/a (no cookies) | `X-Requested-With: askdiq` + `Origin == APP_BASE_URL` on state changes |
-| Security headers | None from the app (`SecurityHeadersMiddleware` absent); nginx may add them (Unverified for prod) | Backend middleware + Next headers + nonce CSP + `askdiq.conf` |
+| Security headers | None from the app (`SecurityHeadersMiddleware` absent); nginx may add them (Unverified for prod) | Backend middleware + Next headers + nonce CSP + `infra/scale-out/askdiq-api.conf` |
 | Errors | FastAPI defaults | RFC 9457 problem+json, no internals |
 | Rate-limit state | In-process memory (per worker) | Postgres shared state (all workers/replicas) |
 | Public website `/query` | Yes: server-to-server with the API key | Yes, same contract on chat routes only (`require_chat_actor`); the dashboard proxy adds `X-AskDIQ-Proxy: 1`, so a browser behind it always needs a session |
@@ -222,11 +222,11 @@ UX only; the API is the boundary.
 | Backend `backend/app/core/security_headers.py` (pure ASGI, outermost) | `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`, `X-Frame-Options`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` (skipped on `/docs`, `/redoc`), HSTS only when `ENV=production`. Values from `SECURITY_*` settings; route-set values win. |
 | Next `frontend/next.config.js` `headers()` | Same static set on every path; HSTS when `NODE_ENV=production`; `poweredByHeader: false`. |
 | Next `frontend/middleware.ts` | Per-request nonce CSP: `default-src 'self'`; `script-src 'self' 'nonce-<n>' 'strict-dynamic'`; `style-src 'self' 'unsafe-inline'`; `img-src 'self' data: blob:`; `font-src 'self' data:`; `connect-src 'self'`; `object-src 'none'`; `base-uri 'self'`; `form-action 'self'`; `frame-ancestors 'none'`. Dev adds `'unsafe-eval'` and `ws: wss:`. |
-| nginx `askdiq.conf` | `server_tokens off`, `client_max_body_size 15m`, `proxy_hide_header` for upstream duplicates, then `add_header ... always` for HSTS, nosniff, Referrer-Policy, Permissions-Policy, COOP, `X-Frame-Options DENY`, API CSP. Sets `X-Forwarded-For $remote_addr` (overwrites, not appends). |
+| nginx `infra/scale-out/askdiq-api.conf` | `server_tokens off`, `client_max_body_size 15m`, `proxy_hide_header` for upstream duplicates, then `add_header ... always` for HSTS, nosniff, Referrer-Policy, Permissions-Policy, COOP, `X-Frame-Options DENY`, API CSP. Sets `X-Forwarded-For $remote_addr` (overwrites, not appends). |
 | Brand assets | Served with explicit `Content-Type` and `X-Content-Type-Options: nosniff` (`backend/app/api/routes/branding.py`). |
 | Cache | ETag GETs send `Cache-Control: private, max-age=...` with `Vary: X-API-Key, X-Client-Id` (`backend/app/core/http_cache.py`); `/auth/me` varies on `X-API-Key, X-Session`; OIDC responses `no-store`. |
 
-Unverified: the live prod nginx config (et-platform-nginx-1) is not in this repo; `askdiq.conf` is the
+Unverified: the live prod nginx config (et-platform-nginx-1) is not in this repo; `infra/scale-out/askdiq-api.conf` is the
 intended config for the preview topology.
 
 ## Errors (problem+json)
@@ -306,7 +306,7 @@ only the audit copy is redacted.
 | `valid_ip(value)` | hotfix | Normalised IPv4/IPv6 via `ipaddress.ip_address` (first hop of a comma list), else `None`. |
 | `resolve_client_ip(request, supplied)` | hotfix | With `ALLOW_CLIENT_IP_OVERRIDE` (code default `true`; hotfix `.env.example` says `false`), a valid body `ip_address` on `/query`, `POST /sessions` and feedback wins; otherwise `get_client_ip`. |
 
-The Next proxy forwards the browser's `X-Forwarded-For`; `askdiq.conf` overwrites it with
+The Next proxy forwards the browser's `X-Forwarded-For`; `infra/scale-out/askdiq-api.conf` overwrites it with
 `$remote_addr`. With `ENV=production` and `TRUST_PROXY_HEADERS=false` the app logs
 `production_startup_warning`. Trust implication of the hotfix: any API-key holder chooses the IP that is
 stored and rate-limited, so the per-IP limit protects only against callers without the key.
@@ -380,7 +380,7 @@ prod `ENV` is not `production` (which would also leave HSTS off and allow body I
 
 ## OWASP Top 10:2025 mapping
 
-Rows from `newplan.md` section 12.1 and `planchanges4.md` section 2.1, verified against `preview/view`
+Rows from `docs/archive/newplan.md` section 12.1 and `docs/archive/planchanges4.md` section 2.1, verified against `preview/view`
 code. "Planned/not found" = in the plan but not found in code at 9115c45. `backend/tests/test_owasp_compliance.py`
 still uses 2021-style names (`a03_sql_injection`, `a04_rate_limiting`, `a08_csv_formula`); the planned
 per-row test classes (Task V.4) are not written yet.
@@ -388,7 +388,7 @@ per-row test classes (Task V.4) are not written yet.
 | Category | Controls (found) | Where in code | Tests | Planned/not found |
 |---|---|---|---|---|
 | A01 Broken Access Control | Session auth + `require_permission`, deny by default; route-walk guard; object scoping by user; CSRF marker + Origin; SameSite=Lax | `backend/app/auth/deps.py`, `permissions.py`, `frontend/app/api/proxy/[...path]/route.ts` | `test_route_guards.py`, `test_auth_rbac.py` (IDOR, CSRF), `test_owasp_compliance.py::test_owasp_a01_unauthenticated_access_blocked` | F8 aggregation cache keyed by role and cross-role cache test; `Vary: Cookie, X-Session` (code sends `Vary: X-API-Key, X-Client-Id`). Prod (main) has no RBAC. |
-| A02 Security Misconfiguration | Security headers (backend, Next, nginx); nonce CSP; narrow CORS lists; docs off in prod; mock-IdP startup guard; `poweredByHeader: false`; `server_tokens off`; `Cache-Control: private` | `security_headers.py`, `next.config.js`, `middleware.ts`, `askdiq.conf`, `main.py`, `config.py` | `test_security_headers.py`, `test_auth_settings.py`, `frontend/tests/lib/next-config.test.ts`, `middleware.test.ts`, `test_http_efficiency.py` | nginx config lint in CI not found. |
+| A02 Security Misconfiguration | Security headers (backend, Next, nginx); nonce CSP; narrow CORS lists; docs off in prod; mock-IdP startup guard; `poweredByHeader: false`; `server_tokens off`; `Cache-Control: private` | `security_headers.py`, `next.config.js`, `middleware.ts`, `infra/scale-out/askdiq-api.conf`, `main.py`, `config.py` | `test_security_headers.py`, `test_auth_settings.py`, `frontend/tests/lib/next-config.test.ts`, `middleware.test.ts`, `test_http_efficiency.py` | nginx config lint in CI not found. |
 | A03 Software Supply Chain Failures | pip-audit and npm audit gates with expiring allow-lists; bandit; Dependabot; Actions `contents: read`; pinned Python deps | `.github/workflows/ci.yml`, `.github/audit/*`, `frontend/scripts/audit-gate.mjs` | CI jobs | Exact pins in `package.json` (caret ranges remain); Actions pinned to major tags, not SHAs. |
 | A04 Cryptographic Failures | `token_urlsafe(32)` session ids, HMAC-SHA256 stored hash; Secure cookie flag; HSTS in prod; 32-byte secret in prod; JWT leftover removed (preview) | `sessions.py`, `config.py`, `auth-cookies.ts` | `test_auth_sessions.py`, `test_auth_settings.py::test_legacy_jwt_secret_is_gone` | `API_JWT_SECRET` still required on `main`. Secure cookie not enforced by code in prod. |
 | A05 Injection | Parameterised SQLAlchemy; sort allow-lists; LIKE escaping; SVG sanitizer; CSV formula neutralisation; classifier `<turns_data>` delimiting; safe markdown; prompt-injection pre-checks; hotfix filter allow-list | `query_builders.py`, `admin_usage.py`, `user_repository.py`, `branding/assets.py`, `serialization.py`, `insights/llm.py`, `pre_checks.py`, `MarkdownView.tsx` | `test_query_builders.py`, `test_branding.py`, `test_owasp_compliance.py::test_owasp_a08_csv_formula_injection_defense`, `test_insights_classifier.py`, `test_pre_checks.py`, `MarkdownView.test.tsx`, hotfix `test_query_hardening.py` | Filter allow-list not on `preview/view`. F8 widget markdown XSS tests (widget branch). |

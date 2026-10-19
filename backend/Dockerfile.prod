@@ -1,5 +1,5 @@
 # Production image for askdiq-api (DeployIQ RAG backend).
-# Build context: ./backend. Deployment runbook: deploy/RUNBOOK.md.
+# Build context: ./backend. Deployment runbook: docs/deployment/runbook.md.
 FROM python:3.14-slim
 
 WORKDIR /app
@@ -46,8 +46,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
 # Multiple workers are safe: rate limits, OIDC state, the job queue and event
 # fan-out are shared through Postgres (planchanges4 B1.4), and a request's
 # post-answer writes stay inside the one process that served it.
-# WEB_CONCURRENCY sets the worker count (docker-compose.prod.yml sets 2 per
-# replica); size the DB pool with the rule in DEPLOYMENT.md. Shell form so the
+# WEB_CONCURRENCY sets the worker count (infra/scale-out/docker-compose.yml sets 2 per
+# replica); size the DB pool with the rule in docs/deployment/docker-and-auth-contract.md. Shell form so the
 # variable expands; `exec` keeps uvicorn as PID 1 to receive SIGTERM.
 # The entrypoint runs the pre-start steps only for a uvicorn command, then
 # `exec`s CMD unchanged; other commands (the job worker) are exec'd directly.

@@ -1,4 +1,4 @@
-// Sign out (DEPLOYMENT.md "frontend contract", step 8). Revokes the server
+// Sign out (docs/deployment/docker-and-auth-contract.md "frontend contract", step 8). Revokes the server
 // session when the backend answers in time, and ALWAYS clears the session
 // cookie, so signing out never depends on a slow or unreachable backend.
 // Kept apart from /api/proxy so the sign-out bound below is independent of

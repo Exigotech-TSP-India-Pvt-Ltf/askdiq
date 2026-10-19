@@ -1,362 +1,189 @@
-# DeployIQ — RAG Platform
+# AskDIQ
 
-A Retrieval-Augmented Generation system for the DeployIQ website content:
-a FastAPI + PostgreSQL/pgvector backend and a Next.js chat/documents/metrics
-frontend.
+AskDIQ is the AI assistant for the DeployIQ platform website (Exigo Tech), and
+the admin console that runs it. Website visitors ask questions; AskDIQ answers
+from a curated knowledge base with citations, guardrails and a grounded
+fallback. Staff sign in with Microsoft Entra ID to monitor usage, cost,
+quality and governance, manage the knowledge base and users, and white-label
+the product.
 
-```
-backend/    FastAPI service: chunking, retrieval, guardrails, LLM harness
-frontend/   Next.js 14 (App Router) chat UI, auth, documents, metrics
-```
-
-Full technical documentation (architecture, API, database, configuration,
-security, deployment, development, website integration):
-[docs/technical/](docs/technical/README.md).
+- **Plan and status:** [docs/plan.md](docs/plan.md)
+- **Deploy to production:** [docs/deployment/deployment-guide.md](docs/deployment/deployment-guide.md)
+- **Production `.env` and SSO:** [docs/deployment/environment-and-sso.md](docs/deployment/environment-and-sso.md)
+- **Technical reference:** [docs/technical/](docs/technical/README.md)
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    UI[Next.js frontend] -->|JWT| API[FastAPI /query]
-    API --> PRE[Pre-guardrails]
-    PRE --> RET[Retriever]
-    RET -->|cosine recall| VS[(pgvector)]
-    RET --> RR[Cross-encoder rerank]
-    RR --> SEL[Cross-document quota select]
-    SEL --> LLM[Azure OpenAI gpt-5-mini]
-    LLM --> POST[Semantic groundedness check]
-    POST --> API
+    Visitor[Public website] -->|X-API-Key, /query| API
+    Browser[Staff browser] -->|HTTPS| Web[Next.js 14 admin console]
+    Web -->|server-side proxy: X-API-Key + session| API[FastAPI backend]
+    API --> PG[(PostgreSQL + pgvector)]
+    API --> AOAI[Azure OpenAI: gpt-5-mini + text-embedding-3-small]
+    API <-->|LISTEN/NOTIFY event bus| PG
+    Worker[Jobs worker] --> PG
+    Web -->|OIDC sign-in| Entra[Microsoft Entra ID]
 ```
 
-- **LLM**: Azure OpenAI `gpt-5-mini` (reasoning model — only supports
-  `temperature=1.0`; uses `max_completion_tokens`, not `max_tokens`).
-- **Embeddings**: Azure OpenAI `text-embedding-3-small`, 1536-dim.
-- **Retrieval pipeline**: broad pgvector cosine recall → dedupe by chunk id
-  → cross-encoder rerank (`fastembed` ONNX, `Xenova/ms-marco-MiniLM-L-6-v2`,
-  reorders only — the reported score stays cosine so off-topic/confidence
-  gates stay calibrated) → cross-document quota selection (round-robin
-  across the top-scoring documents so one document can't crowd out a second
-  genuinely relevant one). Compound questions ("X and how does Y...") are
-  rule-based split into sub-queries, retrieved separately, and merged.
-- **Harness**: retrieve → pre-guardrails → retrieval-relevance gate → build
-  prompt → call LLM → semantic groundedness check, retrying generation (not
-  just on empty/error) if a sample fails groundedness, since temperature=1.0
-  makes phrasing — and therefore groundedness score — vary run to run →
-  structured response. If nothing is confidently grounded, the fallback
-  reply (`app/harness/orchestrator.py`) tells the visitor what topics the
-  assistant *can* help with instead of a bare refusal.
-- **Guardrails**: pre-checks (length, spam/gibberish detection, unsafe/
-  prompt-injection input), post-checks (embed the answer + retrieved
-  chunks, cosine-similarity groundedness, with an explicit allowance for
-  answers that correctly decline unsupported parts of a question — and a
-  system-prompt rule to silently omit genuinely unsupported parts rather
-  than calling out the gap, to avoid encouraging hallucinated workarounds).
-- **Governance**: JWT auth, audit logging (every query/ingest recorded with
-  actor, IP address, guardrail flags, cited sources), PII redaction on
-  ingest — viewable via `GET /governance/audit-log` and the frontend's
-  Governance page.
-- **Chat sessions**: server-side, DB-backed per-user conversation history
-  (`app/core/sessions.py`) — never trusted from the client. A `/query` call
-  without a `session_id` auto-resumes the most recent non-expired session
-  created from the *same client IP* (`app/core/request_meta.py`), or starts
-  a fresh one; sessions expire after `session_timeout_minutes` of
-  inactivity and silently rotate rather than erroring. Full CRUD
-  (list/create/rename/delete) via `app/api/routes/sessions.py` and the
-  frontend's `ChatSessionList.tsx` sidebar.
-- **Rate limiting**: in-memory sliding window on `/query`
-  (`app/core/rate_limit.py`) — per-user and per-IP limits enforced
-  independently, so several users behind one NAT/office IP aren't
-  penalized by a single abusive user.
-- **Startup/latency optimizations**: the cross-encoder reranker model is
-  force-loaded at process boot (`preload_reranker()`), not lazily on the
-  first request; groundedness checks reuse each source chunk's
-  already-computed ingestion-time embedding instead of re-embedding it
-  every query; `llm_reasoning_effort` is tuned down to reduce gpt-5-mini's
-  reasoning-token latency.
+| Part | What it does |
+|---|---|
+| **Frontend** (`frontend/`) | Next.js 14 App Router. The browser only talks to its own origin: `/api/proxy/*` is a server-side route handler that adds the service key (`X-API-Key`) and the session (`X-Session`), so no secret reaches the browser. Sign-in routes under `/auth/*`. Nonce-based CSP. |
+| **Backend** (`backend/`) | FastAPI with async SQLAlchemy. RAG pipeline, auth and RBAC, admin APIs, audit, security headers, RFC 9457 errors, rate limits. |
+| **Database** | One PostgreSQL with the `pgvector` extension for relational data, embeddings (1536-dim), sessions, jobs and shared state. Migrations with Alembic. |
+| **LLM** | Azure OpenAI: `gpt-5-mini` for answers, `text-embedding-3-small` for embeddings; both can be changed at runtime in Settings > Models & Pricing. |
+| **Jobs worker** | Postgres `SKIP LOCKED` job queue (insights classification, backfills). Runs in-process by default, or as `python -m app.jobs.worker`. |
+| **Event bus** | Postgres `LISTEN/NOTIFY` for cross-worker cache invalidation and live governance events (served to the console over SSE). |
 
-## Quick start
+### RAG pipeline
 
-**Backend** (requires PostgreSQL with the `pgvector` extension, and an Azure
-OpenAI deployment — see `backend/.env.example`):
+1. **Pre-checks**: length, spam/gibberish, unsafe input and prompt injection.
+2. **Retrieval**: pgvector cosine recall, dedupe, cross-encoder rerank
+   (`fastembed`, reorder only), and a cross-document quota so one document
+   cannot crowd out another. Compound questions are split and merged.
+3. **Relevance gate**: off-topic questions get a helpful "what I can help
+   with" reply instead of a refusal.
+4. **Generation** with token-budgeted context and recent history.
+5. **Post-checks**: semantic groundedness against the cited chunks, with a
+   generation retry; citations returned as sources.
+6. **Accounting**: per-stage latency, tokens and cost on every turn; sampled
+   online evaluation; insights classification in the background.
+
+## Features
+
+**Chat (AskDIQ)**: answers with source citations, feedback (thumbs and
+reasons), server-side chat sessions, an embeddable chat widget.
+
+**Admin console** (pages filtered by role: superadmin, admin, operator):
+
+| Page | What it shows |
+|---|---|
+| Dashboard | KPI trend cards, charts that drill into the other pages, activity feed, health |
+| AskDIQ | The chat, for staff |
+| Knowledge | Knowledge-base documents: upload (Markdown, `.docx` converted server-side), inventory, citations and detail pages |
+| Visitors | Visitors with charts, timelines and deep links to their conversations |
+| Usage & Cost | Token volumes and USD cost by stage, users, sessions and queries; test-IP management; CSV export |
+| Conversation Logs | Every conversation and turn, with an inspector |
+| Feedback | Triage workspace: review queue, golden cases, preference data, knowledge gaps |
+| Evaluation | Live answer-quality evaluation records and trends |
+| Governance | Overview, monitoring, traces, logs, live incident stream, audit trail, CSV export |
+| Analytics | Intents, topics, flows, drop-off and conversation insights from the classifier |
+| User Management | Users, access requests, roles and permissions, sign-in audit (superadmin) |
+| Settings | Branding (names, colours, logos, login copy), Insights Taxonomy, Models & Pricing (superadmin) |
+
+Light and dark themes, guided tours, a command palette and keyboard shortcuts
+work across the console.
+
+## Repository layout
+
+```text
+backend/     FastAPI app (app/), Alembic migrations, scripts/, tests/, knowledge base (data/real_docs/)
+frontend/    Next.js 14 app (app/, components/, lib/), tests/ (vitest + Testing Library)
+infra/       deploy kit builder, server deploy/rollback scripts, compose files, nginx confs, prod env templates
+docs/        plan.md, deployment/, technical/, walkthroughs/ (one per console page), archive/ (old plans)
+.github/     CI workflow, Dependabot, PR template, audit allow-lists
+```
+
+Dockerfiles stay next to their code (`backend/Dockerfile*`,
+`frontend/Dockerfile*`) because they are the build contexts.
+
+## Local development
+
+Prerequisites: Python 3.14, Node 20, PostgreSQL with `pgvector` (or Docker),
+and an Azure OpenAI resource.
+
+### Database
 
 ```bash
+docker compose -f infra/docker-compose.yml up -d postgres   # pgvector on localhost:5433, db ragdb
+```
+
+### Backend
+
+The virtual environment is `backend\venv` on Windows (used by the editor
+settings and the local CI script); `.venv` works elsewhere. Always call the
+venv's Python.
+
+```powershell
 cd backend
-python -m venv venv && venv\Scripts\activate   # or source venv/bin/activate
-pip install -r requirements.txt
-copy .env.example .env   # fill in DATABASE_URL, AZURE_OPENAI_*, SESSION_SECRET, ENTRA_* (or AUTH_DEV_MOCK=true)
-alembic upgrade head
-python scripts/ingest_real_docs.py
-uvicorn main:app --reload --timeout-graceful-shutdown 5
+python -m venv venv
+venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env            # fill in DATABASE_URL, AZURE_OPENAI_*, API_KEY_NAME, SESSION_SECRET
+venv\Scripts\python.exe -m alembic upgrade head
+venv\Scripts\python.exe scripts\ingest_real_docs.py
+venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000 --timeout-graceful-shutdown 5
 ```
 
-Requires PostgreSQL with the `pgvector` extension enabled (a Docker
-`pgvector/pgvector` image works well for local dev):
+Linux/macOS: `python -m venv .venv`, `cp .env.example .env`, then the same
+commands with `.venv/bin/python`.
 
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
+For local sign-in without Entra, set `ENV=development`, `AUTH_DEV_MOCK=true`
+and your email in `SUPERADMIN_EMAILS` (backend) and `AUTH_DEV_MOCK=true`
+(frontend): "Sign in with Microsoft" then opens a local mock identity
+provider. The backend refuses to start with the mock outside development.
 
-**Frontend**:
+### Frontend
 
-```bash
+```powershell
 cd frontend
-npm install
-copy .env.local.example .env.local   # fill in API_BASE_URL, API_KEY
-npm run dev   # http://localhost:3000
+npm ci --legacy-peer-deps
+Copy-Item .env.local.example .env.local   # API_BASE_URL, API_KEY (= backend API_KEY_NAME), APP_BASE_URL
+npm run dev                               # http://localhost:3000
 ```
 
-The frontend never talks to the backend directly from the browser — the
-client calls same-origin `/api/proxy/*`, a Next.js Route Handler
-(`app/api/proxy/[...path]/route.ts`) that runs server-side and attaches
-`API_KEY` to the forwarded request. Both `API_BASE_URL` and `API_KEY` are
-server-only env vars (no `NEXT_PUBLIC_` prefix) so the key is never inlined
-into the browser bundle.
-
-The backend's CORS `allow_origins` must include `http://localhost:3000`
-(already set in `main.py`).
-
-For running the full stack in Docker instead, see [DEPLOYMENT.md](DEPLOYMENT.md).
-
-## Backend structure
-
-```
-backend/
-  app/
-    core/         config, database session, latency middleware, logging,
-                  chat-session lifecycle, rate limiting, client-IP extraction
-    api/routes/   FastAPI route handlers (auth, ingest, query, sessions, documents, metrics, health)
-    schemas/      Pydantic request/response models
-    chunking/     structure-aware / fixed-size / semantic strategies + factory
-    retrieval/    pgvector-backed vector store, reranker, retriever
-    harness/      orchestrator (retrieve -> guardrails -> LLM -> validation) + prompts
-    guardrails/   pre-query and post-answer checks
-    governance/   auth, audit logging, PII redaction
-    models/       SQLAlchemy ORM models
-    evaluation/   RAG evaluation dataset + evaluator (see Evaluation below)
-  data/real_docs/ the 8 authoritative DeployIQ Markdown docs (the corpus)
-  scripts/        ingest_real_docs.py, seed_ingest.py, show_chunking.py, run_evaluation.py
-  tests/          pytest unit/integration tests (no real DB or Azure calls)
-```
-
-### Backend scripts
-
-- `scripts/ingest_real_docs.py` — (re)ingests the 8 real corpus docs; safe to
-  rerun (replaces existing chunks per source document).
-- `scripts/seed_ingest.py` — ingests via the live `/ingest` API instead of a
-  direct DB session (needs a running server + auth token).
-- `scripts/show_chunking.py [source_name]` — prints one document's stored chunks (heading, char
-  count, content) to sanity-check chunking output after a change.
-
-## Frontend structure
-
-```
-frontend/
-  app/
-    login/page.tsx           Sign-in — split branding/form layout (AuthShell)
-    register/page.tsx        Registration — same layout
-    (app)/layout.tsx         Auth-guarded shell: sidebar + route group
-    (app)/chat/page.tsx      Chat interface — calls POST /query
-    (app)/documents/page.tsx Lists GET /documents
-    (app)/metrics/page.tsx   P50/P70/P100 latency — GET /metrics/latency
-  components/
-    AuthShell.tsx            Shared branding panel + form slot (login/register)
-    Sidebar.tsx              App nav + signed-in user + sign out
-    MessageBubble.tsx        Chat bubble incl. grounded/guardrail badges, sources
-  lib/
-    api.ts                   Typed fetch client (adds Bearer token, parses errors)
-    auth-context.tsx         Session state, persisted to localStorage
-    types.ts                 Mirrors the backend's Pydantic schemas
-```
-
-### Auth flow
-
-1. `/register` or `/login` calls the backend, which returns `{ access_token, user }`.
-2. The token + user are kept in React context and mirrored to
-   `localStorage` under `deployiq.session`, so a refresh stays signed in.
-3. `lib/api.ts` attaches `Authorization: Bearer <token>` to every
-   authenticated call (`/query`, `/documents`, `/metrics/latency`, `/ingest`).
-4. `(app)/layout.tsx` redirects to `/login` if there's no token once the
-   stored session has finished loading.
-
-### Design
-
-The login/register split-panel layout (dark gradient brand panel + white
-form panel) follows the reference screens supplied for this project. The
-left panel's copy, the 6-stage pipeline strip (Understand → Recommend →
-Implement → Validate → Monitor → Improve), and the footer line are drawn
-from DeployIQ's own platform and About Us content rather than placeholder
-text — update `components/AuthShell.tsx` if that copy changes.
-
-## Data
-
-The corpus is the 8 authoritative DeployIQ website Markdown documents in
-`backend/data/real_docs/` (home page, about us, platform overview, Zero
-Trust, Essential Eight, Responsible AI, Trust Center). Re-ingest after any
-chunking/embedding change with `python scripts/ingest_real_docs.py`.
-
-## Tests
-
-`backend/tests/` is a pytest suite covering the pure/mockable logic — no
-live Postgres or Azure calls required, runs in ~2s:
-
-- chunking (`StructureAwareChunker` heading-nesting/bold-stripping/oversized-split rules)
-- `decompose_query`, pre-checks, post-checks (negative-answer regex, cosine
-  groundedness — embeddings mocked), reranker (cross-encoder mocked)
-- `VectorStore._select_diverse_chunks` cross-document quota logic
-- the orchestrator's full retry/fallback state machine (pre-guardrail block,
-  off-topic, empty/failed LLM, groundedness-retry success/exhaustion) with
-  `retrieve`/`call_llm`/`run_post_checks` monkeypatched
+### Full stack in Docker
 
 ```bash
-cd backend
-python -m pytest -q
+docker compose -f infra/docker-compose.yml up --build    # Postgres 5433, API 8000, console 3000
 ```
 
-`pytest.ini` sets `pythonpath = .` and `asyncio_mode = auto` so async tests
-work without extra decorators. `scripts/run_evaluation.py` is the
-complementary *live* check (real DB + real Azure calls, see Evaluation).
+Details, the proxy and sign-in contract, and the scale-out reference:
+[docs/deployment/docker-and-auth-contract.md](docs/deployment/docker-and-auth-contract.md).
 
-## LLM prompt token budget
+Never commit `.env` or `.env.local`; only the `*.example` files are tracked.
 
-Generation uses `tiktoken`'s `o200k_base` encoding, matching the configured
-gpt-5-mini model family. The prompt no longer includes the two long
-few-shot examples. Retrieved context is capped at 2,400 tokens, and relevant
-follow-up history is capped at 400 tokens; standalone questions still send
-no history. When context exceeds its budget, higher-ranked chunks are kept
-first and the final chunk is clipped to fit.
+## Testing and CI
 
-Azure's reported prompt and completion token usage remains logged per
-generation. These limits reduce and bound prompt input, but do not prove
-answer quality is unchanged. Compare evaluation quality and token usage
-before and after deployment; the live evaluation requires the database and
-Azure credentials.
-
-## Continuous integration
-
-GitHub Actions runs the backend pytest suite and the frontend lint and
-production build checks on all pushes and on pull requests targeting `main`.
-These checks do not require database or Azure credentials. The workflow
-is defined in `.github/workflows/ci.yml`.
-
-Run the same checks locally:
-
-```bash
+```powershell
 cd backend
-python -m pip install -r requirements.txt
-python -m pytest -q
+venv\Scripts\python.exe -m pytest -q            # needs TEST_DATABASE_URL (a separate Postgres DB) for DB tests
+venv\Scripts\ruff.exe check . ; venv\Scripts\ruff.exe format --check . ; venv\Scripts\pylint.exe app
 
-cd ../frontend
-npm ci
-npm run lint
-npm run build
+cd ..\frontend
+npm run lint ; npm run typecheck ; npm test ; npm run build
 ```
 
-## Evaluation
+GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and on
+pushes to `main`: backend lint (ruff, pylint, bandit, pip-audit), backend tests
+against Postgres with pgvector (single Alembic head, downgrade round-trip,
+coverage gate), frontend checks (lint, typecheck, vitest, npm audit, build),
+a full-stack smoke test, and an optional performance smoke. Run the same
+checks locally before pushing. Details:
+[docs/technical/09-development.md](docs/technical/09-development.md).
 
-`app/evaluation/dataset.py` defines a curated set of test queries covering
-every corpus document plus the pipeline behaviors the harness specifically
-handles: a compound cross-document question, a negative/unsupported-detail
-question, off-topic questions, and an unsafe-input pre-guardrail check.
-`app/evaluation/evaluator.py` runs each case through the real pipeline
-(`run_query` — real embedding + real LLM calls) and scores:
+## Deployment
 
-- **retrieval_recall** — did retrieval surface at least one of the expected
-  source documents for each case that specifies them.
-- **groundedness_accuracy** — did `grounded` match what the case expects
-  (true for answerable/compound/negative cases, false for off-topic/unsafe).
-- **pass_rate** — retrieval hit AND groundedness AND guardrail-flag
-  expectations all satisfied.
-- **P50/P70/P100 latency**, overall and per pipeline stage — this is what
-  satisfies the "submit P50/P70/P100 latency numbers... measured across a
-  reasonable number of test queries" requirement.
+Production runs on `Internal-Dev-Ubuntu` under `/opt/askdiq` behind the shared
+`et-platform-nginx-1` reverse proxy, with the shared `et-platform-postgres-1`
+database:
 
-Run it with:
+| Host | Serves |
+|---|---|
+| `https://askdiq.ethub.co` | `askdiq-api` (public website, API key) |
+| `https://askdiqui.ethub.co` | `askdiq-web` (admin console, SSO) |
 
-```bash
-cd backend
-python scripts/run_evaluation.py --json eval_report.json
-```
+Only committed `backend/` and `frontend/` source is shipped (built with
+`infra/build_kit.ps1`); the server owns its compose file, nginx conf and
+`.env` files. Follow [docs/deployment/deployment-guide.md](docs/deployment/deployment-guide.md)
+and [docs/deployment/environment-and-sso.md](docs/deployment/environment-and-sso.md).
 
-Most recent real run (13 cases, real Azure calls): **92.3% pass rate, 90%
-retrieval recall, 100% groundedness accuracy**; latency p50/p70/p100 (ms) —
-total 17826/18694/27349, retrieval 6383/7612/11952, llm 8073/8993/10558,
-guardrail_post 4113/4836/6157. The 200ms budget is now measured against
-retrieval + guardrails only, not the full pipeline (see Latency section) —
-though note even that redefined metric is still far over budget in this
-run, since real pgvector/rerank/Azure-embedding calls take seconds, not
-milliseconds. Reported honestly, not silently marked as met.
+## Documentation
 
-**Since that run**, three latency optimizations landed (`llm_reasoning_effort`
-tuned down, reranker preloaded at startup instead of lazily on the first
-request, groundedness checks reusing ingestion-time source embeddings
-instead of re-embedding every query) — live-measured steady-state is now
-closer to **llm ~4.2-4.9s, guardrail_post ~1.3-1.4s, total ~9.7-10s** per
-`/query`. `eval_report.json` hasn't been regenerated against these changes
-yet — re-run `scripts/run_evaluation.py` before quoting fresh official
-numbers.
-
-### Knowledge-base-wide RAG evaluation
-
-The harness also covers the full RAG evaluation checklist:
-
-- **Ingestion** (`app/evaluation/kb_eval.py`, `--kb` / `--kb-only` / `--kb-db`):
-  parsing accuracy, heading/table/list preservation, duplicate and
-  near-duplicate chunks, missing documents, chunk size/overlap, metadata
-  correctness, facts split across chunks, access-control metadata,
-  version/freshness, indexing and freshness delay. Needs no LLM calls.
-- **Retrieval**: Recall@K, Precision@K, Hit Rate@K, MRR, NDCG@K, context
-  coverage, noise ratio and noise sensitivity (pass rate with noisy vs clean
-  context).
-- **Answer** (`--judge`, `judge_extra.py`): claim-level groundedness,
-  correctness sub-scores, completeness, helpfulness/clarity, contradictions.
-- **Citations** (`quality.py`): precision, coverage, and quality (document,
-  section, chunk, current version, primary source). Returned sources are the
-  citations.
-- **Abstention** and **safety** case types (`dataset_extra.py`): not-in-corpus,
-  partial, ambiguous, contradictory, out-of-scope, real-time, no-permission;
-  prompt/indirect injection, PII, secrets, unauthorized documents.
-- **Robustness**: typo/short/long/acronym/synonym variants (`variant_of`),
-  `--repeat N` repeated questions, long conversation history; reports retrieval
-  stability, answer/citation consistency, contradiction rate, performance drop.
-- **Operational**: P50/P95/P99 for end-to-end, retrieval, reranking and LLM;
-  token volumes (tiktoken estimates); cost (`--price-in/--price-out`);
-  retrieval-failure, model-error and availability rates; throughput under
-  `--concurrency N`.
-
-Notes: the answer contradiction check without `--judge` is a numeric
-heuristic; "sensitivity to irrelevant context" is measured from naturally
-noisy retrievals rather than injected noise; access-control and version checks
-currently report the real gap (the ingested chunks carry no such metadata).
-
-## Latency & metrics
-
-`LatencyMiddleware` (`backend/app/core/middleware.py`) times every
-`POST /query` request end-to-end and persists a `LatencyRecord` per request,
-broken down by stage: `retrieval_ms` (embedding + pgvector recall + rerank +
-selection), `guardrail_pre_ms`, `llm_ms` (generation, including any
-groundedness-triggered retries), `guardrail_post_ms`. Every response also
-carries `X-Request-ID` / `X-Latency-MS` headers.
-
-`GET /metrics/latency` (auth required) reports three P50/P70/P100 views plus
-a per-stage breakdown:
-
-- `pipeline_ex_llm` — `guardrail_pre_ms + retrieval_ms + guardrail_post_ms`,
-  the only view checked against `Settings.latency_budget_ms` (default 200ms
-  — see `backend/app/core/config.py`), reported as `within_budget_pct`.
-- `end_to_end` — the full `/query` request (`total_ms`), informational only.
-- `llm` — the generation stage alone, informational only.
-
-A real LLM call regularly takes several seconds, so it's deliberately
-excluded from the budgeted metric rather than making the 200ms number
-meaningless (see Latency section below). The frontend's `(app)/metrics`
-page renders all three. Note: `embedding_ms` is captured in the schema/DB
-column but not currently split out from `retrieval_ms` — embedding happens
-inside the retrieval stage — so it will always read `null` today.
-
-## Security
-
-`.env` holds real Azure OpenAI and JWT secrets — never commit it (see the
-root [.gitignore](.gitignore), which covers both `backend/.env` and
-`frontend/.env.local`). Treat any key ever committed/pasted outside your
-local `.env`, or duplicated into `.env.example`, as compromised and rotate
-it.
+| Document | Content |
+|---|---|
+| [docs/plan.md](docs/plan.md) | Current plan: work in progress, open items, decisions, risks, completed work |
+| [docs/deployment/](docs/deployment/deployment-guide.md) | Deployment guide, runbook, environment and SSO, local Docker and auth contract |
+| [docs/technical/](docs/technical/README.md) | Architecture, repository guide, API, database, configuration, security, operations, development, website integration, frontend contracts and audits |
+| [docs/walkthroughs/](docs/walkthroughs/) | One walkthrough per console page |
+| [docs/architecture/index.html](docs/architecture/index.html) | Interactive architecture diagram |
+| [docs/archive/](docs/archive/) | Original phase plans (kept for the section ids cited in code comments) |

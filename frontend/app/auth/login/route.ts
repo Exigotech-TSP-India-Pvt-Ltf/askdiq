@@ -1,4 +1,4 @@
-// "Sign in with Microsoft" hand-off (DEPLOYMENT.md frontend contract, steps 1-2).
+// "Sign in with Microsoft" hand-off (docs/deployment/docker-and-auth-contract.md frontend contract, steps 1-2).
 // Asks the backend for the authorize URL, binds the browser to its `state`
 // with an httpOnly cookie (login-CSRF defence), remembers a validated `next`
 // and redirects to the identity provider.

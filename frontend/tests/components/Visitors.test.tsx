@@ -1,6 +1,6 @@
 /**
  * F3.2: Visitors list and Visitor detail. Mocked fetch per
- * docs/contracts/entity-stats.md; in-memory router for URL round-trips.
+ * docs/technical/frontend/contracts/entity-stats.md; in-memory router for URL round-trips.
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

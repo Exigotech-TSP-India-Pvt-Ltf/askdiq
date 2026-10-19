@@ -1,7 +1,16 @@
-# DeployIQ — Deployment Guide (Docker)
+# Local Docker stack, auth contract and scale-out reference
 
-Running the full stack (Postgres/pgvector, FastAPI backend, Next.js
-frontend) with Docker Compose.
+Three things live here:
+
+1. Running the full stack (Postgres/pgvector, FastAPI backend, Next.js
+   frontend) locally with Docker Compose (`infra/docker-compose.yml`).
+2. The proxy and sign-in contract between the Next.js server and the API
+   (the "frontend contract" steps cited by the auth route handlers).
+3. The optional two-replica scale-out reference (`infra/scale-out/`).
+
+Production deployment is in [deployment-guide.md](deployment-guide.md);
+production `.env` values and Entra ID SSO are in
+[environment-and-sso.md](environment-and-sso.md).
 
 ## Prerequisites
 
@@ -12,12 +21,12 @@ frontend) with Docker Compose.
 
 ## 1. Configure secrets
 
-`docker-compose.yml` loads both files via `env_file` — fill in before
+`infra/docker-compose.yml` loads both files via `env_file` — fill in before
 `docker compose up`:
 
 | File | Required variables |
 |---|---|
-| `backend/.env` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`, `AZURE_DEPLOYMENT_NAME`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`, `API_KEY_NAME`, `SESSION_SECRET`, `ENTRA_*` (or `AUTH_DEV_MOCK=true` with `ENV=development`) |
+| `backend/.env` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`, `AZURE_DEPLOYMENT_NAME`, `EMBEDDING_MODEL` (the embedding deployment name), `API_KEY_NAME`, `SESSION_SECRET`, `ENTRA_*` (or `AUTH_DEV_MOCK=true` with `ENV=development`) |
 | `frontend/.env.local` | `API_KEY` (must match `backend/.env`'s `API_KEY_NAME`) |
 
 `DATABASE_URL` / `API_BASE_URL` in these files are only used for
@@ -26,18 +35,20 @@ and `backend` services respectively.
 
 ## 2. Build and start the stack
 
+From the repository root:
+
 ```bash
-docker compose up --build
+docker compose -f infra/docker-compose.yml up --build
 ```
 
-Services defined in [docker-compose.yml](docker-compose.yml):
+Services defined in [infra/docker-compose.yml](../../infra/docker-compose.yml):
 
 - `postgres` — `pgvector/pgvector:pg18`, exposed on host port `5433`, data
   persisted in the `pgdata` volume, healthchecked via `pg_isready`.
-- `backend` — built from [backend/Dockerfile](backend/Dockerfile), loads
+- `backend` — built from [backend/Dockerfile](../../backend/Dockerfile), loads
   `backend/.env` via `env_file`, with `DATABASE_URL` overridden to target
   the `postgres` service over the compose network. Exposed on `8000`.
-- `frontend` — built from [frontend/Dockerfile](frontend/Dockerfile), loads
+- `frontend` — built from [frontend/Dockerfile](../../frontend/Dockerfile), loads
   `frontend/.env.local` via `env_file`, with `API_BASE_URL` overridden to
   `http://backend:8000`. Exposed on `3000`.
 
@@ -47,19 +58,19 @@ For this local stack (`backend/Dockerfile`) they are not baked into the
 image's `CMD`, so container restarts never silently re-run them. The
 production image (`backend/Dockerfile.prod`) runs them automatically in its
 entrypoint instead (migrations under an advisory lock, idempotent ingestion;
-see [deploy/RUNBOOK.md](deploy/RUNBOOK.md)). Locally, run once the `backend`
+see [runbook.md](runbook.md)). Locally, run once the `backend`
 container is healthy:
 
 ```bash
 # 1. Apply database migrations (including d5e6f7a8b9c0 for usage outcome tracking)
-docker compose exec backend alembic upgrade head
+docker compose -f infra/docker-compose.yml exec backend alembic upgrade head
 
 # 2. Run idempotent usage accounting backfill for legacy messages
-docker compose exec backend python scripts/backfill_usage_accounting.py --dry-run
-docker compose exec backend python scripts/backfill_usage_accounting.py --apply
+docker compose -f infra/docker-compose.yml exec backend python scripts/backfill_usage_accounting.py --dry-run
+docker compose -f infra/docker-compose.yml exec backend python scripts/backfill_usage_accounting.py --apply
 
 # 3. Canonical Markdown ingestion (strictly accepts .md files; non-.md files are rejected)
-docker compose exec backend python scripts/ingest_real_docs.py
+docker compose -f infra/docker-compose.yml exec backend python scripts/ingest_real_docs.py
 ```
 
 Re-run `ingest_real_docs.py` any time `backend/data/real_docs/*.md` changes
@@ -71,15 +82,15 @@ Configure the following variables in `backend/.env` for production deployments:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRUST_PROXY_HEADERS` | `true` in prod / `false` in dev | Mandatory when running behind Nginx, Traefik, or Azure App Gateway so `X-Forwarded-For` is correctly resolved for Audience Classification. |
-| `TEST_IPS` | `127.0.0.1,::1,localhost` | Initial comma-separated list of test IPs / CIDR blocks (e.g. `10.0.0.0/8,192.168.1.0/24`). Can be dynamically overridden via Admin Console. |
-| `AUDIENCE_CACHE_TTL_SECONDS` | `15` | In-memory cache TTL for audience classification counts. |
-| `USAGE_SUMMARY_CACHE_TTL_SECONDS` | `30` | In-memory cache TTL for `/admin/usage/summary` metrics. |
-| `USAGE_MAX_RANGE_DAYS` | `90` | Maximum date range allowed for usage summaries. |
-| `PRICING_PRICE_EMBED_PER_MILLION` | `0.02` | Rate card for query and guardrail embedding tokens ($/1M). |
-| `PRICING_PRICE_INPUT_PER_MILLION` | `0.25` | Rate card for prompt input tokens ($/1M). |
-| `PRICING_PRICE_OUTPUT_PER_MILLION` | `2.00` | Rate card for visible and reasoning completion tokens ($/1M). |
-| `PRICING_PRICE_CACHED_PER_MILLION` | `0.0625` | Rate card for cached prompt tokens ($/1M). |
+| `TRUST_PROXY_HEADERS` | `false` (set `true` in production) | Mandatory when running behind Nginx, Traefik, or Azure App Gateway so `X-Forwarded-For` is correctly resolved for Audience Classification. |
+| `DEV_TEST_IPS` | `127.0.0.1,::1,localhost,0.0.0.0` | Initial comma-separated list of test IPs / CIDR blocks (e.g. `10.0.0.0/8,192.168.1.0/24`). Can be dynamically overridden via Admin Console. |
+| `AUDIENCE_CACHE_TTL_SECONDS` | `30` | In-memory cache TTL for audience classification counts. |
+| `USAGE_SUMMARY_CACHE_TTL_SECONDS` | `15` | In-memory cache TTL for `/admin/usage/summary` metrics. |
+| `USAGE_MAX_RANGE_DAYS` | `400` | Maximum date range allowed for usage summaries. |
+| `PRICE_EMBED_PER_MILLION` | `0.02` | Rate card for query and guardrail embedding tokens ($/1M). |
+| `PRICE_PROMPT_PER_MILLION` | `0.25` | Rate card for prompt input tokens ($/1M). |
+| `PRICE_OUTPUT_PER_MILLION` | `2.00` | Rate card for visible and reasoning completion tokens ($/1M). |
+| `PRICE_CACHED_PER_MILLION` | `0.125` | Rate card for cached prompt tokens ($/1M). |
 
 ### Proxy contract (backend side, SSO)
 
@@ -139,34 +150,13 @@ standalone (`venv\Scripts\python.exe scripts\smoke_journeys.py --base-url
 http://localhost:3000`) or call `run_signin_journeys()` from
 `scripts/smoke_e2e.py` after its health checks.
 
-## Entra ID go-live checklist (owner)
+## Entra ID go-live
 
-Nothing else changes in code: real Entra is switched on by `.env` alone.
-
-1. **Register the app in Entra ID** (single tenant). Add the Web redirect URI
-   `http://localhost:3000/auth/callback` (and the production HTTPS URL, e.g.
-   `https://askdiq.example.com/auth/callback`). Create a client secret. Grant
-   the delegated permissions `openid`, `profile` and `email`. Optionally add
-   the `email` optional claim to the ID token (otherwise `preferred_username`
-   is used).
-2. **Fill in `backend/.env`** (copy from `backend/.env.example`; never commit
-   it): `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`,
-   `ENTRA_REDIRECT_URI` (must equal `APP_BASE_URL` + `/auth/callback`),
-   `SESSION_SECRET` (`python -c "import secrets; print(secrets.token_hex(32))"`),
-   `SUPERADMIN_EMAILS` (your own email), `ACCESS_CONTACT_EMAIL`, and
-   `AUTH_DEV_MOCK=false`. Fill in `frontend/.env.local`: `APP_BASE_URL`,
-   `SESSION_COOKIE_NAME` (same as the backend) and `SESSION_COOKIE_SECURE`
-   (`true` over HTTPS).
-3. **Preflight:** `cd backend` then
-   `venv\Scripts\python.exe scripts\verify_sso_config.py`. Every check must
-   PASS (it prints check names only, never values).
-4. **Sign in as a superadmin:** start the backend and `npm run dev` (port
-   3000), open `http://localhost:3000`, and sign in with an email from
-   `SUPERADMIN_EMAILS`. You should land on the dashboard.
-5. **Approve a second account:** sign in with another account (for example in
-   a private window). It should get Chat plus the Access Required page.
-   Request access, approve it in User Management with a role, and the second
-   account should reach the dashboard without signing in again.
+Production values, the exact redirect URIs to register in Entra ID, secret
+generation, the verification checklist and SSO troubleshooting are in
+[environment-and-sso.md](environment-and-sso.md). Locally,
+`venv\Scripts\python.exe scripts\verify_sso_config.py` (from `backend/`)
+checks the configuration without printing any value.
 
 ## 5. API Deprecations
 
@@ -182,12 +172,13 @@ Nothing else changes in code: real Entra is switched on by `.env` alone.
 
 - Backend health: `http://localhost:8000/health`
 - Frontend: `http://localhost:3000`
-- `docker compose logs -f backend` — confirm no startup errors
+- `docker compose -f infra/docker-compose.yml logs -f backend` — confirm no startup errors
 
 ## 7. Production topology: replicas, workers and pool sizing
 
-[docker-compose.prod.yml](docker-compose.prod.yml) runs three containers from
-the `askdiq-api:latest` image ([backend/Dockerfile.prod](backend/Dockerfile.prod)):
+[infra/scale-out/docker-compose.yml](../../infra/scale-out/docker-compose.yml) (optional; production
+today runs a single `askdiq-api`, see the deployment guide) runs three containers from
+the `askdiq-api:latest` image ([backend/Dockerfile.prod](../../backend/Dockerfile.prod)):
 
 | Service | Container | Runs | Notes |
 |---|---|---|---|
@@ -195,7 +186,7 @@ the `askdiq-api:latest` image ([backend/Dockerfile.prod](backend/Dockerfile.prod
 | `api-2` | `askdiq-api-2` | same | `/health` healthcheck, host port `127.0.0.1:5501` |
 | `worker` | `askdiq-worker` | `python -m app.jobs.worker` | Postgres job queue (`SKIP LOCKED`); no HTTP |
 
-- **Load balancing:** nginx ([askdiq.conf](askdiq.conf)) proxies to
+- **Load balancing:** nginx ([infra/scale-out/askdiq-api.conf](../../infra/scale-out/askdiq-api.conf)) proxies to
   `upstream askdiq_api` (`least_conn`, `max_fails=3 fail_timeout=10s`,
   `keepalive 32`) and fails over on `error timeout http_502 http_503`. POSTs
   are never replayed once sent. SSE paths (`.../stream`, `.../events`) are
@@ -211,7 +202,7 @@ the `askdiq-api:latest` image ([backend/Dockerfile.prod](backend/Dockerfile.prod
 - **Overrides:** `WEB_CONCURRENCY`, `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`,
   `WORKER_DB_POOL_SIZE` and `WORKER_DB_MAX_OVERFLOW` are set in the compose
   file's `environment:` (which wins over `backend/.env`). Change them from the
-  shell or a project-root `.env` read by compose interpolation.
+  shell or an `infra/scale-out/.env` file read by compose interpolation.
 
 ### Pool sizing rule
 
@@ -228,10 +219,10 @@ workers, lower `DB_POOL_SIZE` or raise `max_connections`.
 ### Rollout
 
 ```bash
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml run --rm api-1 alembic upgrade head
-docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml ps        # api-1 / api-2 "healthy"
+docker compose -f infra/scale-out/docker-compose.yml build
+docker compose -f infra/scale-out/docker-compose.yml run --rm api-1 alembic upgrade head
+docker compose -f infra/scale-out/docker-compose.yml up -d
+docker compose -f infra/scale-out/docker-compose.yml ps        # api-1 / api-2 "healthy"
 nginx -t && nginx -s reload                         # inside the et-platform nginx container
 ```
 
