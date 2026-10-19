@@ -80,7 +80,7 @@ export const METRIC_DEFINITIONS: readonly { term: string; definition: string }[]
   {
     term: "Probable person",
     definition:
-      "One signed-in account (e-mail, case-insensitive), the same rule as active visitors on the Dashboard. Sessions without a usable sign-in are grouped on the client IP they came from. P01, P02 rank people by their first conversation and stay the same under every filter; click a person to open the real visitor records behind them.",
+      "One signed-in account (e-mail, case-insensitive), the same rule as active visitors on the Dashboard. Sessions without a usable sign-in are grouped on the client IP they came from. P01, P02 rank people by their first conversation and stay the same under every filter; click a person to open the real visitor records behind them. On Overview it includes test traffic; the Dashboard's Users count always leaves test IPs out, so compare the two on the Users audience.",
   },
   {
     term: "Hours and days",
