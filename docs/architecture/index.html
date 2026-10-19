@@ -342,7 +342,7 @@ footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex
 </main>
 
 <footer>
-  <span>Sources: backend/app, frontend/app, alembic (23 migrations, head 254857d10a20), docker and nginx files, newplan.md rev 3.3, planchanges4.md, and the seven in-flight branches.</span>
+  <span>Sources: backend/app, frontend/app, alembic (23 migrations, head 254857d10a20), docker and nginx files, docs/archive/newplan.md rev 3.3, docs/archive/planchanges4.md, and the seven in-flight branches.</span>
   <span>Keyboard: <span class="mono">Tab</span> through nodes, <span class="mono">Enter</span> to inspect, <span class="mono">Esc</span> to close, <span class="mono">1–6</span> views, <span class="mono">S</span> security, <span class="mono">+ − 0</span> zoom.</span>
 </footer>
 
@@ -419,23 +419,23 @@ def("api", { name: "askdiq-api", kind: "container", status: "live", sub: "FastAP
   sec: { A02: "Security headers on every response (preview); /docs and /openapi.json off when ENV=production; explicit CORS allow-lists.", A10: "Global handlers return problem+json with request_id and no internals; supervised background tasks drained on shutdown." },
   rel: ["nginx", "postgres", "aoai", "prestart", "worker", "p_validate", "d_authdeps"] });
 def("nginx", { name: "et-platform-nginx-1", kind: "container", status: "live", sub: "TLS · askdiq.ethub.co",
-  desc: "The shared platform reverse proxy. Terminates TLS for askdiq.ethub.co and proxies to the API on port 8000; stream and events locations turn buffering off for SSE. A second server block for askdiq-admin.ethub.co is prepared for the dashboard container. The repo template askdiq.conf still lists a two-replica upstream (askdiq-api-1/-2).",
+  desc: "The shared platform reverse proxy. Terminates TLS for askdiq.ethub.co and proxies to the API on port 8000; stream and events locations turn buffering off for SSE. A second server block for askdiq-admin.ethub.co is prepared for the dashboard container. The repo template infra/scale-out/askdiq-api.conf still lists a two-replica upstream (askdiq-api-1/-2).",
   tech: ["nginx", "Let's Encrypt"],
-  files: ["askdiq.conf", "deploy/nginx/askdiq-admin.conf.example (branch)"],
+  files: ["infra/scale-out/askdiq-api.conf", "infra/nginx/askdiq-admin.conf.example (branch)"],
   endpoints: ["https://askdiq.ethub.co → askdiq-api:8000", "https://askdiq-admin.ethub.co → askdiq-web:3000 (planned)"],
   sec: { A02: "server_tokens off; HSTS, nosniff, Referrer-Policy and Permissions-Policy at server level.", A04: "TLS only at the edge; port 80 redirects to 443." },
   rel: ["api", "web", "website"] });
 def("prestart", { name: "Startup sequence", kind: "module", status: "progress", branch: "chore/prod-deploy-fullstack", sub: "docker-entrypoint.sh → prestart.py",
   desc: "Runs before uvicorn only when the command contains uvicorn. Waits for Postgres, runs alembic upgrade head while holding pg_try_advisory_lock so only one container migrates, then runs idempotent ingestion (content hash skips unchanged documents; skipped if another replica holds the lock), then the optional usage backfill, then execs uvicorn main:app with WEB_CONCURRENCY workers. A failed migration stops the container.",
   tech: ["sh", "Alembic", "Postgres advisory lock"],
-  files: ["backend/docker-entrypoint.sh", "backend/scripts/prestart.py", "backend/Dockerfile.prod", "deploy/RUNBOOK.md"],
+  files: ["backend/docker-entrypoint.sh", "backend/scripts/prestart.py", "backend/Dockerfile.prod", "docs/deployment/runbook.md"],
   env: ["RUN_MIGRATIONS=true", "RUN_INGESTION=true", "RUN_USAGE_BACKFILL=false", "DB_WAIT_RETRIES=30"],
   sec: { A08: "Single migrator under an advisory lock; ingestion is idempotent by content hash.", A10: "Migration failure is fatal, so a half-migrated API never serves traffic." },
   rel: ["api", "postgres", "i_hash", "i_scripts"] });
 def("web", { name: "askdiq-web", kind: "container", status: "planned", branch: "chore/prod-deploy-fullstack", sub: "Next.js standalone · no host port",
   desc: "The dashboard as its own container: Next.js standalone on node:20-alpine, running as user node, port 3000 reachable only on askdiq_internal. nginx serves it at askdiq-admin.ethub.co; the API stays on askdiq.ethub.co. It talks to the API by service name. No NEXT_PUBLIC_ variables are used.",
   tech: ["Next.js (App Router)", "Node 20", "Docker multi-stage"],
-  files: ["frontend/Dockerfile.prod", "deploy/docker-compose.prod.example.yml", "deploy/frontend.env.prod.example"],
+  files: ["frontend/Dockerfile.prod", "infra/docker-compose.prod.example.yml", "infra/frontend.env.prod.example"],
   env: ["API_BASE_URL=http://askdiq-api:8000", "API_KEY (= backend API_KEY_NAME)", "APP_BASE_URL=https://askdiq-admin.ethub.co", "SESSION_COOKIE_NAME=askdiq_session", "SESSION_COOKIE_SECURE=true", "AUTH_DEV_MOCK=false"],
   sec: { A02: "No published host port; strict headers from next.config.js.", A04: "Secure, httpOnly, SameSite=Lax session cookie in production." },
   rel: ["dashboard", "nginx", "api", "d_proxy"] });

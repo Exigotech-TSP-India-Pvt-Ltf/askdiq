@@ -303,7 +303,7 @@ Not found: "Visitor not found", "The requested visitor could not be found." with
 | GET | `/admin/usage/audience-counts` | `dashboard:read` | Audience tab tooltips |
 | GET | `/admin/usage/queries/{request_id}` | `dashboard:read` | Query inspector drawer (see `usage-cost.md`) |
 
-The browser calls these through `/api/proxy/...` (`frontend/lib/entity-stats-api.ts`, `frontend/lib/api.ts`). The contract is `frontend/docs/contracts/entity-stats.md`.
+The browser calls these through `/api/proxy/...` (`frontend/lib/entity-stats-api.ts`, `frontend/lib/api.ts`). The contract is `docs/technical/frontend/contracts/entity-stats.md`.
 
 ## Related pages
 
@@ -322,7 +322,7 @@ The browser calls these through `/api/proxy/...` (`frontend/lib/entity-stats-api
 - **Scale**: `/admin/users` loads every IP group and the per-IP counts, then filters and pages in Python. `limit` has no server maximum.
 - **API bug**: sending only one of `weekday` / `hour` should return 422. The handler's `status` query parameter shadows FastAPI's `status` module, so that path raises an error (500) instead. The UI always sends both.
 - **Mark as test IP** updates the row optimistically but only invalidates the stats query. On the **Users** audience the row stays visible (with a Test badge) until the list refetches.
-- **Contract drift** (`frontend/docs/contracts/entity-stats.md`): it states every timestamp carries a UTC offset. That holds for the new stats and timeline endpoints but not for `GET /admin/users` and `GET /admin/users/{id}`.
+- **Contract drift** (`docs/technical/frontend/contracts/entity-stats.md`): it states every timestamp carries a UTC offset. That holds for the new stats and timeline endpoints but not for `GET /admin/users` and `GET /admin/users/{id}`.
 - Coming in branch `fix/shell-nav-logout-theme-dates`:
   - **Active now** becomes **Active visitors now**, "Last 5 minutes", with an info tooltip. The definition: distinct end users with at least one **query** in the last 5 minutes. The identity is the client id / signed-in user, otherwise the IP, and test IPs are always excluded except on Testing (`backend/app/dashboard/active_visitors.py`).
   - A new **Active visitors** panel, "As of now, independent of the date range", appears under the KPI cards with **Daily active visitors**, **Weekly active visitors** and **Monthly active visitors** (last 24 h / 7 d / 30 d), each with "+x % vs previous ...".

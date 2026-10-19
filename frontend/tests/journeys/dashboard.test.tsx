@@ -1,6 +1,6 @@
 /**
  * Dashboard journey (planchanges4 F3.1): the interactive dashboard against
- * mocked responses that follow docs/contracts/dashboard-aggregations.md, and
+ * mocked responses that follow docs/technical/frontend/contracts/dashboard-aggregations.md, and
  * against today's backend shape (new fields absent).
  */
 import React from "react";

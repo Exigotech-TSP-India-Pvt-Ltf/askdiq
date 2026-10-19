@@ -3,7 +3,7 @@
 Scope: the layout of the AskDIQ repository as of `preview/view` (9115c45): an annotated directory tree and the
 purpose of every top-level folder and important file, backend module, script, test group, frontend route,
 component folder and library file. Files that exist only on in-flight branches are marked
-**In progress (branch `X`)**; see [In-flight work](11-in-flight-work.md) for their status.
+**In progress (branch `X`)**; current status of every work item is in [the plan](../plan.md).
 
 Contents
 
@@ -54,7 +54,7 @@ askdiq/
 │   ├── scripts/                  CLI tools: ingest, seed, backfill, eval, load, smoke
 │   ├── tests/                    pytest suite (+ helpers, fixtures/)
 │   ├── Dockerfile, Dockerfile.prod, .dockerignore
-│   ├── .env.example, .env.prod.example
+│   ├── .env.example
 │   ├── alembic.ini, pyproject.toml (ruff + pylint), pytest.ini, requirements.txt
 ├── frontend/                     Next.js 14 admin dashboard (App Router)
 │   ├── app/                      routes, layouts, route handlers (proxy, auth)
@@ -62,32 +62,34 @@ askdiq/
 │   ├── lib/                      API clients, contexts, hooks, pure helpers; lib/server/ = server-only
 │   ├── tests/                    vitest + Testing Library (components, lib, journeys)
 │   ├── scripts/audit-gate.mjs    npm audit gate
-│   ├── docs/                     API contracts and UI audits
 │   ├── public/                   static assets
 │   ├── middleware.ts             CSP nonce + signed-out redirect
 │   ├── Dockerfile, .dockerignore, .env.local.example, .eslintrc.json, .npmrc
 │   ├── next.config.js, tailwind.config.ts, postcss.config.js, tsconfig.json, vitest.config.ts
 │   └── package.json, package-lock.json
-├── docs/technical/               this documentation set
-├── README.md, DEPLOYMENT.md, PREVIEW_README.md, PLAN.md, newplan.md, planchanges4.md
-├── askdiq.conf                   nginx server block for the prod reverse proxy
-├── docker-compose.yml            local full stack (postgres:5433, backend:8000, frontend:3000)
-└── docker-compose.prod.yml       backend-only prod compose (see warning below)
+├── docs/                         all documentation (plan.md, deployment/, technical/, walkthroughs/, archive/)
+├── infra/                        deploy kit, server scripts, compose files, nginx confs, prod env templates
+│   ├── docker-compose.yml        local full stack (postgres:5433, backend:8000, frontend:3000)
+│   ├── docker-compose.prod.example.yml  reference for the server-owned prod compose
+│   ├── scale-out/                optional 2-replica compose + nginx reference (not shipped)
+│   ├── nginx/, compose/, server/ dashboard nginx blocks, compose block, deploy.sh / rollback.sh
+│   └── build_kit.ps1, askdiq-autoheal.sh, backend.env.prod.example, frontend.env.prod.example
+└── README.md                     project overview and quick start
 ```
 
 ## Root files
 
 | File | Purpose |
 |---|---|
-| `README.md` | Original project README: architecture, quick start, evaluation, latency, security notes. Partly stale (describes the pre-SSO bearer-token auth, `register` page and "tests need no DB"); prefer [Development](09-development.md). |
-| `DEPLOYMENT.md` | Docker deployment guide and the frontend/backend SSO "frontend contract" (steps referenced by the auth route handlers). |
-| `PREVIEW_README.md` | How to run the combined local preview (`preview/all` worktree): env files, migration warning, start, sign in, what to check. Local only. |
-| `PLAN.md` | Original RAG backend hardening and evaluation plan (phases 0-11). Historical. |
-| `newplan.md` | Admin console revamp analysis and plan (rev 3.x): OWASP controls (s12), concurrency/performance (s13), white-labelling (s14), UI/UX audit (s15), CI/PR workflow (s16). Plans describe intent; code is the truth. |
-| `planchanges4.md` | Phased execution checklist for `newplan.md` (backend B0-B7, frontend F0-F8), PR register and OWASP matrix. |
-| `askdiq.conf` | nginx config for the `et-platform-nginx-1` container (prod reverse proxy for askdiq.ethub.co). See [Deployment](08-deployment-operations.md). |
-| `docker-compose.yml` | Local stack: `pgvector/pgvector:pg18` on host port 5433 (db `ragdb`), backend on 8000 (`backend/.env`, `DATABASE_URL` overridden to the compose network), frontend on 3000 (`frontend/.env.local`, `API_BASE_URL=http://backend:8000`). |
-| `docker-compose.prod.yml` | Backend-only prod compose with a placeholder network name. Never ship it in a deploy package (cause of the 2026-10-16 incident); see [Deployment](08-deployment-operations.md). |
+| `README.md` | System overview, architecture, features, local development, testing/CI and links to all docs. |
+| `docs/deployment/docker-and-auth-contract.md` | Docker deployment guide and the frontend/backend SSO "frontend contract" (steps referenced by the auth route handlers). |
+| `docs/plan.md` | The single current plan: status of every work item, open items, risks. |
+| `docs/archive/rag-hardening-plan.md` | Original RAG backend hardening and evaluation plan (phases 0-11). Historical. |
+| `docs/archive/newplan.md` | Admin console revamp analysis and plan (rev 3.x): OWASP controls (s12), concurrency/performance (s13), white-labelling (s14), UI/UX audit (s15), CI/PR workflow (s16). Plans describe intent; code is the truth. |
+| `docs/archive/planchanges4.md` | Phased execution checklist for `docs/archive/newplan.md` (backend B0-B7, frontend F0-F8), PR register and OWASP matrix. |
+| `infra/scale-out/askdiq-api.conf` | Reference nginx config for a two-replica API behind `et-platform-nginx-1` (askdiq.ethub.co). Not the live conf. See [Deployment](08-deployment-operations.md). |
+| `infra/docker-compose.yml` | Local stack (`docker compose -f infra/docker-compose.yml up --build`): `pgvector/pgvector:pg18` on host port 5433 (db `ragdb`), backend on 8000 (`backend/.env`, `DATABASE_URL` overridden to the compose network), frontend on 3000 (`frontend/.env.local`, `API_BASE_URL=http://backend:8000`). |
+| `infra/scale-out/docker-compose.yml` | Optional scale-out compose (api-1, api-2, worker) with a placeholder network name. Never ship it in a deploy package (cause of the 2026-10-16 incident); see [Deployment](08-deployment-operations.md). |
 | `.gitignore` | Ignores env files, venvs, caches, build output. |
 
 ## Backend
@@ -104,7 +106,7 @@ askdiq/
 | `backend/Dockerfile` | Dev/compose image. |
 | `backend/Dockerfile.prod` | Production image `askdiq-api` (see [Deployment](08-deployment-operations.md)). |
 | `backend/.env.example` | Every backend env var with placeholder values. See [Configuration](06-configuration.md). |
-| `backend/.env.prod.example` | Production env template. |
+| `infra/backend.env.prod.example` | Production env template. |
 
 ### `backend/app/api/routes/`
 
@@ -258,7 +260,6 @@ Run from `backend/` with the venv interpreter.
 
 | Script | Purpose |
 |---|---|
-| `_hitl_repro.py` | Ad-hoc repro script for the negative-answer post-check against the live DB (no docstring; Unverified purpose beyond that). |
 | `backfill_evaluation_records.py` | Backfill `evaluation_records` from historical `chat_messages`. |
 | `backfill_turn_insights.py` | Queue insights classification for unlabelled chat history. |
 | `backfill_usage_accounting.py` | One-time idempotent backfill of legacy usage accounting (dry run; `--apply`). |
@@ -410,7 +411,7 @@ and `perf` (timing gates; CI runs them in a separate step without coverage). `co
 | `server/auth-cookies.ts` | Session, OIDC state and `next` cookies. |
 | `server/contact.ts` | `ACCESS_CONTACT_EMAIL` for pre-session pages. |
 
-### `frontend/tests/`, `frontend/scripts/`, `frontend/docs/`
+### `frontend/tests/`, `frontend/scripts/`, frontend docs
 
 | Path | Purpose |
 |---|---|
@@ -420,8 +421,8 @@ and `perf` (timing gates; CI runs them in a separate step without coverage). `co
 | `tests/journeys/` | Multi-step user journeys in jsdom (auth, navigation, dashboard, documents, feedback, governance, analytics parity, settings, user management). |
 | `tests/helpers/`, `tests/fixtures/` | Router mocks, auth and entity harnesses, a fake User Management server; dashboard and insights fixtures. |
 | `scripts/audit-gate.mjs` | `npm audit --omit=dev` gate: fails on high/critical advisories not in `.github/audit/npm-audit-allowlist.json` or on expired entries. |
-| `docs/contracts/dashboard-aggregations.md`, `entity-stats.md` | API contracts for the dashboard and entity pages. |
-| `docs/interaction-audit.md`, `theme-audit.md` | Click/interaction audit table; theme audit. |
+| `docs/technical/frontend/contracts/dashboard-aggregations.md`, `entity-stats.md` | API contracts for the dashboard and entity pages. |
+| `docs/technical/frontend/interaction-audit.md`, `theme-audit.md` | Click/interaction audit table; theme audit. |
 
 ## Repository tooling
 
@@ -447,5 +448,5 @@ worktree status.
 | `feat/realistic-demo-data` | `backend/scripts/seed_realistic_activity.py`, `backend/scripts/seed_realistic_corpus.py`, `backend/tests/test_live_missing_fields.py`, `test_seed_realistic_activity.py`, `test_seed_realistic_db.py` |
 | `feat/askdiq-chat-widget` | `frontend/components/askdiq/` (`AskDiqDrawer`, `AskDiqLauncher`, `AskDiqMascot`), `frontend/components/chat/ChatConversation.tsx`, `SourceChips.tsx`, `use-reported-action.ts`, `frontend/lib/askdiq-widget.ts`, `frontend/public/brand/askdiq-mascot*.{png,webp}`, `frontend/tests/components/AskDiqWidget.test.tsx` |
 | `fix/shell-nav-logout-theme-dates` | `frontend/app/auth/logout/route.ts` (sign-out that always clears the cookie), `backend/app/dashboard/active_visitors.py` (DAU/WAU/MAU), `frontend/components/admin/ActiveVisitorsPanel.tsx`, `frontend/components/ui/InfoTip.tsx`, `RelativeTime.tsx`, `frontend/lib/active-visitors.ts`, tests `test_active_visitors.py`, `ActiveVisitors.test.tsx`, `RelativeTime.test.tsx`, `time.test.ts` |
-| `chore/prod-deploy-fullstack` | `deploy/` (`RUNBOOK.md`, `build_kit.ps1`, `docker-compose.prod.example.yml`, `frontend.env.prod.example`, `nginx/askdiq-admin.conf.example`), `backend/docker-entrypoint.sh`, `backend/scripts/prestart.py`, `frontend/Dockerfile.prod` |
+| `chore/prod-deploy-fullstack` | `deploy/` (now `infra/`; `RUNBOOK.md` now `docs/deployment/runbook.md`, `build_kit.ps1`, `docker-compose.prod.example.yml`, `frontend.env.prod.example`, `nginx/askdiq-admin.conf.example`), `backend/docker-entrypoint.sh`, `backend/scripts/prestart.py`, `frontend/Dockerfile.prod` |
 | `hotfix/query-filters-ip-ingest` (main-based, live in prod) | `backend/tests/test_query_hardening.py` (other changes modify existing files) |

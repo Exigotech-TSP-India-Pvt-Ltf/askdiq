@@ -1,12 +1,13 @@
 # AskDIQ production deployment guide (API + admin dashboard)
 
 Copy-paste guide for deploying `askdiq-api` (FastAPI) and `askdiq-web`
-(Next.js 14 dashboard) to `Internal-Dev-Ubuntu`. Every command is meant to be
+(Next.js 14 dashboard) to `Internal-Dev-Ubuntu`. Every `.env` value and the
+Entra ID (SSO) setup are explained in [environment-and-sso.md](environment-and-sso.md). Every command is meant to be
 pasted as is, except the placeholders below.
 
 | Placeholder | Meaning |
 |---|---|
-| `<DASHBOARD_DOMAIN>` | Dashboard host name, not decided yet (e.g. `askdiq-admin.ethub.co`). Used everywhere below. |
+| `askdiqui.ethub.co` | Dashboard host name (decided). Older notes call it `<DASHBOARD_DOMAIN>`; the nginx template `infra/nginx/askdiq-admin.append.conf` still uses that placeholder (replaced by `sed` in 1b). |
 | `<public site key>` | The API key the public website sends (`API_KEY_NAME` in the backend `.env`). Never paste it into a ticket or chat. |
 | `<release-branch>` | The git branch/commit being released. |
 
@@ -41,7 +42,7 @@ Golden rules (the 2026-10-16 outage came from breaking them):
 | Domain | Served by | Who calls it |
 |---|---|---|
 | `https://askdiq.ethub.co` | nginx -> `askdiq-api:8000` (existing, unchanged) | public website (API key), integrations |
-| `https://<DASHBOARD_DOMAIN>` | nginx -> `askdiq-web:3000` (new) | browsers (SSO users) |
+| `https://askdiqui.ethub.co` | nginx -> `askdiq-web:3000` (new) | browsers (SSO users) |
 
 Request path for the dashboard: browser -> nginx (TLS) -> `askdiq-web:3000`
 -> (server-to-server, `X-API-Key` + session) -> `askdiq-api:8000` -> Postgres.
@@ -81,12 +82,12 @@ Do these before the first dashboard deploy. Later deploys skip this section.
 
 - [ ] **Release blocker check.** The public website calls `/query` with the
       API key only. This must return `200` before you start (section 4.3).
-- [ ] **DNS:** an A record `<DASHBOARD_DOMAIN>` -> the same public IP as
-      `askdiq.ethub.co`. Check: `dig +short <DASHBOARD_DOMAIN>`.
+- [ ] **DNS:** an A record `askdiqui.ethub.co` -> the same public IP as
+      `askdiq.ethub.co`. Check: `dig +short askdiqui.ethub.co`.
 - [ ] **nginx + certificate:** append the server blocks to the existing
       askdiq conf and issue the certificate (steps 1a-1c below).
 - [ ] **Entra redirect URI** (same app registration, same client id): add
-      `https://<DASHBOARD_DOMAIN>/api/auth/callback/microsoft-entra-id` to
+      `https://askdiqui.ethub.co/api/auth/callback/microsoft-entra-id` to
       **Authentication > Web > Redirect URIs**.
 - [ ] **Backend `.env` values** (step 1d).
 - [ ] **Frontend `.env` values** ready (section 3.3).
@@ -95,7 +96,7 @@ Do these before the first dashboard deploy. Later deploys skip this section.
 
 ```bash
 ssh WebAdmin@Internal-Dev-Ubuntu
-D=<DASHBOARD_DOMAIN>            # e.g. askdiq-admin.ethub.co
+D=askdiqui.ethub.co
 TS=$(date +%Y%m%d-%H%M%S)
 
 # Host directories mounted into the nginx container
@@ -110,15 +111,15 @@ sudo grep -nE 'acme-challenge|root |ssl_certificate|include' "$CONF"
 
 ### 1b. Append PART 1 (HTTP), issue the certificate (no email)
 
-The ready-to-append file is `deploy/nginx/askdiq-admin.append.conf` (its only
+The ready-to-append file is `infra/nginx/askdiq-admin.append.conf` (its only
 placeholder is `<DASHBOARD_DOMAIN>`). PART 1 goes in first: the PART 2 (443)
 block references the certificate, and appending it before the certificate
 exists makes `nginx -t` fail, which would block reloads for every app on the
 shared proxy. PART 1 uses ACME webroot `/var/www/certbot`; if the existing
 askdiq block (grep above) uses another webroot, change that one line.
 
-From Windows (once): `scp C:\Projects\askdiq\deploy\nginx\askdiq-admin.append.conf WebAdmin@Internal-Dev-Ubuntu:~/`
-(it is also in every kit under `deploy-kit/deploy/nginx/`).
+From Windows (once): `scp C:\Projects\askdiq\infra\nginx\askdiq-admin.append.conf WebAdmin@Internal-Dev-Ubuntu:~/`
+(it is also in every kit under `deploy-kit/infra/nginx/`).
 
 ```bash
 sed "s#<DASHBOARD_DOMAIN>#$D#g" ~/askdiq-admin.append.conf > /tmp/askdiq-web.conf
@@ -174,7 +175,7 @@ nano backend/.env
 | Variable | Value |
 |---|---|
 | `ENV` | `production` |
-| `APP_BASE_URL` | `https://<DASHBOARD_DOMAIN>` (exact origin, no trailing slash; CSRF origin check) |
+| `APP_BASE_URL` | `https://askdiqui.ethub.co` (exact origin, no trailing slash; CSRF origin check) |
 | `SESSION_COOKIE_SECURE` | `true` |
 | `SESSION_COOKIE_NAME` | `askdiq_session` (must equal the frontend's) |
 | `TRUST_PROXY_HEADERS` | `true` (client IP from `X-Forwarded-For`) |
@@ -182,7 +183,7 @@ nano backend/.env
 | `ENTRA_TENANT_ID` | tenant id |
 | `ENTRA_CLIENT_ID` | the existing app registration's client id |
 | `ENTRA_CLIENT_SECRET` | its client secret |
-| `ENTRA_REDIRECT_URI` | `https://<DASHBOARD_DOMAIN>/api/auth/callback/microsoft-entra-id` (byte-identical to Entra) |
+| `ENTRA_REDIRECT_URI` | `https://askdiqui.ethub.co/api/auth/callback/microsoft-entra-id` (byte-identical to Entra) |
 | `ENTRA_AUTHORITY_HOST` | leave the default |
 | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, `OIDC_DISCOVERY_URL` | aliases of the above; if both are set, `ENTRA_*` wins. Use one family. |
 | `SUPERADMIN_EMAILS` | comma-separated admin emails (first sign-in gets admin) |
@@ -208,7 +209,7 @@ slip in.
 cd C:\Projects\askdiq
 git status --short                     # commit what you want to ship first
 git checkout <release-branch>
-powershell -ExecutionPolicy Bypass -File deploy\build_kit.ps1
+powershell -ExecutionPolicy Bypass -File infra\build_kit.ps1
 # must end with: KIT OK   -> C:\Projects\askdiq\askdiq-deploy-<sha>.tgz
 ```
 
@@ -221,10 +222,10 @@ scp $kit WebAdmin@Internal-Dev-Ubuntu:~/
 
 ## 3. On the server
 
-### 3.0 Fast path: `deploy/server/deploy.sh` (recommended)
+### 3.0 Fast path: `infra/server/deploy.sh` (recommended)
 
 Do the one-time steps first (first deploy only): 3.3 (frontend `.env`) and
-3.4 (paste `deploy/compose/askdiq-web.service.yml` into the server compose).
+3.4 (paste `infra/compose/askdiq-web.service.yml` into the server compose).
 Then one script runs everything below (3.1, 3.2, 3.5-3.7 and the scripted
 checks of section 4) and stops with the exact rollback command on any failure:
 
@@ -232,7 +233,7 @@ checks of section 4) and stops with the exact rollback command on any failure:
 ssh WebAdmin@Internal-Dev-Ubuntu
 KIT=$(ls -t ~/askdiq-deploy-*.tgz | head -1); echo "$KIT"
 mkdir -p ~/askdiq-tools
-tar -xzf "$KIT" -C ~/askdiq-tools --strip-components=3 deploy-kit/deploy/server/deploy.sh deploy-kit/deploy/server/rollback.sh
+tar -xzf "$KIT" -C ~/askdiq-tools --strip-components=3 deploy-kit/infra/server/deploy.sh deploy-kit/infra/server/rollback.sh
 bash ~/askdiq-tools/deploy.sh --kit "$KIT"
 #   flags: --skip-backup (no pg_dump/file copies; image tags + alembic revision are always recorded)
 #          --only-backend | --only-frontend
@@ -253,7 +254,7 @@ What it does, in order (only `askdiq-api` / `askdiq-web` are ever named):
    wait healthy (migrations + ingestion), then web, wait healthy.
 5. Checks: `/health` (database + pool), `alembic current` = single head,
    `/query` with the API key + forwarded `ip_address` = 200, web -> API
-   reachability, `https://<DASHBOARD_DOMAIN>/login` = 200 and no
+   reachability, `https://askdiqui.ethub.co/login` = 200 and no
    `localhost` redirect.
 6. Summary with the rollback command:
    `bash ~/askdiq-tools/rollback.sh --ts <ts>` (section 5).
@@ -342,7 +343,7 @@ ls -la /opt/askdiq/backend/.env        # still there, unchanged
 
 ```bash
 [ -f /opt/askdiq/frontend/.env ] && echo "EXISTS - keep it, only check values" || {
-  cp "$REL/deploy-kit/deploy/frontend.env.prod.example" /opt/askdiq/frontend/.env
+  cp "$REL/deploy-kit/infra/frontend.env.prod.example" /opt/askdiq/frontend/.env
   chmod 600 /opt/askdiq/frontend/.env
 }
 nano /opt/askdiq/frontend/.env
@@ -356,7 +357,7 @@ container recreate, not a rebuild.
 |---|---|---|
 | `API_BASE_URL` | `http://askdiq-api:8000` | Backend by container name on `askdiq_internal`. Never `localhost`, never the public URL. |
 | `API_KEY` | same as backend `API_KEY_NAME` | Service key the proxy sends as `X-API-Key`. |
-| `APP_BASE_URL` | `https://<DASHBOARD_DOMAIN>` | Public origin; must equal the backend's `APP_BASE_URL`. Used for redirects and the sign-in flow. |
+| `APP_BASE_URL` | `https://askdiqui.ethub.co` | Public origin; must equal the backend's `APP_BASE_URL`. Used for redirects and the sign-in flow. |
 | `SESSION_COOKIE_NAME` | `askdiq_session` | Must equal the backend's. |
 | `SESSION_COOKIE_SECURE` | `true` | Session cookie sent only over HTTPS. Always `HttpOnly`, `SameSite=Lax`, `Path=/`, host-only. |
 | `ACCESS_CONTACT_EMAIL` | same as backend | Shown on the login and suspended pages. |
@@ -379,7 +380,7 @@ grep -n -A8 '^networks:' docker-compose.prod.yml                      # askdiq_i
 nano docker-compose.prod.yml
 ```
 
-Paste the `askdiq-web:` block from `deploy/compose/askdiq-web.service.yml`
+Paste the `askdiq-web:` block from `infra/compose/askdiq-web.service.yml`
 (shown here) under `services:` (2-space indent, same level as `askdiq-api:`).
 The file uses the absolute `env_file: /opt/askdiq/frontend/.env` and adds
 `stop_grace_period: 15s`; either form works.
@@ -514,7 +515,7 @@ that are alive and hung. `askdiq-autoheal.sh` restarts only containers named
 
 ```bash
 mkdir -p /opt/askdiq/ops
-tar -xzf "$KIT" -O deploy-kit/deploy/askdiq-autoheal.sh > /opt/askdiq/ops/askdiq-autoheal.sh
+tar -xzf "$KIT" -O deploy-kit/infra/askdiq-autoheal.sh > /opt/askdiq/ops/askdiq-autoheal.sh
 chmod 755 /opt/askdiq/ops/askdiq-autoheal.sh
 /opt/askdiq/ops/askdiq-autoheal.sh && echo "runs OK (no output = nothing unhealthy)"
 crontab -l 2>/dev/null | grep -q askdiq-autoheal || \
@@ -570,14 +571,14 @@ docker exec askdiq-web node -e "fetch('http://askdiq-api:8000/health').then(r=>c
 docker exec askdiq-web node -e "fetch('http://127.0.0.1:3000/login').then(r=>console.log('web',r.status))"     # web 200
 
 # Through nginx
-curl -I https://<DASHBOARD_DOMAIN>/login                       # HTTP/2 200 (or HTTP/1.1 200)
-curl -sI https://<DASHBOARD_DOMAIN>/admin | grep -i '^location' # https://<DASHBOARD_DOMAIN>/login?next=%2Fadmin  (NOT localhost:3000)
-curl -sI http://<DASHBOARD_DOMAIN>/login | grep -i '^location'  # https://... (HTTP -> HTTPS)
+curl -I https://askdiqui.ethub.co/login                       # HTTP/2 200 (or HTTP/1.1 200)
+curl -sI https://askdiqui.ethub.co/admin | grep -i '^location' # https://askdiqui.ethub.co/login?next=%2Fadmin  (NOT localhost:3000)
+curl -sI http://askdiqui.ethub.co/login | grep -i '^location'  # https://... (HTTP -> HTTPS)
 ```
 
 In a browser (private window):
 
-1. **SSO login:** `https://<DASHBOARD_DOMAIN>/login` -> "Sign in with
+1. **SSO login:** `https://askdiqui.ethub.co/login` -> "Sign in with
    Microsoft" -> Entra -> back on the dashboard. DevTools > Application >
    Cookies: `askdiq_session` is `HttpOnly`, `Secure`, `SameSite=Lax`.
 2. **Chat / forwarded IP:** ask a question in Chat. Admin > Conversations (or
@@ -598,7 +599,7 @@ In a browser (private window):
 
 ## 5. Rollback
 
-Scripted (`deploy/server/rollback.sh`, uses the backup made by `deploy.sh`):
+Scripted (`infra/server/rollback.sh`, uses the backup made by `deploy.sh`):
 
 ```bash
 bash ~/askdiq-tools/rollback.sh --ts <ts>                       # images + source; refuses if migrations ran
@@ -687,8 +688,8 @@ sudo cp -a "$CONF.bak.<TS of section 1>" "$CONF" && docker exec et-platform-ngin
 |---|---|---|
 | **502 from nginx** (either domain) | Container stopped, crash-looping, or not on `askdiq_internal`, so nginx cannot reach `askdiq-api:8000` / `askdiq-web:3000` | `docker ps -a --filter name=askdiq`; `docker logs --tail 100 askdiq-api` (or `askdiq-web`); check networks (4.1). Missing network: `docker network connect askdiq_internal <container>`, then fix the compose block and recreate. |
 | **Redirect to `http://localhost:3000/login`** | nginx block lacks `proxy_redirect`; Next middleware builds redirects from its own listen address | Add the `proxy_redirect` line from 1c, `nginx -t`, reload. |
-| **AADSTS50011** (redirect URI mismatch) | `ENTRA_REDIRECT_URI` / `OIDC_REDIRECT_URI` differs from the Entra registration (scheme, host, path, trailing slash), or the URI was not added | Register exactly `https://<DASHBOARD_DOMAIN>/api/auth/callback/microsoft-entra-id`; set the same value in the backend `.env`; recreate `askdiq-api`. If both `ENTRA_*` and `OIDC_*` are set, `ENTRA_*` wins. |
-| **403 "Cross-site request rejected." on dashboard POST/PATCH/DELETE** | Backend `APP_BASE_URL` is not exactly the browser origin (CSRF Origin check) | `APP_BASE_URL=https://<DASHBOARD_DOMAIN>` in **both** `.env` files (no trailing slash, https); recreate both containers. |
+| **AADSTS50011** (redirect URI mismatch) | `ENTRA_REDIRECT_URI` / `OIDC_REDIRECT_URI` differs from the Entra registration (scheme, host, path, trailing slash), or the URI was not added | Register exactly `https://askdiqui.ethub.co/api/auth/callback/microsoft-entra-id`; set the same value in the backend `.env`; recreate `askdiq-api`. If both `ENTRA_*` and `OIDC_*` are set, `ENTRA_*` wins. |
+| **403 "Cross-site request rejected." on dashboard POST/PATCH/DELETE** | Backend `APP_BASE_URL` is not exactly the browser origin (CSRF Origin check) | `APP_BASE_URL=https://askdiqui.ethub.co` in **both** `.env` files (no trailing slash, https); recreate both containers. |
 | **Session cookie not set over https / login loops back to /login** | `SESSION_COOKIE_SECURE` mismatch, cookie name mismatch, or the site reached over plain http | `SESSION_COOKIE_SECURE=true` and the same `SESSION_COOKIE_NAME` in both `.env` files; always use `https://`; nginx sends `X-Forwarded-Proto $scheme`. Do not set SameSite to `Strict` (the Entra callback needs `Lax`). |
 | **Backend stuck at "Waiting for connections to close"** on restart | Open SSE streams (live feed) keep connections alive; uvicorn waits `--timeout-graceful-shutdown 20` s, then cuts them. Streams also end by themselves after `SSE_MAX_STREAM_SECONDS` (120) | Normal for up to 20 s; compose `stop_grace_period: 30s` lets it finish before SIGKILL. If it hangs longer, `docker restart --time 30 askdiq-api`. Do not raise `SSE_MAX_STREAM_SECONDS` far above the grace period. |
 | **`HeadersTimeoutError` / 504 in the dashboard** | Backend down, frozen, or its DB pool exhausted, so no response headers within `BACKEND_TIMEOUT_MS` | `curl -fsS https://askdiq.ethub.co/health`: check `database` and `pool.checked_out` vs `size + max_overflow`. Restart `askdiq-api`; check `docker logs` for pool timeouts; see pool sizing in section 7. |
@@ -762,17 +763,18 @@ docker compose -f docker-compose.prod.yml up -d --no-build --force-recreate askd
 
 | File | What |
 |---|---|
-| `deploy/DEPLOYMENT_GUIDE.md` | This guide |
-| `deploy/RUNBOOK.md` | Detailed runbook (routing rationale, edge cases) |
-| `deploy/server/deploy.sh` | Server-side deploy: backups, extract, build, start, wait, verify, summary |
-| `deploy/server/rollback.sh` | Server-side rollback (images, source, `--db downgrade` / `--db restore`) |
-| `deploy/compose/askdiq-web.service.yml` | Exact `askdiq-web` block to paste into the server compose |
-| `deploy/nginx/askdiq-admin.append.conf` | Ready-to-append nginx blocks (PART 1 HTTP, PART 2 HTTPS) |
-| `deploy/frontend.env.prod.example` | Frontend `.env` template |
+| `docs/deployment/deployment-guide.md` | This guide |
+| `docs/deployment/runbook.md` | Detailed runbook (routing rationale, edge cases) |
+| `infra/server/deploy.sh` | Server-side deploy: backups, extract, build, start, wait, verify, summary |
+| `infra/server/rollback.sh` | Server-side rollback (images, source, `--db downgrade` / `--db restore`) |
+| `infra/compose/askdiq-web.service.yml` | Exact `askdiq-web` block to paste into the server compose |
+| `infra/nginx/askdiq-admin.append.conf` | Ready-to-append nginx blocks (PART 1 HTTP, PART 2 HTTPS) |
+| `infra/frontend.env.prod.example` | Frontend `.env` template |
 | `frontend/Dockerfile.prod` | Multi-stage standalone build: `next build` at build time, `node server.js` at run time, non-root, HEALTHCHECK `/login` |
 | `backend/Dockerfile.prod`, `backend/docker-entrypoint.sh`, `backend/scripts/prestart.py` | API image and start-up (migrations under lock, ingestion) |
-| `deploy/docker-compose.prod.example.yml` | Reference compose (never copy over the server file) |
-| `deploy/nginx/askdiq-admin.conf.example` | Annotated reference nginx block |
-| `deploy/build_kit.ps1`, `deploy/askdiq-autoheal.sh` | Kit builder, watchdog |
+| `infra/docker-compose.prod.example.yml` | Reference compose (never copy over the server file) |
+| `infra/nginx/askdiq-admin.conf.example` | Annotated reference nginx block |
+| `infra/build_kit.ps1`, `infra/askdiq-autoheal.sh` | Kit builder, watchdog |
 | `backend/.env.example` | Every backend setting |
+| `docs/deployment/environment-and-sso.md` | Production `.env` values and Entra ID SSO, step by step |
 | `docs/technical/08-deployment-operations.md` | Operations, incident history, lessons learned |

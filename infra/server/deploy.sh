@@ -81,7 +81,7 @@ on_error() {
       *)
         echo "    Roll back with:"
         echo "      bash $(dirname "$(readlink -f "$0")")/rollback.sh --ts $TS$SCOPE_FLAG"
-        echo "    (add --db downgrade or --db restore --yes if migrations were applied; see DEPLOYMENT_GUIDE.md section 5)" ;;
+        echo "    (add --db downgrade or --db restore --yes if migrations were applied; see docs/deployment/deployment-guide.md section 5)" ;;
     esac
   } >&2
   exit "$code"
@@ -127,7 +127,7 @@ ok "kit $KIT"
 
 defined=$(dc config --services)
 for s in "${SERVICES[@]}"; do
-  grep -qx "$s" <<<"$defined" || die "service $s is not in $COMPOSE_FILE (paste deploy/compose/askdiq-web.service.yml first)"
+  grep -qx "$s" <<<"$defined" || die "service $s is not in $COMPOSE_FILE (paste infra/compose/askdiq-web.service.yml first)"
 done
 ok "compose defines ${SERVICES[*]}"
 if dc config | grep -qE '^\s+published:'; then
@@ -140,7 +140,7 @@ grep -qE '^DATABASE_URL=.*@et-platform-postgres-1:5432/askdiq' "$ROOT/backend/.e
   || die "backend DATABASE_URL does not point at et-platform-postgres-1:5432/askdiq"
 ok "backend .env present, DATABASE_URL host OK"
 if $DO_WEB; then
-  [ -f "$ROOT/frontend/.env" ] || die "missing $ROOT/frontend/.env (cp deploy-kit/deploy/frontend.env.prod.example and fill it)"
+  [ -f "$ROOT/frontend/.env" ] || die "missing $ROOT/frontend/.env (cp deploy-kit/infra/frontend.env.prod.example and fill it)"
   [ "$(env_get API_BASE_URL "$ROOT/frontend/.env")" = "http://askdiq-api:8000" ] \
     || die "frontend API_BASE_URL must be http://askdiq-api:8000"
   [ -n "$(env_get API_KEY "$ROOT/frontend/.env")" ] || die "frontend API_KEY is empty"
@@ -306,4 +306,4 @@ echo "  Deployed:  ${SERVICES[*]}  (ts $TS)"
 echo "  Checks:    ${RESULTS[*]:-none}"
 echo "  Backups:   $BK"
 echo "  Rollback:  bash $(dirname "$(readlink -f "$0")")/rollback.sh --ts $TS$SCOPE_FLAG"
-echo "  Manual:    SSO login, logout, widget, tours, live feed (DEPLOYMENT_GUIDE.md section 4.4)"
+echo "  Manual:    SSO login, logout, widget, tours, live feed (docs/deployment/deployment-guide.md section 4.4)"

@@ -1,5 +1,5 @@
 /**
- * Mocked responses that follow docs/contracts/dashboard-aggregations.md.
+ * Mocked responses that follow docs/technical/frontend/contracts/dashboard-aggregations.md.
  * `LEGACY_DASHBOARD` is the shape the backend returns today (no new fields).
  */
 import type { ActivityFeed, DashboardData } from "@/lib/dashboard-api";

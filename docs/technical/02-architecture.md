@@ -36,7 +36,7 @@ Contents
 | PostgreSQL + pgvector | external | `et-platform-postgres-1` (prod), `pgvector/pgvector:pg18` (local compose) | Relational data, vectors, job queue, rate-limit buckets, OIDC state, NOTIFY. |
 | Azure OpenAI | external | - | Chat completions (`AZURE_DEPLOYMENT_NAME`), embeddings (`text-embedding-3-small`). |
 | Microsoft Entra ID | external | - | OIDC identity provider for the dashboard. |
-| nginx | `et-platform-nginx-1` (shared) | external to this repo | TLS, security headers, reverse proxy; template `askdiq.conf`. |
+| nginx | `et-platform-nginx-1` (shared) | external to this repo | TLS, security headers, reverse proxy; template `infra/scale-out/askdiq-api.conf`. |
 | Website widget | website team's code | external to this repo | Public chat UI; calls `/query` server-to-server. See [Website integration](10-website-integration.md). |
 
 Middleware order (outermost first), from the `add_middleware` calls in `backend/main.py`:
@@ -108,8 +108,8 @@ Notes:
   port `127.0.0.1:5500`). The dashboard container and nginx routing for it are planned
   (branch `chore/prod-deploy-fullstack`); see
   [Deployment](08-deployment-operations.md#6-planned-full-stack-deploy-dashboard-container).
-- `docker-compose.prod.yml` describes a scaled layout (two API replicas `api-1`/`api-2` behind
-  `upstream askdiq_api { least_conn; }` in `askdiq.conf`, plus a standalone `worker` with
+- `infra/scale-out/docker-compose.yml` describes a scaled layout (two API replicas `api-1`/`api-2` behind
+  `upstream askdiq_api { least_conn; }` in `infra/scale-out/askdiq-api.conf`, plus a standalone `worker` with
   `JOBS_WORKER_ENABLED=false` on the API replicas). It is a template only; it must not be
   shipped to prod (it was the cause of the 2026-10-16 outage, see
   [Deployment](08-deployment-operations.md#121-2026-10-16-deploy-outage-crash-loop-502)).
@@ -382,7 +382,7 @@ sequenceDiagram
 - DB load of the stream is O(audiences x processes), not O(clients). Slow clients lose their
   oldest queued event rather than blocking the producer.
 - nginx disables buffering for paths ending in `stream` or `events` and allows 1 h reads
-  (`askdiq.conf`); `SSEAwareGZipMiddleware` never compresses `text/event-stream`.
+  (`infra/scale-out/askdiq-api.conf`); `SSEAwareGZipMiddleware` never compresses `text/event-stream`.
 
 ### 4.6 Ingestion pipeline
 
@@ -460,7 +460,7 @@ sequenceDiagram
 | 50+ concurrency gate | `backend/tests/test_concurrency_50.py` (`perf` marker, CI Postgres) | 60 simultaneous requests (30 `/query` with a 1 s fake LLM, 20 dashboard GETs, 10 feedback POSTs) must all succeed in under 3 s wall time. |
 | Load scripts | `backend/scripts/run_concurrency_test.py`, `run_admin_load_test.py` | Manual load tests. |
 
-Replicas and load balancing: `askdiq.conf` defines `upstream askdiq_api` with `least_conn`,
+Replicas and load balancing: `infra/scale-out/askdiq-api.conf` defines `upstream askdiq_api` with `least_conn`,
 `max_fails=3 fail_timeout=10s`, keepalive 32, and `proxy_next_upstream error timeout
 http_502 http_503` (non-idempotent requests are never retried once sent). Production
 currently runs one container; see [Deployment](08-deployment-operations.md#11-scaling-workers-and-pool-sizing).
@@ -519,7 +519,7 @@ Quotas and budgets (not request limits):
 
 Client IP: `get_client_ip` uses the left-most `X-Forwarded-For` hop only when
 `TRUST_PROXY_HEADERS=true`, else the TCP peer. Startup logs a warning if `ENV=production` and
-it is false. Note: `askdiq.conf` sets `X-Forwarded-For $remote_addr` (overwrites, does not
+it is false. Note: `infra/scale-out/askdiq-api.conf` sets `X-Forwarded-For $remote_addr` (overwrites, does not
 append), so behind nginx the forwarded value is the nginx client.
 
 ## 8. Resilience and error handling
@@ -549,8 +549,8 @@ append), so behind nginx the forwarded value is the nginx client.
 
 ## 10. In-flight changes
 
-Each item is described from its diff against `preview/view`. Overall status and PR stack:
-[In-flight work](11-in-flight-work.md).
+Each item is described from its diff against `preview/view`. Current status of all work:
+[plan](../plan.md).
 
 ### Proxy timeouts, retries and connection leak fixes
 

@@ -28,5 +28,5 @@ COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 3000
 # API_BASE_URL and API_KEY are read at request time by app/api/proxy's route
 # handler (server-only, never bundled into client JS) — pass them as runtime
-# environment variables (see docker-compose.yml), not build args.
+# environment variables (see infra/docker-compose.yml), not build args.
 CMD ["node", "server.js"]

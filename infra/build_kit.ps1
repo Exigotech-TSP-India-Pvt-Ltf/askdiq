@@ -1,10 +1,11 @@
 # Build the AskDIQ deploy kit (run locally on Windows, from any directory):
-#   powershell -ExecutionPolicy Bypass -File deploy\build_kit.ps1 [-Ref HEAD] [-OutDir <dir>]
+#   powershell -ExecutionPolicy Bypass -File infra\build_kit.ps1 [-Ref HEAD] [-OutDir <dir>]
 #
 # Produces askdiq-deploy-<sha>.tgz containing ONLY committed source:
-#   backend/     git archive of backend/   (extracted on the server, see RUNBOOK)
+#   backend/     git archive of backend/   (extracted on the server, see docs/deployment/runbook.md)
 #   frontend/    git archive of frontend/
-#   deploy-kit/  git archive of deploy/    (docs + examples; NEVER extracted into /opt/askdiq)
+#   deploy-kit/  git archive of infra/ and docs/deployment/ (scripts, examples, guides;
+#                NEVER extracted into /opt/askdiq): deploy-kit/infra/..., deploy-kit/docs/deployment/...
 # No node_modules, no .env, no compose file, no nginx conf at the top level:
 # the script verifies that with `tar -tzf` and fails if any slips in.
 param(
@@ -23,9 +24,9 @@ $sha = (& git -C $repo rev-parse --short=12 $Ref).Trim()
 if (-not $OutDir) { $OutDir = $repo }
 $kit = Join-Path $OutDir "askdiq-deploy-$sha.tgz"
 
-$dirty = & git -C $repo status --porcelain -- backend frontend deploy
+$dirty = & git -C $repo status --porcelain -- backend frontend infra docs/deployment
 if ($dirty) {
-  Write-Host 'WARNING: uncommitted changes under backend/, frontend/ or deploy/ are NOT in the kit (it is built from git).' -ForegroundColor Yellow
+  Write-Host 'WARNING: uncommitted changes under backend/, frontend/, infra/ or docs/deployment/ are NOT in the kit (it is built from git).' -ForegroundColor Yellow
 }
 
 $stage = Join-Path ([IO.Path]::GetTempPath()) "askdiq-kit-$sha-$PID"
@@ -35,8 +36,8 @@ try {
   $docs = Join-Path $stage 'docs.tar'
   & git -C $repo -c core.autocrlf=false -c core.eol=lf archive --format=tar -o $src $Ref -- backend frontend
   if ($LASTEXITCODE -ne 0) { throw 'git archive backend/frontend failed' }
-  & git -C $repo -c core.autocrlf=false -c core.eol=lf archive --format=tar --prefix=deploy-kit/ -o $docs $Ref -- deploy
-  if ($LASTEXITCODE -ne 0) { throw 'git archive deploy failed' }
+  & git -C $repo -c core.autocrlf=false -c core.eol=lf archive --format=tar --prefix=deploy-kit/ -o $docs $Ref -- infra docs/deployment
+  if ($LASTEXITCODE -ne 0) { throw 'git archive infra/docs failed' }
   $root = Join-Path $stage 'root'
   New-Item -ItemType Directory -Force -Path $root | Out-Null
   & $tar -xf $src -C $root
@@ -67,11 +68,11 @@ $required = @(
   'backend/Dockerfile.prod', 'backend/docker-entrypoint.sh', 'backend/scripts/prestart.py',
   'backend/scripts/ingest_real_docs.py', 'backend/alembic.ini', 'backend/requirements.txt',
   'frontend/Dockerfile.prod', 'frontend/.dockerignore', 'frontend/package-lock.json', 'frontend/.npmrc',
-  'deploy-kit/deploy/RUNBOOK.md', 'deploy-kit/deploy/docker-compose.prod.example.yml',
-  'deploy-kit/deploy/nginx/askdiq-admin.conf.example', 'deploy-kit/deploy/frontend.env.prod.example',
-  'deploy-kit/deploy/DEPLOYMENT_GUIDE.md', 'deploy-kit/deploy/server/deploy.sh', 'deploy-kit/deploy/server/rollback.sh',
-  'deploy-kit/deploy/compose/askdiq-web.service.yml', 'deploy-kit/deploy/nginx/askdiq-admin.append.conf',
-  'deploy-kit/deploy/askdiq-autoheal.sh'
+  'deploy-kit/docs/deployment/runbook.md', 'deploy-kit/infra/docker-compose.prod.example.yml',
+  'deploy-kit/infra/nginx/askdiq-admin.conf.example', 'deploy-kit/infra/frontend.env.prod.example',
+  'deploy-kit/docs/deployment/deployment-guide.md', 'deploy-kit/infra/server/deploy.sh', 'deploy-kit/infra/server/rollback.sh',
+  'deploy-kit/infra/compose/askdiq-web.service.yml', 'deploy-kit/infra/nginx/askdiq-admin.append.conf',
+  'deploy-kit/infra/askdiq-autoheal.sh', 'deploy-kit/docs/deployment/environment-and-sso.md'
 )
 foreach ($r in $required) { if ($r -notin $entries) { $problems += "missing: $r" } }
 $kb = @($entries | Where-Object { $_ -match '^backend/data/real_docs/[^/]+\.md$' })
@@ -102,4 +103,4 @@ if ($problems) {
   exit 1
 }
 Write-Host ''
-Write-Host 'KIT OK. Next: deploy-kit/deploy/RUNBOOK.md, step 1 (scp).'
+Write-Host 'KIT OK. Next: deploy-kit/docs/deployment/runbook.md, step 1 (scp).'

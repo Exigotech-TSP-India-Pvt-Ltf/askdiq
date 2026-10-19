@@ -21,7 +21,7 @@ The kit never contains a compose file, an nginx conf or a `.env` outside
 > session or the website's API key (`X-API-Key` + `X-Client-Id`, forwarded
 > `ip_address`), via `require_chat_actor` (branch fix/public-api-key-path,
 > merged). Still verify after every deploy that an API-key-only `/query`
-> returns **200**; `deploy/server/deploy.sh` does this and stops with the
+> returns **200**; `infra/server/deploy.sh` does this and stops with the
 > rollback command if it does not.
 >
 > Check before and after every deploy, from the server:
@@ -37,15 +37,14 @@ The kit never contains a compose file, an nginx conf or a `.env` outside
 
 ## 0. Decisions before the first dashboard deploy
 
-1. **Dashboard domain.** Recommended: a subdomain such as
-   `askdiq-admin.ethub.co` (DNS record + TLS certificate on et-platform nginx).
-   Every `<dashboard-domain>` below means this value.
+1. **Dashboard domain.** Decided: `askdiqui.ethub.co` (DNS record + TLS certificate on
+   et-platform nginx); older notes call it `<dashboard-domain>`.
 2. **nginx change** (et-platform nginx owner): a new server block from
-   `deploy-kit/deploy/nginx/askdiq-admin.conf.example`. The existing
+   `deploy-kit/infra/nginx/askdiq-admin.conf.example`. The existing
    `askdiq.ethub.co` conf is not touched.
 3. **Entra redirect URI** (owner's identity team, same client id): add
-   `https://<dashboard-domain>/api/auth/callback/microsoft-entra-id` (or
-   `https://<dashboard-domain>/auth/callback`; the dashboard serves both) to the
+   `https://askdiqui.ethub.co/api/auth/callback/microsoft-entra-id` (or
+   `https://askdiqui.ethub.co/auth/callback`; the dashboard serves both) to the
    app registration's Web redirect URIs. The backend's `ENTRA_REDIRECT_URI`
    (alias `OIDC_REDIRECT_URI`) must equal the registered value exactly.
 
@@ -92,7 +91,7 @@ recommendation.
 ```powershell
 cd C:\Projects\askdiq
 git checkout <release-branch>   # committed code only; the kit is built from git
-powershell -ExecutionPolicy Bypass -File deploy\build_kit.ps1
+powershell -ExecutionPolicy Bypass -File infra\build_kit.ps1
 # -> askdiq-deploy-<sha>.tgz and a checklist; it must print "KIT OK"
 ```
 
@@ -181,7 +180,7 @@ give Alembic two heads.)
 ### 5a. Frontend env (new file, first deploy only)
 
 ```bash
-cp "$REL/deploy-kit/deploy/frontend.env.prod.example" /opt/askdiq/frontend/.env
+cp "$REL/deploy-kit/infra/frontend.env.prod.example" /opt/askdiq/frontend/.env
 chmod 600 /opt/askdiq/frontend/.env
 nano /opt/askdiq/frontend/.env
 ```
@@ -192,7 +191,7 @@ Required values (all read at run time; nothing is baked into the image):
 |---|---|
 | `API_BASE_URL` | `http://askdiq-api:8000` |
 | `API_KEY` | same value as `API_KEY_NAME` in `backend/.env` |
-| `APP_BASE_URL` | `https://<dashboard-domain>` |
+| `APP_BASE_URL` | `https://askdiqui.ethub.co` |
 | `SESSION_COOKIE_NAME` | same as the backend (`askdiq_session` by default) |
 | `SESSION_COOKIE_SECURE` | `true` |
 | `ACCESS_CONTACT_EMAIL` | same as the backend |
@@ -213,8 +212,8 @@ grep -cE '^DATABASE_URL=.*@et-platform-postgres-1:5432/askdiq' backend/.env   # 
 
 | Variable | Value | Why |
 |---|---|---|
-| `APP_BASE_URL` | `https://<dashboard-domain>` | CSRF: every dashboard POST/PATCH/DELETE must carry this exact Origin, otherwise **403**. Also the default redirect URI base. |
-| `ENTRA_REDIRECT_URI` (or `OIDC_REDIRECT_URI`) | `https://<dashboard-domain>/api/auth/callback/microsoft-entra-id` | Sent to Entra; must match the app registration exactly. |
+| `APP_BASE_URL` | `https://askdiqui.ethub.co` | CSRF: every dashboard POST/PATCH/DELETE must carry this exact Origin, otherwise **403**. Also the default redirect URI base. |
+| `ENTRA_REDIRECT_URI` (or `OIDC_REDIRECT_URI`) | `https://askdiqui.ethub.co/api/auth/callback/microsoft-entra-id` | Sent to Entra; must match the app registration exactly. |
 | `SESSION_COOKIE_SECURE` | `true` | Session cookie only over HTTPS. |
 | `SESSION_COOKIE_NAME` | same as the frontend | |
 | `TRUST_PROXY_HEADERS` | `true` | Client IP from `X-Forwarded-For` (audit, rate limits, audience). |
@@ -222,7 +221,7 @@ grep -cE '^DATABASE_URL=.*@et-platform-postgres-1:5432/askdiq' backend/.env   # 
 
 **Cookies over HTTPS.** The dashboard sets the session cookie itself:
 `HttpOnly`, `SameSite=Lax`, `Path=/`, host-only (no `Domain`, so it is scoped to
-`<dashboard-domain>` and never sent to `askdiq.ethub.co`), and `Secure` when
+`askdiqui.ethub.co` and never sent to `askdiq.ethub.co`), and `Secure` when
 `SESSION_COOKIE_SECURE=true`. The short-lived sign-in cookies
 (`askdiq_oidc_state`, next-path) use the same flags. `SameSite=Lax` is required
 (not `Strict`): the Entra redirect back to the callback is a top-level
@@ -240,7 +239,7 @@ existing value as it is for the API's current clients.
 
 ```bash
 cd /opt/askdiq
-diff -u docker-compose.prod.yml "$REL/deploy-kit/deploy/docker-compose.prod.example.yml" || true
+diff -u docker-compose.prod.yml "$REL/deploy-kit/infra/docker-compose.prod.example.yml" || true
 nano docker-compose.prod.yml
 ```
 
@@ -325,9 +324,9 @@ docker exec askdiq-web node -e "fetch('http://askdiq-api:8000/health').then(r=>c
 After the nginx owner has applied the server block and reloaded
 (`docker exec et-platform-nginx-1 nginx -t && docker exec et-platform-nginx-1 nginx -s reload`):
 
-1. `https://<dashboard-domain>/login` shows "Sign in with Microsoft", and
-   `curl -sI https://<dashboard-domain>/admin | grep -i '^location'` shows
-   `https://<dashboard-domain>/login?next=%2Fadmin`. If it shows
+1. `https://askdiqui.ethub.co/login` shows "Sign in with Microsoft", and
+   `curl -sI https://askdiqui.ethub.co/admin | grep -i '^location'` shows
+   `https://askdiqui.ethub.co/login?next=%2Fadmin`. If it shows
    `localhost:3000`, the `proxy_redirect` line of the nginx block is missing:
    the Next.js middleware builds that redirect from its own listen address.
 2. Sign in with a `SUPERADMIN_EMAILS` account: lands on the dashboard. In the

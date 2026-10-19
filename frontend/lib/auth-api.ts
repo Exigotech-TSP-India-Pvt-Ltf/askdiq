@@ -1,6 +1,6 @@
 /**
  * Typed client for the `/auth/*` routes and the pending access-request count
- * (backend `app/api/routes/auth.py`, `user_management.py`; DEPLOYMENT.md
+ * (backend `app/api/routes/auth.py`, `user_management.py`; docs/deployment/docker-and-auth-contract.md
  * "frontend contract"). Calls go through `/api/proxy`, which forwards the
  * httpOnly session cookie as `X-Session`: client code never sees it.
  */

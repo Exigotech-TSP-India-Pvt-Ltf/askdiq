@@ -1,7 +1,7 @@
 """Response models for the Visitors and Conversations entity pages (B7.2).
 
 Mirrors ``frontend/lib/entity-stats-api.ts`` (contract:
-``frontend/docs/contracts/entity-stats.md``). Timestamps are ISO 8601 UTC with
+``docs/technical/frontend/contracts/entity-stats.md``). Timestamps are ISO 8601 UTC with
 ``Z``; days are ``YYYY-MM-DD`` (UTC); money is USD; durations milliseconds.
 ``null`` means "not measured"; lists are never null.
 """

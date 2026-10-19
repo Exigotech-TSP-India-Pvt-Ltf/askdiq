@@ -3,7 +3,7 @@
 ``window_payload`` runs the single-statement aggregates of
 ``app.dashboard.queries`` in parallel (``ScopedRunner.gather``: one session
 per task) and turns them into the additive fields of the dashboard contract
-(``frontend/docs/contracts/dashboard-aggregations.md``). Pure shaping lives
+(``docs/technical/frontend/contracts/dashboard-aggregations.md``). Pure shaping lives
 in small functions so it is unit-tested without a database.
 """
 

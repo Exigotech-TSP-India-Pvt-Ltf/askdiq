@@ -1,7 +1,7 @@
 // Server-only proxy to the FastAPI backend. Keeps API_KEY out of the browser
 // bundle — only this route handler (which runs on the server) ever reads it.
 //
-// Session contract (DEPLOYMENT.md "frontend contract", steps 1, 6 and 8): the
+// Session contract (docs/deployment/docker-and-auth-contract.md "frontend contract", steps 1, 6 and 8): the
 // httpOnly session cookie is read here and sent as `X-Session`; state-changing
 // methods also carry `X-Requested-With: askdiq` and the browser's own
 // `Origin` (CSRF check in the backend). Cookies are never passed to the

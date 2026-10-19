@@ -14,7 +14,7 @@ import { isRole, isUserStatus, type Permission, type Role, type UserStatus } fro
 
 const API_BASE_URL = "/api/proxy";
 const CLIENT_ID_STORAGE_KEY = "deployiq.client_id";
-/** CSRF marker the backend requires on POST / PATCH (DEPLOYMENT.md, step 6). */
+/** CSRF marker the backend requires on POST / PATCH (docs/deployment/docker-and-auth-contract.md, step 6). */
 const CSRF_HEADER = { "X-Requested-With": "askdiq" } as const;
 
 // ---------------------------------------------------------------------------

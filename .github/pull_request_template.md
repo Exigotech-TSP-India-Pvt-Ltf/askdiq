@@ -4,7 +4,7 @@
 
 ## Plan task ids
 
-<!-- e.g. B0.2, B0.4 (planchanges4.md). PR-xx. -->
+<!-- e.g. B0.2, B0.4 (docs/archive/planchanges4.md). PR-xx. -->
 
 ## Type
 

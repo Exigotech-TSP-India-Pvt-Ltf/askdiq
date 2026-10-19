@@ -6,6 +6,9 @@ Postgres/pgvector backend and a Next.js 14 admin dashboard. Written for
 engineers joining the project and for the person deploying and operating it.
 Everything here is derived from the code on `preview/view` (commit `9115c45`)
 plus the in-flight branches, which are marked **In progress (branch `X`)**.
+Those branches have since been merged; the current status of every work item
+is in [the plan](../plan.md), and production setup is in
+[deployment/](../deployment/deployment-guide.md).
 
 ## Read this first
 
@@ -35,19 +38,21 @@ plus the in-flight branches, which are marked **In progress (branch `X`)**.
 | 8 | [Deployment and operations](08-deployment-operations.md) | Ops | Prod layout, release procedure, migrations, backfills, backups, rollback, monitoring, incidents |
 | 9 | [Development](09-development.md) | Engineers | Local setup, running, tests, lint, CI and the local CI mirror, branch workflow, troubleshooting |
 | 10 | [Website integration](10-website-integration.md) | Website frontend team | `/query` contract, visitor identity, IP forwarding, rate limits, 429 handling |
-| 11 | [In-flight work](11-in-flight-work.md) | Engineers, reviewers | Unmerged branches and the open PR stack #14-#38 |
+| - | [Plan](../plan.md) | Everyone | Current status of every work item, open items, risks (replaces the old in-flight-work page) |
 
 ## Related documents in the repo
 
 | File | Content |
 |---|---|
-| `README.md` | Project summary and quick start |
-| `DEPLOYMENT.md` | Docker deployment guide, proxy/SSO contract, pool sizing, load tests |
-| `PREVIEW_README.md` | The local-only combined preview build (`preview/all`) |
-| `newplan.md`, `planchanges4.md` | Design plan (rev 3.x) and execution plan with PR register and OWASP matrix |
-| `frontend/docs/contracts/*.md` | Dashboard aggregation and entity-stats API contracts |
-| `frontend/docs/interaction-audit.md`, `frontend/docs/theme-audit.md` | UI interaction and theme audits |
-| `deploy/RUNBOOK.md` | Production runbook (**In progress (branch `chore/prod-deploy-fullstack`)**) |
+| `README.md` | System overview and quick start |
+| `docs/deployment/environment-and-sso.md` | Production `.env` values, Entra ID SSO setup, verification, troubleshooting |
+| `docs/deployment/deployment-guide.md` | Copy-paste production deployment guide |
+| `docs/deployment/docker-and-auth-contract.md` | Docker deployment guide, proxy/SSO contract, pool sizing, load tests |
+| `docs/archive/newplan.md`, `docs/archive/planchanges4.md` | Design plan (rev 3.x) and execution plan with PR register and OWASP matrix |
+| `docs/technical/frontend/contracts/*.md` | Dashboard aggregation and entity-stats API contracts |
+| `docs/technical/frontend/interaction-audit.md`, `docs/technical/frontend/theme-audit.md` | UI interaction and theme audits |
+| `docs/deployment/runbook.md` | Production runbook (routing rationale, edge cases) |
+| `docs/archive/` | Historical plans (`rag-hardening-plan.md`, `newplan.md`, `planchanges4.md`); code comments cite their section ids |
 
 ## Conventions used in these docs
 

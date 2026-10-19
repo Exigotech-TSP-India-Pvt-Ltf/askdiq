@@ -1,29 +1,36 @@
-# Production deployment: backend only, fronted by the existing
-# et-platform nginx reverse proxy (external network, not managed here).
-# Postgres is the already-running production instance, reached via
-# DATABASE_URL in backend/.env — no postgres service defined here.
+# OPTIONAL scale-out topology (reference; not what production runs today).
+# Production today is the single askdiq-api + askdiq-web layout in the
+# server-owned /opt/askdiq/docker-compose.prod.yml (see
+# infra/docker-compose.prod.example.yml and docs/deployment/deployment-guide.md).
 #
-# Topology (planchanges4 B1.6, newplan section 13.2):
+# Backend only, fronted by the existing et-platform nginx reverse proxy
+# (external network, not managed here). Postgres is the already-running
+# production instance, reached via DATABASE_URL in backend/.env — no postgres
+# service defined here.
+#
+# Topology (docs/archive/planchanges4.md B1.6, docs/archive/newplan.md section 13.2):
 #   api-1, api-2  two API replicas, WEB_CONCURRENCY uvicorn workers each,
-#                 load balanced by nginx (askdiq.conf upstream askdiq_api)
+#                 load balanced by nginx (infra/scale-out/askdiq-api.conf, upstream askdiq_api)
 #   worker        the Postgres job queue worker (python -m app.jobs.worker);
 #                 the API replicas run with JOBS_WORKER_ENABLED=false
 #
 # Pool sizing: replicas x workers x (DB_POOL_SIZE + DB_MAX_OVERFLOW) must stay
-# <= Postgres max_connections - 20 (see DEPLOYMENT.md). The values below
-# override backend/.env; change them through the shell or a project-root .env.
+# <= Postgres max_connections - 20 (see docs/deployment/docker-and-auth-contract.md).
+# The values below override backend/.env; change them through the shell or an
+# infra/scale-out/.env file (compose reads .env from this file's directory).
 #
-# Usage:
-#   docker compose -f docker-compose.prod.yml build
-#   docker compose -f docker-compose.prod.yml up -d
+# Usage (from the repository root; relative paths resolve against infra/scale-out/):
+#   docker compose -f infra/scale-out/docker-compose.yml build
+#   docker compose -f infra/scale-out/docker-compose.yml up -d
+name: askdiq
 
 x-askdiq-backend: &askdiq-backend
   build:
-    context: ./backend
+    context: ../../backend
     dockerfile: Dockerfile.prod
   image: askdiq-api:latest
   env_file:
-    - ./backend/.env
+    - ../../backend/.env
   restart: unless-stopped
   networks:
     - askdiq-net

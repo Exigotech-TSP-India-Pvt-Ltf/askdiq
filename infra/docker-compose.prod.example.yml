@@ -15,7 +15,7 @@
 # Host ports: the web service publishes NONE. Ports 3001-3600, 5000-5600 and
 # 5501 on the host belong to other apps. If a debug port is ever needed, bind
 # 127.0.0.1 only; 127.0.0.1:5500 is the one known-free choice (one service
-# at a time). See deploy/RUNBOOK.md, "Port plan".
+# at a time). See docs/deployment/runbook.md, "Port plan".
 #
 # Usage on the server (from /opt/askdiq, with the server's own file):
 #   docker compose -f docker-compose.prod.yml build askdiq-api askdiq-web
