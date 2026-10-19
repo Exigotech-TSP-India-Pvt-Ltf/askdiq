@@ -118,6 +118,12 @@ class Settings(BaseSettings):
     # Topics needed before a clarification is offered, and the most shown.
     clarify_min_options: int = 2
     clarify_max_options: int = 4
+    # The model asks as few questions as needed, at most this many, in one turn.
+    clarify_max_questions: int = 3
+    # A short question that may need clarifying is retrieved wider, so the
+    # options cover the knowledge base's real distinct intents.
+    clarify_retrieval_top_k: int = 10
+    clarify_retrieval_max_documents: int = 6
     # Honour `ip_address` in request bodies (/query, /sessions, feedback): the
     # website frontend calls server-to-server and forwards each end user's IP,
     # which is stored against that user. Only valid IPv4/IPv6 values are used.

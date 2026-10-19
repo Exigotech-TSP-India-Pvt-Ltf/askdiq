@@ -56,11 +56,12 @@ async def query(
     # A reply to a clarifying question (picked option, its number/text, or a
     # short refinement) is answered as the original question + that meaning.
     resolved = resolve_clarification_reply(
-        body.query, history, body.clarification_choice
+        body.query, history, body.clarification_answers
     )
 
     response = await run_query(
         query=resolved.query if resolved else body.query,
+        boost_document_ids=resolved.document_ids if resolved else None,
         top_k=settings.default_top_k,
         filters=body.filters,
         vector_store=vector_store,
@@ -91,7 +92,7 @@ async def query(
         "outcome": response.outcome,
     }
     if resolved:
-        merged_details["clarification_choice"] = resolved.as_details()
+        merged_details["clarification_answers"] = resolved.as_details()
 
     redacted_query, _ = redact_pii(body.query)
 

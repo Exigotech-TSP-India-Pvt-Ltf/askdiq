@@ -83,8 +83,12 @@ class VectorStore:
         top_k: int = 5,
         filters: dict | None = None,
         query_text: str | None = None,
+        max_documents: int | None = None,
     ) -> list[tuple[Chunk, float]]:
         """Return the top_k most relevant chunks for a query embedding.
+
+        `max_documents` overrides the cross-document quota (wider spread when
+        a short question may need clarifying, see app.harness.clarify).
 
         `query_text` (the raw query string) is optional but required for the
         cross-encoder reranking stage; without it the cosine-ranked order is
@@ -155,12 +159,14 @@ class VectorStore:
         return self._select_diverse_chunks(
             candidates=candidates,
             top_k=top_k,
+            max_documents=max_documents,
         )
 
     @staticmethod
     def _select_diverse_chunks(
         candidates: list[tuple[Chunk, float]],
         top_k: int,
+        max_documents: int | None = None,
     ) -> list[tuple[Chunk, float]]:
         """Allocate the result budget across the top-scoring documents.
 
@@ -189,9 +195,8 @@ class VectorStore:
             reverse=True,
         )
 
-        quota_docs = ranked_docs[
-            : min(settings.cross_doc_quota_max_documents, len(ranked_docs))
-        ]
+        doc_cap = max_documents or settings.cross_doc_quota_max_documents
+        quota_docs = ranked_docs[: min(doc_cap, len(ranked_docs))]
         per_doc_quota = max(1, top_k // len(quota_docs))
 
         selected: list[tuple[Chunk, float]] = []

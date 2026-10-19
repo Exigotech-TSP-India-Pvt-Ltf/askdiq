@@ -334,6 +334,7 @@ async def test_conversation_stats_exact_numbers(client, db_session) -> None:
         "blocked": 1,
         "conversational": 0,
         "llm_failed": 0,
+        "clarify": 0,
     }
     # NULL outcome counts as answered.
     assert day1["counts"]["answered"] == 12

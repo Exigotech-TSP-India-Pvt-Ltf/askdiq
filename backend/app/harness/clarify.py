@@ -1,31 +1,37 @@
 """Clarifying questions for genuinely ambiguous queries (outcome ``clarify``).
 
-Two cheap gates decide whether the model may ask instead of answer, and the
+Cheap gates decide whether the model may ask instead of answer, and the
 model makes the final call in the same generation request (no extra LLM call):
 
-1. ``plan_clarification`` (rules, no I/O): only a short, underspecified,
-   standalone question whose retrieved evidence spreads over at least
+1. ``clarify_eligible`` (rules, before retrieval): only a short,
+   underspecified, standalone question qualifies, and never more than
+   ``clarify_max_consecutive`` times in a row in one session. Greetings,
+   blocked and off-topic queries never get here. Eligible questions are
+   retrieved wider (more documents) so the options can cover the real intents.
+2. ``plan_clarification``: the retrieved evidence must spread over at least
    ``clarify_min_options`` distinct topics (document + section) with similar
-   scores qualifies, and never more than ``clarify_max_consecutive`` times in a
-   row in one session. Greetings, blocked and off-topic queries never get here
-   (they are handled before retrieval / by the relevance gate).
-2. The answer prompt then lists those topics; the model answers normally
-   unless the question really is ambiguous, in which case it replies with one
-   ``CLARIFY: {...}`` line naming 2-4 of the listed topic ids.
+   scores; otherwise the question is just answered.
+3. The answer call then gets a dedicated clarification brief and a strict JSON
+   schema (``ANSWER_OR_CLARIFY``): the model either answers or asks 1 to
+   ``clarify_max_questions`` questions at once, each option citing the topic
+   ids (retrieved chunks) that can answer it.
 
-Options are always the retrieved topics (document title / section heading),
-never invented: the model may only shorten a label for an id it was given.
-The reply to a clarification (a picked option, its number, its text, or a
-short free-text refinement) is folded back into the original question by
-``resolve_clarification_reply`` so the next answer uses both.
+``parse_decision`` validates the model's questions server-side: an option
+whose sources are not in the retrieved set is dropped, a question left with
+fewer than two options is dropped, and with no question left the query is
+answered directly. The follow-up turn carries all answers at once;
+``resolve_clarification_reply`` rewrites the original question plus those
+answers into one explicit query, and the chosen options' documents are
+boosted when it is answered.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import PurePosixPath
+from typing import Any
 
 from app.core.config import get_settings
 from app.guardrails.conversational import detect_conversational_intent
@@ -33,24 +39,31 @@ from app.retrieval.retriever import decompose_query
 from app.schemas.query import (
     ChatTurn,
     Clarification,
-    ClarificationChoice,
+    ClarificationAnswer,
     ClarificationOption,
+    ClarificationQuestion,
     SourceChunk,
 )
 
 CLARIFY_OUTCOME = "clarify"
-CLARIFY_MARKER = "CLARIFY:"
-DEFAULT_QUESTION = "Which of these do you mean?"
+DEFAULT_HEADER = "Topic"
 REPLY_HINT = (
-    "Reply with the number or name of an option, or tell me more about "
-    "what you're looking for."
+    "Reply with the option you want (its name, or its number when there is one "
+    "question), or tell me more about what you're looking for."
 )
 
-_MAX_LABEL_CHARS = 80
+_MAX_HEADER_CHARS = 12
+_MAX_LABEL_CHARS = 60
+_MAX_LABEL_WORDS = 6
+_MAX_DESCRIPTION_CHARS = 200
 _MAX_QUESTION_CHARS = 300
+_MAX_PREAMBLE_CHARS = 300
 _MAX_QUERY_CHARS = 2000
+_MAX_OTHER_CHARS = 300
+_MAX_OPTION_SOURCES = 4
+_EXCERPT_CHARS = 220
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'&+-]*")
-_MARKER_RE = re.compile(r"^\W*CLARIFY\s*:", re.IGNORECASE)
+_ANSWER_SPLIT_RE = re.compile(r"[,;\n·]+")
 _STOPWORDS = frozenset(
     {
         "a",
@@ -66,14 +79,13 @@ _STOPWORDS = frozenset(
         "i",
         "in",
         "is",
+        "it",
         "me",
         "my",
         "of",
         "on",
         "or",
         "please",
-        # compose_query's own connective, so a resolved reply is not re-counted
-        "specifically",
         "tell",
         "the",
         "to",
@@ -90,10 +102,60 @@ _STOPWORDS = frozenset(
     }
 )
 
+_STRING = {"type": "string"}
+# Structured output for a gated answer call (Azure OpenAI strict JSON schema).
+# Lengths/counts are not expressible in strict mode; parse_decision enforces them.
+ANSWER_OR_CLARIFY: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "answer_or_clarify",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["action", "answer", "preamble", "questions"],
+            "properties": {
+                "action": {"type": "string", "enum": ["answer", "clarify"]},
+                "answer": _STRING,
+                "preamble": _STRING,
+                "questions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["header", "question", "multi_select", "options"],
+                        "properties": {
+                            "header": _STRING,
+                            "question": _STRING,
+                            "multi_select": {"type": "boolean"},
+                            "options": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": ["label", "description", "source_ids"],
+                                    "properties": {
+                                        "label": _STRING,
+                                        "description": _STRING,
+                                        "source_ids": {
+                                            "type": "array",
+                                            "items": _STRING,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+
 
 @dataclass(frozen=True, slots=True)
 class ClarifyCandidate:
-    """A distinct retrieved topic the question could be about."""
+    """A distinct retrieved topic (document + section) the question could be about."""
 
     id: str
     label: str
@@ -101,34 +163,43 @@ class ClarifyCandidate:
     source_name: str | None
     section: str | None
     score: float
+    excerpt: str = ""
 
-    def to_option(self, label: str | None = None) -> ClarificationOption:
-        return ClarificationOption(
-            id=self.id,
-            label=label or self.label,
-            document_id=self.document_id,
-            source_name=self.source_name,
-            section=self.section,
-        )
+
+@dataclass(frozen=True, slots=True)
+class LlmDecision:
+    """The gated answer call's result: an answer, or questions back.
+
+    ``answer == ""`` and no clarification means the model asked but nothing
+    was grounded: the caller answers directly instead.
+    """
+
+    answer: str
+    clarification: Clarification | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedReply:
-    """A reply to a clarification, folded into a standalone question."""
+    """Answers to a clarification, folded into one explicit question."""
 
     query: str
     original_query: str
-    label: str
-    option_id: str | None
-    free_text: bool
+    answers: list[dict[str, object]] = field(default_factory=list)
+    document_ids: list[str] = field(default_factory=list)
+    free_text: bool = False
 
     def as_details(self) -> dict[str, object]:
         return {
             "original_query": self.original_query,
-            "option_id": self.option_id,
-            "label": self.label,
+            "answers": self.answers,
+            "document_ids": self.document_ids,
             "free_text": self.free_text,
         }
+
+
+# ---------------------------------------------------------------------------
+# Gate
+# ---------------------------------------------------------------------------
 
 
 def content_word_count(query: str) -> int:
@@ -147,6 +218,23 @@ def clarification_streak(history: list[ChatTurn] | None) -> int:
             break
         streak += 1
     return streak
+
+
+def clarify_eligible(
+    query: str, history: list[ChatTurn] | None, *, follow_up: bool
+) -> bool:
+    """Rule gate (no I/O): may this question be answered with questions back?"""
+    settings = get_settings()
+    if not settings.clarify_enabled:
+        return False
+    if clarification_streak(history) >= settings.clarify_max_consecutive:
+        return False
+    # A follow-up is resolved by the conversation, not by asking again.
+    if follow_up and history:
+        return False
+    if not 0 < content_word_count(query) <= settings.clarify_max_query_words:
+        return False
+    return len(decompose_query(query)) <= 1
 
 
 def _humanize(name: str) -> str:
@@ -178,12 +266,12 @@ def select_candidates(sources: list[SourceChunk]) -> list[ClarifyCandidate]:
         return []
     ranked = sorted(sources, key=lambda s: s.score, reverse=True)
     floor = max(ranked[0].score - settings.clarify_score_margin, 0.0)
+    limit = settings.clarify_retrieval_max_documents + settings.clarify_max_options
 
     picked: list[ClarifyCandidate] = []
     seen_topics: set[tuple[str, str]] = set()
-    seen_labels: set[str] = set()
     for source in ranked:
-        if source.score < floor or len(picked) >= settings.clarify_max_options:
+        if source.score < floor or len(picked) >= limit:
             break
         metadata = source.metadata or {}
         source_name = _metadata_text(metadata, "source_name", "file_name", "title")
@@ -193,23 +281,18 @@ def select_candidates(sources: list[SourceChunk]) -> list[ClarifyCandidate]:
             continue
         seen_topics.add(topic)
         doc_label = _humanize(source_name) if source_name else None
-        label = section or doc_label
+        label = " / ".join(p for p in (doc_label, section) if p)
         if not label:
             continue
-        if label.lower() in seen_labels and doc_label and section:
-            label = f"{section} ({doc_label})"
-        label = _clip(label, _MAX_LABEL_CHARS)
-        if label.lower() in seen_labels:
-            continue
-        seen_labels.add(label.lower())
         picked.append(
             ClarifyCandidate(
                 id=f"T{len(picked) + 1}",
-                label=label,
+                label=_clip(label, 120),
                 document_id=source.document_id,
                 source_name=source_name,
                 section=section,
                 score=source.score,
+                excerpt=_clip(source.content, _EXCERPT_CHARS),
             )
         )
     return picked
@@ -224,115 +307,208 @@ def plan_clarification(
 ) -> list[ClarifyCandidate]:
     """Topics to offer the model, or ``[]`` when the query must just be answered."""
     settings = get_settings()
-    if not settings.clarify_enabled:
-        return []
-    if clarification_streak(history) >= settings.clarify_max_consecutive:
-        return []
-    # A follow-up is resolved by the conversation, not by asking again.
-    if follow_up and history:
-        return []
-    if content_word_count(query) > settings.clarify_max_query_words:
-        return []
-    if len(decompose_query(query)) > 1:
+    if not clarify_eligible(query, history, follow_up=follow_up):
         return []
     candidates = select_candidates(sources)
-    return candidates if len(candidates) >= settings.clarify_min_options else []
+    distinct_docs = {c.document_id for c in candidates}
+    enough = len(candidates) >= settings.clarify_min_options
+    # One document with several sections rarely means several intents.
+    return candidates if enough and len(distinct_docs) >= 2 else []  # noqa: PLR2004
 
 
 def clarify_instruction(candidates: list[ClarifyCandidate]) -> str:
-    """Prompt block letting the model ask instead of answer (see module doc)."""
-    topics = "\n".join(f"{c.id}: {c.label}" for c in candidates)
-    return (
-        "The question is short and the context covers several distinct topics:\n"
-        f"{topics}\n"
-        "If the question clearly fits one topic, or one short answer covers "
-        "them, answer normally. Only if it is genuinely ambiguous between "
-        "these topics, do not answer; reply with exactly one line:\n"
-        'CLARIFY: {"question": "<one short question to the visitor>", '
-        '"options": [{"id": "<topic id>", "label": "<2-6 word label>"}]}\n'
-        "using 2-4 of the topic ids above.\n\n"
-    )
-
-
-def is_clarification_reply(answer: str) -> bool:
-    return bool(_MARKER_RE.match(answer.strip()))
-
-
-def _parse_payload(answer: str) -> dict:
-    body = _MARKER_RE.sub("", answer.strip(), count=1)
-    start, end = body.find("{"), body.rfind("}")
-    if start == -1 or end <= start:
-        return {}
-    try:
-        payload = json.loads(body[start : end + 1])
-    except ValueError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _option_refs(raw: object) -> list[tuple[str, str | None]]:
-    refs: list[tuple[str, str | None]] = []
-    for item in raw if isinstance(raw, list) else []:
-        if isinstance(item, str):
-            refs.append((item.strip(), None))
-        elif isinstance(item, dict) and isinstance(item.get("id"), str):
-            label = item.get("label")
-            refs.append((item["id"].strip(), label if isinstance(label, str) else None))
-    return refs
-
-
-def parse_clarification(
-    answer: str, candidates: list[ClarifyCandidate], original_query: str
-) -> Clarification | None:
-    """Turn a ``CLARIFY:`` reply into a validated clarification.
-
-    Unknown ids are dropped and labels can only shorten a retrieved topic. A
-    malformed payload falls back to every candidate topic (the model did say
-    the question is ambiguous). ``None`` when the reply is a normal answer.
-    """
-    if not is_clarification_reply(answer):
-        return None
+    """Dedicated clarification brief for the gated call (reply: ANSWER_OR_CLARIFY)."""
     settings = get_settings()
-    by_id = {c.id: c for c in candidates}
-    payload = _parse_payload(answer)
-
-    options: list[ClarificationOption] = []
-    for option_id, label in _option_refs(payload.get("options")):
-        candidate = by_id.get(option_id.upper())
-        if candidate is None or any(o.id == candidate.id for o in options):
-            continue
-        clean = _clip(label, _MAX_LABEL_CHARS) if label and label.strip() else None
-        options.append(candidate.to_option(clean))
-    if len(options) < settings.clarify_min_options:
-        options = [c.to_option() for c in candidates]
-    options = options[: settings.clarify_max_options]
-    if len(options) < settings.clarify_min_options:
-        return None
-
-    question = payload.get("question")
-    question = (
-        _clip(question, _MAX_QUESTION_CHARS)
-        if isinstance(question, str) and question.strip()
-        else DEFAULT_QUESTION
+    topics = "\n".join(f'{c.id}: {c.label} - "{c.excerpt}"' for c in candidates)
+    return (
+        "Clarification brief. The question is short and the context covers "
+        "these distinct topics (id: document / section - excerpt):\n"
+        f"{topics}\n\n"
+        "Reply in the required JSON.\n"
+        "- If the question clearly fits one topic, or only one intent is "
+        'supported by the context, set action to "answer", write the full '
+        'answer in answer, preamble "" and questions [].\n'
+        "- Only if it is genuinely ambiguous between intents the context can "
+        'answer, set action to "clarify" and answer "". Write preamble as one '
+        "short, friendly sentence showing you understood, naming what the "
+        'knowledge base actually covers (e.g. "DeployIQ offers several '
+        'services; which would you like to know about?"). Ask as few questions '
+        f"as needed (1 to {settings.clarify_max_questions}), all at once.\n"
+        "- Each question: header (1-2 word tab label, at most 12 characters, "
+        "e.g. Topic, Service, Scope), question (one specific sentence ending "
+        "with ?), multi_select (true only when several options can apply "
+        "together), and 2-4 mutually exclusive options.\n"
+        "- Each option must be answerable from the context: label (2-6 words, "
+        'specific, e.g. "Buy a DeployIQ service" or "Pricing and plans"), '
+        "description (one line saying exactly what they will get, naming the "
+        "concrete offerings, plans or pages found in the context) and "
+        "source_ids (the topic ids above that answer it). Never offer an "
+        "option the context cannot answer, and never a generic option such "
+        '"contact sales" unless the context has that page.\n'
+        "- Use Australian English and a warm, professional tone.\n\n"
     )
+
+
+# ---------------------------------------------------------------------------
+# Validation of the model's questions
+# ---------------------------------------------------------------------------
+
+
+def _label(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    words = raw.split()
+    if not words:
+        return None
+    return _clip(" ".join(words[:_MAX_LABEL_WORDS]), _MAX_LABEL_CHARS)
+
+
+def _question_text(raw: object) -> str | None:
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    text = _clip(raw, _MAX_QUESTION_CHARS - 1).rstrip(" .:")
+    return text if text.endswith("?") else f"{text}?"
+
+
+def _header(raw: object, index: int) -> str:
+    text = raw.strip() if isinstance(raw, str) else ""
+    if not text:
+        return DEFAULT_HEADER if index == 1 else f"Question {index}"[:_MAX_HEADER_CHARS]
+    return text if len(text) <= _MAX_HEADER_CHARS else text[:_MAX_HEADER_CHARS].rstrip()
+
+
+def _grounding(
+    raw: object, by_topic: dict[str, ClarifyCandidate]
+) -> list[ClarifyCandidate]:
+    """Retrieved topics an option cites (unknown ids dropped)."""
+    topics: list[ClarifyCandidate] = []
+    for item in raw if isinstance(raw, list) else []:
+        topic = by_topic.get(item.strip().upper()) if isinstance(item, str) else None
+        if topic is not None and topic not in topics:
+            topics.append(topic)
+    return topics
+
+
+def _options(
+    raw: object, by_topic: dict[str, ClarifyCandidate]
+) -> list[ClarificationOption]:
+    settings = get_settings()
+    options: list[ClarificationOption] = []
+    seen: set[str] = set()
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        label = _label(item.get("label"))
+        topics = _grounding(item.get("source_ids"), by_topic)
+        # Ungrounded options are dropped: never offer what cannot be answered.
+        if label is None or label.lower() in seen or not topics:
+            continue
+        seen.add(label.lower())
+        description = item.get("description")
+        doc_ids = list(dict.fromkeys(t.document_id for t in topics))
+        names = list(dict.fromkeys(t.source_name for t in topics if t.source_name))
+        options.append(
+            ClarificationOption(
+                id=f"O{len(options) + 1}",
+                label=label,
+                description=(
+                    _clip(description, _MAX_DESCRIPTION_CHARS)
+                    if isinstance(description, str)
+                    else ""
+                ),
+                document_ids=doc_ids[:_MAX_OPTION_SOURCES],
+                sources=names[:_MAX_OPTION_SOURCES],
+            )
+        )
+        if len(options) >= settings.clarify_max_options:
+            break
+    return options
+
+
+def build_clarification(
+    payload: dict, candidates: list[ClarifyCandidate], original_query: str
+) -> Clarification | None:
+    """Validated questions from the model's payload, or ``None`` if none is grounded."""
+    settings = get_settings()
+    by_topic = {c.id: c for c in candidates}
+    questions: list[ClarificationQuestion] = []
+    seen: set[str] = set()
+    raw_questions = payload.get("questions")
+    for raw in raw_questions if isinstance(raw_questions, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        text = _question_text(raw.get("question"))
+        options = _options(raw.get("options"), by_topic)
+        if text is None or text.lower() in seen:
+            continue
+        if len(options) < settings.clarify_min_options:
+            continue
+        seen.add(text.lower())
+        index = len(questions) + 1
+        questions.append(
+            ClarificationQuestion(
+                id=f"Q{index}",
+                header=_header(raw.get("header"), index),
+                question=text,
+                multi_select=raw.get("multi_select") is True,
+                options=options,
+            )
+        )
+        if len(questions) >= settings.clarify_max_questions:
+            break
+    if not questions:
+        return None
+    preamble = payload.get("preamble")
     return Clarification(
-        question=question,
-        options=options,
+        preamble=_clip(preamble, _MAX_PREAMBLE_CHARS)
+        if isinstance(preamble, str)
+        else "",
+        questions=questions,
         original_query=original_query[:_MAX_QUERY_CHARS],
     )
 
 
+def parse_decision(
+    raw: str, candidates: list[ClarifyCandidate], original_query: str
+) -> LlmDecision:
+    """Read the gated call's JSON. Non-JSON output is treated as a plain answer."""
+    try:
+        payload = json.loads(raw.strip())
+    except ValueError:
+        return LlmDecision(answer=raw)
+    if not isinstance(payload, dict):
+        return LlmDecision(answer=raw)
+    answer = payload.get("answer")
+    answer = answer if isinstance(answer, str) else ""
+    if payload.get("action") == "clarify":
+        clarification = build_clarification(payload, candidates, original_query)
+        if clarification is not None:
+            return LlmDecision(answer="", clarification=clarification)
+    return LlmDecision(answer=answer)
+
+
 def render_clarification_text(clarification: Clarification) -> str:
-    """Plain-text reply for clients that ignore the structured options."""
-    lines = [
-        f"{i}. {option.label}" for i, option in enumerate(clarification.options, 1)
-    ]
-    return f"{clarification.question}\n\n" + "\n".join(lines) + f"\n\n{REPLY_HINT}"
+    """Plain-text reply for clients that ignore the structured questions."""
+    blocks: list[str] = [clarification.preamble] if clarification.preamble else []
+    single = len(clarification.questions) == 1
+    for qi, question in enumerate(clarification.questions, 1):
+        lines = [question.question if single else f"{qi}. {question.question}"]
+        for oi, option in enumerate(question.options, 1):
+            marker = f"{oi}." if single else "  -"
+            detail = f": {option.description}" if option.description else ""
+            lines.append(f"{marker} {option.label}{detail}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) + f"\n\n{REPLY_HINT}"
 
 
-def compose_query(original_query: str, refinement: str) -> str:
-    """Standalone question from the original one plus the chosen meaning."""
-    suffix = f" (specifically: {refinement.strip()})"
+# ---------------------------------------------------------------------------
+# Answers -> one explicit question
+# ---------------------------------------------------------------------------
+
+
+def compose_query(original_query: str, parts: list[str]) -> str:
+    """The original question plus the user's answers, as one standalone query."""
+    suffix = f" ({'; '.join(p.strip() for p in parts if p.strip())})"
     room = max(_MAX_QUERY_CHARS - len(suffix), 0)
     return original_query.strip()[:room] + suffix
 
@@ -346,71 +522,122 @@ def _last_clarification(history: list[ChatTurn] | None) -> Clarification | None:
     return None
 
 
-def _match_option(
-    text: str, clarification: Clarification
-) -> ClarificationOption | None:
+def _entry(
+    question: ClarificationQuestion,
+    options: list[ClarificationOption],
+    other: str | None,
+) -> dict[str, object]:
+    return {
+        "question_id": question.id,
+        "header": question.header,
+        "option_ids": [o.id for o in options],
+        "labels": [o.label for o in options],
+        "other_text": other,
+        "document_ids": list(dict.fromkeys(d for o in options for d in o.document_ids)),
+    }
+
+
+def _part(entry: dict[str, object]) -> str:
+    labels = [str(label) for label in entry["labels"]]  # type: ignore[attr-defined]
+    if entry.get("other_text"):
+        labels.append(str(entry["other_text"]))
+    return f"{entry['header']}: {' and '.join(labels)}"
+
+
+def _from_answers(
+    clarification: Clarification, answers: list[ClarificationAnswer]
+) -> list[dict[str, object]]:
+    by_id = {q.id: q for q in clarification.questions}
+    entries: list[dict[str, object]] = []
+    for answer in answers:
+        question = by_id.get(answer.question_id)
+        if question is None:
+            continue
+        options_by_id = {o.id: o for o in question.options}
+        picked = [
+            options_by_id[i]
+            for i in dict.fromkeys(answer.option_ids)
+            if i in options_by_id
+        ]
+        other = (
+            _clip(answer.other_text, _MAX_OTHER_CHARS) if answer.other_text else None
+        )
+        if not question.multi_select:
+            # Single select: "Other" replaces a picked option.
+            picked = [] if other else picked[:1]
+        if picked or other:
+            entries.append(_entry(question, picked, other))
+    return entries
+
+
+def _match_text(clarification: Clarification, text: str) -> list[dict[str, object]]:
+    """Plain-text reply: option number (one question) or option names."""
     cleaned = text.strip().strip(".!?)").strip().lower()
-    if cleaned.isdigit():
+    questions = clarification.questions
+    if len(questions) == 1 and cleaned.isdigit():
         index = int(cleaned) - 1
-        if 0 <= index < len(clarification.options):
-            return clarification.options[index]
-        return None
-    for option in clarification.options:
-        if cleaned in (option.label.lower(), option.id.lower()):
-            return option
-    return None
+        options = questions[0].options
+        if 0 <= index < len(options):
+            return [_entry(questions[0], [options[index]], None)]
+        return []
+    pieces = {p.strip().strip(".!?").lower() for p in _ANSWER_SPLIT_RE.split(text)}
+    entries: list[dict[str, object]] = []
+    for question in questions:
+        picked = [o for o in question.options if o.label.lower() in pieces]
+        if picked:
+            entries.append(
+                _entry(question, picked if question.multi_select else picked[:1], None)
+            )
+    return entries
 
 
 def resolve_clarification_reply(
     query: str,
     history: list[ChatTurn] | None,
-    choice: ClarificationChoice | None = None,
+    answers: list[ClarificationAnswer] | None = None,
 ) -> ResolvedReply | None:
-    """Fold a reply to the last clarifying question into a standalone question.
+    """Rewrite a reply to the last clarification into one explicit question.
 
-    ``choice`` (sent by clients that render the options) wins; otherwise the
-    plain ``query`` is matched by option number, label or id. A short
-    free-text reply refines the original question too. ``None`` when the
-    previous turn was not a clarification and no choice was sent.
+    Structured ``answers`` (clients that render the question card) win;
+    otherwise the plain ``query`` is matched by option number / names, and a
+    short free-text reply refines the original question. ``None`` when the
+    previous turn asked nothing (the query is then answered as it is).
     """
     last = _last_clarification(history)
-    if choice is not None:
-        stored = next(
-            (o for o in (last.options if last else []) if o.id == choice.option_id),
-            None,
-        )
-        original = last.original_query if stored and last else choice.original_query
-        label = stored.label if stored else choice.option_label
-        return ResolvedReply(
-            query=compose_query(original, label),
-            original_query=original,
-            label=label,
-            option_id=stored.id if stored else choice.option_id,
-            free_text=False,
-        )
     if last is None:
         return None
-    option = _match_option(query, last)
-    if option is not None:
+    entries = _from_answers(last, answers) if answers else _match_text(last, query)
+    if entries:
+        doc_ids = list(
+            dict.fromkeys(d for e in entries for d in e["document_ids"])  # type: ignore[attr-defined]
+        )
         return ResolvedReply(
-            query=compose_query(last.original_query, option.label),
+            query=compose_query(last.original_query, [_part(e) for e in entries]),
             original_query=last.original_query,
-            label=option.label,
-            option_id=option.id,
-            free_text=False,
+            answers=entries,
+            document_ids=doc_ids,
         )
     settings = get_settings()
     # A new question ("what is E8?") is answered as such, not folded in.
     if (
-        not query.strip().endswith("?")
+        not answers
+        and not query.strip().endswith("?")
         and detect_conversational_intent(query) is None
         and 0 < content_word_count(query) <= settings.clarify_max_query_words
     ):
         return ResolvedReply(
-            query=compose_query(last.original_query, query),
+            query=compose_query(last.original_query, [query]),
             original_query=last.original_query,
-            label=query.strip()[:_MAX_LABEL_CHARS],
-            option_id=None,
             free_text=True,
         )
     return None
+
+
+def boost_documents(
+    sources: list[SourceChunk], document_ids: list[str] | None
+) -> list[SourceChunk]:
+    """Chosen options' documents first (stable), so the answer leads with them."""
+    if not document_ids:
+        return sources
+    preferred = set(document_ids)
+    return sorted(sources, key=lambda s: s.document_id not in preferred)

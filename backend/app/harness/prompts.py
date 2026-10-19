@@ -3,6 +3,7 @@
 import asyncio
 import time
 from http import HTTPStatus
+from typing import Any
 
 import tiktoken
 from openai import AsyncAzureOpenAI
@@ -233,12 +234,13 @@ async def call_llm(
     context_chunks: list[str | SourceChunk],
     history: list[ChatTurn] | None = None,
     clarify_block: str = "",
+    response_format: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, int] | None]:
     """Generate a grounded RAG answer with the configured Azure deployment.
 
-    ``clarify_block`` is passed only when the query qualifies for a
-    clarifying question (see app.harness.clarify); the reply may then be a
-    ``CLARIFY: {...}`` line instead of an answer.
+    ``clarify_block`` and ``response_format`` are passed only when the query
+    qualifies for clarifying questions (see app.harness.clarify); the reply is
+    then strict JSON (an answer, or questions back) instead of plain text.
 
     Returns ``(answer_text, usage)`` where ``usage`` is the *actual*
     token accounting reported by Azure OpenAI in the response
@@ -268,6 +270,7 @@ async def call_llm(
                     },
                 ],
                 reasoning_effort=settings.llm_reasoning_effort,
+                **({"response_format": response_format} if response_format else {}),
             )
     except CircuitOpenError:
         raise
