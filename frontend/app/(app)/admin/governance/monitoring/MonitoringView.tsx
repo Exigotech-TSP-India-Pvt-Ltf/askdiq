@@ -49,10 +49,12 @@ import {
   type GovernanceStreamEvent,
   type LabelledCount,
   type QuotaMetrics,
+  type ResourcesSnapshot,
   type Stage,
   type TraceOutcome,
 } from "@/lib/governance-api";
 import { OUTCOMES, OUTCOME_LABELS } from "@/lib/entity-stats-api";
+import { resourceGauges } from "@/lib/resource-gauges";
 import { logsHref, tabHref, tracesHref } from "@/lib/governance-links";
 import { useCarryHref } from "@/lib/entity-routes";
 import {
@@ -376,6 +378,15 @@ function outcomeColor(d: BarDatum, i: number, ct: ChartTheme): string {
 
 const shareOf = (value: number, total: number) => (total > 0 ? formatPct((value / total) * 100, 0) : "—");
 
+/** Icon per live resource gauge (keys from lib/resource-gauges). */
+const GAUGE_ICONS: Record<string, LucideIcon> = {
+  cpu: Cpu,
+  memory: MemoryStick,
+  rss: Layers,
+  loop: Timer,
+  pool: Database,
+};
+
 const RESOURCE_BANDS: Record<"cpu" | "ram" | "quota", GaugeBands> = {
   cpu: { warn: 70, danger: 90 },
   ram: { warn: 75, danger: 90 },
@@ -537,8 +548,15 @@ export default function MonitoringView() {
   useEffect(() => {
     lastRefetch.current = 0;
   }, [audience]);
+  // Resource gauges update in place from the stream (every sample interval);
+  // the REST snapshot is the fallback when the stream is not live.
+  const [liveResources, setLiveResources] = useState<Partial<ResourcesSnapshot> | null>(null);
   const onEvent = useCallback(
     (event: GovernanceStreamEvent) => {
+      if (event.type === "resources") {
+        setLiveResources(event.data);
+        return;
+      }
       const now = Date.now();
       if (event.type === "snapshot" && lastRefetch.current === 0) {
         lastRefetch.current = now;
@@ -591,6 +609,9 @@ export default function MonitoringView() {
   const counts = m?.counts ?? {};
   const total = m?.stage_percentiles?.total;
   const quality = m?.online_quality_kpis ?? {};
+  const resources = liveResources ?? m?.resources;
+  const gauges = resourceGauges(resources);
+  const sampleEvery = resources?.interval_seconds;
   const quota = m?.azure_quota_telemetry;
   const throttled = (quota?.chat?.azure_429_count_60s ?? 0) + (quota?.embedding?.azure_429_count_60s ?? 0);
   const windowH = m?.window_hours ?? 24;
@@ -598,7 +619,6 @@ export default function MonitoringView() {
   const noDataStages = rows.filter((r) => r.p50 === null).map((r) => r.label);
   const outcomeTotal = outcomes.reduce((sum, d) => sum + d.value, 0);
   const flagTotal = flags.reduce((sum, d) => sum + d.value, 0);
-  const ramMb = typeof m?.process_ram_mb === "number" ? m.process_ram_mb : null;
   const qualityCaption = "since restart · online evaluator";
   const countValue = (key: string, fallback: number | undefined) => counts[key]?.value ?? fallback;
 
@@ -750,26 +770,21 @@ export default function MonitoringView() {
         <StudioSectionHeader
           icon={Gauge}
           title={<span id="gov-resources">Resources and Azure quota</span>}
-          subtitle="This API process (live) · Azure quota over a rolling 60 s window"
+          subtitle="All API workers (live) · Azure quota over a rolling 60 s window"
           actions={throttled ? <StudioPill tone="danger">{`${formatCount(throttled)} throttled (429)`}</StudioPill> : undefined}
         />
         <Stagger className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <ResourceGaugeCard
-            title="CPU"
-            subtitle="This API process · live"
-            icon={Cpu}
-            value={m?.process_cpu_percent ?? null}
-            bands={RESOURCE_BANDS.cpu}
-            caption="Share of one core"
-          />
-          <ResourceGaugeCard
-            title="RAM"
-            subtitle="This API process · live"
-            icon={MemoryStick}
-            value={m?.process_ram_percent ?? null}
-            bands={RESOURCE_BANDS.ram}
-            caption={ramMb === null ? "Resident memory" : `${formatCount(Math.round(ramMb))} MB resident`}
-          />
+          {gauges.map((g) => (
+            <ResourceGaugeCard
+              key={g.key}
+              title={g.label}
+              subtitle={sampleEvery ? `All API workers · every ${sampleEvery} s` : "All API workers · live"}
+              icon={GAUGE_ICONS[g.key] ?? Gauge}
+              value={g.value}
+              bands={g.bands}
+              caption={g.caption}
+            />
+          ))}
           <ResourceGaugeCard
             title="Azure TPM"
             subtitle="Tokens per minute · 60 s"

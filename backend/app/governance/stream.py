@@ -9,7 +9,9 @@ snapshot and fans out, in memory, to every subscriber:
 - ``snapshot``   the full overview payload (first tick / on connect),
 - ``health``     when the Healthy / Degraded / Incident status changes,
 - ``incident``   for each CRITICAL / ALERT row not seen in the last tick,
-- ``monitoring`` the KPI values that changed since the last tick.
+- ``monitoring`` the KPI values that changed since the last tick,
+- ``resources``  the aggregated CPU / memory / loop lag / DB pool snapshot of
+                 all live workers, every ``METRICS_SAMPLE_INTERVAL_SECONDS``.
 
 Writers publish ``TOPIC_GOVERNANCE_INCIDENT`` through ``app.core.events``
 (Postgres NOTIFY), so producers on every replica wake up for new incidents.
@@ -30,15 +32,22 @@ from app.core.events import TOPIC_GOVERNANCE_INCIDENT, EventBus, get_event_bus
 from app.core.logging_config import get_logger
 from app.core.sse import SSEEvent
 from app.governance.overview import overview_payload
+from app.governance.resource_store import resources_snapshot
 
 logger = get_logger(__name__)
 
 SnapshotFn = Callable[[str], Awaitable[dict[str, Any]]]
+ResourcesFn = Callable[[], Awaitable[dict[str, Any]]]
 _QUEUE_SIZE = 100
 
 
 async def _default_snapshot(audience: str) -> dict[str, Any]:
     return await overview_payload(ScopedRunner(), audience)
+
+
+async def _default_resources() -> dict[str, Any]:
+    async with ScopedRunner().session() as db:
+        return await resources_snapshot(db)
 
 
 def diff_events(
@@ -87,6 +96,8 @@ class GovernanceStreamHub:
         interval: float | None = None,
         bus: EventBus | None = None,
         snapshot_timeout: float | None = None,
+        resources_fn: ResourcesFn | None = None,
+        resources_interval: float | None = None,
     ) -> None:
         settings = get_settings()
         self._snapshot_fn = snapshot_fn or _default_snapshot
@@ -105,6 +116,16 @@ class GovernanceStreamHub:
         self._producers: dict[str, asyncio.Task[None]] = {}
         self._latest: dict[str, dict[str, Any]] = {}
         self.ticks: dict[str, int] = defaultdict(int)
+        # Resource gauges (not audience-specific): one light producer per
+        # process while anyone is subscribed, every METRICS_SAMPLE_INTERVAL.
+        self._resources_fn = resources_fn or _default_resources
+        self._resources_interval = (
+            resources_interval
+            if resources_interval is not None
+            else settings.metrics_sample_interval_seconds
+        )
+        self._resources_task: asyncio.Task[None] | None = None
+        self._latest_resources: dict[str, Any] | None = None
 
     # -- introspection (tests, metrics) -------------------------------------
 
@@ -121,16 +142,53 @@ class GovernanceStreamHub:
         queue: asyncio.Queue[SSEEvent] = asyncio.Queue(maxsize=_QUEUE_SIZE)
         self._subscribers[audience].add(queue)
         self._ensure_producer(audience)
+        self._ensure_resources_producer()
         try:
             latest = self._latest.get(audience)
             if latest is not None:
                 yield SSEEvent(data=latest, event="snapshot")
+            if self._latest_resources is not None:
+                yield SSEEvent(data=self._latest_resources, event="resources")
             while True:
                 yield await queue.get()
         finally:
             self._subscribers[audience].discard(queue)
             if not self._subscribers[audience]:
                 self._stop_producer(audience)
+            if not any(self._subscribers.values()):
+                self._stop_resources_producer()
+
+    # -- resources ------------------------------------------------------------
+
+    def _ensure_resources_producer(self) -> None:
+        task = self._resources_task
+        if task is None or task.done():
+            self._resources_task = asyncio.create_task(
+                self._produce_resources(), name="governance-stream-resources"
+            )
+
+    def _stop_resources_producer(self) -> None:
+        task, self._resources_task = self._resources_task, None
+        if task is not None:
+            task.cancel()
+
+    async def resources_tick(self) -> None:
+        """One aggregated resource snapshot to every subscriber (all audiences)."""
+        try:
+            async with asyncio.timeout(self._snapshot_timeout):
+                snapshot = await self._resources_fn()
+        except Exception:
+            logger.warning("governance_stream_resources_failed", exc_info=True)
+            return
+        self._latest_resources = snapshot
+        event = SSEEvent(data=snapshot, event="resources")
+        for audience in list(self._subscribers):
+            self._broadcast(audience, event)
+
+    async def _produce_resources(self) -> None:
+        while True:
+            await self.resources_tick()
+            await asyncio.sleep(self._resources_interval)
 
     def _ensure_producer(self, audience: str) -> None:
         task = self._producers.get(audience)
@@ -197,6 +255,9 @@ class GovernanceStreamHub:
 
     async def aclose(self) -> None:
         tasks = list(self._producers.values())
+        if self._resources_task is not None:
+            tasks.append(self._resources_task)
+            self._resources_task = None
         self._producers.clear()
         self._latest.clear()
         for task in tasks:

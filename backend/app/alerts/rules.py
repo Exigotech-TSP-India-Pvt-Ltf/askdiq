@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts import catalogue as c
 from app.alerts.catalogue import Severity
+from app.alerts.resource_rules import resource_rule
 from app.alerts.service import NOTIFY_JOB, Finding
 from app.auth.permissions import AccessRequestStatus
 from app.core.config import Settings
@@ -32,6 +33,7 @@ from app.models.db_models import (
 )
 
 Rule = Callable[[AsyncSession, datetime, Settings], Awaitable[list[Finding]]]
+RESOURCES_GROUP = "resources"
 
 _SAMPLE_IDS = 5
 _MAX_ACCESS_REQUEST_ALERTS = 20
@@ -539,4 +541,14 @@ DATABASE_RULE_FUNCS: dict[str, Rule] = {
     c.JOB_FAILURES: job_failures_rule,
     c.INGESTION_FAILURES: ingestion_failures_rule,
     c.ONLINE_EVAL_VIOLATIONS: online_eval_rule,
+    # One pass over resource_samples raises all five resource rules.
+    RESOURCES_GROUP: resource_rule,
 }
+
+# Registry key -> catalogue rule ids it evaluates (a key not listed covers
+# itself). Only rules whose function ran cleanly may auto-resolve.
+RULE_GROUPS: dict[str, frozenset[str]] = {RESOURCES_GROUP: c.RESOURCE_RULES}
+
+
+def rules_covered(key: str) -> frozenset[str]:
+    return RULE_GROUPS.get(key, frozenset({key}))

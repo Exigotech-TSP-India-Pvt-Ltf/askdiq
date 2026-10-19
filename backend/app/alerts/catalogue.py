@@ -90,6 +90,14 @@ AZURE_QUOTA = "azure_quota"
 AZURE_THROTTLING = "azure_throttling"
 EVENT_BUS_DOWN = "event_bus_disconnected"
 DATABASE_UNAVAILABLE = "database_unavailable"
+CPU_SUSTAINED = "cpu_sustained"
+MEMORY_HIGH = "memory_high"
+RSS_GROWTH = "worker_rss_growth"
+EVENT_LOOP_LAG = "event_loop_lag"
+DB_POOL_SATURATION = "db_pool_saturation"
+RESOURCE_RULES = frozenset(
+    {CPU_SUSTAINED, MEMORY_HIGH, RSS_GROWTH, EVENT_LOOP_LAG, DB_POOL_SATURATION}
+)
 
 _GOVERNANCE = "/admin/governance"
 _MONITORING = "/admin/governance?tab=Monitoring"
@@ -261,6 +269,67 @@ RULES: tuple[AlertRule, ...] = (
         _GOVERNANCE,
         "Check the Postgres server, credentials, disk space and network; the "
         "API cannot serve requests until it is reachable again.",
+    ),
+    AlertRule(
+        CPU_SUSTAINED,
+        "Sustained high CPU",
+        "Infrastructure",
+        "database",
+        "Container CPU (when the container has a CPU limit) or server CPU at or "
+        "above the threshold for every sample of ALERT_RESOURCE_SUSTAIN_SECONDS, "
+        "per host. A single spike never alerts.",
+        "warning at ALERT_CPU_WARNING_PCT, critical at ALERT_CPU_CRITICAL_PCT",
+        _MONITORING,
+        "Find the busy process (docker stats / top). If it is the API, check "
+        "traffic and the event-loop lag gauge; scale workers or add CPU.",
+    ),
+    AlertRule(
+        MEMORY_HIGH,
+        "High memory",
+        "Infrastructure",
+        "database",
+        "Container memory against its limit (or server memory when unlimited) "
+        "at or above the threshold for ALERT_RESOURCE_SUSTAIN_SECONDS, per host.",
+        "warning at ALERT_MEMORY_WARNING_PCT, critical at ALERT_MEMORY_CRITICAL_PCT",
+        _MONITORING,
+        "Check which container grows (docker stats); restart a leaking worker "
+        "or raise the memory limit before the kernel OOM-kills it.",
+    ),
+    AlertRule(
+        RSS_GROWTH,
+        "Worker memory growth",
+        "API worker",
+        "database",
+        "A worker's RSS rose by at least ALERT_RSS_GROWTH_MB over the history "
+        "window, rising in at least 90% of samples (leak heuristic).",
+        "warning",
+        _MONITORING,
+        "Compare with traffic; a steady climb without load is a leak. Restart "
+        "the worker and capture a heap profile if it recurs.",
+    ),
+    AlertRule(
+        EVENT_LOOP_LAG,
+        "Event-loop lag",
+        "API worker",
+        "database",
+        "p95 event-loop lag of a worker at or above the threshold for "
+        "ALERT_RESOURCE_SUSTAIN_SECONDS (blocking or CPU-bound work on the loop).",
+        "warning at ALERT_LOOP_LAG_WARNING_MS, critical at ALERT_LOOP_LAG_CRITICAL_MS",
+        _MONITORING,
+        "Look for synchronous work in request handlers (big JSON, regex, "
+        "tokenisation) and move it to a thread; check CPU saturation.",
+    ),
+    AlertRule(
+        DB_POOL_SATURATION,
+        "DB connection pool saturated",
+        "Database",
+        "database",
+        "A worker had at least ALERT_DB_POOL_SATURATION_PCT of its pool "
+        "(DB_POOL_SIZE + DB_MAX_OVERFLOW) checked out for the sustain window.",
+        "warning; critical at 100%",
+        _MONITORING,
+        "Look for slow queries or connections held across slow calls; raise "
+        "DB_POOL_SIZE only if Postgres max_connections allows it.",
     ),
 )
 

@@ -274,6 +274,57 @@ export interface QuotaPoint {
   azure_429_count_60s: number;
 }
 
+export type ResourceScope = "host" | "container" | "process";
+
+/** One point of the 15-minute resource history (one per sample interval). */
+export interface ResourcePoint {
+  ts: string;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  rss_mb: number | null;
+  loop_lag_p95_ms: number | null;
+  db_pool_percent: number | null;
+}
+
+/** Aggregate of every live API worker (`resources` in monitoring and SSE). */
+export interface ResourcesSnapshot {
+  sampled_at: string | null;
+  age_seconds: number | null;
+  interval_seconds: number;
+  workers_live: number;
+  /** Container value when the container is limited, else the server's. */
+  effective: {
+    cpu_percent: number | null;
+    cpu_scope: "host" | "container";
+    memory_percent: number | null;
+    memory_scope: "host" | "container";
+  };
+  host: { scope: "host"; cpu_percent: number | null; memory_percent: number | null; memory_total_mb: number | null; hosts: number };
+  container: {
+    scope: "container";
+    cpu_percent: number | null;
+    memory_percent: number | null;
+    memory_mb: number | null;
+    memory_limit_mb: number | null;
+  } | null;
+  process: { scope: "process"; rss_mb: number | null; cpu_percent: number | null };
+  event_loop: { scope: "process"; lag_p95_ms: number | null; lag_max_ms: number | null };
+  db_pool: { scope: "process"; in_use_percent: number | null; checked_out: number; capacity: number };
+  active_queries: number;
+  workers: Array<{
+    worker_id: string;
+    hostname: string;
+    pid: number | null;
+    last_seen: string;
+    rss_mb: number | null;
+    cpu_percent: number | null;
+    loop_lag_p95_ms: number | null;
+    db_pool_checked_out: number | null;
+    active_queries: number | null;
+  }>;
+  history: ResourcePoint[];
+}
+
 export interface GovernanceMonitoring {
   window_hours: number;
   latency_unit: string;
@@ -296,6 +347,8 @@ export interface GovernanceMonitoring {
   process_cpu_percent: number | null;
   process_ram_mb: number | null;
   process_ram_percent: number | null;
+  /** Shared resource telemetry; absent from older backends. */
+  resources?: Partial<ResourcesSnapshot>;
   azure_quota_telemetry: AzureQuotaTelemetry;
   azure_quota_series: QuotaPoint[];
   online_quality_kpis: OnlineQualityKpis;
@@ -305,14 +358,15 @@ export interface GovernanceMonitoring {
 // SSE events (`GET /admin/governance/stream`)
 // ---------------------------------------------------------------------------
 
-export const STREAM_EVENTS = ["snapshot", "health", "incident", "monitoring"] as const;
+export const STREAM_EVENTS = ["snapshot", "health", "incident", "monitoring", "resources"] as const;
 export type StreamEventType = (typeof STREAM_EVENTS)[number];
 
 export type GovernanceStreamEvent =
   | { type: "snapshot"; data: GovernanceOverview }
   | { type: "health"; data: { status: HealthState; previous: HealthState; health: HealthStatus } }
   | { type: "incident"; data: GovernanceLogItem }
-  | { type: "monitoring"; data: { kpis: Record<string, number | null> } };
+  | { type: "monitoring"; data: { kpis: Record<string, number | null> } }
+  | { type: "resources"; data: Partial<ResourcesSnapshot> };
 
 // ---------------------------------------------------------------------------
 // Query strings

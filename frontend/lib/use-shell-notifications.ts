@@ -14,6 +14,8 @@ export const PENDING_ACCESS_QUERY_KEY = "admin/access-requests/pending-count";
 export const ACTIVE_ALERTS_QUERY_KEY = "admin/alerts/active";
 /** Badge refresh (paused when the tab is hidden); focus also revalidates. */
 export const PENDING_ACCESS_POLL_MS = 60_000;
+/** Active alerts refresh: new alerts reach the bell within 30 s. */
+export const ACTIVE_ALERTS_POLL_MS = 30_000;
 const STALE_MS = 30_000;
 export const USER_MANAGEMENT_REQUESTS_HREF = "/admin/user-management?tab=requests";
 /** Access-request alerts are already summarised by the pending-requests item. */
@@ -44,9 +46,9 @@ export function useActiveAlerts(): ActiveAlert[] {
   const { permissions } = useAuth();
   const allowed = hasPermission(permissions, "dashboard:read");
   const query = useApiQuery<ActiveAlert[]>(allowed ? ACTIVE_ALERTS_QUERY_KEY : null, (signal) => fetchActiveAlerts(signal), {
-    staleTime: STALE_MS,
+    staleTime: ACTIVE_ALERTS_POLL_MS / 2,
   });
-  useVisibilityPolling(() => void query.refetch(), PENDING_ACCESS_POLL_MS, allowed);
+  useVisibilityPolling(() => void query.refetch(), ACTIVE_ALERTS_POLL_MS, allowed);
   return allowed ? query.data ?? [] : [];
 }
 

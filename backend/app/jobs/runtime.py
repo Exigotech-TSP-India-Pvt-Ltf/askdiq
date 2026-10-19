@@ -17,6 +17,7 @@ from app.core.events import TOPIC_CACHE_INVALIDATE, Event, EventBus, get_event_b
 from app.core.logging_config import get_logger
 from app.dashboard.snapshots import SnapshotRefresher
 from app.governance.audience import invalidate_audience_cache
+from app.governance.metrics_sampler import MetricsSampler
 from app.jobs.worker import JobWorker
 from app.model_settings.service import (
     MODEL_SETTINGS_CACHE_ID,
@@ -74,6 +75,7 @@ class PlatformServices:
         self._worker_task: asyncio.Task[None] | None = None
         self._sampler_task: asyncio.Task[None] | None = None
         self._snapshot_task: asyncio.Task[None] | None = None
+        self._metrics_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         bus = self.bus
@@ -101,13 +103,26 @@ class PlatformServices:
             self._sampler_task = asyncio.create_task(
                 AlertSampler(bus=bus).run(self._stop), name="alerts-sampler"
             )
+        if cfg.metrics_enabled:
+            self._metrics_task = asyncio.create_task(
+                MetricsSampler().run(self._stop), name="metrics-sampler"
+            )
 
     async def aclose(self) -> None:
         self._stop.set()
-        for task in (self._sampler_task, self._snapshot_task, self._worker_task):
+        # Samplers loop until cancelled; the worker and the snapshot refresher
+        # get a moment to finish their current step first.
+        for attr in ("_sampler_task", "_metrics_task"):
+            sampler = getattr(self, attr)
+            setattr(self, attr, None)
+            if sampler is not None:
+                sampler.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await sampler
+        for task in (self._snapshot_task, self._worker_task):
             if task is not None:
                 await self._stop_task(task)
-        self._sampler_task = self._snapshot_task = self._worker_task = None
+        self._snapshot_task = self._worker_task = None
         await self.bus.stop()
 
     @staticmethod

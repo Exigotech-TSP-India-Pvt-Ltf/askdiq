@@ -8,7 +8,6 @@ Routers only validate input and delegate to ``app.governance.*``.
 
 from __future__ import annotations
 
-import asyncio
 import csv
 import io
 import json
@@ -52,6 +51,7 @@ from app.governance.online_eval import quality_tracker
 from app.governance.overview import overview_payload
 from app.governance.pagination import Cursor
 from app.governance.quota_series import quota_series
+from app.governance.resource_store import resources_snapshot
 from app.governance.stream import GovernanceStreamHub, get_governance_hub
 from app.models.db_models import LatencyRecord
 from app.schemas.governance import (
@@ -132,26 +132,24 @@ _MONITORING_DESCRIPTION = (
     "plus `server_error` audit rows), audience-scoped; `error_counts` has the "
     "inputs. It no longer uses in-memory counters.\n"
     "- `counts` labels every count with its `window` and `source`.\n"
-    "- `traces_total` is the true number of traces for the audience."
+    "- `traces_total` is the true number of traces for the audience.\n"
+    "- `resources` aggregates every live API worker of every replica "
+    "(sampled every `METRICS_SAMPLE_INTERVAL_SECONDS`): `host` (the server), "
+    "`container` (cgroup limits, null outside a container), `process` (summed "
+    "worker RSS / CPU), `event_loop` lag, `db_pool` use, `workers` and a "
+    "15-minute `history`. `effective` is the container value when limited, "
+    "else the host's. `process_cpu_percent` / `process_ram_percent` mirror "
+    "`effective`; `process_ram_mb` is the summed worker RSS."
 )
 
 
-async def _process_sample() -> tuple[float | None, float | None, float | None]:
+async def _resources(session: AsyncSession) -> dict[str, Any]:
+    """Aggregated resource snapshot of all live workers (never fails the page)."""
     try:
-        import psutil  # noqa: PLC0415 - optional at runtime; import failure is tolerated
-
-        def _sample() -> tuple[float, float, float]:
-            proc = psutil.Process()
-            return (
-                psutil.cpu_percent(None),
-                proc.memory_info().rss / 1024 / 1024,
-                proc.memory_percent(),
-            )
-
-        return await asyncio.to_thread(_sample)
+        return await resources_snapshot(session)
     except Exception:
-        logger.debug("psutil_metrics_unavailable", exc_info=True)
-        return None, None, None
+        logger.warning("resources_snapshot_failed", exc_info=True)
+        return {}
 
 
 @router.get(
@@ -185,15 +183,16 @@ async def governance_monitoring(
 
     starts = timeseries.hour_starts(now)
     start = starts[0]
-    percentiles, lat, turns, errs, flags, mix = await runner.gather(
+    percentiles, lat, turns, errs, flags, mix, resources = await runner.gather(
         lambda s: timeseries.stage_percentiles(s, audience, since),
         lambda s: timeseries.latency_rollup(s, audience, start, now),
         lambda s: timeseries.turns_rollup(s, audience, start, now, now),
         lambda s: timeseries.server_error_rollup(s, audience, start, now),
         lambda s: timeseries.guardrail_flag_breakdown(s, audience, since),
         lambda s: timeseries.outcome_mix(s, audience, since),
+        _resources,
     )
-    cpu, ram_mb, ram_pct = await _process_sample()
+    effective = resources.get("effective") or {}
 
     process_counter = audience == "overview"
     requests_total = METRICS["requests"] if process_counter else len(records)
@@ -236,9 +235,13 @@ async def governance_monitoring(
             "errors": labelled(errors["errors"], window, error_source),
             "traces_total": labelled(traces_total, "all_time", "latency_metrics"),
         },
-        "process_cpu_percent": cpu,
-        "process_ram_mb": ram_mb,
-        "process_ram_percent": ram_pct,
+        # Legacy keys, now from the shared aggregate of every live worker:
+        # CPU / memory % of the container when it is limited, else the host;
+        # RAM MB = summed RSS of all API workers.
+        "process_cpu_percent": effective.get("cpu_percent"),
+        "process_ram_mb": (resources.get("process") or {}).get("rss_mb"),
+        "process_ram_percent": effective.get("memory_percent"),
+        "resources": resources,
         "azure_quota_telemetry": quota_data,
         "azure_quota_series": quota_series.points(),
         "online_quality_kpis": quality_tracker.get_kpis(),
