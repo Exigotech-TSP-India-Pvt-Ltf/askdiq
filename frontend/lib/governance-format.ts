@@ -53,6 +53,12 @@ export function formatCount(value: number | null | undefined): string {
   return Math.abs(value) >= 10_000 ? compact.format(value) : integer.format(Math.round(value));
 }
 
+/** Full value with "en" digit grouping (19,452,869), e.g. for a compact value's `title`. */
+export function formatCountExact(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return integer.format(Math.round(value));
+}
+
 export function formatPct(value: number | null | undefined, digits = 1): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return `${value.toFixed(digits)}%`;

@@ -3,7 +3,7 @@
 import React from "react";
 import { FileText, Flag, MessagesSquare } from "lucide-react";
 import { governanceApi, type GovernanceTraceDetail, type WaterfallStage } from "@/lib/governance-api";
-import { formatDateTime, formatMs, formatUsd, humanize } from "@/lib/governance-format";
+import { formatCountExact, formatDateTime, formatMs, formatUsd, humanize } from "@/lib/governance-format";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useApiQuery } from "@/lib/query-cache";
 import type { Audience } from "@/lib/types";
@@ -72,7 +72,7 @@ function TraceBody({ detail }: { detail: GovernanceTraceDetail }) {
         <Field label="Slowest stage">
           {detail.slowest_stage ? `${stageLabel(detail.slowest_stage.stage)} · ${formatMs(detail.slowest_stage.ms)}` : "—"}
         </Field>
-        <Field label="Tokens">{tokens === null ? "—" : tokens.toLocaleString()}</Field>
+        <Field label="Tokens">{formatCountExact(tokens)}</Field>
         <Field label="Cost">{formatUsd(detail.cost_usd)}</Field>
         <Field label="Grounded">{detail.grounded === null ? "—" : detail.grounded ? "Yes" : "No"}</Field>
         <Field label="User">{detail.user_id ?? "—"}</Field>

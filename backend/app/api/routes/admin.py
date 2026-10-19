@@ -42,6 +42,7 @@ from app.governance.log_summary import level_for
 from app.governance.monitoring import (
     QUERY_ACTION,
 )
+from app.governance.outcomes import ALL_OUTCOMES
 from app.governance.test_ips import (
     add_or_update_test_ip,
     delete_test_ip,
@@ -49,6 +50,7 @@ from app.governance.test_ips import (
     get_test_ip_details,
     is_test_ip,
 )
+from app.governance.traces import normalized_outcome_sql
 from app.guardrails.conversational import (
     CAPABILITY_RESPONSE,
     FAREWELL_RESPONSE,
@@ -694,6 +696,38 @@ async def _latency_stats(db: AsyncSession, hours: int = 24 * 30) -> dict[str, An
     }
 
 
+# Window of ``_latency_stats`` as used by the usage cards (30 days).
+USAGE_LATENCY_WINDOW_HOURS = 24 * 30
+# Outcomes that are real failures (the LLM produced no answer). Blocked,
+# conversational and ungrounded turns completed as designed.
+LLM_FAILED_OUTCOMES: tuple[str, ...] = ("llm_failed",)
+UNKNOWN_OUTCOME = "unknown"
+
+
+async def _assistant_outcome_counts(db: AsyncSession) -> dict[str, int]:
+    """All-time assistant turns per canonical outcome (same normalisation as
+    the Monitoring outcome mix). Every outcome is present (0 when unused);
+    legacy turns without an outcome count as ``unknown``."""
+    outcome = func.coalesce(
+        normalized_outcome_sql(ChatMessageRecord.outcome), UNKNOWN_OUTCOME
+    ).label("outcome")
+    inner = (
+        select(outcome)
+        .select_from(ChatMessageRecord)
+        .where(ChatMessageRecord.role == "assistant")
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(inner.c.outcome, func.count()).group_by(inner.c.outcome)
+        )
+    ).all()
+    counts = dict.fromkeys((*ALL_OUTCOMES, UNKNOWN_OUTCOME), 0)
+    for name, count in rows:
+        counts[str(name)] = counts.get(str(name), 0) + int(count)
+    return counts
+
+
 def _usage_card_key(name: str) -> str:
     """Aggregation-cache key for a usage card; the permission scope is part of it."""
     return f"{USAGE_CARD_CACHE_PREFIX}{Permission.DASHBOARD_READ.value}:{name}"
@@ -964,20 +998,28 @@ async def usage_llm(
     settings = get_settings()
 
     async def compute() -> dict:
-        lat = await _latency_stats(db)
+        lat = await _latency_stats(db, USAGE_LATENCY_WINDOW_HOURS)
         query_rows = await _query_usage_rows(db)
         in_tokens = sum(q["input_tokens"] for q in query_rows)
         out_tokens = sum(q["output_tokens"] for q in query_rows)
         cost = sum(q["cost_usd"] for q in query_rows)
-        failed = sum(1 for q in query_rows if q["grounded"] is False)
         actual_count = sum(1 for q in query_rows if q["is_actual"])
-        requests = lat["requests"]
+        # Requests, failures and tokens share one window (all time) and one
+        # source (assistant turns). Only real errors count as failed; blocked,
+        # conversational and ungrounded turns are reported in ``outcomes``.
+        outcomes = await _assistant_outcome_counts(db)
+        requests = sum(outcomes.values())
+        failed = sum(outcomes[name] for name in LLM_FAILED_OUTCOMES)
         return {
             "provider": "Azure OpenAI",
             "model": current_model_settings().llm_deployment,
+            "window": "all_time",
+            "source": "chat_messages",
+            "latency_window_hours": USAGE_LATENCY_WINDOW_HOURS,
             "requests": requests,
             "successful": max(requests - failed, 0),
             "failed": failed,
+            "outcomes": outcomes,
             "input_tokens": in_tokens,
             "output_tokens": out_tokens,
             "total_tokens": in_tokens + out_tokens,
@@ -1008,7 +1050,7 @@ async def usage_embedding(
 ):
     settings = get_settings()
 
-    lat = await _latency_stats(db)
+    lat = await _latency_stats(db, USAGE_LATENCY_WINDOW_HOURS)
     docs = await db.scalar(select(func.count(Document.id)))
     chunks = await db.scalar(select(func.count(Chunk.id)))
     chunk_chars = await db.scalar(
@@ -1040,6 +1082,8 @@ async def usage_embedding(
         "dimensions": settings.embedding_dim,
         "documents": docs or 0,
         "chunks": chunks or 0,
+        "window": "all_time",
+        "latency_window_hours": USAGE_LATENCY_WINDOW_HOURS,
         "requests": int(q_count) + (chunks or 0),
         "input_tokens": tokens,
         "average_latency_ms": _r(lat["embedding_ms"]),

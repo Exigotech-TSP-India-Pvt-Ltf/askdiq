@@ -253,6 +253,20 @@ function logsPage(cursor: string | null, limit = LOG_PAGE_SIZE) {
   };
 }
 
+// All-time AI Usage card: only llm_failed is a failure (blocked / conversational / ungrounded are not).
+const LLM_USAGE = {
+  window: "all_time",
+  latency_window_hours: 720,
+  requests: 6649,
+  successful: 6549,
+  failed: 100,
+  input_tokens: 19452869,
+  output_tokens: 3896232,
+  total_tokens: 23349101,
+  average_latency_ms: 1200,
+  outcomes: { answered: 3842, ungrounded: 900, blocked: 1200, conversational: 607, llm_failed: 100, unknown: 0 },
+};
+
 const calls: URL[] = [];
 const callsTo = (path: string) => calls.filter((u) => u.pathname === `/api/proxy/admin/governance/${path}`);
 
@@ -266,6 +280,7 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   const path = url.pathname.replace("/api/proxy/admin", "");
   if (path === "/governance/overview") return respond(OVERVIEW);
   if (path === "/governance/monitoring") return respond(MONITORING);
+  if (path === "/usage/llm") return respond(LLM_USAGE);
   if (path === "/governance/logs") {
     const limit = Number(url.searchParams.get("limit"));
     return respond(limit === 1 ? { ...logsPage(null), items: [] } : logsPage(url.searchParams.get("cursor"), limit));
@@ -533,6 +548,20 @@ describe("Governance journey (F4.5)", () => {
     expect(screen.getByRole("link", { name: /^p95 latency:/ }).getAttribute("href")).toContain("latency_bucket=slow");
     expect(screen.getByRole("link", { name: /^Active visitors:/ })).toHaveAttribute("href", "/admin/usage?tab=users");
     fireEvent.click(errorTile);
+  });
+
+  it("Monitoring AI Usage counts only LLM errors as failed and formats numbers compactly", async () => {
+    renderPage("/admin/governance?tab=Monitoring");
+    const failed = await screen.findByRole("link", { name: /^Failed: 100, LLM errors · all time/ });
+    expect(failed.getAttribute("href")).toContain("outcome=llm_failed");
+    expect(screen.getByTestId("usage-not-failed")).toHaveTextContent(
+      "Not counted as failed: 1,200 blocked by guardrails, 607 conversational, 900 ungrounded (all time).",
+    );
+    expect(screen.getByRole("link", { name: /^Completed: 6,549, no LLM error/ })).toBeInTheDocument();
+    const input = screen.getByRole("link", { name: /^Input tokens: 19\.5M/ });
+    expect(input).toHaveAttribute("href", "/admin/usage");
+    expect(input.querySelector("[title='19,452,869']")).not.toBeNull();
+    expect(document.body.textContent).not.toContain("1,94,52,869");
   });
 
   it("switching tabs keeps state in the URL and only ranged tabs show the date picker", async () => {
