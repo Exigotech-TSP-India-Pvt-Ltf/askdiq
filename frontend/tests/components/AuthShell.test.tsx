@@ -119,7 +119,9 @@ describe("Header: role badge and notification bell (F1.3)", () => {
       </AuthProvider>,
     );
     expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    // Only the bell's active-alerts poll (dashboard:read); no access-request fetch.
+    const urls = fetchSpy.mock.calls.map(([url]) => String(url));
+    expect(urls.filter((url) => !url.includes("/admin/alerts"))).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: "Account menu for Jane Doe" }));
     expect(within(await screen.findByRole("menu")).getByTestId("role-badge")).toHaveTextContent("Admin");
   });
