@@ -707,3 +707,93 @@ class ModelSettings(Base):
             name="ck_model_settings_prices",
         ),
     )
+
+
+# --- Alerts (app/alerts) ---
+
+ALERT_ACTIVE_STATUSES = ("open", "acknowledged")
+
+
+class Alert(Base):
+    """One alert raised by a rule in ``app.alerts.catalogue``.
+
+    At most one *active* (open / acknowledged) row exists per ``dedupe_key``
+    (partial unique index), so every worker and replica can raise the same
+    condition safely; repeats bump ``occurrences`` / ``last_seen_at``.
+    ``notify_*`` tracks email delivery (``disabled`` when SMTP is not set).
+    """
+
+    __tablename__ = "alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    rule: Mapped[str] = mapped_column(String(64))
+    dedupe_key: Mapped[str] = mapped_column(String(200))
+    severity: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(
+        String(16), default="open", server_default="open"
+    )
+    title: Mapped[str] = mapped_column(String(300))
+    summary: Mapped[str] = mapped_column(Text, default="", server_default="")
+    component: Mapped[str] = mapped_column(String(64))
+    details: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb")
+    )
+    occurrences: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    acknowledged_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    notify_status: Mapped[str] = mapped_column(
+        String(16), default="pending", server_default="pending"
+    )
+    notify_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    notify_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "severity IN ('info', 'warning', 'critical')",
+            name="ck_alerts_severity",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'acknowledged', 'resolved')",
+            name="ck_alerts_status",
+        ),
+        CheckConstraint(
+            "notify_status IN ('pending', 'queued', 'sent', 'retrying', 'failed', "
+            "'disabled', 'skipped', 'suppressed')",
+            name="ck_alerts_notify_status",
+        ),
+        Index(
+            "uq_alerts_active_dedupe_key",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=text("status IN ('open', 'acknowledged')"),
+        ),
+        Index("ix_alerts_status_last_seen", "status", "last_seen_at"),
+        Index("ix_alerts_dedupe_key_notified", "dedupe_key", "notified_at"),
+        Index("ix_alerts_created_id", "created_at", "id"),
+    )

@@ -25,8 +25,14 @@ from typing import TYPE_CHECKING, TypeVar
 from app.core.config import configure_logging, get_settings
 from app.core.events import get_event_bus
 from app.core.logging_config import get_logger
+from app.core.state import get_state_backend
 from app.jobs import handlers, queue  # noqa: F401 - registers built-in handlers
-from app.jobs.registry import STATE_CLEANUP_JOB, get_handler, registered_types
+from app.jobs.registry import (
+    ALERTS_EVALUATE_JOB,
+    STATE_CLEANUP_JOB,
+    get_handler,
+    registered_types,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
@@ -67,6 +73,9 @@ class JobWorker:
             else settings.jobs_shutdown_timeout_seconds
         )
         self.cleanup_interval = float(settings.state_cleanup_interval_seconds)
+        self.alerts_poll_interval = max(
+            1.0, settings.alerts_evaluate_interval_seconds / 4
+        )
         self._types = types
         self._schedule_periodic = schedule_periodic
         self._engine = engine
@@ -98,6 +107,7 @@ class JobWorker:
         loop = asyncio.get_running_loop()
         next_reclaim = 0.0
         next_schedule = 0.0
+        next_alerts = 0.0
         error_delay = self.poll_interval
         while not stop.is_set():
             claimed = 0
@@ -109,6 +119,10 @@ class JobWorker:
                 if self._schedule_periodic and now >= next_schedule:
                     await self._schedule_cleanup()
                     next_schedule = now + self.cleanup_interval
+                if self._schedule_periodic and now >= next_alerts:
+                    # Polled at a quarter of the interval; put_once spaces runs.
+                    await self._schedule_alerts()
+                    next_alerts = now + self.alerts_poll_interval
                 free = self.concurrency - len(self._inflight)
                 if free > 0:
                     jobs = await queue.claim(
@@ -136,6 +150,29 @@ class JobWorker:
         await queue.enqueue(
             STATE_CLEANUP_JOB, {}, dedupe_key=STATE_CLEANUP_JOB, engine=self._engine
         )
+
+    async def _schedule_alerts(self) -> None:
+        """Queue ``alerts.evaluate`` at most once per interval across all workers.
+
+        The shared-state ``put_once`` claim (a Postgres row with a TTL) picks a
+        single scheduler per interval; the queue's dedupe key keeps at most one
+        evaluation pending.
+        """
+        settings = get_settings()
+        if not settings.alerts_enabled or get_handler(ALERTS_EVALUATE_JOB) is None:
+            return
+        claimed = await get_state_backend().put_once(
+            ALERTS_EVALUATE_JOB,
+            {"worker": self.worker_id},
+            ttl=float(settings.alerts_evaluate_interval_seconds),
+        )
+        if claimed:
+            await queue.enqueue(
+                ALERTS_EVALUATE_JOB,
+                {},
+                dedupe_key=ALERTS_EVALUATE_JOB,
+                engine=self._engine,
+            )
 
     async def _execute(self, job: queue.Job) -> None:
         handler = get_handler(job.type)

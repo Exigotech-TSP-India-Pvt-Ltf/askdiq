@@ -1,8 +1,9 @@
+import asyncio
 from collections.abc import AsyncGenerator
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, status
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IllegalStateChangeError
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
     AsyncSession,
@@ -12,8 +13,16 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
+from app.core.errors import ApiHTTPException, ErrorCode
+from app.core.logging_config import get_logger
 
 settings = get_settings()
+logger = get_logger(__name__)
+
+# Close retries while another task finishes an operation on the session.
+_CLOSE_RETRY_ATTEMPTS = 20
+_CLOSE_RETRY_FIRST_SECONDS = 0.01
+_CLOSE_RETRY_MAX_SECONDS = 0.5
 
 engine = create_async_engine(
     settings.database_url,
@@ -41,9 +50,63 @@ class Base(DeclarativeBase):
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency that yields a DB session per request."""
-    async with AsyncSessionLocal() as session:
+    """FastAPI dependency that yields a DB session per request.
+
+    The close runs through ``close_session`` so a request cancelled on
+    shutdown/reload (or client disconnect) still returns its connection.
+    """
+    session = AsyncSessionLocal()
+    try:
         yield session
+    finally:
+        await close_session(session)
+
+
+async def _close_when_idle(session: AsyncSession) -> None:
+    """Close ``session``, waiting out an operation still running on it.
+
+    ``IllegalStateChangeError`` means another task is inside a session method
+    (typically a connection checkout, ``_connection_for_bind``, that a
+    cancelled request left running). Closing under it would corrupt the
+    session, so retry briefly until it finishes; the connection is returned
+    to the pool either way.
+    """
+    delay = _CLOSE_RETRY_FIRST_SECONDS
+    for _attempt in range(_CLOSE_RETRY_ATTEMPTS):
+        try:
+            await session.close()
+            return
+        except IllegalStateChangeError:
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, _CLOSE_RETRY_MAX_SECONDS)
+    logger.warning("db_session_close_abandoned", reason="operation_in_progress")
+
+
+async def close_session(session: AsyncSession) -> None:
+    """Close a request session even when the request is being cancelled.
+
+    The close runs in its own task and is shielded: cancellation of the
+    caller cannot interrupt it half-way (which would leak the pooled
+    connection), and a close that races a still-running operation is retried
+    instead of raising ``IllegalStateChangeError`` into the request.
+    """
+    closer = asyncio.ensure_future(_close_when_idle(session))
+    try:
+        await asyncio.shield(closer)
+    except asyncio.CancelledError:
+        # The close keeps running in the background; let cancellation proceed.
+        closer.add_done_callback(_log_close_failure)
+        raise
+    except Exception as exc:
+        logger.warning("db_session_close_failed", error_type=type(exc).__name__)
+
+
+def _log_close_failure(task: asyncio.Future[None]) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.warning("db_session_close_failed", error_type=type(exc).__name__)
 
 
 async def release_connection(session: AsyncSession) -> None:
@@ -112,9 +175,10 @@ async def read_only_session(
         yield session
     except DBAPIError as exc:
         if is_statement_timeout(exc):
-            raise HTTPException(
+            raise ApiHTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="The query took too long. Please retry or narrow the range.",
+                code=ErrorCode.DB_TIMEOUT,
                 headers={"Retry-After": "5"},
             ) from None
         raise

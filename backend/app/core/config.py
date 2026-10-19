@@ -2,7 +2,7 @@
 
 import re
 from functools import lru_cache
-from typing import Self
+from typing import Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
@@ -14,6 +14,8 @@ MOCK_TENANT_ID = "00000000-0000-4000-8000-00000000a51d"
 MOCK_CLIENT_ID = "00000000-0000-4000-8000-0000000c11e7"
 MOCK_CLIENT_SECRET = "mock-idp-client-secret"  # noqa: S105 - dev-only mock value
 MIN_SESSION_SECRET_BYTES = 32
+# Plain address (recipients) or "Name <address>" (sender); no spaces in the address.
+_EMAIL_RE = re.compile(r"^[^@\s<>,]+@[^@\s<>,]+\.[^@\s<>,]+$|<[^@\s<>,]+@[^@\s<>,]+>$")
 
 
 class Settings(BaseSettings):
@@ -364,6 +366,53 @@ class Settings(BaseSettings):
     insights_reasoning_effort: str = "minimal"
     insights_completion_tokens_per_turn: int = 120
 
+    # --- Alerts (rules evaluated by the job worker; optional email) ---
+    alerts_enabled: bool = True
+    # Database-backed rules run at most once per interval across all workers.
+    alerts_evaluate_interval_seconds: int = Field(default=60, ge=15)
+    # Each API process samples its own signals (circuit breaker, Azure quota,
+    # 429s, event bus, database reachability) this often.
+    alerts_sample_interval_seconds: int = Field(default=30, ge=5)
+    # A process-sampled alert not re-reported for this long is resolved.
+    alerts_local_resolve_minutes: int = Field(default=5, ge=1)
+    # A new alert with the same dedupe key is not emailed again within this.
+    alert_cooldown_minutes: int = Field(default=60, ge=0)
+    alert_retention_days: int = Field(default=90, ge=1)
+    # Minimum severity that is emailed: info | warning | critical.
+    alert_email_min_severity: Literal["info", "warning", "critical"] = "info"
+    alert_email_max_attempts: int = Field(default=5, ge=1, le=20)
+    alert_notify_resolved: bool = True
+    # IANA zone shown next to UTC in alert emails.
+    alert_timezone: str = Field(
+        default="Australia/Sydney", pattern=r"^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$"
+    )
+    # Rule thresholds (the health thresholds above are shared with Governance).
+    alert_min_requests: int = Field(default=20, ge=1)
+    alert_latency_min_samples: int = Field(default=10, ge=1)
+    alert_llm_failure_window_minutes: int = Field(default=15, ge=1)
+    alert_llm_failures_threshold: int = Field(default=5, ge=1)
+    alert_azure_429_threshold: int = Field(default=3, ge=1)
+    alert_budget_warning_pct: float = Field(default=80.0, gt=0)
+    alert_budget_critical_pct: float = Field(default=100.0, gt=0)
+    alert_feedback_window_minutes: int = Field(default=60, ge=5)
+    alert_feedback_min_ratings: int = Field(default=5, ge=1)
+    alert_feedback_negative_pct: float = Field(default=25.0, ge=0, le=100)
+    alert_failure_window_minutes: int = Field(default=60, ge=5)
+    alert_online_eval_violations_threshold: int = Field(default=3, ge=1)
+    alert_event_bus_grace_seconds: int = Field(default=60, ge=5)
+    # SMTP delivery: off unless SMTP_HOST, ALERT_EMAIL_FROM and ALERT_EMAIL_TO
+    # are all set. SMTP_SSL = implicit TLS (465); otherwise STARTTLS (587).
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: SecretStr | None = None
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    smtp_timeout_seconds: float = Field(default=15.0, gt=0)
+    alert_email_from: str = ""
+    # Comma-separated recipients.
+    alert_email_to: str = ""
+
     # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
     # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).
     # Each also accepts the generic OIDC_* names other Exigo apps use, so one .env works for both.
@@ -460,6 +509,34 @@ class Settings(BaseSettings):
                 "in production."
             )
         return self
+
+    @model_validator(mode="after")
+    def _validate_alert_email(self) -> Self:
+        # Header-injection guard: addresses end up in From/To headers.
+        for name in ("alert_email_from", "alert_email_to", "smtp_host"):
+            if re.search(r"[\r\n]", getattr(self, name)):
+                raise ValueError(f"{name.upper()} must not contain line breaks.")
+        bad = [a for a in self.alert_email_recipients if not _EMAIL_RE.match(a)]
+        if bad or (
+            self.alert_email_from and not _EMAIL_RE.search(self.alert_email_from)
+        ):
+            raise ValueError(
+                "ALERT_EMAIL_FROM / ALERT_EMAIL_TO must be email addresses."
+            )
+        return self
+
+    @property
+    def alert_email_recipients(self) -> list[str]:
+        return [a.strip() for a in self.alert_email_to.split(",") if a.strip()]
+
+    @property
+    def alert_email_configured(self) -> bool:
+        """Email delivery is on only when host, sender and recipients are set."""
+        return bool(
+            self.smtp_host.strip()
+            and self.alert_email_from.strip()
+            and self.alert_email_recipients
+        )
 
     @property
     def superadmin_email_set(self) -> frozenset[str]:

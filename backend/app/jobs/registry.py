@@ -6,6 +6,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 STATE_CLEANUP_JOB = "state.cleanup"
+# Periodic alert evaluation (handler in app.alerts.jobs).
+ALERTS_EVALUATE_JOB = "alerts.evaluate"
 
 JobHandler = Callable[[dict[str, Any]], Awaitable[None]]
 

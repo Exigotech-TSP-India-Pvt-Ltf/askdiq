@@ -81,6 +81,8 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/admin/access-requests/bulk-approve"): MANAGE,
     ("POST", "/admin/access-requests/{request_id}/approve"): MANAGE,
     ("POST", "/admin/access-requests/{request_id}/reject"): MANAGE,
+    ("POST", "/admin/alerts/{alert_id}/acknowledge"): Permission.ALERTS_MANAGE,
+    ("POST", "/admin/alerts/{alert_id}/resolve"): Permission.ALERTS_MANAGE,
 }
 # GET routes needing more than dashboard:read.
 EXPECTED_SPECIAL_READS: dict[str, str] = {
