@@ -67,6 +67,36 @@ describe("F0.5.1 cache and dedupe", () => {
     expect(signals[1].aborted).toBe(false);
   });
 
+  it("keepPreviousData shows the last data while a new key loads", async () => {
+    const cache = new QueryCache();
+    const next = deferred<string>();
+    const fetcher = vi.fn((_signal: AbortSignal) => Promise.resolve("first"));
+    const { result, rerender } = renderHook(
+      ({ k, f }) => useApiQuery(k, f, { cache, keepPreviousData: true }),
+      { initialProps: { k: "range=7d", f: fetcher as Fetcher<string> } },
+    );
+    await waitFor(() => expect(result.current.data).toBe("first"));
+    rerender({ k: "range=90d", f: () => next.promise });
+    expect(result.current.data).toBe("first");
+    expect(result.current.isPlaceholderData).toBe(true);
+    expect(result.current.isLoading).toBe(false);
+    await act(async () => next.resolve("second"));
+    expect(result.current.data).toBe("second");
+    expect(result.current.isPlaceholderData).toBe(false);
+  });
+
+  it("without keepPreviousData a new key starts empty", async () => {
+    const cache = new QueryCache();
+    const { result, rerender } = renderHook(({ k }) => useApiQuery(k, () => new Promise<string>(() => undefined), { cache }), {
+      initialProps: { k: "a" },
+    });
+    act(() => cache.setData("a", "x"));
+    expect(result.current.data).toBe("x");
+    rerender({ k: "b" });
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isPlaceholderData).toBe(false);
+  });
+
   it("aborts on unmount but not while another hook still observes the key", async () => {
     const cache = new QueryCache();
     let signal: AbortSignal | undefined;

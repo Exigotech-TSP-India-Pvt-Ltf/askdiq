@@ -14,8 +14,8 @@ import asyncio
 import csv
 import io
 import logging
-import time
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -38,8 +38,13 @@ from sqlalchemy.orm import aliased
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
-from app.core.cache import aggregation_cache
-from app.core.concurrency import ScopedRunner, get_scoped_runner, single_flight
+from app.core.cache import (
+    aggregation_cache,
+    dashboard_cache,
+    dashboard_cached,
+    dashboard_query,
+)
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
@@ -97,23 +102,25 @@ def billed_rate_card(details: dict[str, Any]) -> dict[str, float]:
 
 # Concurrency semaphore for heavy aggregations (Task 5.1.2)
 _agg_semaphore = asyncio.Semaphore(max(1, get_settings().usage_agg_max_concurrency))
-_summary_cache: dict[tuple, tuple[float, dict]] = {}
 # Summary payloads are the same for every caller holding `dashboard:read`
 # (checked before the cache); the scope is part of the key all the same.
 _SUMMARY_CACHE_SCOPE = Permission.DASHBOARD_READ.value
-_counts_cache: dict[str, tuple[float, dict]] = {}
-_counts_cache_lock = asyncio.Lock()
 
-
-# Aggregation-cache prefix of the Monitoring usage cards (/admin/usage/llm ...).
+# dashboard_cache keys / prefixes of the usage aggregates.
 USAGE_CARD_CACHE_PREFIX = "usage-card:"
+USAGE_SUMMARY_CACHE_PREFIX = "usage-summary:"
+AUDIENCE_COUNTS_CACHE_KEY = "usage-audience-counts"
 
 
 def clear_usage_caches() -> None:
     """Clear all usage summary, audience counts and usage card caches (Task 5.1.1)."""
-    _summary_cache.clear()
-    _counts_cache.clear()
     aggregation_cache.invalidate_prefix(USAGE_CARD_CACHE_PREFIX)
+    for prefix in (
+        USAGE_CARD_CACHE_PREFIX,
+        USAGE_SUMMARY_CACHE_PREFIX,
+        AUDIENCE_COUNTS_CACHE_KEY,
+    ):
+        dashboard_cache.invalidate_prefix(prefix)
 
 
 # ============================================================================
@@ -123,125 +130,115 @@ def clear_usage_caches() -> None:
 
 @router.get("/audience-counts")
 async def get_audience_counts(
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Return badge counts (queries, sessions, distinct IPs) for Overview, Users, and Testing with short-TTL cache."""
-    settings = get_settings()
-    ttl = settings.usage_summary_cache_ttl_seconds
-    now_ts = time.time()
-    if "counts" in _counts_cache:
-        cached_ts, cached_val = _counts_cache["counts"]
-        if now_ts - cached_ts < ttl:
-            return cached_val
+    """Badge counts (queries, sessions, distinct IPs) for Overview, Users and Testing.
 
-    async with _counts_cache_lock:
-        now_ts = time.time()
-        if "counts" in _counts_cache:
-            cached_ts, cached_val = _counts_cache["counts"]
-            if now_ts - cached_ts < ttl:
-                return cached_val
+    Every dashboard header asks for them, so they are cached
+    stale-while-revalidate (``dashboard_cache``): after the first computation
+    each page gets them at once while one background task refreshes them.
+    """
+    return await dashboard_query(AUDIENCE_COUNTS_CACHE_KEY, runner, _audience_counts)
 
-        test_ips, _user_ips, _ = await get_classified_ips(db)
-        test_ip_list = list(test_ips)
 
-        user_msg = aliased(ChatMessageRecord, name="user_turn")
-        asst_msg = aliased(ChatMessageRecord, name="asst_turn")
-        client_ip_col = func.coalesce(user_msg.ip_address, ChatSession.created_ip)
+async def _audience_counts(db: AsyncSession) -> dict:
+    test_ips, _user_ips, _ = await get_classified_ips(db)
+    test_ip_list = list(test_ips)
 
-        # 1. Total counts (Overview)
-        q_total = (
-            await db.execute(
-                select(func.count(asst_msg.id))
-                .select_from(asst_msg)
-                .join(
-                    user_msg,
-                    and_(
-                        asst_msg.session_id == user_msg.session_id,
-                        asst_msg.turn_index == user_msg.turn_index,
-                        user_msg.role == "user",
-                    ),
-                )
-                .where(asst_msg.role == "assistant")
+    user_msg = aliased(ChatMessageRecord, name="user_turn")
+    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+    client_ip_col = func.coalesce(user_msg.ip_address, ChatSession.created_ip)
+
+    # 1. Total counts (Overview)
+    q_total = (
+        await db.execute(
+            select(func.count(asst_msg.id))
+            .select_from(asst_msg)
+            .join(
+                user_msg,
+                and_(
+                    asst_msg.session_id == user_msg.session_id,
+                    asst_msg.turn_index == user_msg.turn_index,
+                    user_msg.role == "user",
+                ),
             )
-        ).scalar() or 0
+            .where(asst_msg.role == "assistant")
+        )
+    ).scalar() or 0
 
-        s_total = (await db.execute(select(func.count(ChatSession.id)))).scalar() or 0
+    s_total = (await db.execute(select(func.count(ChatSession.id)))).scalar() or 0
 
-        # Distinct IPs across sessions and messages
-        q_all_ips = (
-            select(ChatMessageRecord.ip_address)
-            .where(ChatMessageRecord.ip_address.isnot(None))
-            .union(
-                select(ChatSession.created_ip).where(ChatSession.created_ip.isnot(None))
+    # Distinct IPs across sessions and messages
+    q_all_ips = (
+        select(ChatMessageRecord.ip_address)
+        .where(ChatMessageRecord.ip_address.isnot(None))
+        .union(select(ChatSession.created_ip).where(ChatSession.created_ip.isnot(None)))
+    )
+    all_distinct_ips = set((await db.execute(q_all_ips)).scalars().all())
+
+    # 2. Testing counts (IP is NULL/empty OR in test_ip_list)
+    if test_ip_list:
+        test_cond_msgs = or_(
+            client_ip_col.is_(None),
+            client_ip_col.in_(test_ip_list),
+        )
+        test_cond_sess = or_(
+            ChatSession.created_ip.is_(None),
+            ChatSession.created_ip.in_(test_ip_list),
+        )
+    else:
+        test_cond_msgs = client_ip_col.is_(None)
+        test_cond_sess = ChatSession.created_ip.is_(None)
+
+    q_testing = (
+        await db.execute(
+            select(func.count(asst_msg.id))
+            .select_from(asst_msg)
+            .join(
+                user_msg,
+                and_(
+                    asst_msg.session_id == user_msg.session_id,
+                    asst_msg.turn_index == user_msg.turn_index,
+                    user_msg.role == "user",
+                ),
+            )
+            .join(ChatSession, asst_msg.session_id == ChatSession.id)
+            .where(
+                asst_msg.role == "assistant",
+                test_cond_msgs,
             )
         )
-        all_distinct_ips = set((await db.execute(q_all_ips)).scalars().all())
+    ).scalar() or 0
 
-        # 2. Testing counts (IP is NULL/empty OR in test_ip_list)
-        if test_ip_list:
-            test_cond_msgs = or_(
-                client_ip_col.is_(None),
-                client_ip_col.in_(test_ip_list),
-            )
-            test_cond_sess = or_(
-                ChatSession.created_ip.is_(None),
-                ChatSession.created_ip.in_(test_ip_list),
-            )
-        else:
-            test_cond_msgs = client_ip_col.is_(None)
-            test_cond_sess = ChatSession.created_ip.is_(None)
+    s_testing = (
+        await db.execute(select(func.count(ChatSession.id)).where(test_cond_sess))
+    ).scalar() or 0
 
-        q_testing = (
-            await db.execute(
-                select(func.count(asst_msg.id))
-                .select_from(asst_msg)
-                .join(
-                    user_msg,
-                    and_(
-                        asst_msg.session_id == user_msg.session_id,
-                        asst_msg.turn_index == user_msg.turn_index,
-                        user_msg.role == "user",
-                    ),
-                )
-                .join(ChatSession, asst_msg.session_id == ChatSession.id)
-                .where(
-                    asst_msg.role == "assistant",
-                    test_cond_msgs,
-                )
-            )
-        ).scalar() or 0
+    # 3. User counts: Overview minus Testing guarantees exact reconciliation
+    q_users = max(0, q_total - q_testing)
+    s_users = max(0, s_total - s_testing)
 
-        s_testing = (
-            await db.execute(select(func.count(ChatSession.id)).where(test_cond_sess))
-        ).scalar() or 0
+    distinct_test_count = sum(1 for ip in all_distinct_ips if ip in test_ips)
+    distinct_user_count = max(0, len(all_distinct_ips) - distinct_test_count)
 
-        # 3. User counts: Overview minus Testing guarantees exact reconciliation
-        q_users = max(0, q_total - q_testing)
-        s_users = max(0, s_total - s_testing)
-
-        distinct_test_count = sum(1 for ip in all_distinct_ips if ip in test_ips)
-        distinct_user_count = max(0, len(all_distinct_ips) - distinct_test_count)
-
-        result = {
-            "overview": {
-                "queries": q_total,
-                "sessions": s_total,
-                "ips": len(all_distinct_ips),
-            },
-            "users": {
-                "queries": q_users,
-                "sessions": s_users,
-                "ips": distinct_user_count,
-            },
-            "testing": {
-                "queries": q_testing,
-                "sessions": s_testing,
-                "ips": distinct_test_count,
-            },
-        }
-        _counts_cache["counts"] = (time.time(), result)
-        return result
+    return {
+        "overview": {
+            "queries": q_total,
+            "sessions": s_total,
+            "ips": len(all_distinct_ips),
+        },
+        "users": {
+            "queries": q_users,
+            "sessions": s_users,
+            "ips": distinct_user_count,
+        },
+        "testing": {
+            "queries": q_testing,
+            "sessions": s_testing,
+            "ips": distinct_test_count,
+        },
+    }
 
 
 # ============================================================================
@@ -300,32 +297,18 @@ async def _usage_summary_payload(
         )
 
     cache_key = (_SUMMARY_CACHE_SCOPE, audience, from_date, to_date)
-    ttl = settings.usage_summary_cache_ttl_seconds
-    cached = _fresh_summary(cache_key, ttl)
-    if cached is not None:
-        return cached
 
     async def compute() -> dict:
-        again = _fresh_summary(cache_key, ttl)
-        if again is not None:
-            return again
+        # The computation opens its own sessions (runner), so it can also run
+        # as a background refresh after this request has returned.
         async with _agg_semaphore:
-            payload = await _compute_usage_summary(
+            return await _compute_usage_summary(
                 runner, audience, from_dt, to_dt, settings
             )
-        _summary_cache[cache_key] = (time.time(), payload)
-        return payload
 
-    # Identical concurrent requests share one computation; different
-    # audiences / ranges no longer queue behind one global lock.
-    return await single_flight.run(f"usage-summary:{cache_key!r}", compute)
-
-
-def _fresh_summary(cache_key: tuple, ttl: float) -> dict | None:
-    entry = _summary_cache.get(cache_key)
-    if entry is not None and time.time() - entry[0] < ttl:
-        return entry[1]
-    return None
+    # Stale-while-revalidate: identical concurrent requests share one
+    # computation; different audiences / ranges run side by side.
+    return await dashboard_cached(f"{USAGE_SUMMARY_CACHE_PREFIX}{cache_key!r}", compute)
 
 
 def _turn_aliases() -> tuple[Any, Any]:
@@ -1080,7 +1063,7 @@ async def get_usage_queries(
     sort: str = "created_at_desc",
     limit: int = 10,
     offset: int = 0,
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Paginated turns with filters, sort and header stats for the Queries tab.
@@ -1097,7 +1080,35 @@ async def get_usage_queries(
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
         raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
     lo, hi = usage_date_range(from_date, to_date)
+    args = UsageQueryArgs(
+        audience, q, ip, session_id, outcome, grounded, lo, hi, sort, limit, offset
+    )
+    # Header stats aggregate every matching turn: cached stale-while-revalidate
+    # per parameter set, computed on its own session.
+    return await dashboard_query(
+        f"usage-queries:{args!r}", runner, lambda s: _usage_queries_page(s, args)
+    )
 
+
+@dataclass(frozen=True, slots=True)
+class UsageQueryArgs:
+    audience: str
+    q: str | None
+    ip: str | None
+    session_id: str | None
+    outcome: str | None
+    grounded: bool | None
+    lo: datetime | None
+    hi: datetime | None
+    sort: str
+    limit: int
+    offset: int
+
+
+async def _usage_queries_page(db: AsyncSession, args: UsageQueryArgs) -> dict:
+    audience, q, ip, session_id = args.audience, args.q, args.ip, args.session_id
+    outcome, grounded, lo, hi = args.outcome, args.grounded, args.lo, args.hi
+    sort, limit, offset = args.sort, args.limit, args.offset
     user_msg = aliased(ChatMessageRecord, name="user_turn")
     asst_msg = aliased(ChatMessageRecord, name="asst_turn")
 

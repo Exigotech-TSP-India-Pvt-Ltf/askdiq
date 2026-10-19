@@ -46,7 +46,8 @@ export function useInsightsAggregate<E extends InsightsEndpoint>(
   return useApiQuery<InsightsResponses[E]>(
     [`${INSIGHTS_CACHE_PREFIX}/${endpoint}`, insightsQuery(filters)],
     (signal) => insightsApi.aggregate(endpoint, token, filters, signal),
-    { enabled },
+    // A filter / period / audience change swaps the chart in place.
+    { enabled, keepPreviousData: true },
   );
 }
 
@@ -56,8 +57,10 @@ const conversationsKey = (filters: InsightsFilters, page: ConversationPageParams
 /** One page of the Conversations table; the next page is warmed while idle. */
 export function useInsightsConversations(filters: InsightsFilters, page: ConversationPageParams) {
   const { token } = useAuth();
-  const result = useApiQuery(conversationsKey(filters, page), (signal) =>
-    insightsApi.getConversations(token, filters, page, signal),
+  const result = useApiQuery(
+    conversationsKey(filters, page),
+    (signal) => insightsApi.getConversations(token, filters, page, signal),
+    { keepPreviousData: true },
   );
   const next = { ...page, offset: page.offset + page.limit };
   const hasNext = result.data !== undefined && next.offset < result.data.total;

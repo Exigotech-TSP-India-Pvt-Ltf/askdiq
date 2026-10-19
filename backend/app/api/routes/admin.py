@@ -1,6 +1,8 @@
 """Admin endpoints for users and conversation management."""
 
 import asyncio
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -17,7 +19,7 @@ from app.api.routes.admin_usage import router as usage_router
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
-from app.core.cache import aggregation_cache
+from app.core.cache import dashboard_cached, dashboard_query
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, release_connection
@@ -157,6 +159,7 @@ async def list_users(
         description="Slot filter last day.",
     ),
     db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return users grouped by client IP with activity statistics (Task 2.3.1).
@@ -190,40 +193,10 @@ async def list_users(
     wanted_status = (visitor_status or "all").lower()
     now = datetime.utcnow()
 
-    ip_rows = (
-        await db.execute(
-            select(
-                ChatSession.created_ip.label("ip"),
-                func.min(ChatSession.created_at).label("first_seen"),
-                func.max(ChatSession.last_activity_at).label("last_active"),
-                func.count(ChatSession.id).label("sessions"),
-            )
-            .where(ChatSession.created_ip.isnot(None))
-            .group_by(ChatSession.created_ip)
-        )
-    ).all()
-
-    queries_by_ip = dict(
-        (
-            await db.execute(
-                select(ChatMessageRecord.ip_address, func.count(ChatMessageRecord.id))
-                .where(ChatMessageRecord.ip_address.isnot(None))
-                .group_by(ChatMessageRecord.ip_address)
-            )
-        ).all()
-    )
-
-    feedback_counts = dict(
-        (
-            await db.execute(
-                select(AuditLog.ip_address, func.count(AuditLog.id))
-                .where(
-                    AuditLog.action.ilike("%feedback%"),
-                    AuditLog.ip_address.isnot(None),
-                )
-                .group_by(AuditLog.ip_address)
-            )
-        ).all()
+    # Three whole-table aggregates per IP: cached stale-while-revalidate and
+    # shared by every filter / sort / page of the list.
+    ip_rows, queries_by_ip, feedback_counts = await dashboard_query(
+        VISITOR_AGGREGATES_CACHE_KEY, runner, _visitor_aggregates
     )
 
     all_users = []
@@ -282,6 +255,63 @@ async def list_users(
     }
 
 
+VISITOR_AGGREGATES_CACHE_KEY = "visitor-aggregates"
+
+
+async def _visitor_aggregates(
+    db: AsyncSession,
+) -> tuple[list[Any], dict[str, int], dict[str, int]]:
+    """(sessions per IP, queries per IP, feedback events per IP)."""
+    ip_rows = (
+        await db.execute(
+            select(
+                ChatSession.created_ip.label("ip"),
+                func.min(ChatSession.created_at).label("first_seen"),
+                func.max(ChatSession.last_activity_at).label("last_active"),
+                func.count(ChatSession.id).label("sessions"),
+            )
+            .where(ChatSession.created_ip.isnot(None))
+            .group_by(ChatSession.created_ip)
+        )
+    ).all()
+    queries_by_ip = dict(
+        (
+            await db.execute(
+                select(ChatMessageRecord.ip_address, func.count(ChatMessageRecord.id))
+                .where(ChatMessageRecord.ip_address.isnot(None))
+                .group_by(ChatMessageRecord.ip_address)
+            )
+        ).all()
+    )
+    feedback_counts = dict(
+        (
+            await db.execute(
+                select(AuditLog.ip_address, func.count(AuditLog.id))
+                .where(
+                    AuditLog.action.ilike("%feedback%"),
+                    AuditLog.ip_address.isnot(None),
+                )
+                .group_by(AuditLog.ip_address)
+            )
+        ).all()
+    )
+    return list(ip_rows), queries_by_ip, feedback_counts
+
+
+async def _feedback_count(db: AsyncSession, ip: str | None) -> int:
+    """Feedback audit events from one IP (index on ``(ip_address, created_at)``)."""
+    if not ip:
+        return 0
+    return int(
+        await db.scalar(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.ip_address == ip, AuditLog.action.ilike("%feedback%")
+            )
+        )
+        or 0
+    )
+
+
 @router.get("/users/{user_id}")
 async def get_user(
     user_id: str,
@@ -289,19 +319,6 @@ async def get_user(
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return detailed information about one user."""
-    feedback_counts = dict(
-        (
-            await db.execute(
-                select(AuditLog.ip_address, func.count(AuditLog.id))
-                .where(
-                    AuditLog.action.ilike("%feedback%"),
-                    AuditLog.ip_address.is_not(None),
-                )
-                .group_by(AuditLog.ip_address)
-            )
-        ).all()
-    )
-
     if user_id.startswith("client-"):
         ip = user_id.removeprefix("client-")
         sessions_res = (
@@ -358,7 +375,7 @@ async def get_user(
             "sessions": len(sessions_res),
             "conversations": len(sessions_res),
             "queries": query_count,
-            "feedback_count": feedback_counts.get(ip, 0),
+            "feedback_count": await _feedback_count(db, ip),
             "conversations_data": [
                 {
                     "id": str(s.id),
@@ -434,7 +451,7 @@ async def get_user(
         "sessions": len(conversation_rows),
         "conversations": len(conversation_rows),
         "queries": query_count,
-        "feedback_count": feedback_counts.get(ip_address, 0),
+        "feedback_count": await _feedback_count(db, ip_address),
         "conversations_data": [
             {
                 "id": str(session.id),
@@ -471,7 +488,7 @@ async def list_conversations(
     day: date | None = Query(
         None, description="With `outcome`: only turns on this UTC day (YYYY-MM-DD)."
     ),
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return conversations for the admin dashboard (Task 2.3.2: audience-scoped, paginated, no email).
@@ -489,6 +506,34 @@ async def list_conversations(
             detail="`day` requires `outcome`.",
         )
     aud_scope = audience_scope(audience)
+    args = ConversationListArgs(
+        aud_scope, q, ip, sort, limit, offset, min_turns, max_turns, outcome, day
+    )
+    # Full grouped scan of sessions x messages (counted, then paged): cached
+    # stale-while-revalidate per parameter set, on its own session.
+    return await dashboard_query(
+        f"conversations:{args!r}", runner, lambda s: _conversations_page(s, args)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationListArgs:
+    aud_scope: str
+    q: str | None
+    ip: str | None
+    sort: str
+    limit: int
+    offset: int
+    min_turns: int | None
+    max_turns: int | None
+    outcome: OutcomeName | None
+    day: date | None
+
+
+async def _conversations_page(db: AsyncSession, args: ConversationListArgs) -> dict:
+    aud_scope, q, ip, sort = args.aud_scope, args.q, args.ip, args.sort
+    limit, offset, outcome, day = args.limit, args.offset, args.outcome, args.day
+    min_turns, max_turns = args.min_turns, args.max_turns
     turn_count = conversation_stats.turn_count_sql()
 
     query = (
@@ -741,7 +786,14 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
             .order_by(ChatSession.id, ChatMessageRecord.turn_index)
         )
     ).all()
+    # Per-row accounting over every exchange is CPU work (seconds on a large
+    # history): run it in the thread pool so the event loop keeps serving
+    # every other request meanwhile.
+    return await asyncio.to_thread(_usage_rows_from_records, rows, rates)
 
+
+def _usage_rows_from_records(rows: Sequence[Any], rates: Any) -> list[dict]:
+    """Pairs user / assistant rows into queries with token and cost accounting."""
     pairs: dict[tuple, dict] = {}
     for r in rows:
         key = (r.session_id, r.turn_index)
@@ -961,16 +1013,9 @@ async def usage_llm(
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    settings = get_settings()
-
-    async def compute() -> dict:
-        # The single-flight computation runs in its own task and can outlive
-        # this request (client disconnect, reload), so it must not use the
-        # request's session: closing that under a running checkout raised
-        # IllegalStateChangeError. It opens its own short-lived session.
-        async with runner.session() as db:
-            lat = await _latency_stats(db)
-            query_rows = await _query_usage_rows(db)
+    async def compute(db: AsyncSession) -> dict:
+        lat = await _latency_stats(db)
+        query_rows = await _query_usage_rows(db)
         in_tokens = sum(q["input_tokens"] for q in query_rows)
         out_tokens = sum(q["output_tokens"] for q in query_rows)
         cost = sum(q["cost_usd"] for q in query_rows)
@@ -997,13 +1042,10 @@ async def usage_llm(
             },
         }
 
-    # Per-exchange cost accounting runs in Python over every exchange; the
-    # all-time totals are cached briefly and concurrent callers share one run.
-    return await aggregation_cache.get_or_compute(
-        _usage_card_key("llm"),
-        compute,
-        ttl=settings.usage_summary_cache_ttl_seconds,
-    )
+    # Per-exchange cost accounting runs in Python over every exchange (seconds):
+    # the all-time totals are cached stale-while-revalidate, on their own
+    # session, and concurrent callers share one run.
+    return await dashboard_query(_usage_card_key("llm"), runner, compute)
 
 
 @router.get("/usage/embedding")
@@ -1548,13 +1590,21 @@ async def admin_dashboard(
     )
     if window is None:
         return cached_response(request, await _dashboard_payload(db, audience))
-    panels = await _dashboard_panels(db, audience)
     await release_connection(db)  # never hold a pool slot while waiting for more
-    payload = {
-        **panels,
-        **await dashboard_service.window_payload(runner, audience, window, now),
-    }
-    return cached_response(request, payload)
+
+    async def compute() -> dict:
+        # Own sessions (runner): the result may be refreshed in the background.
+        (panels,) = await runner.gather(lambda s: _dashboard_panels(s, audience))
+        return {
+            **panels,
+            **await dashboard_service.window_payload(
+                runner, audience, window, dashboard_window.utcnow()
+            ),
+        }
+
+    # The frontend sends minute-aligned windows, so repeat visits share a key.
+    key = f"dashboard:{audience}:{window.start.isoformat()}:{window.end.isoformat()}"
+    return cached_response(request, await dashboard_cached(key, compute))
 
 
 @router.get(

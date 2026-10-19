@@ -11,7 +11,7 @@ import contextlib
 
 from app.alerts.sampler import AlertSampler
 from app.branding.service import BRANDING_CACHE_ID, invalidate_branding_cache
-from app.core.cache import aggregation_cache
+from app.core.cache import aggregation_cache, dashboard_cache
 from app.core.config import Settings, get_settings
 from app.core.events import TOPIC_CACHE_INVALIDATE, Event, EventBus, get_event_bus
 from app.core.logging_config import get_logger
@@ -38,6 +38,7 @@ def _invalidate_local_caches(event: Event) -> None:
         invalidate_model_settings_cache()
         return
     aggregation_cache.invalidate_prefix(event.id)
+    dashboard_cache.invalidate_prefix(event.id)
 
 
 def log_alert_delivery_status(settings: Settings) -> None:
