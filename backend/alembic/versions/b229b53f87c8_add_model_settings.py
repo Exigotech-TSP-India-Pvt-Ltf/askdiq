@@ -1,6 +1,6 @@
 """add model_settings (runtime LLM / embedding model and pricing overrides)
 
-Revision ID: c3d4e5f6a7b8
+Revision ID: b229b53f87c8
 Revises: bb0f7d18a2c0
 Create Date: 2026-10-19 10:00:00.000000
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "c3d4e5f6a7b8"
+revision: str = "b229b53f87c8"
 down_revision: str | None = "bb0f7d18a2c0"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
