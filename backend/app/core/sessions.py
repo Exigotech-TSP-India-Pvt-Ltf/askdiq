@@ -18,11 +18,14 @@ from fastapi import HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.core.logging_config import get_logger
+from app.core.tasks import spawn
 from app.feedback import repository as feedback_repo
 from app.governance.audit import (
     current_request_id,
@@ -351,52 +354,134 @@ async def _write_exchange(
     audit_detail: dict,
     **exchange,
 ) -> None:
-    try:
-        async with AsyncSessionLocal() as db:
-            if new_session is not None:
-                db.add(new_session)
-                session = new_session
-                await record_audit_event(
-                    db,
-                    request_id=request_id,
-                    actor=user_email,
-                    action="session_created",
-                    detail={"session_id": str(new_session.id), "source": "query"},
-                    ip_address=client_ip,
-                    commit=False,
-                )
-            else:
-                session = await db.get(ChatSession, session_id)
-                if session is None:
-                    logger.warning("exchange_persist_skipped session=%s", session_id)
-                    return
+    """Persist one exchange, retrying transient database failures.
 
-            await record_exchange(
-                db,
-                session=session,
-                request_id=request_id,
-                client_ip=client_ip,
-                commit=False,
+    Idempotent: the message ids are fixed by the caller, so a retry after a
+    commit whose acknowledgement was lost finds the rows and stops.
+    """
+    delay = _WRITE_RETRY_FIRST_SECONDS
+    for attempt in range(1, _WRITE_ATTEMPTS + 1):
+        try:
+            if attempt > 1 and await _exchange_exists(assistant_message_id):
+                return
+            await _write_exchange_once(
+                user_email=user_email,
+                session_id=session_id,
+                new_session=new_session,
                 user_message_id=user_message_id,
                 assistant_message_id=assistant_message_id,
+                request_id=request_id,
+                client_ip=client_ip,
+                audit_detail=audit_detail,
                 **exchange,
             )
+            return
+        except Exception as exc:
+            transient = _is_transient_db_error(exc)
+            if transient and attempt < _WRITE_ATTEMPTS:
+                logger.warning(
+                    "exchange_persist_retry request_id=%s attempt=%d error_type=%s",
+                    request_id,
+                    attempt,
+                    type(exc).__name__,
+                )
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+            logger.error(
+                "exchange_persist_failed request_id=%s attempts=%d error_type=%s",
+                request_id,
+                attempt,
+                type(exc).__name__,
+                exc_info=True,
+            )
+            return
+
+
+# Exchange write retries (transient DB errors only): 0.5 s, 1 s, 2 s.
+_WRITE_ATTEMPTS = 4
+_WRITE_RETRY_FIRST_SECONDS = 0.5
+
+
+def _is_transient_db_error(exc: BaseException) -> bool:
+    """Connection-level failures worth retrying (not constraint/SQL errors)."""
+    if isinstance(exc, OSError | TimeoutError | PoolTimeoutError | InterfaceError):
+        return True
+    if isinstance(exc, OperationalError):
+        return True
+    return isinstance(exc, DBAPIError) and bool(exc.connection_invalidated)
+
+
+async def _exchange_exists(assistant_message_id: uuid.UUID) -> bool:
+    async with AsyncSessionLocal() as db:
+        return await db.get(ChatMessageRecord, assistant_message_id) is not None
+
+
+async def _write_exchange_once(
+    *,
+    user_email: str,
+    session_id: uuid.UUID,
+    new_session: ChatSession | None,
+    user_message_id: uuid.UUID,
+    assistant_message_id: uuid.UUID,
+    request_id: str,
+    client_ip: str | None,
+    audit_detail: dict,
+    **exchange,
+) -> None:
+    if new_session is not None:
+        # A fresh transient copy per attempt: a failed attempt's session
+        # object is bound to (and expired by) the rolled-back transaction.
+        new_session = ChatSession(
+            id=new_session.id,
+            user_email=new_session.user_email,
+            title=new_session.title,
+            created_at=new_session.created_at,
+            last_activity_at=new_session.last_activity_at,
+            expires_at=new_session.expires_at,
+            created_ip=new_session.created_ip,
+        )
+    async with AsyncSessionLocal() as db:
+        if new_session is not None:
+            db.add(new_session)
+            session = new_session
             await record_audit_event(
                 db,
                 request_id=request_id,
                 actor=user_email,
-                action="query",
-                detail={**audit_detail, "message_id": str(assistant_message_id)},
+                action="session_created",
+                detail={"session_id": str(new_session.id), "source": "query"},
                 ip_address=client_ip,
                 commit=False,
             )
-            # Labelled later by the job worker, never in the request path.
-            await enqueue_classification_in_transaction(db, assistant_message_id)
-            await db.commit()
-    except Exception:
-        logger.warning(
-            "exchange_persist_failed request_id=%s", request_id, exc_info=True
+        else:
+            session = await db.get(ChatSession, session_id)
+            if session is None:
+                logger.warning("exchange_persist_skipped session=%s", session_id)
+                return
+
+        await record_exchange(
+            db,
+            session=session,
+            request_id=request_id,
+            client_ip=client_ip,
+            commit=False,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            **exchange,
         )
+        await record_audit_event(
+            db,
+            request_id=request_id,
+            actor=user_email,
+            action="query",
+            detail={**audit_detail, "message_id": str(assistant_message_id)},
+            ip_address=client_ip,
+            commit=False,
+        )
+        # Labelled later by the job worker, never in the request path.
+        await enqueue_classification_in_transaction(db, assistant_message_id)
+        await db.commit()
 
 
 def schedule_exchange_write(
@@ -420,7 +505,9 @@ def schedule_exchange_write(
     if title == "New chat":
         title = exchange["user_text"].strip()[:80] or title
 
-    task = asyncio.create_task(
+    # Supervised (spawn): strongly referenced, failures logged, and drained by
+    # the lifespan shutdown, so a reload never drops a just-answered turn.
+    task = spawn(
         _write_exchange(
             user_email=user_email,
             session_id=session.id,
@@ -431,7 +518,8 @@ def schedule_exchange_write(
             client_ip=client_ip,
             audit_detail=audit_detail,
             **exchange,
-        )
+        ),
+        name="exchange_write",
     )
     _pending_writes[user_email].add(task)
     task.add_done_callback(lambda t: _forget_write(user_email, t))
@@ -465,6 +553,9 @@ async def list_sessions(db: AsyncSession, user_email: str) -> list[ChatSessionSu
         .where(ChatSession.user_email == user_email)
         .group_by(ChatSession.id)
         .order_by(ChatSession.last_activity_at.desc())
+        # Bounded: the sidebar shows recent chats; a long-lived actor (the
+        # shared website visitor id) can own thousands of sessions.
+        .limit(settings.session_list_max_items)
     )
     return [_to_summary(session, count, now) for session, count in result.all()]
 
@@ -696,22 +787,24 @@ async def record_feedback(
     )
 
     # Check for negative feedback spike in the last 1 hour
+    # One aggregate row (not every rating of the hour loaded into memory on
+    # each submission); uses ix_message_feedback_created_id.
     one_hour_ago = now - timedelta(hours=1)
-    recent_ratings = (
-        (
-            await db.execute(
-                select(MessageFeedback.rating).where(
-                    MessageFeedback.created_at >= one_hour_ago
-                )
-            )
+    total_1h, neg_count = (
+        await db.execute(
+            select(
+                func.count(MessageFeedback.id),
+                func.count(MessageFeedback.id).filter(
+                    MessageFeedback.rating <= _NEGATIVE_RATING_MAX
+                ),
+            ).where(MessageFeedback.created_at >= one_hour_ago)
         )
-        .scalars()
-        .all()
-    )
+    ).one()
+    recent_total = int(total_1h or 0)
+    neg_count = int(neg_count or 0)
 
-    if len(recent_ratings) >= _FEEDBACK_ALERT_MIN_SAMPLES:
-        neg_count = sum(1 for r in recent_ratings if r <= _NEGATIVE_RATING_MAX)
-        neg_rate = neg_count / len(recent_ratings)
+    if recent_total >= _FEEDBACK_ALERT_MIN_SAMPLES:
+        neg_rate = neg_count / recent_total
         if neg_rate > _FEEDBACK_ALERT_NEGATIVE_RATE:
             await record_audit_event(
                 db,
@@ -721,7 +814,7 @@ async def record_feedback(
                 detail={
                     "negative_rate": round(neg_rate, 3),
                     "threshold": 0.25,
-                    "total_1h": len(recent_ratings),
+                    "total_1h": recent_total,
                     "negative_count": neg_count,
                     "trigger_message_id": str(mid),
                 },
@@ -732,7 +825,7 @@ async def record_feedback(
                 "negative_feedback_spike",
                 negative_rate=round(neg_rate, 3),
                 threshold=0.25,
-                total_1h=len(recent_ratings),
+                total_1h=recent_total,
                 negative_count=neg_count,
             )
 

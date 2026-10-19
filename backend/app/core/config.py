@@ -147,6 +147,8 @@ class Settings(BaseSettings):
     # How many prior messages (user+assistant combined) to load as context
     # for a follow-up question in the same session.
     session_history_max_messages: int = 20
+    # Most recent sessions returned by GET /sessions (newest activity first).
+    session_list_max_items: int = Field(default=200, ge=1, le=1000)
 
     # Per-user request throttling on /query (the expensive LLM path), so one
     # user hammering the endpoint can't degrade it for everyone else.
@@ -292,6 +294,8 @@ class Settings(BaseSettings):
     llm_max_concurrency: int = 64
     llm_saturated_retry_after_seconds: int = 2
     online_eval_max_concurrency: int = 4
+    # Online evaluations waiting for a slot; beyond this new ones are skipped.
+    online_eval_max_pending: int = Field(default=200, ge=1)
     # Default bound for `gather_scoped()` parallel aggregation.
     agg_max_concurrency: int = 4
     # Pooled connections parallel aggregation (all requests together) may never

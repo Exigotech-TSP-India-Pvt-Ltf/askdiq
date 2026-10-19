@@ -212,7 +212,8 @@ describe("Phase F7 Settings journey", { timeout: 20_000 }, () => {
     expect(screen.getByRole("link", { name: "Feedback" })).toBeInTheDocument();
     expect(screen.getByText("Superadmin only")).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Branding settings" })).not.toBeInTheDocument();
-    expect(calls).toHaveLength(0);
+    // Nothing but the header bell's active-alerts poll.
+    expect(calls.filter((c) => !c.url.includes("/admin/alerts"))).toHaveLength(0);
   });
 
   it("operator and role-less users have no Settings item either", () => {

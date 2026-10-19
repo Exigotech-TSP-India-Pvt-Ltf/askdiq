@@ -63,6 +63,7 @@ export const ME: Me = {
     "eval:run",
     "testip:write",
     "usage:export",
+    "alerts:manage",
     "users:manage",
     "audit:auth:read",
     "branding:write",
