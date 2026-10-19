@@ -122,6 +122,7 @@ class VisitorTimeline(BaseModel):
     sessions: list[TimelineSession]
     queries: list[TimelineQuery]
     cost_series: list[CostDay]
+    activity_series: list[ActivityDay] = []
     feedback: list[TimelineFeedback]
     truncated: TimelineTruncated
 
