@@ -958,14 +958,19 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
 
 @router.get("/usage/llm")
 async def usage_llm(
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     settings = get_settings()
 
     async def compute() -> dict:
-        lat = await _latency_stats(db)
-        query_rows = await _query_usage_rows(db)
+        # The single-flight computation runs in its own task and can outlive
+        # this request (client disconnect, reload), so it must not use the
+        # request's session: closing that under a running checkout raised
+        # IllegalStateChangeError. It opens its own short-lived session.
+        async with runner.session() as db:
+            lat = await _latency_stats(db)
+            query_rows = await _query_usage_rows(db)
         in_tokens = sum(q["input_tokens"] for q in query_rows)
         out_tokens = sum(q["output_tokens"] for q in query_rows)
         cost = sum(q["cost_usd"] for q in query_rows)

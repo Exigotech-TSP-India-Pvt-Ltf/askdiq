@@ -43,7 +43,7 @@ from collections.abc import Awaitable, Callable
 from functools import cache
 from typing import Any, TypeVar
 
-from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi import Depends, Header, Request, Security, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,6 +52,7 @@ from app.auth.principal import AuthUser
 from app.auth.sessions import SessionService
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.errors import ApiHTTPException, ErrorCode
 from app.governance.auth import DEFAULT_ACTOR, sanitize_client_id
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -77,22 +78,42 @@ service_key_header = APIKeyHeader(
     description="Proxy-to-backend service key (API_KEY_NAME).",
     auto_error=False,
 )
-session_header = APIKeyHeader(
-    name="X-Session",
-    scheme_name="Session",
-    description="Session id forwarded by the proxy from the session cookie.",
-    auto_error=False,
-)
 
-client_id_header = APIKeyHeader(
-    name="X-Client-Id",
-    scheme_name="ClientId",
-    description=(
-        "Website callers only: stable per-visitor id (UUID recommended) that "
-        "owns chat sessions and keys the per-visitor rate limit."
+
+# X-Session and X-Client-Id are proxy/website plumbing, not credentials a
+# person enters in Swagger: they are read as hidden headers so /docs shows a
+# single "ServiceKey" scheme (API_KEY_NAME). Runtime checks are unchanged.
+async def session_header(
+    token: str | None = Header(
+        default=None, alias="X-Session", include_in_schema=False
     ),
-    auto_error=False,
-)
+) -> str | None:
+    """Session id forwarded by the proxy from the session cookie."""
+    return token or None
+
+
+async def client_id_header(
+    client_id: str | None = Header(
+        default=None, alias="X-Client-Id", include_in_schema=False
+    ),
+) -> str | None:
+    """Website callers only: stable per-visitor id that owns chat sessions."""
+    return client_id or None
+
+
+_DENIAL_CODES: dict[str, ErrorCode] = {
+    DETAIL_SERVICE_KEY: ErrorCode.INVALID_SERVICE_KEY,
+    DETAIL_UNAUTHENTICATED: ErrorCode.UNAUTHENTICATED,
+    DETAIL_CSRF: ErrorCode.CSRF_REJECTED,
+    DETAIL_SUSPENDED: ErrorCode.ACCOUNT_SUSPENDED,
+    DETAIL_APPROVAL: ErrorCode.APPROVAL_REQUIRED,
+    DETAIL_FORBIDDEN: ErrorCode.INSUFFICIENT_PERMISSIONS,
+}
+
+
+def _deny(status_code: int, detail: str) -> ApiHTTPException:
+    """401/403 with the legacy ``detail`` text plus a stable ``code``."""
+    return ApiHTTPException(status_code, detail, code=_DENIAL_CODES[detail])
 
 
 def _guard(fn: F) -> F:
@@ -113,17 +134,64 @@ async def require_service_key(
         or not api_key
         or not hmac.compare_digest(api_key.encode(), expected.encode())
     ):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, DETAIL_SERVICE_KEY)
+        raise _deny(status.HTTP_401_UNAUTHORIZED, DETAIL_SERVICE_KEY)
+
+
+def _first_hop(value: str | None) -> str:
+    return (value or "").split(",")[0].strip()
+
+
+_DEFAULT_PORTS = {"http": ":80", "https": ":443"}
+
+
+def request_origin(request: Request) -> str:
+    """``scheme://host[:port]`` the client used to reach this backend.
+
+    Behind a trusted reverse proxy (``TRUST_PROXY_HEADERS=true``) the
+    ``X-Forwarded-Proto`` / ``X-Forwarded-Host`` set by nginx win, so the
+    public https API host is recognised; otherwise the request URL is used.
+    """
+    scheme = request.url.scheme
+    host = request.headers.get("host") or request.url.netloc
+    if get_settings().trust_proxy_headers:
+        scheme = _first_hop(request.headers.get("x-forwarded-proto")) or scheme
+        host = _first_hop(request.headers.get("x-forwarded-host")) or host
+    scheme, netloc = scheme.lower(), host.lower()
+    default_port = _DEFAULT_PORTS.get(scheme)
+    if default_port and netloc.endswith(default_port):
+        netloc = netloc[: -len(default_port)]
+    return f"{scheme}://{netloc}"
+
+
+def is_same_origin_request(request: Request, origin: str) -> bool:
+    """A browser request from a page this backend served itself (``/docs``).
+
+    ``Origin`` is set by the browser and cannot be forged by another site, so
+    an exact match with the backend's own origin is same-origin. When the
+    browser also sends ``Sec-Fetch-Site`` it must agree.
+    """
+    if not origin or origin != request_origin(request):
+        return False
+    fetch_site = (request.headers.get("sec-fetch-site") or "").lower()
+    return fetch_site in ("", "same-origin")
 
 
 def enforce_csrf(request: Request) -> None:
-    """Cookie-authenticated state changes need the proxy marker and our Origin."""
+    """Session-authenticated state changes must come from our own pages.
+
+    Accepted: the proxy marker plus the frontend Origin (``APP_BASE_URL``), or
+    a same-origin request from a page the backend serves itself (Swagger UI
+    at ``/docs``, locally or behind nginx). Any other cross-site request: 403.
+    """
     if request.method in SAFE_METHODS:
         return
     marker = request.headers.get(CSRF_HEADER, "")
     origin = (request.headers.get("origin") or "").rstrip("/").lower()
-    if marker != CSRF_HEADER_VALUE or origin != get_settings().app_origin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, DETAIL_CSRF)
+    if marker == CSRF_HEADER_VALUE and origin == get_settings().app_origin:
+        return
+    if is_same_origin_request(request, origin):
+        return
+    raise _deny(status.HTTP_403_FORBIDDEN, DETAIL_CSRF)
 
 
 async def authenticate_session(
@@ -149,7 +217,7 @@ async def current_user(
     user: AuthUser | None = Depends(authenticate_session),
 ) -> AuthUser:
     if user is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, DETAIL_UNAUTHENTICATED)
+        raise _deny(status.HTTP_401_UNAUTHORIZED, DETAIL_UNAUTHENTICATED)
     request.state.auth_user = user
     return user
 
@@ -158,16 +226,16 @@ async def current_user(
 async def require_role_or_chat(user: AuthUser = Depends(current_user)) -> AuthUser:
     """Chat is open to every signed-in user who is not suspended (newplan §7.2)."""
     if user.status not in CHAT_STATUSES:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, DETAIL_SUSPENDED)
+        raise _deny(status.HTTP_403_FORBIDDEN, DETAIL_SUSPENDED)
     return user
 
 
 @_guard
 async def require_active_user(user: AuthUser = Depends(current_user)) -> AuthUser:
     if user.status is UserStatus.SUSPENDED:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, DETAIL_SUSPENDED)
+        raise _deny(status.HTTP_403_FORBIDDEN, DETAIL_SUSPENDED)
     if not user.is_active:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, DETAIL_APPROVAL)
+        raise _deny(status.HTTP_403_FORBIDDEN, DETAIL_APPROVAL)
     return user
 
 
@@ -178,7 +246,7 @@ def require_permission(permission: Permission) -> Callable[..., Awaitable[AuthUs
 
     async def dependency(user: AuthUser = Depends(require_active_user)) -> AuthUser:
         if not user.has(permission):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, DETAIL_FORBIDDEN)
+            raise _deny(status.HTTP_403_FORBIDDEN, DETAIL_FORBIDDEN)
         return user
 
     dependency.__name__ = f"require_permission_{permission.name.lower()}"
@@ -217,8 +285,8 @@ async def require_chat_actor(
     if user is not None:
         request.state.auth_user = user
         if user.status not in CHAT_STATUSES:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, DETAIL_SUSPENDED)
+            raise _deny(status.HTTP_403_FORBIDDEN, DETAIL_SUSPENDED)
         return user.email
     if SESSION_HEADER in request.headers or request.headers.get(PROXY_HEADER):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, DETAIL_UNAUTHENTICATED)
+        raise _deny(status.HTTP_401_UNAUTHORIZED, DETAIL_UNAUTHENTICATED)
     return api_key_actor(client_id)
