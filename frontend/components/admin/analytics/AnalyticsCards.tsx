@@ -58,6 +58,7 @@ export function TrendCard({ state, filters, update }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && days.length === 0}
       emptyMessage="Choose a valid date range."
       bodyClassName="h-[250px] w-full"
@@ -82,6 +83,7 @@ export function HourCard({ filters }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && (data?.total ?? 0) === 0}
       emptyMessage="No questions in this selection."
       bodyClassName="h-[300px] w-full"
@@ -107,6 +109,7 @@ export function FlowCard({ state, filters, update }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && (data?.total ?? 0) === 0}
       emptyMessage="No conversations in this selection."
       bodyClassName="min-h-[190px] w-full"
@@ -137,6 +140,7 @@ export function TopicsCard({ state, filters, update, learnLabel }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && items.length === 0}
       emptyMessage="No questions in this selection."
       bodyClassName="h-[280px] w-full"
@@ -168,6 +172,7 @@ export function QualityCard({ state, filters, update, learnLabel }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && (data?.total ?? 0) === 0}
       emptyMessage="No questions in this selection."
       bodyClassName="min-h-[260px] w-full"
@@ -200,6 +205,7 @@ export function DropoffCard({ state, filters, update, learnLabel }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && items.length === 0}
       emptyMessage="No dropped conversations in this selection."
       bodyClassName="min-h-[120px] w-full"
@@ -230,6 +236,7 @@ export function PeopleCard({ state, filters, update, learnLabel }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && items.length === 0}
       emptyMessage="No people in this selection."
       bodyClassName="min-h-[260px] w-full"

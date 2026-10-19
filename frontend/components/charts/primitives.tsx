@@ -180,10 +180,18 @@ export function useChartMarks<T>(
   onSelect: SelectHandler<T> | undefined,
   dimOpacity: number,
 ): ChartMarks {
-  const [active, setActive] = useState<number | null>(null);
+  // The hovered index belongs to the data it was set on: a click that filters
+  // the chart re-renders it under a still pointer with fewer (or other)
+  // marks, and a stale index pointed past the new layout (Analytics crash).
+  const [hover, setHover] = useState<{ index: number; data: readonly T[] } | null>(null);
   const [tabStop, setTabStop] = useState(0);
   const refs = useRef<(SVGElement | null)[]>([]);
   const count = data.length;
+  const active = hover !== null && hover.data === data && hover.index < count ? hover.index : null;
+  const setActive = useCallback(
+    (index: number | null) => setHover(index === null ? null : { index, data }),
+    [data],
+  );
   const safeTabStop = tabStop < count ? tabStop : 0;
 
   const focusMark = useCallback((i: number) => {
@@ -232,7 +240,7 @@ export function useChartMarks<T>(
         onBlur: () => setActive(null),
       };
     },
-    [count, data, describe, focusMark, onSelect, safeTabStop],
+    [count, data, describe, focusMark, onSelect, safeTabStop, setActive],
   );
 
   const opacityFor = useCallback(
