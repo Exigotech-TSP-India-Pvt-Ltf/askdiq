@@ -378,7 +378,8 @@ export function useApiQuery<T>(
   if (state.data !== undefined) shown.current = state.data;
   const placeholder =
     keepPreviousData && active && state.data === undefined && !state.error ? shown.current : undefined;
-  const data = state.data ?? placeholder;
+  // `null` is data (an optional endpoint that is absent), not "missing".
+  const data = state.data !== undefined ? state.data : placeholder;
 
   return {
     data,
