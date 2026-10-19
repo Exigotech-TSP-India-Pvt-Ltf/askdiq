@@ -29,6 +29,7 @@ from sqlalchemy.pool import NullPool
 from app.auth.deps import authenticate_session
 from app.auth.permissions import Role, UserStatus
 from app.auth.principal import AuthUser
+from app.core.cache import dashboard_cache
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, get_session_factory
@@ -133,6 +134,15 @@ async def _signed_in_test_user(
         status=UserStatus.ACTIVE,
         version=1,
     )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_dashboard_cache():
+    """Dashboard aggregates are cached per process; each test starts empty
+    (rolled-back rows of one test must never answer another)."""
+    dashboard_cache.clear()
+    yield
+    dashboard_cache.clear()
 
 
 @pytest.fixture(autouse=True)

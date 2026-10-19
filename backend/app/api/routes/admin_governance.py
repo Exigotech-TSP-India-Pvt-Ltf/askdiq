@@ -13,6 +13,7 @@ import csv
 import io
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -25,6 +26,7 @@ from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
+from app.core.cache import dashboard_cached
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, release_connection
@@ -429,6 +431,23 @@ async def governance_logs(
     filters = _log_filters(user, audience, level, service, q, date_from, date_to)
     position = Cursor.decode(cursor)
     cap = get_settings().governance_exact_count_cap
+    # The filters carry the caller's hidden actions (permission scope), so
+    # the key never shares a page across permission levels.
+    scope = replace(filters, hidden_actions=frozenset())
+    hidden = ",".join(sorted(filters.hidden_actions))
+    key = f"gov-logs:{scope!r}:{hidden}:{cursor}:{limit}"
+    return await dashboard_cached(
+        key, lambda: _governance_logs_page(runner, filters, position, limit, cap)
+    )
+
+
+async def _governance_logs_page(
+    runner: ScopedRunner,
+    filters: logs.LogFilters,
+    position: Cursor | None,
+    limit: int,
+    cap: int,
+) -> dict[str, Any]:
     (rows, next_cursor), (counts, capped, total) = await runner.gather(
         lambda s: logs.fetch_page(s, filters, position, limit),
         lambda s: logs.level_counts_and_total(s, filters, cap),

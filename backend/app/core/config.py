@@ -195,6 +195,11 @@ class Settings(BaseSettings):
     # Audience & Usage Analytics Settings
     audience_cache_ttl_seconds: int = 30
     usage_summary_cache_ttl_seconds: int = 15
+    # Dashboard aggregates (app.core.cache.dashboard_cache): served as-is while
+    # younger than FRESH, served at once and refreshed in the background until
+    # STALE, recomputed while the caller waits after that. FRESH=0 disables.
+    dashboard_cache_fresh_seconds: float = Field(default=15.0, ge=0)
+    dashboard_cache_stale_seconds: float = Field(default=600.0, ge=0)
     usage_page_max_limit: int = 200
     usage_max_offset: int = 10_000
     usage_export_max_rows: int = 10_000

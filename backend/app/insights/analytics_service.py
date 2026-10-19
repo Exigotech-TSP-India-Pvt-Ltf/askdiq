@@ -15,16 +15,19 @@ query time.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import dashboard_cache, dashboard_cached
 from app.core.config import get_settings
+from app.core.database import release_connection
 from app.governance.audience import get_classified_ips
 from app.governance.pii import redact_pii
 from app.insights.analytics_repository import (
@@ -67,6 +70,10 @@ from app.schemas.insights import (
 SessionTask = Callable[[AsyncSession], Awaitable[Any]]
 ParallelRunner = Callable[..., Awaitable[list[Any]]]
 Source = Literal["rollup", "live"]
+T = TypeVar("T")
+
+# Prefix of every insights aggregate in ``dashboard_cache``.
+INSIGHTS_CACHE_PREFIX = "insights:"
 
 # Donut order of the reference HTML; ACK (closings) is not a question.
 QUALITY_ORDER = ("OK", "CORR", "SCOPE", "PART", "FB", "CLAR", "OFF", "FALSE")
@@ -98,6 +105,24 @@ def mask(value: str | None) -> str | None:
     if value is None:
         return None
     return redact_pii(value, allowlist=get_settings().pii_allowlist)[0]
+
+
+def context_key(ctx: QueryContext) -> str:
+    """Stable cache key of a resolved query context (filters, days, test IPs)."""
+    raw = "|".join(
+        (
+            ctx.filters.model_dump_json(),
+            str(ctx.date_from),
+            str(ctx.date_to),
+            ",".join(ctx.test_ips),
+        )
+    )
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+def invalidate_insights_cache() -> int:
+    """Drop every cached insights aggregate (taxonomy edits, reclassification)."""
+    return dashboard_cache.invalidate_prefix(INSIGHTS_CACHE_PREFIX)
 
 
 def dominant_outcome(counts: dict[str, tuple[int, Any]]) -> str:
@@ -154,9 +179,39 @@ class InsightsAnalyticsService:
             test_ips=test_ips,
         )
 
-    async def labels(self) -> Labels:
-        rows = await InsightsAnalyticsRepository(self.db).taxonomy_rows()
+    async def labels(self, session: AsyncSession | None = None) -> Labels:
+        rows = await InsightsAnalyticsRepository(session or self.db).taxonomy_rows()
         return Labels({(row.kind, row.code): row for row in rows})
+
+    # -- caching ------------------------------------------------------------
+
+    async def _one(self, task: SessionTask) -> Any:
+        """Run ``task`` on its own short-lived session (safe to share / refresh)."""
+        (result,) = await self.runner(task)
+        return result
+
+    async def _cached(
+        self, name: str, ctx: QueryContext, compute: Callable[[], Awaitable[T]]
+    ) -> T:
+        """Every aggregate is cached per resolved context (stale-while-revalidate).
+
+        The key holds the resolved day range, so relative periods roll over at
+        midnight, and the audience's test IPs, so a classification change
+        never serves another audience's numbers.
+        """
+        # The work runs on its own sessions: hand the request's connection
+        # back to the pool instead of holding it idle meanwhile.
+        await release_connection(self.db)
+        return await dashboard_cached(
+            f"{INSIGHTS_CACHE_PREFIX}{name}:{context_key(ctx)}", compute
+        )
+
+    async def _cube(self, ctx: QueryContext) -> Cube:
+        """The exchange cube, computed once per context for summary, trend,
+        topics and quality (each used to rebuild it on every request)."""
+        return await self._cached(
+            "cube", ctx, lambda: self._one(lambda s: self.cube(s, ctx))
+        )
 
     def rollup_allowed(self, filters: InsightsFilters) -> bool:
         return (
@@ -178,20 +233,22 @@ class InsightsAnalyticsService:
         return Cube(await repo.live_cube(ctx), "live")
 
     # -- endpoints ----------------------------------------------------------
+    # Each public method resolves the context (cheap) and returns the cached
+    # aggregate; the ``_compute_*`` twin does the SQL on its own sessions.
 
     async def summary(self, filters: InsightsFilters) -> InsightsSummary:
         ctx = await self.context(filters)
+        return await self._cached("summary", ctx, lambda: self._compute_summary(ctx))
 
+    async def _compute_summary(self, ctx: QueryContext) -> InsightsSummary:
         async def kpis(session: AsyncSession) -> Any:
             return await InsightsAnalyticsRepository(session).conversation_kpis(ctx)
-
-        async def exchanges(session: AsyncSession) -> Cube:
-            return await self.cube(session, ctx)
 
         async def pending(session: AsyncSession) -> int:
             return await InsightsAnalyticsRepository(session).pending_count()
 
-        conv, cube, pending_count = await self.runner(kpis, exchanges, pending)
+        cube = await self._cube(ctx)
+        conv, pending_count = await self.runner(kpis, pending)
         subs = list(cube.substantive())
         questions = sum(r.n for r in subs)
         handled = sum(r.handled for r in subs)
@@ -217,12 +274,19 @@ class InsightsAnalyticsService:
 
     async def trend(self, filters: InsightsFilters) -> InsightsTrend:
         ctx = await self.context(filters)
-        repo = InsightsAnalyticsRepository(self.db)
-        lo, hi = ctx.date_from, ctx.date_to
-        if filters.period is Period.ALL:
-            lo, hi = await repo.data_bounds(ctx)
-        cube = await self.cube(self.db, ctx)
-        per_day_conv = await repo.conversations_per_day(ctx)
+        return await self._cached("trend", ctx, lambda: self._compute_trend(ctx))
+
+    async def _compute_trend(self, ctx: QueryContext) -> InsightsTrend:
+        async def bounds(session: AsyncSession) -> tuple[date | None, date | None]:
+            if ctx.filters.period is Period.ALL:
+                return await InsightsAnalyticsRepository(session).data_bounds(ctx)
+            return ctx.date_from, ctx.date_to
+
+        async def per_day(session: AsyncSession) -> dict[date, int]:
+            return await InsightsAnalyticsRepository(session).conversations_per_day(ctx)
+
+        cube = await self._cube(ctx)
+        (lo, hi), per_day_conv = await self.runner(bounds, per_day)
         questions: Counter[date] = Counter()
         for row in cube.substantive():
             questions[row.day] += row.n
@@ -244,11 +308,14 @@ class InsightsAnalyticsService:
 
     async def hourly(self, filters: InsightsFilters) -> InsightsHourly:
         ctx = await self.context(filters)
-        counts = await InsightsAnalyticsRepository(self.db).hourly(ctx)
+        return await self._cached("hourly", ctx, lambda: self._compute_hourly(ctx))
+
+    async def _compute_hourly(self, ctx: QueryContext) -> InsightsHourly:
+        counts = await self._one(lambda s: InsightsAnalyticsRepository(s).hourly(ctx))
         hours = [counts.get(h, 0) for h in range(HOURS_PER_DAY)]
         total = sum(hours)
         return InsightsHourly(
-            tz=filters.tz,
+            tz=ctx.filters.tz,
             hours=hours,
             total=total,
             peak_hour=hours.index(max(hours)) if total else None,
@@ -256,7 +323,10 @@ class InsightsAnalyticsService:
 
     async def flow(self, filters: InsightsFilters) -> InsightsFlow:
         ctx = await self.context(filters)
-        rows = await InsightsAnalyticsRepository(self.db).flow(ctx)
+        return await self._cached("flow", ctx, lambda: self._compute_flow(ctx))
+
+    async def _compute_flow(self, ctx: QueryContext) -> InsightsFlow:
+        rows = await self._one(lambda s: InsightsAnalyticsRepository(s).flow(ctx))
         by_type: Counter[str] = Counter()
         by_outcome: Counter[str] = Counter()
         links = []
@@ -286,8 +356,11 @@ class InsightsAnalyticsService:
 
     async def topics(self, filters: InsightsFilters) -> InsightsTopics:
         ctx = await self.context(filters)
-        cube = await self.cube(self.db, ctx)
-        labels = await self.labels()
+        return await self._cached("topics", ctx, lambda: self._compute_topics(ctx))
+
+    async def _compute_topics(self, ctx: QueryContext) -> InsightsTopics:
+        cube = await self._cube(ctx)
+        labels = await self._one(self.labels)
         questions: Counter[str] = Counter()
         handled: Counter[str] = Counter()
         for row in cube.substantive():
@@ -312,8 +385,11 @@ class InsightsAnalyticsService:
 
     async def quality(self, filters: InsightsFilters) -> InsightsQuality:
         ctx = await self.context(filters)
-        cube = await self.cube(self.db, ctx)
-        labels = await self.labels()
+        return await self._cached("quality", ctx, lambda: self._compute_quality(ctx))
+
+    async def _compute_quality(self, ctx: QueryContext) -> InsightsQuality:
+        cube = await self._cube(ctx)
+        labels = await self._one(self.labels)
         counts: Counter[str] = Counter()
         for row in cube.substantive():
             counts[row.quality] += row.n
@@ -336,7 +412,10 @@ class InsightsAnalyticsService:
 
     async def dropoff(self, filters: InsightsFilters) -> InsightsDropoff:
         ctx = await self.context(filters)
-        rows = await InsightsAnalyticsRepository(self.db).dropoff(ctx)
+        return await self._cached("dropoff", ctx, lambda: self._compute_dropoff(ctx))
+
+    async def _compute_dropoff(self, ctx: QueryContext) -> InsightsDropoff:
+        rows = await self._one(lambda s: InsightsAnalyticsRepository(s).dropoff(ctx))
         items = sorted(
             (
                 DropoffItem(issue=r.issue, label=r.label or r.issue, conversations=r.n)
@@ -348,7 +427,10 @@ class InsightsAnalyticsService:
 
     async def people(self, filters: InsightsFilters) -> InsightsPeople:
         ctx = await self.context(filters)
-        rows = await InsightsAnalyticsRepository(self.db).people(ctx)
+        return await self._cached("people", ctx, lambda: self._compute_people(ctx))
+
+    async def _compute_people(self, ctx: QueryContext) -> InsightsPeople:
+        rows = await self._one(lambda s: InsightsAnalyticsRepository(s).people(ctx))
         per: dict[str, dict[str, tuple[int, Any]]] = defaultdict(dict)
         numbers: dict[str, int] = {}
         for row in rows:
@@ -371,8 +453,19 @@ class InsightsAnalyticsService:
         self, filters: InsightsFilters, page: ConversationPage
     ) -> ConversationList:
         ctx = await self.context(filters)
-        rows, total = await InsightsAnalyticsRepository(self.db).conversations(
-            ctx, page
+        name = (
+            f"conversations:{page.sort.value}:{page.direction.value}"
+            f":{page.limit}:{page.offset}"
+        )
+        return await self._cached(
+            name, ctx, lambda: self._compute_conversations(ctx, page)
+        )
+
+    async def _compute_conversations(
+        self, ctx: QueryContext, page: ConversationPage
+    ) -> ConversationList:
+        rows, total = await self._one(
+            lambda s: InsightsAnalyticsRepository(s).conversations(ctx, page)
         )
         return ConversationList(
             items=[self._row(r) for r in rows],

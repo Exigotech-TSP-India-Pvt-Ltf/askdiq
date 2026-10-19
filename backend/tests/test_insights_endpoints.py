@@ -422,6 +422,41 @@ async def _audit_actions(db, code: str) -> list[str]:
     return [r.action for r in rows]
 
 
+async def test_aggregates_are_cached_and_a_taxonomy_edit_drops_them(
+    insights_client, monkeypatch
+):
+    calls: list[str] = []
+    real_flow = analytics_service.InsightsAnalyticsRepository.flow
+    real_cube = analytics_service.InsightsAnalyticsService.cube
+
+    async def counting_flow(self, ctx):
+        calls.append("flow")
+        return await real_flow(self, ctx)
+
+    async def counting_cube(self, session, ctx):
+        calls.append("cube")
+        return await real_cube(self, session, ctx)
+
+    monkeypatch.setattr(
+        analytics_service.InsightsAnalyticsRepository, "flow", counting_flow
+    )
+    monkeypatch.setattr(analytics_service.InsightsAnalyticsService, "cube", counting_cube)
+    first = await _get(insights_client, "flow")
+    assert await _get(insights_client, "flow") == first
+    # summary, topics and quality share one exchange cube per context.
+    for path in ("summary", "topics", "quality", "trend"):
+        await _get(insights_client, path)
+    assert calls == ["flow", "cube"]
+
+    patched = await insights_client.patch(
+        f"{BASE}/taxonomy/intent/SVC", json={"label": "Services (renamed)"}
+    )
+    assert patched.status_code == 200, patched.text
+    topics = await _get(insights_client, "topics")
+    assert "Services (renamed)" in {item["label"] for item in topics["items"]}
+    assert calls == ["flow", "cube", "cube"]
+
+
 async def test_taxonomy_crud_is_audited(insights_client, insights_reference_db):
     created = await insights_client.post(
         f"{BASE}/taxonomy",
