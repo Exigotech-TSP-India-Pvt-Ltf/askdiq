@@ -53,6 +53,7 @@ class TraceOutcomeFilter(StrEnum):
     BLOCKED = "blocked"
     CONVERSATIONAL = "conversational"
     LLM_FAILED = "llm_failed"
+    CLARIFY = "clarify"
 
 
 class LatencyBucketFilter(StrEnum):

@@ -200,8 +200,13 @@ def _build_prompt(
     query: str,
     context_chunks: list[str | SourceChunk],
     history: list[ChatTurn] | None = None,
+    clarify_block: str = "",
 ) -> tuple[str, int]:
-    """Return (prompt, context_token_count) from a single context pass."""
+    """Return (prompt, context_token_count) from a single context pass.
+
+    ``clarify_block`` (app.harness.clarify.clarify_instruction) lets the model
+    ask a clarifying question instead of answering an ambiguous one.
+    """
     context = _format_context(context_chunks)
     history_block = _format_history(query, history)
 
@@ -210,6 +215,7 @@ def _build_prompt(
         "unsupported parts.\n\n"
         f"{history_block}"
         f"Context:\n{context}\n\n"
+        f"{clarify_block}"
         f"Question: {query}\n\n"
         "Answer:"
     )
@@ -228,8 +234,13 @@ async def call_llm(
     query: str,
     context_chunks: list[str | SourceChunk],
     history: list[ChatTurn] | None = None,
+    clarify_block: str = "",
 ) -> tuple[str, dict[str, int] | None]:
     """Generate a grounded RAG answer with the configured Azure deployment.
+
+    ``clarify_block`` is passed only when the query qualifies for a
+    clarifying question (see app.harness.clarify); the reply may then be a
+    ``CLARIFY: {...}`` line instead of an answer.
 
     Returns ``(answer_text, usage)`` where ``usage`` is the *actual*
     token accounting reported by Azure OpenAI in the response
@@ -241,7 +252,7 @@ async def call_llm(
 
     # Tokenizing is CPU work — keep it off the event loop.
     prompt, context_tokens = await asyncio.to_thread(
-        _build_prompt, query, context_chunks, history
+        _build_prompt, query, context_chunks, history, clarify_block
     )
 
     model = current_model_settings().llm_deployment

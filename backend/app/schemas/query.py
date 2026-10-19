@@ -5,9 +5,47 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ClarificationOption(BaseModel):
+    """One choice of a clarifying question, grounded in a retrieved document."""
+
+    id: str = Field(..., max_length=16, description="Stable option id, e.g. `T1`.")
+    label: str = Field(..., max_length=120, description="Short text shown to the user.")
+    document_id: str | None = Field(
+        default=None, description="Retrieved document the option comes from."
+    )
+    source_name: str | None = Field(default=None, description="Document title.")
+    section: str | None = Field(default=None, description="Section heading, if any.")
+
+
+class Clarification(BaseModel):
+    """A clarifying question returned instead of an answer (outcome `clarify`)."""
+
+    question: str = Field(..., max_length=300)
+    options: list[ClarificationOption] = Field(..., min_length=2, max_length=4)
+    original_query: str = Field(
+        ..., max_length=2000, description="The question that was ambiguous."
+    )
+    allow_free_text: bool = Field(
+        default=True,
+        description="The user may type their own answer instead of picking one.",
+    )
+
+
+class ClarificationChoice(BaseModel):
+    """The option a user picked in reply to a clarifying question."""
+
+    original_query: str = Field(..., min_length=1, max_length=2000)
+    option_id: str | None = Field(default=None, max_length=16)
+    option_label: str = Field(..., min_length=1, max_length=120)
+
+
 class ChatTurn(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(..., min_length=1, max_length=4000)
+    # Server-side only (loaded from the stored message): lets the harness see
+    # that the previous assistant turn asked a clarifying question.
+    outcome: str | None = Field(default=None, exclude=True)
+    clarification: Clarification | None = Field(default=None, exclude=True)
 
 
 class QueryRequest(BaseModel):
@@ -43,6 +81,18 @@ class QueryRequest(BaseModel):
     # IP). Omit in normal use — the real client IP is auto-detected server-
     # side (see app.core.request_meta.get_client_ip) and used instead.
     ip_address: str | None = None
+    # Reply to a clarifying question (response `clarification`): the picked
+    # option and the original question, so the next answer uses both. Optional:
+    # a client that ignores clarifications can reply with the option's number
+    # or text as a plain `query` and the server matches it.
+    clarification_choice: ClarificationChoice | None = Field(
+        default=None,
+        description=(
+            "Reply to a clarifying question: the picked option plus the original "
+            "question. Omit otherwise; a plain `query` with the option's number "
+            "or text is matched against the last clarifying question too."
+        ),
+    )
 
 
 class SourceChunk(BaseModel):
@@ -101,3 +151,7 @@ class QueryResponse(BaseModel):
     cost_usd: float | None = None
     outcome: str = "answered"
     token_details: dict | None = None
+    # Set only when outcome == "clarify": the question and its 2-4 options.
+    # `answer` still carries the same question with the options as a numbered
+    # list, so clients that ignore this field show a sensible reply.
+    clarification: Clarification | None = None

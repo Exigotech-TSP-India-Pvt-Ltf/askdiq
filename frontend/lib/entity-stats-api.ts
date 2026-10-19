@@ -22,7 +22,7 @@ const CLIENT_ID_STORAGE_KEY = "deployiq.client_id";
 // ---------------------------------------------------------------------------
 
 /** `turn_index` outcomes, mirrored from `chat_messages.outcome`. */
-export const OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed"] as const;
+export const OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed", "clarify"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 
 export const OUTCOME_LABELS: Record<Outcome, string> = {
@@ -31,6 +31,7 @@ export const OUTCOME_LABELS: Record<Outcome, string> = {
   blocked: "Blocked",
   conversational: "Conversational",
   llm_failed: "LLM failed",
+  clarify: "Clarifying question",
 };
 
 export function isOutcome(value: unknown): value is Outcome {

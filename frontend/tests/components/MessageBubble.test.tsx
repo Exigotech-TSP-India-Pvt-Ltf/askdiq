@@ -116,3 +116,68 @@ describe("MessageBubble Component", () => {
     });
   });
 });
+
+describe("MessageBubble icon-only actions", () => {
+  const answer: ChatMessage = {
+    id: "msg-asst-icons",
+    role: "assistant",
+    content: "Icon actions.",
+    createdAt: Date.now(),
+    feedbackRating: 1,
+  };
+
+  it("renders every action as an icon button named by aria-label, with a hover/focus label", () => {
+    render(
+      <MessageBubble
+        message={answer}
+        onDelete={vi.fn()}
+        extraActions={
+          <a href="/t" aria-label="View trace">
+            t
+          </a>
+        }
+      />,
+    );
+    const names = ["Helpful response", "Unhelpful response", "Add feedback note", "Copy message", "Delete this exchange"];
+    for (const name of names) {
+      const button = screen.getByRole("button", { name });
+      // No visible text inside the control: only the icon.
+      expect(button.textContent).toBe("");
+      expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+      expect(button.className).toMatch(/focus-visible:ring-2/);
+      // The visual label sits next to it, hidden from assistive tech (no double reading).
+      const tip = button.parentElement?.querySelector("[data-tooltip]");
+      expect(tip).toHaveAttribute("aria-hidden", "true");
+      expect(tip?.className).toMatch(/group-hover\/tip:opacity-100/);
+      expect(tip?.className).toMatch(/group-focus-within\/tip:opacity-100/);
+    }
+    expect(screen.getByRole("link", { name: "View trace" })).toBeInTheDocument();
+  });
+
+  it("uses one icon size for every action", () => {
+    const { container } = render(<MessageBubble message={answer} onDelete={vi.fn()} />);
+    const sizes = new Set(
+      Array.from(container.querySelectorAll("button svg")).map(
+        (svg) => `${svg.getAttribute("width")}x${svg.getAttribute("height")}`,
+      ),
+    );
+    expect([...sizes]).toEqual(["14x14"]);
+  });
+
+  it("shows the Copied label after copying", async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    render(<MessageBubble message={answer} />);
+    const copy = screen.getByRole("button", { name: "Copy message" });
+    expect(copy.parentElement?.querySelector("[data-tooltip]")).toHaveTextContent("Copy");
+    fireEvent.click(copy);
+    await waitFor(() => expect(copy.parentElement?.querySelector("[data-tooltip]")).toHaveTextContent("Copied"));
+  });
+
+  it("keeps the user bubble's copy and delete actions icon-only", () => {
+    render(
+      <MessageBubble message={{ id: "u1", role: "user", content: "Question?", createdAt: Date.now() }} onDelete={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Copy message" }).textContent).toBe("");
+    expect(screen.getByRole("button", { name: "Delete this exchange" }).textContent).toBe("");
+  });
+});

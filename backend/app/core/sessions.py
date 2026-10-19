@@ -15,6 +15,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +34,7 @@ from app.governance.outcomes import derive_outcome
 from app.governance.pii import redact_pii
 from app.insights.triggers import enqueue_classification_in_transaction
 from app.models.db_models import ChatMessageRecord, ChatSession, MessageFeedback
-from app.schemas.query import ChatTurn
+from app.schemas.query import ChatTurn, Clarification
 from app.schemas.session import (
     ChatMessageOut,
     ChatSessionDetail,
@@ -203,7 +204,26 @@ async def load_recent_history(db: AsyncSession, session: ChatSession) -> list[Ch
         .limit(settings.session_history_max_messages)
     )
     records = list(reversed(result.scalars().all()))
-    return [ChatTurn(role=r.role, content=r.content) for r in records]
+    return [
+        ChatTurn(
+            role=r.role,
+            content=r.content,
+            outcome=r.outcome,
+            clarification=stored_clarification(r.token_details),
+        )
+        for r in records
+    ]
+
+
+def stored_clarification(token_details: dict | None) -> Clarification | None:
+    """The clarifying question persisted with an assistant message, if any."""
+    raw = (token_details or {}).get("clarification")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return Clarification.model_validate(raw)
+    except ValidationError:
+        return None
 
 
 async def _next_turn_index(db: AsyncSession, session_id: uuid.UUID) -> int:
@@ -524,6 +544,8 @@ async def get_session_detail(
                 guardrail_tokens=m.guardrail_tokens,
                 cost_usd=m.cost_usd,
                 token_details=m.token_details,
+                outcome=m.outcome,
+                clarification=stored_clarification(m.token_details),
             )
             for m in messages
         ],

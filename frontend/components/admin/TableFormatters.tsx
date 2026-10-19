@@ -197,6 +197,15 @@ export function OutcomeBadge({ outcome }: { outcome: string }) {
           title="Request blocked by safety, injection, or privacy guardrails"
         />
       );
+    case "clarify":
+      return (
+        <TableBadge
+          label="Clarify"
+          variant="info"
+          icon={HelpCircle}
+          title="Asked the user which topic they meant, with options"
+        />
+      );
     case "conversational":
       return (
         <TableBadge

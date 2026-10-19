@@ -9,7 +9,9 @@ from typing import Any, Literal
 
 from app.guardrails.conversational import detect_conversational_intent
 
-Outcome = Literal["answered", "ungrounded", "blocked", "conversational", "llm_failed"]
+Outcome = Literal[
+    "answered", "ungrounded", "blocked", "conversational", "llm_failed", "clarify"
+]
 
 ALL_OUTCOMES: tuple[Outcome, ...] = (
     "answered",
@@ -17,6 +19,10 @@ ALL_OUTCOMES: tuple[Outcome, ...] = (
     "blocked",
     "conversational",
     "llm_failed",
+    # The assistant asked a clarifying question with options instead of
+    # answering (app.harness.clarify). Not a generation outcome: it is not an
+    # answer, so it stays out of the groundedness denominator.
+    "clarify",
 )
 
 # Outcomes that reached the generation phase (used for groundedness denominator)
@@ -31,6 +37,7 @@ LEGACY_OUTCOME_MAP: dict[str, Outcome] = {
     "blocked": "blocked",
     "conversational": "conversational",
     "llm_failed": "llm_failed",
+    "clarify": "clarify",
 }
 
 
@@ -50,6 +57,7 @@ def derive_outcome(
     Priority:
     1. Conversational intent / canned smalltalk detection -> 'conversational'
     2. Explicit failure / empty output -> 'llm_failed'
+       Explicit clarifying question hint -> 'clarify'
     3. Blocked pre-retrieval / guardrails with no generation -> 'blocked'
     4. Explicit ungrounded or grounded=False -> 'ungrounded'
     5. Reached generation and grounded -> 'answered'
@@ -87,6 +95,10 @@ def derive_outcome(
     # 2. LLM failure / empty output
     if normalized_hint in ("llm_failed", "empty_llm_output"):
         return "llm_failed"
+
+    # 2b. Clarifying question with options (only ever set explicitly)
+    if normalized_hint == "clarify":
+        return "clarify"
 
     # 3. Guardrail blocked pre-generation or no generation tokens
     has_zero_prompt = prompt_tokens is None or prompt_tokens == 0

@@ -61,6 +61,7 @@ _OUTCOME_TEXT = {
     "blocked": "blocked",
     "conversational": "handled as small talk",
     "llm_failed": "failed",
+    "clarify": "answered with a clarifying question",
 }
 
 

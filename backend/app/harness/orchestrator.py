@@ -4,6 +4,9 @@ Pipeline:
 retrieve -> pre-guardrails -> retrieval relevance check ->
 build prompt -> call LLM (with retry) ->
 validate output -> post-guardrails -> structured response.
+
+A short, ambiguous question may get a clarifying question with 2-4 options
+instead of an answer (outcome ``clarify``, see app.harness.clarify).
 """
 
 import time
@@ -16,10 +19,17 @@ from app.governance.audit import emit_audit_event
 from app.guardrails.conversational import detect_conversational_intent
 from app.guardrails.post_checks import run_post_checks
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
+from app.harness.clarify import (
+    CLARIFY_OUTCOME,
+    clarify_instruction,
+    parse_clarification,
+    plan_clarification,
+    render_clarification_text,
+)
 from app.harness.prompts import _MAX_HISTORY_TURNS, call_llm
 from app.retrieval.retriever import needs_conversation_context, retrieve
 from app.retrieval.vector_store import VectorStore
-from app.schemas.query import ChatTurn, QueryResponse, SourceChunk
+from app.schemas.query import ChatTurn, Clarification, QueryResponse, SourceChunk
 
 logger = get_logger(__name__)
 
@@ -105,6 +115,53 @@ def _fallback_response(
         reasoning_tokens=reasoning_tokens,
         outcome=outcome,
         token_details=token_details,
+    )
+
+
+def _clarification_response(
+    clarification: Clarification,
+    *,
+    request_id: str,
+    latency_ms: float,
+    sources: list[SourceChunk],
+    confidence: float,
+    follow_up_detected: bool,
+    history_turns_sent: int,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    total_tokens: int | None,
+    reasoning_tokens: int | None,
+    token_details: dict[str, object],
+) -> QueryResponse:
+    """A clarifying question: options persisted in token_details, text fallback in answer."""
+    token_details["outcome"] = CLARIFY_OUTCOME
+    token_details["clarification"] = clarification.model_dump()
+    logger.info(
+        "clarification_requested",
+        options=len(clarification.options),
+        documents=sorted({o.document_id or "" for o in clarification.options}),
+        latency_ms=round(latency_ms, 2),
+    )
+    return QueryResponse(
+        answer=render_clarification_text(clarification),
+        # Kept for the trace (which evidence was ambiguous); the UI shows no
+        # citation chips for a non-answer.
+        sources=sources,
+        # The options come straight from retrieved documents, nothing invented.
+        grounded=True,
+        confidence=round(confidence, 4),
+        request_id=request_id,
+        latency_ms=latency_ms,
+        guardrail_flags=[],
+        follow_up_detected=follow_up_detected,
+        history_turns_sent=history_turns_sent,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        reasoning_tokens=reasoning_tokens,
+        outcome=CLARIFY_OUTCOME,
+        token_details=token_details,
+        clarification=clarification,
     )
 
 
@@ -298,6 +355,18 @@ async def run_query(
         documents=sorted({s.document_id for s in sources}),
     )
 
+    # Short question + evidence spread over several similar-scoring topics:
+    # the model may ask which one is meant instead of answering (same call).
+    clarify_candidates = plan_clarification(
+        query, sources, history, follow_up=follow_up_detected
+    )
+    llm_kwargs: dict[str, str] = (
+        {"clarify_block": clarify_instruction(clarify_candidates)}
+        if clarify_candidates
+        else {}
+    )
+    clarification: Clarification | None = None
+
     # ---------------------------------------------------------
     # 4. LLM GENERATION (+ POST-GENERATION GROUNDEDNESS CHECK)
     # ---------------------------------------------------------
@@ -338,6 +407,7 @@ async def run_query(
                 query,
                 sources,
                 history,
+                **llm_kwargs,
             )
             if usage:
                 attempts_usage.append({"attempt": attempt + 1, "usage": usage})
@@ -378,6 +448,12 @@ async def run_query(
         if not answer.strip():
             retry_reason = "empty_llm_output"
             continue
+
+        if clarify_candidates:
+            clarification = parse_clarification(answer, clarify_candidates, query)
+            if clarification is not None:
+                # A question back to the user: nothing to ground-check.
+                break
 
         t_post = time.perf_counter()
         grounded, confidence, post_flags = await run_post_checks(
@@ -448,6 +524,22 @@ async def run_query(
             reasoning_tokens=reasoning_tokens,
             outcome=outcome,
             token_details=token_details or None,
+        )
+
+    if clarification is not None:
+        return _clarification_response(
+            clarification,
+            request_id=request_id,
+            latency_ms=(time.perf_counter() - start) * 1000,
+            sources=sources,
+            confidence=max_retrieval_score,
+            follow_up_detected=follow_up_detected,
+            history_turns_sent=history_turns_sent,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
+            token_details=token_details,
         )
 
     logger.debug(

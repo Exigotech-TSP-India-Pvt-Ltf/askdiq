@@ -14,7 +14,7 @@ import { useAuth } from "./auth-context";
 import { useBrand } from "./brand-context";
 import { submitMessageFeedback, type FeedbackDetails } from "./feedback-api";
 import { parseServerDate } from "./time";
-import type { ChatMessage, ChatMessageOut, ChatSessionSummary } from "./types";
+import type { ChatMessage, ChatMessageOut, ChatSessionSummary, ClarificationChoice } from "./types";
 
 function newId() {
   return Math.random().toString(36).slice(2);
@@ -29,6 +29,7 @@ function toChatMessage(m: ChatMessageOut, sessionId: string): ChatMessage {
     createdAt: parseServerDate(m.created_at).getTime(),
     feedbackRating: m.feedback_rating,
     requestId: m.request_id ?? null,
+    clarification: m.clarification ?? null,
   };
 }
 
@@ -40,7 +41,8 @@ interface ChatContextValue {
   setInput: (value: string) => void;
   sending: boolean;
   loadingMessages: boolean;
-  sendQuery: (text: string) => Promise<void>;
+  /** `choice` marks the text as the answer to a clarifying question (picked option). */
+  sendQuery: (text: string, choice?: ClarificationChoice) => Promise<void>;
   /** Upserts the rating; `details` carries thumbs-down reason chips and the corrected answer. */
   submitFeedback: (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
   /** Removes a question/answer pair; restores it and rejects if the server delete fails. */
@@ -129,7 +131,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function sendQuery(text: string) {
+  async function sendQuery(text: string, choice?: ClarificationChoice) {
     if (!token || !text.trim() || sending) return;
 
     const trimmedText = text.trim();
@@ -159,6 +161,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const response = await api.query(token, {
         query: trimmedText,
         session_id: activeSessionId,
+        ...(choice ? { clarification_choice: choice } : {}),
       });
 
       setMessages((prev) =>
@@ -170,6 +173,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               pending: false,
               content: response.answer,
               response,
+              clarification: response.clarification ?? null,
               sessionId: response.session_id || null,
             };
           }

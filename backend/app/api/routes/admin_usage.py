@@ -505,6 +505,7 @@ async def _compute_usage_summary(
         "blocked": outcome_rows.get("blocked", 0),
         "conversational": outcome_rows.get("conversational", 0),
         "llm_failed": outcome_rows.get("llm_failed", 0),
+        "clarify": outcome_rows.get("clarify", 0),
     }
 
     # Groundedness pass rate over GENERATION_OUTCOMES only

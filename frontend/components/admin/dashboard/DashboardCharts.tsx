@@ -41,6 +41,7 @@ const OUTCOME_LABEL: Record<DashboardOutcome, string> = {
   blocked: "Blocked",
   conversational: "Conversational",
   llm_failed: "LLM failed",
+  clarify: "Clarifying question",
 };
 
 /** `/admin/usage?tab=queries` limited to one bucket (day, or the day of an hour bucket). */
@@ -76,6 +77,7 @@ export function OutcomesWidget({ data, loading, error, onRetry, range }: WidgetP
     ungrounded: ct.status.warn,
     blocked: ct.status.danger,
     llm_failed: ct.categorical[4 % ct.categorical.length],
+    clarify: ct.status.info,
   };
   const series = DASHBOARD_OUTCOMES.map((key) => ({ key, label: OUTCOME_LABEL[key], color: outcomeColor[key] }));
   const select = useCallback((row: { t: string }) => router.push(queriesHrefFor(row.t)), [router]);

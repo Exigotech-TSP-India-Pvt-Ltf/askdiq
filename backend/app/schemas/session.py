@@ -8,6 +8,7 @@ from app.schemas.feedback import (
     ReasonTag,
     strip_control_chars,
 )
+from app.schemas.query import Clarification
 
 
 class ChatMessageOut(BaseModel):
@@ -28,6 +29,10 @@ class ChatMessageOut(BaseModel):
     guardrail_tokens: int | None = None
     cost_usd: float | None = None
     token_details: dict | None = None
+    # Assistant turns: canonical outcome, and the options of a clarifying
+    # question (outcome "clarify") so the client can re-render them on reload.
+    outcome: str | None = None
+    clarification: Clarification | None = None
 
 
 class ChatSessionSummary(BaseModel):

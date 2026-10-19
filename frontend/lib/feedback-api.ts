@@ -42,7 +42,7 @@ export const TRIAGE_LABELS: Record<TriageStatus, string> = {
   dismissed: "Dismissed",
 };
 
-export const OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed", "empty_llm_output"] as const;
+export const OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed", "empty_llm_output", "clarify"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 
 export const FEEDBACK_SORTS = ["created_at_desc", "created_at_asc", "rating_desc", "rating_asc"] as const;
