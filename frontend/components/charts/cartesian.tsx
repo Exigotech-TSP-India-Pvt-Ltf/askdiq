@@ -1,10 +1,25 @@
 "use client";
 
 import type { ChartTheme } from "@/lib/theme-tokens";
-import { AXIS_FONT_SIZE, formatCompact, scaleLinear, ticks } from "./primitives";
+import { AXIS_FONT_SIZE, fitText, formatCompact, scaleLinear, ticks } from "./primitives";
 
 /** Plot margins shared by the cartesian charts (room for axis labels). */
 export const MARGIN = { top: 10, right: 10, bottom: 22, left: 40 } as const;
+
+/** Extra room reserved for an axis title (only when one is set). */
+export const AXIS_TITLE_SPACE = 16;
+
+/**
+ * Axis titles shared by the chart kit. Both are optional; the plot margin
+ * only grows when a title is set, so charts without titles are unchanged.
+ * Include the unit, e.g. `yAxisLabel="Queries per day"`, `xAxisLabel="Date"`.
+ */
+export interface AxisLabelProps {
+  /** Title under the horizontal axis (category / time axis on column charts, value axis on bar-row charts). */
+  xAxisLabel?: string;
+  /** Rotated title left of the vertical axis (value axis on column charts, category axis on bar-row charts). */
+  yAxisLabel?: string;
+}
 
 export interface PlotArea {
   x0: number;
@@ -13,13 +28,86 @@ export interface PlotArea {
   y1: number;
 }
 
-export function plotArea(width: number, height: number): PlotArea {
+/** Extra left / bottom inset for the axis titles that are set. */
+export function titleInsets(titles: AxisLabelProps = {}): { left: number; bottom: number } {
   return {
-    x0: MARGIN.left,
-    x1: Math.max(MARGIN.left + 1, width - MARGIN.right),
-    y0: MARGIN.top,
-    y1: Math.max(MARGIN.top + 1, height - MARGIN.bottom),
+    left: titles.yAxisLabel ? AXIS_TITLE_SPACE : 0,
+    bottom: titles.xAxisLabel ? AXIS_TITLE_SPACE : 0,
   };
+}
+
+export function plotArea(width: number, height: number, titles?: AxisLabelProps): PlotArea {
+  const inset = titleInsets(titles);
+  const left = MARGIN.left + inset.left;
+  const bottom = MARGIN.bottom + inset.bottom;
+  return {
+    x0: left,
+    x1: Math.max(left + 1, width - MARGIN.right),
+    y0: MARGIN.top,
+    y1: Math.max(MARGIN.top + 1, height - bottom),
+  };
+}
+
+/**
+ * SVG axis titles: the x title centred under the tick labels (bottom edge of
+ * the chart), the y title rotated on the left edge. Long titles are cut with
+ * an ellipsis to the space available; the full text stays in a native
+ * tooltip and in the chart's accessible description.
+ */
+export function AxisTitles({
+  xAxisLabel,
+  yAxisLabel,
+  area,
+  height,
+  ct,
+}: AxisLabelProps & { area: PlotArea; height: number; ct: ChartTheme }) {
+  if (!xAxisLabel && !yAxisLabel) return null;
+  const midX = (area.x0 + area.x1) / 2;
+  const midY = (area.y0 + area.y1) / 2;
+  const yX = AXIS_TITLE_SPACE / 2;
+  return (
+    <g data-testid="chart-axis-titles" aria-hidden="true">
+      {xAxisLabel && (
+        <text
+          data-axis="x"
+          x={midX}
+          y={height - 3}
+          textAnchor="middle"
+          fontSize={AXIS_FONT_SIZE}
+          fontWeight={500}
+          fill={ct.axis}
+        >
+          <title>{xAxisLabel}</title>
+          {fitText(xAxisLabel, Math.max(0, area.x1 - area.x0))}
+        </text>
+      )}
+      {yAxisLabel && (
+        <text
+          data-axis="y"
+          x={yX}
+          y={midY}
+          dy="0.32em"
+          textAnchor="middle"
+          fontSize={AXIS_FONT_SIZE}
+          fontWeight={500}
+          fill={ct.axis}
+          transform={`rotate(-90 ${yX} ${midY})`}
+        >
+          <title>{yAxisLabel}</title>
+          {fitText(yAxisLabel, Math.max(0, area.y1 - area.y0))}
+        </text>
+      )}
+    </g>
+  );
+}
+
+/** Accessible description of the axes ("X axis: Date. Y axis: Queries."), or undefined. */
+export function axisDescription(titles: AxisLabelProps): string | undefined {
+  const parts = [
+    titles.xAxisLabel ? `X axis: ${titles.xAxisLabel}.` : null,
+    titles.yAxisLabel ? `Y axis: ${titles.yAxisLabel}.` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : undefined;
 }
 
 /** Horizontal gridlines with value labels on the left. */

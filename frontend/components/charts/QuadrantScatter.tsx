@@ -10,11 +10,12 @@ import {
   formatCompact,
   niceMax,
   scaleLinear,
+  ticks,
   useChartMarks,
   type ChartSize,
   type SelectHandler,
 } from "./primitives";
-import { YGrid, plotArea } from "./cartesian";
+import { AxisTitles, YGrid, axisDescription, plotArea, type AxisLabelProps } from "./cartesian";
 
 export interface ScatterPoint {
   id: string;
@@ -32,7 +33,11 @@ export interface QuadrantLabels {
   bottomRight?: string;
 }
 
-export interface QuadrantScatterProps {
+/**
+ * `xAxisLabel` / `yAxisLabel` (with units) title the axes; the older
+ * `xLabel` / `yLabel` still work and are used when the new props are unset.
+ */
+export interface QuadrantScatterProps extends AxisLabelProps {
   data: readonly ScatterPoint[];
   onSelect?: SelectHandler<ScatterPoint>;
   /** Vertical divider (x value). Defaults to the x range middle. */
@@ -48,6 +53,8 @@ export interface QuadrantScatterProps {
   height?: number;
   formatX?: (value: number) => string;
   formatY?: (value: number) => string;
+  /** Numeric tick labels under the x axis (default true); turn off for categorical `formatX`. */
+  showXTicks?: boolean;
 }
 
 const MIN_R = 4;
@@ -68,11 +75,16 @@ export function QuadrantScatter({
   height,
   formatX = formatCompact,
   formatY = formatCompact,
+  xAxisLabel,
+  yAxisLabel,
+  showXTicks = true,
 }: QuadrantScatterProps) {
   const ct = useChartTheme();
+  const titles = { xAxisLabel: xAxisLabel ?? xLabel, yAxisLabel: yAxisLabel ?? yLabel };
   const describe = useCallback(
-    (p: ScatterPoint) => `${p.label}: ${xLabel} ${formatX(p.x)}, ${yLabel} ${formatY(p.y)}`,
-    [formatX, formatY, xLabel, yLabel],
+    (p: ScatterPoint) =>
+      `${p.label}: ${xAxisLabel ?? xLabel} ${formatX(p.x)}, ${yAxisLabel ?? yLabel} ${formatY(p.y)}`,
+    [formatX, formatY, xAxisLabel, xLabel, yAxisLabel, yLabel],
   );
   const { active, getMarkProps, opacityFor } = useChartMarks(data, describe, onSelect, ct.dimOpacity);
   const { mx, my, maxSize } = useMemo(
@@ -96,7 +108,7 @@ export function QuadrantScatter({
   };
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const area = plotArea(width, h);
+    const area = plotArea(width, h, titles);
     return {
       area,
       x: scaleLinear([0, mx], [area.x0, area.x1]),
@@ -115,8 +127,8 @@ export function QuadrantScatter({
         <TooltipBody
           title={p.label}
           rows={[
-            { label: xLabel, value: formatX(p.x) },
-            { label: yLabel, value: formatY(p.y) },
+            { label: titles.xAxisLabel, value: formatX(p.x) },
+            { label: titles.yAxisLabel, value: formatY(p.y) },
           ]}
         />
       ),
@@ -124,7 +136,7 @@ export function QuadrantScatter({
   };
 
   return (
-    <ChartFrame label={label} height={height} tooltip={tooltip}>
+    <ChartFrame label={label} height={height} tooltip={tooltip} description={axisDescription(titles)}>
       {(size) => {
         const { area, x, y } = layout(size);
         const corner = (text: string | undefined, cx: number, cy: number, anchor: "start" | "end") =>
@@ -142,20 +154,16 @@ export function QuadrantScatter({
             {corner(quadrants.topRight, area.x1 - 4, area.y0 + 12, "end")}
             {corner(quadrants.bottomLeft, area.x0 + 4, area.y1 - 6, "start")}
             {corner(quadrants.bottomRight, area.x1 - 4, area.y1 - 6, "end")}
-            <text x={(area.x0 + area.x1) / 2} y={size.height - 4} textAnchor="middle" fontSize={AXIS_FONT_SIZE} fill={ct.axis} aria-hidden="true">
-              {xLabel}
-            </text>
-            <text
-              x={12}
-              y={(area.y0 + area.y1) / 2}
-              textAnchor="middle"
-              fontSize={AXIS_FONT_SIZE}
-              fill={ct.axis}
-              transform={`rotate(-90 12 ${(area.y0 + area.y1) / 2})`}
-              aria-hidden="true"
-            >
-              {yLabel}
-            </text>
+            {showXTicks && (
+              <g aria-hidden="true">
+                {ticks(mx).map((t) => (
+                  <text key={t} x={x(t)} y={area.y1 + 15} textAnchor="middle" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
+                    {formatX(t)}
+                  </text>
+                ))}
+              </g>
+            )}
+            <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {data.map((p, i) => (
               <circle
                 key={p.id}

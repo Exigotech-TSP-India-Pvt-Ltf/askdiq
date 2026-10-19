@@ -80,6 +80,8 @@ export function formatByUnit(value: number | null | undefined, unit: string | nu
 const SOURCE_LABELS: Record<string, string> = {
   in_memory_counter: "process counter",
   latency_metrics: "latency records",
+  // Overall p50 / p95: queries that ran the RAG pipeline (conversational replies excluded).
+  "latency_metrics.pipeline": "RAG queries",
   chat_sessions: "chat sessions",
   chat_messages: "chat turns",
 };

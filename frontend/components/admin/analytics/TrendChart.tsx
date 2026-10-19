@@ -12,6 +12,7 @@ import {
   useChartMarks,
   type ChartSize,
 } from "@/components/charts/primitives";
+import { AXIS_TITLE_SPACE, AxisTitles, axisDescription } from "@/components/charts/cartesian";
 import type { TrendDay } from "@/lib/insights-api";
 import { useInsightsPalette } from "./colors";
 import { dayLabel } from "./format";
@@ -24,7 +25,8 @@ export interface TrendChartProps {
   height?: number;
 }
 
-const MARGIN = { t: 12, r: 14, b: 26, l: 30 };
+const MARGIN = { t: 12, r: 14, b: 26 + AXIS_TITLE_SPACE, l: 30 + AXIS_TITLE_SPACE };
+const AXIS_TITLES = { xAxisLabel: "Date", yAxisLabel: "Count per day" };
 const MAX_X_LABELS = 7;
 const Y_TICKS = 3;
 
@@ -86,6 +88,7 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
     <ChartFrame
       label={`Daily substantive questions, ${days.length} days, peak ${Math.max(...days.map((d) => d.questions))}.`}
       height={height}
+      description={axisDescription(AXIS_TITLES)}
       tooltip={(size) => {
         if (active === null) return null;
         const { x, y } = layout(size);
@@ -142,7 +145,7 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
             ))}
             {days.map((d, i) =>
               i % step === 0 || i === days.length - 1 ? (
-                <text key={d.day} x={x(i)} y={h - 7} textAnchor="middle" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
+                <text key={d.day} x={x(i)} y={h - MARGIN.b + 19} textAnchor="middle" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
                   {dayLabel(d.day)}
                 </text>
               ) : null,
@@ -161,6 +164,12 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
                 />
               ) : null,
             )}
+            <AxisTitles
+              {...AXIS_TITLES}
+              area={{ x0: MARGIN.l, x1: width - MARGIN.r, y0: MARGIN.t, y1: h - MARGIN.b }}
+              height={h}
+              ct={ct}
+            />
             <path d={area} fill={`url(#${gradientId})`} />
             <path d={line} fill="none" stroke={ct.categorical[0]} strokeWidth={2.2} />
             {days.map((d, i) => {

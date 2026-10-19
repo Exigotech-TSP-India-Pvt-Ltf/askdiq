@@ -14,7 +14,18 @@ import {
   type SelectHandler,
   type TooltipRow,
 } from "./primitives";
-import { Legend, XLabels, YGrid, bandPath, linePath, plotArea, pointX } from "./cartesian";
+import {
+  AxisTitles,
+  Legend,
+  XLabels,
+  YGrid,
+  axisDescription,
+  bandPath,
+  linePath,
+  plotArea,
+  pointX,
+  type AxisLabelProps,
+} from "./cartesian";
 
 export interface PercentilePoint {
   label: string;
@@ -23,7 +34,7 @@ export interface PercentilePoint {
   p99?: number;
 }
 
-export interface PercentileBandProps {
+export interface PercentileBandProps extends AxisLabelProps {
   data: readonly PercentilePoint[];
   onSelect?: SelectHandler<PercentilePoint>;
   label?: string;
@@ -38,7 +49,10 @@ export function PercentileBand({
   label = "Latency percentiles",
   height,
   formatValue = formatCompact,
+  xAxisLabel,
+  yAxisLabel,
 }: PercentileBandProps) {
+  const titles = { xAxisLabel, yAxisLabel };
   const ct = useChartTheme();
   const describe = useCallback(
     (d: PercentilePoint) =>
@@ -65,7 +79,7 @@ export function PercentileBand({
   ];
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const area = plotArea(width, h);
+    const area = plotArea(width, h, titles);
     return { area, x: pointX(data.length, area), y: scaleLinear([0, max], [area.y1, area.y0]) };
   };
 
@@ -78,11 +92,17 @@ export function PercentileBand({
       { label: "p95", value: formatValue(d.p95), color },
     ];
     if (d.p99 !== undefined) rows.push({ label: "p99", value: formatValue(d.p99), color: p99Color });
-    return { x: x(active), y: y(Math.max(d.p95, d.p99 ?? 0)), content: <TooltipBody title={d.label} rows={rows} /> };
+    return { x: x(active), y: y(Math.max(d.p95, d.p99 ?? 0)), content: <TooltipBody title={d.label} caption={yAxisLabel} rows={rows} /> };
   };
 
   return (
-    <ChartFrame label={label} height={height} tooltip={tooltip} footer={<Legend series={legend} ct={ct} />}>
+    <ChartFrame
+      label={label}
+      height={height}
+      tooltip={tooltip}
+      description={axisDescription(titles)}
+      footer={<Legend series={legend} ct={ct} />}
+    >
       {(size) => {
         const { area, x, y } = layout(size);
         const p50 = data.map((d, i) => [x(i), y(d.p50)] as const);
@@ -93,6 +113,7 @@ export function PercentileBand({
           <>
             <YGrid area={area} max={max} ct={ct} format={formatValue} />
             <XLabels labels={data.map((d) => d.label)} xAt={x} area={area} ct={ct} />
+            <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {data.length > 1 && (
               <path d={bandPath(p95, p50)} fill={color} fillOpacity={0.18} aria-hidden="true" />
             )}

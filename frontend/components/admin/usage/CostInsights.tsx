@@ -75,7 +75,15 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
           ...COST_STAGES.map((key) => ({ key, label: COST_STAGE_LABEL[key], numeric: true, format: (v: unknown) => usdFine.format(Number(v)) })),
         ])}
       >
-        <StackedArea data={stageRows} xKey="label" series={stageDefs} formatValue={(v) => usd.format(v)} label="Cost by stage" />
+        <StackedArea
+          data={stageRows}
+          xKey="label"
+          series={stageDefs}
+          formatValue={(v) => usd.format(v)}
+          label="Cost by stage"
+          xAxisLabel={stageSeries?.bucket === "hour" ? "Hour (UTC)" : "Date (UTC)"}
+          yAxisLabel={stageSeries?.bucket === "hour" ? "Cost per hour (USD)" : "Cost per day (USD)"}
+        />
       </ChartCard>
 
       <ChartCard
@@ -122,6 +130,8 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
           reference={forecast?.budget_usd != null ? { value: forecast.budget_usd, label: `Budget ${usd.format(forecast.budget_usd)}` } : undefined}
           formatValue={(v) => usd.format(v)}
           label="Month-end cost forecast"
+          xAxisLabel="Date (UTC)"
+          yAxisLabel="Cumulative cost (USD)"
         />
       </ChartCard>
 

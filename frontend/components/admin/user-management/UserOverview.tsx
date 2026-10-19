@@ -198,6 +198,8 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
             data={logins}
             label="Logins per day"
             valueLabel="Sign-ins"
+            xAxisLabel="Date"
+            yAxisLabel="Sign-ins per day"
             onSelect={() => onDrill({ tab: "users", sort: "last_login_at", order: "desc", status: null, role: null })}
           />
         </ChartCard>
@@ -217,6 +219,7 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
           <Funnel
             data={funnel}
             label="Access-request funnel"
+            valueLabel="Users"
             onSelect={(stage) => {
               const id = (stage as FunnelStage & { id: FunnelStageId }).id;
               onDrill({ tab: "users", status: FUNNEL_FILTER[id], role: null });
@@ -265,6 +268,9 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
           <Histogram
             data={approve}
             label="Time to approve"
+            valueLabel="Approvals"
+            xAxisLabel="Wait from request to approval"
+            yAxisLabel="Approved requests"
             formatEdge={(i) => APPROVAL_BUCKETS[i] ?? ""}
             onSelect={() => onDrill({ tab: "requests", view: "approved" })}
           />

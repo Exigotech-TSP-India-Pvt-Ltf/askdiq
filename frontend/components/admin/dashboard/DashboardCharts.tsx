@@ -33,6 +33,9 @@ export interface WidgetProps {
   range: DateRange;
 }
 
+/** X axis title for a dashboard bucket series (bucket labels are formatted in UTC). */
+const bucketAxisLabel = (bucket: string) => (bucket === "hour" ? "Hour (UTC)" : "Date (UTC)");
+
 const errorText = (error: unknown) => (error ? (error instanceof Error ? error.message : "Couldn't load this chart") : null);
 
 const OUTCOME_LABEL: Record<DashboardOutcome, string> = {
@@ -109,7 +112,15 @@ export function OutcomesWidget({ data, loading, error, onRetry, range }: WidgetP
       }
     >
       {usingOutcomes ? (
-        <StackedArea data={rows} xKey="label" series={series} onSelect={select} label="Queries by outcome" />
+        <StackedArea
+          data={rows}
+          xKey="label"
+          series={series}
+          onSelect={select}
+          label="Queries by outcome"
+          xAxisLabel={bucketAxisLabel(bucket)}
+          yAxisLabel={bucket === "hour" ? "Queries per hour" : "Queries per day"}
+        />
       ) : (
         <StackedArea
           data={totals}
@@ -117,6 +128,8 @@ export function OutcomesWidget({ data, loading, error, onRetry, range }: WidgetP
           series={[{ key: "queries", label: "All queries" }]}
           onSelect={select}
           label="Queries per day"
+          xAxisLabel="Date (UTC)"
+          yAxisLabel="Queries per day"
         />
       )}
     </ChartCard>
@@ -155,7 +168,14 @@ export function LatencyWidget({ data, loading, error, onRetry, range }: WidgetPr
         { key: "p95", label: "p95", numeric: true, format: (v) => formatLatencyMs(Number(v)) },
       ])}
     >
-      <PercentileBand data={points} onSelect={select} formatValue={(v) => formatLatencyMs(v)} label="Latency percentiles" />
+      <PercentileBand
+        data={points}
+        onSelect={select}
+        formatValue={(v) => formatLatencyMs(v)}
+        label="Latency percentiles"
+        xAxisLabel={bucketAxisLabel(bucket)}
+        yAxisLabel="End-to-end response time"
+      />
     </ChartCard>
   );
 }
@@ -214,7 +234,14 @@ export function CostWidget({ data, loading, error, onRetry }: WidgetProps) {
     >
       {cost && (
         <div className="flex flex-col gap-3">
-          <BulletChart data={rows} onSelect={select} formatValue={(v) => usd.format(v)} label="Cost month to date" height={56} />
+          <BulletChart
+            data={rows}
+            onSelect={select}
+            formatValue={(v) => usd.format(v)}
+            label="Cost month to date (USD)"
+            valueLabel="Month to date (USD)"
+            height={56}
+          />
           <dl className="grid grid-cols-3 gap-2 text-xs">
             <div>
               <dt className="text-fg-subtle">Month to date</dt>

@@ -544,6 +544,9 @@ function DocumentDetailContent() {
                       if (match) selectChunk(match.chunkId);
                     }}
                     label="Chunk hits by week"
+                    valueLabel="Hits"
+                    xAxisLabel="Week starting"
+                    yAxisLabel="Chunk"
                   />
                 </ChartCard>
                 </div>

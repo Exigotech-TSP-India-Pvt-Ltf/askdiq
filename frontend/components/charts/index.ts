@@ -31,5 +31,5 @@ export { Radar } from "./Radar";
 export type { RadarProps } from "./Radar";
 export { TreemapChart, SankeyChart } from "./HeavyCharts";
 export type { SankeyChartProps, SankeyLinkDatum, SankeyNodeDatum, TreemapChartProps, TreemapDatum } from "./types";
-export type { SeriesDef } from "./cartesian";
+export type { AxisLabelProps, SeriesDef } from "./cartesian";
 export type { SelectHandler } from "./primitives";

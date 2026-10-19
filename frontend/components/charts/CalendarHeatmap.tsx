@@ -13,6 +13,7 @@ import {
   type ChartSize,
   type SelectHandler,
 } from "./primitives";
+import { AxisTitles, axisDescription, titleInsets, type AxisLabelProps } from "./cartesian";
 
 export interface HeatCell {
   row: string;
@@ -20,7 +21,8 @@ export interface HeatCell {
   value: number;
 }
 
-export interface CalendarHeatmapProps {
+/** `xAxisLabel` titles the columns (e.g. "Hour of day (UTC)"), `yAxisLabel` the rows (e.g. "Day of week"). */
+export interface CalendarHeatmapProps extends AxisLabelProps {
   data: readonly HeatCell[];
   /** Row order (e.g. Mon..Sun). Defaults to first appearance in `data`. */
   rows?: readonly string[];
@@ -32,6 +34,8 @@ export interface CalendarHeatmapProps {
   formatValue?: (value: number) => string;
   /** Show every n-th column label. Default: about 12 labels. */
   colLabelEvery?: number;
+  /** Tooltip name of the cell value (default "Value"), e.g. "Sessions". */
+  valueLabel?: string;
 }
 
 const LEFT = 36;
@@ -52,8 +56,12 @@ export function CalendarHeatmap({
   height,
   formatValue = formatCompact,
   colLabelEvery,
+  valueLabel = "Value",
+  xAxisLabel,
+  yAxisLabel,
 }: CalendarHeatmapProps) {
   const ct = useChartTheme();
+  const titles = { xAxisLabel, yAxisLabel };
   const describe = useCallback(
     (c: HeatCell) => `${c.row} ${c.col}: ${formatValue(c.value)}`,
     [formatValue],
@@ -68,13 +76,17 @@ export function CalendarHeatmap({
   const every = colLabelEvery ?? Math.max(1, Math.ceil(colKeys.length / 12));
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const cw = Math.max(2, (width - LEFT) / Math.max(1, colKeys.length));
-    const rh = Math.max(2, (h - BOTTOM) / Math.max(1, rowKeys.length));
+    const inset = titleInsets(titles);
+    const left = LEFT + inset.left;
+    const gridH = Math.max(2, h - BOTTOM - inset.bottom);
+    const cw = Math.max(2, (width - left) / Math.max(1, colKeys.length));
+    const rh = Math.max(2, gridH / Math.max(1, rowKeys.length));
     const pos = (c: HeatCell) => ({
-      x: LEFT + colKeys.indexOf(c.col) * cw,
+      x: left + colKeys.indexOf(c.col) * cw,
       y: rowKeys.indexOf(c.row) * rh,
     });
-    return { cw, rh, pos };
+    const titleArea = { x0: left, x1: Math.max(left + 1, width), y0: 0, y1: gridH };
+    return { cw, rh, pos, left, colLabelY: gridH + BOTTOM - 4, titleArea };
   };
 
   const tooltip = (size: ChartSize) => {
@@ -85,25 +97,28 @@ export function CalendarHeatmap({
     return {
       x: p.x + cw / 2,
       y: p.y,
-      content: <TooltipBody title={`${c.row} · ${c.col}`} rows={[{ label: "Value", value: formatValue(c.value) }]} />,
+      content: (
+        <TooltipBody title={`${c.row} · ${c.col}`} rows={[{ label: valueLabel, value: formatValue(c.value) }]} />
+      ),
     };
   };
 
   return (
-    <ChartFrame label={label} height={height} tooltip={tooltip}>
+    <ChartFrame label={label} height={height} tooltip={tooltip} description={axisDescription(titles)}>
       {(size) => {
-        const { cw, rh, pos } = layout(size);
+        const { cw, rh, pos, left, colLabelY, titleArea } = layout(size);
         return (
           <>
+            <AxisTitles {...titles} area={titleArea} height={size.height} ct={ct} />
             {rowKeys.map((r, ri) => (
               <g key={`r-${r}`} aria-hidden="true">
-                <text x={LEFT - 6} y={ri * rh + rh / 2} dy="0.32em" textAnchor="end" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
+                <text x={left - 6} y={ri * rh + rh / 2} dy="0.32em" textAnchor="end" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
                   {r}
                 </text>
                 {colKeys.map((c, ci) => (
                   <rect
                     key={c}
-                    x={LEFT + ci * cw + GAP / 2}
+                    x={left + ci * cw + GAP / 2}
                     y={ri * rh + GAP / 2}
                     width={cw - GAP}
                     height={rh - GAP}
@@ -118,8 +133,8 @@ export function CalendarHeatmap({
               ci % every === 0 ? (
                 <text
                   key={`c-${c}`}
-                  x={LEFT + ci * cw + cw / 2}
-                  y={size.height - 4}
+                  x={left + ci * cw + cw / 2}
+                  y={colLabelY}
                   textAnchor="middle"
                   fontSize={AXIS_FONT_SIZE}
                   fill={ct.axis}
@@ -131,7 +146,7 @@ export function CalendarHeatmap({
             )}
             {data.map((cell, i) => {
               const p = pos(cell);
-              if (p.x < LEFT || p.y < 0) return null;
+              if (p.x < left || p.y < 0) return null;
               return (
                 <rect
                   key={i}

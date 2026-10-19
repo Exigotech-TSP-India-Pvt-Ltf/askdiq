@@ -57,6 +57,13 @@ export function buildTimeline(
   });
 }
 
+const LEGEND: { state: HealthState | "empty"; label: string }[] = [
+  { state: "Healthy", label: "Healthy" },
+  { state: "Degraded", label: "Degraded" },
+  { state: "Incident", label: "Incident" },
+  { state: "empty", label: "No traffic" },
+];
+
 interface StatusTimelineProps {
   hours: readonly string[];
   errorRates: readonly (number | null)[];
@@ -109,6 +116,21 @@ export function StatusTimeline({ hours, errorRates, requests, incidents, signal 
         <span>{formatHour(cells[Math.floor(cells.length / 2)].hour)}</span>
         <span>{formatHour(cells[cells.length - 1].hour)}</span>
       </div>
+      <p className="mt-0.5 text-center text-[11px] font-medium text-fg-muted" aria-hidden="true">
+        Hour (local time)
+      </p>
+      <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fg-muted" aria-label="Legend">
+        {LEGEND.map((l) => (
+          <li key={l.state} className="flex items-center gap-1.5">
+            <span className={`h-2.5 w-2.5 rounded-sm ${CELL[l.state]}`} aria-hidden="true" />
+            {l.label}
+          </li>
+        ))}
+        <li className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-status-danger" aria-hidden="true" />
+          Incidents (number in the hour)
+        </li>
+      </ul>
     </div>
   );
 }
