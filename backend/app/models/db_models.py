@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -807,4 +808,27 @@ class Alert(Base):
         Index("ix_alerts_status_last_seen", "status", "last_seen_at"),
         Index("ix_alerts_dedupe_key_notified", "dedupe_key", "notified_at"),
         Index("ix_alerts_created_id", "created_at", "id"),
+    )
+
+
+class ResourceSample(Base):
+    """One worker's resource sample (``app.governance.resources``).
+
+    Every API worker inserts one row per ``METRICS_SAMPLE_INTERVAL_SECONDS``;
+    rows older than ``METRICS_HISTORY_MINUTES`` are pruned. The monitoring
+    endpoint, the SSE stream and the resource alert rules aggregate the live
+    workers of every replica from here (no Redis).
+    """
+
+    __tablename__ = "resource_samples"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    worker_id: Mapped[str] = mapped_column(String(128))
+    hostname: Mapped[str] = mapped_column(String(255))
+    sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sample: Mapped[dict] = mapped_column(JSONB)
+
+    __table_args__ = (
+        Index("ix_resource_samples_sampled_at", "sampled_at"),
+        Index("ix_resource_samples_worker_sampled", "worker_id", "sampled_at"),
     )

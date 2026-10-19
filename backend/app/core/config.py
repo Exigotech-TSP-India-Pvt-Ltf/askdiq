@@ -354,10 +354,20 @@ class Settings(BaseSettings):
     insights_reasoning_effort: str = "minimal"
     insights_completion_tokens_per_turn: int = 120
 
+    # --- Resource telemetry (app.governance.resources / metrics_sampler) ---
+    metrics_enabled: bool = True
+    # Each API worker samples CPU / memory / event-loop lag / DB pool this often
+    # and the live stream pushes the aggregated snapshot at the same pace.
+    metrics_sample_interval_seconds: float = Field(default=5.0, ge=1.0, le=60.0)
+    # Rolling history kept (DB, all workers) for sparklines and alert windows.
+    metrics_history_minutes: int = Field(default=15, ge=5, le=120)
+    # A worker without a sample for this many intervals is treated as gone.
+    metrics_worker_stale_intervals: int = Field(default=3, ge=2, le=20)
+
     # --- Alerts (rules evaluated by the job worker; optional email) ---
     alerts_enabled: bool = True
     # Database-backed rules run at most once per interval across all workers.
-    alerts_evaluate_interval_seconds: int = Field(default=60, ge=15)
+    alerts_evaluate_interval_seconds: int = Field(default=30, ge=15)
     # Each API process samples its own signals (circuit breaker, Azure quota,
     # 429s, event bus, database reachability) this often.
     alerts_sample_interval_seconds: int = Field(default=30, ge=5)
@@ -388,6 +398,19 @@ class Settings(BaseSettings):
     alert_failure_window_minutes: int = Field(default=60, ge=5)
     alert_online_eval_violations_threshold: int = Field(default=3, ge=1)
     alert_event_bus_grace_seconds: int = Field(default=60, ge=5)
+    # Resource rules: the condition must hold for the whole sustain window
+    # (a single spike never alerts).
+    alert_resource_sustain_seconds: int = Field(default=120, ge=10)
+    alert_cpu_warning_pct: float = Field(default=80.0, gt=0, le=100)
+    alert_cpu_critical_pct: float = Field(default=95.0, gt=0, le=100)
+    alert_memory_warning_pct: float = Field(default=85.0, gt=0, le=100)
+    alert_memory_critical_pct: float = Field(default=95.0, gt=0, le=100)
+    alert_loop_lag_warning_ms: float = Field(default=200.0, gt=0)
+    alert_loop_lag_critical_ms: float = Field(default=1000.0, gt=0)
+    alert_db_pool_saturation_pct: float = Field(default=90.0, gt=0, le=100)
+    # Leak heuristic: RSS rising (almost) every sample by at least this much.
+    alert_rss_growth_mb: float = Field(default=256.0, gt=0)
+    alert_rss_growth_min_samples: int = Field(default=24, ge=3)
     # SMTP delivery: off unless SMTP_HOST, ALERT_EMAIL_FROM and ALERT_EMAIL_TO
     # are all set. SMTP_SSL = implicit TLS (465); otherwise STARTTLS (587).
     smtp_host: str = ""

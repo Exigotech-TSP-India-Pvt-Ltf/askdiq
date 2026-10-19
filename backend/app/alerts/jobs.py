@@ -32,7 +32,7 @@ from app.alerts.email import (
     send_email,
     utc_key,
 )
-from app.alerts.rules import DATABASE_RULE_FUNCS
+from app.alerts.rules import DATABASE_RULE_FUNCS, rules_covered
 from app.branding.service import get_branding
 from app.core import database
 from app.core.config import Settings, get_settings
@@ -77,7 +77,7 @@ async def evaluate_alerts(
                     await service.raise_alert(db, finding, now=now, settings=cfg)
                     present.add(finding.dedupe_key)
                 await db.commit()
-            evaluated.add(rule_id)
+            evaluated.update(rules_covered(rule_id))
             stats["raised"] += len(findings)
         except Exception as exc:
             stats["failed_rules"] += 1

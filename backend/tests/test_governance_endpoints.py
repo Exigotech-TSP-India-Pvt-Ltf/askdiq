@@ -317,6 +317,8 @@ async def test_stream_notify_wakes_producer_before_interval():
         snapshots.incidents.append("inc-9")
         bus.dispatch(Event(TOPIC_GOVERNANCE_INCIDENT, "inc-9", origin="x"))
         event = await asyncio.wait_for(anext(gen), 5)
+        while event.event == "resources":  # resource gauges tick independently
+            event = await asyncio.wait_for(anext(gen), 5)
         assert (event.event, event.id) == ("incident", "inc-9")
         assert snapshots.calls == 2
     finally:
