@@ -213,6 +213,17 @@ class ChatSession(Base):
         order_by="ChatMessageRecord.created_at",
     )
 
+    __table_args__ = (
+        # Newest session per (actor, IP) on every /query; newest-first list.
+        Index(
+            "ix_chat_sessions_user_ip_activity",
+            "user_email",
+            "created_ip",
+            "last_activity_at",
+        ),
+        Index("ix_chat_sessions_user_activity", "user_email", "last_activity_at"),
+    )
+
 
 class ChatMessageRecord(Base):
     __tablename__ = "chat_messages"
