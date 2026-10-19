@@ -291,10 +291,18 @@ export interface UseApiQueryOptions {
   enabled?: boolean;
   revalidateOnFocus?: boolean;
   cache?: QueryCache;
+  /**
+   * While a new key loads, keep returning the last data this hook showed
+   * (`isPlaceholderData`) instead of `undefined`: switching a range, tab or
+   * filter swaps the charts in place rather than flashing skeletons.
+   */
+  keepPreviousData?: boolean;
 }
 
 export interface UseApiQueryResult<T> {
   data: T | undefined;
+  /** `data` belongs to the previous key (`keepPreviousData`) while this one loads. */
+  isPlaceholderData: boolean;
   error: unknown;
   /** No data yet and a request is running. */
   isLoading: boolean;
@@ -318,6 +326,7 @@ export function useApiQuery<T>(
     enabled = true,
     revalidateOnFocus = true,
     cache = queryCache,
+    keepPreviousData = false,
   }: UseApiQueryOptions = {},
 ): UseApiQueryResult<T> {
   const k = key === null ? null : serializeKey(key);
@@ -364,10 +373,18 @@ export function useApiQuery<T>(
     [cache, k],
   );
 
+  // Last data this hook rendered (any key), for `keepPreviousData`.
+  const shown = useRef<T | undefined>(undefined);
+  if (state.data !== undefined) shown.current = state.data;
+  const placeholder =
+    keepPreviousData && active && state.data === undefined && !state.error ? shown.current : undefined;
+  const data = state.data ?? placeholder;
+
   return {
-    data: state.data,
+    data,
+    isPlaceholderData: placeholder !== undefined,
     error: state.error,
-    isLoading: active && state.data === undefined && (state.isFetching || state.updatedAt === 0) && !state.error,
+    isLoading: active && data === undefined && (state.isFetching || state.updatedAt === 0) && !state.error,
     isValidating: state.isFetching,
     updatedAt: state.updatedAt,
     refetch,
