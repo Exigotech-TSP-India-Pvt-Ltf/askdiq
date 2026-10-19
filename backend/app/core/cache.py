@@ -198,6 +198,10 @@ class SWRCache:
             self._store.pop(k, None)
         return len(keys)
 
+    def put(self, key: str, value: Any) -> None:
+        """Store a value computed elsewhere (e.g. by a background refresher)."""
+        self._put(key, value)
+
     def _put(self, key: str, value: Any) -> None:
         if key not in self._store and len(self._store) >= self._max_size:
             # Drop the oldest computation first.

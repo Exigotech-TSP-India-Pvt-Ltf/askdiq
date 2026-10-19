@@ -182,7 +182,8 @@ async def get_summary(
 ) -> Response:
     """Conversations, substantive questions, handled %, served %, people and
     average questions per conversation (the HTML's ``metrics()``)."""
-    return cached_response(request, await service.summary(filters))
+    summary = InsightsSummary.model_validate(await service.summary(filters))
+    return cached_response(request, summary)
 
 
 @router.get(

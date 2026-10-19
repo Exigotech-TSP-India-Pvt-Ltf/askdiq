@@ -20,6 +20,7 @@ from app.api.routes import admin as admin_routes
 from app.api.routes import admin_usage
 from app.auth.permissions import Permission
 from app.core.cache import aggregation_cache
+from app.dashboard import snapshots
 from app.dashboard.queries import ASST, cached_tokens_sql
 from app.governance import logs, traces
 from app.models.db_models import ChatMessageRecord, Chunk, LatencyRecord
@@ -120,10 +121,28 @@ async def test_summary_keys_compute_concurrently_and_identical_requests_share_on
         return {"audience": audience}
 
     monkeypatch.setattr(admin_usage, "_compute_usage_summary", fake_compute)
+    # No database: snapshot rows live in a dict, tasks get no session.
+    rows: dict[str, object] = {}
+
+    async def read_row(_session, key):
+        return rows.get(key)
+
+    async def write_row(_session, values):
+        rows[values["key"]] = values
+
+    monkeypatch.setattr(snapshots, "_read_row", read_row)
+    monkeypatch.setattr(snapshots, "_write_row", write_row)
+
+    class NoDbRunner:
+        @staticmethod
+        async def gather(*tasks):
+            return [await task(None) for task in tasks]
+
+    runner = NoDbRunner()
     calls = [
-        admin_usage._usage_summary_payload("overview", None, None, None),  # type: ignore[arg-type]
-        admin_usage._usage_summary_payload("overview", None, None, None),  # type: ignore[arg-type]
-        admin_usage._usage_summary_payload("real", None, None, None),  # type: ignore[arg-type]
+        admin_usage._usage_summary_payload("overview", None, None, runner),  # type: ignore[arg-type]
+        admin_usage._usage_summary_payload("overview", None, None, runner),  # type: ignore[arg-type]
+        admin_usage._usage_summary_payload("real", None, None, runner),  # type: ignore[arg-type]
     ]
     tasks = [asyncio.create_task(c) for c in calls]
     for _ in range(50):
@@ -183,14 +202,14 @@ async def test_usage_llm_is_cached_until_cleared(
 ) -> None:
     admin_usage.clear_usage_caches()
     runs = 0
-    real = admin_routes._query_usage_rows
+    real = admin_routes._usage_llm_payload
 
     async def counting(db):
         nonlocal runs
         runs += 1
         return await real(db)
 
-    monkeypatch.setattr(admin_routes, "_query_usage_rows", counting)
+    monkeypatch.setattr(admin_routes, "_usage_llm_payload", counting)
     first = await client.get("/admin/usage/llm")
     second = await client.get("/admin/usage/llm")
     assert first.status_code == second.status_code == 200

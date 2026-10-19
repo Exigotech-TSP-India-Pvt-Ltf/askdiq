@@ -17,10 +17,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import TOPIC_CACHE_INVALIDATE, publish_event
+from app.dashboard.snapshots import delete_snapshots
 from app.governance.audit import record_audit_event
 from app.governance.pii import redact_pii
 from app.insights.analytics_service import (
     INSIGHTS_CACHE_PREFIX,
+    INSIGHTS_KIND_PREFIX,
     invalidate_insights_cache,
 )
 from app.insights.taxonomy import BotQuality, Intent, Issue, TaxonomyKind
@@ -96,7 +98,9 @@ class TaxonomyService:
         return row
 
     async def _commit(self) -> None:
-        """Commit, then drop cached analytics: labels, groups and flags shape them."""
+        """Commit with the stored analytics snapshots dropped (labels, groups and
+        flags shape them), then drop the in-process ones everywhere."""
+        await delete_snapshots(self.db, INSIGHTS_KIND_PREFIX)
         await self.db.commit()
         invalidate_insights_cache()
         await publish_event(TOPIC_CACHE_INVALIDATE, INSIGHTS_CACHE_PREFIX)

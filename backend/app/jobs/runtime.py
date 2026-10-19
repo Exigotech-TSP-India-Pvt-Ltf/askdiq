@@ -15,6 +15,7 @@ from app.core.cache import aggregation_cache, dashboard_cache
 from app.core.config import Settings, get_settings
 from app.core.events import TOPIC_CACHE_INVALIDATE, Event, EventBus, get_event_bus
 from app.core.logging_config import get_logger
+from app.dashboard.snapshots import SnapshotRefresher
 from app.governance.audience import invalidate_audience_cache
 from app.jobs.worker import JobWorker
 from app.model_settings.service import (
@@ -72,6 +73,7 @@ class PlatformServices:
         self._stop = asyncio.Event()
         self._worker_task: asyncio.Task[None] | None = None
         self._sampler_task: asyncio.Task[None] | None = None
+        self._snapshot_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         bus = self.bus
@@ -83,35 +85,40 @@ class PlatformServices:
 
         bus.on(TOPIC_CACHE_INVALIDATE, _on_invalidate)
         await bus.start()
-        settings = get_settings()
-        if settings.jobs_worker_enabled:
+        cfg = get_settings()
+        if cfg.jobs_worker_enabled:
             self._worker_task = asyncio.create_task(
                 JobWorker().run(self._stop), name="jobs-worker"
             )
-        log_alert_delivery_status(settings)
-        if settings.alerts_enabled:
+            if cfg.dashboard_snapshot_refresh_seconds > 0:
+                # Precomputed dashboards: backfills the defaults at startup,
+                # then keeps the watched ones fresh (one worker, advisory lock).
+                self._snapshot_task = asyncio.create_task(
+                    SnapshotRefresher().run(self._stop), name="dashboard-snapshots"
+                )
+        log_alert_delivery_status(cfg)
+        if cfg.alerts_enabled:
             self._sampler_task = asyncio.create_task(
                 AlertSampler(bus=bus).run(self._stop), name="alerts-sampler"
             )
 
     async def aclose(self) -> None:
         self._stop.set()
-        if self._sampler_task is not None:
-            sampler, self._sampler_task = self._sampler_task, None
-            sampler.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await sampler
-        if self._worker_task is not None:
-            task = self._worker_task
-            self._worker_task = None
-            # Give the worker a moment to finish its current step, then cancel it.
-            # A cancelled worker is a normal stop (reload/shutdown), not an error.
-            done, _ = await asyncio.wait({task}, timeout=_WORKER_STOP_TIMEOUT_SECONDS)
-            if not done:
-                task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await task
+        for task in (self._sampler_task, self._snapshot_task, self._worker_task):
+            if task is not None:
+                await self._stop_task(task)
+        self._sampler_task = self._snapshot_task = self._worker_task = None
         await self.bus.stop()
+
+    @staticmethod
+    async def _stop_task(task: asyncio.Task[None]) -> None:
+        # Give the task a moment to finish its current step, then cancel it.
+        # A cancelled task is a normal stop (reload/shutdown), not an error.
+        done, _ = await asyncio.wait({task}, timeout=_WORKER_STOP_TIMEOUT_SECONDS)
+        if not done:
+            task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await task
 
 
 async def start_platform_services() -> PlatformServices:

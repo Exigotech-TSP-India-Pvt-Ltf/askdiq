@@ -440,7 +440,9 @@ async def test_aggregates_are_cached_and_a_taxonomy_edit_drops_them(
     monkeypatch.setattr(
         analytics_service.InsightsAnalyticsRepository, "flow", counting_flow
     )
-    monkeypatch.setattr(analytics_service.InsightsAnalyticsService, "cube", counting_cube)
+    monkeypatch.setattr(
+        analytics_service.InsightsAnalyticsService, "cube", counting_cube
+    )
     first = await _get(insights_client, "flow")
     assert await _get(insights_client, "flow") == first
     # summary, topics and quality share one exchange cube per context.

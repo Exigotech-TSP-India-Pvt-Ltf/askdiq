@@ -36,6 +36,7 @@ from app.core.middleware import METRICS
 from app.core.serialization import sanitize_csv_cell
 from app.core.sse import event_stream
 from app.dashboard import active_visitors
+from app.dashboard.snapshots import GatherRunner, get_snapshot, register
 from app.governance import logs, timeseries, traces
 from app.governance.audience import Audience, audience_scope
 from app.governance.audit import record_audit_event
@@ -433,12 +434,61 @@ async def governance_logs(
     cap = get_settings().governance_exact_count_cap
     # The filters carry the caller's hidden actions (permission scope), so
     # the key never shares a page across permission levels.
+    if position is None and filters.date_from is None and filters.date_to is None:
+        # First pages without a date range (the Overall tab's totals, the Logs
+        # tab's default): precomputed and refreshed in the background.
+        return await get_snapshot(
+            GOVERNANCE_LOGS_KIND, _logs_params(filters, limit), runner.gather
+        )
     scope = replace(filters, hidden_actions=frozenset())
     hidden = ",".join(sorted(filters.hidden_actions))
     key = f"gov-logs:{scope!r}:{hidden}:{cursor}:{limit}"
     return await dashboard_cached(
         key, lambda: _governance_logs_page(runner, filters, position, limit, cap)
     )
+
+
+GOVERNANCE_LOGS_KIND = "governance.logs"
+
+
+def _logs_params(filters: logs.LogFilters, limit: int) -> dict[str, Any]:
+    return {
+        "audience": filters.audience,
+        "levels": list(filters.levels),
+        "services": list(filters.services),
+        "q": filters.q,
+        "hidden": sorted(filters.hidden_actions),
+        "limit": limit,
+    }
+
+
+async def _governance_logs_snapshot(gather: Any, params: dict) -> dict[str, Any]:
+    filters = logs.LogFilters(
+        audience=params["audience"],
+        levels=tuple(params["levels"]),
+        services=tuple(params["services"]),
+        q=params["q"],
+        hidden_actions=frozenset(params["hidden"]),
+    )
+    cap = get_settings().governance_exact_count_cap
+    return await _governance_logs_page(
+        GatherRunner(gather),  # type: ignore[arg-type]
+        filters,
+        None,
+        params["limit"],
+        cap,
+    )
+
+
+register(
+    GOVERNANCE_LOGS_KIND,
+    _governance_logs_snapshot,
+    [
+        _logs_params(logs.LogFilters(audience=aud, hidden_actions=hidden), 1)
+        for aud in ("overview", "users", "testing")
+        for hidden in (frozenset(), AUTH_AUDIT_ACTIONS)
+    ],
+)
 
 
 async def _governance_logs_page(

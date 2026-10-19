@@ -86,7 +86,14 @@ export function AnalyticsView() {
           )}
         </>
       )}
-      <div role="tabpanel" data-tour="analytics-panel" aria-label={ANALYTICS_TABS.find((t) => t.id === state.tab)?.label}>
+      <div
+        role="tabpanel"
+        data-tour="analytics-panel"
+        aria-label={ANALYTICS_TABS.find((t) => t.id === state.tab)?.label}
+        aria-busy={summary.isPlaceholderData || undefined}
+        // Previous results stay visible (dimmed) while the new filters load.
+        className={`transition-opacity duration-150 ${summary.isPlaceholderData ? "opacity-60" : ""}`}
+      >
         <AnalyticsTabPanel tab={state.tab} state={state} filters={filters} update={update} learnLabel={learnLabel} />
       </div>
     </div>

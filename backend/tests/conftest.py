@@ -137,9 +137,12 @@ async def _signed_in_test_user(
 
 
 @pytest.fixture(autouse=True)
-def _fresh_dashboard_cache():
+def _fresh_dashboard_cache(monkeypatch: pytest.MonkeyPatch):
     """Dashboard aggregates are cached per process; each test starts empty
-    (rolled-back rows of one test must never answer another)."""
+    (rolled-back rows of one test must never answer another). Stored
+    snapshots are off unless a test turns them on (tests/test_dashboard_snapshots.py):
+    many tests share one transactional session across concurrent requests."""
+    monkeypatch.setattr(get_settings(), "dashboard_snapshots_persist", False)
     dashboard_cache.clear()
     yield
     dashboard_cache.clear()
