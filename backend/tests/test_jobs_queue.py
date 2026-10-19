@@ -311,10 +311,15 @@ async def test_cleanup_job_removes_expired_shared_state(engine):
     backend = PostgresState(engine)
     await backend.put_once(f"cleanup-{uuid.uuid4()}", {"v": 1}, ttl=0.01)
     await asyncio.sleep(0.1)
+    # Only rows already expired when cleanup runs: rows other tests created
+    # with short TTLs can expire between the cleanup and this check.
+    async with engine.connect() as conn:
+        cutoff = await conn.scalar(text("SELECT now()"))
     await handlers.state_cleanup_task({})
     async with engine.connect() as conn:
         expired = await conn.scalar(
-            text("SELECT count(*) FROM oidc_states WHERE expires_at <= now()")
+            text("SELECT count(*) FROM oidc_states WHERE expires_at <= :cutoff"),
+            {"cutoff": cutoff},
         )
     assert expired == 0
 
