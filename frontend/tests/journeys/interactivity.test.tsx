@@ -264,6 +264,14 @@ describe("Global state carries across pages", () => {
     expect(session.getAttribute("href")).toBe(`/admin/conversations/${CONV_ID}?range=30d`);
   });
 
+  it("the Conversations tab applies the date range to the list as well as the stats", async () => {
+    renderPage(<ConversationsPage />, { url: "/admin/visitors?tab=conversations&from=2026-10-01&to=2026-10-05" });
+    await waitFor(() => expect(lastCall("/admin/conversations")?.searchParams.get("from")).toBe("2026-10-01"));
+    expect(lastCall("/admin/conversations")?.searchParams.get("to")).toBe("2026-10-05");
+    expect(lastCall("/admin/conversations/stats")?.searchParams.get("from")).toBe("2026-10-01");
+    expect(lastCall("/admin/conversations/stats")?.searchParams.get("to")).toBe("2026-10-05");
+  });
+
   it("the audience scope applies to every entity page", async () => {
     window.localStorage.setItem("askdiq.audience_scope", "users");
     renderPage(

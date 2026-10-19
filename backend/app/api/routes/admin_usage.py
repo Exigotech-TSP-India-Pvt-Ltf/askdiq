@@ -274,30 +274,9 @@ async def _usage_summary_payload(
     runner: ScopedRunner,
 ) -> dict:
     settings = get_settings()
-
-    # Parse and validate dates
-    from_dt: datetime | None = None
-    to_dt: datetime | None = None
-    if from_date:
-        try:
-            from_dt = datetime.fromisoformat(from_date.replace("Z", ""))
-        except ValueError:
-            raise HTTPException(
-                status_code=422, detail="Invalid from_date format. Use ISO 8601."
-            ) from None
-    if to_date:
-        try:
-            to_dt = datetime.fromisoformat(to_date.replace("Z", ""))
-        except ValueError:
-            raise HTTPException(
-                status_code=422, detail="Invalid to_date format. Use ISO 8601."
-            ) from None
-
-    if from_dt and to_dt and (to_dt - from_dt).days > settings.usage_max_range_days:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Requested date range exceeds maximum allowed limit of {settings.usage_max_range_days} days.",
-        )
+    # Same parser as the lists: a date-only ``to_date`` covers that whole UTC
+    # day, and the span is capped at ``usage_max_range_days``.
+    from_dt, to_dt = usage_date_range(from_date, to_date)
 
     cache_key = (_SUMMARY_CACHE_SCOPE, audience, from_date, to_date)
     ttl = settings.usage_summary_cache_ttl_seconds
@@ -635,6 +614,10 @@ _ALLOWED_USER_SORTS = {
 }
 
 
+_FROM_DOC = "ISO datetime or YYYY-MM-DD (UTC): keep turns asked from then on."
+_TO_DOC = "ISO datetime or YYYY-MM-DD (a day covers the whole UTC day), inclusive."
+
+
 @router.get("/users")
 async def get_usage_users(
     audience: Audience = Depends(audience_scope),
@@ -643,9 +626,13 @@ async def get_usage_users(
     sort: str = "cost_desc",
     limit: int = Query(10, ge=1, le=_PAGE_MAX_LIMIT),
     offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
+    from_date: str | None = Query(None, description=_FROM_DOC),
+    to_date: str | None = Query(None, description=_TO_DOC),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
+    """Per-IP usage rows; ``from_date`` / ``to_date`` keep the turns in that window."""
+    lo, hi = usage_date_range(from_date, to_date)
     return await _usage_users_page(
         db,
         audience=audience,
@@ -654,6 +641,8 @@ async def get_usage_users(
         sort=sort,
         limit=limit,
         offset=offset,
+        from_dt=lo,
+        to_dt=hi,
     )
 
 
@@ -666,6 +655,8 @@ async def _usage_users_page(
     sort: str,
     limit: int,
     offset: int,
+    from_dt: datetime | None = None,
+    to_dt: datetime | None = None,
 ) -> dict:
     """Users rows for the tab (page-capped) and the CSV export (export-capped)."""
     if sort not in _ALLOWED_USER_SORTS:
@@ -719,6 +710,7 @@ async def _usage_users_page(
     aud_cond = await build_audience_filter(db, user_msg.ip_address, audience)
     if aud_cond is not None:
         query = query.where(aud_cond)
+    query = _turn_time_filter(query, user_msg, from_dt, to_dt)
 
     if q and q.strip():
         escaped = escape_ilike_pattern(q.strip())
@@ -836,15 +828,30 @@ async def get_usage_sessions(
     sort: str = "last_active_desc",
     limit: int = Query(10, ge=1),
     offset: int = Query(0, ge=0),
+    from_date: str | None = Query(None, description=_FROM_DOC),
+    to_date: str | None = Query(None, description=_TO_DOC),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2)."""
+    """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2).
+
+    ``from_date`` / ``to_date`` keep only the turns asked in that window, so a
+    session's queries, tokens and cost are the ones inside the range.
+    """
     settings = get_settings()
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
         raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
+    lo, hi = usage_date_range(from_date, to_date)
     return await _usage_sessions_page(
-        db, audience=audience, q=q, ip=ip, sort=sort, limit=limit, offset=offset
+        db,
+        audience=audience,
+        q=q,
+        ip=ip,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+        from_dt=lo,
+        to_dt=hi,
     )
 
 
@@ -857,6 +864,8 @@ async def _usage_sessions_page(
     sort: str,
     limit: int,
     offset: int,
+    from_dt: datetime | None = None,
+    to_dt: datetime | None = None,
 ) -> dict:
     """Sessions rows for the tab (page-capped) and the CSV export (export-capped)."""
     if sort not in _ALLOWED_SESSION_SORTS:
@@ -918,6 +927,7 @@ async def _usage_sessions_page(
     aud_cond = await build_audience_filter(db, ChatSession.created_ip, audience)
     if aud_cond is not None:
         query = query.where(aud_cond)
+    query = _turn_time_filter(query, user_msg, from_dt, to_dt)
 
     if ip and ip.strip():
         query = query.where(ChatSession.created_ip == ip.strip())
@@ -1061,9 +1071,28 @@ def usage_date_range(
     """Validated ``(from, to)`` pair for the usage lists and export."""
     lo = parse_usage_bound(from_date, "from_date")
     hi = parse_usage_bound(to_date, "to_date", end=True)
-    if lo is not None and hi is not None and lo > hi:
+    if lo is None or hi is None:
+        return lo, hi
+    if lo > hi:
         raise HTTPException(status_code=422, detail="from_date must be before to_date.")
+    max_days = get_settings().usage_max_range_days
+    if (hi - lo).days > max_days:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Requested date range exceeds maximum allowed limit of {max_days} days.",
+        )
     return lo, hi
+
+
+def _turn_time_filter(
+    query: Any, user_msg: Any, lo: datetime | None, hi: datetime | None
+) -> Any:
+    """Keep the user turns asked inside ``[lo, hi]`` (either end optional)."""
+    if lo is not None:
+        query = query.where(user_msg.created_at >= lo)
+    if hi is not None:
+        query = query.where(user_msg.created_at <= hi)
+    return query
 
 
 @router.get("/queries")
@@ -1509,6 +1538,8 @@ async def export_usage_csv(
                 sort="cost_desc",
                 limit=settings.usage_export_max_rows,
                 offset=0,
+                from_dt=lo,
+                to_dt=hi,
             )
             for item in user_res["items"]:
                 writer.writerow(
@@ -1554,6 +1585,8 @@ async def export_usage_csv(
                 sort="cost_desc",
                 limit=settings.usage_export_max_rows,
                 offset=0,
+                from_dt=lo,
+                to_dt=hi,
             )
             for item in sess_res["items"]:
                 writer.writerow(

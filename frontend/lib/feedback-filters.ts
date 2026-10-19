@@ -117,15 +117,24 @@ export function patchToUrl(patch: FilterPatch): Record<string, string | null> {
   return out;
 }
 
-/** List-API parameters for the server-side filters. */
-export function toListParams(f: FeedbackFilters): Omit<FeedbackListParams, "audience" | "limit" | "cursor"> {
+/**
+ * List-API parameters for the server-side filters. A day picked from a chart
+ * (`f.day`) wins; otherwise `days` (the global date range, inclusive UTC days)
+ * bounds the ratings.
+ */
+export function toListParams(
+  f: FeedbackFilters,
+  days: { from?: string; to?: string } = {},
+): Omit<FeedbackListParams, "audience" | "limit" | "cursor"> {
+  const first = f.day ?? days.from;
+  const last = f.day ?? days.to;
   return {
     rating: f.rating,
     outcome: f.outcome,
     triage_status: f.status === "all" ? undefined : f.status,
     grounded: f.grounded,
-    date_from: f.day ? `${f.day}T00:00:00Z` : undefined,
-    date_to: f.day ? `${f.day}T23:59:59Z` : undefined,
+    date_from: first ? `${first}T00:00:00Z` : undefined,
+    date_to: last ? `${last}T23:59:59Z` : undefined,
     message_id: f.message_id,
     q: f.q,
     has_comment: f.has_comment,

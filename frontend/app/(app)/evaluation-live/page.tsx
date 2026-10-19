@@ -13,6 +13,7 @@ import {
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { useDeepLink } from "@/lib/use-deep-link";
+import { useRangeParams } from "@/components/admin/entity/shared";
 import {
   CheckCircle2,
   Target,
@@ -149,6 +150,8 @@ export default function EvaluationLivePage() {
   // Pass / fail / partial outcome colours.
   const pieColors = [ct.status.ok, ct.status.danger, ct.status.warn];
   const { audience } = useAudience();
+  // Global date range (header picker): live records and the pass-rate trend.
+  const { from: rangeFrom, to: rangeTo } = useRangeParams();
   const [r, setR] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -173,7 +176,7 @@ export default function EvaluationLivePage() {
     if (!token) return;
     setLoading(true);
     api
-      .evaluationReportLive(token, audience, compareMode)
+      .evaluationReportLive(token, audience, compareMode, undefined, { from: rangeFrom, to: rangeTo })
       .then((data) => {
         setR(data);
         setError(null);
@@ -185,7 +188,7 @@ export default function EvaluationLivePage() {
         );
         setLoading(false);
       });
-  }, [token, audience, compareMode]);
+  }, [token, audience, compareMode, rangeFrom, rangeTo]);
 
   const allCases = useMemo(() => r?.cases ?? [], [r?.cases]);
 
@@ -252,6 +255,7 @@ export default function EvaluationLivePage() {
         title="Evaluation"
         subtitle="Continuous production evaluation, live query audit, and benchmark comparative scorecard"
         icon={Sparkles}
+        showDateRange
       >
         <button
           data-tour="evaluation-compare"

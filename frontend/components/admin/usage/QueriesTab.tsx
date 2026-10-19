@@ -40,13 +40,14 @@ interface QueriesTabProps {
   token: string;
   initialSessionId?: string;
   initialIp?: string;
-  /** Day range from a deep link (YYYY-MM-DD, inclusive). */
+  /** Global date range, inclusive UTC days (YYYY-MM-DD); "" = all time. */
   fromDay?: string;
   toDay?: string;
   /** Sets the IP filter; "" clears it. */
   onSelectIp?: (ip: string) => void;
   /** Sets the session filter; "" clears it. */
   onSelectSession?: (sessionId: string) => void;
+  /** Shown as a removable day chip only when given (a deep-linked custom range). */
   onClearDays?: () => void;
 }
 
@@ -459,7 +460,7 @@ export function QueriesTab({
                       },
                     ]
                   : []),
-                ...(fromDay || toDay
+                ...((fromDay || toDay) && onClearDays
                   ? [
                       {
                         id: "days",

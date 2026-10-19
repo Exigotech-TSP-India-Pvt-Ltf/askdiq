@@ -95,13 +95,20 @@ export interface GoldenCasesTabProps {
   canRun: boolean;
   /** Poll interval while a run is queued (tests shorten it). */
   pollMs?: number;
+  /** Global date range (inclusive UTC days): cases promoted in it. */
+  days?: { from?: string; to?: string };
 }
 
 /** Golden Cases tab (planchanges4 F5.4): last evaluation result and "Run now" with a job chip. */
-export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS }: GoldenCasesTabProps) {
+export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS, days }: GoldenCasesTabProps) {
   const toast = useToast();
-  const fetcher = useCallback((signal: AbortSignal) => listGoldenCases(token, { limit: GOLDEN_PAGE_SIZE }, signal), [token]);
-  const { data, error, isLoading, refetch } = useApiQuery<GoldenCasePage>(feedbackKeys.golden, fetcher);
+  const from = days?.from;
+  const to = days?.to;
+  const fetcher = useCallback(
+    (signal: AbortSignal) => listGoldenCases(token, { limit: GOLDEN_PAGE_SIZE, from, to }, signal),
+    [token, from, to],
+  );
+  const { data, error, isLoading, refetch } = useApiQuery<GoldenCasePage>(feedbackKeys.goldenFor({ from, to }), fetcher);
   const [jobs, setJobs] = useState<Record<string, Job>>({});
   const jobsRef = useRef(jobs);
   jobsRef.current = jobs;

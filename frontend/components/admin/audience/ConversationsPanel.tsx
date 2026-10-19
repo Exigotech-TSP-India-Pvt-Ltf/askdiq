@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { Eye, MessageCircle, MessagesSquare, Repeat, Users } from "lucide-react";
 import { TableToolbar } from "@/components/admin/TableToolbar";
@@ -71,7 +71,22 @@ export function ConversationsPanel() {
 
   const list = useApiQuery(
     token
-      ? ["conversations", "list", audience, search, ip, minTurns, maxTurns, outcome, day, sort, pageSize, offset]
+      ? [
+          "conversations",
+          "list",
+          audience,
+          search,
+          ip,
+          minTurns,
+          maxTurns,
+          outcome,
+          day,
+          range.from,
+          range.to,
+          sort,
+          pageSize,
+          offset,
+        ]
       : null,
     (signal) =>
       getConversations(
@@ -84,6 +99,9 @@ export function ConversationsPanel() {
           max_turns: maxTurns,
           outcome,
           day,
+          // The list matches the stats: conversations started in the range.
+          from: range.from,
+          to: range.to,
           sort,
           limit: pageSize,
           offset,
@@ -116,6 +134,15 @@ export function ConversationsPanel() {
   );
   const formatEdge = useCallback((v: number) => (v === openMin ? `${v}+` : String(v)), [openMin]);
   const outcomeRows = useMemo(() => toOutcomeRows(statsData?.outcome_by_day ?? []), [statsData]);
+
+  // A new date range starts the list from the first page.
+  const rangeKey = `${range.from ?? ""}|${range.to ?? ""}`;
+  const seenRange = useRef(rangeKey);
+  useEffect(() => {
+    if (seenRange.current === rangeKey) return;
+    seenRange.current = rangeKey;
+    setPage(1);
+  }, [rangeKey, setPage]);
 
   const filter = useCallback(
     (update: Record<string, string | number | null>) => {

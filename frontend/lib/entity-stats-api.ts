@@ -589,6 +589,9 @@ export interface ConversationListParams {
   outcome?: string | null;
   /** ... on this day (`YYYY-MM-DD`). */
   day?: string | null;
+  /** Global date range: conversations started in these inclusive UTC days (as the stats). */
+  from?: string;
+  to?: string;
 }
 
 export function getConversations(token: string, params: ConversationListParams, signal?: AbortSignal) {

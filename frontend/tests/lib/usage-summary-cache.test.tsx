@@ -5,7 +5,7 @@ import { queryCache, serializeKey } from "@/lib/query-cache";
 import { feedbackKeys } from "@/lib/feedback-api";
 import { governanceKeys } from "@/lib/governance-api";
 import { usageKeys, useUsageSummary } from "@/lib/use-usage-data";
-import { prefetchKey } from "@/components/admin/dashboard/DashboardKpis";
+import { prefetchKey, prefetchParams } from "@/components/admin/dashboard/DashboardKpis";
 import type { UsageSummary } from "@/lib/types";
 
 /** perf/dashboard-load-speed: shared stale-while-revalidate cache and hover prefetch reuse. */
@@ -58,6 +58,33 @@ describe("dashboard KPI intent prefetch", () => {
     );
     expect(serializeKey(prefetchKey("/feedback/analytics", "testing"))).toBe(
       serializeKey(feedbackKeys.analytics("testing")),
+    );
+  });
+
+  it("keys and fetches by the date range, so a hover warms the ranged page entry", () => {
+    const days = { from: "2026-10-01", to: "2026-10-07" };
+    expect(serializeKey(prefetchKey("/usage/summary", "users", days))).toBe(
+      serializeKey(usageKeys.summary("users", days)),
+    );
+    expect(serializeKey(usageKeys.summary("users", days))).not.toBe(serializeKey(usageKeys.summary("users")));
+    expect(serializeKey(prefetchKey("/feedback/analytics", "users", days))).toBe(
+      serializeKey(feedbackKeys.analytics("users", days)),
+    );
+    expect(serializeKey(feedbackKeys.analytics("users", days))).not.toBe(serializeKey(feedbackKeys.analytics("users")));
+    expect(prefetchParams("/usage/summary", days)).toEqual({ from_date: "2026-10-01", to_date: "2026-10-07" });
+    expect(prefetchParams("/feedback/analytics", days)).toEqual({ from: "2026-10-01", to: "2026-10-07" });
+    expect(prefetchParams("/governance/monitoring", days)).toEqual({});
+  });
+
+  it("sends the range to the summary endpoint", async () => {
+    const fetchSummary = vi.spyOn(api, "getUsageSummary").mockResolvedValue(SUMMARY);
+    renderHook(() => useUsageSummary("session", "overview", { from: "2026-10-01", to: "2026-10-07" }));
+    await waitFor(() =>
+      expect(fetchSummary).toHaveBeenCalledWith(
+        "session",
+        { audience: "overview", from_date: "2026-10-01", to_date: "2026-10-07" },
+        expect.anything(),
+      ),
     );
   });
 

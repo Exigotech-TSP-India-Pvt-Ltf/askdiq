@@ -277,8 +277,14 @@ export const dashboardApi = {
       signal,
     ),
   /** Warms a KPI card's target page (admin-relative GET, audience-scoped). */
-  prefetch: (token: string | null, path: string, audience: Audience, signal?: AbortSignal) =>
-    getJson<unknown>(`${path}${buildQuery({ audience: audienceParam(audience) })}`, token, signal),
+  /** `extra` carries the target page's own params (e.g. its date range) so the warmed entry matches. */
+  prefetch: (
+    token: string | null,
+    path: string,
+    audience: Audience,
+    signal?: AbortSignal,
+    extra: Record<string, string | undefined> = {},
+  ) => getJson<unknown>(`${path}${buildQuery({ audience: audienceParam(audience), ...extra })}`, token, signal),
   health: (token: string | null, audience: Audience, signal?: AbortSignal) =>
     getJson<GovernanceHealthOverview>(
       `/governance/overview${buildQuery({ audience: audienceParam(audience) })}`,

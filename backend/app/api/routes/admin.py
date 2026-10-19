@@ -29,6 +29,7 @@ from app.dashboard import active_visitors
 from app.dashboard import activity as dashboard_activity
 from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
+from app.dashboard.range_params import optional_day_range
 from app.entities import conversations as conversation_stats
 from app.entities import visitors
 from app.governance.audience import (
@@ -473,12 +474,15 @@ async def list_conversations(
     day: date | None = Query(
         None, description="With `outcome`: only turns on this UTC day (YYYY-MM-DD)."
     ),
+    days: dashboard_window.DayRange | None = Depends(optional_day_range),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return conversations for the admin dashboard (Task 2.3.2: audience-scoped, paginated, no email).
 
     Rows carry `turn_count` and `outcome_counts` (NULL outcome = answered).
+    Optional `from` / `to` (inclusive UTC days) keep conversations started in
+    that range, matching `/conversations/stats`; without them, all of them.
     """
     if min_turns is not None and max_turns is not None and min_turns > max_turns:
         raise HTTPException(
@@ -508,6 +512,10 @@ async def list_conversations(
 
     for cond in await conversation_stats.session_conditions(db, aud_scope, ip, q):
         query = query.where(cond)
+    if days is not None:
+        query = query.where(
+            ChatSession.created_at >= days.start, ChatSession.created_at < days.end
+        )
     if outcome is not None:
         query = query.where(conversation_stats.outcome_exists(outcome.value, day))
     if min_turns is not None:

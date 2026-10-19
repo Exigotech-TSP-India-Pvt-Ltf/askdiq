@@ -34,12 +34,16 @@ function usePreloadTabs(): void {
   );
 }
 
-/** Tabs whose endpoints accept `from` / `to`, so the date range applies. */
+/**
+ * Tabs whose endpoints accept `from` / `to`, so the date range applies.
+ * Overall and Monitoring are real-time health views (rolling last 24 hours
+ * and live process stats); they stay "as of now" and say so in the subtitle.
+ */
 const RANGED_TABS: ReadonlySet<GovernanceTab> = new Set(["Traces", "Logs"]);
 
 const SUBTITLE: Record<GovernanceTab, string> = {
-  Overall: "Health at a glance: status, KPIs, incidents",
-  Monitoring: "Pipeline latency percentiles, traffic, resources and quality, live",
+  Overall: "Health at a glance: status, KPIs, incidents. Live, last 24 hours (not affected by the date range)",
+  Monitoring: "Pipeline latency percentiles, traffic, resources and quality. Live, last 24 hours (not affected by the date range)",
   Traces: "Request journeys across the RAG pipeline",
   Logs: "Audit, security and pipeline events",
 };
