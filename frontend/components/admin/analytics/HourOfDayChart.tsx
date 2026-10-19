@@ -8,6 +8,10 @@ import { useInsightsPalette } from "./colors";
 export interface HourOfDayChartProps {
   /** 24 counts, index = hour in the viewer's zone. */
   hours: readonly number[];
+  /** Hour picked as a cross-filter (outlined). */
+  selected?: number | null;
+  /** Click / Enter on an hour: toggles the hour filter. */
+  onSelect?: (hour: number) => void;
   height?: number;
 }
 
@@ -21,7 +25,7 @@ const GAP = 0.018;
 const HOUR_LABELS = [0, 6, 12, 18];
 
 /** Radial bar chart of substantive questions by hour of day (the HTML's `radial()`). */
-export function HourOfDayChart({ hours, height = 300 }: HourOfDayChartProps) {
+export function HourOfDayChart({ hours, selected = null, onSelect, height = 300 }: HourOfDayChartProps) {
   const palette = useInsightsPalette();
   const { ct } = palette;
   const data = useMemo<HourDatum[]>(
@@ -32,7 +36,8 @@ export function HourOfDayChart({ hours, height = 300 }: HourOfDayChartProps) {
   const max = Math.max(1, ...data.map((d) => d.value));
   const peak = data.find((d) => d.value === max && total > 0)?.hour ?? null;
   const describe = useCallback((d: HourDatum) => `${d.hour}:00, ${d.value} questions`, []);
-  const { active, getMarkProps, opacityFor } = useChartMarks(data, describe, undefined, ct.dimOpacity);
+  const select = useMemo(() => (onSelect ? (d: HourDatum) => onSelect(d.hour) : undefined), [onSelect]);
+  const { active, getMarkProps, opacityFor } = useChartMarks(data, describe, select, ct.dimOpacity);
 
   if (total === 0) return <ChartEmpty message="No questions in this selection." height={height} />;
 
@@ -73,6 +78,9 @@ export function HourOfDayChart({ hours, height = 300 }: HourOfDayChartProps) {
                   d={arcPath(r0, radius(d.value, r0, r1), angle(d.hour), angle(d.hour + 1) - GAP)}
                   fill={palette.hour(d.value, max)}
                   opacity={opacityFor(i)}
+                  aria-pressed={onSelect ? selected === d.hour : undefined}
+                  stroke={selected === d.hour ? ct.tooltip.text : "none"}
+                  strokeWidth={selected === d.hour ? 2 : 0}
                 />
               ))}
               <text textAnchor="middle" y={-2} fontSize={16} fontWeight={600} fill={ct.tooltip.text}>

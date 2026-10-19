@@ -11,6 +11,7 @@ import { ChartCard } from "@/components/charts/ChartCard";
 import { StackedBar, type BarSegment } from "@/components/charts/StackedBar";
 import { Waterfall, type WaterfallStep } from "@/components/charts/Waterfall";
 import { EntityLink } from "@/components/ui/EntityLink";
+import { entityHref } from "@/lib/entity-links";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -192,14 +193,22 @@ function ConversationDetailContent() {
             value={conversation.created_ip || "—"}
             icon={User}
             badge={
-              conversation.created_ip ? (
+              <span className="inline-flex gap-2">
+                {conversation.created_ip && (
+                  <Link
+                    href={carry(visitorDetailHref(`client-${conversation.created_ip}`))}
+                    className={`rounded text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+                  >
+                    View visitor
+                  </Link>
+                )}
                 <Link
-                  href={carry(visitorDetailHref(`client-${conversation.created_ip}`))}
+                  href={entityHref({ kind: "analytics", tab: "conversations", q: conversation.id })}
                   className={`rounded text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
                 >
-                  View visitor
+                  In Analytics
                 </Link>
-              ) : undefined
+              </span>
             }
           />
           <StatCard title="Started" value={formatDateTime(conversation.created_at)} subtitle={`Last activity ${formatDateTime(conversation.last_activity_at)}`} icon={Clock} />

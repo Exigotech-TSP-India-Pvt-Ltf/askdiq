@@ -1,8 +1,9 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { CircleCheck, CircleHelp, MessagesSquare, Repeat, ShieldCheck, Users } from "lucide-react";
+import { ArrowUpRight, CircleCheck, CircleHelp, MessagesSquare, Repeat, ShieldCheck, Users } from "lucide-react";
 import type { InsightsSummary } from "@/lib/insights-api";
+import type { AnalyticsState } from "./url-state";
 import { CountUp } from "@/components/ui/CountUp";
 import { fmtDecimal, fmtInt, fmtPct } from "./format";
 
@@ -13,12 +14,17 @@ export interface KpiDef {
   value: (s: InsightsSummary) => number | null;
   format: (v: number) => string;
   hint: (s: InsightsSummary) => string;
+  /** Where the records behind the number are (a tab, pre-filtered). */
+  target: Partial<AnalyticsState>;
+  targetLabel: string;
 }
 
 /** The six KPIs of the HTML's `metrics()` / `kpiCards()` (newplan §6.4). */
 export const KPIS: readonly KpiDef[] = [
   {
     key: "conversations",
+    target: { tab: "conversations" },
+    targetLabel: "the conversations",
     label: "Conversations",
     icon: MessagesSquare,
     value: (s) => s.conversations,
@@ -27,6 +33,8 @@ export const KPIS: readonly KpiDef[] = [
   },
   {
     key: "questions",
+    target: { tab: "topics" },
+    targetLabel: "questions by topic",
     label: "Substantive questions",
     icon: CircleHelp,
     value: (s) => s.substantive_questions,
@@ -35,6 +43,8 @@ export const KPIS: readonly KpiDef[] = [
   },
   {
     key: "handled",
+    target: { tab: "topics" },
+    targetLabel: "how questions were answered",
     label: "Questions handled",
     icon: CircleCheck,
     value: (s) => s.handled_pct,
@@ -43,6 +53,8 @@ export const KPIS: readonly KpiDef[] = [
   },
   {
     key: "served",
+    target: { tab: "conversations", outcome: "Served" },
+    targetLabel: "the served conversations",
     label: "Conversations served",
     icon: ShieldCheck,
     value: (s) => s.served_pct,
@@ -51,14 +63,18 @@ export const KPIS: readonly KpiDef[] = [
   },
   {
     key: "people",
+    target: { tab: "dropoff" },
+    targetLabel: "conversations per person",
     label: "Probable people",
     icon: Users,
     value: (s) => s.people,
     format: fmtInt,
-    hint: () => "Pseudonymous, no PII",
+    hint: () => "Account e-mail, else network; pseudonymous",
   },
   {
     key: "avg",
+    target: { tab: "conversations", sort: "exchanges", dir: "desc" },
+    targetLabel: "the longest conversations",
     label: "Avg. questions / conv.",
     icon: Repeat,
     value: (s) => s.avg_questions_per_conversation,
@@ -70,9 +86,11 @@ export const KPIS: readonly KpiDef[] = [
 export interface KpiStripProps {
   summary: InsightsSummary | undefined;
   loading?: boolean;
+  /** Opens the records behind a KPI (its `target`). */
+  onOpen?: (target: Partial<AnalyticsState>) => void;
 }
 
-export function KpiStrip({ summary, loading = false }: KpiStripProps) {
+export function KpiStrip({ summary, loading = false, onOpen }: KpiStripProps) {
   return (
     <section aria-label="Key figures" data-tour="analytics-kpis" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
       {KPIS.map((k) => {
@@ -96,6 +114,17 @@ export function KpiStrip({ summary, loading = false }: KpiStripProps) {
             </p>
             <h3 className="text-xs font-medium text-fg-muted">{k.label}</h3>
             {summary && <p className="text-[11px] text-fg-subtle">{k.hint(summary)}</p>}
+            {onOpen && (
+              <button
+                type="button"
+                onClick={() => onOpen(k.target)}
+                aria-label={`${k.label}: open ${k.targetLabel}`}
+                className="mt-auto inline-flex items-center gap-1 self-start rounded text-[11px] font-semibold text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
+              >
+                View records
+                <ArrowUpRight className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+              </button>
+            )}
           </article>
         );
       })}

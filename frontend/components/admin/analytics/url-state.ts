@@ -15,12 +15,14 @@ import {
   DATE_RE,
   DEFAULT_PAGE_SIZE,
   EXPERIENCE_RATINGS,
+  HOURS_PER_DAY,
   INSIGHTS_PERIODS,
   MAX_PAGE_SIZE,
   MAX_SEARCH_CHARS,
   MAX_USER_TYPE_CHARS,
   PERSON_RE,
   SORT_DIRECTIONS,
+  VISITOR_RE,
   type ConversationOutcome,
   type ConversationSort,
   type ExperienceRating,
@@ -45,6 +47,10 @@ export interface AnalyticsState {
   intent: string;
   quality: string;
   person: string;
+  /** Visitors-page id (`client-<ip>` or a user UUID). */
+  visitor: string;
+  /** Hour of day (viewer zone), null = every hour. */
+  hour: number | null;
   q: string;
   sort: ConversationSort;
   dir: SortDirection;
@@ -65,6 +71,8 @@ export const DEFAULT_STATE: AnalyticsState = {
   intent: "",
   quality: "",
   person: "",
+  visitor: "",
+  hour: null,
   q: "",
   sort: "start",
   dir: "desc",
@@ -90,6 +98,13 @@ function isRealDate(value: string): boolean {
 function intIn(value: string | null, min: number, max: number, fallback: number): number {
   const n = Number(value);
   return value !== null && Number.isInteger(n) && n >= min && n <= max ? n : fallback;
+}
+
+/** A valid hour of day (0-23), else null. */
+function hourOf(value: string | null): number | null {
+  if (!value) return null;
+  const n = intIn(value, 0, HOURS_PER_DAY - 1, -1);
+  return n < 0 ? null : n;
 }
 
 const FIRST_PRINTABLE = 32;
@@ -122,6 +137,8 @@ export function parseAnalyticsState(search: string): AnalyticsState {
     intent: matching(CODE_RE, sp.get("intent")),
     quality: matching(CODE_RE, sp.get("quality")),
     person: matching(PERSON_RE, sp.get("person")),
+    visitor: matching(VISITOR_RE, sp.get("visitor")),
+    hour: hourOf(sp.get("hour")),
     q,
     sort: oneOf(CONVERSATION_SORTS, sp.get("sort"), DEFAULT_STATE.sort),
     dir: oneOf(SORT_DIRECTIONS, sp.get("dir"), DEFAULT_STATE.dir),
@@ -155,6 +172,8 @@ export function toInsightsFilters(state: AnalyticsState): InsightsFilters {
   if (state.intent) out.intent = state.intent;
   if (state.quality) out.quality = state.quality;
   if (state.person) out.person = state.person;
+  if (state.visitor) out.visitor = state.visitor;
+  if (state.hour !== null) out.hour = state.hour;
   if (state.q) out.q = state.q;
   return out;
 }
@@ -171,6 +190,8 @@ export const FILTER_FIELDS = [
   "intent",
   "quality",
   "person",
+  "visitor",
+  "hour",
   "q",
 ] as const satisfies readonly (keyof AnalyticsState)[];
 
@@ -182,7 +203,7 @@ export function toggleDay(state: AnalyticsState, day: string): Partial<Analytics
   return { period: "custom", from: day, to: day };
 }
 
-/** Toggles a cross-filter (topic, quality, issue, person): same value again clears it. */
+/** Toggles a cross-filter (topic, quality, issue, person, hour): same value again clears it. */
 export function toggleValue<K extends keyof AnalyticsState>(
   state: AnalyticsState,
   key: K,

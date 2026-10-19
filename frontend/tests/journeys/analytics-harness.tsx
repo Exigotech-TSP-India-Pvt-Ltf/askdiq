@@ -45,7 +45,10 @@ export interface RecordedCall {
 
 const PREFIX = "/api/proxy/admin/insights/";
 
-/** Installs `global.fetch`; `overrides` replace a recorded response per endpoint. */
+/**
+ * Installs `global.fetch`; `overrides` replace a recorded response per endpoint
+ * (a function receives the request's query; `undefined` answers 404).
+ */
 export function mockInsightsFetch(overrides: Partial<Record<string, unknown>> = {}) {
   const calls: RecordedCall[] = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -53,7 +56,13 @@ export function mockInsightsFetch(overrides: Partial<Record<string, unknown>> = 
     const path = url.pathname.startsWith(PREFIX) ? url.pathname.slice(PREFIX.length) : url.pathname;
     const endpoint = path.startsWith("conversations/") ? "conversation_detail" : path;
     calls.push({ endpoint, params: url.searchParams });
-    const body = endpoint in overrides ? overrides[endpoint] : (RECORDED as unknown as Record<string, unknown>)[endpoint];
+    const override = overrides[endpoint];
+    const body =
+      endpoint in overrides
+        ? typeof override === "function"
+          ? (override as (params: URLSearchParams) => unknown)(url.searchParams)
+          : override
+        : (RECORDED as unknown as Record<string, unknown>)[endpoint];
     if (body === undefined) return new Response(JSON.stringify({ detail: "Not found" }), { status: 404 });
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   });

@@ -4,7 +4,7 @@ import React, { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CircleDollarSign, Clock, ListTree, MessageSquareText, MessagesSquare, Search, ThumbsUp, User } from "lucide-react";
+import { ChartPie, CircleDollarSign, Clock, ListTree, MessageSquareText, MessagesSquare, Search, ThumbsUp, User } from "lucide-react";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
@@ -247,6 +247,10 @@ function VisitorDetailContent() {
               <Link href={carry(conversationsHref({ ip }))} className={secondaryButton}>
                 <MessagesSquare {...ICON} />
                 Conversations
+              </Link>
+              <Link href={entityHref({ kind: "analytics", visitor: id })} className={secondaryButton}>
+                <ChartPie {...ICON} />
+                Analytics
               </Link>
             </>
           ) : undefined
