@@ -32,7 +32,11 @@ export interface BarListProps extends AxisLabelProps {
   colorFor?: (datum: BarDatum, index: number, ct: ChartTheme) => string;
   /** Tooltip name of the bar value (default "Count"), e.g. "Ratings". */
   valueLabel?: string;
+  /** Dim rows whose value is 0 (a fixed category list, e.g. every outcome). */
+  dimZero?: boolean;
 }
+
+const ZERO_ROW_OPACITY = 0.45;
 
 const LABEL_WIDTH = 104;
 const VALUE_WIDTH = 44;
@@ -47,6 +51,7 @@ export function BarList({
   formatValue = formatCompact,
   colorFor,
   valueLabel = "Count",
+  dimZero = false,
   xAxisLabel,
   yAxisLabel,
 }: BarListProps) {
@@ -98,7 +103,13 @@ export function BarList({
               const y = rowH * i + (rowH - barH) / 2;
               const w = Math.max(d.value > 0 ? 2 : 0, (d.value / max) * plotW);
               return (
-                <g key={d.key} {...getMarkProps(i)} opacity={opacityFor(i)} data-key={d.key}>
+                <g
+                  key={d.key}
+                  {...getMarkProps(i)}
+                  opacity={opacityFor(i) * (dimZero && d.value === 0 ? ZERO_ROW_OPACITY : 1)}
+                  data-key={d.key}
+                  data-zero={dimZero && d.value === 0 ? "true" : undefined}
+                >
                   <rect x={0} y={rowH * i} width={size.width} height={rowH} fill="transparent" />
                   <text x={labelW} y={rowH * i + rowH / 2} dy="0.32em" textAnchor="end" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
                     {d.label}

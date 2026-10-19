@@ -76,7 +76,7 @@ export function LiveIndicator({ status, updatedAt }: { status: StreamStatus; upd
       </span>
       {STREAM_LABEL[status]}
       {updatedAt ? (
-        <span className="text-fg-subtle">· {new Date(updatedAt).toLocaleTimeString()}</span>
+        <span className="text-fg-subtle">· {new Date(updatedAt).toLocaleTimeString("en-AU")}</span>
       ) : null}
     </span>
   );

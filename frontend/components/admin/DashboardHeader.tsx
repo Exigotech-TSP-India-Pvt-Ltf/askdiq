@@ -5,7 +5,6 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { AudienceScopeTabs } from "@/components/admin/AudienceScopeTabs";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
-import { HeaderUtilities } from "@/components/shell/HeaderUtilities";
 
 export interface BreadcrumbItem {
   label: string;
@@ -111,13 +110,10 @@ export function DashboardHeader({
         ) : null}
       </div>
 
-      {/* Right Column: Actions + palette, notifications and profile (theme
-          lives in the profile menu). Below md the MobileTopBar carries them. */}
+      {/* Right Column: page actions only (notifications, tours, theme and sign
+          out live in the sidebar account corner). */}
       <div className="flex items-center gap-2.5 min-w-0 sm:min-w-[200px] justify-end">
         {actions ?? children}
-        <div className="hidden md:block">
-          <HeaderUtilities />
-        </div>
       </div>
     </header>
   );

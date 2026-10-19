@@ -10,22 +10,35 @@ import { hasSeenTour, markTourSeen } from "@/lib/tour/dom";
 import { pop, useMotionVariants } from "@/lib/motion";
 import { focusRing, menuItem, popoverPanel } from "@/components/ui/styles";
 import { useTourOptional, type TourContextValue } from "@/components/tour/TourProvider";
+import { accountActionButton, accountPopoverPosition, type AccountPopoverPlacement } from "@/components/shell/account-actions";
 
-export type TourLauncherVariant = "header" | "mobile" | "floating";
+export type TourLauncherVariant = "sidebar" | "drawer" | "floating";
 
 interface TourLauncherProps {
-  /** `header`: desktop header slot. `mobile`: the mobile top bar. `floating`: pages without a header slot. */
+  /**
+   * `sidebar`: the desktop sidebar account corner (registers, hiding the floating one).
+   * `drawer`: the mobile navigation drawer. `floating`: fallback while no sidebar one is mounted.
+   */
   variant?: TourLauncherVariant;
+  /** Menu position in the account corner (ignored by `floating`). */
+  placement?: AccountPopoverPlacement;
+  /** Runs before a tour starts (the mobile drawer closes so the tour can reach the page). */
+  onBeforeStart?: () => void;
 }
 
 /** Icon-only "Take the tour" button with a small menu: this page's tour or the dashboard basics. */
-export function TourLauncher({ variant = "header" }: TourLauncherProps) {
+export function TourLauncher({ variant = "sidebar", placement = "above", onBeforeStart }: TourLauncherProps) {
   const tour = useTourOptional();
   if (!tour) return null;
-  return <TourLauncherInner tour={tour} variant={variant} />;
+  return <TourLauncherInner tour={tour} variant={variant} placement={placement} onBeforeStart={onBeforeStart} />;
 }
 
-function TourLauncherInner({ tour, variant }: { tour: TourContextValue; variant: TourLauncherVariant }) {
+interface TourLauncherInnerProps extends Required<Pick<TourLauncherProps, "variant" | "placement">> {
+  tour: TourContextValue;
+  onBeforeStart?: () => void;
+}
+
+function TourLauncherInner({ tour, variant, placement, onBeforeStart }: TourLauncherInnerProps) {
   const pathname = usePathname() ?? "";
   // Tabbed pages pick their tour from ?tab= (read after mount: no hydration mismatch).
   // Re-checked after every render (a tab switch re-renders the header) and only set
@@ -45,7 +58,7 @@ function TourLauncherInner({ tour, variant }: { tour: TourContextValue; variant:
   const variants = useMotionVariants(pop);
   const { registerHeaderLauncher, headerLaunchers, start } = tour;
 
-  useEffect(() => (variant === "header" ? registerHeaderLauncher() : undefined), [variant, registerHeaderLauncher]);
+  useEffect(() => (variant === "sidebar" ? registerHeaderLauncher() : undefined), [variant, registerHeaderLauncher]);
 
   // First visit: a subtle pulse on the launcher (never auto-opens the tour). Only a visible
   // launcher claims the hint, so the hidden mobile/desktop twin doesn't swallow it.
@@ -93,15 +106,21 @@ function TourLauncherInner({ tour, variant }: { tour: TourContextValue; variant:
   const launch = (id: typeof pageId) => {
     setOpen(false);
     setHint(false);
+    onBeforeStart?.();
     start(id);
   };
 
-  const wrapper =
-    variant === "floating" ? "fixed right-6 top-24 z-30 hidden md:block" : "relative";
+  const floating = variant === "floating";
+  // Account-corner launchers stay static so the menu anchors to the action row / rail.
+  const wrapper = floating ? "fixed right-6 top-24 z-30 hidden md:block" : "";
+  const triggerClass = floating
+    ? `relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface-card text-brand-700 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 dark:text-brand-300 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 ${focusRing}`
+    : accountActionButton;
+  const menuPosition = floating ? "right-0 mt-2 origin-top-right" : accountPopoverPosition[placement];
 
   return (
     <div ref={rootRef} className={wrapper} data-tour="shell-tour-launcher">
-      <div className="relative">
+      <div className={floating ? "relative" : "relative w-fit"}>
         <button
           ref={triggerRef}
           type="button"
@@ -115,9 +134,9 @@ function TourLauncherInner({ tour, variant }: { tour: TourContextValue; variant:
           aria-expanded={open}
           aria-controls={open ? menuId : undefined}
           data-testid="tour-launcher"
-          className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface-card text-brand-700 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 dark:text-brand-300 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 ${focusRing}`}
+          className={triggerClass}
         >
-          <Compass className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+          <Compass className="h-4 w-4 text-brand-700 dark:text-brand-300" strokeWidth={1.75} aria-hidden="true" />
         </button>
         {hint ? (
           <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5" data-testid="tour-hint" aria-hidden="true">
@@ -136,7 +155,7 @@ function TourLauncherInner({ tour, variant }: { tour: TourContextValue; variant:
             initial="hidden"
             animate="visible"
             exit="exit"
-            className={`absolute right-0 z-50 mt-2 w-56 origin-top-right ${popoverPanel}`}
+            className={`absolute z-50 w-56 max-w-[calc(100vw-2rem)] ${menuPosition} ${popoverPanel}`}
           >
             <p className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Product tours</p>
             {hasPageTour ? (

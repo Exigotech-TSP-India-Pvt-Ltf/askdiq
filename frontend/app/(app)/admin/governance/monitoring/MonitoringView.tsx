@@ -4,28 +4,42 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Activity,
   AlertTriangle,
+  ArrowUpRight,
+  BadgeCheck,
+  Coins,
   Cpu,
   Database,
   FileSearch,
+  FileText,
   Gauge,
+  Hash,
+  KeyRound,
+  Layers,
   Loader,
+  MemoryStick,
+  PieChart,
+  Scale,
   Search,
+  ShieldAlert,
+  ShieldCheck,
+  Sigma,
   Timer,
+  TriangleAlert,
   Users,
+  XCircle,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useRouter } from "next/navigation";
+import { m } from "motion/react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { useApiQuery } from "@/lib/query-cache";
-import {
-  RECHARTS_AXIS_TITLE_SPACE,
-  chartTooltipStyle,
-  rechartsAxisLabel,
-  useChartTheme,
-} from "@/lib/use-chart-theme";
+import { useChartTheme } from "@/lib/use-chart-theme";
+import type { ChartTheme } from "@/lib/theme-tokens";
+import { cardEnter, staggerFor, useMotionVariants } from "@/lib/motion";
 import {
   STAGES,
   TRACE_OUTCOMES,
@@ -38,24 +52,30 @@ import {
   type Stage,
   type TraceOutcome,
 } from "@/lib/governance-api";
+import { OUTCOMES, OUTCOME_LABELS } from "@/lib/entity-stats-api";
 import { logsHref, tabHref, tracesHref } from "@/lib/governance-links";
 import { useCarryHref } from "@/lib/entity-routes";
 import {
-  axisWidthFor,
   formatCount,
+  formatCountExact,
   formatHour,
   formatMs,
   formatPct,
   humanize,
   latencyTick,
-  niceTicks,
   windowSourceLabel,
 } from "@/lib/governance-format";
 import { useGovernanceStream } from "@/lib/use-governance-stream";
 import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
+import { BarList, type BarDatum } from "@/components/charts/BarList";
+import { StackedBar } from "@/components/charts/StackedBar";
 import { PercentileBand, type PercentilePoint } from "@/components/charts/PercentileBand";
 import { StackedArea } from "@/components/charts/StackedArea";
-import { RadialGauge } from "@/components/charts/RadialGauge";
+import { RadialGauge, type GaugeBands } from "@/components/charts/RadialGauge";
+import { StatCard } from "@/components/admin/insights/StatCard";
+import { StudioPill, StudioSectionHeader, StudioSegmented, studioCardClass } from "@/components/ui/StudioCard";
+import { CountUp } from "@/components/ui/CountUp";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { stageLabel } from "@/components/admin/governance/TraceDrawer";
 import { LiveIndicator } from "@/components/admin/governance/badges";
@@ -64,6 +84,12 @@ import { ACTIVE_VISITORS_LABEL } from "@/lib/active-visitors";
 
 /** SSE events arrive every few seconds; refetch the full snapshot at most this often. */
 export const MONITORING_REFETCH_MIN_MS = 5_000;
+
+/** Values at or above this render compact ("19.5M") with the exact value in a tooltip. */
+const COMPACT_FROM = 10_000;
+
+/** Usage & Cost console (token and cost detail). */
+const USAGE_COST_HREF = "/admin/usage";
 
 // --- pure helpers (exported for tests) ---------------------------------------
 
@@ -107,12 +133,102 @@ export function quotaUtilisation(
   return Math.max(0, Math.min(100, 100 - Math.min(...values)));
 }
 
+const UNKNOWN_OUTCOME = "unknown";
+
+/** Every outcome (zero rows kept, so the mix never collapses to one bar); legacy "unknown" only when present. */
+export function outcomeRows(mix: Record<string, number> | undefined): BarDatum[] {
+  const rows: BarDatum[] = OUTCOMES.map((o) => ({ key: o, label: OUTCOME_LABELS[o], value: mix?.[o] ?? 0 }));
+  const unknown = mix?.[UNKNOWN_OUTCOME] ?? 0;
+  if (unknown > 0) rows.push({ key: UNKNOWN_OUTCOME, label: "Unknown", value: unknown });
+  return rows;
+}
+
+/** Guardrail flags, most frequent first. */
+export function flagRows(flags: Record<string, number> | undefined): BarDatum[] {
+  return Object.entries(flags ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, value]) => ({ key, label: humanize(key), value }));
+}
+
+export interface LlmUsage {
+  window?: string;
+  source?: string;
+  latency_window_hours?: number;
+  requests?: number | null;
+  successful?: number | null;
+  failed?: number | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+  average_latency_ms?: number | null;
+  outcomes?: Record<string, number>;
+}
+
+export interface LlmUsageSummary {
+  requests: number | null;
+  failed: number | null;
+  succeeded: number | null;
+  /** 0-100, or null without requests. */
+  successRate: number | null;
+  /** Turns that completed as designed without an answer from the documents (not failures). */
+  blocked: number | null;
+  conversational: number | null;
+  ungrounded: number | null;
+}
+
+const asNum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/**
+ * Failed = real errors only (the LLM produced no answer). Blocked,
+ * conversational and ungrounded turns are reported separately, never as
+ * failures; requests and failures share one window (see the backend card).
+ */
+export function llmUsageSummary(u: LlmUsage | undefined): LlmUsageSummary {
+  const requests = asNum(u?.requests);
+  const failed = asNum(u?.failed);
+  const succeeded = requests === null || failed === null ? null : Math.max(0, requests - failed);
+  const outcome = (key: string) => (u?.outcomes ? (asNum(u.outcomes[key]) ?? 0) : null);
+  return {
+    requests,
+    failed,
+    succeeded,
+    successRate: requests && succeeded !== null ? (succeeded / requests) * 100 : null,
+    blocked: outcome("blocked"),
+    conversational: outcome("conversational"),
+    ungrounded: outcome("ungrounded"),
+  };
+}
+
+/** `title` for a compact value: the exact number when compacting hides digits. */
+export function exactTitle(value: number | null | undefined): string | undefined {
+  return typeof value === "number" && Math.abs(value) >= COMPACT_FROM ? formatCountExact(value) : undefined;
+}
+
 // --- small pieces ---------------------------------------------------------------
+
+/** Card entrance (fade + rise) inside a `Stagger` grid; opacity only under reduced motion. */
+function Enter({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const variants = useMotionVariants(cardEnter);
+  return (
+    <m.div variants={variants} className={className}>
+      {children}
+    </m.div>
+  );
+}
+
+function Stagger({ children, className, ...rest }: { children: React.ReactNode; className: string } & Record<`data-${string}`, string>) {
+  return (
+    <m.div variants={staggerFor(React.Children.count(children))} initial="hidden" animate="visible" className={className} {...rest}>
+      {children}
+    </m.div>
+  );
+}
 
 /** A count tile; it links to the rows behind the number (the hover lift promises a click). */
 function StatTile({
   label,
   value,
+  exact,
   caption,
   icon: Icon,
   href,
@@ -120,6 +236,8 @@ function StatTile({
 }: {
   label: string;
   value: string;
+  /** Exact value tooltip when `value` is compact. */
+  exact?: string;
   caption: string;
   icon: LucideIcon;
   href: string;
@@ -131,21 +249,23 @@ function StatTile({
     <Link
       href={carry(href)}
       aria-label={`${label}: ${value}. Open the rows behind it`}
-      className="group flex flex-col gap-1.5 rounded-xl border border-line bg-surface-card p-4 transition duration-150 hover:border-brand-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none dark:hover:border-brand-700/60"
+      className={`group flex h-full flex-col gap-1.5 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${studioCardClass({ interactive: true })}`}
     >
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-fg-subtle">{label}</p>
-        <Icon className="h-4 w-4 text-fg-subtle group-hover:text-accent-fg" strokeWidth={1.75} aria-hidden="true" />
+      <div className="relative z-10 flex items-center justify-between gap-2">
+        <p className="truncate text-xs font-medium text-fg-subtle">{label}</p>
+        <Icon className="h-4 w-4 shrink-0 text-fg-subtle group-hover:text-accent-fg" strokeWidth={1.75} aria-hidden="true" />
       </div>
-      <p className="text-2xl font-semibold tabular-nums text-fg">{value}</p>
-      <p className="text-[11px] text-fg-subtle" data-testid="count-label">
+      <p className="relative z-10 truncate text-2xl font-semibold tabular-nums text-fg" title={exact}>
+        {value}
+      </p>
+      <p className="relative z-10 truncate text-[11px] text-fg-subtle" data-testid="count-label">
         {caption}
       </p>
     </Link>
   );
   if (!info) return tile;
   return (
-    <div className="relative">
+    <div className="relative h-full">
       {tile}
       <div className="absolute right-10 top-4 z-10">{info}</div>
     </div>
@@ -160,188 +280,235 @@ function countCaption(c: LabelledCount | undefined): string {
   return c ? windowSourceLabel(c.window, c.source) : "—";
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface-card px-4 py-3">
-      <p className="text-[11px] uppercase tracking-wide text-fg-subtle">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-fg">{value}</p>
-    </div>
-  );
-}
-
-/** G1 + G2: ms / s ticks, an axis wide enough for its labels, "no data" stages. */
-function StageLatencyChart({ rows }: { rows: StageRow[] }) {
-  const ct = useChartTheme();
-  const max = Math.max(0, ...rows.map((r) => r.avg ?? 0));
-  const ticks = niceTicks(max);
-  const width = axisWidthFor(ticks.map(latencyTick));
-  const byLabel = new Map(rows.map((r) => [r.label, r]));
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 4 + RECHARTS_AXIS_TITLE_SPACE, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
-        <XAxis
-          dataKey="label"
-          interval={0}
-          tick={{ fontSize: 11, fill: ct.axis }}
-          tickFormatter={(label: string) => (byLabel.get(label)?.avg === null ? `${label} (no data)` : label)}
-          axisLine={false}
-          tickLine={false}
-          label={rechartsAxisLabel(ct, "Pipeline stage", "x")}
-        />
-        <YAxis
-          domain={[0, ticks[ticks.length - 1]]}
-          ticks={ticks}
-          tickFormatter={latencyTick}
-          tick={{ fontSize: 11, fill: ct.axis }}
-          axisLine={false}
-          tickLine={false}
-          width={width + RECHARTS_AXIS_TITLE_SPACE}
-          label={rechartsAxisLabel(ct, "Average time", "y")}
-        />
-        <Tooltip
-          contentStyle={chartTooltipStyle(ct)}
-          formatter={(v) => [formatMs(typeof v === "number" ? v : null), "Average"]}
-        />
-        <Bar dataKey="avg" radius={[6, 6, 0, 0]} isAnimationActive={false}>
-          {rows.map((r, idx) => (
-            <Cell key={r.stage} fill={ct.categorical[idx % ct.categorical.length]} />
-          ))}
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-function ShareBars({
-  data,
+/**
+ * Shared KPI card (StatCard) with a count-up value, its time window in the
+ * caption, and an optional deep link (arrow + focus ring) to the rows behind it.
+ */
+function MetricCard({
   label,
-  emptyText,
-  hrefFor,
+  value,
+  format = formatCount,
+  caption,
+  icon,
+  href,
 }: {
-  data: Record<string, number>;
   label: string;
-  emptyText: string;
-  /** Link for a row (its traces); rows without one stay plain text. */
-  hrefFor?: (name: string) => string | null;
+  value: number | null;
+  format?: (value: number) => string;
+  caption: string;
+  icon: LucideIcon;
+  href?: string;
 }) {
-  const ct = useChartTheme();
   const carry = useCarryHref();
-  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
-  const total = entries.reduce((s, [, v]) => s + v, 0);
-  const max = Math.max(1, ...entries.map(([, v]) => v));
-  if (entries.length === 0) return <p className="py-8 text-center text-xs text-fg-subtle">{emptyText}</p>;
+  const shown = value === null ? "—" : format(value);
+  const card = (
+    <StatCard
+      title={label}
+      icon={icon}
+      className="h-full"
+      value={
+        <span title={format === formatCount ? exactTitle(value) : undefined} data-testid="metric-value">
+          <CountUp value={value} format={format} />
+        </span>
+      }
+      badge={
+        href ? (
+          <ArrowUpRight
+            className="h-4 w-4 shrink-0 text-fg-subtle transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-accent-fg motion-reduce:transition-none"
+            strokeWidth={1.75}
+            aria-hidden="true"
+          />
+        ) : undefined
+      }
+      subtitle={caption}
+    />
+  );
   return (
-    <ul className="space-y-2.5" aria-label={label}>
-      {entries.map(([name, value], i) => (
-        <li key={name} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 text-xs">
-          {hrefFor?.(name) ? (
-            <Link
-              href={carry(hrefFor(name) ?? "")}
-              title={`Open ${humanize(name)} traces`}
-              className="truncate rounded text-accent-fg hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-            >
-              {humanize(name)}
-            </Link>
-          ) : (
-            <span className="truncate text-fg-muted" title={name}>
-              {humanize(name)}
+    <Enter className="h-full">
+      {href ? (
+        <Link
+          href={carry(href)}
+          aria-label={`${label}: ${shown}, ${caption}. Open the rows behind it`}
+          className="block h-full rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+        >
+          {card}
+        </Link>
+      ) : (
+        card
+      )}
+    </Enter>
+  );
+}
+
+/** Pipeline latency per stage (chart kit; G1 + G2: ms / s ticks, "no data" stages). */
+function StageLatencyChart({ rows }: { rows: StageRow[] }) {
+  const data = rows.map((r) => ({ label: r.label, avg: r.avg ?? 0 }));
+  const noData = new Set(rows.filter((r) => r.avg === null).map((r) => r.label));
+  return (
+    <StackedBar
+      data={data}
+      xKey="label"
+      series={[{ key: "avg", label: "Average" }]}
+      formatLabel={(label) => (noData.has(label) ? `${label} (no data)` : label)}
+      formatValue={latencyTick}
+      label="Average latency per pipeline stage"
+      xAxisLabel="Pipeline stage"
+      yAxisLabel="Average time"
+    />
+  );
+}
+
+/** Outcome colours: answered ok, ungrounded warn, failed danger, others neutral. */
+function outcomeColor(d: BarDatum, i: number, ct: ChartTheme): string {
+  switch (d.key) {
+    case "answered":
+      return ct.status.ok;
+    case "ungrounded":
+      return ct.status.warn;
+    case "blocked":
+      return ct.status.info;
+    case "llm_failed":
+      return ct.status.danger;
+    default:
+      return ct.categorical[(i + 1) % ct.categorical.length];
+  }
+}
+
+const shareOf = (value: number, total: number) => (total > 0 ? formatPct((value / total) * 100, 0) : "—");
+
+const RESOURCE_BANDS: Record<"cpu" | "ram" | "quota", GaugeBands> = {
+  cpu: { warn: 70, danger: 90 },
+  ram: { warn: 75, danger: 90 },
+  quota: { warn: 70, danger: 90 },
+};
+
+function ResourceGaugeCard({
+  title,
+  subtitle,
+  icon,
+  value,
+  bands,
+  caption,
+}: {
+  title: string;
+  subtitle: string;
+  icon: LucideIcon;
+  value: number | null;
+  bands: GaugeBands;
+  caption: string;
+}) {
+  const reading = value === null ? "no measurement yet" : formatPct(value, 0);
+  return (
+    <Enter className="h-full">
+      <ChartCard
+        title={title}
+        subtitle={subtitle}
+        icon={icon}
+        className="h-full"
+        bodyClassName="w-full"
+        table={toChartTable(
+          [{ metric: title, value: reading, warn: `${bands.warn}%`, danger: `${bands.danger}%` }],
+          [
+            { key: "metric", label: "Metric" },
+            { key: "value", label: "Used", numeric: true },
+            { key: "warn", label: "Warning at", numeric: true },
+            { key: "danger", label: "Critical at", numeric: true },
+          ],
+        )}
+      >
+        <div title={`${title}: ${reading}. Warning at ${bands.warn}%, critical at ${bands.danger}%`}>
+          <RadialGauge
+            label={`${title} used`}
+            value={value}
+            bands={bands}
+            higherIsBetter={false}
+            caption={caption}
+            formatValue={(v) => `${Math.round(v)}%`}
+          />
+          <p className="mt-2 flex items-center justify-center gap-3 text-[11px] text-fg-subtle">
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden="true" className="h-2 w-2 rounded-full bg-status-warn" />
+              Warn {bands.warn}%
             </span>
-          )}
-          <span className="h-2.5 overflow-hidden rounded-full bg-surface-muted" aria-hidden="true">
-            <span
-              className="block h-full rounded-full"
-              style={{ width: `${(value / max) * 100}%`, backgroundColor: ct.categorical[i % ct.categorical.length] }}
-            />
-          </span>
-          <span className="tabular-nums text-fg">
-            {formatCount(value)}
-            <span className="ml-1 text-fg-subtle">({total ? formatPct((value / total) * 100, 0) : "—"})</span>
-          </span>
-        </li>
-      ))}
-    </ul>
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden="true" className="h-2 w-2 rounded-full bg-status-danger" />
+              Critical {bands.danger}%
+            </span>
+          </p>
+        </div>
+      </ChartCard>
+    </Enter>
   );
 }
 
 const USAGE_TABS = [
-  { key: "llm", label: "LLM Usage", icon: Cpu },
-  { key: "embedding", label: "Embedding Usage", icon: Database },
+  { id: "llm", label: "LLM Usage" },
+  { id: "embedding", label: "Embedding Usage" },
 ] as const;
-type UsageTabKey = (typeof USAGE_TABS)[number]["key"];
-type UsageStats = Record<string, number | null | undefined>;
-
-function num(v: number | null | undefined): string {
-  return typeof v === "number" ? v.toLocaleString() : "—";
-}
+type UsageTabKey = (typeof USAGE_TABS)[number]["id"];
+type EmbeddingUsage = Record<string, number | string | null | undefined>;
 
 function AiUsagePanel() {
   const { token } = useAuth();
   const [usageTab, setUsageTab] = useState<UsageTabKey>("llm");
-  const llm = useApiQuery<UsageStats>(["admin/usage/llm"], () => api.adminGet<UsageStats>(token ?? "", "/usage/llm"), {
+  const llm = useApiQuery<LlmUsage>(["admin/usage/llm"], () => api.adminGet<LlmUsage>(token ?? "", "/usage/llm"), {
     enabled: Boolean(token),
   });
-  const embedding = useApiQuery<UsageStats>(
+  const embedding = useApiQuery<EmbeddingUsage>(
     ["admin/usage/embedding"],
-    () => api.adminGet<UsageStats>(token ?? "", "/usage/embedding"),
+    () => api.adminGet<EmbeddingUsage>(token ?? "", "/usage/embedding"),
     { enabled: Boolean(token) },
   );
-  const l = llm.data ?? {};
+  const l = llm.data;
   const e = embedding.data ?? {};
+  const s = llmUsageSummary(l);
+  const allTime = "all time · assistant turns";
+  const latencyDays = Math.round((l?.latency_window_hours ?? asNum(e.latency_window_hours) ?? 720) / 24);
+  const latencyCaption = `last ${latencyDays} days · latency records`;
 
   return (
-    <section aria-labelledby="ai-usage" data-tour="governance-mon-ai-usage" className="rounded-xl border border-line bg-surface-card p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 id="ai-usage" className="text-base font-semibold text-fg">
-            AI Usage
-          </h2>
-          <p className="mt-1 text-xs text-fg-subtle">Model usage from the usage records.</p>
-        </div>
-        <div role="tablist" aria-label="AI usage" className="flex flex-wrap gap-1 rounded-lg bg-surface-muted p-1">
-          {USAGE_TABS.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                role="tab"
-                aria-selected={usageTab === tab.key}
-                onClick={() => setUsageTab(tab.key)}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
-                  usageTab === tab.key ? "bg-surface-card text-fg shadow-sm" : "text-fg-subtle hover:text-fg"
-                }`}
-              >
-                <Icon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      {usageTab === "llm" ? (
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <MiniStat label="Requests" value={num(l.requests)} />
-          <MiniStat label="Successful" value={num(l.successful)} />
-          <MiniStat label="Failed" value={num(l.failed)} />
-          <MiniStat label="Average Latency" value={formatMs(l.average_latency_ms ?? null)} />
-          <MiniStat label="Input Tokens" value={num(l.input_tokens)} />
-          <MiniStat label="Output Tokens" value={num(l.output_tokens)} />
-          <MiniStat label="Total Tokens" value={num(l.total_tokens)} />
-          <MiniStat
-            label="Success Rate"
-            value={typeof l.requests === "number" && l.requests > 0 && typeof l.successful === "number" ? formatPct((l.successful / l.requests) * 100) : "—"}
+    <section aria-labelledby="ai-usage" data-tour="governance-mon-ai-usage" className="space-y-4">
+      <StudioSectionHeader
+        icon={Cpu}
+        title={<span id="ai-usage">AI Usage</span>}
+        subtitle="Model usage from the usage records. Failed counts only LLM errors."
+        actions={
+          <StudioSegmented
+            ariaLabel="AI usage"
+            options={USAGE_TABS}
+            value={usageTab}
+            onChange={setUsageTab}
           />
-        </div>
+        }
+      />
+      {usageTab === "llm" ? (
+        <>
+          <Stagger key="llm" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Requests" icon={Activity} value={s.requests} caption={allTime} href={tabHref("Traces")} />
+            <MetricCard label="Completed" icon={BadgeCheck} value={s.succeeded} caption={`no LLM error · ${allTime}`} href={tabHref("Traces")} />
+            <MetricCard label="Failed" icon={XCircle} value={s.failed} caption={`LLM errors · ${allTime}`} href={tracesHref({ outcome: "llm_failed" })} />
+            <MetricCard label="Success rate" icon={Gauge} value={s.successRate} format={(v) => formatPct(v)} caption={`completed / requests · all time`} />
+            <MetricCard label="Average latency" icon={Timer} value={asNum(l?.average_latency_ms)} format={formatMs} caption={`LLM stage · ${latencyCaption}`} />
+            <MetricCard label="Input tokens" icon={Hash} value={asNum(l?.input_tokens)} caption={allTime} href={USAGE_COST_HREF} />
+            <MetricCard label="Output tokens" icon={Hash} value={asNum(l?.output_tokens)} caption={allTime} href={USAGE_COST_HREF} />
+            <MetricCard label="Total tokens" icon={Sigma} value={asNum(l?.total_tokens)} caption={allTime} href={USAGE_COST_HREF} />
+          </Stagger>
+          {s.blocked !== null ? (
+            <p className="text-xs text-fg-subtle" data-testid="usage-not-failed">
+              Not counted as failed: {formatCount(s.blocked)} blocked by guardrails, {formatCount(s.conversational)} conversational,{" "}
+              {formatCount(s.ungrounded)} ungrounded (all time).
+            </p>
+          ) : null}
+        </>
       ) : (
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <MiniStat label="Dimensions" value={num(e.dimensions)} />
-          <MiniStat label="Documents" value={num(e.documents)} />
-          <MiniStat label="Chunks" value={num(e.chunks)} />
-          <MiniStat label="Requests" value={num(e.requests)} />
-          <MiniStat label="Input Tokens" value={num(e.input_tokens)} />
-          <MiniStat label="Average Latency" value={formatMs(e.average_latency_ms ?? null)} />
-        </div>
+        <Stagger key="embedding" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <MetricCard label="Dimensions" icon={Layers} value={asNum(e.dimensions)} caption="embedding model setting" />
+          <MetricCard label="Documents" icon={FileText} value={asNum(e.documents)} caption="right now · knowledge base" />
+          <MetricCard label="Chunks" icon={Database} value={asNum(e.chunks)} caption="right now · knowledge base" />
+          <MetricCard label="Requests" icon={Activity} value={asNum(e.requests)} caption="all time · chunks + queries" />
+          <MetricCard label="Input tokens" icon={Coins} value={asNum(e.input_tokens)} caption="all time · estimated" href={USAGE_COST_HREF} />
+          <MetricCard label="Average latency" icon={Timer} value={asNum(e.average_latency_ms)} format={formatMs} caption={`embedding stage · ${latencyCaption}`} />
+        </Stagger>
       )}
     </section>
   );
@@ -355,6 +522,8 @@ export default function MonitoringView() {
   const { token } = useAuth();
   const { audience } = useAudience();
   const ct = useChartTheme();
+  const router = useRouter();
+  const carry = useCarryHref();
   const query = useApiQuery<GovernanceMonitoring>(
     governanceKeys.monitoring(audience),
     (signal) => governanceApi.monitoring(token, audience, signal),
@@ -385,6 +554,16 @@ export default function MonitoringView() {
 
   const m = query.data;
   const rows = useMemo(() => (m ? stageRows(m) : []), [m]);
+  const outcomes = useMemo(() => outcomeRows(m?.outcome_mix), [m]);
+  const flags = useMemo(() => flagRows(m?.guardrail_flag_breakdown), [m]);
+  const openOutcome = useCallback(
+    (d: BarDatum) => {
+      if (isTraceOutcome(d.key)) router.push(carry(tracesHref({ outcome: d.key })));
+    },
+    [carry, router],
+  );
+  const openFlags = useCallback(() => router.push(carry(tracesHref({ status: "blocked" }))), [carry, router]);
+
   const stageBand: PercentilePoint[] = rows.flatMap((r) =>
     r.p50 === null || r.p95 === null
       ? []
@@ -412,11 +591,16 @@ export default function MonitoringView() {
   const counts = m?.counts ?? {};
   const total = m?.stage_percentiles?.total;
   const quality = m?.online_quality_kpis ?? {};
-  const ramCaption = typeof m?.process_ram_mb === "number" ? `RAM · ${Math.round(m.process_ram_mb)} MB` : "RAM";
   const quota = m?.azure_quota_telemetry;
   const throttled = (quota?.chat?.azure_429_count_60s ?? 0) + (quota?.embedding?.azure_429_count_60s ?? 0);
   const windowH = m?.window_hours ?? 24;
+  const windowLabel = `last ${windowH} h`;
   const noDataStages = rows.filter((r) => r.p50 === null).map((r) => r.label);
+  const outcomeTotal = outcomes.reduce((sum, d) => sum + d.value, 0);
+  const flagTotal = flags.reduce((sum, d) => sum + d.value, 0);
+  const ramMb = typeof m?.process_ram_mb === "number" ? m.process_ram_mb : null;
+  const qualityCaption = "since restart · online evaluator";
+  const countValue = (key: string, fallback: number | undefined) => counts[key]?.value ?? fallback;
 
   return (
     <div className="space-y-6">
@@ -428,214 +612,292 @@ export default function MonitoringView() {
       </div>
 
       {/* G8: a balanced 4 x 2 grid (no dead slot) at the same width as AI Usage. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={loading || undefined} data-tour="governance-mon-tiles">
-        <StatTile label="API requests" href={logsHref()} icon={Activity} value={formatCount(counts.api_requests?.value ?? m?.api_requests)} caption={countCaption(counts.api_requests)} />
-        <StatTile label="Queries" href={tabHref("Traces")} icon={Search} value={formatCount(counts.queries_24h?.value ?? m?.queries_24h)} caption={countCaption(counts.queries_24h)} />
-        <StatTile label={ACTIVE_VISITORS_LABEL} info={<ActiveVisitorsInfo />} href="/admin/usage?tab=users" icon={Users} value={formatCount(counts.active_users?.value ?? m?.active_users)} caption={countCaption(counts.active_users)} />
-        <StatTile label="Traces" href={tabHref("Traces")} icon={FileSearch} value={formatCount(counts.traces_total?.value ?? m?.traces_total)} caption={countCaption(counts.traces_total)} />
-        <StatTile
-          label="Error rate"
-          href={tracesHref({ status: "failed" })}
-          icon={AlertTriangle}
-          value={formatPct(m?.error_rate, 2)}
-          caption={`${formatCount(counts.errors?.value)} errors · ${countCaption(counts.errors)}`}
-        />
-        <StatTile label="Average latency" href={tabHref("Traces")} icon={Timer} value={formatMs(m?.total_latency_ms ?? null)} caption={`end to end · ${windowH}h · latency records`} />
-        <StatTile
-          label="p95 latency"
-          href={tracesHref({ latency_bucket: "slow" })}
-          icon={Gauge}
-          value={formatMs(total?.p95_ms ?? m?.p95_latency_ms ?? null)}
-          caption={`${formatCount(total?.sample_count ?? 0)} samples · ${windowH}h · latency records`}
-        />
-        <StatTile label="Active queries" href={tabHref("Traces")} icon={Loader} value={formatCount(counts.active_queries?.value ?? m?.active_queries)} caption={countCaption(counts.active_queries)} />
-      </div>
+      <Stagger className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="governance-mon-tiles">
+        {[
+          <StatTile key="api" label="API requests" href={logsHref()} icon={Activity} value={formatCount(countValue("api_requests", m?.api_requests))} exact={exactTitle(countValue("api_requests", m?.api_requests))} caption={countCaption(counts.api_requests)} />,
+          <StatTile key="queries" label="Queries" href={tabHref("Traces")} icon={Search} value={formatCount(countValue("queries_24h", m?.queries_24h))} exact={exactTitle(countValue("queries_24h", m?.queries_24h))} caption={countCaption(counts.queries_24h)} />,
+          <StatTile key="visitors" label={ACTIVE_VISITORS_LABEL} info={<ActiveVisitorsInfo />} href="/admin/usage?tab=users" icon={Users} value={formatCount(countValue("active_users", m?.active_users))} caption={countCaption(counts.active_users)} />,
+          <StatTile key="traces" label="Traces" href={tabHref("Traces")} icon={FileSearch} value={formatCount(countValue("traces_total", m?.traces_total))} exact={exactTitle(countValue("traces_total", m?.traces_total))} caption={countCaption(counts.traces_total)} />,
+          <StatTile
+            key="errors"
+            label="Error rate"
+            href={tracesHref({ status: "failed" })}
+            icon={AlertTriangle}
+            value={formatPct(m?.error_rate, 2)}
+            caption={`${formatCount(counts.errors?.value)} errors · ${countCaption(counts.errors)}`}
+          />,
+          <StatTile key="avg" label="Average latency" href={tabHref("Traces")} icon={Timer} value={formatMs(m?.total_latency_ms ?? null)} caption={`end to end · ${windowH}h · latency records`} />,
+          <StatTile
+            key="p95"
+            label="p95 latency"
+            href={tracesHref({ latency_bucket: "slow" })}
+            icon={Gauge}
+            value={formatMs(total?.p95_ms ?? m?.p95_latency_ms ?? null)}
+            caption={`${formatCount(total?.sample_count ?? 0)} samples · ${windowH}h · latency records`}
+          />,
+          <StatTile key="active" label="Active queries" href={tabHref("Traces")} icon={Loader} value={formatCount(countValue("active_queries", m?.active_queries))} caption={countCaption(counts.active_queries)} />,
+        ].map((tile) => (
+          <Enter key={tile.key} className="h-full">
+            {tile}
+          </Enter>
+        ))}
+      </Stagger>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2" data-tour="governance-mon-latency">
-        <ChartCard
-          title="Pipeline latency"
-          subtitle="Average per stage"
-          window={`${windowH}h`}
-          loading={loading}
-          empty={!loading && rows.every((r) => r.avg === null)}
-          emptyMessage="No stage timings recorded in this window"
-          table={toChartTable(rows, [
-            { key: "label", label: "Stage" },
-            { key: "avg", label: "Average", numeric: true, format: nullableMs },
-            { key: "samples", label: "Samples", numeric: true },
-          ])}
-        >
-          <StageLatencyChart rows={rows} />
-        </ChartCard>
+      <Stagger className="grid grid-cols-1 gap-6 xl:grid-cols-2" data-tour="governance-mon-latency">
+        <Enter>
+          <ChartCard
+            title="Pipeline latency"
+            subtitle="Average per stage"
+            window={windowLabel}
+            loading={loading}
+            empty={!loading && rows.every((r) => r.avg === null)}
+            emptyMessage="No stage timings recorded in this window"
+            table={toChartTable(rows, [
+              { key: "label", label: "Stage" },
+              { key: "avg", label: "Average", numeric: true, format: nullableMs },
+              { key: "samples", label: "Samples", numeric: true },
+            ])}
+          >
+            <StageLatencyChart rows={rows} />
+          </ChartCard>
+        </Enter>
 
-        <ChartCard
-          title="Stage percentiles"
-          subtitle="p50 to p95 band with dashed p99, per stage"
-          window={`${windowH}h`}
-          loading={loading}
-          empty={!loading && stageBand.length === 0}
-          emptyMessage="No stage samples in this window"
-          table={toChartTable(rows, [
-            { key: "label", label: "Stage" },
-            { key: "p50", label: "p50", numeric: true, format: nullableMs },
-            { key: "p95", label: "p95", numeric: true, format: nullableMs },
-            { key: "p99", label: "p99", numeric: true, format: nullableMs },
-            { key: "samples", label: "Samples", numeric: true },
-          ])}
-        >
-          <div className="flex h-full flex-col">
-            <div className="min-h-0 flex-1">
-              <PercentileBand
-                data={stageBand}
-                label="Stage latency percentiles"
-                formatValue={latencyTick}
-                xAxisLabel="Pipeline stage"
-                yAxisLabel="Latency"
-              />
+        <Enter>
+          <ChartCard
+            title="Stage percentiles"
+            subtitle="p50 to p95 band with dashed p99, per stage"
+            window={windowLabel}
+            loading={loading}
+            empty={!loading && stageBand.length === 0}
+            emptyMessage="No stage samples in this window"
+            table={toChartTable(rows, [
+              { key: "label", label: "Stage" },
+              { key: "p50", label: "p50", numeric: true, format: nullableMs },
+              { key: "p95", label: "p95", numeric: true, format: nullableMs },
+              { key: "p99", label: "p99", numeric: true, format: nullableMs },
+              { key: "samples", label: "Samples", numeric: true },
+            ])}
+          >
+            <div className="flex h-full flex-col">
+              <div className="min-h-0 flex-1">
+                <PercentileBand
+                  data={stageBand}
+                  label="Stage latency percentiles"
+                  formatValue={latencyTick}
+                  xAxisLabel="Pipeline stage"
+                  yAxisLabel="Latency"
+                />
+              </div>
+              {noDataStages.length > 0 ? (
+                <p className="mt-1 text-[11px] text-fg-subtle">No data: {noDataStages.join(", ")}</p>
+              ) : null}
             </div>
-            {noDataStages.length > 0 ? (
-              <p className="mt-1 text-[11px] text-fg-subtle">No data: {noDataStages.join(", ")}</p>
-            ) : null}
-          </div>
-        </ChartCard>
+          </ChartCard>
+        </Enter>
 
-        <ChartCard
-          title="Latency over time"
-          subtitle="End-to-end p50 to p95, hourly"
-          window={`${windowH}h`}
-          loading={loading}
-          empty={!loading && latencyBand.length === 0}
-          table={toChartTable(latencyBand, [
-            { key: "label", label: "Hour" },
-            { key: "p50", label: "p50", numeric: true, format: nullableMs },
-            { key: "p95", label: "p95", numeric: true, format: nullableMs },
-          ])}
-        >
-          <PercentileBand
-            data={latencyBand}
-            label="Hourly latency percentiles"
-            formatValue={latencyTick}
-            xAxisLabel="Hour (local time)"
-            yAxisLabel="End-to-end latency"
+        <Enter>
+          <ChartCard
+            title="Latency over time"
+            subtitle="End-to-end p50 to p95, hourly"
+            window={windowLabel}
+            loading={loading}
+            empty={!loading && latencyBand.length === 0}
+            table={toChartTable(latencyBand, [
+              { key: "label", label: "Hour" },
+              { key: "p50", label: "p50", numeric: true, format: nullableMs },
+              { key: "p95", label: "p95", numeric: true, format: nullableMs },
+            ])}
+          >
+            <PercentileBand
+              data={latencyBand}
+              label="Hourly latency percentiles"
+              formatValue={latencyTick}
+              xAxisLabel="Hour (local time)"
+              yAxisLabel="End-to-end latency"
+            />
+          </ChartCard>
+        </Enter>
+
+        <Enter>
+          <ChartCard
+            title="Requests and errors"
+            subtitle="Assistant turns plus server errors, hourly"
+            window={windowLabel}
+            loading={loading}
+            empty={!loading && traffic.every((t) => t.ok + t.errors === 0)}
+            table={toChartTable(traffic, [
+              { key: "hour", label: "Hour" },
+              { key: "ok", label: "Succeeded", numeric: true },
+              { key: "errors", label: "Errors", numeric: true },
+            ])}
+          >
+            <StackedArea
+              data={traffic}
+              xKey="hour"
+              label="Requests and errors per hour"
+              xAxisLabel="Hour (local time)"
+              yAxisLabel="Requests per hour"
+              series={[
+                { key: "ok", label: "Succeeded" },
+                { key: "errors", label: "Errors", color: ct.status.danger },
+              ]}
+            />
+          </ChartCard>
+        </Enter>
+      </Stagger>
+
+      <section aria-labelledby="gov-resources" data-tour="governance-mon-resources" className="space-y-4">
+        <StudioSectionHeader
+          icon={Gauge}
+          title={<span id="gov-resources">Resources and Azure quota</span>}
+          subtitle="This API process (live) · Azure quota over a rolling 60 s window"
+          actions={throttled ? <StudioPill tone="danger">{`${formatCount(throttled)} throttled (429)`}</StudioPill> : undefined}
+        />
+        <Stagger className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <ResourceGaugeCard
+            title="CPU"
+            subtitle="This API process · live"
+            icon={Cpu}
+            value={m?.process_cpu_percent ?? null}
+            bands={RESOURCE_BANDS.cpu}
+            caption="Share of one core"
           />
-        </ChartCard>
-
-        <ChartCard
-          title="Requests and errors"
-          subtitle="Assistant turns plus server errors, hourly"
-          window={`${windowH}h`}
-          loading={loading}
-          empty={!loading && traffic.every((t) => t.ok + t.errors === 0)}
-          table={toChartTable(traffic, [
-            { key: "hour", label: "Hour" },
-            { key: "ok", label: "Succeeded", numeric: true },
-            { key: "errors", label: "Errors", numeric: true },
-          ])}
-        >
-          <StackedArea
-            data={traffic}
-            xKey="hour"
-            label="Requests and errors per hour"
-            xAxisLabel="Hour (local time)"
-            yAxisLabel="Requests per hour"
-            series={[
-              { key: "ok", label: "Succeeded" },
-              { key: "errors", label: "Errors", color: ct.status.danger },
-            ]}
+          <ResourceGaugeCard
+            title="RAM"
+            subtitle="This API process · live"
+            icon={MemoryStick}
+            value={m?.process_ram_percent ?? null}
+            bands={RESOURCE_BANDS.ram}
+            caption={ramMb === null ? "Resident memory" : `${formatCount(Math.round(ramMb))} MB resident`}
           />
-        </ChartCard>
-      </div>
-
-      <section aria-labelledby="gov-resources" data-tour="governance-mon-resources" className="rounded-xl border border-line bg-surface-card p-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="gov-resources" className="text-base font-semibold text-fg">
-            Resources and Azure quota
-          </h2>
-          <p className="text-[11px] text-fg-subtle">
-            This API process · Azure rolling 60 s window{throttled ? ` · ${throttled} throttled (429)` : ""}
-          </p>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
-          <RadialGauge label="CPU" value={m?.process_cpu_percent ?? null} bands={{ warn: 70, danger: 90 }} higherIsBetter={false} caption="CPU" />
-          <RadialGauge label="RAM" value={m?.process_ram_percent ?? null} bands={{ warn: 75, danger: 90 }} higherIsBetter={false} caption={ramCaption} />
-          <RadialGauge
-            label="Azure TPM used"
+          <ResourceGaugeCard
+            title="Azure TPM"
+            subtitle="Tokens per minute · 60 s"
+            icon={Zap}
             value={quotaUtilisation(quota, "tpm_headroom_pct")}
-            bands={{ warn: 70, danger: 90 }}
-            higherIsBetter={false}
-            caption="Azure TPM"
+            bands={RESOURCE_BANDS.quota}
+            caption="Busiest of chat and embedding"
           />
-          <RadialGauge
-            label="Azure RPM used"
+          <ResourceGaugeCard
+            title="Azure RPM"
+            subtitle="Requests per minute · 60 s"
+            icon={Activity}
             value={quotaUtilisation(quota, "rpm_headroom_pct")}
-            bands={{ warn: 70, danger: 90 }}
-            higherIsBetter={false}
-            caption="Azure RPM"
+            bands={RESOURCE_BANDS.quota}
+            caption="Busiest of chat and embedding"
           />
-        </div>
+        </Stagger>
       </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2" data-tour="governance-mon-guardrails">
-        <ChartCard
-          title="Guardrail flags"
-          subtitle="Flags raised on assistant turns"
-          window={`${windowH}h`}
-          loading={loading}
-          bodyClassName="w-full"
-          table={toChartTable(
-            Object.entries(m?.guardrail_flag_breakdown ?? {}).map(([flag, count]) => ({ flag: humanize(flag), count })),
-            [
-              { key: "flag", label: "Flag" },
-              { key: "count", label: "Turns", numeric: true },
-            ],
-          )}
-        >
-          <ShareBars
-            data={m?.guardrail_flag_breakdown ?? {}}
-            label="Guardrail flags"
-            emptyText="No guardrail flags in this window."
-            hrefFor={() => tracesHref({ status: "blocked" })}
-          />
-        </ChartCard>
-        <ChartCard
-          title="Outcome mix"
-          subtitle="Assistant turns by outcome"
-          window={`${windowH}h`}
-          loading={loading}
-          bodyClassName="w-full"
-          table={toChartTable(
-            Object.entries(m?.outcome_mix ?? {}).map(([outcome, count]) => ({ outcome: humanize(outcome), count })),
-            [
-              { key: "outcome", label: "Outcome" },
-              { key: "count", label: "Turns", numeric: true },
-            ],
-          )}
-        >
-          <ShareBars
-            data={m?.outcome_mix ?? {}}
-            label="Outcome mix"
-            emptyText="No assistant turns in this window."
-            hrefFor={(name) => (isTraceOutcome(name) ? tracesHref({ outcome: name }) : null)}
-          />
-        </ChartCard>
-      </div>
+      <Stagger className="grid grid-cols-1 gap-6 xl:grid-cols-2" data-tour="governance-mon-guardrails">
+        <Enter className="h-full">
+          <ChartCard
+            title="Guardrail flags"
+            subtitle="Flags raised on assistant turns"
+            window={windowLabel}
+            icon={ShieldAlert}
+            loading={loading}
+            className="h-full"
+            bodyClassName="h-64 w-full"
+            table={toChartTable(
+              flags.map((d) => ({ flag: d.label, count: d.value, share: shareOf(d.value, flagTotal) })),
+              [
+                { key: "flag", label: "Flag" },
+                { key: "count", label: "Turns", numeric: true },
+                { key: "share", label: "Share", numeric: true },
+              ],
+            )}
+          >
+            {flags.length === 0 ? (
+              <EmptyState
+                compact
+                icon={ShieldCheck}
+                title="No guardrail flags"
+                description={`No assistant turn was flagged in the ${windowLabel}.`}
+              />
+            ) : (
+              <BarList
+                data={flags}
+                label="Guardrail flags"
+                valueLabel="Turns"
+                xAxisLabel="Assistant turns"
+                yAxisLabel="Flag"
+                formatValue={formatCount}
+                colorFor={(_d, _i, theme) => theme.status.warn}
+                onSelect={openFlags}
+              />
+            )}
+          </ChartCard>
+        </Enter>
+        <Enter className="h-full">
+          <ChartCard
+            title="Outcome mix"
+            subtitle="Assistant turns by outcome; only LLM failed is an error"
+            window={windowLabel}
+            icon={PieChart}
+            loading={loading}
+            className="h-full"
+            bodyClassName="h-64 w-full"
+            table={toChartTable(
+              outcomes.map((d) => ({ outcome: d.label, count: d.value, share: shareOf(d.value, outcomeTotal) })),
+              [
+                { key: "outcome", label: "Outcome" },
+                { key: "count", label: "Turns", numeric: true },
+                { key: "share", label: "Share", numeric: true },
+              ],
+            )}
+          >
+            {outcomeTotal === 0 ? (
+              <EmptyState
+                compact
+                icon={PieChart}
+                title="No assistant turns"
+                description={`Nothing was answered in the ${windowLabel}.`}
+              />
+            ) : (
+              <BarList
+                data={outcomes}
+                label="Outcome mix"
+                valueLabel="Turns"
+                xAxisLabel="Assistant turns"
+                yAxisLabel="Outcome"
+                formatValue={formatCount}
+                colorFor={outcomeColor}
+                dimZero
+                onSelect={openOutcome}
+              />
+            )}
+          </ChartCard>
+        </Enter>
+      </Stagger>
 
-      <section aria-labelledby="gov-quality" data-tour="governance-mon-online-quality" className="rounded-xl border border-line bg-surface-card p-6">
-        <h2 id="gov-quality" className="text-base font-semibold text-fg">
-          Online quality
-        </h2>
-        <p className="mt-1 text-xs text-fg-subtle">Sampled online evaluation of live answers, since process start.</p>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <MiniStat label="Sampled" value={formatCount(quality.sampled_count ?? null)} />
-          <MiniStat label="Violation rate" value={quality.violation_rate === undefined ? "—" : formatPct(quality.violation_rate * 100)} />
-          <MiniStat
-            label="Mean faithfulness"
-            value={typeof quality.mean_faithfulness === "number" ? `${quality.mean_faithfulness.toFixed(2)} / 5` : "—"}
+      <section aria-labelledby="gov-quality" data-tour="governance-mon-online-quality" className="space-y-4">
+        <StudioSectionHeader
+          icon={Scale}
+          title={<span id="gov-quality">Online quality</span>}
+          subtitle="Sampled online evaluation of live answers, since process start."
+        />
+        <Stagger className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <MetricCard label="Sampled" icon={Search} value={asNum(quality.sampled_count)} caption={qualityCaption} href={tabHref("Traces")} />
+          <MetricCard
+            label="Violation rate"
+            icon={TriangleAlert}
+            value={typeof quality.violation_rate === "number" ? quality.violation_rate * 100 : null}
+            format={(v) => formatPct(v)}
+            caption={qualityCaption}
+            href={tracesHref({ status: "blocked" })}
           />
-          <MiniStat label="Unfaithful" value={formatCount(quality.unfaithful_count ?? null)} />
-          <MiniStat label="PII leaks" value={formatCount(quality.pii_leak_count ?? null)} />
-          <MiniStat label="Secret leaks" value={formatCount(quality.secret_leak_count ?? null)} />
-        </div>
+          <MetricCard
+            label="Mean faithfulness"
+            icon={BadgeCheck}
+            value={asNum(quality.mean_faithfulness)}
+            format={(v) => `${v.toFixed(2)} / 5`}
+            caption={`1 to 5 · ${qualityCaption}`}
+          />
+          <MetricCard label="Unfaithful" icon={XCircle} value={asNum(quality.unfaithful_count)} caption={qualityCaption} href={tracesHref({ status: "ungrounded" })} />
+          <MetricCard label="PII leaks" icon={ShieldAlert} value={asNum(quality.pii_leak_count)} caption={qualityCaption} />
+          <MetricCard label="Secret leaks" icon={KeyRound} value={asNum(quality.secret_leak_count)} caption={qualityCaption} />
+        </Stagger>
       </section>
 
       <AiUsagePanel />

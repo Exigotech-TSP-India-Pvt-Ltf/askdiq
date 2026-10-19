@@ -13,7 +13,7 @@ import { ThemeProvider } from "@/lib/theme-context";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { ToastProvider, useToast } from "@/components/ui/ToastProvider";
 import { CommandCenter } from "@/components/shell/CommandCenter";
-import { ProfileMenu } from "@/components/shell/ProfileMenu";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { EntityLink } from "@/components/ui/EntityLink";
 import { useDeepLinkParam } from "@/lib/use-deep-link";
@@ -141,7 +141,7 @@ describe("Phase F0 foundations journey", () => {
         <BrandProvider brand={brand}>
           <MotionProvider>
             <BrandLogo />
-            <ProfileMenu />
+            <ThemeToggle size="sm" />
           </MotionProvider>
         </BrandProvider>
       </ThemeProvider>,
@@ -154,11 +154,10 @@ describe("Phase F0 foundations journey", () => {
     expect(dark).toHaveAttribute("src", "/branding/assets/dark");
     expect(dark).toHaveClass("hidden", "dark:block");
 
-    // Switching to dark from the profile menu flips the <html> class that the logo pair keys off.
-    fireEvent.click(screen.getByRole("button", { name: /account menu/i }));
-    fireEvent.click(await screen.findByRole("menuitemradio", { name: "Dark" }));
+    // Switching to dark from the account-corner theme toggle flips the <html> class that the logo pair keys off.
+    fireEvent.click(screen.getByRole("button", { name: /switch to dark mode/i }));
     await waitFor(() => expect(document.documentElement).toHaveClass("dark"));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Light" }));
+    fireEvent.click(screen.getByRole("button", { name: /switch to light mode/i }));
     await waitFor(() => expect(document.documentElement).not.toHaveClass("dark"));
   });
 

@@ -7,7 +7,8 @@ import { Bell, BellOff } from "lucide-react";
 import { pop, useMotionVariants } from "@/lib/motion";
 import { usePopover } from "@/lib/use-popover";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { focusRing, iconButton, popoverPanel } from "@/components/ui/styles";
+import { focusRing, popoverPanel } from "@/components/ui/styles";
+import { accountActionButton, accountPopoverPosition, type AccountPopoverPlacement } from "@/components/shell/account-actions";
 
 export interface NotificationItem {
   id: string;
@@ -22,6 +23,8 @@ export interface NotificationItem {
 interface NotificationBellProps {
   /** Access requests, CRITICAL incidents and feedback spikes (fed by SSE in PR-18). */
   items?: NotificationItem[];
+  /** Panel position relative to the sidebar account corner (see `AccountPopoverPlacement`). */
+  placement?: AccountPopoverPlacement;
 }
 
 const TONE_DOT: Record<NonNullable<NotificationItem["tone"]>, string> = {
@@ -30,15 +33,19 @@ const TONE_DOT: Record<NonNullable<NotificationItem["tone"]>, string> = {
   danger: "bg-status-danger",
 };
 
-/** Header notification bell (newplan §15.1). Shell only: shows an empty state until PR-18 feeds it. */
-export function NotificationBell({ items = [] }: NotificationBellProps) {
+/**
+ * Notification bell of the sidebar account corner (newplan §15.1). The wrapper
+ * is static so the panel anchors to the account row / collapsed rail.
+ */
+export function NotificationBell({ items = [], placement = "above" }: NotificationBellProps) {
   const { open, toggle, close, triggerRef, panelRef } = usePopover();
   const variants = useMotionVariants(pop);
   const panelId = useId();
   const count = items.length;
+  const label = count ? `Notifications (${count} new)` : "Notifications";
 
   return (
-    <div className="relative">
+    <div>
       <button
         ref={triggerRef}
         type="button"
@@ -47,8 +54,9 @@ export function NotificationBell({ items = [] }: NotificationBellProps) {
         data-tour="shell-notifications"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        aria-label={count ? `Notifications (${count} new)` : "Notifications"}
-        className={`${iconButton} relative border border-line bg-surface-card shadow-sm`}
+        aria-label={label}
+        title={label}
+        className={accountActionButton}
       >
         <Bell className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
         {count ? (
@@ -68,7 +76,7 @@ export function NotificationBell({ items = [] }: NotificationBellProps) {
             initial="hidden"
             animate="visible"
             exit="exit"
-            className={`absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] origin-top-right ${popoverPanel}`}
+            className={`absolute z-50 w-72 max-w-[calc(100vw-2rem)] ${accountPopoverPosition[placement]} ${popoverPanel}`}
           >
             <p className="border-b border-line px-2.5 pb-2 pt-1 text-xs font-semibold text-fg">Notifications</p>
             {count === 0 ? (

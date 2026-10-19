@@ -368,6 +368,8 @@ function MobileSidebar({
                 onNavigate={() => setOpen?.(false)}
               />
             </nav>
+            {/* Same account corner as the desktop sidebar: identity, notifications, tours, theme, sign out. */}
+            <SidebarAccount collapsed={false} surface="drawer" onBeforeAction={() => setOpen?.(false)} />
           </m.aside>
         </div>
       ) : null}

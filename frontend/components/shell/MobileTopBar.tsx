@@ -3,16 +3,18 @@
 import React from "react";
 import { Menu } from "lucide-react";
 import { BrandLogo } from "@/components/brand/BrandLogo";
-import { HeaderUtilities } from "@/components/shell/HeaderUtilities";
 import { useMobileNav } from "@/lib/mobile-nav-context";
 import { iconButton } from "@/components/ui/styles";
 
-/** App bar below `md`: hamburger for the off-canvas sidebar, logo mark and header utilities. */
+/**
+ * App bar below `md`: hamburger and logo mark only. Notifications, tours,
+ * theme and sign out live in the drawer's account corner.
+ */
 export function MobileTopBar() {
   const nav = useMobileNav();
   if (!nav) return null;
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-surface-card px-4 md:hidden">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface-card px-4 md:hidden">
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
@@ -26,7 +28,6 @@ export function MobileTopBar() {
         </button>
         <BrandLogo variant="mark" />
       </div>
-      <HeaderUtilities launcherVariant="mobile" />
     </header>
   );
 }

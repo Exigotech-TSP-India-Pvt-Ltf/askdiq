@@ -169,6 +169,55 @@ describe("Tour launcher", () => {
     expect(screen.queryByRole("button", { name: "Take the tour" })).not.toBeInTheDocument();
   });
 
+  it("opens its menu upward from the account row, or sideways from the collapsed rail", () => {
+    nav.pathname = "/admin/usage";
+    const { unmount } = renderLauncher();
+    fireEvent.click(screen.getByRole("button", { name: "Take the tour" }));
+    expect(screen.getByRole("menu", { name: "Product tours" }).className).toContain("bottom-full");
+    unmount();
+    render(
+      <TourProvider>
+        <TourLauncher placement="side" />
+      </TourProvider>,
+    );
+    const trigger = screen.getByRole("button", { name: "Take the tour" });
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("menu", { name: "Product tours" }).className).toContain("left-full");
+  });
+
+  it("the floating launcher hides while the sidebar one is mounted (the drawer one does not count)", () => {
+    nav.pathname = "/admin/usage";
+    const { rerender } = render(
+      <TourProvider>
+        <TourLauncher variant="sidebar" />
+        <TourLauncher variant="floating" />
+      </TourProvider>,
+    );
+    expect(screen.getAllByRole("button", { name: "Take the tour" })).toHaveLength(1);
+    rerender(
+      <TourProvider>
+        <TourLauncher variant="drawer" />
+        <TourLauncher variant="floating" />
+      </TourProvider>,
+    );
+    expect(screen.getAllByRole("button", { name: "Take the tour" })).toHaveLength(2);
+  });
+
+  it("runs onBeforeStart (the mobile drawer closes) before starting a tour", async () => {
+    nav.pathname = "/admin/usage";
+    const onBeforeStart = vi.fn();
+    render(
+      <TourProvider>
+        <TourLauncher variant="drawer" onBeforeStart={onBeforeStart} />
+      </TourProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Take the tour" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /dashboard basics/i }));
+    expect(onBeforeStart).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Welcome to the AskDIQ dashboard");
+  });
+
   it("pulses once on the first visit only", () => {
     const first = renderLauncher();
     expect(screen.getByTestId("tour-hint")).toBeInTheDocument();

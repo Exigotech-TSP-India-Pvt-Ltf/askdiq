@@ -1,6 +1,6 @@
 import type { PageTour } from "../types";
 
-/** "Dashboard basics": the chrome shared by every page (sidebar, header tools, chat widget). */
+/** "Dashboard basics": the chrome shared by every page (sidebar, account corner, header filters, chat widget). */
 export const shellTour: PageTour = {
   id: "shell",
   title: "Dashboard basics",
@@ -35,21 +35,15 @@ export const shellTour: PageTour = {
       placement: "bottom",
     },
     {
+      target: '[data-tour="shell-account"]',
+      title: "Your account corner",
+      body: "The sidebar footer shows who is signed in: your name with your role badge, and your email beneath. The buttons under it open notifications and tours, link to Help (when your organisation has set it up), switch between light and dark theme, and sign you out. In the collapsed sidebar they stack under your avatar; hover any of them for its name.",
+      placement: "right",
+    },
+    {
       target: '[data-tour="shell-notifications"]',
       title: "Notifications",
-      body: "Access requests and incidents land here, with a badge counting what's new. Open an item to go straight to the page that needs attention.",
-      placement: "bottom",
-    },
-    {
-      target: '[data-tour="shell-profile"]',
-      title: "Profile, theme and sign out",
-      body: "Open your account menu to see your role, switch between light and dark theme, and sign out.",
-      placement: "bottom",
-    },
-    {
-      target: '[data-tour="shell-account"]',
-      title: "Your account at a glance",
-      body: "The sidebar footer shows who is signed in (name, email and role badge), with the theme switch and sign out on the row beneath. In the collapsed sidebar, hover the avatar for the same details.",
+      body: "Access requests and incidents land in this bell, with a badge counting what's new. Open an item to go straight to the page that needs attention.",
       placement: "right",
     },
     {
@@ -61,8 +55,8 @@ export const shellTour: PageTour = {
     {
       target: '[data-tour="shell-tour-launcher"]',
       title: "Replay a tour any time",
-      body: "This compass opens the tours: \"Tour this page\" explains the current page card by card, and \"Dashboard basics\" brings you back here.",
-      placement: "bottom",
+      body: "This compass beside the bell opens the tours: \"Tour this page\" explains the current page card by card, and \"Dashboard basics\" brings you back here.",
+      placement: "right",
     },
     {
       title: "You're all set",
