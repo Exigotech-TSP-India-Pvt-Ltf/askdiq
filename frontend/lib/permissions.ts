@@ -18,6 +18,7 @@ export const PERMISSIONS = [
   "eval:run",
   "testip:write",
   "usage:export",
+  "alerts:manage",
   "users:manage",
   "audit:auth:read",
   "branding:write",
@@ -35,6 +36,7 @@ const ADMIN_PERMISSIONS: readonly Permission[] = [
   "eval:run",
   "testip:write",
   "usage:export",
+  "alerts:manage",
 ];
 const SUPERADMIN_PERMISSIONS: readonly Permission[] = [
   ...ADMIN_PERMISSIONS,

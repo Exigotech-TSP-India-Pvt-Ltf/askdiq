@@ -2,17 +2,28 @@
 
 import { useMemo } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { fetchActiveAlerts, type ActiveAlert, type AlertSeverity } from "@/lib/alerts-api";
 import { fetchPendingAccessCount } from "@/lib/auth-api";
 import { hasPermission } from "@/lib/permissions";
 import { useApiQuery } from "@/lib/query-cache";
+import { formatRelativeTime } from "@/lib/time";
 import { useVisibilityPolling } from "@/lib/use-visibility-polling";
 import type { NotificationItem } from "@/components/shell/NotificationBell";
 
 export const PENDING_ACCESS_QUERY_KEY = "admin/access-requests/pending-count";
+export const ACTIVE_ALERTS_QUERY_KEY = "admin/alerts/active";
 /** Badge refresh (paused when the tab is hidden); focus also revalidates. */
 export const PENDING_ACCESS_POLL_MS = 60_000;
 const STALE_MS = 30_000;
 export const USER_MANAGEMENT_REQUESTS_HREF = "/admin/user-management?tab=requests";
+/** Access-request alerts are already summarised by the pending-requests item. */
+const ACCESS_REQUEST_PATH = "/admin/user-management";
+
+const ALERT_TONE: Record<AlertSeverity, NotificationItem["tone"]> = {
+  critical: "danger",
+  warning: "warn",
+  info: "info",
+};
 
 /**
  * Open access requests for superadmins (`users:manage`); 0 and no request for
@@ -28,26 +39,48 @@ export function usePendingAccessCount(): number {
   return allowed ? query.data ?? 0 : 0;
 }
 
-/**
- * Header bell feed. Access requests come from `GET /admin/access-requests`.
- * TODO(F3/F4): CRITICAL incidents and feedback spikes once their SSE feeds
- * (governance stream, feedback summary) are in this branch's base.
- */
+/** Open and acknowledged alerts (`dashboard:read`); empty for everyone else. */
+export function useActiveAlerts(): ActiveAlert[] {
+  const { permissions } = useAuth();
+  const allowed = hasPermission(permissions, "dashboard:read");
+  const query = useApiQuery<ActiveAlert[]>(allowed ? ACTIVE_ALERTS_QUERY_KEY : null, (signal) => fetchActiveAlerts(signal), {
+    staleTime: STALE_MS,
+  });
+  useVisibilityPolling(() => void query.refetch(), PENDING_ACCESS_POLL_MS, allowed);
+  return allowed ? query.data ?? [] : [];
+}
+
+export function alertNotification(alert: ActiveAlert, now: number = Date.now()): NotificationItem {
+  const seen = alert.lastSeenAt ? new Date(alert.lastSeenAt) : null;
+  return {
+    id: `alert-${alert.id}`,
+    title: alert.title,
+    description: alert.summary || undefined,
+    href: alert.consolePath,
+    tone: ALERT_TONE[alert.severity],
+    time: seen && !Number.isNaN(seen.getTime()) ? formatRelativeTime(seen, now) : undefined,
+  };
+}
+
+/** Header bell feed: pending access requests, then active alerts (newest first). */
 export function useShellNotifications(): NotificationItem[] {
   const pending = usePendingAccessCount();
-  return useMemo<NotificationItem[]>(
-    () =>
-      pending > 0
-        ? [
-            {
-              id: "pending-access-requests",
-              title: `${pending} access request${pending === 1 ? "" : "s"} waiting`,
-              description: "Review them in User Management.",
-              href: USER_MANAGEMENT_REQUESTS_HREF,
-              tone: "warn",
-            },
-          ]
-        : [],
-    [pending],
-  );
+  const alerts = useActiveAlerts();
+  return useMemo<NotificationItem[]>(() => {
+    const items: NotificationItem[] = [];
+    if (pending > 0) {
+      items.push({
+        id: "pending-access-requests",
+        title: `${pending} access request${pending === 1 ? "" : "s"} waiting`,
+        description: "Review them in User Management.",
+        href: USER_MANAGEMENT_REQUESTS_HREF,
+        tone: "warn",
+      });
+    }
+    for (const alert of alerts) {
+      if (pending > 0 && alert.consolePath.startsWith(ACCESS_REQUEST_PATH)) continue;
+      items.push(alertNotification(alert));
+    }
+    return items;
+  }, [pending, alerts]);
 }
