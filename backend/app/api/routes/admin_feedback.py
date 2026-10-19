@@ -36,6 +36,8 @@ from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from app.core.database import get_db, get_session_factory, release_connection
 from app.core.http_cache import cached_response
+from app.dashboard.range_params import optional_day_range
+from app.dashboard.window import DayRange
 from app.feedback import analytics, service
 from app.feedback import repository as repo
 from app.feedback.jobs import enqueue_golden_run
@@ -176,18 +178,26 @@ async def list_feedback(
 async def get_feedback_analytics(
     request: Request,
     audience: str = Query("overview"),
+    days: DayRange | None = Depends(optional_day_range),
     db: AsyncSession = Depends(get_db),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> Response:
     """Aggregates ignore the list filters, so ``total`` stays stable (F3).
-    ``by_intent`` is present only once turn insights exist."""
+    ``by_intent`` is present only once turn insights exist.
+
+    Optional ``from`` / ``to`` (inclusive UTC days) limit every section to
+    ratings given in that range; without them totals are all time and the
+    trend covers the last ``FEEDBACK_TREND_DAYS``."""
     scope = audience_scope(audience)
     aud_feedback = await build_audience_filter(db, repo.CLIENT_IP, scope)
     aud_queries = await build_audience_filter(db, ChatSession.created_ip, scope)
     await release_connection(db)  # never hold a pool slot while waiting for more
     payload = await analytics.compute_analytics(
-        aud_feedback, aud_queries, session_factory
+        aud_feedback,
+        aud_queries,
+        session_factory,
+        window=(days.start, days.end) if days else None,
     )
     return cached_response(request, payload)
 
@@ -201,10 +211,14 @@ async def get_feedback_analytics(
 async def list_golden_cases(
     limit: int = Query(50, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0, le=MAX_OFFSET),
+    days: DayRange | None = Depends(optional_day_range),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> GoldenCasePage:
-    rows, total = await repo.list_promoted_cases(db, limit, offset)
+    """Optional ``from`` / ``to`` (inclusive UTC days) keep cases promoted then."""
+    rows, total = await repo.list_promoted_cases(
+        db, limit, offset, window=(days.start, days.end) if days else None
+    )
     return GoldenCasePage(
         items=[_golden(r) for r in rows], total=total, limit=limit, offset=offset
     )
@@ -253,11 +267,13 @@ async def export_feedback_pairs(
     triage_status: TriageStatus | None = None,
     include_dismissed: bool = False,
     complete_only: bool = False,
+    days: DayRange | None = Depends(optional_day_range),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.FEEDBACK_EXPORT)),
 ) -> StreamingResponse:
     """Pairs are streamed off a server-side cursor (flat memory). Prompt and
-    answer text are PII-masked; incomplete pairs carry ``complete: false``."""
+    answer text are PII-masked; incomplete pairs carry ``complete: false``.
+    Optional ``from`` / ``to`` (inclusive UTC days) keep ratings given then."""
     await record_audit_event(
         db,
         request_id=f"feedback-export-{uuid.uuid4().hex[:12]}",
@@ -279,6 +295,7 @@ async def export_feedback_pairs(
             include_dismissed=include_dismissed,
             complete_only=complete_only,
             batch_size=get_settings().feedback_export_batch_size,
+            window=(days.start, days.end) if days else None,
         ),
         media_type="application/x-ndjson",
         headers={

@@ -26,7 +26,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     title: "Filters",
-    body: "Set a period, user type, outcome, rating or search text. Active filters show as removable chips and are kept in the address bar, so a filtered view can be shared.",
+    body: "Pick a date range with the picker in the page header, then narrow by user type, outcome, rating or search text. Active filters show as removable chips and are kept in the address bar, so a filtered view can be shared.",
     tab: "overview",
   },
   {

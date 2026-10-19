@@ -4,17 +4,15 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import UsageCostPage from "@/app/(app)/admin/usage/page";
 import { api } from "@/lib/api";
+import { RangeProvider, presetRange, rangeUtcDays, toIsoDay } from "@/lib/range-context";
+import { currentParams, history as routerHistory } from "../helpers/router-mock";
 import type { UsageSummary, PageEnvelope, UsageUserRow, UsageSessionRow, UsageQueryRow } from "@/lib/types";
 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => ({ token: "mock-token", user: null, loading: false }),
 }));
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
-  usePathname: () => "/admin/usage",
-  useSearchParams: () => new URLSearchParams(),
-}));
+vi.mock("next/navigation", async () => (await import("../helpers/router-mock")).navigationMock());
 
 vi.mock("@/lib/audience-context", () => ({
   useAudience: () => ({
@@ -207,6 +205,7 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     window.history.replaceState(null, "", "/");
+    routerHistory.reset("/admin/usage");
 
     vi.spyOn(api, "getUsageSummary").mockResolvedValue(mockSummary);
     vi.spyOn(api, "getUsageUsers").mockResolvedValue(mockUsersResponse);
@@ -386,17 +385,58 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     return calls[calls.length - 1]?.[1] ?? {};
   };
 
-  it("applies a dashboard day link (?tab=queries&from=&to=) and clears it from the chip", async () => {
-    window.history.replaceState(null, "", "/admin/usage?tab=queries&from=2026-10-14&to=2026-10-14");
-    render(<UsageCostPage />);
+  /** The page inside the admin layout's global date range, at `url`. */
+  const renderRanged = (url: string) => {
+    window.history.replaceState(null, "", url);
+    routerHistory.reset(url);
+    return render(
+      <RangeProvider>
+        <UsageCostPage />
+      </RangeProvider>,
+    );
+  };
+  const lastCall = (fn: (...args: never[]) => unknown) => {
+    const calls = vi.mocked(fn).mock.calls as unknown[][];
+    return (calls[calls.length - 1]?.[1] ?? {}) as Record<string, unknown>;
+  };
+
+  it("applies a dashboard day link (?tab=queries&from=&to=) as the global range and clears it from the chip", async () => {
+    renderRanged("/admin/usage?tab=queries&from=2026-10-14&to=2026-10-14");
 
     await waitFor(() => expect(lastQueriesCall()).toMatchObject({ from_date: "2026-10-14", to_date: "2026-10-14" }));
     expect(screen.getByRole("tab", { name: /all queries/i })).toHaveAttribute("aria-selected", "true");
 
+    // Clearing the day returns to the default range (one source of truth).
     fireEvent.click(screen.getByRole("button", { name: /remove filter day: 2026-10-14/i }));
-    await waitFor(() => expect(lastQueriesCall().from_date).toBeUndefined());
-    expect(lastQueriesCall().to_date).toBeUndefined();
-    expect(window.location.search).not.toContain("from=");
+    const week = rangeUtcDays(presetRange("7d"));
+    await waitFor(() => expect(lastQueriesCall()).toMatchObject({ from_date: week.from, to_date: week.to }));
+    expect(currentParams().get("from")).toBeNull();
+    expect(currentParams().get("to")).toBeNull();
+  });
+
+  it("sends the global range to the summary and every tab's list", async () => {
+    renderRanged("/admin/usage?range=30d");
+    const days = rangeUtcDays(presetRange("30d"));
+
+    await waitFor(() => expect(lastCall(api.getUsageSummary)).toMatchObject({ from_date: days.from, to_date: days.to }));
+    await waitFor(() => expect(lastQueriesCall()).toMatchObject({ from_date: days.from, to_date: days.to }));
+    // A preset range is not a removable day filter.
+    expect(screen.queryByRole("button", { name: /remove filter day/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /all users/i }));
+    await waitFor(() => expect(lastCall(api.getUsageUsers)).toMatchObject({ from_date: days.from, to_date: days.to }));
+
+    fireEvent.click(screen.getByRole("tab", { name: /all sessions/i }));
+    await waitFor(() => expect(lastCall(api.getUsageSessions)).toMatchObject({ from_date: days.from, to_date: days.to }));
+  });
+
+  it("keeps an old one-sided ?from= link working by turning it into a custom range", async () => {
+    renderRanged("/admin/usage?tab=queries&from=2026-10-14");
+
+    const today = toIsoDay(new Date());
+    await waitFor(() => expect(currentParams().get("to")).toBe(today));
+    expect(currentParams().get("from")).toBe("2026-10-14");
+    await waitFor(() => expect(lastQueriesCall()).toMatchObject({ from_date: "2026-10-14", to_date: today }));
   });
 
   it("an IP filter can be cleared (it no longer snaps back)", async () => {

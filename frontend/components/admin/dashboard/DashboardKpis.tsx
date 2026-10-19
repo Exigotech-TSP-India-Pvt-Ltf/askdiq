@@ -30,7 +30,9 @@ import { feedbackKeys } from "@/lib/feedback-api";
 import { governanceKeys } from "@/lib/governance-api";
 import { usageKeys } from "@/lib/use-usage-data";
 import type { Audience } from "@/lib/types";
-import type { DateRange } from "@/lib/range-context";
+import { rangeUtcDays, type DateRange } from "@/lib/range-context";
+
+type RangeDays = { from?: string; to?: string };
 import {
   bucketLabel,
   dashboardApi,
@@ -44,16 +46,28 @@ import {
  * it reads the same endpoint, so a hover-warmed response renders the page
  * instantly instead of only warming the server.
  */
-export function prefetchKey(path: string, audience: Audience): QueryKey {
+export function prefetchKey(path: string, audience: Audience, days: RangeDays = {}): QueryKey {
   switch (path) {
     case "/usage/summary":
-      return usageKeys.summary(audience);
+      return usageKeys.summary(audience, days);
     case "/governance/monitoring":
       return governanceKeys.monitoring(audience);
     case "/feedback/analytics":
-      return feedbackKeys.analytics(audience);
+      return feedbackKeys.analytics(audience, days);
     default:
       return ["prefetch", path, audience];
+  }
+}
+
+/** The range params the prefetched endpoint takes (its page sends the same ones). */
+export function prefetchParams(path: string, days: RangeDays = {}): Record<string, string | undefined> {
+  switch (path) {
+    case "/usage/summary":
+      return { from_date: days.from, to_date: days.to };
+    case "/feedback/analytics":
+      return { from: days.from, to: days.to };
+    default:
+      return {};
   }
 }
 
@@ -196,8 +210,10 @@ function KpiCard({ def, data, range }: { def: KpiDef; data: DashboardData; range
   const router = useRouter();
   // Keep the dashboard's date range on the target page.
   const href = useCarryHref()(def.href);
-  const intent = usePrefetchOnIntent(prefetchKey(def.prefetchPath, audience), (signal) =>
-    dashboardApi.prefetch(token, def.prefetchPath, audience, signal),
+  // The target page reads the same range (the link carries it), so warm that entry.
+  const days = rangeUtcDays(range);
+  const intent = usePrefetchOnIntent(prefetchKey(def.prefetchPath, audience, days), (signal) =>
+    dashboardApi.prefetch(token, def.prefetchPath, audience, signal, prefetchParams(def.prefetchPath, days)),
   );
   const value = kpiValue(data, def.key);
   const trend = kpiTrend(data, def.key);

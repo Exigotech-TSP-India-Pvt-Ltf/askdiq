@@ -416,6 +416,7 @@ async def export_pairs_jsonl(
     include_dismissed: bool,
     complete_only: bool,
     batch_size: int,
+    window: tuple[datetime, datetime] | None = None,
 ) -> AsyncIterator[str]:
     """One JSON line per pair; rows come off a server-side cursor in batches."""
     async for row in repo.stream_pair_rows(
@@ -423,6 +424,7 @@ async def export_pairs_jsonl(
         triage_status=triage_status,
         include_dismissed=include_dismissed,
         batch_size=batch_size,
+        window=window,
     ):
         pair = build_pair(row)
         if complete_only and not pair["complete"]:

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,6 +17,8 @@ from app.core.database import get_db
 from app.core.logging_config import get_logger
 from app.core.stats import percentile
 from app.dashboard import eval_series
+from app.dashboard.range_params import optional_day_range
+from app.dashboard.window import DayRange
 from app.governance.audience import build_audience_filter
 from app.models.db_models import (
     ChatMessageRecord,
@@ -401,8 +404,16 @@ async def _live_stage_latencies(db: AsyncSession, records: list) -> dict:
     return {name: value for name, value in stages.items() if value is not None}
 
 
-async def _build_live_user_evaluation(db: AsyncSession) -> dict:
+async def _build_live_user_evaluation(
+    db: AsyncSession, window: tuple[datetime, datetime] | None = None
+) -> dict:
+    """Latest 300 online evaluation records, optionally those created in ``window``."""
     q = select(EvaluationRecord).order_by(EvaluationRecord.created_at.desc()).limit(300)
+    if window is not None:
+        q = q.where(
+            EvaluationRecord.created_at >= window[0],
+            EvaluationRecord.created_at < window[1],
+        )
     records = (await db.execute(q)).scalars().all()
     n_cases = len(records)
     if not n_cases:
@@ -607,12 +618,24 @@ async def _build_live_user_evaluation(db: AsyncSession) -> dict:
 async def live_evaluation_report(
     audience: str = Query("users"),
     compare: bool = Query(False),
+    days: DayRange | None = Depends(optional_day_range),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Continuous Live RAG evaluation with real database metrics and benchmark comparison."""
+    """Continuous Live RAG evaluation with real database metrics and benchmark comparison.
+
+    Optional ``from`` / ``to`` (inclusive UTC days) limit the live records and
+    the pass-rate trend runs to that range (the response then echoes
+    ``window``); without them it is the latest records and runs, as before.
+    The benchmark golden suite itself is a fixed file, so only its run
+    history is filtered.
+    """
+    window = (days.start, days.end) if days else None
+    run_limit = (
+        max(eval_series.MAX_RUNS, len(days.days())) if days else eval_series.MAX_RUNS
+    )
     # 1. Fetch live production data
-    live_data = await _build_live_user_evaluation(db)
+    live_data = await _build_live_user_evaluation(db, window)
 
     # 2. Fetch baseline benchmark data
     result = await asyncio.to_thread(_read_latest_eval_report, True)
@@ -713,8 +736,10 @@ async def live_evaluation_report(
         }
         # B7.4: benchmark runs are the evaluation report files.
         runs = await eval_series.report_runs(_eval_report_dirs())
-        res_data.update(eval_series.insight_fields(runs))
-        return res_data
+        res_data.update(
+            eval_series.insight_fields(eval_series.runs_in_window(runs, window))
+        )
+        return _with_window(res_data, days)
 
     # Return Live Users data with comparison payload attached
     live_data["comparison"] = {
@@ -722,8 +747,19 @@ async def live_evaluation_report(
         "dual_radar": dual_radar,
     }
     # B7.4: live "runs" are UTC days of online evaluation records.
-    live_data.update(eval_series.insight_fields(await eval_series.live_runs(db)))
-    return live_data
+    live = await eval_series.live_runs(db, run_limit, window)
+    live_data.update(eval_series.insight_fields(live))
+    return _with_window(live_data, days)
+
+
+def _with_window(payload: dict, days: DayRange | None) -> dict:
+    """Echo the applied day range (additive; absent without ``from`` / ``to``)."""
+    if days is not None:
+        payload["window"] = {
+            "from": days.first.isoformat(),
+            "to": days.last.isoformat(),
+        }
+    return payload
 
 
 @router.get("/metrics/evaluation/record/{record_id}")

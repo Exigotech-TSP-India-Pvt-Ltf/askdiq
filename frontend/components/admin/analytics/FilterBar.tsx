@@ -2,22 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
-import {
-  CONVERSATION_OUTCOMES,
-  EXPERIENCE_RATINGS,
-  INSIGHTS_PERIODS,
-  MAX_SEARCH_CHARS,
-  type InsightsPeriod,
-} from "@/lib/insights-api";
-import { dayLabel } from "./format";
+import { CONVERSATION_OUTCOMES, EXPERIENCE_RATINGS, MAX_SEARCH_CHARS } from "@/lib/insights-api";
 import { stripControlChars, type AnalyticsState } from "./url-state";
-
-export const PERIOD_LABELS: Record<InsightsPeriod, string> = {
-  all: "Full period",
-  "7d": "Last 7 days",
-  "30d": "Last 30 days",
-  custom: "Custom",
-};
 
 /** User types the classifier assigns (taxonomy groups) plus the derived ones. */
 export const BASE_USER_TYPES = ["Customer / prospect", "Off-scope request", "Mixed", "Greeting only"] as const;
@@ -46,7 +32,10 @@ export interface FilterBarProps {
   chipLabels?: ChipLabels;
 }
 
-/** Period, user type, outcome, rating and search, all synced to the URL (planchanges4 F6.1). */
+/**
+ * User type, outcome, rating and search, all synced to the URL (planchanges4
+ * F6.1). The date range comes from the global picker in the page header.
+ */
 export function FilterBar({ state, update, clearFilters, userTypes = [], chipLabels = {} }: FilterBarProps) {
   const id = useId();
   const [search, setSearch] = useState(state.q);
@@ -73,21 +62,6 @@ export function FilterBar({ state, update, clearFilters, userTypes = [], chipLab
 
   const typeOptions = Array.from(new Set([...BASE_USER_TYPES, ...userTypes, ...(state.user_type ? [state.user_type] : [])]));
 
-  const changePeriod = (period: InsightsPeriod) => {
-    if (period === "custom") {
-      const today = new Date().toISOString().slice(0, 10);
-      update({ period, from: state.from || today, to: state.to || today });
-    } else {
-      update({ period, from: "", to: "" });
-    }
-  };
-
-  const changeDate = (key: "from" | "to", value: string) => {
-    if (!value) return;
-    const next = { ...state, [key]: value };
-    if (next.from && next.to && next.from <= next.to) update({ period: "custom", from: next.from, to: next.to });
-  };
-
   return (
     <div className="flex flex-col gap-2">
       <div
@@ -96,53 +70,6 @@ export function FilterBar({ state, update, clearFilters, userTypes = [], chipLab
         data-tour="filters"
         className="flex flex-col gap-2 rounded-xl border border-line bg-surface-muted/60 p-3 sm:flex-row sm:flex-wrap sm:items-end"
       >
-        <div className={FIELD}>
-          <label htmlFor={`${id}-period`} className={LABEL}>
-            Period
-          </label>
-          <select
-            id={`${id}-period`}
-            className={CONTROL}
-            value={state.period}
-            onChange={(e) => changePeriod(e.target.value as InsightsPeriod)}
-          >
-            {INSIGHTS_PERIODS.map((p) => (
-              <option key={p} value={p}>
-                {PERIOD_LABELS[p]}
-              </option>
-            ))}
-          </select>
-        </div>
-        {state.period === "custom" && (
-          <>
-            <div className={FIELD}>
-              <label htmlFor={`${id}-from`} className={LABEL}>
-                From
-              </label>
-              <input
-                id={`${id}-from`}
-                type="date"
-                className={CONTROL}
-                value={state.from}
-                max={state.to || undefined}
-                onChange={(e) => changeDate("from", e.target.value)}
-              />
-            </div>
-            <div className={FIELD}>
-              <label htmlFor={`${id}-to`} className={LABEL}>
-                To
-              </label>
-              <input
-                id={`${id}-to`}
-                type="date"
-                className={CONTROL}
-                value={state.to}
-                min={state.from || undefined}
-                onChange={(e) => changeDate("to", e.target.value)}
-              />
-            </div>
-          </>
-        )}
         <div className={FIELD}>
           <label htmlFor={`${id}-type`} className={LABEL}>
             User type
@@ -238,12 +165,8 @@ export function FilterChips({
   update: (patch: Partial<AnalyticsState>) => void;
   labels: ChipLabels;
 }) {
+  // The date range is shown (and changed) by the picker in the page header.
   const chips: Chip[] = [];
-  if (state.period === "custom") {
-    chips.push({ key: "range", text: `${dayLabel(state.from)} – ${dayLabel(state.to)}`, clear: { period: "all", from: "", to: "" } });
-  } else if (state.period !== "all") {
-    chips.push({ key: "period", text: PERIOD_LABELS[state.period], clear: { period: "all" } });
-  }
   if (state.user_type) chips.push({ key: "user_type", text: state.user_type, clear: { user_type: "" } });
   if (state.outcome) chips.push({ key: "outcome", text: state.outcome, clear: { outcome: "" } });
   if (state.rating) chips.push({ key: "rating", text: state.rating, clear: { rating: "" } });

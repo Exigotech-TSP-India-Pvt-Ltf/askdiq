@@ -166,10 +166,19 @@ export const api = {
     return request<Record<string, any>>(`/metrics/evaluation${qs}`, { token, signal });
   },
 
-  evaluationReportLive: (token: string, audience?: Audience, compare?: boolean, signal?: AbortSignal) => {
+  evaluationReportLive: (
+    token: string,
+    audience?: Audience,
+    compare?: boolean,
+    signal?: AbortSignal,
+    /** Inclusive UTC days (YYYY-MM-DD); omitted = the latest records, as before. */
+    range?: { from?: string; to?: string },
+  ) => {
     const params = new URLSearchParams();
     if (audience) params.set("audience", audience);
     if (compare) params.set("compare", "true");
+    if (range?.from) params.set("from", range.from);
+    if (range?.to) params.set("to", range.to);
     const qs = params.toString() ? `?${params.toString()}` : "";
     return request<Record<string, any>>(`/metrics/evaluation/live${qs}`, { token, signal });
   },
@@ -256,6 +265,9 @@ export const api = {
       audience?: Audience;
       q?: string;
       type?: string;
+      /** YYYY-MM-DD or ISO datetime (a day covers the whole UTC day). */
+      from_date?: string;
+      to_date?: string;
       sort?: string;
       limit?: number;
       offset?: number;
@@ -266,6 +278,8 @@ export const api = {
     if (params.audience) qs.set("audience", params.audience);
     if (params.q) qs.set("q", params.q);
     if (params.type) qs.set("type", params.type);
+    if (params.from_date) qs.set("from_date", params.from_date);
+    if (params.to_date) qs.set("to_date", params.to_date);
     if (params.sort) qs.set("sort", params.sort);
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
     if (params.offset !== undefined) qs.set("offset", String(params.offset));
@@ -282,6 +296,9 @@ export const api = {
       audience?: Audience;
       q?: string;
       ip?: string;
+      /** YYYY-MM-DD or ISO datetime (a day covers the whole UTC day). */
+      from_date?: string;
+      to_date?: string;
       sort?: string;
       limit?: number;
       offset?: number;
@@ -292,6 +309,8 @@ export const api = {
     if (params.audience) qs.set("audience", params.audience);
     if (params.q) qs.set("q", params.q);
     if (params.ip) qs.set("ip", params.ip);
+    if (params.from_date) qs.set("from_date", params.from_date);
+    if (params.to_date) qs.set("to_date", params.to_date);
     if (params.sort) qs.set("sort", params.sort);
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
     if (params.offset !== undefined) qs.set("offset", String(params.offset));

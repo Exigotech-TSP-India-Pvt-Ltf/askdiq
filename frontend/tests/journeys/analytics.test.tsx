@@ -162,7 +162,8 @@ describe("trend setDay() toggle", () => {
     expect(currentParams().get("from")).toBe("2026-05-15");
     expect(currentParams().get("to")).toBe("2026-05-15");
     await waitFor(() => expect(api.last("trend")?.params.get("from")).toBe("2026-05-15"));
-    expect(screen.getByRole("button", { name: "Remove filter 15 May – 15 May" })).toBeInTheDocument();
+    // The range is shown by the header picker, not as a filter chip.
+    expect(screen.queryByRole("button", { name: /^Remove filter 15 May/ })).not.toBeInTheDocument();
 
     const again = container.querySelector<SVGRectElement>('[data-day="2026-05-15"]');
     expect(again).toHaveAttribute("aria-pressed", "true");
@@ -173,7 +174,6 @@ describe("trend setDay() toggle", () => {
     await waitFor(() =>
       expect(container.querySelector('[data-day="2026-05-15"]')).toHaveAttribute("aria-pressed", "false"),
     );
-    expect(screen.queryByRole("button", { name: /^Remove filter 15 May/ })).not.toBeInTheDocument();
   });
 
   it("Enter on a focused day does the same (keyboard)", async () => {

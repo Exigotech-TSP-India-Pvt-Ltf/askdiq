@@ -31,6 +31,7 @@ from app.dashboard import active_visitors
 from app.dashboard import activity as dashboard_activity
 from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
+from app.dashboard.range_params import optional_day_range
 from app.dashboard.snapshots import (
     GatherRunner,
     get_snapshot,
@@ -529,12 +530,15 @@ async def list_conversations(
     day: date | None = Query(
         None, description="With `outcome`: only turns on this UTC day (YYYY-MM-DD)."
     ),
+    days: dashboard_window.DayRange | None = Depends(optional_day_range),
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return conversations for the admin dashboard (Task 2.3.2: audience-scoped, paginated, no email).
 
     Rows carry `turn_count` and `outcome_counts` (NULL outcome = answered).
+    Optional `from` / `to` (inclusive UTC days) keep conversations started in
+    that range, matching `/conversations/stats`; without them, all of them.
     """
     if min_turns is not None and max_turns is not None and min_turns > max_turns:
         raise HTTPException(
@@ -548,7 +552,18 @@ async def list_conversations(
         )
     aud_scope = audience_scope(audience)
     args = ConversationListArgs(
-        aud_scope, q, ip, sort, limit, offset, min_turns, max_turns, outcome, day
+        aud_scope,
+        q,
+        ip,
+        sort,
+        limit,
+        offset,
+        min_turns,
+        max_turns,
+        outcome,
+        day,
+        days.start.isoformat() if days is not None else None,
+        days.end.isoformat() if days is not None else None,
     )
     # Full grouped scan of sessions x messages (counted, then paged): cached
     # stale-while-revalidate per parameter set, on its own session.
@@ -581,6 +596,9 @@ class ConversationListArgs:
     max_turns: int | None
     outcome: OutcomeName | None
     day: date | None
+    # Optional global date range (naive UTC ISO strings, part of the snapshot key).
+    range_start: str | None = None
+    range_end: str | None = None
 
 
 async def _conversations_page(db: AsyncSession, args: ConversationListArgs) -> dict:
@@ -604,6 +622,11 @@ async def _conversations_page(db: AsyncSession, args: ConversationListArgs) -> d
 
     for cond in await conversation_stats.session_conditions(db, aud_scope, ip, q):
         query = query.where(cond)
+    if args.range_start is not None and args.range_end is not None:
+        query = query.where(
+            ChatSession.created_at >= datetime.fromisoformat(args.range_start),
+            ChatSession.created_at < datetime.fromisoformat(args.range_end),
+        )
     if outcome is not None:
         query = query.where(conversation_stats.outcome_exists(outcome.value, day))
     if min_turns is not None:

@@ -30,6 +30,9 @@ interface SessionsTabProps {
   onSelectSession?: (sessionId: string) => void;
   /** Sets the IP filter; "" clears it. */
   onSelectIp?: (ip: string) => void;
+  /** Global date range, inclusive UTC days (YYYY-MM-DD); "" = all time. */
+  fromDay?: string;
+  toDay?: string;
 }
 
 export function SessionsTab({
@@ -37,6 +40,8 @@ export function SessionsTab({
   initialIp,
   onSelectSession,
   onSelectIp,
+  fromDay = "",
+  toDay = "",
 }: SessionsTabProps) {
   const {
     page,
@@ -78,7 +83,7 @@ export function SessionsTab({
       return;
     }
     setPage(1);
-  }, [ipFilter, setPage]);
+  }, [ipFilter, fromDay, toDay, setPage]);
 
   const fetchData = React.useCallback(async () => {
     setIsLoading(true);
@@ -90,6 +95,8 @@ export function SessionsTab({
           audience,
           q: search || undefined,
           ip: ipFilter || undefined,
+          from_date: fromDay || undefined,
+          to_date: toDay || undefined,
           sort,
           limit: pageSize,
           offset,
@@ -104,7 +111,7 @@ export function SessionsTab({
     } finally {
       setIsLoading(false);
     }
-  }, [token, audience, search, ipFilter, sort, pageSize, offset, getSignal]);
+  }, [token, audience, search, ipFilter, fromDay, toDay, sort, pageSize, offset, getSignal]);
 
   useEffect(() => {
     fetchData();
@@ -226,7 +233,7 @@ export function SessionsTab({
 
   const exportUrl = `/api/proxy/admin/usage/export?tab=sessions&audience=${audience}&q=${encodeURIComponent(
     search
-  )}${ipFilter ? `&ip=${encodeURIComponent(ipFilter)}` : ""}`;
+  )}${ipFilter ? `&ip=${encodeURIComponent(ipFilter)}` : ""}${fromDay ? `&from_date=${fromDay}` : ""}${toDay ? `&to_date=${toDay}` : ""}`;
 
   return (
     <div className="space-y-6">

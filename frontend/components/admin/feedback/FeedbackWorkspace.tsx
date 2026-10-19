@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { FileJson, FlaskConical, Inbox, LayoutDashboard, SearchX, ThumbsUp } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
@@ -17,6 +17,7 @@ import { GoldenCasesTab } from "./GoldenCasesTab";
 import { PreferenceDataTab } from "./PreferenceDataTab";
 import { KnowledgeGapsTab } from "./KnowledgeGapsTab";
 import { useFeedbackUrl, type FeedbackTab } from "./use-feedback-url";
+import { useRangeParams } from "@/components/admin/entity/shared";
 
 /**
  * Feedback / RLHF workspace (newplan §5.4, planchanges4 F5): Overview,
@@ -28,12 +29,19 @@ export function FeedbackWorkspace() {
   const canTriage = useCan("feedback:triage");
   const canExport = useCan("feedback:export");
   const { tab, filters, chips, setTab, applyFilters, removeChip, clearAll } = useFeedbackUrl();
+  // The global date range (header picker) bounds every tab: KPIs, queue,
+  // golden cases and preference pairs.
+  const { from, to } = useRangeParams();
+  const days = useMemo(() => ({ from, to }), [from, to]);
 
   const analyticsFetcher = useCallback(
-    (signal: AbortSignal) => getFeedbackAnalytics(token ?? "", audience, signal),
-    [token, audience],
+    (signal: AbortSignal) => getFeedbackAnalytics(token ?? "", audience, signal, days),
+    [token, audience, days],
   );
-  const analytics = useApiQuery<FeedbackAnalytics>(token ? feedbackKeys.analytics(audience) : null, analyticsFetcher);
+  const analytics = useApiQuery<FeedbackAnalytics>(
+    token ? feedbackKeys.analytics(audience, days) : null,
+    analyticsFetcher,
+  );
 
   const filterQueue = useCallback((patch: FilterPatch) => applyFilters(patch, { openQueue: true }), [applyFilters]);
 
@@ -54,6 +62,7 @@ export function FeedbackWorkspace() {
         title="Feedback"
         subtitle="Human feedback loop: triage ratings, promote golden cases, export preference pairs"
         icon={ThumbsUp}
+        showDateRange
       />
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-5 p-4 sm:p-6 lg:p-8">
         <div data-tour="feedback-tabs">
@@ -79,10 +88,17 @@ export function FeedbackWorkspace() {
             />
           ) : null}
           {tab === "queue" && token ? (
-            <ReviewQueue token={token} audience={audience} filters={filters} onFilter={applyFilters} canTriage={canTriage} />
+            <ReviewQueue
+              token={token}
+              audience={audience}
+              filters={filters}
+              onFilter={applyFilters}
+              canTriage={canTriage}
+              days={days}
+            />
           ) : null}
-          {tab === "golden" && token ? <GoldenCasesTab token={token} canRun={canTriage} /> : null}
-          {tab === "pairs" && token ? <PreferenceDataTab token={token} canExport={canExport} /> : null}
+          {tab === "golden" && token ? <GoldenCasesTab token={token} canRun={canTriage} days={days} /> : null}
+          {tab === "pairs" && token ? <PreferenceDataTab token={token} canExport={canExport} days={days} /> : null}
           {tab === "gaps" ? (
             <KnowledgeGapsTab
               analytics={analytics.data}
