@@ -2,6 +2,7 @@
 
 import { ArrowUpRight } from "lucide-react";
 import { ChartCard, toChartTable } from "@/components/charts";
+import { LazyMount } from "@/components/charts/LazyMount";
 import type { InsightsFilters } from "@/lib/insights-api";
 import { DropoffChart } from "./DropoffChart";
 import { FlowSankey } from "./FlowSankey";
@@ -239,14 +240,17 @@ export function PeopleCard({ state, filters, update, learnLabel }: CardProps) {
         { key: "dominant_outcome", label: "Mostly" },
       ])}
     >
-      <PeopleBubble
-        items={items}
-        selected={state.person}
-        onSelect={(p) => {
-          learnLabel?.("person", p.person);
-          update(toggleValue(state, "person", p.person_id));
-        }}
-      />
+      {/* Thousands of marks, below the fold: mounted when scrolled near. */}
+      <LazyMount minHeight={220}>
+        <PeopleBubble
+          items={items}
+          selected={state.person}
+          onSelect={(p) => {
+            learnLabel?.("person", p.person);
+            update(toggleValue(state, "person", p.person_id));
+          }}
+        />
+      </LazyMount>
     </ChartCard>
   );
 }
