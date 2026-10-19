@@ -79,7 +79,7 @@ export function HourCard({ state, filters, update }: CardProps) {
   return (
     <ChartCard
       title="Questions by hour of day"
-      subtitle={data ? `Substantive questions, your time zone (${data.tz}). Click an hour to filter.` : undefined}
+      subtitle={data ? `Substantive questions by hour (${data.tz}, like the Visitors heatmap). Click an hour to filter.` : undefined}
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}

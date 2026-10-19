@@ -92,6 +92,9 @@ OUTCOME_ORDER = (
 )
 MAX_TREND_DAYS = 400  # the HTML's days() cap
 HOURS_PER_DAY = 24
+# Zone the Analytics page queries in: UTC, like every other console page,
+# so the same days give the same counts (frontend ANALYTICS_TIME_ZONE).
+ANALYTICS_PAGE_TZ = "UTC"
 PCT_DIGITS = 2
 
 
@@ -630,8 +633,8 @@ def _snapshot_builder(name: str) -> Callable[..., Awaitable[Any]]:
 
 
 def _default_snapshot_params(name: str) -> list[dict[str, Any]]:
-    """The Analytics page's first view in the configured zone, each period."""
-    tz = get_settings().insights_timezone
+    """The Analytics page's first view (in its zone), each period."""
+    tz = ANALYTICS_PAGE_TZ
     out: list[dict[str, Any]] = []
     for period in (Period.ALL, Period.LAST_7_DAYS, Period.LAST_30_DAYS):
         params: dict[str, Any] = {

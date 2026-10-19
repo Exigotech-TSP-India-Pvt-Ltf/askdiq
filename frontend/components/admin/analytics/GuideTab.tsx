@@ -84,7 +84,7 @@ export const METRIC_DEFINITIONS: readonly { term: string; definition: string }[]
   },
   {
     term: "Hours and days",
-    definition: "Bucketed in your browser's time zone; the Visitors and Conversations pages use UTC days, so a day near midnight can differ.",
+    definition: "Bucketed in UTC, like the Dashboard, Visitors and Conversations pages, so the same days give the same counts everywhere.",
   },
   {
     term: "Pending classification",
