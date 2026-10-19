@@ -21,6 +21,7 @@ from sqlalchemy import (
     literal_column,
     select,
     union,
+    union_all,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -337,6 +338,40 @@ async def timeline_feedback(
         .limit(MAX_FEEDBACK + 1)
     )
     return list((await db.execute(stmt)).all())
+
+
+async def timeline_activity(
+    db: AsyncSession, visitor: Visitor, days: DayRange
+) -> dict[tuple[date, str], int]:
+    """Sessions started and feedback given per UTC day (one grouped statement)."""
+    started = select(
+        _day(ChatSession.created_at).label("day"),
+        literal_column("'sessions'").label("kind"),
+    ).where(
+        visitor.condition,
+        ChatSession.created_at >= days.start,
+        ChatSession.created_at < days.end,
+    )
+    rated = (
+        select(
+            _day(MessageFeedback.created_at).label("day"),
+            literal_column("'feedback'").label("kind"),
+        )
+        .join(ChatSession, ChatSession.id == MessageFeedback.session_id)
+        .where(
+            visitor.condition,
+            MessageFeedback.created_at >= days.start,
+            MessageFeedback.created_at < days.end,
+        )
+    )
+    events = union_all(started, rated).subquery()
+    stmt = select(events.c.day, events.c.kind, func.count()).group_by(
+        events.c.day, events.c.kind
+    )
+    return {
+        (row[0].date(), str(row[1])): int(row[2])
+        for row in (await db.execute(stmt)).all()
+    }
 
 
 def _normalized_outcome(raw: str | None) -> str | None:

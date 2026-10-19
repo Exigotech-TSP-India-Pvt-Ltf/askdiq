@@ -88,6 +88,8 @@ export function PassRateTrendCard({ report, loading }: Props) {
         onSelect={select}
         formatValue={pct}
         label="Pass rate per run"
+        xAxisLabel="Run date (UTC)"
+        yAxisLabel="Pass rate (%)"
       />
     </ChartCard>
   );

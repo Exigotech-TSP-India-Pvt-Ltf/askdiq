@@ -13,7 +13,7 @@ import {
   type ChartSize,
   type SelectHandler,
 } from "./primitives";
-import { XLabels, YGrid, plotArea } from "./cartesian";
+import { AxisTitles, XLabels, YGrid, axisDescription, plotArea, type AxisLabelProps } from "./cartesian";
 
 export interface HistogramBin {
   /** Inclusive lower edge. */
@@ -23,13 +23,15 @@ export interface HistogramBin {
   count: number;
 }
 
-export interface HistogramProps {
+export interface HistogramProps extends AxisLabelProps {
   /** Pre-binned data (server aggregates); use `binValues` for raw values. */
   data: readonly HistogramBin[];
   onSelect?: SelectHandler<HistogramBin>;
   label?: string;
   height?: number;
   formatEdge?: (value: number) => string;
+  /** Name of the bar height in the tooltip and accessible names (default "Count"), e.g. "Conversations". */
+  valueLabel?: string;
 }
 
 /** Splits raw values into `binCount` equal-width bins. */
@@ -59,20 +61,27 @@ export function Histogram({
   label = "Histogram",
   height,
   formatEdge = formatCompact,
+  valueLabel = "Count",
+  xAxisLabel,
+  yAxisLabel,
 }: HistogramProps) {
+  const titles = { xAxisLabel, yAxisLabel };
   const ct = useChartTheme();
   const binLabel = useCallback(
     (b: HistogramBin) => (b.x0 === b.x1 ? formatEdge(b.x0) : `${formatEdge(b.x0)}–${formatEdge(b.x1)}`),
     [formatEdge],
   );
-  const describe = useCallback((b: HistogramBin) => `${binLabel(b)}: ${b.count}`, [binLabel]);
+  const describe = useCallback(
+    (b: HistogramBin) => (valueLabel === "Count" ? `${binLabel(b)}: ${b.count}` : `${binLabel(b)}: ${b.count} ${valueLabel}`),
+    [binLabel, valueLabel],
+  );
   const { active, getMarkProps, opacityFor } = useChartMarks(data, describe, onSelect, ct.dimOpacity);
   const max = useMemo(() => niceMax(Math.max(0, ...data.map((b) => b.count))), [data]);
 
   if (data.length === 0) return <ChartEmpty height={height} />;
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const area = plotArea(width, h);
+    const area = plotArea(width, h, titles);
     const bw = (area.x1 - area.x0) / data.length;
     return { area, bw, y: scaleLinear([0, max], [area.y1, area.y0]) };
   };
@@ -84,18 +93,25 @@ export function Histogram({
     return {
       x: area.x0 + bw * active + bw / 2,
       y: y(b.count),
-      content: <TooltipBody title={binLabel(b)} rows={[{ label: "Count", value: String(b.count), color: ct.categorical[0] }]} />,
+      content: (
+        <TooltipBody
+          title={binLabel(b)}
+          caption={xAxisLabel}
+          rows={[{ label: valueLabel, value: String(b.count), color: ct.categorical[0] }]}
+        />
+      ),
     };
   };
 
   return (
-    <ChartFrame label={label} height={height} tooltip={tooltip}>
+    <ChartFrame label={label} height={height} tooltip={tooltip} description={axisDescription(titles)}>
       {(size) => {
         const { area, bw, y } = layout(size);
         return (
           <>
             <YGrid area={area} max={max} ct={ct} />
             <XLabels labels={data.map(binLabel)} xAt={(i) => area.x0 + bw * i + bw / 2} area={area} ct={ct} maxLabels={6} />
+            <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {data.map((b, i) => (
               <g key={i} {...getMarkProps(i)} opacity={opacityFor(i)}>
                 <rect x={area.x0 + bw * i} y={area.y0} width={bw} height={area.y1 - area.y0} fill="transparent" />

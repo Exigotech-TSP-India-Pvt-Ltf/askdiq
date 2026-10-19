@@ -14,18 +14,21 @@ import {
   type SelectHandler,
 } from "./primitives";
 import {
+  AxisTitles,
   Legend,
   XLabels,
   YGrid,
+  axisDescription,
   bandPath,
   num,
   plotArea,
   pointX,
   seriesColor,
+  type AxisLabelProps,
   type SeriesDef,
 } from "./cartesian";
 
-export interface StackedAreaProps<T extends object> {
+export interface StackedAreaProps<T extends object> extends AxisLabelProps {
   /** One row per x value, e.g. `{ day: "Mon", answered: 40, fallback: 3 }`. */
   data: readonly T[];
   xKey: Extract<keyof T, string>;
@@ -52,7 +55,10 @@ export function StackedArea<T extends object>({
   label = "Stacked area chart",
   height,
   formatValue = formatCompact,
+  xAxisLabel,
+  yAxisLabel,
 }: StackedAreaProps<T>) {
+  const titles = { xAxisLabel, yAxisLabel };
   const ct = useChartTheme();
   const [hoverSeries, setHoverSeries] = useState<string | null>(null);
   const xLabel = useCallback((row: T) => String((row as Record<string, unknown>)[xKey] ?? ""), [xKey]);
@@ -81,7 +87,7 @@ export function StackedArea<T extends object>({
   if (data.length === 0 || series.length === 0) return <ChartEmpty height={height} />;
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const area = plotArea(width, h);
+    const area = plotArea(width, h, titles);
     return { area, x: pointX(data.length, area), y: scaleLinear([0, max], [area.y1, area.y0]) };
   };
 
@@ -96,6 +102,7 @@ export function StackedArea<T extends object>({
       content: (
         <TooltipBody
           title={xLabel(row)}
+          caption={yAxisLabel}
           rows={series.map((s, i) => ({
             label: s.label,
             value: formatValue(num(row, s.key)),
@@ -111,6 +118,7 @@ export function StackedArea<T extends object>({
       label={label}
       height={height}
       tooltip={tooltip}
+      description={axisDescription(titles)}
       footer={<Legend series={series} ct={ct} onHover={setHoverSeries} />}
     >
       {(size) => {
@@ -127,6 +135,7 @@ export function StackedArea<T extends object>({
           <>
             <YGrid area={area} max={max} ct={ct} format={percent ? pct : formatValue} />
             <XLabels labels={data.map(xLabel)} xAt={x} area={area} ct={ct} />
+            <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {series.map((s, si) => {
               const color = seriesColor(ct, s, si);
               const upper = widen(stacks[si].map(([, u], i) => [x(i), y(u)] as const));

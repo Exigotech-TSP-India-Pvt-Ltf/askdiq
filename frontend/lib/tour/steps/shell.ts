@@ -17,6 +17,12 @@ export const shellTour: PageTour = {
       placement: "right",
     },
     {
+      target: '[data-tour="shell-command-palette"]',
+      title: "Go to any page",
+      body: "Click Go to page, or press Ctrl+K (⌘K on Mac) from anywhere, to type a page name and jump straight there; you can start tours from it too. Press ? at any time for the full list of keyboard shortcuts.",
+      placement: "right",
+    },
+    {
       target: '[data-tour="shell-audience"]',
       title: "Choose the audience",
       body: "Overview shows all traffic, Users shows real end users only, and Testing shows internal test traffic. The choice carries across pages, so numbers stay comparable.",
@@ -29,12 +35,6 @@ export const shellTour: PageTour = {
       placement: "bottom",
     },
     {
-      target: '[data-tour="shell-command-palette"]',
-      title: "Jump anywhere with the command palette",
-      body: "Press Ctrl+K (⌘K on Mac) to search pages and start tours without the mouse. Press ? at any time for the full list of keyboard shortcuts.",
-      placement: "bottom",
-    },
-    {
       target: '[data-tour="shell-notifications"]',
       title: "Notifications",
       body: "Access requests and incidents land here, with a badge counting what's new. Open an item to go straight to the page that needs attention.",
@@ -43,13 +43,13 @@ export const shellTour: PageTour = {
     {
       target: '[data-tour="shell-profile"]',
       title: "Profile, theme and sign out",
-      body: "Open your account menu to see your role, switch between light, dark or system theme, and sign out.",
+      body: "Open your account menu to see your role, switch between light and dark theme, and sign out.",
       placement: "bottom",
     },
     {
       target: '[data-tour="shell-account"]',
       title: "Your account at a glance",
-      body: "The sidebar footer shows who is signed in and their role, with quick theme and sign-out buttons.",
+      body: "The sidebar footer shows who is signed in (name, email and role badge), with the theme switch and sign out on the row beneath. In the collapsed sidebar, hover the avatar for the same details.",
       placement: "right",
     },
     {

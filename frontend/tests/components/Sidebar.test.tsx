@@ -5,6 +5,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { NAV_ITEMS, Sidebar, canSeeNavItem, isNavItemEnabled } from "@/components/Sidebar";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
+import { CommandCenter } from "@/components/shell/CommandCenter";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { MobileNavProvider } from "@/lib/mobile-nav-context";
 import { queryCache } from "@/lib/query-cache";
@@ -32,6 +33,7 @@ afterEach(() => {
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/admin/usage",
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
 describe("Sidebar Navigation Component (Task 4.3)", () => {
@@ -42,9 +44,8 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
       "Dashboard",
       "AskDIQ",
       "Knowledge",
-      "Visitors",
+      "Visitors & Conversations",
       "Usage & Cost",
-      "Conversation Logs",
       "Feedback",
       "Evaluation",
       "Governance",
@@ -66,7 +67,7 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
     expect(screen.getByText("Evaluation").closest("a")).toHaveAttribute("href", "/admin/evaluation-live");
     expect(screen.queryByText("Users")).not.toBeInTheDocument();
     expect(document.querySelector('a[href="/admin/evaluation"]')).toBeNull();
-    expect(screen.getByText("Visitors").closest("a")).toHaveAttribute("href", "/admin/users");
+    expect(screen.getByText("Visitors & Conversations").closest("a")).toHaveAttribute("href", "/admin/visitors");
   });
 
   it("shows one flat list with no collapsible group header (no ADMIN submenu)", () => {
@@ -82,9 +83,8 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
       "Dashboard",
       "AskDIQ",
       "Knowledge",
-      "Visitors",
+      "Visitors & Conversations",
       "Usage & Cost",
-      "Conversation Logs",
       "Feedback",
       "Evaluation",
       "Governance",
@@ -222,7 +222,7 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
 describe("Role-aware sidebar (PR-18, F1.3)", () => {
   beforeEach(() => window.localStorage.clear());
 
-  const DASHBOARD_LINKS = ["Dashboard", "Knowledge", "Visitors", "Usage & Cost", "Conversation Logs", "Feedback", "Governance", "Analytics"];
+  const DASHBOARD_LINKS = ["Dashboard", "Knowledge", "Visitors & Conversations", "Usage & Cost", "Feedback", "Governance", "Analytics"];
 
   const linkNames = () => screen.getAllByRole("link").map((a) => a.textContent?.trim());
 
@@ -271,18 +271,112 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
     render(<Sidebar />);
     fireEvent.click(screen.getByTitle("Collapse sidebar"));
     for (const link of screen.getAllByRole("link")) expect(link).toHaveAttribute("title");
-    expect(screen.getByRole("link", { name: /visitors/i })).toHaveAttribute("title", "Visitors");
+    expect(screen.getByRole("link", { name: /visitors/i })).toHaveAttribute("title", "Visitors & Conversations");
   });
 
   it("profile area shows the real name, email and role badge, and signs out", () => {
     signInAs("superadmin");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
     render(<Sidebar />);
-    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.getByText("jane@contoso.example")).toBeInTheDocument();
+    expect(screen.getByText("Jane Doe")).toHaveAttribute("title", "Jane Doe");
+    const email = screen.getByTestId("account-email");
+    expect(email).toHaveTextContent("jane@contoso.example");
+    // Full address on hover even when the line truncates.
+    expect(email).toHaveAttribute("title", "jane@contoso.example");
     expect(screen.getByTestId("role-badge")).toHaveTextContent("Superadmin");
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(auth.logout).toHaveBeenCalled();
+  });
+
+  it("puts the role badge, theme toggle and sign out on their own row, not beside the identity", () => {
+    signInAs("superadmin");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
+    render(<Sidebar />);
+    const identity = screen.getByText("Jane Doe").parentElement!;
+    const signOut = screen.getByRole("button", { name: "Sign out" });
+    const actions = signOut.parentElement!.parentElement!;
+    expect(identity).not.toContainElement(signOut);
+    expect(identity).not.toContainElement(screen.getByTestId("role-badge"));
+    expect(actions).toContainElement(screen.getByTestId("role-badge"));
+    expect(actions).toContainElement(screen.getByRole("button", { name: /theme:/i }));
+  });
+
+  it("collapsed account shows an avatar with the name, email and role as its label", () => {
+    signInAs("superadmin");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
+    render(<Sidebar />);
+    fireEvent.click(screen.getByTitle("Collapse sidebar"));
+    const avatar = screen.getByRole("img", { name: "Jane Doe, jane@contoso.example, Superadmin" });
+    expect(avatar).toHaveTextContent("JD");
+    expect(screen.queryByTestId("account-email")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /theme:/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+  });
+});
+
+describe("Go to page (command palette) in the sidebar", () => {
+  beforeEach(() => window.localStorage.clear());
+  afterEach(() => vi.restoreAllMocks());
+
+  function renderWithCenter(children: React.ReactNode = <Sidebar />) {
+    return render(
+      <MotionProvider>
+        <CommandCenter>{children}</CommandCenter>
+      </MotionProvider>,
+    );
+  }
+
+  it("is hidden without a CommandCenter", () => {
+    render(<Sidebar />);
+    expect(screen.queryByRole("button", { name: "Go to page" })).not.toBeInTheDocument();
+  });
+
+  it("expanded: a search-field button with the Ctrl K hint that opens the palette", async () => {
+    renderWithCenter();
+    const button = screen.getByRole("button", { name: "Go to page" });
+    expect(button).toHaveAttribute("data-tour", "shell-command-palette");
+    expect(button).toHaveAttribute("aria-keyshortcuts", "Control+K Meta+K");
+    expect(button).toHaveTextContent("Go to page…");
+    expect(button.querySelector("kbd")).toHaveTextContent("Ctrl K");
+    // Sits above the nav, not inside it.
+    expect(screen.getByRole("navigation", { name: "Main" })).not.toContainElement(button);
+    fireEvent.click(button);
+    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+  });
+
+  it("shows ⌘K on Apple platforms", async () => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    renderWithCenter();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Go to page" }).querySelector("kbd")).toHaveTextContent("⌘K"));
+  });
+
+  it("collapsed: an icon button with a tooltip", () => {
+    renderWithCenter();
+    fireEvent.click(screen.getByTitle("Collapse sidebar"));
+    const button = screen.getByRole("button", { name: "Go to page" });
+    expect(button).toHaveAttribute("title", "Go to page (Ctrl K)");
+    expect(button.querySelector("kbd")).toBeNull();
+  });
+
+  it("Ctrl+K still toggles the palette", async () => {
+    renderWithCenter();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+  });
+
+  it("mobile drawer offers it at the top and closes itself before opening the palette", async () => {
+    renderWithCenter(
+      <MobileNavProvider>
+        <MobileTopBar />
+        <Sidebar />
+      </MobileNavProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Go to page" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).not.toBeInTheDocument());
+    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("combobox")).toHaveFocus());
   });
 });
 

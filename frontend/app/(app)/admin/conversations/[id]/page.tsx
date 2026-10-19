@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { CircleDollarSign, Clock, FlaskConical, Hash, MessagesSquare, Search, User } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { StatCard } from "@/components/admin/insights/StatCard";
+import { TableCard } from "@/components/admin/TableCard";
+import { TableToolbar } from "@/components/admin/TableToolbar";
+import { Pagination } from "@/components/admin/Pagination";
+import { NO_IP_HINT } from "@/lib/audience-routes";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { StackedBar, type BarSegment } from "@/components/charts/StackedBar";
 import { Waterfall, type WaterfallStep } from "@/components/charts/Waterfall";
@@ -20,7 +24,6 @@ import { focusRing, secondaryButton } from "@/components/ui/styles";
 import {
   ToneChip,
   errorMessage,
-  formatDateTime,
   formatMs,
   formatUsd,
   outcomeTone,
@@ -31,9 +34,12 @@ import { useCan } from "@/lib/use-can";
 import { useApiMutation, useApiQuery } from "@/lib/query-cache";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { usePrefersReducedMotion } from "@/lib/motion";
-import { useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
+import { AUDIENCE_PAGE_LABEL, conversationsHref, useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
+import { useClientTable } from "@/lib/use-client-table";
 import { buildTurns, type TurnView } from "@/components/admin/entity/turns";
 import {
+  OUTCOMES,
+  OUTCOME_LABELS,
   STAGES,
   STAGE_LABELS,
   getConversation,
@@ -49,6 +55,9 @@ const QueryInspectorDrawer = dynamic(
 );
 
 const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
+
+const OUTCOME_FILTER = [{ label: "All outcomes", value: "all" }, ...OUTCOMES.map((o) => ({ label: OUTCOME_LABELS[o], value: o }))];
+const turnText = (t: TurnView) => `${t.question ?? ""} ${t.answer ?? ""}`;
 
 type TokenRow = { turn: string; turnIndex: number; prompt: number; cached_prompt: number; completion: number; reasoning: number };
 
@@ -72,6 +81,18 @@ function ConversationDetailContent() {
   const hasDetail = (detail.data?.turns?.length ?? 0) > 0;
   const conversation = detail.data?.conversation;
 
+  const [outcome, setOutcome] = useState("all");
+  const outcomeFilter = useCallback((t: TurnView) => outcome === "all" || t.detail?.outcome === outcome, [outcome]);
+  const turnsTable = useClientTable(turns, { searchText: turnText, filter: outcomeFilter });
+  const { filtered: filteredTurns, pageSize: turnsPageSize, setPage: setTurnsPage } = turnsTable;
+
+  // `?turn=` opens the page that holds the turn (then the effect below scrolls to it).
+  useEffect(() => {
+    if (focusTurn === null) return;
+    const idx = filteredTurns.findIndex((t) => t.turnIndex === focusTurn);
+    if (idx >= 0) setTurnsPage(Math.floor(idx / turnsPageSize) + 1);
+  }, [focusTurn, filteredTurns, turnsPageSize, setTurnsPage]);
+
   const selected = useMemo(
     () => turns.find((t) => t.turnIndex === focusTurn) ?? turns.find((t) => t.detail !== null) ?? null,
     [focusTurn, turns],
@@ -84,7 +105,7 @@ function ConversationDetailContent() {
     if (!el) return;
     el.scrollIntoView?.({ block: "center", behavior: reducedMotion ? "auto" : "smooth" });
     el.focus({ preventScroll: true });
-  }, [focusTurn, turns.length, reducedMotion]);
+  }, [focusTurn, turns.length, turnsTable.page, reducedMotion]);
 
   const selectTurn = useCallback((turnIndex: number) => set({ turn: turnIndex }), [set]);
   const openInspector = useCallback((requestId: string | null) => {
@@ -153,7 +174,7 @@ function ConversationDetailContent() {
           title="Conversation"
           icon={MessagesSquare}
           showAudienceTabs={false}
-          breadcrumb={[{ label: "Conversations", href: "/admin/conversations" }, { label: id || "Unknown" }]}
+          breadcrumb={[{ label: AUDIENCE_PAGE_LABEL, href: carry(conversationsHref()) }, { label: id || "Unknown" }]}
         />
         <div className="p-8">
           {isAbsent(detail.error) ? (
@@ -161,7 +182,7 @@ function ConversationDetailContent() {
               title="Conversation not found"
               description="It may have expired or been deleted."
               action={
-                <Link href="/admin/conversations" className={secondaryButton}>
+                <Link href={carry(conversationsHref())} className={secondaryButton}>
                   Back to Conversations
                 </Link>
               }
@@ -182,27 +203,44 @@ function ConversationDetailContent() {
         title={title}
         icon={MessagesSquare}
         showAudienceTabs={false}
-        breadcrumb={[{ label: "Conversations", href: "/admin/conversations" }, { label: title }]}
+        breadcrumb={[{ label: AUDIENCE_PAGE_LABEL, href: carry(conversationsHref()) }, { label: title }]}
+        actions={
+          conversation.created_ip ? (
+            <Link href={carry(visitorDetailHref(`client-${conversation.created_ip}`))} className={secondaryButton} title="Open this conversation's visitor">
+              <User {...ICON} />
+              <span className="hidden lg:inline">View visitor</span>
+            </Link>
+          ) : undefined
+        }
       />
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="conversations-detail-stats">
           <StatCard
             title="Visitor"
-            value={conversation.created_ip || "—"}
-            icon={User}
-            badge={
+            value={
               conversation.created_ip ? (
                 <Link
                   href={carry(visitorDetailHref(`client-${conversation.created_ip}`))}
-                  className={`rounded text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+                  className={`rounded font-mono text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
                 >
-                  View visitor
+                  {conversation.created_ip}
                 </Link>
-              ) : undefined
+              ) : (
+                <span className="text-fg-subtle" title={NO_IP_HINT}>
+                  Not recorded
+                </span>
+              )
             }
+            subtitle={conversation.created_ip ? "Client IP · select to open the visitor" : "No client IP was captured"}
+            icon={User}
           />
-          <StatCard title="Started" value={formatDateTime(conversation.created_at)} subtitle={`Last activity ${formatDateTime(conversation.last_activity_at)}`} icon={Clock} />
+          <StatCard
+            title="Started"
+            value={<RelativeTime value={conversation.created_at} />}
+            subtitle={<RelativeTime value={conversation.last_activity_at} prefix="Last activity " />}
+            icon={Clock}
+          />
           <StatCard title="Turns" value={turns.length} subtitle={`${detail.data.message_count} messages`} icon={Hash} />
           <StatCard
             title="Cost"
@@ -230,6 +268,9 @@ function ConversationDetailContent() {
               data={stageSteps}
               formatValue={formatMs}
               onSelect={() => openInspector(selected?.requestId ?? null)}
+              xAxisLabel="Milliseconds from request start"
+              yAxisLabel="Stage"
+              valueLabel="Duration"
               label="Stage latency for the selected turn"
             />
           </ChartCard>
@@ -260,16 +301,56 @@ function ConversationDetailContent() {
                 { key: "reasoning", label: "Reasoning" },
               ]}
               onSelect={(seg: BarSegment<TokenRow>) => selectTurn(seg.row.turnIndex)}
+              xAxisLabel="Turn"
+              yAxisLabel="Tokens"
               label="Tokens per turn"
             />
           </ChartCard>
         </div>
 
-        <section aria-label="Turns" className="space-y-4" data-tour="conversations-detail-turns">
+        <div data-tour="conversations-detail-turns">
+        <TableCard
+          toolbar={
+            <TableToolbar
+              title="Turns"
+              countLabel={`${turnsTable.total.toLocaleString()} of ${turns.length.toLocaleString()} turn${turns.length === 1 ? "" : "s"}`}
+              search={turnsTable.search}
+              onSearchChange={turnsTable.setSearch}
+              searchPlaceholder="Search questions and answers…"
+              filters={[
+                {
+                  id: "outcome",
+                  label: "Outcome",
+                  value: outcome,
+                  options: OUTCOME_FILTER,
+                  onChange: (v) => {
+                    setOutcome(v || "all");
+                    turnsTable.setPage(1);
+                  },
+                },
+              ]}
+            />
+          }
+          pagination={
+            turns.length > 0 ? (
+              <Pagination
+                page={turnsTable.page}
+                pageCount={turnsTable.pageCount}
+                totalItems={turnsTable.total}
+                pageSize={turnsTable.pageSize}
+                onPageChange={turnsTable.setPage}
+                onPageSizeChange={turnsTable.setPageSize}
+              />
+            ) : undefined
+          }
+        >
+        <section aria-label="Turns" className="space-y-4 p-4 sm:p-5">
           {turns.length === 0 ? (
             <EmptyState title="No messages found" />
+          ) : turnsTable.paged.length === 0 ? (
+            <EmptyState compact title="No turns match the search or outcome filter" />
           ) : (
-            turns.map((t) => (
+            turnsTable.paged.map((t) => (
               <TurnCard
                 key={t.turnIndex}
                 turn={t}
@@ -284,6 +365,8 @@ function ConversationDetailContent() {
             ))
           )}
         </section>
+        </TableCard>
+        </div>
       </div>
 
       {inspect && token ? (

@@ -90,6 +90,15 @@ class CostDay(BaseModel):
     queries: int
 
 
+class ActivityDay(BaseModel):
+    """Per-day counts behind the visitor KPI sparklines (UTC days)."""
+
+    day: str
+    sessions: int
+    queries: int
+    feedback: int
+
+
 class TimelineFeedback(BaseModel):
     id: str
     message_id: str

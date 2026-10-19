@@ -8,12 +8,14 @@ import {
   ChartEmpty,
   ChartFrame,
   TooltipBody,
+  fitText,
   formatCompact,
   scaleLinear,
   useChartMarks,
   type ChartSize,
   type SelectHandler,
 } from "./primitives";
+import { AxisTitles, axisDescription, titleInsets, type AxisLabelProps } from "./cartesian";
 
 export interface WaterfallStep {
   label: string;
@@ -24,12 +26,17 @@ export interface WaterfallStep {
   tone?: keyof ChartTheme["status"];
 }
 
-export interface WaterfallProps {
+/** `xAxisLabel` titles the value (time / amount) axis, `yAxisLabel` the stage column. */
+export interface WaterfallProps extends AxisLabelProps {
   data: readonly WaterfallStep[];
   onSelect?: SelectHandler<WaterfallStep>;
   label?: string;
   height?: number;
   formatValue?: (value: number) => string;
+  /** Width of the stage label column in px (default 110); capped to 35 % of the chart on narrow screens. */
+  labelWidth?: number;
+  /** Tooltip name of the bar value (default "Value"), e.g. "Duration". */
+  valueLabel?: string;
 }
 
 const LABEL_WIDTH = 110;
@@ -42,7 +49,12 @@ export function Waterfall({
   label = "Waterfall",
   height,
   formatValue = formatCompact,
+  valueLabel = "Value",
+  labelWidth = LABEL_WIDTH,
+  xAxisLabel,
+  yAxisLabel,
 }: WaterfallProps) {
+  const titles = { xAxisLabel, yAxisLabel };
   const ct = useChartTheme();
   const describe = useCallback(
     (d: WaterfallStep) => `${d.label}: ${formatValue(d.value)}`,
@@ -68,10 +80,13 @@ export function Waterfall({
     d.tone ? ct.status[d.tone] : d.value < 0 ? ct.status.danger : ct.categorical[0];
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const labelW = Math.min(LABEL_WIDTH, width * 0.35);
+    const inset = titleInsets(titles);
+    const labelW = inset.left + Math.min(labelWidth, (width - inset.left) * 0.35);
     const x = scaleLinear([lo, hi], [labelW + 8, Math.max(labelW + 9, width - 48)]);
-    const rowH = h / data.length;
-    return { labelW, x, rowH };
+    const rowsH = Math.max(1, h - inset.bottom);
+    const rowH = rowsH / data.length;
+    const titleArea = { x0: labelW + 8, x1: Math.max(labelW + 9, width - 48), y0: 0, y1: rowsH };
+    return { labelW, x, rowH, rowsH, titleArea, labelInset: inset.left };
   };
 
   const tooltip = (size: ChartSize) => {
@@ -85,8 +100,9 @@ export function Waterfall({
       content: (
         <TooltipBody
           title={d.label}
+          caption={xAxisLabel}
           rows={[
-            { label: "Value", value: formatValue(d.value), color: colorFor(d) },
+            { label: valueLabel, value: formatValue(d.value), color: colorFor(d) },
             { label: "Starts at", value: formatValue(d.value < 0 ? b : a) },
           ]}
         />
@@ -95,13 +111,14 @@ export function Waterfall({
   };
 
   return (
-    <ChartFrame label={label} height={height} tooltip={tooltip}>
+    <ChartFrame label={label} height={height} tooltip={tooltip} description={axisDescription(titles)}>
       {(size) => {
-        const { labelW, x, rowH } = layout(size);
+        const { labelW, x, rowH, rowsH, titleArea, labelInset: inset } = layout(size);
         const barH = Math.max(2, rowH * (1 - ROW_GAP));
         return (
           <>
-            <line x1={x(lo)} x2={x(lo)} y1={0} y2={size.height} stroke={ct.grid} aria-hidden="true" />
+            <AxisTitles {...titles} area={titleArea} height={size.height} ct={ct} />
+            <line x1={x(lo)} x2={x(lo)} y1={0} y2={rowsH} stroke={ct.grid} aria-hidden="true" />
             {data.map((d, i) => {
               const [a, b] = spans[i];
               const cy = rowH * i + rowH / 2;
@@ -116,7 +133,8 @@ export function Waterfall({
                     fontSize={AXIS_FONT_SIZE}
                     fill={ct.axis}
                   >
-                    {d.label}
+                    <title>{d.label}</title>
+                    {fitText(d.label, labelW - inset - 4)}
                   </text>
                   <rect
                     x={x(a)}

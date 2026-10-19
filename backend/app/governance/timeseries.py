@@ -170,7 +170,27 @@ _LATENCY_KEYS = (
     "p95_ms",
     "recent_count",
     "recent_p95_ms",
+    "pipeline_requests",
+    "pipeline_p50_ms",
+    "pipeline_p95_ms",
 )
+# Stage columns that only RAG pipeline queries fill (see ``pipeline_sql``).
+PIPELINE_COLUMNS: tuple[str, ...] = (
+    "guardrail_pre_ms",
+    "embedding_ms",
+    "retrieval_ms",
+    "llm_ms",
+)
+
+
+def pipeline_sql() -> Any:
+    """True for latency rows of queries that ran the RAG pipeline.
+
+    Conversational intercepts ("hi", "thanks") answer in a few ms without
+    touching a stage, so mixing them into the percentiles made p50 read
+    "3.4 ms" next to a p95 of seconds. Pipeline rows always time a stage.
+    """
+    return or_(*(getattr(LatencyRecord, col).isnot(None) for col in PIPELINE_COLUMNS))
 
 
 async def latency_rollup(
@@ -180,6 +200,7 @@ async def latency_rollup(
     recent = case(
         (LatencyRecord.created_at >= recent_since, LatencyRecord.total_ms), else_=None
     )
+    piped = case((pipeline_sql(), LatencyRecord.total_ms), else_=None)
     stmt = (
         select(
             hour,
@@ -190,6 +211,9 @@ async def latency_rollup(
             func.percentile_cont(0.95).within_group(LatencyRecord.total_ms),
             func.count(recent),
             func.percentile_cont(0.95).within_group(recent),
+            func.count(piped),
+            func.percentile_cont(0.5).within_group(piped),
+            func.percentile_cont(0.95).within_group(piped),
         )
         .select_from(LatencyRecord)
         .where(LatencyRecord.created_at >= start)

@@ -59,6 +59,8 @@ describe("KPI formatting and labels (G7)", () => {
 
   it("labels each count with its window and source", () => {
     expect(windowSourceLabel("24h", "latency_metrics")).toBe("24h · latency records");
+    // Overall p50 and p95 share this source, so both hints say the same population.
+    expect(windowSourceLabel("24h", "latency_metrics.pipeline")).toBe("24h · RAG queries");
     expect(windowSourceLabel("since_process_start", "in_memory_counter")).toBe("since restart · process counter");
     expect(windowSourceLabel("today_utc", "chat_messages.cost_usd")).toMatch(/^since 00:00 UTC · /);
     expect(windowSourceLabel("24h", "chat_messages.outcome+audit_log.server_error")).toBe(

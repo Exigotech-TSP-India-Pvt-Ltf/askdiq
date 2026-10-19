@@ -132,8 +132,8 @@ describe("DashboardHeader utilities", () => {
     render(<DashboardHeader title="Dashboard" icon={LayoutDashboard} />);
     expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /account menu for jane doe/i })).toBeInTheDocument();
-    // Without a CommandCenter there is no palette button to show.
-    expect(screen.queryByRole("button", { name: "Open command palette" })).not.toBeInTheDocument();
+    // The go-to-page (palette) trigger lives in the sidebar now, never in the header.
+    expect(screen.queryByRole("button", { name: /go to page|command palette/i })).not.toBeInTheDocument();
   });
 });
 

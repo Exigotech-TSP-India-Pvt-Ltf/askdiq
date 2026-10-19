@@ -6,7 +6,7 @@ import { arcPath } from "./arc";
 import { useInsightsPalette } from "./colors";
 
 export interface HourOfDayChartProps {
-  /** 24 counts, index = hour in the viewer's zone. */
+  /** 24 counts, index = hour in the viewer's zone (local time). */
   hours: readonly number[];
   height?: number;
 }
@@ -57,7 +57,13 @@ export function HourOfDayChart({ hours, height = 300 }: HourOfDayChartProps) {
         return {
           x: cx + r * Math.sin(a),
           y: cy - r * Math.cos(a),
-          content: <TooltipBody title={`${d.hour}:00 – ${d.hour + 1}:00`} rows={[{ label: "Questions", value: String(d.value) }]} />,
+          content: (
+            <TooltipBody
+              title={`${d.hour}:00 – ${d.hour + 1}:00`}
+              caption="Hour of day (local time)"
+              rows={[{ label: "Questions", value: String(d.value) }]}
+            />
+          ),
         };
       }}
     >

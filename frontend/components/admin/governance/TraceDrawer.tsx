@@ -100,7 +100,14 @@ function TraceBody({ detail }: { detail: GovernanceTraceDetail }) {
 
       <Section title="Stage waterfall">
         {steps.length > 0 ? (
-          <Waterfall data={steps} label="Pipeline stages" height={Math.max(120, steps.length * 34)} formatValue={formatMs} />
+          <Waterfall
+            data={steps}
+            label="Pipeline stages"
+            height={Math.max(120, steps.length * 34) + 16}
+            formatValue={formatMs}
+            valueLabel="Duration"
+            xAxisLabel="Elapsed time since request start"
+          />
         ) : (
           <p className="text-xs text-fg-subtle">No stage timings were recorded.</p>
         )}

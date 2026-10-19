@@ -38,6 +38,10 @@ const nextConfig = {
     return [
       { source: "/admin/evaluation", destination: "/admin/evaluation-live", permanent: false },
       { source: "/evaluation", destination: "/admin/evaluation-live", permanent: false },
+      // Visitors + Conversation Logs merged into one page (query strings pass through;
+      // detail pages /admin/users/:id and /admin/conversations/:id are unchanged).
+      { source: "/admin/users", destination: "/admin/visitors", permanent: false },
+      { source: "/admin/conversations", destination: "/admin/visitors?tab=conversations", permanent: false },
     ];
   },
   async headers() {

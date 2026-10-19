@@ -9,7 +9,7 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
-  { keys: ["Ctrl / ⌘", "K"], description: "Open the command palette", group: "Global" },
+  { keys: ["Ctrl / ⌘", "K"], description: "Go to page (open the command palette)", group: "Global" },
   { keys: ["Ctrl / ⌘", "/"], description: "Open or close the assistant chat drawer", group: "Global" },
   { keys: ["?"], description: "Show keyboard shortcuts", group: "Global" },
   { keys: ["↑", "↓"], description: "Move through palette results", group: "Overlays" },
@@ -41,4 +41,15 @@ export function isHelpShortcut(event: KeyboardEvent): boolean {
 /** Ctrl+/ on Windows / Linux, Cmd+/ on macOS: toggles the assistant chat drawer (works in fields). */
 export function isAskShortcut(event: KeyboardEvent): boolean {
   return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === "/";
+}
+
+/** True on macOS / iOS, where the palette shortcut is Cmd+K (client only; false during SSR). */
+export function isApplePlatform(nav: Pick<Navigator, "platform" | "userAgent"> | undefined = typeof navigator === "undefined" ? undefined : navigator): boolean {
+  if (!nav) return false;
+  return /mac|iphone|ipad|ipod/i.test(nav.platform || nav.userAgent || "");
+}
+
+/** Visible key hint for the palette shortcut: "⌘K" on Apple platforms, "Ctrl K" elsewhere. */
+export function paletteShortcutLabel(apple: boolean): string {
+  return apple ? "⌘K" : "Ctrl K";
 }

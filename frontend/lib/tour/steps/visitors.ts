@@ -5,9 +5,15 @@ export const visitorsTour: PageTour = {
   title: "Visitors",
   steps: [
     {
-      title: "Welcome to Visitors",
-      body: "Visitors shows who is using the assistant, identified by client IP: how many, how often they return, when they are active and what each one did. Use it to understand reach and to keep internal test traffic apart from real users.",
+      title: "Welcome to Visitors & Conversations",
+      body: "This page has two tabs. Visitors (this tour) shows who is using the assistant, identified by client IP: how many, how often they return, when they are active and what each one did. Conversations holds the conversation logs. Use it to understand reach and to keep internal test traffic apart from real users.",
       placement: "center",
+    },
+    {
+      target: '[data-tour="audience-tabs"]',
+      title: "Visitors and Conversations tabs",
+      body: "Switch between visitors and their conversations. Both tabs share the audience and date range, and a visitor's conversations icon opens the Conversations tab filtered to that IP.",
+      placement: "bottom",
     },
     {
       target: '[data-tour="visitors-header"]',

@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
+import {
+  RECHARTS_AXIS_TITLE_SPACE,
+  chartTooltipStyle,
+  rechartsAxisLabel,
+  useChartTheme,
+} from "@/lib/use-chart-theme";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { useDeepLink } from "@/lib/use-deep-link";
@@ -32,6 +37,7 @@ import { Pagination, type PageSize } from "@/components/admin/Pagination";
 import { EvaluationRecordDrawer } from "@/components/admin/EvaluationRecordDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
+import { JudgeDisabledState, hasJudgedSamples } from "@/components/admin/evaluation/JudgeDisabledState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import {
   Bar,
@@ -60,6 +66,8 @@ const PassRateTrendCard = dynamic(
 
 const pct = (v: unknown) =>
   typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—";
+/** Percent, or "Not measured" when the server sends null (no dash-only cards). */
+const pctOrUnmeasured = (v: unknown) => (typeof v === "number" ? pct(v) : "Not measured");
 const num = (v: unknown, d = 2) =>
   typeof v === "number" ? v.toFixed(d) : "—";
 const ms = formatLatencyMs;
@@ -90,9 +98,13 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md px-4 py-3.5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
       <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">{label}</p>
-      <p className={`mt-1 text-xl font-black font-mono tracking-tight tabular-nums ${isPct ? statusColor(value) : "text-slate-900 dark:text-white"}`}>
-        {value}
-      </p>
+      {value === "Not measured" ? (
+        <p className="mt-2 text-sm font-semibold text-fg-subtle">{value}</p>
+      ) : (
+        <p className={`mt-1 whitespace-nowrap text-xl font-black font-mono tracking-tight tabular-nums ${isPct ? statusColor(value) : "text-slate-900 dark:text-white"}`}>
+          {value}
+        </p>
+      )}
       {pctNum !== null && (
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-chart-track">
           <div
@@ -372,15 +384,22 @@ export default function EvaluationLivePage() {
               ])}
               >
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={caseTypeBars}>
+                  <BarChart data={caseTypeBars} margin={{ top: 5, right: 5, bottom: RECHARTS_AXIS_TITLE_SPACE, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
-                    <XAxis dataKey="type" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
+                    <XAxis
+                      dataKey="type"
+                      tick={{ fontSize: 11, fill: ct.axis }}
+                      axisLine={false}
+                      tickLine={false}
+                      label={rechartsAxisLabel(ct, "Query type", "x")}
+                    />
                     <YAxis
                       tick={{ fontSize: 11, fill: ct.axis }}
                       axisLine={false}
                       tickLine={false}
-                      width={30}
+                      width={30 + RECHARTS_AXIS_TITLE_SPACE}
                       domain={[0, 100]}
+                      label={rechartsAxisLabel(ct, "Pass rate (%)", "y")}
                     />
                     <Tooltip
                       contentStyle={tooltipStyle}
@@ -408,13 +427,25 @@ export default function EvaluationLivePage() {
               ])}
               >
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={latencyBars}>
+                  <BarChart data={latencyBars} margin={{ top: 5, right: 5, bottom: RECHARTS_AXIS_TITLE_SPACE, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
-                    <XAxis dataKey="stage" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} width={40} />
+                    <XAxis
+                      dataKey="stage"
+                      tick={{ fontSize: 11, fill: ct.axis }}
+                      axisLine={false}
+                      tickLine={false}
+                      label={rechartsAxisLabel(ct, "Pipeline stage", "x")}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: ct.axis }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={40 + RECHARTS_AXIS_TITLE_SPACE}
+                      label={rechartsAxisLabel(ct, "Latency (seconds)", "y")}
+                    />
                     <Tooltip
                       contentStyle={tooltipStyle}
-                      formatter={(v) => [`${v} s`, ""]}
+                      formatter={(v, name) => [`${v} s`, name]}
                     />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <Bar dataKey="p50" name="p50" fill={ct.categorical[0]} radius={[4, 4, 0, 0]} />
@@ -447,7 +478,12 @@ export default function EvaluationLivePage() {
         {/* Domain Tab 2: Semantic Quality & Citations */}
         {activeTab === "judge" && (
           <div className="space-y-6 animate-in fade-in duration-200">
-            {/* LLM Judge Hero Metrics */}
+            {/* LLM Judge Hero Metrics (empty state while the online judge has scored nothing) */}
+            {!hasJudgedSamples(r) ? (
+              <div data-tour="evaluation-judge-kpis">
+                <JudgeDisabledState />
+              </div>
+            ) : (
             <div data-tour="evaluation-judge-kpis" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <HeroStat
                 label="Faithfulness (LLM Judge)"
@@ -465,6 +501,7 @@ export default function EvaluationLivePage() {
                 icon={CheckCircle2}
               />
             </div>
+            )}
 
             {/* Citation & Attribution Matrix */}
             <div data-tour="evaluation-judge-citations" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
@@ -479,14 +516,15 @@ export default function EvaluationLivePage() {
                 </span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
-                <Stat label="Citation Precision" value={pct(r?.citation?.precision)} />
-                <Stat label="Citation Coverage" value={pct(r?.citation?.coverage)} />
-                <Stat label="Correct Document" value={r?.citation?.quality?.correct_document === true ? "100.0%" : "—"} />
-                <Stat label="Current Version" value={r?.citation?.quality?.current_version === true ? "100.0%" : "—"} />
+                <Stat label="Citation Precision" value={pctOrUnmeasured(r?.citation?.precision)} />
+                <Stat label="Citation Coverage" value={pctOrUnmeasured(r?.citation?.coverage)} />
+                <Stat label="Correct Document" value={r?.citation?.quality?.correct_document === true ? "100.0%" : "Not measured"} />
+                <Stat label="Current Version" value={r?.citation?.quality?.current_version === true ? "100.0%" : "Not measured"} />
               </div>
             </div>
 
             {/* Semantic Quality Insights */}
+            {hasJudgedSamples(r) && (
             <div data-tour="evaluation-judge-rationale" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-teal-50/30 dark:bg-teal-950/20 backdrop-blur-md p-6 shadow-card dark:shadow-xl space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-teal-900 dark:text-teal-300 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
@@ -500,6 +538,7 @@ export default function EvaluationLivePage() {
                 Without the LLM judge (ONLINE_EVAL_ENABLED) faithfulness is a heuristic, not a judged score.
               </p>
             </div>
+            )}
           </div>
         )}
 

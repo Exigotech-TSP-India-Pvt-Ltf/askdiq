@@ -128,6 +128,18 @@ def _kpi(
     }
 
 
+def latency_population(lat: timeseries.Rollup) -> tuple[tuple[str, str], str]:
+    """(p50 key, p95 key) and source for the latency KPIs.
+
+    Both percentiles always come from the same rows: RAG pipeline queries when
+    the window has any (instant conversational replies would drag p50 to a few
+    ms while p95 stays in seconds), else every latency row.
+    """
+    if int(lat.total.get("pipeline_requests") or 0) > 0:
+        return ("pipeline_p50_ms", "pipeline_p95_ms"), "latency_metrics.pipeline"
+    return ("p50_ms", "p95_ms"), "latency_metrics"
+
+
 def build_kpis(
     starts: list[datetime],
     lat: timeseries.Rollup,
@@ -147,6 +159,7 @@ def build_kpis(
     grounded = hourly(turns, "grounded")
     known = hourly(turns, "grounded_known")
     turns_src = "chat_messages"
+    lat_keys, lat_src = latency_population(lat)
     return {
         "requests": _kpi(
             requests, None, [p["requests"] for p in series], f"{turns_src}+audit_log"
@@ -158,16 +171,16 @@ def build_kpis(
             f"{turns_src}.outcome+audit_log.server_error",
         ),
         "latency_p50": _kpi(
-            lt.get("p50_ms"),
+            lt.get(lat_keys[0]),
             LATENCY_UNIT,
-            hourly(lat, "p50_ms", None),
-            "latency_metrics",
+            hourly(lat, lat_keys[0], None),
+            lat_src,
         ),
         "latency_p95": _kpi(
-            lt.get("p95_ms"),
+            lt.get(lat_keys[1]),
             LATENCY_UNIT,
-            hourly(lat, "p95_ms", None),
-            "latency_metrics",
+            hourly(lat, lat_keys[1], None),
+            lat_src,
         ),
         "active_users": _kpi(
             int(visitors.total.get(active_visitors.VISITORS) or 0),

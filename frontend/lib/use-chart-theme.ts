@@ -47,3 +47,19 @@ export function chartTooltipStyle(ct: ChartTheme): React.CSSProperties {
     fontSize: 12,
   };
 }
+
+/** Extra px a Recharts axis needs for a title (add to the YAxis `width` / chart bottom margin). */
+export const RECHARTS_AXIS_TITLE_SPACE = 16;
+
+/**
+ * Recharts axis title (XAxis / YAxis `label` prop) styled like the chart kit:
+ * 11 px, axis colour, y title rotated on the left. Give the YAxis
+ * `RECHARTS_AXIS_TITLE_SPACE` more width, and the chart that much more bottom
+ * margin for an x title.
+ */
+export function rechartsAxisLabel(ct: ChartTheme, value: string, axis: "x" | "y") {
+  const style = { fontSize: 11, fontWeight: 500, fill: ct.axis, textAnchor: "middle" as const };
+  return axis === "x"
+    ? { value, position: "insideBottom" as const, offset: -RECHARTS_AXIS_TITLE_SPACE + 4, style }
+    : { value, angle: -90, position: "insideLeft" as const, offset: 4, style };
+}

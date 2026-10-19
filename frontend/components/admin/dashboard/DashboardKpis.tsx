@@ -83,7 +83,7 @@ export const DASHBOARD_KPIS: readonly KpiDef[] = [
     key: "users",
     label: ACTIVE_VISITORS_LABEL,
     icon: Users,
-    href: "/admin/users",
+    href: "/admin/visitors",
     prefetchPath: "/users",
     goodDirection: "up",
     format: (v) => integer.format(v),

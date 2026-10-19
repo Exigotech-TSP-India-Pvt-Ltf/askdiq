@@ -14,14 +14,26 @@ import {
   type SelectHandler,
   type TooltipRow,
 } from "./primitives";
-import { Legend, XLabels, YGrid, linePath, plotArea, pointX, seriesColor, type SeriesDef } from "./cartesian";
+import {
+  AxisTitles,
+  Legend,
+  XLabels,
+  YGrid,
+  axisDescription,
+  linePath,
+  plotArea,
+  pointX,
+  seriesColor,
+  type AxisLabelProps,
+  type SeriesDef,
+} from "./cartesian";
 
 export interface LineSeriesDef<K extends string = string> extends SeriesDef<K> {
   /** Dashed stroke (forecasts, projections). */
   dashed?: boolean;
 }
 
-export interface LineTrendProps<T extends object> {
+export interface LineTrendProps<T extends object> extends AxisLabelProps {
   /** One row per x value; a null / missing value breaks the line. */
   data: readonly T[];
   xKey: Extract<keyof T, string>;
@@ -70,7 +82,10 @@ export function LineTrend<T extends object>({
   label = "Trend chart",
   height,
   formatValue = formatCompact,
+  xAxisLabel,
+  yAxisLabel,
 }: LineTrendProps<T>) {
+  const titles = { xAxisLabel, yAxisLabel };
   const ct = useChartTheme();
   const [hoverSeries, setHoverSeries] = useState<string | null>(null);
   const xLabel = useCallback((row: T) => String((row as Record<string, unknown>)[xKey] ?? ""), [xKey]);
@@ -95,7 +110,7 @@ export function LineTrend<T extends object>({
   if (data.length === 0) return <ChartEmpty height={height} />;
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const area = plotArea(width, h);
+    const area = plotArea(width, h, titles);
     return { area, x: pointX(data.length, area), y: scaleLinear([0, max], [area.y1, area.y0]) };
   };
 
@@ -108,7 +123,7 @@ export function LineTrend<T extends object>({
       return v === null ? [] : [{ label: s.label, value: formatValue(v), color: seriesColor(ct, s, i) }];
     });
     const top = Math.max(0, ...series.map((s) => valueOf(row, s.key) ?? 0));
-    return { x: x(active), y: y(top), content: <TooltipBody title={xLabel(row)} rows={rows} /> };
+    return { x: x(active), y: y(top), content: <TooltipBody title={xLabel(row)} caption={yAxisLabel} rows={rows} /> };
   };
 
   return (
@@ -116,6 +131,7 @@ export function LineTrend<T extends object>({
       label={label}
       height={height}
       tooltip={tooltip}
+      description={axisDescription(titles)}
       footer={<Legend series={series} ct={ct} onHover={setHoverSeries} />}
     >
       {(size) => {
@@ -125,6 +141,7 @@ export function LineTrend<T extends object>({
           <>
             <YGrid area={area} max={max} ct={ct} format={formatValue} />
             <XLabels labels={data.map(xLabel)} xAt={x} area={area} ct={ct} />
+            <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {reference && (
               <g aria-hidden="true">
                 <line

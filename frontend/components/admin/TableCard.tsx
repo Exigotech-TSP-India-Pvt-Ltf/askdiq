@@ -32,42 +32,47 @@ export function TableCard({
   className = "",
 }: TableCardProps) {
   const footer = pagination ?? (cursor ? <CursorPagination {...cursor} /> : null);
-  const hasCardHeader = Boolean(title || description || badge || headerActions);
+  const hasCardHeader = Boolean(title || description || badge);
 
   return (
     <div
       data-testid="table-card"
       className={`${CARD} ${className}`}
     >
-      {/* Optional Top Card Header (Title / Subtitle / Header Actions) */}
-      {hasCardHeader && (
-        <div className={`relative z-20 flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4 ${studioDivider}`}>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              {typeof title === "string" ? (
-                <h2 className={studioTitle}>{title}</h2>
-              ) : (
-                title
+      {/* One header row: title (+ badge, description) on the left, search / filters
+          and header actions on the right, so a table never shows its title in one
+          band and its search alone on the row below. z-30 keeps the filter and
+          column popovers above the table slot (same-z siblings paint in DOM order). */}
+      {hasCardHeader || toolbar ? (
+        <div
+          data-testid="table-card-header"
+          className={`relative z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b px-4 sm:px-5 ${
+            toolbar ? "bg-surface-studio/40 py-3 dark:bg-white/[0.02]" : "py-4"
+          } ${studioDivider}`}
+        >
+          {hasCardHeader ? (
+            <div className="min-w-0 shrink">
+              <div className="flex min-w-0 items-center gap-2.5">
+                {typeof title === "string" ? <h2 className={`truncate ${studioTitle}`}>{title}</h2> : title}
+                {badge}
+              </div>
+              {description && (
+                <p className="mt-0.5 max-w-prose text-xs text-fg-subtle dark:text-brand-200/70">{description}</p>
               )}
-              {badge}
             </div>
-            {description && (
-              <p className="mt-0.5 text-xs text-fg-subtle dark:text-brand-200/70">{description}</p>
-            )}
-          </div>
-          {headerActions && (
-            <div className="flex items-center gap-2">{headerActions}</div>
-          )}
+          ) : null}
+          {toolbar || headerActions ? (
+            <div
+              className={`flex min-w-0 flex-wrap items-center justify-end gap-2 ${hasCardHeader ? "" : "w-full"} ${
+                toolbar ? "flex-1 basis-[22rem]" : ""
+              }`}
+            >
+              {toolbar ? <div className="min-w-0 flex-1">{toolbar}</div> : null}
+              {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
+            </div>
+          ) : null}
         </div>
-      )}
-
-      {/* Toolbar Slot (Integrated Search & Single Filters Popover) */}
-      {toolbar && (
-        // z-30 keeps the filter / column popovers above the table slot below (same-z siblings paint in DOM order).
-        <div className={`relative z-30 border-b bg-surface-studio/40 px-4 py-3 dark:bg-white/[0.02] sm:px-5 ${studioDivider}`}>
-          {toolbar}
-        </div>
-      )}
+      ) : null}
 
       {/* Table Grid Slot */}
       <div className="relative z-10 min-h-[300px] overflow-x-auto">

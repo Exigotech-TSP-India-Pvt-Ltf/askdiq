@@ -20,7 +20,12 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { useApiQuery } from "@/lib/query-cache";
-import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
+import {
+  RECHARTS_AXIS_TITLE_SPACE,
+  chartTooltipStyle,
+  rechartsAxisLabel,
+  useChartTheme,
+} from "@/lib/use-chart-theme";
 import {
   STAGES,
   TRACE_OUTCOMES,
@@ -173,7 +178,7 @@ function StageLatencyChart({ rows }: { rows: StageRow[] }) {
   const byLabel = new Map(rows.map((r) => [r.label, r]));
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
+      <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 4 + RECHARTS_AXIS_TITLE_SPACE, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
         <XAxis
           dataKey="label"
@@ -182,6 +187,7 @@ function StageLatencyChart({ rows }: { rows: StageRow[] }) {
           tickFormatter={(label: string) => (byLabel.get(label)?.avg === null ? `${label} (no data)` : label)}
           axisLine={false}
           tickLine={false}
+          label={rechartsAxisLabel(ct, "Pipeline stage", "x")}
         />
         <YAxis
           domain={[0, ticks[ticks.length - 1]]}
@@ -190,7 +196,8 @@ function StageLatencyChart({ rows }: { rows: StageRow[] }) {
           tick={{ fontSize: 11, fill: ct.axis }}
           axisLine={false}
           tickLine={false}
-          width={width}
+          width={width + RECHARTS_AXIS_TITLE_SPACE}
+          label={rechartsAxisLabel(ct, "Average time", "y")}
         />
         <Tooltip
           contentStyle={chartTooltipStyle(ct)}
@@ -478,7 +485,13 @@ export default function MonitoringView() {
         >
           <div className="flex h-full flex-col">
             <div className="min-h-0 flex-1">
-              <PercentileBand data={stageBand} label="Stage latency percentiles" formatValue={latencyTick} />
+              <PercentileBand
+                data={stageBand}
+                label="Stage latency percentiles"
+                formatValue={latencyTick}
+                xAxisLabel="Pipeline stage"
+                yAxisLabel="Latency"
+              />
             </div>
             {noDataStages.length > 0 ? (
               <p className="mt-1 text-[11px] text-fg-subtle">No data: {noDataStages.join(", ")}</p>
@@ -498,7 +511,13 @@ export default function MonitoringView() {
             { key: "p95", label: "p95", numeric: true, format: nullableMs },
           ])}
         >
-          <PercentileBand data={latencyBand} label="Hourly latency percentiles" formatValue={latencyTick} />
+          <PercentileBand
+            data={latencyBand}
+            label="Hourly latency percentiles"
+            formatValue={latencyTick}
+            xAxisLabel="Hour (local time)"
+            yAxisLabel="End-to-end latency"
+          />
         </ChartCard>
 
         <ChartCard
@@ -517,6 +536,8 @@ export default function MonitoringView() {
             data={traffic}
             xKey="hour"
             label="Requests and errors per hour"
+            xAxisLabel="Hour (local time)"
+            yAxisLabel="Requests per hour"
             series={[
               { key: "ok", label: "Succeeded" },
               { key: "errors", label: "Errors", color: ct.status.danger },
