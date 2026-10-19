@@ -13,9 +13,9 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import VisitorsPage from "@/app/(app)/admin/users/page";
+import VisitorsPage from "@/app/(app)/admin/visitors/page";
 import VisitorDetailPage from "@/app/(app)/admin/users/[id]/page";
-import ConversationsPage from "@/app/(app)/admin/conversations/page";
+import ConversationsPage from "@/app/(app)/admin/visitors/page";
 import ConversationDetailPage from "@/app/(app)/admin/conversations/[id]/page";
 import DocumentsPage from "@/app/(app)/documents/page";
 import DocumentDetailPage from "@/app/(app)/documents/[id]/page";
@@ -78,7 +78,7 @@ const lastCall = (path: string) => callsTo(calls, path).at(-1);
 
 describe("Visitors (newplan §1 row: Users -> Visitors)", () => {
   it("heatmap cell -> /admin/users?weekday=&hour= -> same filter on load", async () => {
-    renderPage(<VisitorsPage />, { url: "/admin/users" });
+    renderPage(<VisitorsPage />, { url: "/admin/visitors" });
     fireEvent.click(await screen.findByRole("button", { name: "Wed 14: 5" }));
     await waitFor(() => expect(history.current()).toBe(visitorsHref({ weekday: 2, hour: 14 })));
 
@@ -91,7 +91,7 @@ describe("Visitors (newplan §1 row: Users -> Visitors)", () => {
   });
 
   it("'View sessions' -> /admin/usage?tab=sessions&ip= -> Usage parses the IP into the Sessions request", async () => {
-    renderPage(<VisitorsPage />, { url: "/admin/users" });
+    renderPage(<VisitorsPage />, { url: "/admin/visitors" });
     const link = await screen.findByRole("link", { name: `View sessions for ${IP}` });
     const href = link.getAttribute("href") ?? "";
     expect(href).toBe(entityHref({ kind: "visitor", id: IP }));
@@ -103,7 +103,7 @@ describe("Visitors (newplan §1 row: Users -> Visitors)", () => {
   });
 
   it("row / IP -> visitor detail -> loads that visitor", async () => {
-    renderPage(<VisitorsPage />, { url: "/admin/users" });
+    renderPage(<VisitorsPage />, { url: "/admin/visitors" });
     const href = (await screen.findByRole("link", { name: IP })).getAttribute("href") ?? "";
     expect(href).toBe(visitorDetailHref(VISITOR_ID));
     renderPage(<VisitorDetailPage />, { url: href });
@@ -152,8 +152,8 @@ describe("Visitor detail (row: sessions, queries, feedback, cost)", () => {
 
 describe("Conversations (row: overview + drawer keeps list state)", () => {
   it("histogram bin and outcome segment URLs round-trip into chips and request params", async () => {
-    renderPage(<ConversationsPage />, { url: "/admin/conversations" });
-    fireEvent.click(await screen.findByRole("button", { name: "1: 80" }));
+    renderPage(<ConversationsPage />, { url: "/admin/visitors?tab=conversations" });
+    fireEvent.click(await screen.findByRole("button", { name: "1: 80 Conversations" }));
     await waitFor(() => expect(history.current()).toBe(conversationsHref({ min_turns: 1, max_turns: 1 })));
     fireEvent.click(screen.getByRole("button", { name: /^10 Oct, LLM failed: 1$/ }));
     await waitFor(() => expect(currentParams().get("outcome")).toBe("llm_failed"));
@@ -167,7 +167,7 @@ describe("Conversations (row: overview + drawer keeps list state)", () => {
   });
 
   it("?preview= opens the drawer on load; Back closes it without touching filters", async () => {
-    renderPage(<ConversationsPage />, { url: `/admin/conversations?ip=${IP}` });
+    renderPage(<ConversationsPage />, { url: `/admin/visitors?tab=conversations&ip=${IP}` });
     fireEvent.click(await screen.findByText("Leave policy"));
     await waitFor(() => expect(currentParams().get("preview")).toBe(CONV_ID));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
@@ -264,13 +264,21 @@ describe("Global state carries across pages", () => {
     expect(session.getAttribute("href")).toBe(`/admin/conversations/${CONV_ID}?range=30d`);
   });
 
+  it("the Conversations tab applies the date range to the list as well as the stats", async () => {
+    renderPage(<ConversationsPage />, { url: "/admin/visitors?tab=conversations&from=2026-10-01&to=2026-10-05" });
+    await waitFor(() => expect(lastCall("/admin/conversations")?.searchParams.get("from")).toBe("2026-10-01"));
+    expect(lastCall("/admin/conversations")?.searchParams.get("to")).toBe("2026-10-05");
+    expect(lastCall("/admin/conversations/stats")?.searchParams.get("from")).toBe("2026-10-01");
+    expect(lastCall("/admin/conversations/stats")?.searchParams.get("to")).toBe("2026-10-05");
+  });
+
   it("the audience scope applies to every entity page", async () => {
     window.localStorage.setItem("askdiq.audience_scope", "users");
     renderPage(
       <AudienceProvider>
         <VisitorsPage />
       </AudienceProvider>,
-      { url: "/admin/users" },
+      { url: "/admin/visitors" },
     );
     await waitFor(() => expect(lastCall("/admin/users")?.searchParams.get("audience")).toBe("users"));
     expect(lastCall("/admin/visitors/stats")?.searchParams.get("audience")).toBe("users");
@@ -279,7 +287,7 @@ describe("Global state carries across pages", () => {
       <AudienceProvider>
         <ConversationsPage />
       </AudienceProvider>,
-      { url: "/admin/conversations" },
+      { url: "/admin/visitors?tab=conversations" },
     );
     await waitFor(() => expect(lastCall("/admin/conversations")?.searchParams.get("audience")).toBe("users"));
     expect(lastCall("/admin/conversations/stats")?.searchParams.get("audience")).toBe("users");

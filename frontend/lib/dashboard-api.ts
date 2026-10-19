@@ -1,7 +1,7 @@
 /**
  * Typed client and contract for the Dashboard aggregations (planchanges4
  * B7.1 / F3.1, newplan §1 and §15.4). The written contract is
- * `frontend/docs/contracts/dashboard-aggregations.md`; keep the two in sync.
+ * `docs/technical/frontend/contracts/dashboard-aggregations.md`; keep the two in sync.
  *
  * Backward compatible by design: every field the backend returns today is
  * kept as is, every new field is optional. The page renders the existing data
@@ -59,7 +59,7 @@ export const DASHBOARD_KPI_KEYS = [
 export type DashboardKpiKey = (typeof DASHBOARD_KPI_KEYS)[number];
 
 /** Outcome keys, the same set as `UsageSummary.quality.outcomes`. */
-export const DASHBOARD_OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed"] as const;
+export const DASHBOARD_OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed", "clarify"] as const;
 export type DashboardOutcome = (typeof DASHBOARD_OUTCOMES)[number];
 
 export type SeriesBucket = "hour" | "day";
@@ -277,8 +277,14 @@ export const dashboardApi = {
       signal,
     ),
   /** Warms a KPI card's target page (admin-relative GET, audience-scoped). */
-  prefetch: (token: string | null, path: string, audience: Audience, signal?: AbortSignal) =>
-    getJson<unknown>(`${path}${buildQuery({ audience: audienceParam(audience) })}`, token, signal),
+  /** `extra` carries the target page's own params (e.g. its date range) so the warmed entry matches. */
+  prefetch: (
+    token: string | null,
+    path: string,
+    audience: Audience,
+    signal?: AbortSignal,
+    extra: Record<string, string | undefined> = {},
+  ) => getJson<unknown>(`${path}${buildQuery({ audience: audienceParam(audience), ...extra })}`, token, signal),
   health: (token: string | null, audience: Audience, signal?: AbortSignal) =>
     getJson<GovernanceHealthOverview>(
       `/governance/overview${buildQuery({ audience: audienceParam(audience) })}`,

@@ -63,6 +63,7 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ),
     ("PUT", "/admin/branding"): Permission.BRANDING_WRITE,
     ("POST", "/admin/branding/assets"): Permission.BRANDING_WRITE,
+    ("PUT", "/admin/models"): Permission.MODELS_WRITE,
     ("POST", "/admin/feedback/bulk"): Permission.FEEDBACK_TRIAGE,
     ("PATCH", "/admin/feedback/{feedback_id}"): Permission.FEEDBACK_TRIAGE,
     ("POST", "/admin/feedback/golden/{case_id}/run"): Permission.FEEDBACK_TRIAGE,
@@ -80,11 +81,14 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/admin/access-requests/bulk-approve"): MANAGE,
     ("POST", "/admin/access-requests/{request_id}/approve"): MANAGE,
     ("POST", "/admin/access-requests/{request_id}/reject"): MANAGE,
+    ("POST", "/admin/alerts/{alert_id}/acknowledge"): Permission.ALERTS_MANAGE,
+    ("POST", "/admin/alerts/{alert_id}/resolve"): Permission.ALERTS_MANAGE,
 }
 # GET routes needing more than dashboard:read.
 EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/usage/export": Permission.USAGE_EXPORT,
     "/admin/branding/defaults": Permission.BRANDING_WRITE,
+    "/admin/models": Permission.MODELS_WRITE,
     "/admin/governance/logs/export.csv": Permission.USAGE_EXPORT,
     "/admin/feedback/export": Permission.FEEDBACK_EXPORT,
     "/auth/me": SIGNED_IN,

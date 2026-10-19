@@ -24,7 +24,7 @@ export const analyticsTour: PageTour = {
     {
       target: '[data-tour="analytics-filters"]',
       title: "Filters",
-      body: "Pick a period, user type, outcome or rating, or search questions, issues and people. Clicking a chart also adds a filter chip here; Clear filters resets them all.",
+      body: "The date range comes from the picker in the page header. Here, pick a user type, outcome or rating, or search questions, issues and people. Clicking a chart also adds a filter chip here; Clear filters resets them (not the date range).",
       placement: "bottom",
     },
     {

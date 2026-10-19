@@ -287,7 +287,8 @@ describe("permission gating", () => {
     data.me = { ...data.me, role: "admin", permissions: ["dashboard:read"] };
     renderPage(undefined, data);
     expect(await screen.findByText("Superadmins only")).toBeInTheDocument();
-    expect(server.callsTo("GET", "/admin/")).toHaveLength(0);
+    // The header bell may poll /admin/alerts (dashboard:read); nothing else.
+    expect(server.callsTo("GET", "/admin/").filter((c) => !c.path.startsWith("/admin/alerts"))).toHaveLength(0);
   });
 
   it("fails closed when /auth/me fails", async () => {
@@ -295,6 +296,7 @@ describe("permission gating", () => {
     server.on("GET /auth/me", () => ({ status: 401, body: { detail: "Not signed in." } }));
     renderWithProviders(<UserManagementPage />);
     expect(await screen.findByText("Could not check your access")).toBeInTheDocument();
-    expect(server.callsTo("GET", "/admin/")).toHaveLength(0);
+    // The header bell may poll /admin/alerts (dashboard:read); nothing else.
+    expect(server.callsTo("GET", "/admin/").filter((c) => !c.path.startsWith("/admin/alerts"))).toHaveLength(0);
   });
 });

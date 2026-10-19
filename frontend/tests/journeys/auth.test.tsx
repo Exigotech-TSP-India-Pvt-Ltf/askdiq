@@ -107,7 +107,7 @@ describe("Auth journey (F1.5)", () => {
     const { rerender } = renderApp(<h1>Chat page</h1>);
     expect(await screen.findByRole("heading", { name: "Chat page" })).toBeInTheDocument();
     const mainNav = screen.getAllByRole("navigation", { name: "Main" })[0];
-    expect(within(mainNav).getAllByRole("link").map((a) => a.textContent)).toEqual(["Chat"]);
+    expect(within(mainNav).getAllByRole("link").map((a) => a.textContent)).toEqual(["AskDIQ"]);
 
     // 2. A dashboard route renders Access Required instead of the page.
     nav.pathname = "/admin";

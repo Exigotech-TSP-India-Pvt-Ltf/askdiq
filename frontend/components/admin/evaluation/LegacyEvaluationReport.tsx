@@ -7,7 +7,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
+import {
+  RECHARTS_AXIS_TITLE_SPACE,
+  chartTooltipStyle,
+  rechartsAxisLabel,
+  useChartTheme,
+} from "@/lib/use-chart-theme";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { CheckCircle2, Target, ShieldCheck, ClipboardCheck, Sparkles } from "lucide-react";
@@ -512,15 +517,22 @@ export function LegacyEvaluationReport() {
           <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
             <ChartCard title="Pass rate by case type" subtitle="Share of cases passing, per category">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={caseTypeBars}>
+                <BarChart data={caseTypeBars} margin={{ top: 5, right: 5, bottom: RECHARTS_AXIS_TITLE_SPACE, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
-                  <XAxis dataKey="type" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
+                  <XAxis
+                    dataKey="type"
+                    tick={{ fontSize: 11, fill: ct.axis }}
+                    axisLine={false}
+                    tickLine={false}
+                    label={rechartsAxisLabel(ct, "Case type", "x")}
+                  />
                   <YAxis
                     tick={{ fontSize: 11, fill: ct.axis }}
                     axisLine={false}
                     tickLine={false}
-                    width={30}
+                    width={30 + RECHARTS_AXIS_TITLE_SPACE}
                     domain={[0, 100]}
+                    label={rechartsAxisLabel(ct, "Pass rate (%)", "y")}
                   />
                   <Tooltip
                     contentStyle={tooltipStyle}
@@ -537,13 +549,25 @@ export function LegacyEvaluationReport() {
 
             <ChartCard title="Latency by stage" subtitle="p50 / p95 / p99 (seconds)">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={latencyBars}>
+                <BarChart data={latencyBars} margin={{ top: 5, right: 5, bottom: RECHARTS_AXIS_TITLE_SPACE, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
-                  <XAxis dataKey="stage" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} width={40} />
+                  <XAxis
+                    dataKey="stage"
+                    tick={{ fontSize: 11, fill: ct.axis }}
+                    axisLine={false}
+                    tickLine={false}
+                    label={rechartsAxisLabel(ct, "Pipeline stage", "x")}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: ct.axis }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={40 + RECHARTS_AXIS_TITLE_SPACE}
+                    label={rechartsAxisLabel(ct, "Latency (seconds)", "y")}
+                  />
                   <Tooltip
                     contentStyle={tooltipStyle}
-                    formatter={(v) => [`${Number(v).toFixed(2)} s`, ""]}
+                    formatter={(v, name) => [`${Number(v).toFixed(2)} s`, name]}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar dataKey="p50" name="p50" fill={ct.categorical[5]} radius={[4, 4, 0, 0]} />

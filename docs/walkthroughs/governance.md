@@ -767,7 +767,7 @@ Any event makes Monitoring refetch, at most once every 5 s.
 
 - The Next proxy streams the backend body straight through (`new NextResponse(res.body)`) and passes on
   `content-type` and `cache-control`. It does **not** pass on `X-Accel-Buffering`.
-- The repo's nginx config (`askdiq.conf`) has a dedicated SSE location for paths ending in `/stream` or
+- The repo's nginx config (`infra/scale-out/askdiq-api.conf`) has a dedicated SSE location for paths ending in `/stream` or
   `/events`, with `proxy_buffering off`, `gzip off` and a 1 h read timeout. That location covers the
   API host.
 - **Not verified:**

@@ -197,6 +197,15 @@ export function OutcomeBadge({ outcome }: { outcome: string }) {
           title="Request blocked by safety, injection, or privacy guardrails"
         />
       );
+    case "clarify":
+      return (
+        <TableBadge
+          label="Clarify"
+          variant="info"
+          icon={HelpCircle}
+          title="Asked the user which topic they meant, with options"
+        />
+      );
     case "conversational":
       return (
         <TableBadge
@@ -219,30 +228,4 @@ export function OutcomeBadge({ outcome }: { outcome: string }) {
     default:
       return <TableBadge label={outcome || "Unknown"} variant="neutral" />;
   }
-}
-
-/** Pre-configured AudienceBadge */
-export function AudienceBadge({
-  isTest,
-  label,
-}: {
-  isTest: boolean;
-  label?: string;
-}) {
-  if (isTest) {
-    return (
-      <TableBadge
-        label={label || "Test"}
-        variant="warning"
-        title="Internal developer test loopback or configured test IP"
-      />
-    );
-  }
-  return (
-    <TableBadge
-      label={label || "Production"}
-      variant="success"
-      title="Verified end-user production traffic"
-    />
-  );
 }

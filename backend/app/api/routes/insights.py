@@ -40,6 +40,7 @@ from app.schemas.insights import (
     MAX_OFFSET,
     MAX_PAGE_SIZE,
     MAX_SEARCH_CHARS,
+    PERSON_PATTERN,
     Audience,
     ConversationDetail,
     ConversationList,
@@ -58,6 +59,7 @@ from app.schemas.insights import (
     InsightsTrend,
     PendingClassification,
     Period,
+    PersonDetail,
     SortDirection,
     TaxonomyCreate,
     TaxonomyList,
@@ -104,6 +106,14 @@ def insights_filters(
     person: str | None = Query(
         None, max_length=16, description="person_id (stable pseudonym)."
     ),
+    visitor: str | None = Query(
+        None,
+        max_length=80,
+        description="Visitors-page id: `client-<ip>` or a user UUID.",
+    ),
+    hour: int | None = Query(
+        None, ge=0, le=23, description="Hour of day (0-23) in `tz`."
+    ),
     q: str | None = Query(None, max_length=MAX_SEARCH_CHARS),
     audience: Audience = Query(Audience.OVERVIEW),
     tz: str | None = Query(
@@ -125,6 +135,8 @@ def insights_filters(
             intent=intent,
             quality=quality,
             person=person,
+            visitor=visitor,
+            hour=hour,
             q=q,
             audience=audience,
             tz=tz or get_settings().insights_timezone,
@@ -182,7 +194,8 @@ async def get_summary(
 ) -> Response:
     """Conversations, substantive questions, handled %, served %, people and
     average questions per conversation (the HTML's ``metrics()``)."""
-    return cached_response(request, await service.summary(filters))
+    summary = InsightsSummary.model_validate(await service.summary(filters))
+    return cached_response(request, summary)
 
 
 @router.get(
@@ -281,8 +294,32 @@ async def get_people(
     filters: InsightsFilters = Depends(insights_filters),
     service: InsightsAnalyticsService = Depends(get_service),
 ) -> InsightsPeople:
-    """People are pseudonyms (P01... per result set); no e-mail or IP is exposed."""
+    """People are pseudonyms (P01... numbered over the audience); no e-mail or IP."""
     return await service.people(filters)
+
+
+@router.get(
+    "/people/{person_id}",
+    response_model=PersonDetail,
+    summary="The visitors and sessions behind one probable person",
+    responses={
+        **READ_ERRORS,
+        404: {"description": "No sessions for this person.", **_PROBLEM},
+    },
+)
+async def get_person(
+    person_id: str = Path(pattern=PERSON_PATTERN, description="person_id."),
+    user: AuthUser = Depends(read_guard),
+    filters: InsightsFilters = Depends(insights_filters),
+    service: InsightsAnalyticsService = Depends(get_service),
+) -> PersonDetail:
+    """How the person is grouped (account e-mail, network or session; the
+    value itself is never returned) and the Visitors-page ids of the IPs
+    their sessions came from. Only the ``audience`` and ``tz`` filters apply."""
+    detail = await service.person(person_id, filters)
+    if detail is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person not found.")
+    return detail
 
 
 @router.get(

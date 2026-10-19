@@ -21,6 +21,42 @@ export interface SourceChunk {
   metadata: Record<string, unknown>;
 }
 
+/** One option of a clarification question, grounded in retrieved documents. */
+export interface ClarificationOption {
+  id: string;
+  label: string;
+  /** One line: what choosing it means. */
+  description?: string;
+  document_ids?: string[];
+  /** Document names the option comes from (shown as a subtle "from:" hint). */
+  sources?: string[];
+}
+
+/** One question of a clarification (one tab of the question card). */
+export interface ClarificationQuestion {
+  id: string;
+  /** Short tab label (at most 12 characters), e.g. "Topic". */
+  header: string;
+  question: string;
+  multi_select?: boolean;
+  options: ClarificationOption[];
+}
+
+/** Questions asked instead of an answer (outcome "clarify"), all in one turn. */
+export interface Clarification {
+  preamble?: string;
+  questions: ClarificationQuestion[];
+  original_query: string;
+  allow_free_text?: boolean;
+}
+
+/** The user's answer to one question, sent back with the follow-up turn. */
+export interface ClarificationAnswer {
+  question_id: string;
+  option_ids: string[];
+  other_text?: string | null;
+}
+
 export interface QueryResponse {
   answer: string;
   sources: SourceChunk[];
@@ -29,12 +65,14 @@ export interface QueryResponse {
   request_id: string;
   latency_ms: number;
   guardrail_flags: string[];
-  /** "answered" | "ungrounded" | "blocked" | "conversational" | "llm_failed" (app/governance/outcomes.py). */
+  /** "answered" | "ungrounded" | "blocked" | "conversational" | "llm_failed" | "clarify" (app/governance/outcomes.py). */
   outcome?: string;
   session_id: string;
   session_title: string;
   user_message_id: string;
   assistant_message_id: string;
+  /** Present only when outcome is "clarify". */
+  clarification?: Clarification | null;
 }
 
 export interface ChatSessionSummary {
@@ -56,6 +94,8 @@ export interface ChatMessageOut {
   grounded?: boolean | null;
   guardrail_flags?: string[] | null;
   feedback_rating?: number | null;
+  outcome?: string | null;
+  clarification?: Clarification | null;
 }
 
 export interface ChatSessionDetail extends ChatSessionSummary {
@@ -74,6 +114,8 @@ export interface ChatMessage {
   feedbackRating?: number | null;
   /** Saved answers' request id (the live `response` carries its own). */
   requestId?: string | null;
+  /** Clarifying question options (live from `response`, or restored from history). */
+  clarification?: Clarification | null;
   /**
    * Session the message is stored in. An expired session rotates to a new one
    * mid-conversation, so the messages above the rotation still belong to the

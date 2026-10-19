@@ -9,6 +9,10 @@
 import { useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { HOURS_PER_DAY, WEEKDAYS, binLabel, type TurnsBin } from "./entity-stats-api";
+import { AUDIENCE_PAGE } from "./audience-routes";
+
+export { AUDIENCE_PAGE, AUDIENCE_PAGE_LABEL, AUDIENCE_TABS, audiencePageHref, parseAudienceTab } from "./audience-routes";
+export type { AudienceTab } from "./audience-routes";
 
 const HOUR = (h: number) => String(h).padStart(2, "0");
 
@@ -28,7 +32,7 @@ export function visitorDetailHref(id: string): string {
 
 /** Visitors filtered by a heatmap cell. */
 export function visitorsHref(filter: { weekday?: number | null; hour?: number | null } = {}): string {
-  return withQuery("/admin/users", { weekday: filter.weekday, hour: filter.hour });
+  return withQuery(AUDIENCE_PAGE, { weekday: filter.weekday, hour: filter.hour });
 }
 
 export function heatFilterLabel(weekday: number, hour: number): string {
@@ -44,9 +48,9 @@ export interface ConversationFilter {
   preview?: string | null;
 }
 
-/** Conversations list, optionally filtered and with a preview drawer open. */
+/** Conversations tab, optionally filtered and with a preview drawer open. */
 export function conversationsHref(filter: ConversationFilter = {}): string {
-  return withQuery("/admin/conversations", { ...filter });
+  return withQuery(AUDIENCE_PAGE, { tab: "conversations", ...filter });
 }
 
 export function turnsFilterLabel(bin: Pick<TurnsBin, "min_turns" | "max_turns">): string {

@@ -2,7 +2,7 @@ import type { PageTour } from "../types";
 
 export const chatTour: PageTour = {
   id: "chat",
-  title: "Chat",
+  title: "AskDIQ",
   steps: [
     {
       placement: "center",
@@ -78,7 +78,7 @@ export const chatTour: PageTour = {
     {
       placement: "center",
       title: "That's Chat",
-      body: "Ask, check the sources, and rate what you get: your thumbs are how answers improve. Admins can see ratings on Feedback, full exchanges on Conversation Logs and the documents behind answers on Documents.",
+      body: "Ask, check the sources, and rate what you get: your thumbs are how answers improve. Admins can see ratings on Feedback, full exchanges on Conversation Logs and the documents behind answers on Knowledge.",
     },
   ],
 };

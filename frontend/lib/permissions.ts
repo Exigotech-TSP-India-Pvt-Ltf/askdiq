@@ -18,12 +18,44 @@ export const PERMISSIONS = [
   "eval:run",
   "testip:write",
   "usage:export",
+  "alerts:manage",
   "users:manage",
   "audit:auth:read",
   "branding:write",
   "taxonomy:write",
+  "models:write",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
+
+const OPERATOR_PERMISSIONS: readonly Permission[] = ["dashboard:read"];
+const ADMIN_PERMISSIONS: readonly Permission[] = [
+  ...OPERATOR_PERMISSIONS,
+  "documents:write",
+  "feedback:triage",
+  "feedback:export",
+  "eval:run",
+  "testip:write",
+  "usage:export",
+  "alerts:manage",
+];
+const SUPERADMIN_PERMISSIONS: readonly Permission[] = [
+  ...ADMIN_PERMISSIONS,
+  "users:manage",
+  "audit:auth:read",
+  "branding:write",
+  "taxonomy:write",
+  "models:write",
+];
+
+/**
+ * The single frontend copy of backend `ROLE_PERMISSIONS` (the API has no list
+ * endpoint; `/auth/me` returns only the caller's set).
+ */
+export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
+  superadmin: SUPERADMIN_PERMISSIONS,
+  admin: ADMIN_PERMISSIONS,
+  operator: OPERATOR_PERMISSIONS,
+};
 
 export const ROLE_LABELS: Record<Role, string> = {
   superadmin: "Superadmin",

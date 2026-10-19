@@ -16,8 +16,15 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.events import TOPIC_CACHE_INVALIDATE, publish_event
+from app.dashboard.snapshots import delete_snapshots
 from app.governance.audit import record_audit_event
 from app.governance.pii import redact_pii
+from app.insights.analytics_service import (
+    INSIGHTS_CACHE_PREFIX,
+    INSIGHTS_KIND_PREFIX,
+    invalidate_insights_cache,
+)
 from app.insights.taxonomy import BotQuality, Intent, Issue, TaxonomyKind
 from app.models.db_models import InsightTaxonomy
 from app.schemas.insights import TaxonomyCreate, TaxonomyUpdate
@@ -90,6 +97,14 @@ class TaxonomyService:
             raise TaxonomyNotFoundError("Taxonomy entry not found.")
         return row
 
+    async def _commit(self) -> None:
+        """Commit with the stored analytics snapshots dropped (labels, groups and
+        flags shape them), then drop the in-process ones everywhere."""
+        await delete_snapshots(self.db, INSIGHTS_KIND_PREFIX)
+        await self.db.commit()
+        invalidate_insights_cache()
+        await publish_event(TOPIC_CACHE_INVALIDATE, INSIGHTS_CACHE_PREFIX)
+
     async def _audit(
         self, audit: AuditContext, action: str, row: InsightTaxonomy, detail: dict
     ) -> None:
@@ -124,7 +139,7 @@ class TaxonomyService:
             await self.db.rollback()
             raise TaxonomyConflictError(_DUPLICATE) from exc
         await self._audit(audit, "insights_taxonomy_created", row, values)
-        await self.db.commit()
+        await self._commit()
         await self.db.refresh(row)
         return row
 
@@ -147,7 +162,7 @@ class TaxonomyService:
             row,
             {"before": before, "after": changes},
         )
-        await self.db.commit()
+        await self._commit()
         await self.db.refresh(row)
         return row
 
@@ -163,7 +178,7 @@ class TaxonomyService:
             row.is_active = False
             row.updated_at = func.now()
             await self._audit(audit, "insights_taxonomy_archived", row, {})
-            await self.db.commit()
+            await self._commit()
             await self.db.refresh(row)
         return row
 
@@ -176,6 +191,6 @@ class TaxonomyService:
             row.is_active = True
             row.updated_at = func.now()
             await self._audit(audit, "insights_taxonomy_unarchived", row, {})
-            await self.db.commit()
+            await self._commit()
             await self.db.refresh(row)
         return row

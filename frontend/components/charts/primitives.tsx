@@ -10,7 +10,7 @@
  * hover or focus shows a card tooltip and dims the other marks.
  */
 import type React from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 export type SelectHandler<T> = (datum: T) => void;
 
@@ -65,10 +65,13 @@ export interface ChartFrameProps {
   children: (size: ChartSize) => React.ReactNode;
   /** HTML rendered under the SVG (legends). */
   footer?: React.ReactNode;
+  /** Longer accessible description (e.g. the axis titles), linked via aria-describedby. */
+  description?: string;
 }
 
 /** Responsive SVG canvas with a themed tooltip card. */
-export function ChartFrame({ label, height, className = "", tooltip, children, footer }: ChartFrameProps) {
+export function ChartFrame({ label, height, className = "", tooltip, children, footer, description }: ChartFrameProps) {
+  const descId = useId();
   const [ref, size] = useElementSize<HTMLDivElement>({
     width: DEFAULT_CHART_WIDTH,
     height: height ?? DEFAULT_CHART_HEIGHT,
@@ -84,11 +87,13 @@ export function ChartFrame({ label, height, className = "", tooltip, children, f
         <svg
           role="group"
           aria-label={label}
+          aria-describedby={description ? descId : undefined}
           width={size.width}
           height={size.height}
           viewBox={`0 0 ${size.width} ${size.height}`}
           className="block overflow-visible"
         >
+          {description && <desc id={descId}>{description}</desc>}
           {children(size)}
         </svg>
         {anchor && (
@@ -113,10 +118,20 @@ export interface TooltipRow {
 }
 
 /** Standard tooltip content: a title and coloured rows. */
-export function TooltipBody({ title, rows }: { title?: string; rows: readonly TooltipRow[] }) {
+export function TooltipBody({
+  title,
+  rows,
+  caption,
+}: {
+  title?: string;
+  rows: readonly TooltipRow[];
+  /** Small measure / unit line under the title, e.g. "Queries per day". */
+  caption?: string;
+}) {
   return (
     <div className="flex flex-col gap-0.5">
-      {title && <p className="mb-0.5 font-semibold text-fg-muted">{title}</p>}
+      {title && <p className={`${caption ? "" : "mb-0.5 "}font-semibold text-fg-muted`}>{title}</p>}
+      {caption && <p className="mb-0.5 text-[10px] text-fg-subtle">{caption}</p>}
       {rows.map((r) => (
         <p key={r.label} className="flex items-center gap-2">
           {r.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: r.color }} aria-hidden="true" />}
@@ -180,10 +195,18 @@ export function useChartMarks<T>(
   onSelect: SelectHandler<T> | undefined,
   dimOpacity: number,
 ): ChartMarks {
-  const [active, setActive] = useState<number | null>(null);
+  // The hovered index belongs to the data it was set on: a click that filters
+  // the chart re-renders it under a still pointer with fewer (or other)
+  // marks, and a stale index pointed past the new layout (Analytics crash).
+  const [hover, setHover] = useState<{ index: number; data: readonly T[] } | null>(null);
   const [tabStop, setTabStop] = useState(0);
   const refs = useRef<(SVGElement | null)[]>([]);
   const count = data.length;
+  const active = hover !== null && hover.data === data && hover.index < count ? hover.index : null;
+  const setActive = useCallback(
+    (index: number | null) => setHover(index === null ? null : { index, data }),
+    [data],
+  );
   const safeTabStop = tabStop < count ? tabStop : 0;
 
   const focusMark = useCallback((i: number) => {
@@ -232,7 +255,7 @@ export function useChartMarks<T>(
         onBlur: () => setActive(null),
       };
     },
-    [count, data, describe, focusMark, onSelect, safeTabStop],
+    [count, data, describe, focusMark, onSelect, safeTabStop, setActive],
   );
 
   const opacityFor = useCallback(
@@ -281,3 +304,17 @@ export function rampColor(ramp: readonly string[], value: number, max: number): 
 }
 
 export const AXIS_FONT_SIZE = 11;
+
+/** Approximate glyph width of axis text, as a share of the font size. */
+const CHAR_WIDTH_RATIO = 0.58;
+
+/**
+ * Cuts `text` with an ellipsis so it fits roughly `maxWidth` px at
+ * `fontSize` (SVG text cannot wrap or ellipsize on its own).
+ */
+export function fitText(text: string, maxWidth: number, fontSize: number = AXIS_FONT_SIZE): string {
+  const maxChars = Math.floor(maxWidth / (fontSize * CHAR_WIDTH_RATIO));
+  if (text.length <= maxChars) return text;
+  if (maxChars <= 1) return "…";
+  return `${text.slice(0, maxChars - 1).trimEnd()}…`;
+}

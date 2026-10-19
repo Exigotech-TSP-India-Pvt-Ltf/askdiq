@@ -11,8 +11,14 @@ export const conversationsTour: PageTour = {
   steps: [
     {
       title: "Conversation logs",
-      body: "Every chat session the assistant handled, with its turns, outcomes and cost. Support uses it to read what a visitor actually asked; analysts use it to spot long or failing conversations.",
+      body: "The Conversations tab of Visitors & Conversations: every chat session the assistant handled, with its turns, outcomes and cost. Support uses it to read what a visitor actually asked; analysts use it to spot long or failing conversations.",
       placement: "center",
+    },
+    {
+      target: '[data-tour="audience-tabs"]',
+      title: "Visitors and Conversations tabs",
+      body: "Switch back to Visitors to see who asked. Both tabs share the audience and date range.",
+      placement: "bottom",
     },
     {
       target: t("header"),
@@ -47,7 +53,7 @@ export const conversationsTour: PageTour = {
     {
       target: t("table"),
       title: "Conversation table",
-      body: "One row per conversation with origin IP, turns, messages and activity times; sort by Created or Last Active. Click a row or the eye icon to preview it in a side drawer, then Open full view for the detail page.",
+      body: "One row per conversation with origin IP (shown as Not recorded when a server-to-server call sent no client IP), turns, messages and activity times; sort by Created or Last Active. Click a row or the eye icon to preview it in a side drawer, then Open full view for the detail page.",
       placement: "top",
     },
     {

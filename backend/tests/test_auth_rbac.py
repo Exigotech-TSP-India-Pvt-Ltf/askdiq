@@ -50,6 +50,8 @@ SECTION_7_3 = [
     # planchanges4 B2.3.2: superadmin also owns branding and taxonomy.
     ("Branding", {Permission.BRANDING_WRITE}, 0, 0, 1),
     ("Taxonomy", {Permission.TAXONOMY_WRITE}, 0, 0, 1),
+    ("Models and pricing", {Permission.MODELS_WRITE}, 0, 0, 1),
+    ("Alerts: acknowledge, resolve", {Permission.ALERTS_MANAGE}, 0, 1, 1),
 ]
 _ROLE_COLUMNS = (Role.OPERATOR, Role.ADMIN, Role.SUPERADMIN)
 MATRIX = {

@@ -400,13 +400,13 @@ and the `/admin/evaluation` and `/evaluation` redirects to `/admin/evaluation-li
 | File | Variable | Value | Note |
 |---|---|---|---|
 | `docker-compose.yml` (local) | `POSTGRES_PASSWORD` | `${POSTGRES_PASSWORD:-12345}` | Local pgvector container only. Host port 5433. |
-| `docker-compose.yml` | backend `DATABASE_URL` | `postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-12345}@postgres:5432/ragdb` | Overrides `backend/.env`. |
-| `docker-compose.yml` | frontend `API_BASE_URL` | `http://backend:8000` | Overrides `frontend/.env.local`. |
-| `docker-compose.prod.yml` (api-1, api-2) | `WEB_CONCURRENCY` / `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `2` / `10` / `5` (shell overridable) | Plus `JOBS_WORKER_ENABLED: "false"`. |
-| `docker-compose.prod.yml` (worker) | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `${WORKER_DB_POOL_SIZE:-5}` / `${WORKER_DB_MAX_OVERFLOW:-5}` | Dedicated job worker. |
+| `infra/docker-compose.yml` | backend `DATABASE_URL` | `postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-12345}@postgres:5432/ragdb` | Overrides `backend/.env`. |
+| `infra/docker-compose.yml` | frontend `API_BASE_URL` | `http://backend:8000` | Overrides `frontend/.env.local`. |
+| `infra/scale-out/docker-compose.yml` (api-1, api-2) | `WEB_CONCURRENCY` / `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `2` / `10` / `5` (shell overridable) | Plus `JOBS_WORKER_ENABLED: "false"`. |
+| `infra/scale-out/docker-compose.yml` (worker) | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `${WORKER_DB_POOL_SIZE:-5}` / `${WORKER_DB_MAX_OVERFLOW:-5}` | Dedicated job worker. |
 | `frontend/Dockerfile` | `NODE_ENV`, `NEXT_TELEMETRY_DISABLED` | `production`, `1` | |
 
-Prod reality differs from `docker-compose.prod.yml`: production runs a single `askdiq-api` container on
+Prod reality differs from `infra/scale-out/docker-compose.yml`: production runs a single `askdiq-api` container on
 host port `127.0.0.1:5500` with env only from `/opt/askdiq/backend/.env`, and the repo compose file has a
 placeholder `NETWORK_NAME`. Never ship it (see [Deployment](08-deployment-operations.md)).
 
@@ -445,7 +445,7 @@ backup, never from a package.
 | `DB_WAIT_RETRIES` / `DB_WAIT_INTERVAL_SECONDS` / `DB_CONNECT_TIMEOUT_SECONDS` | `30` / `2` / `20` | Wait-for-Postgres loop in prestart. | **In progress (branch `chore/prod-deploy-fullstack`)** |
 | `MIGRATION_LOCK_TIMEOUT_SECONDS` | `600` | Wait for the migration advisory lock. | **In progress (branch `chore/prod-deploy-fullstack`)** |
 | `INGESTION_TIMEOUT_SECONDS` / `BACKFILL_TIMEOUT_SECONDS` | `900` / `1800` | Step timeouts in prestart. | **In progress (branch `chore/prod-deploy-fullstack`)** |
-| `deploy/frontend.env.prod.example` | n/a | Prod frontend env template: `API_BASE_URL=http://askdiq-api:8000`, `APP_BASE_URL=https://askdiq-admin.ethub.co`, `SESSION_COOKIE_SECURE=true`, `AUTH_DEV_MOCK=false`. Placed at `/opt/askdiq/frontend/.env`. No `NEXT_PUBLIC_*` used. | **In progress (branch `chore/prod-deploy-fullstack`)** |
+| `infra/frontend.env.prod.example` | n/a | Prod frontend env template: `API_BASE_URL=http://askdiq-api:8000`, `APP_BASE_URL=https://askdiqui.ethub.co`, `SESSION_COOKIE_SECURE=true`, `AUTH_DEV_MOCK=false`. Placed at `/opt/askdiq/frontend/.env`. No `NEXT_PUBLIC_*` used. Step by step: [environment-and-sso.md](../deployment/environment-and-sso.md). | Merged |
 | `next.config.js` `optimizePackageImports` | adds `motion` | Bundle optimisation only; no new env. | **In progress (branch `perf/dashboard-load-speed`)** |
 
 The prestart toggles are read with `os.environ` by `backend/scripts/prestart.py` (run by

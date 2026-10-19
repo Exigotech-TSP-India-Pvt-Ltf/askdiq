@@ -17,6 +17,8 @@ export const PREVIEW_LIMIT = 50;
 export interface PreferenceDataTabProps {
   token: string;
   canExport: boolean;
+  /** Global date range (inclusive UTC days): ratings given in it. */
+  days?: { from?: string; to?: string };
 }
 
 function Cell({ text, missing }: { text: string | null; missing: boolean }) {
@@ -32,15 +34,20 @@ function Cell({ text, missing }: { text: string | null; missing: boolean }) {
 }
 
 /** Preference Data tab (planchanges4 F5.4): preview, incomplete pairs flagged, JSONL download. */
-export function PreferenceDataTab({ token, canExport }: PreferenceDataTabProps) {
+export function PreferenceDataTab({ token, canExport, days }: PreferenceDataTabProps) {
   const toast = useToast();
   const [completeOnly, setCompleteOnly] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const from = days?.from;
+  const to = days?.to;
   const fetcher = useCallback(
-    (signal: AbortSignal) => previewPairs(token, { complete_only: completeOnly }, PREVIEW_LIMIT, signal),
-    [token, completeOnly],
+    (signal: AbortSignal) => previewPairs(token, { complete_only: completeOnly, from, to }, PREVIEW_LIMIT, signal),
+    [token, completeOnly, from, to],
   );
-  const { data, error, isLoading, refetch } = useApiQuery(canExport ? feedbackKeys.pairs(completeOnly) : null, fetcher);
+  const { data, error, isLoading, refetch } = useApiQuery(
+    canExport ? feedbackKeys.pairs(completeOnly, { from, to }) : null,
+    fetcher,
+  );
 
   const counts = useMemo(() => {
     const pairs = data?.pairs ?? [];
@@ -61,7 +68,7 @@ export function PreferenceDataTab({ token, canExport }: PreferenceDataTabProps) 
   const download = async () => {
     setDownloading(true);
     try {
-      const filename = await downloadPairs(token, { complete_only: completeOnly });
+      const filename = await downloadPairs(token, { complete_only: completeOnly, from, to });
       toast.show({ title: "Export downloaded", description: filename, tone: "success" });
     } catch (err) {
       toast.show({ title: "Export failed", description: err instanceof Error ? err.message : undefined, tone: "error" });

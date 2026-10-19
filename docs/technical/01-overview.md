@@ -241,8 +241,8 @@ Versions are the pinned values in the repo at `9115c45`.
 | PostgreSQL + pgvector | `pgvector/pgvector:pg18` (local `docker-compose.yml`) | One database for relational data and vectors. Unverified: exact Postgres/pgvector version of the production `et-platform-postgres-1`. |
 | Azure OpenAI | Chat deployment `AZURE_DEPLOYMENT_NAME` (CI value `gpt-5-mini`), embeddings `text-embedding-3-small` (1536 dims) | `AZURE_OPENAI_API_VERSION` e.g. `2024-12-01-preview` |
 | Microsoft Entra ID | OIDC v2.0 | Revamp only |
-| nginx | `et-platform-nginx-1` (shared, not managed here) | Site config template `askdiq.conf` |
-| Docker Compose | `docker-compose.yml` (local), `docker-compose.prod.yml` (template) | See [Deployment](08-deployment-operations.md) |
+| nginx | `et-platform-nginx-1` (shared, not managed here) | Site config template `infra/scale-out/askdiq-api.conf` |
+| Docker Compose | `infra/docker-compose.yml` (local), `infra/docker-compose.prod.example.yml` (prod reference), `infra/scale-out/docker-compose.yml` (scale-out reference) | See [Deployment](08-deployment-operations.md) |
 | No Redis | - | Shared state, queue and events use Postgres |
 
 ### Frontend (`frontend/package.json`, `frontend/Dockerfile`)

@@ -16,6 +16,7 @@ from app.core.sessions import (
 from app.governance.costing import compute_exchange_cost
 from app.governance.online_eval import schedule_online_evaluation
 from app.governance.pii import redact_pii
+from app.harness.clarify import CLARIFY_OUTCOME, resolve_clarification_reply
 from app.harness.orchestrator import run_query
 from app.retrieval.embeddings import embedding_tokens_sink
 from app.retrieval.vector_store import VectorStore
@@ -52,8 +53,15 @@ async def query(
     # Release the pooled connection before embedding/rerank/LLM.
     await db.commit()
 
+    # A reply to a clarifying question (picked option, its number/text, or a
+    # short refinement) is answered as the original question + that meaning.
+    resolved = resolve_clarification_reply(
+        body.query, history, body.clarification_answers
+    )
+
     response = await run_query(
-        query=body.query,
+        query=resolved.query if resolved else body.query,
+        boost_document_ids=resolved.document_ids if resolved else None,
         top_k=settings.default_top_k,
         filters=body.filters,
         vector_store=vector_store,
@@ -83,6 +91,8 @@ async def query(
         **(response.token_details or {}),
         "outcome": response.outcome,
     }
+    if resolved:
+        merged_details["clarification_answers"] = resolved.as_details()
 
     redacted_query, _ = redact_pii(body.query)
 
@@ -125,21 +135,23 @@ async def query(
         },
     )
 
-    schedule_online_evaluation(
-        request_id=request.state.request_id,
-        query=body.query,
-        answer=response.answer,
-        sources=response.sources,
-        guardrail_flags=response.guardrail_flags,
-        ip_address=client_ip,
-        session_id=str(session.id),
-        message_id=str(assistant_message_id) if assistant_message_id else None,
-        outcome=response.outcome,
-        grounded=response.grounded,
-        confidence=response.confidence,
-        latency_ms=response.latency_ms,
-        after=exchange_write_task(assistant_message_id),
-    )
+    # A clarifying question is not an answer, so there is nothing to judge.
+    if response.outcome != CLARIFY_OUTCOME:
+        schedule_online_evaluation(
+            request_id=request.state.request_id,
+            query=resolved.query if resolved else body.query,
+            answer=response.answer,
+            sources=response.sources,
+            guardrail_flags=response.guardrail_flags,
+            ip_address=client_ip,
+            session_id=str(session.id),
+            message_id=str(assistant_message_id) if assistant_message_id else None,
+            outcome=response.outcome,
+            grounded=response.grounded,
+            confidence=response.confidence,
+            latency_ms=response.latency_ms,
+            after=exchange_write_task(assistant_message_id),
+        )
 
     response.session_id = str(session.id)
     response.session_title = session_title

@@ -8,6 +8,9 @@
  *   `backend/app/api/routes/insights.py`): `GET|POST /admin/insights/taxonomy`,
  *   `PATCH /admin/insights/taxonomy/{kind}/{code}`, `POST .../archive`.
  *
+ * - Models (`backend/app/schemas/model_settings.py`,
+ *   `backend/app/api/routes/model_settings.py`): `GET|PUT /admin/models`.
+ *
  * Kept apart from `lib/api.ts` (shared hotspot); same `/api/proxy` route and
  * `ApiError`, plus the problem+json `request_id` and field errors.
  */
@@ -204,6 +207,44 @@ export interface BrandAssetRead {
 }
 
 export const BRANDING_KEY = "settings/branding";
+export const MODELS_KEY = "settings/models";
+
+// ---------------------------------------------------------------------------
+// Models and pricing
+// ---------------------------------------------------------------------------
+
+export const MODEL_FIELDS = ["llm_deployment", "embedding_model"] as const;
+export type ModelField = (typeof MODEL_FIELDS)[number];
+export const PRICE_FIELDS = [
+  "price_prompt_per_million",
+  "price_cached_per_million",
+  "price_output_per_million",
+  "price_embed_per_million",
+] as const;
+export type PriceField = (typeof PRICE_FIELDS)[number];
+export type ModelSettingsField = ModelField | PriceField;
+
+/** Mirrors `DEPLOYMENT_PATTERN` (Azure deployment names). */
+export const DEPLOYMENT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** Mirrors `MAX_PRICE_PER_MILLION` (USD). */
+export const MAX_PRICE_PER_MILLION = 1000;
+
+export type ModelConfigValues = Record<ModelField, string> & Record<PriceField, number>;
+
+/** `GET|PUT /admin/models` response: effective values over the .env defaults. */
+export interface ModelSettingsRead extends ModelConfigValues {
+  embedding_dim: number;
+  defaults: ModelConfigValues;
+  overridden: ModelSettingsField[];
+  /** 0 before the first save. */
+  version: number;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+/** `PUT /admin/models` body: partial; `null` clears an override (back to .env). */
+export type ModelSettingsUpdate = { version: number } & Partial<Record<ModelField, string | null>> &
+  Partial<Record<PriceField, number | null>>;
 
 export const settingsApi = {
   getBranding: (signal?: AbortSignal) => request<BrandingRead>("/branding", { signal, cache: "no-store" }),
@@ -218,6 +259,11 @@ export const settingsApi = {
     form.append("file", file, file.name);
     return request<BrandAssetRead>("/admin/branding/assets", { method: "POST", body: form });
   },
+
+  getModelSettings: (signal?: AbortSignal) => request<ModelSettingsRead>("/admin/models", { signal, cache: "no-store" }),
+
+  updateModelSettings: (body: ModelSettingsUpdate) =>
+    request<ModelSettingsRead>("/admin/models", { method: "PUT", body: JSON.stringify(body) }),
 
   listTaxonomy: (signal?: AbortSignal, { includeArchived = true }: { includeArchived?: boolean } = {}) =>
     request<TaxonomyList>(`${TAXONOMY_PATH}?include_archived=${includeArchived}`, { signal }),

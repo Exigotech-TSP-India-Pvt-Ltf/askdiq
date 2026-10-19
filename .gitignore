@@ -22,12 +22,19 @@ backend/.ruff_cache/
 backend/.coverage
 backend/.coverage.*
 htmlcov/
+coverage.xml
 
 # --- Frontend (Node / Next.js) ---
 frontend/node_modules/
 frontend/.next/
 node_modules/
 .next/
+frontend/coverage/
+frontend/out/
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
 
 # --- Logs / debug captures ---
 *.log
@@ -47,6 +54,7 @@ backend/conc_*.json
 *.tgz
 
 # --- Local planning / design notes (not part of the product) ---
+# The tracked plan is docs/plan.md; all other markdown lives under docs/.
 /planchanges1.md
 /planchanges3.md
 /planchanges2.md

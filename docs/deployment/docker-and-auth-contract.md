@@ -1,0 +1,269 @@
+# Local Docker stack, auth contract and scale-out reference
+
+Three things live here:
+
+1. Running the full stack (Postgres/pgvector, FastAPI backend, Next.js
+   frontend) locally with Docker Compose (`infra/docker-compose.yml`).
+2. The proxy and sign-in contract between the Next.js server and the API
+   (the "frontend contract" steps cited by the auth route handlers).
+3. The optional two-replica scale-out reference (`infra/scale-out/`).
+
+Production deployment is in [deployment-guide.md](deployment-guide.md);
+production `.env` values and Entra ID SSO are in
+[environment-and-sso.md](environment-and-sso.md).
+
+## Prerequisites
+
+- Docker and Docker Compose
+- `backend/.env` and `frontend/.env.local` present (copy from their
+  `.example` files and fill in values) — neither is committed, so both
+  must exist on every machine that runs this stack
+
+## 1. Configure secrets
+
+`infra/docker-compose.yml` loads both files via `env_file` — fill in before
+`docker compose up`:
+
+| File | Required variables |
+|---|---|
+| `backend/.env` | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`, `AZURE_DEPLOYMENT_NAME`, `EMBEDDING_MODEL` (the embedding deployment name), `API_KEY_NAME`, `SESSION_SECRET`, `ENTRA_*` (or `AUTH_DEV_MOCK=true` with `ENV=development`) |
+| `frontend/.env.local` | `API_KEY` (must match `backend/.env`'s `API_KEY_NAME`) |
+
+`DATABASE_URL` / `API_BASE_URL` in these files are only used for
+non-Docker local dev — Compose overrides both to point at the `postgres`
+and `backend` services respectively.
+
+## 2. Build and start the stack
+
+From the repository root:
+
+```bash
+docker compose -f infra/docker-compose.yml up --build
+```
+
+Services defined in [infra/docker-compose.yml](../../infra/docker-compose.yml):
+
+- `postgres` — `pgvector/pgvector:pg18`, exposed on host port `5433`, data
+  persisted in the `pgdata` volume, healthchecked via `pg_isready`.
+- `backend` — built from [backend/Dockerfile](../../backend/Dockerfile), loads
+  `backend/.env` via `env_file`, with `DATABASE_URL` overridden to target
+  the `postgres` service over the compose network. Exposed on `8000`.
+- `frontend` — built from [frontend/Dockerfile](../../frontend/Dockerfile), loads
+  `frontend/.env.local` via `env_file`, with `API_BASE_URL` overridden to
+  `http://backend:8000`. Exposed on `3000`.
+
+## 3. One-off setup (migrations + backfill + ingestion)
+
+For this local stack (`backend/Dockerfile`) they are not baked into the
+image's `CMD`, so container restarts never silently re-run them. The
+production image (`backend/Dockerfile.prod`) runs them automatically in its
+entrypoint instead (migrations under an advisory lock, idempotent ingestion;
+see [runbook.md](runbook.md)). Locally, run once the `backend`
+container is healthy:
+
+```bash
+# 1. Apply database migrations (including d5e6f7a8b9c0 for usage outcome tracking)
+docker compose -f infra/docker-compose.yml exec backend alembic upgrade head
+
+# 2. Run idempotent usage accounting backfill for legacy messages
+docker compose -f infra/docker-compose.yml exec backend python scripts/backfill_usage_accounting.py --dry-run
+docker compose -f infra/docker-compose.yml exec backend python scripts/backfill_usage_accounting.py --apply
+
+# 3. Canonical Markdown ingestion (strictly accepts .md files; non-.md files are rejected)
+docker compose -f infra/docker-compose.yml exec backend python scripts/ingest_real_docs.py
+```
+
+Re-run `ingest_real_docs.py` any time `backend/data/real_docs/*.md` changes
+— it's safe to rerun (replaces existing chunks per source document).
+
+## 4. Operational Environment Variables & Proxy Configuration
+
+Configure the following variables in `backend/.env` for production deployments:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TRUST_PROXY_HEADERS` | `false` (set `true` in production) | Mandatory when running behind Nginx, Traefik, or Azure App Gateway so `X-Forwarded-For` is correctly resolved for Audience Classification. |
+| `DEV_TEST_IPS` | `127.0.0.1,::1,localhost,0.0.0.0` | Initial comma-separated list of test IPs / CIDR blocks (e.g. `10.0.0.0/8,192.168.1.0/24`). Can be dynamically overridden via Admin Console. |
+| `AUDIENCE_CACHE_TTL_SECONDS` | `30` | In-memory cache TTL for audience classification counts. |
+| `USAGE_SUMMARY_CACHE_TTL_SECONDS` | `15` | In-memory cache TTL for `/admin/usage/summary` metrics. |
+| `USAGE_MAX_RANGE_DAYS` | `400` | Maximum date range allowed for usage summaries. |
+| `PRICE_EMBED_PER_MILLION` | `0.02` | Rate card for query and guardrail embedding tokens ($/1M). |
+| `PRICE_PROMPT_PER_MILLION` | `0.25` | Rate card for prompt input tokens ($/1M). |
+| `PRICE_OUTPUT_PER_MILLION` | `2.00` | Rate card for visible and reasoning completion tokens ($/1M). |
+| `PRICE_CACHED_PER_MILLION` | `0.125` | Rate card for cached prompt tokens ($/1M). |
+
+### Proxy contract (backend side, SSO)
+
+Since SSO, the backend only answers the Next.js proxy, and every user
+request needs a signed-in session. The proxy must send:
+
+| Header | When | Backend behaviour |
+|---|---|---|
+| `X-API-Key` | every request | Service key (`API_KEY_NAME`, equal to the frontend's `API_KEY`). Missing or wrong: **401**, even with a valid session. |
+| `X-Session` | every user request | The raw session id from the httpOnly session cookie. Missing, unknown, expired or revoked: **401**. |
+| `X-Requested-With: askdiq` and `Origin` | `POST`, `PUT`, `PATCH`, `DELETE` | CSRF defence: the marker must be present and `Origin` must equal `APP_BASE_URL`'s origin, otherwise **403**. |
+| `X-Forwarded-For` | every request | Client IP for audit and rate limits; honoured only when `TRUST_PROXY_HEADERS=true`. |
+
+Status and role are re-read from Postgres on every request: pending or
+rejected users get Chat only (403 on dashboard routes), suspended users get
+403 everywhere (except `GET /auth/me` and `POST /auth/logout`, so the UI can
+show the suspended page), and role changes apply on the next request. Public
+routes: `/health`, `/branding`, `/auth/sso/login` and `/auth/sso/callback`
+(no session yet, but the service key is still required) and, with
+`AUTH_DEV_MOCK=true` in development only, the mock IdP under `/mock-idp/`.
+
+### Sign-in flow (frontend contract for the Next.js side)
+
+The Next.js handlers are thin; the backend is the authority. Exact contract:
+
+| Step | Next.js | Backend call (through the proxy, with `X-API-Key`) |
+|---|---|---|
+| 1 | "Sign in with Microsoft" calls `GET /api/proxy/auth/sso/login`. | Returns `{"authorize_url": ...}` (`Cache-Control: no-store`). Rate-limited per client IP (`AUTH_LOGIN_RATE_LIMIT_PER_MINUTE`, default 10/min, **429** with `Retry-After`). |
+| 2 | Before redirecting the browser to `authorize_url`, set a short-lived (10 min) httpOnly, `SameSite=Lax` cookie `askdiq_oidc_state` holding the `state` query parameter of that URL. | `state`, `nonce` and the PKCE verifier are stored server-side, single use. |
+| 3 | `GET /auth/callback?code=&state=` (route handler, server-side): reject unless `state` equals the `askdiq_oidc_state` cookie (login-CSRF defence), then delete that cookie. | |
+| 4 | Server-side `POST {backend}/auth/sso/callback` with JSON `{"code", "state"}`, plus `X-Session: <old cookie value>` if a session cookie already exists (it is revoked: rotation on login). | **200** `{"session", "cookie_name", "cookie_secure", "expires_at", "me"}`. **400**: state unknown, expired or replayed (start again). **401**: invalid ID token. **403**: suspended (`detail: "Account suspended."`, body also has `access_contact_email`) or the email belongs to another Entra identity. **429**: rate limited. **502**: identity provider unreachable. Every outcome is audited (`login_success` / `login_denied`). |
+| 5 | Set the cookie named `cookie_name` (`SESSION_COOKIE_NAME`, default `askdiq_session`) to `session`: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when `cookie_secure` (`SESSION_COOKIE_SECURE`), `Expires=expires_at`. Never expose it to client JavaScript. Redirect to `/` (active) or `/chat` (pending/rejected) based on `me.status`; on 403 suspended redirect to the suspended page. | |
+| 6 | Every proxied call: `X-API-Key`, `X-Session: <cookie value>`, `X-Forwarded-For`; on `POST`/`PUT`/`PATCH`/`DELETE` also `X-Requested-With: askdiq` and forward the browser's `Origin`. | Table above. |
+| 7 | Page gate: `GET /api/proxy/auth/me` returns `{user, role, status, permissions, version, access_contact_email}` (weak `ETag`, `Cache-Control: private, max-age=0`, `Vary: X-API-Key, X-Session`). 401 means go to `/login`. | |
+| 8 | Sign out: `POST /api/proxy/auth/logout` (**204**), then delete the cookie. | The session is revoked server-side and `logout` is audited. |
+
+In development with `AUTH_DEV_MOCK=true` the authorize URL points at
+`APP_BASE_URL/mock-idp/...`, so the frontend must forward `/mock-idp/*` to the
+backend (development only), or set `AUTH_MOCK_BASE_URL` to the backend URL
+that both the browser and the backend can reach.
+
+Other `/auth` routes: `GET /auth/access-request` (own status and latest
+request) and `POST /auth/access-request` (`{"requested_role"?, "justification"?}`;
+**409** when already active or a request is pending). User Management
+(superadmin only, `users:manage`): `/admin/users-accounts` (list, `stats`,
+detail, `PATCH` with `version`, `revoke-sessions`, `invite`) and
+`/admin/access-requests` (queue, `approve`, `reject`, `bulk-approve`). Auth
+audit events appear on `/governance/audit-log` and `/admin/governance/logs`
+only for callers with `audit:auth:read` (superadmin).
+
+### Full-stack sign-in smoke
+
+`backend/scripts/smoke_journeys.py` signs in through port 3000 against the
+mock IdP (a pending user gets 403 on `/api/proxy/admin/dashboard`, a
+`SUPERADMIN_EMAILS` user gets 200, logout invalidates the cookie). Run it
+standalone (`venv\Scripts\python.exe scripts\smoke_journeys.py --base-url
+http://localhost:3000`) or call `run_signin_journeys()` from
+`scripts/smoke_e2e.py` after its health checks.
+
+## Entra ID go-live
+
+Production values, the exact redirect URIs to register in Entra ID, secret
+generation, the verification checklist and SSO troubleshooting are in
+[environment-and-sso.md](environment-and-sso.md). Locally,
+`venv\Scripts\python.exe scripts\verify_sso_config.py` (from `backend/`)
+checks the configuration without printing any value.
+
+## 5. API Deprecations
+
+- **`GET /admin/usage/cost-breakdown`**: Deprecated as of release 2.0. This legacy monolithic endpoint will be removed in release 2.1.
+- **Replacement Endpoints**:
+  - `GET /admin/usage/summary`: High-level economics ($ USD and Token Volumes separated) with audience scoping.
+  - `GET /admin/usage/users`: Paginated, audience-aware user table with top-consumer intelligence.
+  - `GET /admin/usage/sessions`: Paginated session table with turn metrics.
+  - `GET /admin/usage/queries`: Paginated turn list with outcome filter and single-turn rate-card inspector.
+  - `GET /admin/usage/export`: Streaming CSV export with formula injection sanitization.
+
+## 6. Verify
+
+- Backend health: `http://localhost:8000/health`
+- Frontend: `http://localhost:3000`
+- `docker compose -f infra/docker-compose.yml logs -f backend` — confirm no startup errors
+
+## 7. Production topology: replicas, workers and pool sizing
+
+[infra/scale-out/docker-compose.yml](../../infra/scale-out/docker-compose.yml) (optional; production
+today runs a single `askdiq-api`, see the deployment guide) runs three containers from
+the `askdiq-api:latest` image ([backend/Dockerfile.prod](../../backend/Dockerfile.prod)):
+
+| Service | Container | Runs | Notes |
+|---|---|---|---|
+| `api-1` | `askdiq-api-1` | `uvicorn --workers ${WEB_CONCURRENCY}` | `/health` healthcheck, host port `127.0.0.1:5500` |
+| `api-2` | `askdiq-api-2` | same | `/health` healthcheck, host port `127.0.0.1:5501` |
+| `worker` | `askdiq-worker` | `python -m app.jobs.worker` | Postgres job queue (`SKIP LOCKED`); no HTTP |
+
+- **Load balancing:** nginx ([infra/scale-out/askdiq-api.conf](../../infra/scale-out/askdiq-api.conf)) proxies to
+  `upstream askdiq_api` (`least_conn`, `max_fails=3 fail_timeout=10s`,
+  `keepalive 32`) and fails over on `error timeout http_502 http_503`. POSTs
+  are never replayed once sent. SSE paths (`.../stream`, `.../events`) are
+  unbuffered with a 1 h read timeout. No sticky sessions are needed:
+  rate limits, OIDC state, jobs and live events are shared through Postgres.
+- **Workers:** `WEB_CONCURRENCY` (default `2` in compose, `1` in the image)
+  sets uvicorn workers per replica. Each worker holds its own DB pool, one
+  `LISTEN` connection for the event bus, and its own reranker model in memory,
+  so budget RAM per worker too.
+- **Jobs:** the API replicas run with `JOBS_WORKER_ENABLED=false`; only the
+  `worker` service claims jobs. Any number of workers is safe; to scale with
+  `--scale worker=N`, remove its `container_name` first.
+- **Overrides:** `WEB_CONCURRENCY`, `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`,
+  `WORKER_DB_POOL_SIZE` and `WORKER_DB_MAX_OVERFLOW` are set in the compose
+  file's `environment:` (which wins over `backend/.env`). Change them from the
+  shell or an `infra/scale-out/.env` file read by compose interpolation.
+
+### Pool sizing rule
+
+```
+replicas × workers × (DB_POOL_SIZE + DB_MAX_OVERFLOW) ≤ max_connections − 20
+```
+
+Defaults: `2 × 2 × (10 + 5) = 60`. Also count the job worker's pool
+(`5 + 5 = 10`) and one `LISTEN` connection per process (`2 × 2 + 1 = 5`):
+**75 in total**, within the `100 − 20 = 80` budget of a stock Postgres. Check
+the server with `SHOW max_connections;` and, before adding replicas or
+workers, lower `DB_POOL_SIZE` or raise `max_connections`.
+
+### Rollout
+
+```bash
+docker compose -f infra/scale-out/docker-compose.yml build
+docker compose -f infra/scale-out/docker-compose.yml run --rm api-1 alembic upgrade head
+docker compose -f infra/scale-out/docker-compose.yml up -d
+docker compose -f infra/scale-out/docker-compose.yml ps        # api-1 / api-2 "healthy"
+nginx -t && nginx -s reload                         # inside the et-platform nginx container
+```
+
+nginx resolves `askdiq-api-1` / `askdiq-api-2` when it loads the config, so
+both containers must exist on the shared network before `nginx -t` or a
+reload (otherwise: `host not found in upstream`). Once loaded, a stopped
+replica is just marked failed and skipped.
+
+Run migrations before starting the replicas, so several processes never race
+on first-time schema setup. For a rolling update restart one replica at a
+time (`restart api-1`, wait for healthy, then `api-2`); nginx routes around
+the replica that is down. To see which replica served a request, log
+`$upstream_addr` in the nginx access log (an `add_header` inside a location
+block would drop the server-level security headers).
+
+### Load test
+
+```bash
+# From backend/ (venv python). CI-sized smoke: 50 users for 15 s; exits 1 on a breach.
+python scripts/run_admin_load_test.py --smoke --base-url https://askdiq.ethub.co
+# Full admin profile (newplan §13.5): 50, then 100 users for 10 minutes.
+python scripts/run_admin_load_test.py --profile admin --concurrency 100 --duration 600
+# Chat profile against a fake-LLM stack; add loadtest-<n> to RATE_LIMIT_EXEMPT_ACTORS.
+python scripts/run_admin_load_test.py --profile chat --concurrency 50 --duration 120
+```
+
+The API key comes from `--api-key` or `API_KEY_NAME`. The JSON report
+(`backend/reports/admin_load_report.json`, or `--output`) lists p50/p70/p95/p99,
+error % and 429s per route, plus every newplan §13.4 budget check: aggregation
+GETs p95 < 600 ms, paginated lists p95 < 250 ms, and an error rate below 0.5 %
+(429s excluded). `--report-only` always exits 0; `--profile usage` reproduces
+the original `/admin/usage/*` mix.
+
+## Notes / gotchas
+
+- `fastembed`'s cross-encoder reranker downloads its ONNX model from
+  Hugging Face on first use inside the backend container — it needs
+  outbound network access at least once (or a pre-warmed model cache
+  volume) for reranking to work.
+- The backend's `DATABASE_URL` in `backend/.env` (`localhost:5433`) is only
+  correct for non-Docker local dev; Compose always overrides it.
+- `docker-compose.yml` never duplicates secrets into the compose file
+  itself — both `env_file` entries load real values from the `.env` files.
+- Ensure reverse proxies pass `X-Forwarded-For` with client IP so audience classification accurately separates authentic end users from internal test runners.

@@ -32,6 +32,8 @@ SERVICE_BY_ACTION: dict[str, Service] = {
     "test_ip_removed": "admin",
     "usage_export": "admin",
     "governance_logs_export": "admin",
+    "alert_acknowledged": "admin",
+    "alert_resolved": "admin",
     "rate_limited": "system",
     "server_error": "system",
 }

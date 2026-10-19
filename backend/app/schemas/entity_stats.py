@@ -1,7 +1,7 @@
 """Response models for the Visitors and Conversations entity pages (B7.2).
 
 Mirrors ``frontend/lib/entity-stats-api.ts`` (contract:
-``frontend/docs/contracts/entity-stats.md``). Timestamps are ISO 8601 UTC with
+``docs/technical/frontend/contracts/entity-stats.md``). Timestamps are ISO 8601 UTC with
 ``Z``; days are ``YYYY-MM-DD`` (UTC); money is USD; durations milliseconds.
 ``null`` means "not measured"; lists are never null.
 """
@@ -21,6 +21,7 @@ class OutcomeName(StrEnum):
     BLOCKED = "blocked"
     CONVERSATIONAL = "conversational"
     LLM_FAILED = "llm_failed"
+    CLARIFY = "clarify"
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +90,15 @@ class CostDay(BaseModel):
     queries: int
 
 
+class ActivityDay(BaseModel):
+    """Per-day counts behind the visitor KPI sparklines (UTC days)."""
+
+    day: str
+    sessions: int
+    queries: int
+    feedback: int
+
+
 class TimelineFeedback(BaseModel):
     id: str
     message_id: str
@@ -113,6 +123,7 @@ class VisitorTimeline(BaseModel):
     sessions: list[TimelineSession]
     queries: list[TimelineQuery]
     cost_series: list[CostDay]
+    activity_series: list[ActivityDay] = []
     feedback: list[TimelineFeedback]
     truncated: TimelineTruncated
 

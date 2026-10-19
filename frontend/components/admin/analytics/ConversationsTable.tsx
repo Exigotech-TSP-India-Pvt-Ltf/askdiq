@@ -188,7 +188,21 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
               />
             </Link>
           </td>
-          <td className={CELL}>{row.person ?? "–"}</td>
+          <td className={CELL}>
+            {row.person ? (
+              <button
+                type="button"
+                onClick={() => update({ person: state.person === row.person_id ? "" : row.person_id })}
+                aria-pressed={state.person === row.person_id}
+                aria-label={`Filter to person ${row.person}`}
+                className="rounded font-medium text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
+              >
+                {row.person}
+              </button>
+            ) : (
+              "–"
+            )}
+          </td>
           <td className={`${CELL} tabular-nums`}>{isoDay(row.start)}</td>
           <td className={CELL}>{row.user_type}</td>
           <td className={CELL}>

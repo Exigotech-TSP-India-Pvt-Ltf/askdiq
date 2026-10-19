@@ -24,13 +24,22 @@ export interface FunnelProps {
   label?: string;
   height?: number;
   formatValue?: (value: number) => string;
+  /** Tooltip name of the stage value (default "Count"), e.g. "Users". */
+  valueLabel?: string;
 }
 
 const LABEL_WIDTH = 110;
 const pct = new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 0 });
 
 /** Stage conversion (triage: new, reviewed, promoted; access requests). */
-export function Funnel({ data, onSelect, label = "Funnel", height, formatValue = formatCompact }: FunnelProps) {
+export function Funnel({
+  data,
+  onSelect,
+  label = "Funnel",
+  height,
+  formatValue = formatCompact,
+  valueLabel = "Count",
+}: FunnelProps) {
   const ct = useChartTheme();
   const first = data[0]?.value ?? 0;
   const conversion = useCallback(
@@ -66,7 +75,7 @@ export function Funnel({ data, onSelect, label = "Funnel", height, formatValue =
         <TooltipBody
           title={d.label}
           rows={[
-            { label: "Count", value: formatValue(d.value), color: ct.sequential[ct.sequential.length - 1] },
+            { label: valueLabel, value: formatValue(d.value), color: ct.sequential[ct.sequential.length - 1] },
             { label: "Of first stage", value: conversion(d) },
           ]}
         />

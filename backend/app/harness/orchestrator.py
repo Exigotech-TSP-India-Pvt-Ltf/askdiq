@@ -4,6 +4,9 @@ Pipeline:
 retrieve -> pre-guardrails -> retrieval relevance check ->
 build prompt -> call LLM (with retry) ->
 validate output -> post-guardrails -> structured response.
+
+A short, ambiguous question may get a clarifying question with 2-4 options
+instead of an answer (outcome ``clarify``, see app.harness.clarify).
 """
 
 import time
@@ -16,10 +19,20 @@ from app.governance.audit import emit_audit_event
 from app.guardrails.conversational import detect_conversational_intent
 from app.guardrails.post_checks import run_post_checks
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
+from app.harness.clarify import (
+    ANSWER_OR_CLARIFY,
+    CLARIFY_OUTCOME,
+    boost_documents,
+    clarify_eligible,
+    clarify_instruction,
+    parse_decision,
+    plan_clarification,
+    render_clarification_text,
+)
 from app.harness.prompts import _MAX_HISTORY_TURNS, call_llm
 from app.retrieval.retriever import needs_conversation_context, retrieve
 from app.retrieval.vector_store import VectorStore
-from app.schemas.query import ChatTurn, QueryResponse, SourceChunk
+from app.schemas.query import ChatTurn, Clarification, QueryResponse, SourceChunk
 
 logger = get_logger(__name__)
 
@@ -108,6 +121,60 @@ def _fallback_response(
     )
 
 
+def _clarification_response(
+    clarification: Clarification,
+    *,
+    request_id: str,
+    latency_ms: float,
+    sources: list[SourceChunk],
+    confidence: float,
+    follow_up_detected: bool,
+    history_turns_sent: int,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    total_tokens: int | None,
+    reasoning_tokens: int | None,
+    token_details: dict[str, object],
+) -> QueryResponse:
+    """A clarifying question: options persisted in token_details, text fallback in answer."""
+    token_details["outcome"] = CLARIFY_OUTCOME
+    token_details["clarification"] = clarification.model_dump()
+    logger.info(
+        "clarification_requested",
+        questions=len(clarification.questions),
+        documents=sorted(
+            {
+                d
+                for q in clarification.questions
+                for o in q.options
+                for d in o.document_ids
+            }
+        ),
+        latency_ms=round(latency_ms, 2),
+    )
+    return QueryResponse(
+        answer=render_clarification_text(clarification),
+        # Kept for the trace (which evidence was ambiguous); the UI shows no
+        # citation chips for a non-answer.
+        sources=sources,
+        # The options come straight from retrieved documents, nothing invented.
+        grounded=True,
+        confidence=round(confidence, 4),
+        request_id=request_id,
+        latency_ms=latency_ms,
+        guardrail_flags=[],
+        follow_up_detected=follow_up_detected,
+        history_turns_sent=history_turns_sent,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        reasoning_tokens=reasoning_tokens,
+        outcome=CLARIFY_OUTCOME,
+        token_details=token_details,
+        clarification=clarification,
+    )
+
+
 async def run_query(
     query: str,
     top_k: int,
@@ -116,8 +183,12 @@ async def run_query(
     request_id: str,
     stage_timings: dict,
     history: list[ChatTurn] | None = None,
+    boost_document_ids: list[str] | None = None,
 ) -> QueryResponse:
     """Run the complete RAG query pipeline.
+
+    ``boost_document_ids``: documents of the clarification options the user
+    picked; their chunks are put first in the answer context.
 
     Flow:
 
@@ -218,13 +289,19 @@ async def run_query(
 
     t0 = time.perf_counter()
 
+    # A short question that may need clarifying is retrieved wider (more
+    # documents), so any options cover the knowledge base's real intents.
+    wide = clarify_eligible(query, history, follow_up=follow_up_detected)
     sources: list[SourceChunk] = await retrieve(
         vector_store,
         effective_query,
-        top_k=top_k,
+        top_k=max(top_k, settings.clarify_retrieval_top_k) if wide else top_k,
         filters=filters,
         history=history,
+        **({"max_documents": settings.clarify_retrieval_max_documents} if wide else {}),
     )
+    # Reply to a clarification: the chosen options' documents lead the context.
+    sources = boost_documents(sources, boost_document_ids)
 
     stage_timings["retrieval"] = (time.perf_counter() - t0) * 1000
 
@@ -298,6 +375,21 @@ async def run_query(
         documents=sorted({s.document_id for s in sources}),
     )
 
+    # Short question + evidence spread over several similar-scoring topics:
+    # the model may ask which one is meant instead of answering (same call).
+    clarify_candidates = plan_clarification(
+        query, sources, history, follow_up=follow_up_detected
+    )
+    llm_kwargs: dict[str, object] = (
+        {
+            "clarify_block": clarify_instruction(clarify_candidates),
+            "response_format": ANSWER_OR_CLARIFY,
+        }
+        if clarify_candidates
+        else {}
+    )
+    clarification: Clarification | None = None
+
     # ---------------------------------------------------------
     # 4. LLM GENERATION (+ POST-GENERATION GROUNDEDNESS CHECK)
     # ---------------------------------------------------------
@@ -320,7 +412,8 @@ async def run_query(
     tot_reasoning = 0
     tot_cached = 0
 
-    max_attempts = settings.max_llm_retries + 1
+    # An ungrounded clarification earns one direct-answer attempt on top.
+    max_attempts = settings.max_llm_retries + 1 + (1 if clarify_candidates else 0)
     retry_reason = ""
     for attempt in range(max_attempts):
         if attempt > 0:
@@ -338,6 +431,7 @@ async def run_query(
                 query,
                 sources,
                 history,
+                **llm_kwargs,
             )
             if usage:
                 attempts_usage.append({"attempt": attempt + 1, "usage": usage})
@@ -346,6 +440,11 @@ async def run_query(
                 tot_reasoning += usage.get("reasoning_tokens", 0)
                 tot_cached += usage.get("cached_tokens", 0)
             answer = attempt_answer
+            if clarify_candidates:
+                # Strict JSON: either the answer, or questions back.
+                decision = parse_decision(answer, clarify_candidates, query)
+                answer = decision.answer
+                clarification = decision.clarification
         except Exception as exc:
             last_error = exc
             answer = ""
@@ -373,6 +472,18 @@ async def run_query(
             if isinstance(exc, CircuitOpenError):
                 # Breaker is open: retrying now would fail fast again.
                 break
+            continue
+
+        if clarification is not None:
+            # Questions back to the user: nothing to ground-check.
+            break
+
+        if not answer.strip() and clarify_candidates:
+            # Asked, but no option was grounded in the retrieved context:
+            # answer directly on the next attempt instead.
+            clarify_candidates = []
+            llm_kwargs = {}
+            retry_reason = "clarification_ungrounded"
             continue
 
         if not answer.strip():
@@ -424,7 +535,7 @@ async def run_query(
     # 5. LLM FAILURE / EMPTY RESPONSE
     # ---------------------------------------------------------
 
-    if not answer.strip():
+    if not answer.strip() and clarification is None:
         flags = ["llm_call_failed"] if last_error else ["empty_llm_output"]
         outcome = "llm_failed" if last_error else "empty_llm_output"
         token_details["outcome"] = outcome
@@ -448,6 +559,22 @@ async def run_query(
             reasoning_tokens=reasoning_tokens,
             outcome=outcome,
             token_details=token_details or None,
+        )
+
+    if clarification is not None:
+        return _clarification_response(
+            clarification,
+            request_id=request_id,
+            latency_ms=(time.perf_counter() - start) * 1000,
+            sources=sources,
+            confidence=max_retrieval_score,
+            follow_up_detected=follow_up_detected,
+            history_turns_sent=history_turns_sent,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
+            token_details=token_details,
         )
 
     logger.debug(

@@ -2,7 +2,7 @@ import type { PageTour } from "../types";
 
 export const evaluationTour: PageTour = {
   id: "evaluation",
-  title: "Evaluation (Live)",
+  title: "Evaluation",
   steps: [
     {
       title: "Answer-quality scorecard",
@@ -17,8 +17,8 @@ export const evaluationTour: PageTour = {
     },
     {
       target: '[data-tour="evaluation-compare"]',
-      title: "Compare Live vs Benchmark",
-      body: "Shows a comparison matrix above the tabs: pass rate, faithfulness, recall and citation precision for the benchmark vs live users, each with a delta, plus an overlaid radar. Click Exit Comparison to hide it.",
+      title: "Compare with benchmark",
+      body: "Shows a comparison matrix above the tabs: pass rate, faithfulness, recall and citation precision for the benchmark vs live users, each with a delta, plus an overlaid radar. Click Exit comparison to hide it.",
       placement: "left",
     },
     {

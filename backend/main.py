@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     admin,
+    alerts,
     auth,
     branding,
     documents,
@@ -17,6 +18,7 @@ from app.api.routes import (
     ingest,
     insights,
     metrics,
+    model_settings,
     query,
     sessions,
     user_management,
@@ -25,7 +27,7 @@ from app.auth.mock_idp import mount_mock_idp
 from app.core.compression import SSEAwareGZipMiddleware
 from app.core.concurrency import configure_thread_pool
 from app.core.config import Settings, configure_logging, get_settings
-from app.core.database import init_db
+from app.core.database import get_session_factory, init_db
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import LatencyMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
@@ -33,6 +35,7 @@ from app.core.tasks import drain as drain_background_tasks
 from app.governance.stream import get_governance_hub
 from app.harness.prompts import call_llm
 from app.jobs.runtime import start_platform_services
+from app.model_settings.service import refresh_model_settings
 from app.retrieval.embeddings import embed_text
 from app.retrieval.reranker import preload_reranker
 
@@ -75,6 +78,8 @@ async def lifespan(_app: FastAPI):
     # Initializes pgvector extension and creates all missing database tables.
     await init_db()
     configure_thread_pool()
+    # Settings > Models overrides, before the first Azure call uses them.
+    await refresh_model_settings(get_session_factory())
     await _startup_azure_health_check()
     await asyncio.to_thread(preload_reranker)
     # Event bus (LISTEN/NOTIFY) and, if JOBS_WORKER_ENABLED, the job worker.
@@ -141,8 +146,10 @@ app.include_router(admin.router, tags=["admin"])
 app.include_router(insights.router)
 app.include_router(branding.router)
 app.include_router(branding.admin_router)
+app.include_router(model_settings.router)
 app.include_router(auth.router)
 app.include_router(user_management.router)
+app.include_router(alerts.router)
 # Local mock Entra IdP, only with AUTH_DEV_MOCK=true (settings refuse it
 # outside ENV=development).
 mount_mock_idp(app, settings)

@@ -2,7 +2,7 @@ import type { PageTour } from "../types";
 
 export const documentsTour: PageTour = {
   id: "documents",
-  title: "Documents",
+  title: "Knowledge",
   steps: [
     {
       placement: "center",
@@ -90,7 +90,7 @@ export const documentsTour: PageTour = {
     },
     {
       placement: "center",
-      title: "That's Documents",
+      title: "That's Knowledge",
       body: "Keep the knowledge base clean: fix anything in Needs Attention and refresh stale documents. Related pages: Chat to try answers, Feedback for low-rated ones, and Governance for ingest audit events.",
     },
   ],

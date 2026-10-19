@@ -4,10 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
+import {
+  RECHARTS_AXIS_TITLE_SPACE,
+  chartTooltipStyle,
+  rechartsAxisLabel,
+  useChartTheme,
+} from "@/lib/use-chart-theme";
 import { useAudience } from "@/lib/audience-context";
 import { formatLatencyMs } from "@/lib/format";
 import { useDeepLink } from "@/lib/use-deep-link";
+import { useRangeParams } from "@/components/admin/entity/shared";
 import {
   CheckCircle2,
   Target,
@@ -29,9 +35,11 @@ import { TabGroup, EVALUATION_LIVE_TABS } from "@/components/admin/TabGroup";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination, type PageSize } from "@/components/admin/Pagination";
-import { QueryInspectorDrawer } from "@/components/admin/QueryInspectorDrawer";
+import { EvaluationRecordDrawer } from "@/components/admin/EvaluationRecordDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
+import { StatCard } from "@/components/admin/insights/StatCard";
+import { JudgeDisabledState, hasJudgedSamples } from "@/components/admin/evaluation/JudgeDisabledState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import {
   Bar,
@@ -60,6 +68,8 @@ const PassRateTrendCard = dynamic(
 
 const pct = (v: unknown) =>
   typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—";
+/** Percent, or "Not measured" when the server sends null (no dash-only cards). */
+const pctOrUnmeasured = (v: unknown) => (typeof v === "number" ? pct(v) : "Not measured");
 const num = (v: unknown, d = 2) =>
   typeof v === "number" ? v.toFixed(d) : "—";
 const ms = formatLatencyMs;
@@ -90,9 +100,13 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md px-4 py-3.5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
       <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">{label}</p>
-      <p className={`mt-1 text-xl font-black font-mono tracking-tight tabular-nums ${isPct ? statusColor(value) : "text-slate-900 dark:text-white"}`}>
-        {value}
-      </p>
+      {value === "Not measured" || value === "—" ? (
+        <p className="mt-2 text-sm font-semibold text-fg-subtle">Not measured</p>
+      ) : (
+        <p className={`mt-1 whitespace-nowrap text-xl font-black font-mono tracking-tight tabular-nums ${isPct ? statusColor(value) : "text-slate-900 dark:text-white"}`}>
+          {value}
+        </p>
+      )}
       {pctNum !== null && (
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-chart-track">
           <div
@@ -116,17 +130,16 @@ function HeroStat({
   icon: React.ElementType;
   accent?: string;
 }) {
+  // Shared KPI card (same as the rest of the console); no dash-only values.
+  const measured = value !== "—" && value !== "Not measured";
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
-      <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl transition-transform group-hover:scale-125" />
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">{label}</p>
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-teal-500/10 dark:bg-teal-400/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 shadow-xs">
-          <Icon className="h-4 w-4" />
-        </div>
-      </div>
-      <p className="mt-2 text-2xl font-black font-mono text-slate-900 dark:text-white tracking-tight tabular-nums">{value}</p>
-    </div>
+    <StatCard
+      title={label}
+      value={measured ? value : <span className="text-base font-medium text-fg-subtle">Not measured</span>}
+      subtitle={measured ? undefined : "No scored evaluation in this range"}
+      icon={Icon as React.ComponentType<{ className?: string }>}
+      className={accent ?? ""}
+    />
   );
 }
 
@@ -137,6 +150,8 @@ export default function EvaluationLivePage() {
   // Pass / fail / partial outcome colours.
   const pieColors = [ct.status.ok, ct.status.danger, ct.status.warn];
   const { audience } = useAudience();
+  // Global date range (header picker): live records and the pass-rate trend.
+  const { from: rangeFrom, to: rangeTo } = useRangeParams();
   const [r, setR] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -161,7 +176,7 @@ export default function EvaluationLivePage() {
     if (!token) return;
     setLoading(true);
     api
-      .evaluationReportLive(token, audience, compareMode)
+      .evaluationReportLive(token, audience, compareMode, undefined, { from: rangeFrom, to: rangeTo })
       .then((data) => {
         setR(data);
         setError(null);
@@ -173,7 +188,7 @@ export default function EvaluationLivePage() {
         );
         setLoading(false);
       });
-  }, [token, audience, compareMode]);
+  }, [token, audience, compareMode, rangeFrom, rangeTo]);
 
   const allCases = useMemo(() => r?.cases ?? [], [r?.cases]);
 
@@ -237,9 +252,10 @@ export default function EvaluationLivePage() {
     <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
       <div data-tour="evaluation-header">
       <DashboardHeader
-        title="RAG Evaluation (Live)"
+        title="Evaluation"
         subtitle="Continuous production evaluation, live query audit, and benchmark comparative scorecard"
         icon={Sparkles}
+        showDateRange
       >
         <button
           data-tour="evaluation-compare"
@@ -251,7 +267,7 @@ export default function EvaluationLivePage() {
           }`}
         >
           <GitCompare className="w-4 h-4" />
-          <span>{compareMode ? "Exit Comparison" : "Compare Live vs Benchmark"}</span>
+          <span className="whitespace-nowrap">{compareMode ? "Exit comparison" : "Compare with benchmark"}</span>
           {compareMode && (
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           )}
@@ -346,7 +362,7 @@ export default function EvaluationLivePage() {
                         <Cell key={idx} fill={pieColors[idx % pieColors.length]} />
                       ))}
                     </Pie>
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Legend verticalAlign="top" height={24} wrapperStyle={{ fontSize: 11 }} />
                     <Tooltip
                       contentStyle={tooltipStyle}
                     />
@@ -363,6 +379,8 @@ export default function EvaluationLivePage() {
             <div data-tour="evaluation-overview-breakdown" className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <ChartCard
                 title="Pass rate by query type"
+                empty={caseTypeBars.length === 0}
+                emptyMessage="No scored cases in this range yet"
                 subtitle="Distribution of passing answers per intent"
                 variant="aurora"
                 titleStyle="eyebrow"
@@ -372,15 +390,22 @@ export default function EvaluationLivePage() {
               ])}
               >
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={caseTypeBars}>
+                  <BarChart data={caseTypeBars} margin={{ top: 5, right: 5, bottom: RECHARTS_AXIS_TITLE_SPACE, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
-                    <XAxis dataKey="type" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
+                    <XAxis
+                      dataKey="type"
+                      tick={{ fontSize: 11, fill: ct.axis }}
+                      axisLine={false}
+                      tickLine={false}
+                      label={rechartsAxisLabel(ct, "Query type", "x")}
+                    />
                     <YAxis
                       tick={{ fontSize: 11, fill: ct.axis }}
                       axisLine={false}
                       tickLine={false}
-                      width={30}
+                      width={30 + RECHARTS_AXIS_TITLE_SPACE}
                       domain={[0, 100]}
+                      label={rechartsAxisLabel(ct, "Pass rate (%)", "y")}
                     />
                     <Tooltip
                       contentStyle={tooltipStyle}
@@ -397,6 +422,8 @@ export default function EvaluationLivePage() {
 
               <ChartCard
                 title="Latency by pipeline stage"
+                empty={latencyBars.every((b) => !Number(b.p50) && !Number(b.p95) && !Number(b.p99))}
+                emptyMessage="No stage timings in this range yet"
                 subtitle="p50 / p95 / p99 across stages (seconds)"
                 variant="aurora"
                 titleStyle="eyebrow"
@@ -408,15 +435,27 @@ export default function EvaluationLivePage() {
               ])}
               >
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={latencyBars}>
+                  <BarChart data={latencyBars} margin={{ top: 5, right: 5, bottom: RECHARTS_AXIS_TITLE_SPACE, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
-                    <XAxis dataKey="stage" tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: ct.axis }} axisLine={false} tickLine={false} width={40} />
+                    <XAxis
+                      dataKey="stage"
+                      tick={{ fontSize: 11, fill: ct.axis }}
+                      axisLine={false}
+                      tickLine={false}
+                      label={rechartsAxisLabel(ct, "Pipeline stage", "x")}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: ct.axis }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={40 + RECHARTS_AXIS_TITLE_SPACE}
+                      label={rechartsAxisLabel(ct, "Latency (seconds)", "y")}
+                    />
                     <Tooltip
                       contentStyle={tooltipStyle}
-                      formatter={(v) => [`${v} s`, ""]}
+                      formatter={(v, name) => [`${v} s`, name]}
                     />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Legend verticalAlign="top" height={24} wrapperStyle={{ fontSize: 11 }} />
                     <Bar dataKey="p50" name="p50" fill={ct.categorical[0]} radius={[4, 4, 0, 0]} />
                     <Bar dataKey="p95" name="p95" fill={ct.status.warn} radius={[4, 4, 0, 0]} />
                     <Bar dataKey="p99" name="p99" fill={ct.status.danger} radius={[4, 4, 0, 0]} />
@@ -447,7 +486,12 @@ export default function EvaluationLivePage() {
         {/* Domain Tab 2: Semantic Quality & Citations */}
         {activeTab === "judge" && (
           <div className="space-y-6 animate-in fade-in duration-200">
-            {/* LLM Judge Hero Metrics */}
+            {/* LLM Judge Hero Metrics (empty state while the online judge has scored nothing) */}
+            {!hasJudgedSamples(r) ? (
+              <div data-tour="evaluation-judge-kpis">
+                <JudgeDisabledState />
+              </div>
+            ) : (
             <div data-tour="evaluation-judge-kpis" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <HeroStat
                 label="Faithfulness (LLM Judge)"
@@ -465,6 +509,7 @@ export default function EvaluationLivePage() {
                 icon={CheckCircle2}
               />
             </div>
+            )}
 
             {/* Citation & Attribution Matrix */}
             <div data-tour="evaluation-judge-citations" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-6 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
@@ -479,14 +524,15 @@ export default function EvaluationLivePage() {
                 </span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
-                <Stat label="Citation Precision" value={pct(r?.citation?.precision)} />
-                <Stat label="Citation Coverage" value={pct(r?.citation?.coverage)} />
-                <Stat label="Correct Document" value={r?.citation?.quality?.correct_document === true ? "100.0%" : "—"} />
-                <Stat label="Current Version" value={r?.citation?.quality?.current_version === true ? "100.0%" : "—"} />
+                <Stat label="Citation Precision" value={pctOrUnmeasured(r?.citation?.precision)} />
+                <Stat label="Citation Coverage" value={pctOrUnmeasured(r?.citation?.coverage)} />
+                <Stat label="Correct Document" value={r?.citation?.quality?.correct_document === true ? "100.0%" : "Not measured"} />
+                <Stat label="Current Version" value={r?.citation?.quality?.current_version === true ? "100.0%" : "Not measured"} />
               </div>
             </div>
 
             {/* Semantic Quality Insights */}
+            {hasJudgedSamples(r) && (
             <div data-tour="evaluation-judge-rationale" className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-teal-50/30 dark:bg-teal-950/20 backdrop-blur-md p-6 shadow-card dark:shadow-xl space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-teal-900 dark:text-teal-300 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
@@ -500,6 +546,7 @@ export default function EvaluationLivePage() {
                 Without the LLM judge (ONLINE_EVAL_ENABLED) faithfulness is a heuristic, not a judged score.
               </p>
             </div>
+            )}
           </div>
         )}
 
@@ -712,7 +759,7 @@ export default function EvaluationLivePage() {
       </div>
 
       {/* Deep Query Inspector Drawer */}
-      <QueryInspectorDrawer
+      <EvaluationRecordDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         recordId={selectedRecord?.id}

@@ -377,7 +377,7 @@ function DocumentsContent() {
     <div className="flex min-h-screen flex-col bg-surface-page text-fg">
       <div data-tour="documents-header">
       <DashboardHeader
-        title="Knowledge Base Documents"
+        title="Knowledge"
         subtitle="Every uploaded .md and .docx file, standardized to canonical Markdown, chunked and embedded"
         icon={FileText}
         showAudienceTabs={false}
@@ -574,6 +574,8 @@ function DocumentsContent() {
               orientation="horizontal"
               onSelect={(seg) => router.push(entityHref({ kind: "document", id: seg.row.document_id }))}
               label="Most cited documents"
+              xAxisLabel="Citations in answers"
+              yAxisLabel="Document"
             />
           </ChartCard>
 
@@ -606,8 +608,8 @@ function DocumentsContent() {
                 x: d.age_days,
                 y: d.citations,
               }))}
-              xLabel="Age (days)"
-              yLabel="Citations"
+              xAxisLabel="Age (days)"
+              yAxisLabel="Citations"
               quadrants={{ topLeft: "Fresh, cited", topRight: "Old, still cited", bottomLeft: "New", bottomRight: "Stale" }}
               onSelect={(p) => router.push(entityHref({ kind: "document", id: p.id }))}
               label="Document age against citations"

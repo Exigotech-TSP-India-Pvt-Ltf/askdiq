@@ -13,6 +13,7 @@ import {
   type ChartSize,
   type SelectHandler,
 } from "./primitives";
+import { AxisTitles, axisDescription, titleInsets, type AxisLabelProps } from "./cartesian";
 
 export interface BarDatum {
   key: string;
@@ -20,7 +21,8 @@ export interface BarDatum {
   value: number;
 }
 
-export interface BarListProps {
+/** `xAxisLabel` titles the bar length (value) axis, `yAxisLabel` the category column. */
+export interface BarListProps extends AxisLabelProps {
   data: readonly BarDatum[];
   onSelect?: SelectHandler<BarDatum>;
   label?: string;
@@ -28,7 +30,13 @@ export interface BarListProps {
   formatValue?: (value: number) => string;
   /** Bar colour from the chart theme (default: first categorical colour). */
   colorFor?: (datum: BarDatum, index: number, ct: ChartTheme) => string;
+  /** Tooltip name of the bar value (default "Count"), e.g. "Ratings". */
+  valueLabel?: string;
+  /** Dim rows whose value is 0 (a fixed category list, e.g. every outcome). */
+  dimZero?: boolean;
 }
+
+const ZERO_ROW_OPACITY = 0.45;
 
 const LABEL_WIDTH = 104;
 const VALUE_WIDTH = 44;
@@ -42,8 +50,13 @@ export function BarList({
   height,
   formatValue = formatCompact,
   colorFor,
+  valueLabel = "Count",
+  dimZero = false,
+  xAxisLabel,
+  yAxisLabel,
 }: BarListProps) {
   const ct = useChartTheme();
+  const titles = { xAxisLabel, yAxisLabel };
   const describe = useCallback((d: BarDatum) => `${d.label}: ${formatValue(d.value)}`, [formatValue]);
   const { active, getMarkProps, opacityFor } = useChartMarks(data, describe, onSelect, ct.dimOpacity);
   const max = useMemo(() => Math.max(1, ...data.map((d) => d.value)), [data]);
@@ -52,11 +65,14 @@ export function BarList({
   if (data.length === 0) return <ChartEmpty height={height} />;
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const labelW = Math.min(LABEL_WIDTH, width * 0.35);
+    const inset = titleInsets(titles);
+    const labelW = inset.left + Math.min(LABEL_WIDTH, (width - inset.left) * 0.35);
     const plotW = Math.max(1, width - labelW - VALUE_WIDTH - 12);
-    const rowH = h / data.length;
+    const rowsH = Math.max(1, h - inset.bottom);
+    const rowH = rowsH / data.length;
     const barH = Math.min(MAX_BAR, rowH * 0.62);
-    return { labelW, plotW, rowH, barH };
+    const titleArea = { x0: labelW + 8, x1: labelW + 8 + plotW, y0: 0, y1: rowsH };
+    return { labelW, plotW, rowH, barH, titleArea };
   };
 
   const tooltip = (size: ChartSize) => {
@@ -66,21 +82,34 @@ export function BarList({
     return {
       x: labelW + 8 + ((d.value / max) * plotW) / 2,
       y: rowH * active + rowH * 0.2,
-      content: <TooltipBody title={d.label} rows={[{ label: "Count", value: formatValue(d.value), color: color(d, active) }]} />,
+      content: (
+        <TooltipBody
+          title={d.label}
+          caption={xAxisLabel}
+          rows={[{ label: valueLabel, value: formatValue(d.value), color: color(d, active) }]}
+        />
+      ),
     };
   };
 
   return (
-    <ChartFrame label={label} height={height} tooltip={tooltip}>
+    <ChartFrame label={label} height={height} tooltip={tooltip} description={axisDescription(titles)}>
       {(size) => {
-        const { labelW, plotW, rowH, barH } = layout(size);
+        const { labelW, plotW, rowH, barH, titleArea } = layout(size);
         return (
           <>
+            <AxisTitles {...titles} area={titleArea} height={size.height} ct={ct} />
             {data.map((d, i) => {
               const y = rowH * i + (rowH - barH) / 2;
               const w = Math.max(d.value > 0 ? 2 : 0, (d.value / max) * plotW);
               return (
-                <g key={d.key} {...getMarkProps(i)} opacity={opacityFor(i)} data-key={d.key}>
+                <g
+                  key={d.key}
+                  {...getMarkProps(i)}
+                  opacity={opacityFor(i) * (dimZero && d.value === 0 ? ZERO_ROW_OPACITY : 1)}
+                  data-key={d.key}
+                  data-zero={dimZero && d.value === 0 ? "true" : undefined}
+                >
                   <rect x={0} y={rowH * i} width={size.width} height={rowH} fill="transparent" />
                   <text x={labelW} y={rowH * i + rowH / 2} dy="0.32em" textAnchor="end" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
                     {d.label}

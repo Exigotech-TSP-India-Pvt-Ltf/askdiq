@@ -2,7 +2,7 @@
 
 import re
 from functools import lru_cache
-from typing import Self
+from typing import Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
@@ -14,6 +14,8 @@ MOCK_TENANT_ID = "00000000-0000-4000-8000-00000000a51d"
 MOCK_CLIENT_ID = "00000000-0000-4000-8000-0000000c11e7"
 MOCK_CLIENT_SECRET = "mock-idp-client-secret"  # noqa: S105 - dev-only mock value
 MIN_SESSION_SECRET_BYTES = 32
+# Plain address (recipients) or "Name <address>" (sender); no spaces in the address.
+_EMAIL_RE = re.compile(r"^[^@\s<>,]+@[^@\s<>,]+\.[^@\s<>,]+$|<[^@\s<>,]+@[^@\s<>,]+>$")
 
 
 class Settings(BaseSettings):
@@ -103,6 +105,27 @@ class Settings(BaseSettings):
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).
     retrieval_filter_keys: list[str] = ["source_type", "corpus", "ingestion_source"]
+    # Clarifying questions (app/harness/clarify.py): a short, underspecified
+    # question whose evidence is spread over several distinct topics with
+    # similar scores lets the LLM ask "which one?" with 2-4 options taken from
+    # the retrieved document titles/sections, instead of guessing.
+    clarify_enabled: bool = True
+    # At most this many clarification turns in a row per session; after that
+    # the assistant always answers with its best interpretation.
+    clarify_max_consecutive: int = 2
+    # Only questions with at most this many content words are considered.
+    clarify_max_query_words: int = 4
+    # Topics whose best score is within this margin of the top score compete.
+    clarify_score_margin: float = 0.06
+    # Topics needed before a clarification is offered, and the most shown.
+    clarify_min_options: int = 2
+    clarify_max_options: int = 4
+    # The model asks as few questions as needed, at most this many, in one turn.
+    clarify_max_questions: int = 3
+    # A short question that may need clarifying is retrieved wider, so the
+    # options cover the knowledge base's real distinct intents.
+    clarify_retrieval_top_k: int = 10
+    clarify_retrieval_max_documents: int = 6
     # Honour `ip_address` in request bodies (/query, /sessions, feedback): the
     # website frontend calls server-to-server and forwards each end user's IP,
     # which is stored against that user. Only valid IPv4/IPv6 values are used.
@@ -130,6 +153,8 @@ class Settings(BaseSettings):
     # How many prior messages (user+assistant combined) to load as context
     # for a follow-up question in the same session.
     session_history_max_messages: int = 20
+    # Most recent sessions returned by GET /sessions (newest activity first).
+    session_list_max_items: int = Field(default=200, ge=1, le=1000)
 
     # Per-user request throttling on /query (the expensive LLM path), so one
     # user hammering the endpoint can't degrade it for everyone else.
@@ -184,12 +209,35 @@ class Settings(BaseSettings):
     price_embed_per_million: float = 0.02
     price_prompt_per_million: float = 0.25
     price_output_per_million: float = 2.00
-    # Real Azure cached-input rate is 50% discount ($0.125/1M vs $0.25/1M prompt)
-    price_cached_per_million: float = 0.125
+    # gpt-5-mini cached input is 10% of the input rate ($0.025 vs $0.25 per 1M;
+    # Azure Retail Prices API, Global deployment).
+    price_cached_per_million: float = 0.025
+    # Settings > Models runtime overrides (DB row over the values above and
+    # AZURE_DEPLOYMENT_NAME / EMBEDDING_MODEL): per-worker refresh interval and
+    # the bound on one read (the last good values are kept on failure).
+    model_settings_refresh_seconds: int = Field(default=60, ge=1)
+    model_settings_load_timeout_seconds: float = Field(default=5.0, gt=0)
 
     # Audience & Usage Analytics Settings
     audience_cache_ttl_seconds: int = 30
     usage_summary_cache_ttl_seconds: int = 15
+    # Dashboard aggregates (app.core.cache.dashboard_cache): served as-is while
+    # younger than FRESH, served at once and refreshed in the background until
+    # STALE, recomputed while the caller waits after that. FRESH=0 disables.
+    dashboard_cache_fresh_seconds: float = Field(default=15.0, ge=0)
+    dashboard_cache_stale_seconds: float = Field(default=600.0, ge=0)
+    # Precomputed dashboard aggregates (app.dashboard.snapshots, table
+    # dashboard_snapshots). The refresher runs every REFRESH s (0 = off) in the
+    # jobs worker process, recomputing watched snapshots when data changed and
+    # every snapshot at least every IDLE_REFRESH s; a read of a snapshot older
+    # than MAX_AGE also triggers a background recompute. Unused ones are
+    # dropped after KEEP_HOURS.
+    dashboard_snapshot_refresh_seconds: float = Field(default=30.0, ge=0)
+    # false = in-process cache only (no dashboard_snapshots reads / writes).
+    dashboard_snapshots_persist: bool = True
+    dashboard_snapshot_idle_refresh_seconds: float = Field(default=900.0, ge=1)
+    dashboard_snapshot_max_age_seconds: float = Field(default=1800.0, ge=1)
+    dashboard_snapshot_keep_hours: float = Field(default=168.0, gt=0)
     usage_page_max_limit: int = 200
     usage_max_offset: int = 10_000
     usage_export_max_rows: int = 10_000
@@ -264,6 +312,8 @@ class Settings(BaseSettings):
     llm_max_concurrency: int = 64
     llm_saturated_retry_after_seconds: int = 2
     online_eval_max_concurrency: int = 4
+    # Online evaluations waiting for a slot; beyond this new ones are skipped.
+    online_eval_max_pending: int = Field(default=200, ge=1)
     # Default bound for `gather_scoped()` parallel aggregation.
     agg_max_concurrency: int = 4
     # Pooled connections parallel aggregation (all requests together) may never
@@ -342,6 +392,76 @@ class Settings(BaseSettings):
     insights_model: str = ""
     insights_reasoning_effort: str = "minimal"
     insights_completion_tokens_per_turn: int = 120
+
+    # --- Resource telemetry (app.governance.resources / metrics_sampler) ---
+    metrics_enabled: bool = True
+    # Each API worker samples CPU / memory / event-loop lag / DB pool this often
+    # and the live stream pushes the aggregated snapshot at the same pace.
+    metrics_sample_interval_seconds: float = Field(default=5.0, ge=1.0, le=60.0)
+    # Rolling history kept (DB, all workers) for sparklines and alert windows.
+    metrics_history_minutes: int = Field(default=15, ge=5, le=120)
+    # A worker without a sample for this many intervals is treated as gone.
+    metrics_worker_stale_intervals: int = Field(default=3, ge=2, le=20)
+
+    # --- Alerts (rules evaluated by the job worker; optional email) ---
+    alerts_enabled: bool = True
+    # Database-backed rules run at most once per interval across all workers.
+    alerts_evaluate_interval_seconds: int = Field(default=30, ge=15)
+    # Each API process samples its own signals (circuit breaker, Azure quota,
+    # 429s, event bus, database reachability) this often.
+    alerts_sample_interval_seconds: int = Field(default=30, ge=5)
+    # A process-sampled alert not re-reported for this long is resolved.
+    alerts_local_resolve_minutes: int = Field(default=5, ge=1)
+    # A new alert with the same dedupe key is not emailed again within this.
+    alert_cooldown_minutes: int = Field(default=60, ge=0)
+    alert_retention_days: int = Field(default=90, ge=1)
+    # Minimum severity that is emailed: info | warning | critical.
+    alert_email_min_severity: Literal["info", "warning", "critical"] = "info"
+    alert_email_max_attempts: int = Field(default=5, ge=1, le=20)
+    alert_notify_resolved: bool = True
+    # IANA zone shown next to UTC in alert emails.
+    alert_timezone: str = Field(
+        default="Australia/Sydney", pattern=r"^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$"
+    )
+    # Rule thresholds (the health thresholds above are shared with Governance).
+    alert_min_requests: int = Field(default=20, ge=1)
+    alert_latency_min_samples: int = Field(default=10, ge=1)
+    alert_llm_failure_window_minutes: int = Field(default=15, ge=1)
+    alert_llm_failures_threshold: int = Field(default=5, ge=1)
+    alert_azure_429_threshold: int = Field(default=3, ge=1)
+    alert_budget_warning_pct: float = Field(default=80.0, gt=0)
+    alert_budget_critical_pct: float = Field(default=100.0, gt=0)
+    alert_feedback_window_minutes: int = Field(default=60, ge=5)
+    alert_feedback_min_ratings: int = Field(default=5, ge=1)
+    alert_feedback_negative_pct: float = Field(default=25.0, ge=0, le=100)
+    alert_failure_window_minutes: int = Field(default=60, ge=5)
+    alert_online_eval_violations_threshold: int = Field(default=3, ge=1)
+    alert_event_bus_grace_seconds: int = Field(default=60, ge=5)
+    # Resource rules: the condition must hold for the whole sustain window
+    # (a single spike never alerts).
+    alert_resource_sustain_seconds: int = Field(default=120, ge=10)
+    alert_cpu_warning_pct: float = Field(default=80.0, gt=0, le=100)
+    alert_cpu_critical_pct: float = Field(default=95.0, gt=0, le=100)
+    alert_memory_warning_pct: float = Field(default=85.0, gt=0, le=100)
+    alert_memory_critical_pct: float = Field(default=95.0, gt=0, le=100)
+    alert_loop_lag_warning_ms: float = Field(default=200.0, gt=0)
+    alert_loop_lag_critical_ms: float = Field(default=1000.0, gt=0)
+    alert_db_pool_saturation_pct: float = Field(default=90.0, gt=0, le=100)
+    # Leak heuristic: RSS rising (almost) every sample by at least this much.
+    alert_rss_growth_mb: float = Field(default=256.0, gt=0)
+    alert_rss_growth_min_samples: int = Field(default=24, ge=3)
+    # SMTP delivery: off unless SMTP_HOST, ALERT_EMAIL_FROM and ALERT_EMAIL_TO
+    # are all set. SMTP_SSL = implicit TLS (465); otherwise STARTTLS (587).
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: SecretStr | None = None
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    smtp_timeout_seconds: float = Field(default=15.0, gt=0)
+    alert_email_from: str = ""
+    # Comma-separated recipients.
+    alert_email_to: str = ""
 
     # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
     # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).
@@ -439,6 +559,34 @@ class Settings(BaseSettings):
                 "in production."
             )
         return self
+
+    @model_validator(mode="after")
+    def _validate_alert_email(self) -> Self:
+        # Header-injection guard: addresses end up in From/To headers.
+        for name in ("alert_email_from", "alert_email_to", "smtp_host"):
+            if re.search(r"[\r\n]", getattr(self, name)):
+                raise ValueError(f"{name.upper()} must not contain line breaks.")
+        bad = [a for a in self.alert_email_recipients if not _EMAIL_RE.match(a)]
+        if bad or (
+            self.alert_email_from and not _EMAIL_RE.search(self.alert_email_from)
+        ):
+            raise ValueError(
+                "ALERT_EMAIL_FROM / ALERT_EMAIL_TO must be email addresses."
+            )
+        return self
+
+    @property
+    def alert_email_recipients(self) -> list[str]:
+        return [a.strip() for a in self.alert_email_to.split(",") if a.strip()]
+
+    @property
+    def alert_email_configured(self) -> bool:
+        """Email delivery is on only when host, sender and recipients are set."""
+        return bool(
+            self.smtp_host.strip()
+            and self.alert_email_from.strip()
+            and self.alert_email_recipients
+        )
 
     @property
     def superadmin_email_set(self) -> frozenset[str]:

@@ -1,5 +1,5 @@
 /**
- * Session and sign-in cookies (DEPLOYMENT.md "frontend contract", steps 2, 3,
+ * Session and sign-in cookies (docs/deployment/docker-and-auth-contract.md "frontend contract", steps 2, 3,
  * 5 and 8). Server-only: used by middleware.ts, the proxy and the /auth route
  * handlers. Every cookie here is httpOnly, so client JavaScript never sees a
  * session id or OIDC state. Edge-safe (no Node APIs).

@@ -16,11 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
+from app.dashboard.snapshots import Gather, get_snapshot, register
 from app.documents import citations, inventory
 from app.governance.audit import record_audit_event
 from app.models.db_models import Chunk, Document
@@ -108,14 +110,45 @@ async def get_citation_stats(
     from_: date | None = Query(None, alias="from", description="First day (UTC)"),
     to: date | None = Query(None, description="Last day, inclusive (UTC)"),
     limit: int = Query(DEFAULT_TOP_CITED, ge=1, le=MAX_TOP_CITED),
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> Response:
     """A citation is one assistant turn that listed the document among its
     sources (once per turn per document)."""
     start, end = resolve_range(from_, to, citations.utc_today())
-    payload = await citations.citation_stats(db, start=start, end=end, limit=limit)
+    payload = await get_snapshot(
+        CITATION_STATS_KIND,
+        {"start": start.isoformat(), "end": end.isoformat(), "limit": limit},
+        runner.gather,
+    )
     return cached_response(request, payload)
+
+
+CITATION_STATS_KIND = "documents.citations"
+
+
+async def _citation_stats_snapshot(gather: Gather, params: dict) -> Any:
+    start, end = date.fromisoformat(params["start"]), date.fromisoformat(params["end"])
+
+    async def stats(session: AsyncSession) -> Any:
+        return await citations.citation_stats(
+            session, start=start, end=end, limit=params["limit"]
+        )
+
+    (payload,) = await gather(stats)
+    # Stored in its wire form ("from" / "to"), as the route sends it.
+    return payload.model_dump(mode="json", by_alias=True)
+
+
+def _citation_defaults() -> list[dict]:
+    """The Knowledge page's default range (as resolve_range picks it)."""
+    start, end = resolve_range(None, None, citations.utc_today())
+    return [
+        {"start": start.isoformat(), "end": end.isoformat(), "limit": DEFAULT_TOP_CITED}
+    ]
+
+
+register(CITATION_STATS_KIND, _citation_stats_snapshot, _citation_defaults)
 
 
 @router.get(

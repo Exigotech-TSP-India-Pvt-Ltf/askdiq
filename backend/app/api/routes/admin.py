@@ -1,7 +1,9 @@
 """Admin endpoints for users and conversation management."""
 
 import asyncio
-from datetime import date, datetime, timedelta
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -14,10 +16,10 @@ from app.api.routes.admin_feedback import router as feedback_router
 from app.api.routes.admin_governance import router as governance_router
 from app.api.routes.admin_usage import USAGE_CARD_CACHE_PREFIX
 from app.api.routes.admin_usage import router as usage_router
+from app.api.routes.admin_usage import summary_totals as usage_summary_totals
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
-from app.core.cache import aggregation_cache
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, release_connection
@@ -29,6 +31,13 @@ from app.dashboard import active_visitors
 from app.dashboard import activity as dashboard_activity
 from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
+from app.dashboard.range_params import optional_day_range
+from app.dashboard.snapshots import (
+    GatherRunner,
+    get_snapshot,
+    register,
+    snapshot_query,
+)
 from app.entities import conversations as conversation_stats
 from app.entities import visitors
 from app.governance.audience import (
@@ -42,6 +51,7 @@ from app.governance.log_summary import level_for
 from app.governance.monitoring import (
     QUERY_ACTION,
 )
+from app.governance.outcomes import ALL_OUTCOMES
 from app.governance.test_ips import (
     add_or_update_test_ip,
     delete_test_ip,
@@ -49,6 +59,7 @@ from app.governance.test_ips import (
     get_test_ip_details,
     is_test_ip,
 )
+from app.governance.traces import normalized_outcome_sql
 from app.guardrails.conversational import (
     CAPABILITY_RESPONSE,
     FAREWELL_RESPONSE,
@@ -56,6 +67,7 @@ from app.guardrails.conversational import (
     THANKS_RESPONSE,
     detect_conversational_intent,
 )
+from app.model_settings.service import current_model_settings
 from app.models.db_models import (
     AuditLog,
     ChatMessageRecord,
@@ -156,6 +168,7 @@ async def list_users(
         description="Slot filter last day.",
     ),
     db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return users grouped by client IP with activity statistics (Task 2.3.1).
@@ -189,41 +202,12 @@ async def list_users(
     wanted_status = (visitor_status or "all").lower()
     now = datetime.utcnow()
 
-    ip_rows = (
-        await db.execute(
-            select(
-                ChatSession.created_ip.label("ip"),
-                func.min(ChatSession.created_at).label("first_seen"),
-                func.max(ChatSession.last_activity_at).label("last_active"),
-                func.count(ChatSession.id).label("sessions"),
-            )
-            .where(ChatSession.created_ip.isnot(None))
-            .group_by(ChatSession.created_ip)
-        )
-    ).all()
-
-    queries_by_ip = dict(
-        (
-            await db.execute(
-                select(ChatMessageRecord.ip_address, func.count(ChatMessageRecord.id))
-                .where(ChatMessageRecord.ip_address.isnot(None))
-                .group_by(ChatMessageRecord.ip_address)
-            )
-        ).all()
-    )
-
-    feedback_counts = dict(
-        (
-            await db.execute(
-                select(AuditLog.ip_address, func.count(AuditLog.id))
-                .where(
-                    AuditLog.action.ilike("%feedback%"),
-                    AuditLog.ip_address.isnot(None),
-                )
-                .group_by(AuditLog.ip_address)
-            )
-        ).all()
-    )
+    # Three whole-table aggregates per IP: cached stale-while-revalidate and
+    # shared by every filter / sort / page of the list.
+    aggregates = await get_snapshot(VISITOR_AGGREGATES_KIND, {}, runner.gather)
+    ip_rows = [_VisitorRow.from_json(r) for r in aggregates["ips"]]
+    queries_by_ip: dict[str, int] = aggregates["queries"]
+    feedback_counts: dict[str, int] = aggregates["feedback"]
 
     all_users = []
     for row in ip_rows:
@@ -281,6 +265,95 @@ async def list_users(
     }
 
 
+def _naive_utc_iso(value: str) -> datetime:
+    """ISO-8601 to naive UTC (the columns' form); "Z" / "+05:30" are converted."""
+    parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+VISITOR_AGGREGATES_KIND = "visitors.aggregates"
+
+
+@dataclass(frozen=True, slots=True)
+class _VisitorRow:
+    ip: str
+    first_seen: datetime | None
+    last_active: datetime | None
+    sessions: int
+
+    @classmethod
+    def from_json(cls, raw: list[Any]) -> "_VisitorRow":
+        def when(value: str | None) -> datetime | None:
+            return datetime.fromisoformat(value) if value else None
+
+        return cls(raw[0], when(raw[1]), when(raw[2]), int(raw[3]))
+
+
+async def _visitor_aggregates_snapshot(gather: Any, _params: dict) -> dict[str, Any]:
+    (ip_rows, queries, feedback) = (await gather(_visitor_aggregates))[0]
+    return {
+        "ips": [[r.ip, r.first_seen, r.last_active, r.sessions] for r in ip_rows],
+        "queries": queries,
+        "feedback": feedback,
+    }
+
+
+async def _visitor_aggregates(
+    db: AsyncSession,
+) -> tuple[list[Any], dict[str, int], dict[str, int]]:
+    """(sessions per IP, queries per IP, feedback events per IP)."""
+    ip_rows = (
+        await db.execute(
+            select(
+                ChatSession.created_ip.label("ip"),
+                func.min(ChatSession.created_at).label("first_seen"),
+                func.max(ChatSession.last_activity_at).label("last_active"),
+                func.count(ChatSession.id).label("sessions"),
+            )
+            .where(ChatSession.created_ip.isnot(None))
+            .group_by(ChatSession.created_ip)
+        )
+    ).all()
+    queries_by_ip = dict(
+        (
+            await db.execute(
+                select(ChatMessageRecord.ip_address, func.count(ChatMessageRecord.id))
+                .where(ChatMessageRecord.ip_address.isnot(None))
+                .group_by(ChatMessageRecord.ip_address)
+            )
+        ).all()
+    )
+    feedback_counts = dict(
+        (
+            await db.execute(
+                select(AuditLog.ip_address, func.count(AuditLog.id))
+                .where(
+                    AuditLog.action.ilike("%feedback%"),
+                    AuditLog.ip_address.isnot(None),
+                )
+                .group_by(AuditLog.ip_address)
+            )
+        ).all()
+    )
+    return list(ip_rows), queries_by_ip, feedback_counts
+
+
+async def _feedback_count(db: AsyncSession, ip: str | None) -> int:
+    """Feedback audit events from one IP (index on ``(ip_address, created_at)``)."""
+    if not ip:
+        return 0
+    return int(
+        await db.scalar(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.ip_address == ip, AuditLog.action.ilike("%feedback%")
+            )
+        )
+        or 0
+    )
+
+
 @router.get("/users/{user_id}")
 async def get_user(
     user_id: str,
@@ -288,19 +361,6 @@ async def get_user(
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return detailed information about one user."""
-    feedback_counts = dict(
-        (
-            await db.execute(
-                select(AuditLog.ip_address, func.count(AuditLog.id))
-                .where(
-                    AuditLog.action.ilike("%feedback%"),
-                    AuditLog.ip_address.is_not(None),
-                )
-                .group_by(AuditLog.ip_address)
-            )
-        ).all()
-    )
-
     if user_id.startswith("client-"):
         ip = user_id.removeprefix("client-")
         sessions_res = (
@@ -357,7 +417,7 @@ async def get_user(
             "sessions": len(sessions_res),
             "conversations": len(sessions_res),
             "queries": query_count,
-            "feedback_count": feedback_counts.get(ip, 0),
+            "feedback_count": await _feedback_count(db, ip),
             "conversations_data": [
                 {
                     "id": str(s.id),
@@ -433,7 +493,7 @@ async def get_user(
         "sessions": len(conversation_rows),
         "conversations": len(conversation_rows),
         "queries": query_count,
-        "feedback_count": feedback_counts.get(ip_address, 0),
+        "feedback_count": await _feedback_count(db, ip_address),
         "conversations_data": [
             {
                 "id": str(session.id),
@@ -470,12 +530,15 @@ async def list_conversations(
     day: date | None = Query(
         None, description="With `outcome`: only turns on this UTC day (YYYY-MM-DD)."
     ),
-    db: AsyncSession = Depends(get_db),
+    days: dashboard_window.DayRange | None = Depends(optional_day_range),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Return conversations for the admin dashboard (Task 2.3.2: audience-scoped, paginated, no email).
 
     Rows carry `turn_count` and `outcome_counts` (NULL outcome = answered).
+    Optional `from` / `to` (inclusive UTC days) keep conversations started in
+    that range, matching `/conversations/stats`; without them, all of them.
     """
     if min_turns is not None and max_turns is not None and min_turns > max_turns:
         raise HTTPException(
@@ -488,6 +551,60 @@ async def list_conversations(
             detail="`day` requires `outcome`.",
         )
     aud_scope = audience_scope(audience)
+    args = ConversationListArgs(
+        aud_scope,
+        q,
+        ip,
+        sort,
+        limit,
+        offset,
+        min_turns,
+        max_turns,
+        outcome,
+        day,
+        days.start.isoformat() if days is not None else None,
+        days.end.isoformat() if days is not None else None,
+    )
+    # Full grouped scan of sessions x messages (counted, then paged): cached
+    # stale-while-revalidate per parameter set, on its own session.
+    return await get_snapshot(CONVERSATIONS_KIND, asdict(args), runner.gather)
+
+
+CONVERSATIONS_KIND = "admin.conversations"
+
+
+async def _conversations_snapshot(gather: Any, params: dict) -> dict:
+    values = dict(params)
+    if values["day"]:
+        values["day"] = date.fromisoformat(values["day"])
+    if values["outcome"]:
+        values["outcome"] = OutcomeName(values["outcome"])
+    args = ConversationListArgs(**values)
+    (page,) = await gather(lambda s: _conversations_page(s, args))
+    return page
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationListArgs:
+    aud_scope: str
+    q: str | None
+    ip: str | None
+    sort: str
+    limit: int
+    offset: int
+    min_turns: int | None
+    max_turns: int | None
+    outcome: OutcomeName | None
+    day: date | None
+    # Optional global date range (naive UTC ISO strings, part of the snapshot key).
+    range_start: str | None = None
+    range_end: str | None = None
+
+
+async def _conversations_page(db: AsyncSession, args: ConversationListArgs) -> dict:
+    aud_scope, q, ip, sort = args.aud_scope, args.q, args.ip, args.sort
+    limit, offset, outcome, day = args.limit, args.offset, args.outcome, args.day
+    min_turns, max_turns = args.min_turns, args.max_turns
     turn_count = conversation_stats.turn_count_sql()
 
     query = (
@@ -505,6 +622,11 @@ async def list_conversations(
 
     for cond in await conversation_stats.session_conditions(db, aud_scope, ip, q):
         query = query.where(cond)
+    if args.range_start is not None and args.range_end is not None:
+        query = query.where(
+            ChatSession.created_at >= datetime.fromisoformat(args.range_start),
+            ChatSession.created_at < datetime.fromisoformat(args.range_end),
+        )
     if outcome is not None:
         query = query.where(conversation_stats.outcome_exists(outcome.value, day))
     if min_turns is not None:
@@ -693,6 +815,38 @@ async def _latency_stats(db: AsyncSession, hours: int = 24 * 30) -> dict[str, An
     }
 
 
+# Window of ``_latency_stats`` as used by the usage cards (30 days).
+USAGE_LATENCY_WINDOW_HOURS = 24 * 30
+# Outcomes that are real failures (the LLM produced no answer). Blocked,
+# conversational and ungrounded turns completed as designed.
+LLM_FAILED_OUTCOMES: tuple[str, ...] = ("llm_failed",)
+UNKNOWN_OUTCOME = "unknown"
+
+
+async def _assistant_outcome_counts(db: AsyncSession) -> dict[str, int]:
+    """All-time assistant turns per canonical outcome (same normalisation as
+    the Monitoring outcome mix). Every outcome is present (0 when unused);
+    legacy turns without an outcome count as ``unknown``."""
+    outcome = func.coalesce(
+        normalized_outcome_sql(ChatMessageRecord.outcome), UNKNOWN_OUTCOME
+    ).label("outcome")
+    inner = (
+        select(outcome)
+        .select_from(ChatMessageRecord)
+        .where(ChatMessageRecord.role == "assistant")
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(inner.c.outcome, func.count()).group_by(inner.c.outcome)
+        )
+    ).all()
+    counts = dict.fromkeys((*ALL_OUTCOMES, UNKNOWN_OUTCOME), 0)
+    for name, count in rows:
+        counts[str(name)] = counts.get(str(name), 0) + int(count)
+    return counts
+
+
 def _usage_card_key(name: str) -> str:
     """Aggregation-cache key for a usage card; the permission scope is part of it."""
     return f"{USAGE_CARD_CACHE_PREFIX}{Permission.DASHBOARD_READ.value}:{name}"
@@ -710,7 +864,7 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
     (guardrail-blocked/fallback/conversational replies).
     """
 
-    get_settings()
+    rates = current_model_settings()
 
     rows = (
         await db.execute(
@@ -740,7 +894,14 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
             .order_by(ChatSession.id, ChatMessageRecord.turn_index)
         )
     ).all()
+    # Per-row accounting over every exchange is CPU work (seconds on a large
+    # history): run it in the thread pool so the event loop keeps serving
+    # every other request meanwhile.
+    return await asyncio.to_thread(_usage_rows_from_records, rows, rates)
 
+
+def _usage_rows_from_records(rows: Sequence[Any], rates: Any) -> list[dict]:
+    """Pairs user / assistant rows into queries with token and cost accounting."""
     pairs: dict[tuple, dict] = {}
     for r in rows:
         key = (r.session_id, r.turn_index)
@@ -850,7 +1011,7 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
                 cost = 0.0
             else:
                 q_embed_tok = p["embedding_tokens"] or _est_tokens(p["query"])
-                cost = (q_embed_tok * 0.02) / 1e6
+                cost = (q_embed_tok * rates.price_embed_per_million) / 1e6
             cost_query_embed = cost
             cost_guardrail_embed = 0.0
             cost_prompt = 0.0
@@ -871,13 +1032,21 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
             g_embed_tok = p["guardrail_tokens"] or 0
             is_actual = True
             costs_map = details.get("costs_usd", {})
-            cost_query_embed = costs_map.get("query_embed", (q_embed_tok * 0.02) / 1e6)
-            cost_guardrail_embed = costs_map.get(
-                "guardrail_embed", (g_embed_tok * 0.02) / 1e6
+            cost_query_embed = costs_map.get(
+                "query_embed", (q_embed_tok * rates.price_embed_per_million) / 1e6
             )
-            cost_prompt = costs_map.get("prompt", (in_tok * 0.25) / 1e6)
-            cost_reasoning = costs_map.get("reasoning", (reasoning_tok * 2.0) / 1e6)
-            cost_visible = costs_map.get("visible", (visible_tok * 2.0) / 1e6)
+            cost_guardrail_embed = costs_map.get(
+                "guardrail_embed", (g_embed_tok * rates.price_embed_per_million) / 1e6
+            )
+            cost_prompt = costs_map.get(
+                "prompt", (in_tok * rates.price_prompt_per_million) / 1e6
+            )
+            cost_reasoning = costs_map.get(
+                "reasoning", (reasoning_tok * rates.price_output_per_million) / 1e6
+            )
+            cost_visible = costs_map.get(
+                "visible", (visible_tok * rates.price_output_per_million) / 1e6
+            )
             outcome = outcome_hint or ("answered" if p["grounded"] else "fallback")
         elif p["prompt_tokens"] is not None and p["completion_tokens"] is not None:
             in_tok = p["prompt_tokens"]
@@ -949,47 +1118,68 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
 
 @router.get("/usage/llm")
 async def usage_llm(
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    settings = get_settings()
-
-    async def compute() -> dict:
-        lat = await _latency_stats(db)
-        query_rows = await _query_usage_rows(db)
-        in_tokens = sum(q["input_tokens"] for q in query_rows)
-        out_tokens = sum(q["output_tokens"] for q in query_rows)
-        cost = sum(q["cost_usd"] for q in query_rows)
-        failed = sum(1 for q in query_rows if q["grounded"] is False)
-        actual_count = sum(1 for q in query_rows if q["is_actual"])
-        requests = lat["requests"]
-        return {
-            "provider": "Azure OpenAI",
-            "model": settings.azure_deployment_name,
-            "requests": requests,
-            "successful": max(requests - failed, 0),
-            "failed": failed,
-            "input_tokens": in_tokens,
-            "output_tokens": out_tokens,
-            "total_tokens": in_tokens + out_tokens,
-            "average_latency_ms": _r(lat["llm_ms"]),
-            "cost": f"${cost:.4f}",
-            # How many of the queries counted above used the real Azure usage
-            # numbers vs. the legacy text-length estimate (pre-migration rows
-            # or exchanges with no actual LLM call).
-            "token_accounting": {
-                "actual": actual_count,
-                "estimated": len(query_rows) - actual_count,
-            },
-        }
-
-    # Per-exchange cost accounting runs in Python over every exchange; the
-    # all-time totals are cached briefly and concurrent callers share one run.
-    return await aggregation_cache.get_or_compute(
-        _usage_card_key("llm"),
-        compute,
-        ttl=settings.usage_summary_cache_ttl_seconds,
+    # Per-exchange cost accounting runs in Python over every exchange (seconds):
+    # the all-time totals are cached stale-while-revalidate, on their own
+    # session, and concurrent callers share one run.
+    return await snapshot_query(
+        USAGE_LLM_KIND, {"scope": _usage_card_key("llm")}, runner, _usage_llm_payload
     )
+
+
+USAGE_LLM_KIND = "usage.llm"
+
+
+async def _usage_llm_snapshot(gather: Any, _params: dict) -> dict:
+    (payload,) = await gather(_usage_llm_payload)
+    return payload
+
+
+async def _usage_llm_payload(db: AsyncSession) -> dict:
+    """All-time LLM usage card (Monitoring tab), aggregated in SQL.
+
+    Same accounting as the Usage & Cost summary (``_summary_totals``: the
+    tokens and cost recorded per exchange at generation time), instead of
+    loading and re-pricing every exchange in Python.
+    """
+    lat = await _latency_stats(db, USAGE_LATENCY_WINDOW_HOURS)
+    totals = await usage_summary_totals(db, "overview", None, None)
+    # Requests, failures and tokens share one window (all time) and one
+    # source (assistant turns). Only real errors count as failed; blocked,
+    # conversational and ungrounded turns are reported in ``outcomes``.
+    outcomes = await _assistant_outcome_counts(db)
+    failed = sum(outcomes[name] for name in LLM_FAILED_OUTCOMES)
+    in_tokens = int(totals.sum_prompt)
+    out_tokens = int(totals.sum_completion)
+    cost = float(totals.sum_cost)
+    exchanges = int(totals.total_turns)
+    estimated = int(totals.estimated_turns)
+    requests = sum(outcomes.values())
+    return {
+        "provider": "Azure OpenAI",
+        "model": current_model_settings().llm_deployment,
+        "window": "all_time",
+        "source": "chat_messages",
+        "latency_window_hours": USAGE_LATENCY_WINDOW_HOURS,
+        "outcomes": outcomes,
+        "requests": requests,
+        "successful": max(requests - failed, 0),
+        "failed": failed,
+        "input_tokens": in_tokens,
+        "output_tokens": out_tokens,
+        "total_tokens": in_tokens + out_tokens,
+        "average_latency_ms": _r(lat["llm_ms"]),
+        "cost": f"${cost:.4f}",
+        # How many of the queries counted above used the real Azure usage
+        # numbers vs. the legacy text-length estimate (pre-migration rows
+        # or exchanges with no actual LLM call).
+        "token_accounting": {
+            "actual": max(exchanges - estimated, 0),
+            "estimated": estimated,
+        },
+    }
 
 
 @router.get("/usage/embedding")
@@ -999,7 +1189,7 @@ async def usage_embedding(
 ):
     settings = get_settings()
 
-    lat = await _latency_stats(db)
+    lat = await _latency_stats(db, USAGE_LATENCY_WINDOW_HOURS)
     docs = await db.scalar(select(func.count(Document.id)))
     chunks = await db.scalar(select(func.count(Chunk.id)))
     chunk_chars = await db.scalar(
@@ -1027,14 +1217,16 @@ async def usage_embedding(
     tokens = int((chunk_chars or 0) // 4) + int(q_tokens)
     return {
         "provider": "Azure OpenAI",
-        "model": settings.embedding_model,
+        "model": current_model_settings().embedding_model,
         "dimensions": settings.embedding_dim,
         "documents": docs or 0,
         "chunks": chunks or 0,
+        "window": "all_time",
+        "latency_window_hours": USAGE_LATENCY_WINDOW_HOURS,
         "requests": int(q_count) + (chunks or 0),
         "input_tokens": tokens,
         "average_latency_ms": _r(lat["embedding_ms"]),
-        "cost": f"${tokens / 1e6 * 0.02:.4f}",
+        "cost": f"${tokens / 1e6 * current_model_settings().price_embed_per_million:.4f}",
     }
 
 
@@ -1085,10 +1277,13 @@ async def usage_metadata(
     settings = get_settings()
 
     return {
-        "llm": {"provider": "Azure OpenAI", "model": settings.azure_deployment_name},
+        "llm": {
+            "provider": "Azure OpenAI",
+            "model": current_model_settings().llm_deployment,
+        },
         "embedding": {
             "provider": "Azure OpenAI",
-            "model": settings.embedding_model,
+            "model": current_model_settings().embedding_model,
             "dimensions": settings.embedding_dim,
         },
         "reranker": {
@@ -1219,7 +1414,7 @@ async def usage_cost_breakdown(
     filtered = all_queries
     if from_date:
         try:
-            f_dt = datetime.fromisoformat(from_date.replace("Z", ""))
+            f_dt = _naive_utc_iso(from_date)
             filtered = [
                 item
                 for item in filtered
@@ -1229,7 +1424,7 @@ async def usage_cost_breakdown(
             pass
     if to_date:
         try:
-            t_dt = datetime.fromisoformat(to_date.replace("Z", ""))
+            t_dt = _naive_utc_iso(to_date)
             filtered = [
                 item
                 for item in filtered
@@ -1531,13 +1726,52 @@ async def admin_dashboard(
     )
     if window is None:
         return cached_response(request, await _dashboard_payload(db, audience))
-    panels = await _dashboard_panels(db, audience)
     await release_connection(db)  # never hold a pool slot while waiting for more
-    payload = {
-        **panels,
-        **await dashboard_service.window_payload(runner, audience, window, now),
+
+    return cached_response(
+        request,
+        await get_snapshot(
+            DASHBOARD_KIND, _dashboard_params(audience, window, now), runner.gather
+        ),
+    )
+
+
+DASHBOARD_KIND = "admin.dashboard"
+# A window ending this close to "now" is a rolling preset ("Last 7 days"):
+# it is stored per span and recomputed for the current time.
+ROLLING_WINDOW_SLACK = timedelta(minutes=5)
+
+
+def _dashboard_params(audience: str, window: Any, now: datetime) -> dict[str, Any]:
+    if abs(now - window.end) <= ROLLING_WINDOW_SLACK:
+        return {"audience": audience, "span_seconds": int(window.span.total_seconds())}
+    return {
+        "audience": audience,
+        "start": window.start.isoformat(),
+        "end": window.end.isoformat(),
     }
-    return cached_response(request, payload)
+
+
+async def _dashboard_snapshot(gather: Any, params: dict) -> dict:
+    now = dashboard_window.utcnow()
+    if "span_seconds" in params:
+        end = now.replace(second=0, microsecond=0)
+        window = dashboard_window.Window(
+            end - timedelta(seconds=params["span_seconds"]), end
+        )
+    else:
+        window = dashboard_window.Window(
+            datetime.fromisoformat(params["start"]),
+            datetime.fromisoformat(params["end"]),
+        )
+    audience = params["audience"]
+    (panels,) = await gather(lambda s: _dashboard_panels(s, audience))
+    return {
+        **panels,
+        **await dashboard_service.window_payload(
+            GatherRunner(gather), audience, window, now
+        ),
+    }
 
 
 @router.get(
@@ -1764,3 +1998,38 @@ async def _governance_status(db: AsyncSession, since: datetime) -> dict:
         "audit_logs": f"{audit_total or 0:,} entries",
         "guardrails": f"{flagged or 0:,} responses with flags (24h)",
     }
+
+
+# ============================================================================
+# PRECOMPUTED AGGREGATES (app.dashboard.snapshots): each page's default view
+# is computed at startup and kept fresh in the background.
+# ============================================================================
+
+_DAY_SECONDS = 86_400
+_DASHBOARD_SPANS_DAYS = (1, 7, 30, 90)
+_DEFAULT_SPAN_DAYS = 7
+
+register(VISITOR_AGGREGATES_KIND, _visitor_aggregates_snapshot, [{}])
+register(USAGE_LLM_KIND, _usage_llm_snapshot, [{"scope": _usage_card_key("llm")}])
+register(
+    CONVERSATIONS_KIND,
+    _conversations_snapshot,
+    [
+        asdict(
+            ConversationListArgs(
+                aud, None, None, "last_activity_desc", 10, 0, None, None, None, None
+            )
+        )
+        for aud in ("overview", "users", "testing")
+    ],
+)
+register(
+    DASHBOARD_KIND,
+    _dashboard_snapshot,
+    [
+        {"audience": aud, "span_seconds": days * _DAY_SECONDS}
+        for aud in ("overview", "users", "testing")
+        for days in _DASHBOARD_SPANS_DAYS
+        if aud == "overview" or days == _DEFAULT_SPAN_DAYS
+    ],
+)

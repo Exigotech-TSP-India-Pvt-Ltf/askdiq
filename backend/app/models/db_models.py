@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -211,6 +212,17 @@ class ChatSession(Base):
         back_populates="session",
         cascade="all, delete-orphan",
         order_by="ChatMessageRecord.created_at",
+    )
+
+    __table_args__ = (
+        # Newest session per (actor, IP) on every /query; newest-first list.
+        Index(
+            "ix_chat_sessions_user_ip_activity",
+            "user_email",
+            "created_ip",
+            "last_activity_at",
+        ),
+        Index("ix_chat_sessions_user_activity", "user_email", "last_activity_at"),
     )
 
 
@@ -671,4 +683,174 @@ class BrandSettings(Base):
             "AND (tint_hex IS NULL OR tint_hex ~ '^#[0-9a-f]{6}$')",
             name="ck_brand_settings_hex",
         ),
+    )
+
+
+class ModelSettings(Base):
+    """Runtime model and pricing overrides (Settings > Models); singleton ``id = 1``.
+
+    A null column means "use the .env value". Prices are USD per 1M tokens and
+    only affect exchanges recorded after the change (each exchange snapshots
+    the rates it was billed at).
+    """
+
+    __tablename__ = "model_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    llm_deployment: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    price_prompt_per_million: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_cached_per_million: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_output_per_million: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_embed_per_million: Mapped[float | None] = mapped_column(Float, nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_model_settings_singleton"),
+        CheckConstraint(
+            "coalesce(price_prompt_per_million, 0) >= 0 "
+            "AND coalesce(price_cached_per_million, 0) >= 0 "
+            "AND coalesce(price_output_per_million, 0) >= 0 "
+            "AND coalesce(price_embed_per_million, 0) >= 0",
+            name="ck_model_settings_prices",
+        ),
+    )
+
+
+# --- Alerts (app/alerts) ---
+
+ALERT_ACTIVE_STATUSES = ("open", "acknowledged")
+
+
+class Alert(Base):
+    """One alert raised by a rule in ``app.alerts.catalogue``.
+
+    At most one *active* (open / acknowledged) row exists per ``dedupe_key``
+    (partial unique index), so every worker and replica can raise the same
+    condition safely; repeats bump ``occurrences`` / ``last_seen_at``.
+    ``notify_*`` tracks email delivery (``disabled`` when SMTP is not set).
+    """
+
+    __tablename__ = "alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    rule: Mapped[str] = mapped_column(String(64))
+    dedupe_key: Mapped[str] = mapped_column(String(200))
+    severity: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(
+        String(16), default="open", server_default="open"
+    )
+    title: Mapped[str] = mapped_column(String(300))
+    summary: Mapped[str] = mapped_column(Text, default="", server_default="")
+    component: Mapped[str] = mapped_column(String(64))
+    details: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb")
+    )
+    occurrences: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    acknowledged_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    notify_status: Mapped[str] = mapped_column(
+        String(16), default="pending", server_default="pending"
+    )
+    notify_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    notify_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "severity IN ('info', 'warning', 'critical')",
+            name="ck_alerts_severity",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'acknowledged', 'resolved')",
+            name="ck_alerts_status",
+        ),
+        CheckConstraint(
+            "notify_status IN ('pending', 'queued', 'sent', 'retrying', 'failed', "
+            "'disabled', 'skipped', 'suppressed')",
+            name="ck_alerts_notify_status",
+        ),
+        Index(
+            "uq_alerts_active_dedupe_key",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=text("status IN ('open', 'acknowledged')"),
+        ),
+        Index("ix_alerts_status_last_seen", "status", "last_seen_at"),
+        Index("ix_alerts_dedupe_key_notified", "dedupe_key", "notified_at"),
+        Index("ix_alerts_created_id", "created_at", "id"),
+    )
+
+
+class DashboardSnapshot(Base):
+    """Precomputed dashboard aggregate: one API payload per kind + params.
+
+    Written by the snapshot refresher (app.dashboard.snapshots) under an
+    advisory lock and read by the dashboard routes, so a page visit reads one
+    row instead of aggregating the history. ``requested_at`` marks the
+    combinations people actually open; only those are kept fresh.
+    """
+
+    __tablename__ = "dashboard_snapshots"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(64))
+    params: Mapped[dict] = mapped_column(JSONB)
+    payload: Mapped[dict | list] = mapped_column(JSONB)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    compute_ms: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (Index("ix_dashboard_snapshots_requested_at", "requested_at"),)
+
+
+class ResourceSample(Base):
+    """One worker's resource sample (``app.governance.resources``).
+
+    Every API worker inserts one row per ``METRICS_SAMPLE_INTERVAL_SECONDS``;
+    rows older than ``METRICS_HISTORY_MINUTES`` are pruned. The monitoring
+    endpoint, the SSE stream and the resource alert rules aggregate the live
+    workers of every replica from here (no Redis).
+    """
+
+    __tablename__ = "resource_samples"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    worker_id: Mapped[str] = mapped_column(String(128))
+    hostname: Mapped[str] = mapped_column(String(255))
+    sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sample: Mapped[dict] = mapped_column(JSONB)
+
+    __table_args__ = (
+        Index("ix_resource_samples_sampled_at", "sampled_at"),
+        Index("ix_resource_samples_worker_sampled", "worker_id", "sampled_at"),
     )

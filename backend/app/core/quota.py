@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.config import get_settings
+from app.model_settings.service import current_model_settings
 
 _HEADER_FRESHNESS_SECONDS = 60.0
 _HIGH_UTILIZATION_RATIO = 0.8
@@ -195,8 +196,7 @@ class QuotaMonitor:
         headers: dict[str, str] | None = None,
         now: float | None = None,
     ) -> None:
-        settings = get_settings()
-        tracker = self.get_tracker(settings.azure_deployment_name)
+        tracker = self.get_tracker(current_model_settings().llm_deployment)
         tracker.record(tokens, is_error, is_429, retries, headers, now)
 
     def record_embedding(
@@ -208,14 +208,13 @@ class QuotaMonitor:
         headers: dict[str, str] | None = None,
         now: float | None = None,
     ) -> None:
-        settings = get_settings()
-        tracker = self.get_tracker(settings.embedding_model)
+        tracker = self.get_tracker(current_model_settings().embedding_model)
         tracker.record(tokens, is_error, is_429, retries, headers, now)
 
     def get_summary(self, now: float | None = None) -> dict[str, Any]:
-        settings = get_settings()
-        chat_tracker = self.get_tracker(settings.azure_deployment_name)
-        embed_tracker = self.get_tracker(settings.embedding_model)
+        models = current_model_settings()
+        chat_tracker = self.get_tracker(models.llm_deployment)
+        embed_tracker = self.get_tracker(models.embedding_model)
         chat_m = chat_tracker.get_metrics(now)
         embed_m = embed_tracker.get_metrics(now)
 

@@ -17,6 +17,8 @@ export interface KpiTrendCardProps {
   goodDirection?: "up" | "down";
   /** 7-day (or any) trend for the sparkline. */
   trend: readonly SparkPoint[];
+  /** Formats the sparkline tooltip values (e.g. USD); default compact numbers. */
+  formatTrendValue?: (value: number) => string;
   onSelect?: SelectHandler<SparkPoint>;
   /** Makes the card a link (deep-link, pre-filtered). */
   href?: string;
@@ -24,7 +26,8 @@ export interface KpiTrendCardProps {
   intentHandlers?: React.HTMLAttributes<HTMLElement>;
   icon?: LucideIcon;
   tone?: SparkTone;
-  hint?: string;
+  /** One-line footnote under the sparkline (truncated; strings also get a tooltip). */
+  hint?: React.ReactNode;
   /** Time window of the value, e.g. "Last 7 days" (shown under the label). */
   windowLabel?: string;
   /** Definition tip (e.g. `<InfoTip>`), rendered beside the header outside the card link. */
@@ -72,6 +75,7 @@ export function KpiTrendCard({
   icon: Icon,
   tone = "brand",
   hint,
+  formatTrendValue,
   windowLabel,
   info,
   className = "",
@@ -79,8 +83,8 @@ export function KpiTrendCard({
   const header = (
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-fg-subtle">{label}</p>
-        {windowLabel && <p className="text-[11px] text-fg-subtle">{windowLabel}</p>}
+        <p className="truncate text-sm font-medium text-fg-subtle">{label}</p>
+        {windowLabel && <p className="truncate text-[11px] text-fg-subtle">{windowLabel}</p>}
       </div>
       {href ? (
         <ArrowUpRight
@@ -94,8 +98,10 @@ export function KpiTrendCard({
     </div>
   );
   const figure = (
-    <div className="flex items-end justify-between gap-2">
-      <p className="text-2xl font-semibold tabular-nums text-fg">{value}</p>
+    <div className="flex min-w-0 items-end justify-between gap-2">
+      <p data-testid="kpi-value" className="min-w-0 truncate whitespace-nowrap text-2xl font-semibold tabular-nums text-fg">
+        {value}
+      </p>
       {delta !== undefined && delta !== null && <DeltaBadge delta={delta} goodDirection={goodDirection} />}
     </div>
   );
@@ -114,8 +120,19 @@ export function KpiTrendCard({
           {figure}
         </>
       )}
-      <Sparkline data={trend} onSelect={onSelect} label={`${label} trend`} tone={tone} height={36} />
-      {hint && <p className="text-[11px] text-fg-subtle">{hint}</p>}
+      <Sparkline
+        data={trend}
+        onSelect={onSelect}
+        label={`${label} trend`}
+        tone={tone}
+        height={36}
+        formatValue={formatTrendValue}
+      />
+      {hint ? (
+        <p className="truncate whitespace-nowrap text-[11px] text-fg-subtle" title={typeof hint === "string" ? hint : undefined}>
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

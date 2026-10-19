@@ -53,6 +53,9 @@ interface InteractiveOverviewTabProps {
   onRetry?: () => void;
   token?: string;
   audience?: string;
+  /** Global date range, inclusive UTC days (YYYY-MM-DD); "" = all time. */
+  fromDay?: string;
+  toDay?: string;
 }
 
 export function InteractiveOverviewTab({
@@ -62,6 +65,8 @@ export function InteractiveOverviewTab({
   onRetry,
   token = "",
   audience = "overview",
+  fromDay = "",
+  toDay = "",
 }: InteractiveOverviewTabProps) {
   // Token pipeline colours (prompt, reasoning, output) from the chart theme.
   const ct = useChartTheme();
@@ -108,6 +113,8 @@ export function InteractiveOverviewTab({
       const res = await api.getUsageQueries(token, {
         audience: audience as Audience,
         outcome: selectedOutcome !== "all" ? selectedOutcome : undefined,
+        from_date: fromDay || undefined,
+        to_date: toDay || undefined,
         sort: "created_at_desc",
         limit: 8,
       });
@@ -119,7 +126,7 @@ export function InteractiveOverviewTab({
     } finally {
       setLoadingQueries(false);
     }
-  }, [token, audience, selectedOutcome]);
+  }, [token, audience, selectedOutcome, fromDay, toDay]);
 
   useEffect(() => {
     fetchActualQueries();

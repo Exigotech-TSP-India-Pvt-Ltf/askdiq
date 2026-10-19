@@ -95,13 +95,20 @@ export interface GoldenCasesTabProps {
   canRun: boolean;
   /** Poll interval while a run is queued (tests shorten it). */
   pollMs?: number;
+  /** Global date range (inclusive UTC days): cases promoted in it. */
+  days?: { from?: string; to?: string };
 }
 
 /** Golden Cases tab (planchanges4 F5.4): last evaluation result and "Run now" with a job chip. */
-export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS }: GoldenCasesTabProps) {
+export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS, days }: GoldenCasesTabProps) {
   const toast = useToast();
-  const fetcher = useCallback((signal: AbortSignal) => listGoldenCases(token, { limit: GOLDEN_PAGE_SIZE }, signal), [token]);
-  const { data, error, isLoading, refetch } = useApiQuery<GoldenCasePage>(feedbackKeys.golden, fetcher);
+  const from = days?.from;
+  const to = days?.to;
+  const fetcher = useCallback(
+    (signal: AbortSignal) => listGoldenCases(token, { limit: GOLDEN_PAGE_SIZE, from, to }, signal),
+    [token, from, to],
+  );
+  const { data, error, isLoading, refetch } = useApiQuery<GoldenCasePage>(feedbackKeys.goldenFor({ from, to }), fetcher);
   const [jobs, setJobs] = useState<Record<string, Job>>({});
   const jobsRef = useRef(jobs);
   jobsRef.current = jobs;
@@ -240,7 +247,7 @@ export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS }: Golde
           href="/admin/evaluation-live"
           className={`group inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-surface-muted dark:text-brand-300 ${focusRing}`}
         >
-          Evaluation (Live)
+          Evaluation
           <ArrowUpRight
             className="h-3.5 w-3.5 transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
             strokeWidth={1.75}

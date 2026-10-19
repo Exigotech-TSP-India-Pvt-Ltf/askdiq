@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.core.quota import quota_monitor
+from app.core.tasks import spawn
 from app.evaluation.judge import judge_answer
 from app.evaluation.quality import SECRET_PATTERNS, pii_leaked
 from app.models.db_models import (
@@ -167,6 +168,24 @@ async def _existing_fk_ids(
     return msg_uuid, sess_uuid
 
 
+def _rule_checks(
+    request_id: str, query: str, answer: str, context_chunks: list[str]
+) -> tuple[list[str], float, float]:
+    """Secret scan, PII leak scan and attribution metrics (sync, CPU-bound)."""
+    flags: list[str] = []
+    if any(pattern.search(answer) for pattern in SECRET_PATTERNS.values()):
+        flags.append("secret_leak_detected")
+        logger.warning("online_eval_rule_violation request_id=%s", request_id)
+    leaked = pii_leaked(answer, query)
+    if leaked:
+        flags.append("pii_leak_detected")
+        logger.warning(
+            "online_eval_pii_leak request_id=%s count=%d", request_id, len(leaked)
+        )
+    cit_prec, cit_cov = compute_attribution_metrics(answer, context_chunks)
+    return flags, cit_prec, cit_cov
+
+
 async def _run_evaluation_task(
     request_id: str,
     query: str,
@@ -189,28 +208,13 @@ async def _run_evaluation_task(
         settings = get_settings()
         detected_flags: list[str] = list(initial_flags or [])
 
-        # 1. Secret Scanner (Lightweight regex rules)
-        for pattern in SECRET_PATTERNS.values():
-            if pattern.search(answer):
-                detected_flags.append("secret_leak_detected")
-                logger.warning(
-                    "online_eval_rule_violation request_id=%s",
-                    request_id,
-                )
-                break
-
-        # 2. PII Leakage Scanner
-        leaked = pii_leaked(answer, query)
-        if leaked:
-            detected_flags.append("pii_leak_detected")
-            logger.warning(
-                "online_eval_pii_leak request_id=%s count=%d",
-                request_id,
-                len(leaked),
-            )
-
-        # 3. Citation & Attribution Scoring
-        cit_prec, cit_cov = compute_attribution_metrics(answer, context_chunks)
+        # 1-3. Secret / PII regex scans and attribution scoring are CPU work:
+        # run them in the thread pool so they never stall the event loop
+        # serving live requests.
+        rule_flags, cit_prec, cit_cov = await asyncio.to_thread(
+            _rule_checks, request_id, query, answer, context_chunks
+        )
+        detected_flags.extend(rule_flags)
 
         # 4. LLM Judge Scoring
         faithfulness_score: float | None = None
@@ -431,7 +435,17 @@ def schedule_online_evaluation(
                     }
                 )
 
-    task = asyncio.create_task(
+    # Backpressure: each pending evaluation holds the answer and its chunks in
+    # memory while it waits for a semaphore slot. Past the cap, skip instead of
+    # growing without bound under a traffic burst (evaluation is a sample).
+    if len(_background_tasks) >= get_settings().online_eval_max_pending:
+        logger.warning(
+            "online_eval_skipped_backlog request_id=%s pending=%d",
+            request_id,
+            len(_background_tasks),
+        )
+        return
+    task = spawn(
         _run_evaluation_task(
             request_id=request_id,
             query=query,
@@ -449,7 +463,8 @@ def schedule_online_evaluation(
             audience=audience,
             force_llm_judge=force,
             after=after,
-        )
+        ),
+        name="online_eval",
     )
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)

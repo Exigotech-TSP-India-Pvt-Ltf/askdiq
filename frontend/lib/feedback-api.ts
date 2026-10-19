@@ -42,7 +42,7 @@ export const TRIAGE_LABELS: Record<TriageStatus, string> = {
   dismissed: "Dismissed",
 };
 
-export const OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed", "empty_llm_output"] as const;
+export const OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed", "empty_llm_output", "clarify"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 
 export const FEEDBACK_SORTS = ["created_at_desc", "created_at_asc", "rating_desc", "rating_asc"] as const;
@@ -399,13 +399,27 @@ export function listFeedback(token: string, params: FeedbackListParams, signal?:
   return json<FeedbackPage>(feedbackListPath(params), { token, signal });
 }
 
-export function getFeedbackAnalytics(token: string, audience: Audience, signal?: AbortSignal): Promise<FeedbackAnalytics> {
-  return json<FeedbackAnalytics>(`/admin/feedback/analytics${query({ audience })}`, { token, signal });
+/** Inclusive UTC days (YYYY-MM-DD) of the global date range; empty = all time. */
+export interface FeedbackDays {
+  from?: string;
+  to?: string;
+}
+
+export function getFeedbackAnalytics(
+  token: string,
+  audience: Audience,
+  signal?: AbortSignal,
+  days: FeedbackDays = {},
+): Promise<FeedbackAnalytics> {
+  return json<FeedbackAnalytics>(`/admin/feedback/analytics${query({ audience, from: days.from, to: days.to })}`, {
+    token,
+    signal,
+  });
 }
 
 export function listGoldenCases(
   token: string,
-  params: { limit?: number; offset?: number } = {},
+  params: { limit?: number; offset?: number; from?: string; to?: string } = {},
   signal?: AbortSignal,
 ): Promise<GoldenCasePage> {
   return json<GoldenCasePage>(`/admin/feedback/golden${query(params)}`, { token, signal });
@@ -458,6 +472,9 @@ export interface ExportParams {
   triage_status?: TriageStatus;
   include_dismissed?: boolean;
   complete_only?: boolean;
+  /** Inclusive UTC days: keep ratings given in this range. */
+  from?: string;
+  to?: string;
 }
 
 function exportPath(params: ExportParams): string {
@@ -545,10 +562,19 @@ export async function downloadPairs(token: string, params: ExportParams): Promis
 // ---------------------------------------------------------------------------
 
 export const FEEDBACK_KEY_PREFIX = "admin/feedback";
+
+/** Range part of a cache key; empty without a range (keeps the old keys). */
+function daysSuffix(days: FeedbackDays): string {
+  return days.from || days.to ? `?from=${days.from ?? ""}&to=${days.to ?? ""}` : "";
+}
 export const feedbackKeys = {
-  analytics: (audience: Audience) => `${FEEDBACK_KEY_PREFIX}/analytics/${audience}`,
+  analytics: (audience: Audience, days: FeedbackDays = {}) =>
+    `${FEEDBACK_KEY_PREFIX}/analytics/${audience}${daysSuffix(days)}`,
   list: (path: string) => `${FEEDBACK_KEY_PREFIX}/list${path}`,
   listPrefix: `${FEEDBACK_KEY_PREFIX}/list`,
+  /** Prefix of every golden-cases entry (invalidate this); `goldenFor` is one range. */
   golden: `${FEEDBACK_KEY_PREFIX}/golden`,
-  pairs: (complete: boolean) => `${FEEDBACK_KEY_PREFIX}/pairs/${complete ? "complete" : "all"}`,
+  goldenFor: (days: FeedbackDays = {}) => `${FEEDBACK_KEY_PREFIX}/golden${daysSuffix(days)}`,
+  pairs: (complete: boolean, days: FeedbackDays = {}) =>
+    `${FEEDBACK_KEY_PREFIX}/pairs/${complete ? "complete" : "all"}${daysSuffix(days)}`,
 } as const;

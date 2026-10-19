@@ -36,10 +36,11 @@ exists; journeys run in vitest/jsdom).
 
 ### Database
 
-Run Postgres with pgvector from the root compose file (host port **5433**, database `ragdb`, user `postgres`):
+Run Postgres with pgvector from the local compose file (host port **5433**, database `ragdb`, user `postgres`),
+from the repository root:
 
 ```powershell
-docker compose up -d postgres
+docker compose -f infra/docker-compose.yml up -d postgres
 ```
 
 The `vector` extension is created by the migrations; on a hand-made database run
@@ -86,7 +87,7 @@ Copy-Item .env.local.example .env.local      # API_BASE_URL, API_KEY (= backend 
 | Frontend | `npm run dev` (`frontend/`; `next dev --turbo -p 3000`; `dev:webpack` without turbo) | 3000 |
 | Frontend (prod build) | `npm run serve` (`next build && next start -p 3000`) | 3000 |
 | Job worker | In-process by default (`JOBS_WORKER_ENABLED=true`, started from the FastAPI lifespan via `app/jobs/runtime.py`); standalone: `venv\Scripts\python.exe -m app.jobs.worker` with `JOBS_WORKER_ENABLED=false` on the API | n/a |
-| Full stack in Docker | `docker compose up --build` (root) | 5433, 8000, 3000 |
+| Full stack in Docker | `docker compose -f infra/docker-compose.yml up --build` (repo root) | 5433, 8000, 3000 |
 
 Health check: `GET http://127.0.0.1:8000/health`. API docs: `/docs` and `/redoc` are served unless `ENV=production` (where `ENABLE_API_DOCS=true` turns them on).
 
@@ -270,4 +271,4 @@ What it does:
 | Flaky `test_concurrency_50` or `test_http_efficiency` locally | Timing-sensitive tests (latency budgets, event-loop blocking, pool behaviour) on a heavily loaded machine or with coverage tracing. | Run them alone: `pytest -q -m perf` and `pytest -q tests/test_http_efficiency.py`; close other heavy processes. CI runs perf gates without coverage. Do not loosen budgets to make them pass. |
 | DB tests fail with connection errors | No reachable test DB. | Start Postgres and set `TEST_DATABASE_URL`, or set `ALLOW_DB_SKIP=1` locally (never in CI). |
 | Windows: commands fail in the wrong shell | The tooling mixes PowerShell (`ci_local.ps1`, `venv\Scripts\...`) and Git Bash (POSIX scripts, `VAR=value cmd`). | PowerShell: `$env:VAR='x'; cmd`, `;` not `&&` (PowerShell 5.1). Git Bash: forward slashes, `/c/Projects/...`. |
-| Windows: `LF will be replaced by CRLF` warnings, broken shell scripts in containers | `core.autocrlf` converts line endings in the working copy. | Leave the warnings; commits normalize. Files that run in Linux (`docker-entrypoint.sh`) must be LF; the deploy kit (`deploy/build_kit.ps1`, **In progress (branch `chore/prod-deploy-fullstack`)**) builds archives with LF endings via `git archive`. |
+| Windows: `LF will be replaced by CRLF` warnings, broken shell scripts in containers | `core.autocrlf` converts line endings in the working copy. | Leave the warnings; commits normalize. Files that run in Linux (`docker-entrypoint.sh`) must be LF; the deploy kit (`infra/build_kit.ps1`, **In progress (branch `chore/prod-deploy-fullstack`)**) builds archives with LF endings via `git archive`. |

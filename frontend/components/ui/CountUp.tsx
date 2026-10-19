@@ -5,8 +5,10 @@ import { animate } from "motion/react";
 import { countUp, usePrefersReducedMotion } from "@/lib/motion";
 
 export interface CountUpProps {
-  value: number;
+  /** `null` renders `fallback` (no data yet). */
+  value: number | null;
   format: (value: number) => string;
+  fallback?: string;
   className?: string;
 }
 
@@ -16,12 +18,13 @@ export interface CountUpProps {
  * screen readers and tests never read an intermediate number; reduced motion
  * shows the final value at once.
  */
-export function CountUp({ value, format, className = "" }: CountUpProps) {
+export function CountUp({ value, format, fallback = "—", className = "" }: CountUpProps) {
   const reduced = usePrefersReducedMotion();
   const from = useRef(0);
-  const [shown, setShown] = useState(reduced ? value : 0);
+  const [shown, setShown] = useState(reduced ? (value ?? 0) : 0);
 
   useEffect(() => {
+    if (value === null) return undefined;
     if (reduced) {
       from.current = value;
       setShown(value);
@@ -32,10 +35,13 @@ export function CountUp({ value, format, className = "" }: CountUpProps) {
     return () => controls.stop();
   }, [reduced, value]);
 
+  if (value === null) return <span className={className}>{fallback}</span>;
   return (
     <span className={className}>
       <span aria-hidden="true">{format(shown)}</span>
-      <span className="sr-only">{format(value)}</span>
+      <span className="sr-only" data-testid="count-final">
+        {format(value)}
+      </span>
     </span>
   );
 }

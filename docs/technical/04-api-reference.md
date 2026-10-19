@@ -446,7 +446,7 @@ Params: `audience`, `q`, `ip`, `sort` (`last_activity_asc` or default desc), `li
 turns[], focus_turn}`; `turns` carry stage timings, tokens, cost, sources, feedback, insight labels and the
 promoted golden case id. 404 `Conversation not found`.
 
-### Entity stats (`backend/app/api/routes/admin_entities.py`, contract `frontend/docs/contracts/entity-stats.md`)
+### Entity stats (`backend/app/api/routes/admin_entities.py`, contract `docs/technical/frontend/contracts/entity-stats.md`)
 
 | Route | Params | Response |
 |---|---|---|
@@ -788,7 +788,7 @@ user_agent}]`.
 | `satisfaction` | `{thumbs_up, thumbs_down, ratio}` | with window |
 | `top_intents` | `[{intent, label, count, share}]` | with window |
 
-Full aggregation semantics: `frontend/docs/contracts/dashboard-aggregations.md`.
+Full aggregation semantics: `docs/technical/frontend/contracts/dashboard-aggregations.md`.
 
 ## 21. Production contract (hotfix branch)
 

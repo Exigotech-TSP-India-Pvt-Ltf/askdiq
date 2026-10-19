@@ -399,6 +399,7 @@ async def test_windowed_dashboard_exact_numbers(client, db_session) -> None:
             "blocked": 0,
             "conversational": 0,
             "llm_failed": 0,
+            "clarify": 0,
         },
         {
             "t": days[1],
@@ -407,6 +408,7 @@ async def test_windowed_dashboard_exact_numbers(client, db_session) -> None:
             "blocked": 0,
             "conversational": 0,
             "llm_failed": 0,
+            "clarify": 0,
         },
         {
             "t": days[2],
@@ -415,6 +417,7 @@ async def test_windowed_dashboard_exact_numbers(client, db_session) -> None:
             "blocked": 1,
             "conversational": 0,
             "llm_failed": 1,
+            "clarify": 0,
         },
     ]
     lat = data["latency_series"]

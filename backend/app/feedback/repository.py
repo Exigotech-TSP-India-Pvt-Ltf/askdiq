@@ -457,14 +457,33 @@ async def mark_message_promoted(
 
 
 async def list_promoted_cases(
-    db: AsyncSession, limit: int, offset: int
+    db: AsyncSession,
+    limit: int,
+    offset: int,
+    *,
+    window: tuple[datetime, datetime] | None = None,
 ) -> tuple[list[EvalPromotedCase], int]:
+    """Golden cases, newest first; ``window`` keeps cases promoted in ``[start, end)``."""
+    conds = (
+        [
+            EvalPromotedCase.promoted_at >= window[0],
+            EvalPromotedCase.promoted_at < window[1],
+        ]
+        if window
+        else []
+    )
     total = int(
-        (await db.scalar(select(func.count()).select_from(EvalPromotedCase))) or 0
+        (
+            await db.scalar(
+                select(func.count()).select_from(EvalPromotedCase).where(*conds)
+            )
+        )
+        or 0
     )
     rows = (
         await db.execute(
             select(EvalPromotedCase)
+            .where(*conds)
             .order_by(EvalPromotedCase.promoted_at.desc(), EvalPromotedCase.id)
             .offset(offset)
             .limit(limit)
@@ -484,6 +503,7 @@ async def stream_pair_rows(
     triage_status: TriageStatus | None,
     include_dismissed: bool,
     batch_size: int,
+    window: tuple[datetime, datetime] | None = None,
 ) -> AsyncIterator[Any]:
     ev = latest_eval()
     stmt = (
@@ -509,6 +529,11 @@ async def stream_pair_rows(
         stmt = stmt.where(MessageFeedback.triage_status == triage_status.value)
     elif not include_dismissed:
         stmt = stmt.where(MessageFeedback.triage_status != TriageStatus.DISMISSED.value)
+    if window is not None:
+        stmt = stmt.where(
+            MessageFeedback.created_at >= window[0],
+            MessageFeedback.created_at < window[1],
+        )
     result = await db.stream(stmt)
     async for row in result:
         yield row

@@ -1,6 +1,6 @@
 import type { PageTour } from "../types";
 
-/** "Dashboard basics": the chrome shared by every page (sidebar, header tools, chat widget). */
+/** "Dashboard basics": the chrome shared by every page (sidebar, account corner, header filters, chat widget). */
 export const shellTour: PageTour = {
   id: "shell",
   title: "Dashboard basics",
@@ -17,6 +17,12 @@ export const shellTour: PageTour = {
       placement: "right",
     },
     {
+      target: '[data-tour="shell-command-palette"]',
+      title: "Go to any page",
+      body: "Click Go to page, or press Ctrl+K (⌘K on Mac) from anywhere, to type a page name and jump straight there; you can start tours from it too. Press ? at any time for the full list of keyboard shortcuts.",
+      placement: "right",
+    },
+    {
       target: '[data-tour="shell-audience"]',
       title: "Choose the audience",
       body: "Overview shows all traffic, Users shows real end users only, and Testing shows internal test traffic. The choice carries across pages, so numbers stay comparable.",
@@ -29,27 +35,15 @@ export const shellTour: PageTour = {
       placement: "bottom",
     },
     {
-      target: '[data-tour="shell-command-palette"]',
-      title: "Jump anywhere with the command palette",
-      body: "Press Ctrl+K (⌘K on Mac) to search pages and start tours without the mouse. Press ? at any time for the full list of keyboard shortcuts.",
-      placement: "bottom",
+      target: '[data-tour="shell-account"]',
+      title: "Your account corner",
+      body: "The sidebar footer shows who is signed in: your name with your role badge, and your email beneath. The buttons under it open notifications and tours, link to Help (when your organisation has set it up), switch between light and dark theme, and sign you out. In the collapsed sidebar they stack under your avatar; hover any of them for its name.",
+      placement: "right",
     },
     {
       target: '[data-tour="shell-notifications"]',
       title: "Notifications",
-      body: "Access requests and incidents land here, with a badge counting what's new. Open an item to go straight to the page that needs attention.",
-      placement: "bottom",
-    },
-    {
-      target: '[data-tour="shell-profile"]',
-      title: "Profile, theme and sign out",
-      body: "Open your account menu to see your role, switch between light, dark or system theme, and sign out.",
-      placement: "bottom",
-    },
-    {
-      target: '[data-tour="shell-account"]',
-      title: "Your account at a glance",
-      body: "The sidebar footer shows who is signed in and their role, with quick theme and sign-out buttons.",
+      body: "Access requests and incidents land in this bell, with a badge counting what's new. Open an item to go straight to the page that needs attention.",
       placement: "right",
     },
     {
@@ -61,8 +55,8 @@ export const shellTour: PageTour = {
     {
       target: '[data-tour="shell-tour-launcher"]',
       title: "Replay a tour any time",
-      body: "This compass opens the tours: \"Tour this page\" explains the current page card by card, and \"Dashboard basics\" brings you back here.",
-      placement: "bottom",
+      body: "This compass beside the bell opens the tours: \"Tour this page\" explains the current page card by card, and \"Dashboard basics\" brings you back here.",
+      placement: "right",
     },
     {
       title: "You're all set",

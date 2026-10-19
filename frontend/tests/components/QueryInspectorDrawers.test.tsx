@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MotionProvider } from "@/components/providers/MotionProvider";
-import { QueryInspectorDrawer as EvaluationInspector } from "@/components/admin/QueryInspectorDrawer";
+import { EvaluationRecordDrawer as EvaluationInspector } from "@/components/admin/EvaluationRecordDrawer";
 import { QueryInspectorDrawer as UsageInspector } from "@/components/admin/usage/QueryInspectorDrawer";
 import { api, ApiError } from "@/lib/api";
 

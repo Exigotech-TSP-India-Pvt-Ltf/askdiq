@@ -1,7 +1,7 @@
 """Response models for the dashboard, usage and evaluation chart additions (B7.1, B7.4).
 
 Mirrors ``frontend/lib/dashboard-api.ts`` and ``frontend/lib/usage-insights-api.ts``
-(contract: ``frontend/docs/contracts/dashboard-aggregations.md``). Units:
+(contract: ``docs/technical/frontend/contracts/dashboard-aggregations.md``). Units:
 ``*_ms`` milliseconds, ``*_usd`` US dollars, ratios 0..1; the legacy
 ``error_rate`` is a percentage 0..100.
 """
@@ -54,6 +54,7 @@ class OutcomePoint(BaseModel):
     blocked: int
     conversational: int
     llm_failed: int
+    clarify: int = 0
 
 
 class LatencyPoint(BaseModel):

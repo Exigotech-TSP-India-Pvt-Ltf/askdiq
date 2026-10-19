@@ -15,7 +15,8 @@ from scripts.backfill_usage_accounting import backfill_usage_accounting
 async def test_seeder_deterministic_and_outcomes(db_session):
     """Subtask 0.2.1 & Integration Suite 0: Verify seeder produces repeatable outcomes."""
     # Verify outcomes enum validity
-    assert len(ALL_OUTCOMES) == 5
+    assert len(ALL_OUTCOMES) == 6
+    assert "clarify" not in GENERATION_OUTCOMES
     assert "answered" in GENERATION_OUTCOMES
     assert "ungrounded" in GENERATION_OUTCOMES
     assert "llm_failed" in GENERATION_OUTCOMES

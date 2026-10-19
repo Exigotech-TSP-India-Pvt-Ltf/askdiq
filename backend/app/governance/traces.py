@@ -116,7 +116,7 @@ def status_sql(outcome: Any, flags: Any) -> Any:
         (or_(norm == "llm_failed", has(FAILED_FLAGS)), "failed"),
         (norm == "blocked", "blocked"),
         (norm == "ungrounded", "ungrounded"),
-        (norm.in_(("answered", "conversational")), "ok"),
+        (norm.in_(("answered", "conversational", "clarify")), "ok"),
         (outcome.is_(None) & flags_missing, "unknown"),
         (has(BLOCKED_FLAGS), "blocked"),
         (has(UNGROUNDED_FLAGS), "ungrounded"),

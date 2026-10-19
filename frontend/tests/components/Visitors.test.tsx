@@ -1,12 +1,12 @@
 /**
  * F3.2: Visitors list and Visitor detail. Mocked fetch per
- * docs/contracts/entity-stats.md; in-memory router for URL round-trips.
+ * docs/technical/frontend/contracts/entity-stats.md; in-memory router for URL round-trips.
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import VisitorsPage from "@/app/(app)/admin/users/page";
+import VisitorsPage from "@/app/(app)/admin/visitors/page";
 import VisitorDetailPage from "@/app/(app)/admin/users/[id]/page";
 import { callsTo, currentParams, envelope, history, mockFetch, renderPage, type Route } from "../helpers/entity-harness";
 import {
@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 describe("Visitors list", () => {
-  beforeEach(() => history.reset("/admin/users"));
+  beforeEach(() => history.reset("/admin/visitors"));
 
   it("shows the KPI strip and charts from /admin/visitors/stats", async () => {
     mockFetch([listRoute, statsRoute]);
@@ -155,9 +155,9 @@ describe("Visitor detail", () => {
     renderPage(<VisitorDetailPage />);
     expect(await screen.findByRole("heading", { level: 1, name: IP })).toBeInTheDocument();
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getByRole("link", { name: "Visitors" })).toHaveAttribute("href", "/admin/users");
-    expect(screen.getByRole("link", { name: /View sessions/ })).toHaveAttribute("href", `/admin/usage?tab=sessions&ip=${encodeURIComponent(IP)}`);
-    expect(screen.getByRole("link", { name: /^Conversations$/ })).toHaveAttribute("href", `/admin/conversations?ip=${encodeURIComponent(IP)}`);
+    expect(within(crumbs).getByRole("link", { name: "Visitors & Conversations" })).toHaveAttribute("href", "/admin/visitors");
+    expect(screen.getByRole("link", { name: /Usage sessions/ })).toHaveAttribute("href", `/admin/usage?tab=sessions&ip=${encodeURIComponent(IP)}`);
+    expect(screen.getByRole("link", { name: /^Conversations$/ })).toHaveAttribute("href", `/admin/visitors?tab=conversations&ip=${encodeURIComponent(IP)}`);
     const sessionLinks = screen.getAllByRole("link", { name: "Leave policy" });
     expect(sessionLinks[0]).toHaveAttribute("href", `/admin/conversations/${CONV_ID}`);
     expect(screen.getByRole("link", { name: "Open in Feedback" })).toHaveAttribute("href", `/admin/feedback?message_id=${ASSISTANT_MSG}`);

@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
 import { useUsageSummary } from "@/lib/use-usage-data";
+import { DEFAULT_PRESET, useRange } from "@/lib/range-context";
+import { useRangeParams } from "@/components/admin/entity/shared";
 import { InteractiveOverviewTab } from "@/components/admin/usage/InteractiveOverviewTab";
 import { UsersTab } from "@/components/admin/usage/UsersTab";
 import { SessionsTab } from "@/components/admin/usage/SessionsTab";
@@ -38,6 +40,12 @@ const USAGE_CONSOLE_TABS: TabItem<TabId>[] = [
   { id: "queries", label: "All Queries", icon: Cpu },
 ];
 
+/** A `YYYY-MM-DD` as a local calendar date (what the range picker holds). */
+function localDay(day: string): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
 function UsageCostContent() {
   const { token } = useAuth();
   const { audience } = useAudience();
@@ -45,21 +53,22 @@ function UsageCostContent() {
   const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_USAGE_TAB);
   const [selectedIp, setSelectedIp] = useState<string>("");
   const [selectedSession, setSelectedSession] = useState<string>("");
-  const [fromDay, setFromDay] = useState<string>("");
-  const [toDay, setToDay] = useState<string>("");
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   // Re-read the URL on every client navigation, not only on mount, so a link
   // to /admin/usage?tab=... while already here switches tab and filters.
   const searchKey = useSearchParams()?.toString() ?? "";
 
-  // Hook for Tab 1 summary
-  const { summary, isLoading, error, refresh } = useUsageSummary(
-    token,
-    audience
-  );
+  // One source of truth for the dates: the global range (header picker,
+  // `?range=` / `?from=&to=`), sent to every tab as inclusive UTC days.
+  // Dashboard day links (`from` = `to` = YYYY-MM-DD) are a custom range.
+  const rangeCtx = useRange();
+  const { from: fromDay = "", to: toDay = "" } = useRangeParams();
+  const days = { from: fromDay || undefined, to: toDay || undefined };
 
-  // The URL is the source of truth: tab, ip, session and the from/to day
-  // range (dashboard day links send `from` = `to` = YYYY-MM-DD).
+  // Hook for Tab 1 summary
+  const { summary, isLoading, error, refresh } = useUsageSummary(token, audience, days);
+
+  // The URL is the source of truth: tab, ip and session.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
@@ -67,9 +76,19 @@ function UsageCostContent() {
     setActiveTab(parseUsageTab(sp.get("tab")));
     setSelectedIp(sp.get("ip") ?? "");
     setSelectedSession(sp.get("session") ?? "");
-    setFromDay(parseUsageDay(sp.get("from")));
-    setToDay(parseUsageDay(sp.get("to")));
   }, [searchKey]);
+
+  // Old Usage links could send only one end (`?from=` or `?to=`), which the
+  // global range ignores: turn them into the custom range they meant.
+  const setCustom = rangeCtx?.setCustom;
+  useEffect(() => {
+    if (typeof window === "undefined" || !setCustom) return;
+    const sp = new URLSearchParams(window.location.search);
+    const from = parseUsageDay(sp.get("from"));
+    const to = parseUsageDay(sp.get("to"));
+    if (from && !to) setCustom(localDay(from), new Date());
+    else if (to && !from) setCustom(localDay(to), localDay(to));
+  }, [searchKey, setCustom]);
 
   const updateUrl = useCallback(
     (patch: { tab?: TabId; ip?: string; session?: string; from?: string; to?: string }) => {
@@ -113,11 +132,9 @@ function UsageCostContent() {
     updateUrl({ session: sessionId });
   };
 
-  const handleClearDays = () => {
-    setFromDay("");
-    setToDay("");
-    updateUrl({ from: "", to: "" });
-  };
+  // Clearing the deep-linked day chip returns to the default range.
+  const handleClearDays =
+    rangeCtx && rangeCtx.range.kind === "custom" ? () => rangeCtx.setPreset(DEFAULT_PRESET) : undefined;
 
   return (
     <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
@@ -126,6 +143,7 @@ function UsageCostContent() {
         title="Usage & Financial Economics"
         subtitle="Audience-segmented cost accounting, token volume telemetry, and turn-level LLM economics"
         icon={CircleDollarSign}
+        showDateRange
         actions={
           <button
             type="button"
@@ -163,6 +181,8 @@ function UsageCostContent() {
                 onRetry={refresh}
                 token={token || ""}
                 audience={audience}
+                fromDay={fromDay}
+                toDay={toDay}
               />
             </div>
           )}
@@ -172,6 +192,8 @@ function UsageCostContent() {
               <UsersTab
                 token={token || ""}
                 onSelectUserIp={handleSelectUserIp}
+                fromDay={fromDay}
+                toDay={toDay}
               />
             </div>
           )}
@@ -183,6 +205,8 @@ function UsageCostContent() {
                 initialIp={selectedIp}
                 onSelectSession={handleSelectSession}
                 onSelectIp={handleIpFilter}
+                fromDay={fromDay}
+                toDay={toDay}
               />
             </div>
           )}

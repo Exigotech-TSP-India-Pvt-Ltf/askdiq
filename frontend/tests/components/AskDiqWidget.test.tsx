@@ -240,6 +240,66 @@ describe("AskDIQ drawer", () => {
     expect(within(dialog).getAllByRole("button", { name: "Copy message" }).length).toBeGreaterThan(0);
   });
 
+  const pricingClarification = {
+    preamble: "DeployIQ publishes a few kinds of pricing.",
+    original_query: "pricing",
+    questions: [
+      {
+        id: "Q1",
+        header: "Topic",
+        question: "Which pricing do you mean?",
+        options: [
+          { id: "O1", label: "Platform plans", description: "Seat-based plans", sources: ["pricing.md"] },
+          { id: "O2", label: "Support tiers", description: "Support add-ons" },
+        ],
+      },
+    ],
+  };
+
+  it("renders the clarification card in the drawer; picking sends all answers in one follow-up", () => {
+    const sendQuery = vi.fn().mockResolvedValue(undefined);
+    const clarify: ChatMessage = {
+      id: "a3",
+      role: "assistant",
+      content: "Which pricing do you mean?\n\n1. Platform plans\n2. Support tiers",
+      createdAt: answer.createdAt,
+      clarification: pricingClarification,
+    };
+    chatState.current = baseChat({
+      sendQuery,
+      messages: [{ id: "u3", role: "user", content: "pricing", createdAt: answer.createdAt }, clarify],
+    });
+    renderDrawer();
+    const card = screen.getByRole("region", { name: "Clarifying questions" });
+    expect(within(card).getByText("DeployIQ publishes a few kinds of pricing.")).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole("radio", { name: /Support tiers/ }));
+    fireEvent.click(within(card).getByRole("button", { name: "Send" }));
+    expect(sendQuery).toHaveBeenCalledWith("Topic: Support tiers", [{ question_id: "Q1", option_ids: ["O2"] }]);
+  });
+
+  it("Esc skips the card and focuses the composer", () => {
+    chatState.current = baseChat({
+      messages: [{ id: "a5", role: "assistant", content: "x", createdAt: answer.createdAt, clarification: pricingClarification }],
+    });
+    renderDrawer();
+    const radio = screen.getByRole("radio", { name: /Platform plans/ });
+    fireEvent.keyDown(radio, { key: "Escape" });
+    expect(screen.getByRole("textbox", { name: "Message AskDIQ" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Show questions" })).toBeInTheDocument();
+  });
+
+  it("shows an answered clarification as a read-only summary", () => {
+    chatState.current = baseChat({
+      messages: [
+        { id: "a4", role: "assistant", content: "x", createdAt: answer.createdAt, clarification: pricingClarification },
+        { id: "u5", role: "user", content: "Topic: Support tiers", createdAt: answer.createdAt },
+      ],
+    });
+    renderDrawer();
+    expect(screen.getByRole("note", { name: "Your answers" })).toHaveTextContent("Topic: Support tiers");
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+  });
+
   it("shows the brand's suggested prompts on an empty chat and sends one", () => {
     const sendQuery = vi.fn().mockResolvedValue(undefined);
     chatState.current = baseChat({ sendQuery });

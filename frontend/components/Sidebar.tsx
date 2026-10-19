@@ -6,35 +6,34 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, m } from "motion/react";
 import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
+import { prefetchRouteData } from "@/lib/route-prefetch";
 import {
   ChevronLeft,
   LayoutDashboard,
-  Loader2,
-  LogOut,
-  MessageSquare,
-  FileText,
+  BotMessageSquare,
+  LibraryBig,
+  FlaskConical,
   Users,
-  MessagesSquare,
   ThumbsUp,
   ShieldCheck,
   CircleDollarSign,
-  Sparkles,
   ChartColumnBig,
   UserCog,
   Settings2,
   X,
 } from "lucide-react";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { BrandLogo } from "@/components/brand/BrandLogo";
-import { crossfade, drawerLeft, layoutSpring, useMotionVariants } from "@/lib/motion";
+import { crossfade, drawerLeft, layoutSpring, pop, useMotionVariants } from "@/lib/motion";
 import { useMobileNav } from "@/lib/mobile-nav-context";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { readStorage, writeStorage } from "@/lib/storage";
 import { focusRing, iconButton, overlayBackdrop } from "@/components/ui/styles";
-import { RoleBadge } from "@/components/shell/RoleBadge";
+import { useCommandCenter } from "@/components/shell/command-center-context";
+import { GoToPageButton } from "@/components/shell/GoToPageButton";
+import { SidebarAccount } from "@/components/shell/SidebarAccount";
 import { hasPermission, type Permission } from "@/lib/permissions";
 import { usePendingAccessCount } from "@/lib/use-shell-notifications";
-import { pop } from "@/lib/motion";
 
 const COLLAPSED_STORAGE_KEY = "deployiq.sidebar.collapsed";
 
@@ -48,8 +47,8 @@ export interface NavItem {
   /** False pre-registers a page that is not built yet: it is not rendered. */
   enabled?: boolean;
   /**
-   * Permission the signed-in role needs to see the item (newplan §7.3). Items
-   * without one (Chat) are open to every signed-in, non-suspended user.
+   * Permission the signed-in role needs to see the item (newplan Â§7.3). Items
+   * without one (AskDIQ) are open to every signed-in, non-suspended user.
    */
   permission?: Permission;
   /** Visible with any one of these (when the page itself accepts either). */
@@ -57,24 +56,33 @@ export interface NavItem {
   badgeKey?: NavBadgeKey;
   /** Extra palette search terms. */
   keywords?: string[];
+  /** Other path prefixes that highlight this item (e.g. detail pages under old URLs). */
+  activePrefixes?: readonly string[];
 }
 
 const DASHBOARD: Permission = "dashboard:read";
 
 const ADMIN_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, permission: DASHBOARD },
-  { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/documents", label: "Documents", icon: FileText, permission: DASHBOARD },
-  // Renamed from "Users" (newplan open item 6): these are chat visitors, not accounts.
-  { href: "/admin/users", label: "Visitors", icon: Users, permission: DASHBOARD, keywords: ["users", "audience", "ip", "test ip"] },
+  { href: "/chat", label: "AskDIQ", icon: BotMessageSquare, keywords: ["chat", "assistant", "ask"] },
+  { href: "/documents", label: "Knowledge", icon: LibraryBig, permission: DASHBOARD, keywords: ["documents", "knowledge base", "upload"] },
+  // Visitors (chat visitors by IP, not accounts) and Conversation Logs are one
+  // tabbed page; their detail pages keep their own URLs and highlight this item.
+  {
+    href: "/admin/visitors",
+    label: "Visitors & Conversations",
+    icon: Users,
+    permission: DASHBOARD,
+    activePrefixes: ["/admin/users", "/admin/conversations"],
+    keywords: ["visitors", "users", "audience", "ip", "test ip", "conversations", "conversation logs", "sessions", "transcripts"],
+  },
   { href: "/admin/usage", label: "Usage & Cost", icon: CircleDollarSign, permission: DASHBOARD },
-  { href: "/admin/conversations", label: "Conversation Logs", icon: MessagesSquare, permission: DASHBOARD },
   { href: "/admin/feedback", label: "Feedback", icon: ThumbsUp, permission: DASHBOARD },
-  { href: "/admin/evaluation-live", label: "Evaluation (Live)", icon: Sparkles, permission: DASHBOARD },
+  { href: "/admin/evaluation-live", label: "Evaluation", icon: FlaskConical, permission: DASHBOARD, keywords: ["quality", "live evaluation", "rag"] },
   { href: "/admin/governance", label: "Governance", icon: ShieldCheck, permission: DASHBOARD },
 ];
 
-/** Pages from newplan §6, §7.8 and §14; all built and enabled in this preview. */
+/** Pages from newplan Â§6, Â§7.8 and Â§14; all built and enabled in this preview. */
 const PLANNED_ITEMS: NavItem[] = [
   { href: "/admin/analytics", label: "Analytics", icon: ChartColumnBig, permission: DASHBOARD },
   {
@@ -89,9 +97,9 @@ const PLANNED_ITEMS: NavItem[] = [
     href: "/admin/settings",
     label: "Settings",
     icon: Settings2,
-    // The page opens with either permission (Branding or Taxonomy tab).
-    anyPermission: ["branding:write", "taxonomy:write"],
-    keywords: ["branding", "taxonomy", "white-label"],
+    // The page opens with any of these (Branding, Taxonomy or Models tab).
+    anyPermission: ["branding:write", "taxonomy:write", "models:write"],
+    keywords: ["branding", "taxonomy", "white-label", "models", "llm", "embeddings", "pricing", "cost"],
   },
 ];
 
@@ -112,18 +120,13 @@ export function visibleNavItems(permissions: readonly string[] | null | undefine
   return NAV_ITEMS.filter((item) => canSeeNavItem(item, permissions));
 }
 
-function initials(name: string | undefined | null) {
-  return (name ?? "")
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
-
-function isActive(pathname: string | null, href: string) {
+function matchesPrefix(pathname: string | null, href: string) {
   // Segment-aware so "/admin/evaluation" is not active on "/admin/evaluation-live".
   return pathname === href || (href !== "/admin" && Boolean(pathname?.startsWith(`${href}/`)));
+}
+
+export function isNavItemActive(pathname: string | null, item: Pick<NavItem, "href" | "activePrefixes">): boolean {
+  return matchesPrefix(pathname, item.href) || (item.activePrefixes ?? []).some((p) => matchesPrefix(pathname, p));
 }
 
 interface NavListProps {
@@ -138,10 +141,15 @@ interface NavListProps {
 
 function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: NavListProps) {
   const badgeVariants = useMotionVariants(pop);
+  const { token } = useAuth();
+  const { audience } = useAudience();
+  // Navigation intent: <Link> already prefetches the route in production;
+  // also warm the page's first queries so the click paints from cache.
+  const warm = (href: string) => prefetchRouteData(href, token, audience);
   return (
     <>
       {items.filter(isNavItemEnabled).map((item) => {
-        const active = isActive(pathname, item.href);
+        const active = isNavItemActive(pathname, item);
         const Icon = item.icon;
         const badge = item.badgeKey ? badges?.[item.badgeKey] : undefined;
         return (
@@ -151,6 +159,8 @@ function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: N
             title={collapsed ? item.label : undefined}
             aria-current={active ? "page" : undefined}
             onClick={onNavigate}
+            onMouseEnter={() => warm(item.href)}
+            onFocus={() => warm(item.href)}
             className={`group relative flex items-center gap-2.5 rounded-lg py-1.5 text-[13px] font-medium transition-colors ${focusRing} ${
               collapsed ? "justify-center px-0" : "px-3"
             } ${
@@ -204,16 +214,16 @@ interface SidebarProps {
 
 export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
   const pathname = usePathname();
-  const { user, logout, role, permissions } = useAuth();
+  const { permissions } = useAuth();
   const pendingAccess = usePendingAccessCount();
   const badges = badgeOverride ?? { pendingAccess };
   const items = visibleNavItems(permissions);
 
   // Read synchronously on mount (not in useState initializer) so server
   // and first client render both start expanded, avoiding a hydration
-  // mismatch — the stored preference is then applied right after mount.
+  // mismatch â€” the stored preference is then applied right after mount.
   const [collapsed, setCollapsed] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
+  const hasPalette = useCommandCenter() !== null;
 
   useEffect(() => {
     setCollapsed(readStorage(COLLAPSED_STORAGE_KEY) === "1");
@@ -226,27 +236,6 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
       return next;
     });
   }
-
-  function signOut() {
-    if (signingOut) return;
-    setSigningOut(true);
-    // logout() always ends on /login (bounded wait); reset only if it ever returns here.
-    void Promise.resolve(logout()).finally(() => setSigningOut(false));
-  }
-
-  const signOutButton = (
-    <button
-      type="button"
-      onClick={signOut}
-      disabled={signingOut}
-      aria-busy={signingOut}
-      title={signingOut ? "Signing out…" : "Sign out"}
-      aria-label="Sign out"
-      className={`rounded-md p-1.5 text-ink/40 dark:text-slate-400 hover:bg-ink/5 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white transition disabled:cursor-wait disabled:opacity-60 ${focusRing}`}
-    >
-      {signingOut ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogOut className="h-4 w-4" aria-hidden="true" />}
-    </button>
-  );
 
   return (
     <>
@@ -287,55 +276,25 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
           )}
         </div>
 
+        {hasPalette ? (
+          <div className={`shrink-0 pt-3 ${collapsed ? "flex justify-center px-2" : "px-3"}`}>
+            <GoToPageButton collapsed={collapsed} />
+          </div>
+        ) : null}
+
         <nav aria-label="Main" data-tour="shell-nav" className={`flex-1 space-y-0.5 overflow-y-auto py-4 ${collapsed ? "px-2" : "px-3"}`}>
           {/* One flat, permission-filtered list: no group headers. */}
           <NavList items={items} pathname={pathname} collapsed={collapsed} badges={badges} layoutId="sidebar-active" />
         </nav>
 
-        <div data-tour="shell-account" className="border-t border-ink/10 dark:border-white/10 p-3">
-          {collapsed ? (
-            <div className="flex flex-col items-center gap-2">
-              <ThemeToggle size="sm" />
-              <div
-                title={user?.full_name ?? "Signed out"}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white"
-              >
-                {user ? initials(user.full_name) : "—"}
-              </div>
-              {signOutButton}
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 rounded-lg px-2 py-1">
-              <div
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white"
-              >
-                {user ? initials(user.full_name) : "—"}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-ink dark:text-slate-100">
-                  {user?.full_name ?? "Signed out"}
-                </p>
-                <p className="truncate text-xs text-ink/50 dark:text-slate-400">{user?.email}</p>
-                {role ? (
-                  <div className="mt-1">
-                    <RoleBadge role={role} />
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex items-center gap-1">
-                <ThemeToggle size="sm" />
-                {signOutButton}
-              </div>
-            </div>
-          )}
-        </div>
+        <SidebarAccount collapsed={collapsed} />
       </aside>
       <MobileSidebar pathname={pathname} items={items} badges={badges} />
     </>
   );
 }
 
-/** Off-canvas sidebar below `md` (newplan §15.1), opened by the header hamburger. */
+/** Off-canvas sidebar below `md` (newplan Â§15.1), opened by the header hamburger. */
 function MobileSidebar({
   pathname,
   items,
@@ -350,6 +309,7 @@ function MobileSidebar({
   const setOpen = nav?.setOpen;
   const panelRef = useRef<HTMLElement>(null);
   const variants = useMotionVariants(drawerLeft);
+  const hasPalette = useCommandCenter() !== null;
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -393,6 +353,11 @@ function MobileSidebar({
                 <X className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden="true" />
               </button>
             </div>
+            {hasPalette ? (
+              <div className="shrink-0 px-3 pt-3">
+                <GoToPageButton onBeforeOpen={() => setOpen?.(false)} />
+              </div>
+            ) : null}
             <nav aria-label="Main" className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
               <NavList
                 items={items}
@@ -403,6 +368,8 @@ function MobileSidebar({
                 onNavigate={() => setOpen?.(false)}
               />
             </nav>
+            {/* Same account corner as the desktop sidebar: identity, notifications, tours, theme, sign out. */}
+            <SidebarAccount collapsed={false} surface="drawer" onBeforeAction={() => setOpen?.(false)} />
           </m.aside>
         </div>
       ) : null}

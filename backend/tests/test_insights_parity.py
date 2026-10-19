@@ -22,7 +22,9 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 
+from app.core.cache import dashboard_cache
 from app.core.config import get_settings
+from app.dashboard.snapshots import delete_snapshots
 from app.insights.analytics_repository import person_salt
 from app.insights.repository import InsightsRepository
 from tests.insights_fixture import (
@@ -410,6 +412,9 @@ async def test_rollup_path_matches_live_path(insights_client, insights_reference
         )
     ]
     await InsightsRepository(db).recompute_days(days, FIXTURE_TIMEZONE, [])
+    # Aggregates are precomputed: drop them, as a refresh after new data would.
+    await delete_snapshots(db, "insights.")
+    dashboard_cache.clear()
     rolled = {
         path: await _get(insights_client, path, case)
         for path in ("summary", "trend", "topics", "quality")

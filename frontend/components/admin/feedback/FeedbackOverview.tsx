@@ -211,6 +211,8 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
               { key: "negative", label: "Negative" },
             ]}
             label="Satisfaction trend"
+            xAxisLabel="Date"
+            yAxisLabel="Ratings per day"
             onSelect={(row) => onFilter({ day: row.day })}
           />
         </ChartCard>
@@ -228,6 +230,8 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
           <BarList
             data={derived.ratings}
             label="Rating distribution"
+            valueLabel="Ratings"
+            xAxisLabel="Number of ratings"
             onSelect={(d) => onFilter({ rating: Number(d.key) })}
             colorFor={(d, _i, ct) => (Number(d.key) >= 4 ? ct.status.ok : Number(d.key) === 3 ? ct.status.warn : ct.status.danger)}
           />
@@ -247,7 +251,13 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
             rows: derived.outcomes.map((r) => ({ label: r.label, value: r.value })),
           }}
         >
-          <BarList data={derived.outcomes} label="Feedback by outcome" onSelect={(d) => onFilter({ outcome: d.key })} />
+          <BarList
+            data={derived.outcomes}
+            label="Feedback by outcome"
+            valueLabel="Ratings"
+            xAxisLabel="Number of ratings"
+            onSelect={(d) => onFilter({ outcome: d.key })}
+          />
         </ChartCard>
         <ChartCard
           title="Top reasons"
@@ -265,6 +275,8 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
           <BarList
             data={derived.reasons}
             label="Top reasons"
+            valueLabel="Thumbs-down"
+            xAxisLabel="Times chosen"
             onSelect={(d) => onFilter({ reason: d.key })}
             colorFor={(_d, _i, ct) => ct.status.warn}
           />
@@ -283,6 +295,7 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
           <Funnel
             data={derived.funnel}
             label="Triage funnel"
+            valueLabel="Feedback items"
             onSelect={(stage) => {
               const match = derived.funnel.find((s) => s.label === stage.label);
               if (match) onFilter({ status: match.key });
@@ -307,8 +320,9 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
             yMax={1}
             xThreshold={0.5}
             yThreshold={0.5}
-            xLabel="Human rating"
-            yLabel="Grounded"
+            xAxisLabel="Human rating (negative to positive)"
+            yAxisLabel="Grounded (no to yes)"
+            showXTicks={false}
             formatX={(v) => (v >= 0.5 ? "positive" : "negative")}
             formatY={(v) => (v >= 0.5 ? "yes" : "no")}
             quadrants={{ topLeft: "Disagree", bottomRight: "Disagree" }}

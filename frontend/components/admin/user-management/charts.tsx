@@ -19,7 +19,14 @@ import {
   type ChartSize,
   type SelectHandler,
 } from "@/components/charts/primitives";
-import { XLabels, YGrid, plotArea } from "@/components/charts/cartesian";
+import {
+  AxisTitles,
+  XLabels,
+  YGrid,
+  axisDescription,
+  plotArea,
+  type AxisLabelProps,
+} from "@/components/charts/cartesian";
 
 export interface DailyBarDatum {
   label: string;
@@ -31,13 +38,16 @@ export function DailyBars({
   onSelect,
   label = "Daily counts",
   valueLabel = "Count",
+  xAxisLabel,
+  yAxisLabel,
 }: {
   data: readonly DailyBarDatum[];
   onSelect?: SelectHandler<DailyBarDatum>;
   label?: string;
   valueLabel?: string;
-}) {
+} & AxisLabelProps) {
   const ct = useChartTheme();
+  const titles = { xAxisLabel, yAxisLabel };
   const describe = useCallback((d: DailyBarDatum) => `${d.label}: ${d.value}`, []);
   const { active, getMarkProps, opacityFor } = useChartMarks(data, describe, onSelect, ct.dimOpacity);
   const max = useMemo(() => niceMax(Math.max(0, ...data.map((d) => d.value))), [data]);
@@ -45,7 +55,7 @@ export function DailyBars({
   if (data.length === 0) return <ChartEmpty />;
 
   const layout = ({ width, height }: ChartSize) => {
-    const area = plotArea(width, height);
+    const area = plotArea(width, height, titles);
     const bw = (area.x1 - area.x0) / data.length;
     return { area, bw, y: scaleLinear([0, max], [area.y1, area.y0]) };
   };
@@ -62,7 +72,7 @@ export function DailyBars({
   };
 
   return (
-    <ChartFrame label={label} tooltip={tooltip}>
+    <ChartFrame label={label} tooltip={tooltip} description={axisDescription(titles)}>
       {(size) => {
         const { area, bw, y } = layout(size);
         const barW = Math.max(1, Math.min(28, bw * 0.7));
@@ -70,6 +80,7 @@ export function DailyBars({
           <>
             <YGrid area={area} max={max} ct={ct} />
             <XLabels labels={data.map((d) => d.label)} xAt={(i) => area.x0 + bw * i + bw / 2} area={area} ct={ct} maxLabels={7} />
+            <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {data.map((d, i) => (
               <g key={d.label} {...getMarkProps(i)} opacity={opacityFor(i)}>
                 <rect x={area.x0 + bw * i} y={area.y0} width={bw} height={area.y1 - area.y0} fill="transparent" />

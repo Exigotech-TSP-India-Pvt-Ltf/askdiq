@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { BrandProvider } from "@/lib/brand-context";
-import { DEFAULT_BRAND, normalizeBrand, type Brand } from "@/lib/brand";
+import { DEFAULT_BRAND, LOGIN_LOGO_SRC, normalizeBrand, type Brand } from "@/lib/brand";
 import { LoginView } from "@/components/auth/LoginView";
 import { signInUrl } from "@/components/auth/MicrosoftSignInButton";
 import { GENERIC_LOGIN_ERROR, LOGIN_ERROR_MESSAGES } from "@/lib/login-errors";
@@ -86,7 +86,7 @@ describe("Login page (F1.2.1, newplan §7.7)", () => {
     renderLogin({}, DEFAULT_BRAND);
     const panel = screen.getByRole("complementary");
     const logo = within(panel).getByRole("img", { name: "Exigo Tech" });
-    expect(logo).toHaveAttribute("src", DEFAULT_BRAND.logos.dark);
+    expect(logo).toHaveAttribute("src", LOGIN_LOGO_SRC);
     expect(logo.className).not.toContain("dark:hidden");
     expect(panel.className).toContain("from-brand-600");
     expect(panel.className).toContain("to-brand-800");

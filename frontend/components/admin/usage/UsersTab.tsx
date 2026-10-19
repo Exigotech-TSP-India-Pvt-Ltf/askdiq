@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { PageEnvelope, UsageUserRow } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useTableState } from "@/lib/use-table-state";
@@ -22,9 +22,12 @@ import {
 interface UsersTabProps {
   token: string;
   onSelectUserIp?: (ip: string) => void;
+  /** Global date range, inclusive UTC days (YYYY-MM-DD); "" = all time. */
+  fromDay?: string;
+  toDay?: string;
 }
 
-export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
+export function UsersTab({ token, onSelectUserIp, fromDay = "", toDay = "" }: UsersTabProps) {
   const {
     page,
     pageSize,
@@ -61,6 +64,16 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // A new date range starts from the first page.
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    setPage(1);
+  }, [fromDay, toDay, setPage]);
+
   const fetchData = React.useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -71,6 +84,8 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
           audience,
           q: search || undefined,
           type: filters.type !== "all" ? filters.type : undefined,
+          from_date: fromDay || undefined,
+          to_date: toDay || undefined,
           sort,
           limit: pageSize,
           offset,
@@ -85,7 +100,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [token, audience, search, filters.type, sort, pageSize, offset, getSignal]);
+  }, [token, audience, search, filters.type, fromDay, toDay, sort, pageSize, offset, getSignal]);
 
   useEffect(() => {
     fetchData();
@@ -178,7 +193,7 @@ export function UsersTab({ token, onSelectUserIp }: UsersTabProps) {
 
   const exportUrl = `/api/proxy/admin/usage/export?tab=users&audience=${audience}&q=${encodeURIComponent(
     search
-  )}${filters.type !== "all" ? `&type=${encodeURIComponent(filters.type)}` : ""}`;
+  )}${filters.type !== "all" ? `&type=${encodeURIComponent(filters.type)}` : ""}${fromDay ? `&from_date=${fromDay}` : ""}${toDay ? `&to_date=${toDay}` : ""}`;
 
   return (
     <div className="space-y-6">

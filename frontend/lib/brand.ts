@@ -58,6 +58,9 @@ export function defaultChatSampleQuestions(productName: string): string[] {
   ];
 }
 
+/** All-white wordmark for the sign-in brand panel (not white-labelled). */
+export const LOGIN_LOGO_SRC = "/exigotech-logo-white.svg";
+
 export const DEFAULT_BRAND: Brand = {
   productName: "DeployIQ",
   assistantName: "AskDIQ",

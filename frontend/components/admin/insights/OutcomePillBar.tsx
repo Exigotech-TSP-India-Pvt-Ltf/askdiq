@@ -43,6 +43,12 @@ const OUTCOME_CONFIG: Record<
     text: "text-purple-700 dark:text-purple-300",
     activeBorder: "border-purple-500 ring-2 ring-purple-200",
   },
+  clarify: {
+    label: "Clarifying question",
+    bg: "bg-sky-50 dark:bg-sky-500/15",
+    text: "text-sky-700 dark:text-sky-300",
+    activeBorder: "border-sky-500 ring-2 ring-sky-200",
+  },
 };
 
 export function OutcomePillBar({

@@ -9,7 +9,7 @@ import { useDeepLink } from "@/lib/use-deep-link";
 import { TAB_PARAMS, isGovernanceTab, type GovernanceTab } from "@/lib/governance-links";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, GOVERNANCE_TABS } from "@/components/admin/TabGroup";
-import { MascotLoader } from "@/components/ui/MascotLoader";
+import { SkeletonCard } from "@/components/ui/Skeleton";
 import { runWhenIdle } from "@/lib/query-cache";
 import OverallView from "./overall/OverallView";
 
@@ -19,7 +19,7 @@ import OverallView from "./overall/OverallView";
 const loadMonitoring = () => import("./monitoring/MonitoringView");
 const loadTraces = () => import("./traces/TracesView");
 const loadLogs = () => import("./logs/LogsView");
-const tabLoading = () => <MascotLoader variant="inline" label="Loading tab" className="min-h-96" />;
+const tabLoading = () => <SkeletonCard label="Loading tab" className="min-h-96" />;
 const MonitoringView = dynamic(loadMonitoring, { loading: tabLoading });
 const TracesView = dynamic(loadTraces, { loading: tabLoading });
 const LogsView = dynamic(loadLogs, { loading: tabLoading });
@@ -34,12 +34,16 @@ function usePreloadTabs(): void {
   );
 }
 
-/** Tabs whose endpoints accept `from` / `to`, so the date range applies. */
+/**
+ * Tabs whose endpoints accept `from` / `to`, so the date range applies.
+ * Overall and Monitoring are real-time health views (rolling last 24 hours
+ * and live process stats); they stay "as of now" and say so in the subtitle.
+ */
 const RANGED_TABS: ReadonlySet<GovernanceTab> = new Set(["Traces", "Logs"]);
 
 const SUBTITLE: Record<GovernanceTab, string> = {
-  Overall: "Health at a glance: status, KPIs, incidents",
-  Monitoring: "Pipeline latency percentiles, traffic, resources and quality, live",
+  Overall: "Health at a glance: status, KPIs, incidents. Live, last 24 hours (not affected by the date range)",
+  Monitoring: "Pipeline latency percentiles, traffic, resources and quality. Live, last 24 hours (not affected by the date range)",
   Traces: "Request journeys across the RAG pipeline",
   Logs: "Audit, security and pipeline events",
 };

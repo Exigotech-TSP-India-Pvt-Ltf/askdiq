@@ -94,18 +94,18 @@ before shipping the revamp to `askdiq.ethub.co`.
 | `backend/Dockerfile` | Local/dev image used by `docker-compose.yml` |
 | `backend/Dockerfile.prod` | Production image `askdiq-api:latest`: `python:3.14-slim`, `gcc libpq-dev curl`, non-root `appuser` (uid 1000), `HEALTHCHECK curl -f http://localhost:8000/health`, `CMD uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-1}` (on `preview/view`; prod's `main` image runs a single worker without the variable) |
 | `backend/.dockerignore` | Drops `*.md`, `.env`, tests, `scripts/_*.py`, `data/archive/`. The hotfix and deploy branches re-include `data/real_docs/*.md` (the knowledge base) |
-| `frontend/Dockerfile` | Local/dev Next.js image used by `docker-compose.yml` |
+| `frontend/Dockerfile` | Local/dev Next.js image used by `infra/docker-compose.yml` |
 | `frontend/Dockerfile.prod` | **In progress (branch `chore/prod-deploy-fullstack`)**: production dashboard image `askdiq-web:latest` |
-| `docker-compose.yml` | Local full stack: `postgres` (`pgvector/pgvector:pg18`, host port `5433`), `backend` (`8000`), `frontend` (`3000`) |
-| `docker-compose.prod.yml` | **Reference only, does not match the server.** Describes two replicas `api-1`/`api-2` (`127.0.0.1:5500`, `127.0.0.1:5501`), a `worker` service, and one external network named by the placeholder `NETWORK_NAME`. Prod actually runs a single `askdiq-api` on two networks. Never ship or copy it to the server (see incident 12.1). |
-| `askdiq.conf` | **Reference only.** nginx site for `askdiq.ethub.co`: `upstream askdiq_api` (`least_conn`, `askdiq-api-1`/`askdiq-api-2`), security headers at server level, SSE location (`/(stream|events)$`, unbuffered, 1 h timeouts), `client_max_body_size 15m`, `proxy_next_upstream error timeout http_502 http_503`. The live conf is owned by the et-platform nginx owner; find it with `docker inspect et-platform-nginx-1 --format '{{range .Mounts}}{{.Destination}}{{println}}{{end}}'`. |
+| `infra/docker-compose.yml` | Local full stack: `postgres` (`pgvector/pgvector:pg18`, host port `5433`), `backend` (`8000`), `frontend` (`3000`) |
+| `infra/scale-out/docker-compose.yml` (was the root `docker-compose.prod.yml`) | **Reference only, does not match the server.** Describes two replicas `api-1`/`api-2` (`127.0.0.1:5500`, `127.0.0.1:5501`), a `worker` service, and one external network named by the placeholder `NETWORK_NAME`. Prod actually runs a single `askdiq-api` on two networks. Never ship or copy it to the server (see incident 12.1). |
+| `infra/scale-out/askdiq-api.conf` | **Reference only.** nginx site for `askdiq.ethub.co`: `upstream askdiq_api` (`least_conn`, `askdiq-api-1`/`askdiq-api-2`), security headers at server level, SSE location (`/(stream|events)$`, unbuffered, 1 h timeouts), `client_max_body_size 15m`, `proxy_next_upstream error timeout http_502 http_503`. The live conf is owned by the et-platform nginx owner; find it with `docker inspect et-platform-nginx-1 --format '{{range .Mounts}}{{.Destination}}{{println}}{{end}}'`. |
 
 ## 4. Golden rules
 
 1. Ship **only committed source**. Today: `git archive` of `backend/` only. With
    the deploy kit: `backend/`, `frontend/` and a `deploy-kit/` docs folder that
    is never extracted into `/opt/askdiq`.
-2. **Never ship** `docker-compose*.yml`, `askdiq.conf` or any `.env`. The
+2. **Never ship** `docker-compose*.yml`, `infra/scale-out/askdiq-api.conf` or any `.env`. The
    server's compose file, nginx conf and env files are edited in place, one
    line at a time, after a backup.
 3. **Read state before changing it**: `docker ps -a`, `docker inspect
@@ -158,8 +158,8 @@ kit in section 6 supersedes it once merged.
 ## 6. Planned full-stack deploy (dashboard container)
 
 **In progress (branch `chore/prod-deploy-fullstack`).** The authoritative
-procedure is `deploy/RUNBOOK.md` on that branch
-(`git show chore/prod-deploy-fullstack:deploy/RUNBOOK.md`). Summary of what the
+procedure is `docs/deployment/runbook.md` on that branch
+(`git show chore/prod-deploy-fullstack:docs/deployment/runbook.md`). Summary of what the
 branch adds:
 
 | File | What it does |
@@ -168,11 +168,11 @@ branch adds:
 | `backend/scripts/prestart.py` | Waits for Postgres (`DB_WAIT_RETRIES=30`, `DB_WAIT_INTERVAL_SECONDS=2`, `DB_CONNECT_TIMEOUT_SECONDS=20`); runs `alembic upgrade head` under advisory lock `0x41534B4449510001` (fatal on failure, exit 3; DB unreachable exit 2; `MIGRATION_LOCK_TIMEOUT_SECONDS=600`); then KB ingestion (`scripts/ingest_real_docs.py`) under a try-lock (`0x...0002`, skipped if another replica holds it, non-fatal, `INGESTION_TIMEOUT_SECONDS=900`); optional usage backfill (`0x...0003`, `BACKFILL_TIMEOUT_SECONDS=1800`). Toggles: `RUN_MIGRATIONS` (default true), `RUN_INGESTION` (true), `RUN_USAGE_BACKFILL` (false). `DATABASE_URL` is never logged. |
 | `backend/Dockerfile.prod` | Adds the entrypoint, `RUN_*` defaults, a build-time check that `data/real_docs/deploy-iq-platform.md` exists, CRLF stripping of the entrypoint, and `start-period=120s` on the healthcheck |
 | `frontend/Dockerfile.prod`, `frontend/.dockerignore` | Production Next.js image `askdiq-web:latest`; all settings read at run time from `/opt/askdiq/frontend/.env` |
-| `deploy/build_kit.ps1` | Builds `askdiq-deploy-<sha>.tgz` from git with LF endings: `backend/`, `frontend/`, `deploy-kit/`. Rejects (and deletes) the kit if it contains `node_modules`, `.next`, any non-example `.env`, a compose file or `.conf` outside `deploy-kit/`, or misses a required file or the KB markdown. Prints `KIT OK`. |
-| `deploy/docker-compose.prod.example.yml` | Reference compose: `askdiq-api` (both networks, `start_period: 180s`), new `askdiq-web` (only `askdiq_internal`, **no host port**, healthcheck fetches `/login`), optional `askdiq-worker` (profile `worker`, set `JOBS_WORKER_ENABLED=false` on the API when used). Add only the missing block to the server file; never copy it over. |
-| `deploy/frontend.env.prod.example` | Template for `/opt/askdiq/frontend/.env`: `API_BASE_URL=http://askdiq-api:8000`, `API_KEY` (= backend `API_KEY_NAME`), `APP_BASE_URL`, `SESSION_COOKIE_NAME=askdiq_session`, `SESSION_COOKIE_SECURE=true`, `ACCESS_CONTACT_EMAIL`, `AUTH_DEV_MOCK=false` |
-| `deploy/nginx/askdiq-admin.conf.example` | Server block for a dashboard subdomain (example `askdiq-admin.ethub.co`) proxying to `askdiq-web:3000` via Docker DNS (`resolver 127.0.0.11`, so reloads never fail while the container is down). **Required** `proxy_redirect` rewriting `http://localhost:3000/...` (the Next.js 14 standalone middleware builds the signed-out redirect from its own listen address) to `https://$host`. Unbuffered SSE location for `/api/proxy/admin/governance/stream`. No CSP at nginx (Next sets a nonce CSP itself). |
-| `DEPLOYMENT.md` | Notes that the prod image migrates and ingests in its entrypoint |
+| `infra/build_kit.ps1` | Builds `askdiq-deploy-<sha>.tgz` from git with LF endings: `backend/`, `frontend/`, `deploy-kit/`. Rejects (and deletes) the kit if it contains `node_modules`, `.next`, any non-example `.env`, a compose file or `.conf` outside `deploy-kit/`, or misses a required file or the KB markdown. Prints `KIT OK`. |
+| `infra/docker-compose.prod.example.yml` | Reference compose: `askdiq-api` (both networks, `start_period: 180s`), new `askdiq-web` (only `askdiq_internal`, **no host port**, healthcheck fetches `/login`), optional `askdiq-worker` (profile `worker`, set `JOBS_WORKER_ENABLED=false` on the API when used). Add only the missing block to the server file; never copy it over. |
+| `infra/frontend.env.prod.example` | Template for `/opt/askdiq/frontend/.env`: `API_BASE_URL=http://askdiq-api:8000`, `API_KEY` (= backend `API_KEY_NAME`), `APP_BASE_URL`, `SESSION_COOKIE_NAME=askdiq_session`, `SESSION_COOKIE_SECURE=true`, `ACCESS_CONTACT_EMAIL`, `AUTH_DEV_MOCK=false` |
+| `infra/nginx/askdiq-admin.conf.example` | Server block for a dashboard subdomain (example `askdiq-admin.ethub.co`) proxying to `askdiq-web:3000` via Docker DNS (`resolver 127.0.0.11`, so reloads never fail while the container is down). **Required** `proxy_redirect` rewriting `http://localhost:3000/...` (the Next.js 14 standalone middleware builds the signed-out redirect from its own listen address) to `https://$host`. Unbuffered SSE location for `/api/proxy/admin/governance/stream`. No CSP at nginx (Next sets a nonce CSP itself). |
+| `docs/deployment/docker-and-auth-contract.md` | Notes that the prod image migrates and ingests in its entrypoint |
 
 RUNBOOK steps: 0 decisions (dashboard subdomain, nginx block applied by the
 nginx owner, Entra redirect URI
@@ -323,7 +323,7 @@ outside development.
 - Jobs (revamp): the API runs jobs in-process when `JOBS_WORKER_ENABLED=true`
   (default). For a dedicated worker run `python -m app.jobs.worker` (compose
   profile `worker`) and set `JOBS_WORKER_ENABLED=false` on the API.
-- Pool sizing rule (`DEPLOYMENT.md`):
+- Pool sizing rule (`docs/deployment/docker-and-auth-contract.md`):
   `replicas x workers x (DB_POOL_SIZE + DB_MAX_OVERFLOW) <= max_connections - 20`,
   plus the job worker's pool and one `LISTEN` connection per process. Check
   `SHOW max_connections;` on `et-platform-postgres-1`; the DB is shared with
@@ -339,7 +339,7 @@ outside development.
 | | |
 |---|---|
 | Impact | `askdiq.ethub.co` returned 502; `askdiq-api` in a restart loop |
-| Cause 1 | The deploy tarball included the repo's `docker-compose.prod.yml` (placeholder network `NETWORK_NAME`, a single network, replica layout) which replaced the server file, so the container lost `et-platform_internal` and could not reach the DB |
+| Cause 1 | The deploy tarball included the repo's `docker-compose.prod.yml` (now `infra/scale-out/docker-compose.yml`) (placeholder network `NETWORK_NAME`, a single network, replica layout) which replaced the server file, so the container lost `et-platform_internal` and could not reach the DB |
 | Cause 2 | A dev-derived `.env` was uploaded; its `DATABASE_URL` pointed at `localhost`, which inside the container is the container itself |
 | Fix | Restored the `DATABASE_URL` line from `~/askdiq.env.bak.2026-10-16-0441`; re-attached `et-platform_internal`; recreated the container; verified `/health` (`database: healthy`) and `docker ps` |
 
@@ -388,5 +388,5 @@ outside development.
 | Many 429s | Per-client or per-IP limits (10 and 30 per minute); visitors without a valid `X-Client-Id` share one bucket | See [Website integration](10-website-integration.md#6-rate-limits) |
 | Two Alembic heads | Stale migration file left on the server | Re-sync with `rsync --delete`; `alembic heads` must show one |
 | Next.js `HeadersTimeoutError` (dashboard) | Backend frozen by pool exhaustion | See [Development troubleshooting](09-development.md#troubleshooting); **In progress (branch `fix/chat-page-fetch-timeouts`)** |
-| Dashboard redirects to `http://localhost:3000/login` (planned) | nginx block lacks `proxy_redirect` | Apply the block from `deploy/nginx/askdiq-admin.conf.example` |
+| Dashboard redirects to `http://localhost:3000/login` (planned) | nginx block lacks `proxy_redirect` | Apply the block from `infra/nginx/askdiq-admin.conf.example` |
 | Dashboard POST returns 403 "Cross-site request rejected." (planned) | `APP_BASE_URL` does not equal the dashboard origin | Fix `APP_BASE_URL` in the backend `.env` |

@@ -269,6 +269,12 @@ async def test_visitor_timeline(client, db_session) -> None:
         pytest.approx(0.006),
     ]
     assert [c["queries"] for c in data["cost_series"]] == [1, 0, 1]
+    assert [
+        (a["sessions"], a["queries"], a["feedback"]) for a in data["activity_series"]
+    ] == [(1, 1, 1), (0, 0, 0), (1, 1, 0)]
+    assert [a["day"] for a in data["activity_series"]] == [
+        c["day"] for c in data["cost_series"]
+    ]
     assert len(data["feedback"]) == 1
     fb = data["feedback"][0]
     assert fb["rating"] == 2
@@ -334,6 +340,7 @@ async def test_conversation_stats_exact_numbers(client, db_session) -> None:
         "blocked": 1,
         "conversational": 0,
         "llm_failed": 0,
+        "clarify": 0,
     }
     # NULL outcome counts as answered.
     assert day1["counts"]["answered"] == 12

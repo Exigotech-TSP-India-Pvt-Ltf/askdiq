@@ -15,6 +15,7 @@ import {
   type SelectHandler,
   type TooltipRow,
 } from "./primitives";
+import { AxisTitles, axisDescription, titleInsets, type AxisLabelProps } from "./cartesian";
 
 export interface BulletDatum {
   label: string;
@@ -30,12 +31,15 @@ export interface BulletDatum {
   max?: number;
 }
 
-export interface BulletChartProps {
+/** `xAxisLabel` titles the value axis (e.g. "USD"); `yAxisLabel` the row labels. */
+export interface BulletChartProps extends AxisLabelProps {
   data: readonly BulletDatum[];
   onSelect?: SelectHandler<BulletDatum>;
   label?: string;
   height?: number;
   formatValue?: (value: number) => string;
+  /** Tooltip name of the actual value (default "Actual"), e.g. "Spent". */
+  valueLabel?: string;
 }
 
 const LABEL_WIDTH = 96;
@@ -48,8 +52,12 @@ export function BulletChart({
   label = "Bullet chart",
   height,
   formatValue = formatCompact,
+  valueLabel = "Actual",
+  xAxisLabel,
+  yAxisLabel,
 }: BulletChartProps) {
   const ct = useChartTheme();
+  const titles = { xAxisLabel, yAxisLabel };
   const describe = useCallback(
     (d: BulletDatum) =>
       `${d.label}: ${formatValue(d.value)}${d.target === undefined ? "" : ` of ${formatValue(d.target)} target`}${
@@ -69,29 +77,33 @@ export function BulletChart({
   if (data.length === 0) return <ChartEmpty height={height} />;
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const labelW = Math.min(LABEL_WIDTH, width * 0.35);
-    const rowH = h / data.length;
+    const inset = titleInsets(titles);
+    const labelW = inset.left + Math.min(LABEL_WIDTH, (width - inset.left) * 0.35);
+    const rowsH = Math.max(1, h - inset.bottom);
+    const rowH = rowsH / data.length;
     const xFor = (d: BulletDatum) => scaleLinear([0, d.max ?? sharedMax], [labelW + 8, Math.max(labelW + 9, width - 8)]);
-    return { labelW, rowH, xFor };
+    const titleArea = { x0: labelW + 8, x1: Math.max(labelW + 9, width - 8), y0: 0, y1: rowsH };
+    return { labelW, rowH, xFor, titleArea };
   };
 
   const tooltip = (size: ChartSize) => {
     if (active === null) return null;
     const { rowH, xFor } = layout(size);
     const d = data[active];
-    const rows: TooltipRow[] = [{ label: "Actual", value: formatValue(d.value), color: ct.categorical[0] }];
+    const rows: TooltipRow[] = [{ label: valueLabel, value: formatValue(d.value), color: ct.categorical[0] }];
     if (d.target !== undefined) rows.push({ label: "Target", value: formatValue(d.target) });
     if (d.forecast !== undefined) rows.push({ label: "Forecast", value: formatValue(d.forecast), color: ct.status.warn });
-    return { x: xFor(d)(d.value), y: rowH * active + rowH * 0.2, content: <TooltipBody title={d.label} rows={rows} /> };
+    return { x: xFor(d)(d.value), y: rowH * active + rowH * 0.2, content: <TooltipBody title={d.label} caption={xAxisLabel} rows={rows} /> };
   };
 
   return (
-    <ChartFrame label={label} height={height} tooltip={tooltip}>
+    <ChartFrame label={label} height={height} tooltip={tooltip} description={axisDescription(titles)}>
       {(size) => {
-        const { labelW, rowH, xFor } = layout(size);
+        const { labelW, rowH, xFor, titleArea } = layout(size);
         const bandH = Math.max(6, rowH * 0.6);
         return (
           <>
+            <AxisTitles {...titles} area={titleArea} height={size.height} ct={ct} />
             {data.map((d, i) => {
               const x = xFor(d);
               const top = rowH * i + (rowH - bandH) / 2;

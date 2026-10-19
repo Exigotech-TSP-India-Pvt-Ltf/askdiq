@@ -1,0 +1,85 @@
+# OPTIONAL scale-out topology (reference; not what production runs today).
+# Production today is the single askdiq-api + askdiq-web layout in the
+# server-owned /opt/askdiq/docker-compose.prod.yml (see
+# infra/docker-compose.prod.example.yml and docs/deployment/deployment-guide.md).
+#
+# Backend only, fronted by the existing et-platform nginx reverse proxy
+# (external network, not managed here). Postgres is the already-running
+# production instance, reached via DATABASE_URL in backend/.env — no postgres
+# service defined here.
+#
+# Topology (docs/archive/planchanges4.md B1.6, docs/archive/newplan.md section 13.2):
+#   api-1, api-2  two API replicas, WEB_CONCURRENCY uvicorn workers each,
+#                 load balanced by nginx (infra/scale-out/askdiq-api.conf, upstream askdiq_api)
+#   worker        the Postgres job queue worker (python -m app.jobs.worker);
+#                 the API replicas run with JOBS_WORKER_ENABLED=false
+#
+# Pool sizing: replicas x workers x (DB_POOL_SIZE + DB_MAX_OVERFLOW) must stay
+# <= Postgres max_connections - 20 (see docs/deployment/docker-and-auth-contract.md).
+# The values below override backend/.env; change them through the shell or an
+# infra/scale-out/.env file (compose reads .env from this file's directory).
+#
+# Usage (from the repository root; relative paths resolve against infra/scale-out/):
+#   docker compose -f infra/scale-out/docker-compose.yml build
+#   docker compose -f infra/scale-out/docker-compose.yml up -d
+name: askdiq
+
+x-askdiq-backend: &askdiq-backend
+  build:
+    context: ../../backend
+    dockerfile: Dockerfile.prod
+  image: askdiq-api:latest
+  env_file:
+    - ../../backend/.env
+  restart: unless-stopped
+  networks:
+    - askdiq-net
+
+x-askdiq-api: &askdiq-api
+  <<: *askdiq-backend
+  environment:
+    WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+    DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+    JOBS_WORKER_ENABLED: "false"
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+    interval: 15s
+    timeout: 5s
+    start_period: 40s
+    retries: 3
+  # uvicorn drains in-flight requests on SIGTERM before exiting.
+  stop_grace_period: 30s
+
+services:
+  api-1:
+    <<: *askdiq-api
+    container_name: askdiq-api-1
+    ports:
+      - "127.0.0.1:5500:8000"
+
+  api-2:
+    <<: *askdiq-api
+    container_name: askdiq-api-2
+    ports:
+      - "127.0.0.1:5501:8000"
+
+  worker:
+    <<: *askdiq-backend
+    container_name: askdiq-worker
+    command: ["python", "-m", "app.jobs.worker"]
+    environment:
+      DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-5}
+    # No HTTP server here, so the image's /health HEALTHCHECK does not apply.
+    healthcheck:
+      disable: true
+    # Longer than JOBS_SHUTDOWN_TIMEOUT_SECONDS (30 s) so running jobs drain.
+    stop_grace_period: 45s
+
+networks:
+  askdiq-net:
+    external: true
+    # Replace NETWORK_NAME with the actual network name of et-platform-nginx-1,
+    # found via: docker inspect et-platform-nginx-1 --format '{{json .NetworkSettings.Networks}}'
+    name: NETWORK_NAME

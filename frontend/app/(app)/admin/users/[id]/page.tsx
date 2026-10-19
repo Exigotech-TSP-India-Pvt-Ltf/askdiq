@@ -1,17 +1,16 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CircleDollarSign, Clock, ListTree, MessageSquareText, MessagesSquare, Search, ThumbsUp, User } from "lucide-react";
+import { ChartPie, ChevronDown, ChevronUp, CircleDollarSign, Clock, ListTree, MessageSquareText, MessagesSquare, Search, ThumbsUp, User } from "lucide-react";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
 import { TableCard } from "@/components/admin/TableCard";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { formatNumber } from "@/components/admin/TableFormatters";
-import { StatCard } from "@/components/admin/insights/StatCard";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { KpiTrendCard } from "@/components/charts/KpiTrendCard";
 import { Waterfall, type WaterfallStep } from "@/components/charts/Waterfall";
@@ -19,14 +18,13 @@ import { EntityLink } from "@/components/ui/EntityLink";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { MascotLoader } from "@/components/ui/MascotLoader";
+import { PageShellSkeleton } from "@/components/ui/PageShellSkeleton";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { secondaryButton } from "@/components/ui/styles";
 import {
   SectionCard,
   ToneChip,
   errorMessage,
-  formatDateTime,
   formatDay,
   formatMs,
   formatUsd,
@@ -37,9 +35,13 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { useApiQuery } from "@/lib/query-cache";
 import { useDeepLinkParam } from "@/lib/use-deep-link";
+import { useClientTable } from "@/lib/use-client-table";
+import { activitySparks } from "@/lib/visitor-activity";
 import { entityHref } from "@/lib/entity-links";
-import { conversationsHref, useCarryHref } from "@/lib/entity-routes";
+import { AUDIENCE_PAGE, AUDIENCE_PAGE_LABEL, conversationsHref, useCarryHref } from "@/lib/entity-routes";
 import {
+  OUTCOMES,
+  OUTCOME_LABELS,
   getVisitor,
   getVisitorTimeline,
   isAbsent,
@@ -54,9 +56,11 @@ const QueryInspectorDrawer = dynamic(
 
 const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
 const HOUR_MS = 60 * 60 * 1000;
-const MAX_TIMELINE_SESSIONS = 20;
+/** Timeline rows shown at first and added per "Show more". */
+const TIMELINE_PAGE = 10;
+const TIMELINE_ROW_PX = 26;
+const TIMELINE_LABEL_PX = 220;
 const MIN_SESSION_HOURS = 0.05;
-const TITLE_CHARS = 16;
 
 function formatHours(hours: number): string {
   if (hours < 1) return `${Math.round(hours * 60)} min`;
@@ -64,12 +68,16 @@ function formatHours(hours: number): string {
   return `${(hours / 24).toFixed(1)} d`;
 }
 
+const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+
 interface TimelineBar {
   sessionId: string;
   title: string;
   startedAt: number;
   endedAt: number;
 }
+
+const OUTCOME_FILTER = [{ label: "All outcomes", value: "all" }, ...OUTCOMES.map((o) => ({ label: OUTCOME_LABELS[o], value: o }))];
 
 function VisitorDetailContent() {
   const router = useRouter();
@@ -79,10 +87,8 @@ function VisitorDetailContent() {
   const { token } = useAuth();
   const range = useRangeParams();
   const [inspect, setInspect] = useDeepLinkParam("inspect");
-
-  const [convSearch, setConvSearch] = useState("");
-  const [convPage, setConvPage] = useState(1);
-  const [convPageSize, setConvPageSize] = useState(10);
+  const [timelineCount, setTimelineCount] = useState(TIMELINE_PAGE);
+  const [outcome, setOutcome] = useState("all");
 
   const visitor = useApiQuery(token && id ? ["visitor", id] : null, (signal) => getVisitor(token ?? "", id, signal));
   const timeline = useApiQuery(token && id ? ["visitor", id, "timeline", range.from, range.to] : null, (signal) =>
@@ -93,21 +99,20 @@ function VisitorDetailContent() {
   const tl = timeline.data ?? null;
   const timelineAbsent = !timeline.isLoading && !timeline.error && tl === null;
   const ip = user?.ip_address ?? tl?.ip_address ?? null;
+  const sparks = useMemo(() => activitySparks(tl), [tl]);
 
   const conversations = useMemo(() => user?.conversations_data ?? [], [user]);
-  const filteredConversations = useMemo(() => {
-    const needle = convSearch.trim().toLowerCase();
-    if (!needle) return conversations;
-    return conversations.filter((c) => (c.title || "").toLowerCase().includes(needle) || c.id.toLowerCase().includes(needle));
-  }, [conversations, convSearch]);
-  const pagedConversations = useMemo(() => {
-    const start = (convPage - 1) * convPageSize;
-    return filteredConversations.slice(start, start + convPageSize);
-  }, [filteredConversations, convPage, convPageSize]);
+  const sessionSearch = useCallback((c: VisitorConversation) => `${c.title ?? ""} ${c.id}`, []);
+  const sessionsTable = useClientTable(conversations, { searchText: sessionSearch });
+
+  const queries = useMemo(() => tl?.queries ?? [], [tl]);
+  const querySearch = useCallback((q: TimelineQuery) => `${q.query} ${q.request_id}`, []);
+  const outcomeFilter = useCallback((q: TimelineQuery) => outcome === "all" || q.outcome === outcome, [outcome]);
+  const queriesTable = useClientTable(queries, { searchText: querySearch, filter: outcomeFilter });
 
   // Sessions as bars on a time axis: B7.2 timeline when deployed, else the
-  // sessions the existing detail endpoint already returns.
-  const bars = useMemo<TimelineBar[]>(() => {
+  // sessions the existing detail endpoint already returns. Chronological.
+  const allBars = useMemo<TimelineBar[]>(() => {
     const source = tl
       ? tl.sessions.map((s) => ({ sessionId: s.session_id, title: s.title ?? "", start: s.started_at, end: s.ended_at }))
       : conversations.map((c) => ({
@@ -124,26 +129,21 @@ function VisitorDetailContent() {
         endedAt: new Date(s.end).getTime(),
       }))
       .filter((s) => Number.isFinite(s.startedAt))
-      .sort((a, b) => a.startedAt - b.startedAt)
-      .slice(-MAX_TIMELINE_SESSIONS);
+      .sort((a, b) => a.startedAt - b.startedAt);
   }, [conversations, tl]);
+  // The most recent `timelineCount` sessions (the rest behind "Show more").
+  const bars = useMemo(() => allBars.slice(-timelineCount), [allBars, timelineCount]);
 
   const steps = useMemo<(WaterfallStep & { sessionId: string })[]>(() => {
     if (bars.length === 0) return [];
     const t0 = bars[0].startedAt;
     return bars.map((b) => ({
       sessionId: b.sessionId,
-      label: b.title.length > TITLE_CHARS ? `${b.title.slice(0, TITLE_CHARS - 1)}…` : b.title,
+      label: b.title,
       start: (b.startedAt - t0) / HOUR_MS,
       value: Math.max(MIN_SESSION_HOURS, ((Number.isFinite(b.endedAt) ? b.endedAt : b.startedAt) - b.startedAt) / HOUR_MS),
     }));
   }, [bars]);
-
-  const costTrend = useMemo(
-    () => (tl?.cost_series ?? []).map((d) => ({ label: formatDay(d.day), value: d.cost_usd })),
-    [tl],
-  );
-  const totalCost = tl ? tl.cost_series.reduce((sum, d) => sum + d.cost_usd, 0) : null;
 
   const convColumns: ColumnDef<VisitorConversation>[] = [
     {
@@ -171,7 +171,11 @@ function VisitorDetailContent() {
     {
       key: "query",
       header: "Query",
-      render: (q) => <span className="line-clamp-2 text-xs text-fg">{q.query}</span>,
+      render: (q) => (
+        <span className="line-clamp-2 max-w-[44ch] text-xs text-fg" title={q.query}>
+          {q.query}
+        </span>
+      ),
     },
     {
       key: "outcome",
@@ -187,14 +191,14 @@ function VisitorDetailContent() {
         </EntityLink>
       ),
     },
-    { key: "latency_ms", header: "Latency", align: "right", render: (q) => formatMs(q.latency_ms) },
-    { key: "cost_usd", header: "Cost", align: "right", render: (q) => formatUsd(q.cost_usd) },
+    { key: "latency_ms", header: "Latency", align: "right", render: (q) => <span className="whitespace-nowrap">{formatMs(q.latency_ms)}</span> },
+    { key: "cost_usd", header: "Cost", align: "right", render: (q) => <span className="whitespace-nowrap">{formatUsd(q.cost_usd)}</span> },
     { key: "created_at", header: "When", render: (q) => <RelativeTime value={q.created_at} className="text-xs text-fg-subtle" /> },
   ];
 
   if (visitor.isLoading) {
     return (
-      <MascotLoader variant="page" label="Loading visitor" />
+      <PageShellSkeleton label="Loading visitor" />
     );
   }
 
@@ -206,7 +210,7 @@ function VisitorDetailContent() {
           title="Visitor"
           icon={User}
           showAudienceTabs={false}
-          breadcrumb={[{ label: "Visitors", href: "/admin/users" }, { label: id || "Unknown" }]}
+          breadcrumb={[{ label: AUDIENCE_PAGE_LABEL, href: carry(AUDIENCE_PAGE) }, { label: id || "Unknown" }]}
         />
         <div className="p-8">
           {notFound ? (
@@ -214,7 +218,7 @@ function VisitorDetailContent() {
               title="Visitor not found"
               description="The requested visitor could not be found."
               action={
-                <Link href={carry("/admin/users")} className={secondaryButton}>
+                <Link href={carry(AUDIENCE_PAGE)} className={secondaryButton}>
                   Back to Visitors
                 </Link>
               }
@@ -228,6 +232,11 @@ function VisitorDetailContent() {
   }
 
   const label = ip || `Visitor ${user.id.slice(0, 8)}`;
+  const windowLabel = range.label ?? undefined;
+  const allTime = (n: number | null | undefined) => `${(n ?? 0).toLocaleString()} all time`;
+  const totalCost = sparks ? sparks.cost.reduce((sum, d) => sum + d.value, 0) : null;
+  const hiddenSessions = allBars.length - bars.length;
+  const truncatedQueries = tl?.truncated.queries ?? false;
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-page text-fg">
@@ -236,41 +245,78 @@ function VisitorDetailContent() {
         icon={User}
         showAudienceTabs={false}
         showDateRange
-        breadcrumb={[{ label: "Visitors", href: "/admin/users" }, { label }]}
+        breadcrumb={[{ label: AUDIENCE_PAGE_LABEL, href: carry(AUDIENCE_PAGE) }, { label }]}
         actions={
           ip ? (
             <>
-              <Link href={carry(entityHref({ kind: "visitor", id: ip }))} className={secondaryButton}>
+              <Link href={carry(entityHref({ kind: "visitor", id: ip }))} className={secondaryButton} title="Sessions in Usage & Cost">
                 <ListTree {...ICON} />
-                View sessions
+                <span className="hidden lg:inline">Usage sessions</span>
               </Link>
-              <Link href={carry(conversationsHref({ ip }))} className={secondaryButton}>
+              <Link href={carry(conversationsHref({ ip }))} className={secondaryButton} title="This visitor's conversations">
                 <MessagesSquare {...ICON} />
-                Conversations
+                <span className="hidden lg:inline">Conversations</span>
+              </Link>
+              <Link href={entityHref({ kind: "analytics", visitor: id })} className={secondaryButton}>
+                <ChartPie {...ICON} />
+                Analytics
               </Link>
             </>
           ) : undefined
         }
       />
 
-      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <StatCard title="Sessions" value={user.sessions ?? 0} icon={MessagesSquare} />
-          <StatCard title="Queries" value={user.queries ?? 0} icon={Search} />
-          <StatCard title="Feedback" value={user.feedback_count ?? 0} icon={ThumbsUp} />
-          <StatCard title="First seen" value={formatDateTime(user.first_seen)} subtitle={`Last active ${formatDateTime(user.last_active)}`} icon={Clock} />
+      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-4 sm:p-8">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5" data-testid="visitor-detail-kpis">
+          <KpiTrendCard
+            label="Sessions"
+            value={formatNumber(sparks ? sparks.totals.sessions : (user.sessions ?? 0))}
+            windowLabel={sparks ? windowLabel : "All time"}
+            trend={sparks?.sessions ?? []}
+            icon={MessagesSquare}
+            hint={sparks ? `Sessions per day · ${allTime(user.sessions)}` : "Per-day sessions are not available yet"}
+          />
+          <KpiTrendCard
+            label="Queries"
+            value={formatNumber(sparks ? sparks.totals.queries : (user.queries ?? 0))}
+            windowLabel={sparks ? windowLabel : "All time"}
+            trend={sparks?.queries ?? []}
+            icon={Search}
+            hint={sparks ? `Queries per day · ${allTime(user.queries)}` : "Per-day queries are not available yet"}
+          />
+          <KpiTrendCard
+            label="Feedback"
+            value={formatNumber(sparks ? sparks.totals.feedback : (user.feedback_count ?? 0))}
+            windowLabel={sparks ? windowLabel : "All time"}
+            trend={sparks?.feedback ?? []}
+            icon={ThumbsUp}
+            hint={sparks ? `Ratings per day · ${allTime(user.feedback_count)}` : "Per-day feedback is not available yet"}
+          />
+          <KpiTrendCard
+            label="Last active"
+            value={<RelativeTime value={user.last_active} />}
+            windowLabel={sparks ? `Active ${sparks.totals.activeDays} of ${plural(sparks.totals.days, "day")}` : undefined}
+            trend={sparks?.active ?? []}
+            tone="info"
+            icon={Clock}
+            hint={<RelativeTime value={user.first_seen} prefix="First seen " />}
+          />
           <KpiTrendCard
             label="Cost"
             value={formatUsd(totalCost)}
-            trend={costTrend}
+            windowLabel={windowLabel}
+            trend={sparks?.cost ?? []}
+            formatTrendValue={formatUsd}
             icon={CircleDollarSign}
-            hint={timelineAbsent ? "Per-visitor cost is not available yet" : (range.label ?? undefined)}
+            goodDirection="down"
+            hint={timelineAbsent ? "Per-visitor cost is not available yet" : "LLM cost (USD) per day"}
           />
         </div>
 
         <ChartCard
           title="Activity timeline"
-          subtitle="Sessions on a time axis; select a bar to open the conversation"
+          subtitle={`Most recent sessions on a time axis; hover a bar for the full title, select it to open the conversation`}
+          window={windowLabel}
           loading={timeline.isLoading && conversations.length === 0}
           empty={steps.length === 0}
           emptyMessage="No sessions for this visitor"
@@ -283,80 +329,147 @@ function VisitorDetailContent() {
             ],
             rows: bars.map((b) => ({
               title: <EntityLink entity={{ kind: "conversation", id: b.sessionId }} mono={false} copyable={false}>{b.title}</EntityLink>,
-              start: new Date(b.startedAt).toLocaleString(),
+              start: <RelativeTime value={new Date(b.startedAt).toISOString()} display="absolute" />,
               duration: formatHours(Math.max(0, b.endedAt - b.startedAt) / HOUR_MS),
             })),
           }}
         >
           <Waterfall
             data={steps}
-            height={Math.max(120, steps.length * 28)}
+            height={steps.length * TIMELINE_ROW_PX + 28}
+            labelWidth={TIMELINE_LABEL_PX}
             label="Sessions over time"
+            xAxisLabel="Hours since the first session shown"
+            yAxisLabel="Session"
+            valueLabel="Duration"
             formatValue={formatHours}
             onSelect={(step) => {
               const s = steps.find((x) => x === step);
               if (s) router.push(carry(entityHref({ kind: "conversation", id: s.sessionId })));
             }}
           />
+          {allBars.length > TIMELINE_PAGE ? (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[11px] text-fg-subtle">
+              <span>
+                Showing the latest {bars.length} of {plural(allBars.length, "session")}
+                {tl?.truncated.sessions ? " (first 200 in range)" : ""}
+              </span>
+              <div className="flex items-center gap-2">
+                {hiddenSessions > 0 ? (
+                  <button type="button" className={secondaryButton} onClick={() => setTimelineCount((n) => n + TIMELINE_PAGE)}>
+                    <ChevronDown {...ICON} />
+                    Show {Math.min(TIMELINE_PAGE, hiddenSessions)} more
+                  </button>
+                ) : null}
+                {bars.length > TIMELINE_PAGE ? (
+                  <button type="button" className={secondaryButton} onClick={() => setTimelineCount(TIMELINE_PAGE)}>
+                    <ChevronUp {...ICON} />
+                    Show fewer
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </ChartCard>
 
         <TableCard
-          title="Sessions"
-          description="Conversations started from this visitor."
           toolbar={
             <TableToolbar
-              search={convSearch}
-              onSearchChange={(v) => {
-                setConvSearch(v);
-                setConvPage(1);
-              }}
-              searchPlaceholder="Search sessions…"
+              title="Sessions"
+              countLabel={`${plural(sessionsTable.total, "session")} from this visitor`}
+              search={sessionsTable.search}
+              onSearchChange={sessionsTable.setSearch}
+              searchPlaceholder="Search title or session ID…"
             />
           }
           pagination={
             <Pagination
-              page={convPage}
-              pageCount={Math.ceil(filteredConversations.length / convPageSize)}
-              totalItems={filteredConversations.length}
-              pageSize={convPageSize}
-              onPageChange={setConvPage}
-              onPageSizeChange={setConvPageSize}
+              page={sessionsTable.page}
+              pageCount={sessionsTable.pageCount}
+              totalItems={sessionsTable.total}
+              pageSize={sessionsTable.pageSize}
+              onPageChange={sessionsTable.setPage}
+              onPageSizeChange={sessionsTable.setPageSize}
             />
           }
         >
           <DataTable
             columns={convColumns}
-            data={pagedConversations}
+            data={sessionsTable.paged}
             keyField="id"
             onRowClick={(c) => router.push(carry(entityHref({ kind: "conversation", id: c.id })))}
-            emptyMessage="No sessions found for this visitor."
+            emptyMessage={conversations.length === 0 ? "No sessions found for this visitor." : "No sessions match this search."}
           />
         </TableCard>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <SectionCard
-            title="Queries"
-            description="Most recent first; select one to open the query inspector."
+          <TableCard
             className="xl:col-span-2"
+            toolbar={
+              <TableToolbar
+                title="Queries"
+                countLabel={
+                  tl
+                    ? `${queriesTable.total.toLocaleString()} quer${queriesTable.total === 1 ? "y" : "ies"}${truncatedQueries ? " (latest 100 in range)" : ""} · select one to inspect`
+                    : undefined
+                }
+                search={queriesTable.search}
+                onSearchChange={queriesTable.setSearch}
+                searchPlaceholder="Search query text…"
+                filters={[
+                  {
+                    id: "outcome",
+                    label: "Outcome",
+                    value: outcome,
+                    options: OUTCOME_FILTER,
+                    onChange: (v) => {
+                      setOutcome(v || "all");
+                      queriesTable.setPage(1);
+                    },
+                  },
+                ]}
+              />
+            }
+            pagination={
+              tl ? (
+                <Pagination
+                  page={queriesTable.page}
+                  pageCount={queriesTable.pageCount}
+                  totalItems={queriesTable.total}
+                  pageSize={queriesTable.pageSize}
+                  onPageChange={queriesTable.setPage}
+                  onPageSizeChange={queriesTable.setPageSize}
+                />
+              ) : undefined
+            }
           >
             {timeline.isLoading ? (
-              <SkeletonCard label="Loading queries" />
+              <div className="p-5">
+                <SkeletonCard label="Loading queries" />
+              </div>
             ) : timeline.error ? (
-              <ErrorState compact message={errorMessage(timeline.error, "Couldn't load queries.")} onRetry={() => void timeline.refetch()} />
+              <div className="p-5">
+                <ErrorState compact message={errorMessage(timeline.error, "Couldn't load queries.")} onRetry={() => void timeline.refetch()} />
+              </div>
             ) : !tl ? (
-              <EmptyState compact icon={Search} title="Per-visitor queries are not available yet" />
+              <div className="p-5">
+                <EmptyState compact icon={Search} title="Per-visitor queries are not available yet" />
+              </div>
             ) : (
               <DataTable
                 columns={queryColumns}
-                data={tl.queries}
+                data={queriesTable.paged}
                 keyField="request_id"
                 onRowClick={(q) => setInspect(q.request_id)}
-                emptyMessage="No queries in this range."
+                emptyMessage={queries.length === 0 ? "No queries in this range." : "No queries match the search or outcome filter."}
               />
             )}
-          </SectionCard>
+          </TableCard>
 
-          <SectionCard title="Feedback" description="Ratings this visitor gave.">
+          <SectionCard
+            title="Feedback"
+            description={tl ? `${plural(tl.feedback.length, "rating")} this visitor gave in the range` : "Ratings this visitor gave."}
+          >
             {timeline.isLoading ? (
               <SkeletonCard label="Loading feedback" />
             ) : !tl ? (
@@ -364,7 +477,7 @@ function VisitorDetailContent() {
             ) : tl.feedback.length === 0 ? (
               <EmptyState compact icon={MessageSquareText} title="No feedback in this range" />
             ) : (
-              <ul className="space-y-3" aria-label="Visitor feedback">
+              <ul className="max-h-[560px] space-y-3 overflow-y-auto pr-1" aria-label="Visitor feedback" tabIndex={0}>
                 {tl.feedback.map((f) => (
                   <li key={f.id} className="rounded-lg border border-line p-3">
                     <div className="flex flex-wrap items-center gap-2">

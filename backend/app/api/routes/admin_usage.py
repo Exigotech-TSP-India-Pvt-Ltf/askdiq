@@ -14,8 +14,8 @@ import asyncio
 import csv
 import io
 import logging
-import time
 from collections.abc import AsyncGenerator
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -38,13 +38,19 @@ from sqlalchemy.orm import aliased
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
-from app.core.cache import aggregation_cache
-from app.core.concurrency import ScopedRunner, get_scoped_runner, single_flight
+from app.core.cache import (
+    aggregation_cache,
+    dashboard_cache,
+)
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
+from app.core.serialization import sanitize_csv_cell
 from app.dashboard import usage_series
 from app.dashboard.queries import cached_tokens_sql
+from app.dashboard.snapshots import CACHE_PREFIX as SNAPSHOT_CACHE_PREFIX
+from app.dashboard.snapshots import Gather, GatherRunner, get_snapshot, register
 from app.dashboard.window import utcnow
 from app.governance.audience import (
     Audience,
@@ -53,12 +59,12 @@ from app.governance.audience import (
     get_classified_ips,
 )
 from app.governance.audit import record_audit_event
-from app.governance.costing import calculate_stage_costs
 from app.governance.outcomes import GENERATION_OUTCOMES
 from app.governance.usage_queries import (
     apply_usage_filters,
     escape_ilike_pattern,
 )
+from app.model_settings.service import current_model_settings
 from app.models.db_models import (
     AuditLog,
     ChatMessageRecord,
@@ -73,28 +79,45 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/usage", tags=["usage"])
 
-__all__ = ["calculate_stage_costs", "router"]
+__all__ = ["router"]
+
+
+def billed_rate_card(details: dict[str, Any]) -> dict[str, float]:
+    """Rates an exchange was billed at (its pricing snapshot), else today's rates."""
+    snapshot = details.get("pricing")
+    billed = snapshot if isinstance(snapshot, dict) else {}
+    live = current_model_settings()
+
+    def rate(key: str, fallback: float) -> float:
+        value = billed.get(key)
+        return float(value) if isinstance(value, int | float) else fallback
+
+    return {
+        "price_embed_per_million": rate("embed_per_m", live.price_embed_per_million),
+        "price_input_per_million": rate("prompt_per_m", live.price_prompt_per_million),
+        "price_output_per_million": rate("output_per_m", live.price_output_per_million),
+        "price_cached_per_million": rate("cached_per_m", live.price_cached_per_million),
+    }
 
 
 # Concurrency semaphore for heavy aggregations (Task 5.1.2)
 _agg_semaphore = asyncio.Semaphore(max(1, get_settings().usage_agg_max_concurrency))
-_summary_cache: dict[tuple, tuple[float, dict]] = {}
 # Summary payloads are the same for every caller holding `dashboard:read`
 # (checked before the cache); the scope is part of the key all the same.
 _SUMMARY_CACHE_SCOPE = Permission.DASHBOARD_READ.value
-_counts_cache: dict[str, tuple[float, dict]] = {}
-_counts_cache_lock = asyncio.Lock()
 
-
-# Aggregation-cache prefix of the Monitoring usage cards (/admin/usage/llm ...).
+# dashboard_cache keys / prefixes of the usage aggregates.
 USAGE_CARD_CACHE_PREFIX = "usage-card:"
 
 
 def clear_usage_caches() -> None:
-    """Clear all usage summary, audience counts and usage card caches (Task 5.1.1)."""
-    _summary_cache.clear()
-    _counts_cache.clear()
+    """Clear the in-process usage caches (Task 5.1.1).
+
+    Stored snapshots stay (the refresher replaces them); drop them with
+    ``app.dashboard.snapshots.delete_snapshots`` to force a recompute.
+    """
     aggregation_cache.invalidate_prefix(USAGE_CARD_CACHE_PREFIX)
+    dashboard_cache.invalidate_prefix(SNAPSHOT_CACHE_PREFIX)
 
 
 # ============================================================================
@@ -104,125 +127,123 @@ def clear_usage_caches() -> None:
 
 @router.get("/audience-counts")
 async def get_audience_counts(
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Return badge counts (queries, sessions, distinct IPs) for Overview, Users, and Testing with short-TTL cache."""
-    settings = get_settings()
-    ttl = settings.usage_summary_cache_ttl_seconds
-    now_ts = time.time()
-    if "counts" in _counts_cache:
-        cached_ts, cached_val = _counts_cache["counts"]
-        if now_ts - cached_ts < ttl:
-            return cached_val
+    """Badge counts (queries, sessions, distinct IPs) for Overview, Users and Testing.
 
-    async with _counts_cache_lock:
-        now_ts = time.time()
-        if "counts" in _counts_cache:
-            cached_ts, cached_val = _counts_cache["counts"]
-            if now_ts - cached_ts < ttl:
-                return cached_val
+    Every dashboard header asks for them, so they are cached
+    stale-while-revalidate (``dashboard_cache``): after the first computation
+    each page gets them at once while one background task refreshes them.
+    """
+    return await get_snapshot(AUDIENCE_COUNTS_KIND, {}, runner.gather)
 
-        test_ips, _user_ips, _ = await get_classified_ips(db)
-        test_ip_list = list(test_ips)
 
-        user_msg = aliased(ChatMessageRecord, name="user_turn")
-        asst_msg = aliased(ChatMessageRecord, name="asst_turn")
-        client_ip_col = func.coalesce(user_msg.ip_address, ChatSession.created_ip)
+AUDIENCE_COUNTS_KIND = "usage.audience_counts"
 
-        # 1. Total counts (Overview)
-        q_total = (
-            await db.execute(
-                select(func.count(asst_msg.id))
-                .select_from(asst_msg)
-                .join(
-                    user_msg,
-                    and_(
-                        asst_msg.session_id == user_msg.session_id,
-                        asst_msg.turn_index == user_msg.turn_index,
-                        user_msg.role == "user",
-                    ),
-                )
-                .where(asst_msg.role == "assistant")
+
+async def _audience_counts_snapshot(gather: Gather, _params: dict) -> dict:
+    (counts,) = await gather(_audience_counts)
+    return counts
+
+
+async def _audience_counts(db: AsyncSession) -> dict:
+    test_ips, _user_ips, _ = await get_classified_ips(db)
+    test_ip_list = list(test_ips)
+
+    user_msg = aliased(ChatMessageRecord, name="user_turn")
+    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+    client_ip_col = func.coalesce(user_msg.ip_address, ChatSession.created_ip)
+
+    # 1. Total counts (Overview)
+    q_total = (
+        await db.execute(
+            select(func.count(asst_msg.id))
+            .select_from(asst_msg)
+            .join(
+                user_msg,
+                and_(
+                    asst_msg.session_id == user_msg.session_id,
+                    asst_msg.turn_index == user_msg.turn_index,
+                    user_msg.role == "user",
+                ),
             )
-        ).scalar() or 0
+            .where(asst_msg.role == "assistant")
+        )
+    ).scalar() or 0
 
-        s_total = (await db.execute(select(func.count(ChatSession.id)))).scalar() or 0
+    s_total = (await db.execute(select(func.count(ChatSession.id)))).scalar() or 0
 
-        # Distinct IPs across sessions and messages
-        q_all_ips = (
-            select(ChatMessageRecord.ip_address)
-            .where(ChatMessageRecord.ip_address.isnot(None))
-            .union(
-                select(ChatSession.created_ip).where(ChatSession.created_ip.isnot(None))
+    # Distinct IPs across sessions and messages
+    q_all_ips = (
+        select(ChatMessageRecord.ip_address)
+        .where(ChatMessageRecord.ip_address.isnot(None))
+        .union(select(ChatSession.created_ip).where(ChatSession.created_ip.isnot(None)))
+    )
+    all_distinct_ips = set((await db.execute(q_all_ips)).scalars().all())
+
+    # 2. Testing counts (IP is NULL/empty OR in test_ip_list)
+    if test_ip_list:
+        test_cond_msgs = or_(
+            client_ip_col.is_(None),
+            client_ip_col.in_(test_ip_list),
+        )
+        test_cond_sess = or_(
+            ChatSession.created_ip.is_(None),
+            ChatSession.created_ip.in_(test_ip_list),
+        )
+    else:
+        test_cond_msgs = client_ip_col.is_(None)
+        test_cond_sess = ChatSession.created_ip.is_(None)
+
+    q_testing = (
+        await db.execute(
+            select(func.count(asst_msg.id))
+            .select_from(asst_msg)
+            .join(
+                user_msg,
+                and_(
+                    asst_msg.session_id == user_msg.session_id,
+                    asst_msg.turn_index == user_msg.turn_index,
+                    user_msg.role == "user",
+                ),
+            )
+            .join(ChatSession, asst_msg.session_id == ChatSession.id)
+            .where(
+                asst_msg.role == "assistant",
+                test_cond_msgs,
             )
         )
-        all_distinct_ips = set((await db.execute(q_all_ips)).scalars().all())
+    ).scalar() or 0
 
-        # 2. Testing counts (IP is NULL/empty OR in test_ip_list)
-        if test_ip_list:
-            test_cond_msgs = or_(
-                client_ip_col.is_(None),
-                client_ip_col.in_(test_ip_list),
-            )
-            test_cond_sess = or_(
-                ChatSession.created_ip.is_(None),
-                ChatSession.created_ip.in_(test_ip_list),
-            )
-        else:
-            test_cond_msgs = client_ip_col.is_(None)
-            test_cond_sess = ChatSession.created_ip.is_(None)
+    s_testing = (
+        await db.execute(select(func.count(ChatSession.id)).where(test_cond_sess))
+    ).scalar() or 0
 
-        q_testing = (
-            await db.execute(
-                select(func.count(asst_msg.id))
-                .select_from(asst_msg)
-                .join(
-                    user_msg,
-                    and_(
-                        asst_msg.session_id == user_msg.session_id,
-                        asst_msg.turn_index == user_msg.turn_index,
-                        user_msg.role == "user",
-                    ),
-                )
-                .join(ChatSession, asst_msg.session_id == ChatSession.id)
-                .where(
-                    asst_msg.role == "assistant",
-                    test_cond_msgs,
-                )
-            )
-        ).scalar() or 0
+    # 3. User counts: Overview minus Testing guarantees exact reconciliation
+    q_users = max(0, q_total - q_testing)
+    s_users = max(0, s_total - s_testing)
 
-        s_testing = (
-            await db.execute(select(func.count(ChatSession.id)).where(test_cond_sess))
-        ).scalar() or 0
+    distinct_test_count = sum(1 for ip in all_distinct_ips if ip in test_ips)
+    distinct_user_count = max(0, len(all_distinct_ips) - distinct_test_count)
 
-        # 3. User counts: Overview minus Testing guarantees exact reconciliation
-        q_users = max(0, q_total - q_testing)
-        s_users = max(0, s_total - s_testing)
-
-        distinct_test_count = sum(1 for ip in all_distinct_ips if ip in test_ips)
-        distinct_user_count = max(0, len(all_distinct_ips) - distinct_test_count)
-
-        result = {
-            "overview": {
-                "queries": q_total,
-                "sessions": s_total,
-                "ips": len(all_distinct_ips),
-            },
-            "users": {
-                "queries": q_users,
-                "sessions": s_users,
-                "ips": distinct_user_count,
-            },
-            "testing": {
-                "queries": q_testing,
-                "sessions": s_testing,
-                "ips": distinct_test_count,
-            },
-        }
-        _counts_cache["counts"] = (time.time(), result)
-        return result
+    return {
+        "overview": {
+            "queries": q_total,
+            "sessions": s_total,
+            "ips": len(all_distinct_ips),
+        },
+        "users": {
+            "queries": q_users,
+            "sessions": s_users,
+            "ips": distinct_user_count,
+        },
+        "testing": {
+            "queries": q_testing,
+            "sessions": s_testing,
+            "ips": distinct_test_count,
+        },
+    }
 
 
 # ============================================================================
@@ -254,59 +275,47 @@ async def _usage_summary_payload(
     to_date: str | None,
     runner: ScopedRunner,
 ) -> dict:
-    settings = get_settings()
+    # Same parser as the lists: a date-only ``to_date`` covers that whole UTC
+    # day, and the span is capped at ``usage_max_range_days``.
+    from_dt, to_dt = usage_date_range(from_date, to_date)
 
-    # Parse and validate dates
-    from_dt: datetime | None = None
-    to_dt: datetime | None = None
-    if from_date:
-        try:
-            from_dt = datetime.fromisoformat(from_date.replace("Z", ""))
-        except ValueError:
-            raise HTTPException(
-                status_code=422, detail="Invalid from_date format. Use ISO 8601."
-            ) from None
-    if to_date:
-        try:
-            to_dt = datetime.fromisoformat(to_date.replace("Z", ""))
-        except ValueError:
-            raise HTTPException(
-                status_code=422, detail="Invalid to_date format. Use ISO 8601."
-            ) from None
+    params: dict[str, Any] = {"scope": _SUMMARY_CACHE_SCOPE, "audience": audience}
+    if from_dt and (to_dt is None or abs(utcnow() - to_dt) <= ROLLING_RANGE_SLACK):
+        # "Last N days" ending now: one snapshot per span, recomputed for the
+        # current time by the refresher (a raw `to` changes every request).
+        start = from_dt
+        end = to_dt or utcnow()
+        params["span_seconds"] = int((end - start).total_seconds())
+    else:
+        params["from_date"] = from_date
+        params["to_date"] = to_date
+    # Precomputed (dashboard_snapshots): identical concurrent requests share
+    # one computation; different audiences / ranges run side by side.
+    return await get_snapshot(USAGE_SUMMARY_KIND, params, runner.gather)
 
-    if from_dt and to_dt and (to_dt - from_dt).days > settings.usage_max_range_days:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Requested date range exceeds maximum allowed limit of {settings.usage_max_range_days} days.",
+
+USAGE_SUMMARY_KIND = "usage.summary"
+# A range ending this close to "now" is a rolling preset ("Last 30 days").
+ROLLING_RANGE_SLACK = timedelta(minutes=5)
+
+
+async def _usage_summary_snapshot(gather: Gather, params: dict) -> dict:
+    def parse(raw: str | None) -> datetime | None:
+        return parse_usage_bound(raw, "date")
+
+    if "span_seconds" in params:
+        to_dt: datetime | None = utcnow()
+        from_dt = to_dt - timedelta(seconds=params["span_seconds"])
+    else:
+        from_dt, to_dt = parse(params["from_date"]), parse(params["to_date"])
+    async with _agg_semaphore:
+        return await _compute_usage_summary(
+            GatherRunner(gather),  # type: ignore[arg-type]
+            params["audience"],
+            from_dt,
+            to_dt,
+            get_settings(),
         )
-
-    cache_key = (_SUMMARY_CACHE_SCOPE, audience, from_date, to_date)
-    ttl = settings.usage_summary_cache_ttl_seconds
-    cached = _fresh_summary(cache_key, ttl)
-    if cached is not None:
-        return cached
-
-    async def compute() -> dict:
-        again = _fresh_summary(cache_key, ttl)
-        if again is not None:
-            return again
-        async with _agg_semaphore:
-            payload = await _compute_usage_summary(
-                runner, audience, from_dt, to_dt, settings
-            )
-        _summary_cache[cache_key] = (time.time(), payload)
-        return payload
-
-    # Identical concurrent requests share one computation; different
-    # audiences / ranges no longer queue behind one global lock.
-    return await single_flight.run(f"usage-summary:{cache_key!r}", compute)
-
-
-def _fresh_summary(cache_key: tuple, ttl: float) -> dict | None:
-    entry = _summary_cache.get(cache_key)
-    if entry is not None and time.time() - entry[0] < ttl:
-        return entry[1]
-    return None
 
 
 def _turn_aliases() -> tuple[Any, Any]:
@@ -378,6 +387,10 @@ async def _summary_totals(
     stmt = _join_user_turn(stmt, asst_msg, user_msg).where(asst_msg.role == "assistant")
     stmt = await _scope_turns(db, stmt, user_msg, audience, from_dt, to_dt)
     return (await db.execute(stmt)).one()
+
+
+# Public name: the Monitoring LLM card uses the same accounting.
+summary_totals = _summary_totals
 
 
 async def _ingest_overhead(
@@ -486,6 +499,7 @@ async def _compute_usage_summary(
         "blocked": outcome_rows.get("blocked", 0),
         "conversational": outcome_rows.get("conversational", 0),
         "llm_failed": outcome_rows.get("llm_failed", 0),
+        "clarify": outcome_rows.get("clarify", 0),
     }
 
     # Groundedness pass rate over GENERATION_OUTCOMES only
@@ -496,10 +510,11 @@ async def _compute_usage_summary(
     )
 
     # Rates & Savings calculation
-    cached_rate = settings.price_cached_per_million
-    prompt_rate = settings.price_prompt_per_million
-    output_rate = settings.price_output_per_million
-    embed_rate = settings.price_embed_per_million
+    rates = current_model_settings()
+    cached_rate = rates.price_cached_per_million
+    prompt_rate = rates.price_prompt_per_million
+    output_rate = rates.price_output_per_million
+    embed_rate = rates.price_embed_per_million
 
     # Visible vs reasoning tokens
     visible_tokens = max(0, sum_completion - sum_reasoning)
@@ -615,6 +630,10 @@ _ALLOWED_USER_SORTS = {
 }
 
 
+_FROM_DOC = "ISO datetime or YYYY-MM-DD (UTC): keep turns asked from then on."
+_TO_DOC = "ISO datetime or YYYY-MM-DD (a day covers the whole UTC day), inclusive."
+
+
 @router.get("/users")
 async def get_usage_users(
     audience: Audience = Depends(audience_scope),
@@ -623,9 +642,13 @@ async def get_usage_users(
     sort: str = "cost_desc",
     limit: int = Query(10, ge=1, le=_PAGE_MAX_LIMIT),
     offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
+    from_date: str | None = Query(None, description=_FROM_DOC),
+    to_date: str | None = Query(None, description=_TO_DOC),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
+    """Per-IP usage rows; ``from_date`` / ``to_date`` keep the turns in that window."""
+    lo, hi = usage_date_range(from_date, to_date)
     return await _usage_users_page(
         db,
         audience=audience,
@@ -634,6 +657,8 @@ async def get_usage_users(
         sort=sort,
         limit=limit,
         offset=offset,
+        from_dt=lo,
+        to_dt=hi,
     )
 
 
@@ -646,6 +671,8 @@ async def _usage_users_page(
     sort: str,
     limit: int,
     offset: int,
+    from_dt: datetime | None = None,
+    to_dt: datetime | None = None,
 ) -> dict:
     """Users rows for the tab (page-capped) and the CSV export (export-capped)."""
     if sort not in _ALLOWED_USER_SORTS:
@@ -699,6 +726,7 @@ async def _usage_users_page(
     aud_cond = await build_audience_filter(db, user_msg.ip_address, audience)
     if aud_cond is not None:
         query = query.where(aud_cond)
+    query = _turn_time_filter(query, user_msg, from_dt, to_dt)
 
     if q and q.strip():
         escaped = escape_ilike_pattern(q.strip())
@@ -816,15 +844,30 @@ async def get_usage_sessions(
     sort: str = "last_active_desc",
     limit: int = Query(10, ge=1),
     offset: int = Query(0, ge=0),
+    from_date: str | None = Query(None, description=_FROM_DOC),
+    to_date: str | None = Query(None, description=_TO_DOC),
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2)."""
+    """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2).
+
+    ``from_date`` / ``to_date`` keep only the turns asked in that window, so a
+    session's queries, tokens and cost are the ones inside the range.
+    """
     settings = get_settings()
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
         raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
+    lo, hi = usage_date_range(from_date, to_date)
     return await _usage_sessions_page(
-        db, audience=audience, q=q, ip=ip, sort=sort, limit=limit, offset=offset
+        db,
+        audience=audience,
+        q=q,
+        ip=ip,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+        from_dt=lo,
+        to_dt=hi,
     )
 
 
@@ -837,6 +880,8 @@ async def _usage_sessions_page(
     sort: str,
     limit: int,
     offset: int,
+    from_dt: datetime | None = None,
+    to_dt: datetime | None = None,
 ) -> dict:
     """Sessions rows for the tab (page-capped) and the CSV export (export-capped)."""
     if sort not in _ALLOWED_SESSION_SORTS:
@@ -898,6 +943,7 @@ async def _usage_sessions_page(
     aud_cond = await build_audience_filter(db, ChatSession.created_ip, audience)
     if aud_cond is not None:
         query = query.where(aud_cond)
+    query = _turn_time_filter(query, user_msg, from_dt, to_dt)
 
     if ip and ip.strip():
         query = query.where(ChatSession.created_ip == ip.strip())
@@ -1041,9 +1087,28 @@ def usage_date_range(
     """Validated ``(from, to)`` pair for the usage lists and export."""
     lo = parse_usage_bound(from_date, "from_date")
     hi = parse_usage_bound(to_date, "to_date", end=True)
-    if lo is not None and hi is not None and lo > hi:
+    if lo is None or hi is None:
+        return lo, hi
+    if lo > hi:
         raise HTTPException(status_code=422, detail="from_date must be before to_date.")
+    max_days = get_settings().usage_max_range_days
+    if (hi - lo).days > max_days:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Requested date range exceeds maximum allowed limit of {max_days} days.",
+        )
     return lo, hi
+
+
+def _turn_time_filter(
+    query: Any, user_msg: Any, lo: datetime | None, hi: datetime | None
+) -> Any:
+    """Keep the user turns asked inside ``[lo, hi]`` (either end optional)."""
+    if lo is not None:
+        query = query.where(user_msg.created_at >= lo)
+    if hi is not None:
+        query = query.where(user_msg.created_at <= hi)
+    return query
 
 
 @router.get("/queries")
@@ -1059,7 +1124,7 @@ async def get_usage_queries(
     sort: str = "created_at_desc",
     limit: int = 10,
     offset: int = 0,
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Paginated turns with filters, sort and header stats for the Queries tab.
@@ -1076,7 +1141,46 @@ async def get_usage_queries(
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
         raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
     lo, hi = usage_date_range(from_date, to_date)
+    args = UsageQueryArgs(
+        audience, q, ip, session_id, outcome, grounded, lo, hi, sort, limit, offset
+    )
+    # Header stats aggregate every matching turn: cached stale-while-revalidate
+    # per parameter set, computed on its own session.
+    return await get_snapshot(USAGE_QUERIES_KIND, asdict(args), runner.gather)
 
+
+USAGE_QUERIES_KIND = "usage.queries"
+
+
+async def _usage_queries_snapshot(gather: Gather, params: dict) -> dict:
+    values = dict(params)
+    for name in ("lo", "hi"):
+        if isinstance(values[name], str):
+            values[name] = datetime.fromisoformat(values[name])
+    args = UsageQueryArgs(**values)
+    (page,) = await gather(lambda s: _usage_queries_page(s, args))
+    return page
+
+
+@dataclass(frozen=True, slots=True)
+class UsageQueryArgs:
+    audience: str
+    q: str | None
+    ip: str | None
+    session_id: str | None
+    outcome: str | None
+    grounded: bool | None
+    lo: datetime | None
+    hi: datetime | None
+    sort: str
+    limit: int
+    offset: int
+
+
+async def _usage_queries_page(db: AsyncSession, args: UsageQueryArgs) -> dict:
+    audience, q, ip, session_id = args.audience, args.q, args.ip, args.session_id
+    outcome, grounded, lo, hi = args.outcome, args.grounded, args.lo, args.hi
+    sort, limit, offset = args.sort, args.limit, args.offset
     user_msg = aliased(ChatMessageRecord, name="user_turn")
     asst_msg = aliased(ChatMessageRecord, name="asst_turn")
 
@@ -1229,7 +1333,6 @@ async def get_query_detail(
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Single-turn inspector detail exposing rates and cached prompt details (Task 3.5.3)."""
-    settings = get_settings()
     user_msg = aliased(ChatMessageRecord, name="user_turn")
     asst_msg = aliased(ChatMessageRecord, name="asst_turn")
 
@@ -1276,6 +1379,7 @@ async def get_query_detail(
         lat_rerank,
     ) = row
     details = asst.token_details or {}
+    rate_card = billed_rate_card(details)
 
     return {
         "request_id": asst.request_id,
@@ -1311,18 +1415,10 @@ async def get_query_detail(
             + (asst.total_tokens or 0),
         },
         "rates": {
-            "price_embed_per_million": settings.price_embed_per_million,
-            "price_input_per_million": settings.price_prompt_per_million,
-            "price_prompt_per_million": settings.price_prompt_per_million,
-            "price_output_per_million": settings.price_output_per_million,
-            "price_cached_per_million": settings.price_cached_per_million,
+            **rate_card,
+            "price_prompt_per_million": rate_card["price_input_per_million"],
         },
-        "pricing_rate_card": {
-            "price_embed_per_million": settings.price_embed_per_million,
-            "price_input_per_million": settings.price_prompt_per_million,
-            "price_output_per_million": settings.price_output_per_million,
-            "price_cached_per_million": settings.price_cached_per_million,
-        },
+        "pricing_rate_card": rate_card,
         "latencies": {
             "total_ms": lat_total,
             "embedding_ms": lat_embed,
@@ -1336,16 +1432,6 @@ async def get_query_detail(
 # ============================================================================
 # STREAMING CSV EXPORT (Task 3.4)
 # ============================================================================
-
-
-def _sanitize_csv_cell(val: Any) -> str:
-    """Neutralize formula injection by prefixing leading special characters with a single quote."""
-    if val is None:
-        return ""
-    text = str(val)
-    if text.startswith(("=", "+", "-", "@", "\t", "\r")):
-        return f"'{text}"
-    return text
 
 
 @router.get("/export")
@@ -1461,20 +1547,20 @@ async def export_usage_csv(
             rows = (await db.execute(stmt)).all()
             for r in rows:
                 row_cells = [
-                    _sanitize_csv_cell(r[0]),
-                    _sanitize_csv_cell(r[1].isoformat() if r[1] else ""),
-                    _sanitize_csv_cell(r[2] or "Unknown"),
-                    _sanitize_csv_cell(r[3]),
-                    _sanitize_csv_cell(r[4]),
-                    _sanitize_csv_cell(r[5] or 0),
-                    _sanitize_csv_cell(r[6] or 0),
-                    _sanitize_csv_cell(r[7] or 0),
-                    _sanitize_csv_cell(r[8] or 0),
-                    _sanitize_csv_cell(
+                    sanitize_csv_cell(r[0]),
+                    sanitize_csv_cell(r[1].isoformat() if r[1] else ""),
+                    sanitize_csv_cell(r[2] or "Unknown"),
+                    sanitize_csv_cell(r[3]),
+                    sanitize_csv_cell(r[4]),
+                    sanitize_csv_cell(r[5] or 0),
+                    sanitize_csv_cell(r[6] or 0),
+                    sanitize_csv_cell(r[7] or 0),
+                    sanitize_csv_cell(r[8] or 0),
+                    sanitize_csv_cell(
                         f"{r[9]:.6f}" if r[9] is not None else "0.000000"
                     ),
-                    _sanitize_csv_cell(r[10] or "answered"),
-                    _sanitize_csv_cell("Yes" if r[11] else "No"),
+                    sanitize_csv_cell(r[10] or "answered"),
+                    sanitize_csv_cell("Yes" if r[11] else "No"),
                 ]
                 writer.writerow(row_cells)
                 yield out.getvalue()
@@ -1507,20 +1593,22 @@ async def export_usage_csv(
                 sort="cost_desc",
                 limit=settings.usage_export_max_rows,
                 offset=0,
+                from_dt=lo,
+                to_dt=hi,
             )
             for item in user_res["items"]:
                 writer.writerow(
                     [
-                        _sanitize_csv_cell(item["ip_address"]),
-                        _sanitize_csv_cell(item["type"]),
-                        _sanitize_csv_cell(item["sessions"]),
-                        _sanitize_csv_cell(item["queries"]),
-                        _sanitize_csv_cell(item["embed_tokens"]),
-                        _sanitize_csv_cell(item["prompt_tokens"]),
-                        _sanitize_csv_cell(item["reasoning_tokens"]),
-                        _sanitize_csv_cell(item["output_tokens"]),
-                        _sanitize_csv_cell(item["total_tokens"]),
-                        _sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
+                        sanitize_csv_cell(item["ip_address"]),
+                        sanitize_csv_cell(item["type"]),
+                        sanitize_csv_cell(item["sessions"]),
+                        sanitize_csv_cell(item["queries"]),
+                        sanitize_csv_cell(item["embed_tokens"]),
+                        sanitize_csv_cell(item["prompt_tokens"]),
+                        sanitize_csv_cell(item["reasoning_tokens"]),
+                        sanitize_csv_cell(item["output_tokens"]),
+                        sanitize_csv_cell(item["total_tokens"]),
+                        sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
                     ]
                 )
                 yield out.getvalue()
@@ -1552,17 +1640,19 @@ async def export_usage_csv(
                 sort="cost_desc",
                 limit=settings.usage_export_max_rows,
                 offset=0,
+                from_dt=lo,
+                to_dt=hi,
             )
             for item in sess_res["items"]:
                 writer.writerow(
                     [
-                        _sanitize_csv_cell(item["id"]),
-                        _sanitize_csv_cell(item["title"]),
-                        _sanitize_csv_cell(item["ip_address"]),
-                        _sanitize_csv_cell(item["queries"]),
-                        _sanitize_csv_cell(item["total_tokens"]),
-                        _sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
-                        _sanitize_csv_cell(item["last_active"] or ""),
+                        sanitize_csv_cell(item["id"]),
+                        sanitize_csv_cell(item["title"]),
+                        sanitize_csv_cell(item["ip_address"]),
+                        sanitize_csv_cell(item["queries"]),
+                        sanitize_csv_cell(item["total_tokens"]),
+                        sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
+                        sanitize_csv_cell(item["last_active"] or ""),
                     ]
                 )
                 yield out.getvalue()
@@ -1577,3 +1667,49 @@ async def export_usage_csv(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+# ============================================================================
+# PRECOMPUTED AGGREGATES (app.dashboard.snapshots): the defaults each page
+# opens with are computed at startup and kept fresh in the background.
+# ============================================================================
+
+_AUDIENCES = ("overview", "users", "testing")
+# The shared range picker's presets (days), kept warm per audience.
+_PRESET_DAYS = (7, 30, 90)
+_DAY_SECONDS = 86_400
+
+register(AUDIENCE_COUNTS_KIND, _audience_counts_snapshot, [{}])
+register(
+    USAGE_SUMMARY_KIND,
+    _usage_summary_snapshot,
+    [
+        {"scope": _SUMMARY_CACHE_SCOPE, "audience": audience, **window}
+        for audience in _AUDIENCES
+        for window in (
+            {"from_date": None, "to_date": None},
+            *({"span_seconds": d * _DAY_SECONDS} for d in _PRESET_DAYS),
+        )
+    ],
+)
+register(
+    USAGE_QUERIES_KIND,
+    _usage_queries_snapshot,
+    [
+        asdict(
+            UsageQueryArgs(
+                "overview",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "created_at_desc",
+                8,
+                0,
+            )
+        )
+    ],
+)

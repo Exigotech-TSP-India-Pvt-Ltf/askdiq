@@ -8,11 +8,11 @@ Routers only validate input and delegate to ``app.governance.*``.
 
 from __future__ import annotations
 
-import asyncio
 import csv
 import io
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -21,19 +21,21 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes.admin_usage import _sanitize_csv_cell
 from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
+from app.core.cache import dashboard_cached
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, release_connection
 from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
+from app.core.serialization import sanitize_csv_cell
 from app.core.sse import event_stream
 from app.dashboard import active_visitors
+from app.dashboard.snapshots import GatherRunner, get_snapshot, register
 from app.governance import logs, timeseries, traces
 from app.governance.audience import Audience, audience_scope
 from app.governance.audit import record_audit_event
@@ -49,6 +51,7 @@ from app.governance.online_eval import quality_tracker
 from app.governance.overview import overview_payload
 from app.governance.pagination import Cursor
 from app.governance.quota_series import quota_series
+from app.governance.resource_store import resources_snapshot
 from app.governance.stream import GovernanceStreamHub, get_governance_hub
 from app.models.db_models import LatencyRecord
 from app.schemas.governance import (
@@ -129,26 +132,24 @@ _MONITORING_DESCRIPTION = (
     "plus `server_error` audit rows), audience-scoped; `error_counts` has the "
     "inputs. It no longer uses in-memory counters.\n"
     "- `counts` labels every count with its `window` and `source`.\n"
-    "- `traces_total` is the true number of traces for the audience."
+    "- `traces_total` is the true number of traces for the audience.\n"
+    "- `resources` aggregates every live API worker of every replica "
+    "(sampled every `METRICS_SAMPLE_INTERVAL_SECONDS`): `host` (the server), "
+    "`container` (cgroup limits, null outside a container), `process` (summed "
+    "worker RSS / CPU), `event_loop` lag, `db_pool` use, `workers` and a "
+    "15-minute `history`. `effective` is the container value when limited, "
+    "else the host's. `process_cpu_percent` / `process_ram_percent` mirror "
+    "`effective`; `process_ram_mb` is the summed worker RSS."
 )
 
 
-async def _process_sample() -> tuple[float | None, float | None, float | None]:
+async def _resources(session: AsyncSession) -> dict[str, Any]:
+    """Aggregated resource snapshot of all live workers (never fails the page)."""
     try:
-        import psutil  # noqa: PLC0415 - optional at runtime; import failure is tolerated
-
-        def _sample() -> tuple[float, float, float]:
-            proc = psutil.Process()
-            return (
-                psutil.cpu_percent(None),
-                proc.memory_info().rss / 1024 / 1024,
-                proc.memory_percent(),
-            )
-
-        return await asyncio.to_thread(_sample)
+        return await resources_snapshot(session)
     except Exception:
-        logger.debug("psutil_metrics_unavailable", exc_info=True)
-        return None, None, None
+        logger.warning("resources_snapshot_failed", exc_info=True)
+        return {}
 
 
 @router.get(
@@ -182,15 +183,16 @@ async def governance_monitoring(
 
     starts = timeseries.hour_starts(now)
     start = starts[0]
-    percentiles, lat, turns, errs, flags, mix = await runner.gather(
+    percentiles, lat, turns, errs, flags, mix, resources = await runner.gather(
         lambda s: timeseries.stage_percentiles(s, audience, since),
         lambda s: timeseries.latency_rollup(s, audience, start, now),
         lambda s: timeseries.turns_rollup(s, audience, start, now, now),
         lambda s: timeseries.server_error_rollup(s, audience, start, now),
         lambda s: timeseries.guardrail_flag_breakdown(s, audience, since),
         lambda s: timeseries.outcome_mix(s, audience, since),
+        _resources,
     )
-    cpu, ram_mb, ram_pct = await _process_sample()
+    effective = resources.get("effective") or {}
 
     process_counter = audience == "overview"
     requests_total = METRICS["requests"] if process_counter else len(records)
@@ -233,9 +235,13 @@ async def governance_monitoring(
             "errors": labelled(errors["errors"], window, error_source),
             "traces_total": labelled(traces_total, "all_time", "latency_metrics"),
         },
-        "process_cpu_percent": cpu,
-        "process_ram_mb": ram_mb,
-        "process_ram_percent": ram_pct,
+        # Legacy keys, now from the shared aggregate of every live worker:
+        # CPU / memory % of the container when it is limited, else the host;
+        # RAM MB = summed RSS of all API workers.
+        "process_cpu_percent": effective.get("cpu_percent"),
+        "process_ram_mb": (resources.get("process") or {}).get("rss_mb"),
+        "process_ram_percent": effective.get("memory_percent"),
+        "resources": resources,
         "azure_quota_telemetry": quota_data,
         "azure_quota_series": quota_series.points(),
         "online_quality_kpis": quality_tracker.get_kpis(),
@@ -429,6 +435,72 @@ async def governance_logs(
     filters = _log_filters(user, audience, level, service, q, date_from, date_to)
     position = Cursor.decode(cursor)
     cap = get_settings().governance_exact_count_cap
+    # The filters carry the caller's hidden actions (permission scope), so
+    # the key never shares a page across permission levels.
+    if position is None and filters.date_from is None and filters.date_to is None:
+        # First pages without a date range (the Overall tab's totals, the Logs
+        # tab's default): precomputed and refreshed in the background.
+        return await get_snapshot(
+            GOVERNANCE_LOGS_KIND, _logs_params(filters, limit), runner.gather
+        )
+    scope = replace(filters, hidden_actions=frozenset())
+    hidden = ",".join(sorted(filters.hidden_actions))
+    key = f"gov-logs:{scope!r}:{hidden}:{cursor}:{limit}"
+    return await dashboard_cached(
+        key, lambda: _governance_logs_page(runner, filters, position, limit, cap)
+    )
+
+
+GOVERNANCE_LOGS_KIND = "governance.logs"
+
+
+def _logs_params(filters: logs.LogFilters, limit: int) -> dict[str, Any]:
+    return {
+        "audience": filters.audience,
+        "levels": list(filters.levels),
+        "services": list(filters.services),
+        "q": filters.q,
+        "hidden": sorted(filters.hidden_actions),
+        "limit": limit,
+    }
+
+
+async def _governance_logs_snapshot(gather: Any, params: dict) -> dict[str, Any]:
+    filters = logs.LogFilters(
+        audience=params["audience"],
+        levels=tuple(params["levels"]),
+        services=tuple(params["services"]),
+        q=params["q"],
+        hidden_actions=frozenset(params["hidden"]),
+    )
+    cap = get_settings().governance_exact_count_cap
+    return await _governance_logs_page(
+        GatherRunner(gather),  # type: ignore[arg-type]
+        filters,
+        None,
+        params["limit"],
+        cap,
+    )
+
+
+register(
+    GOVERNANCE_LOGS_KIND,
+    _governance_logs_snapshot,
+    [
+        _logs_params(logs.LogFilters(audience=aud, hidden_actions=hidden), 1)
+        for aud in ("overview", "users", "testing")
+        for hidden in (frozenset(), AUTH_AUDIT_ACTIONS)
+    ],
+)
+
+
+async def _governance_logs_page(
+    runner: ScopedRunner,
+    filters: logs.LogFilters,
+    position: Cursor | None,
+    limit: int,
+    cap: int,
+) -> dict[str, Any]:
     (rows, next_cursor), (counts, capped, total) = await runner.gather(
         lambda s: logs.fetch_page(s, filters, position, limit),
         lambda s: logs.level_counts_and_total(s, filters, cap),
@@ -460,7 +532,7 @@ _CSV_COLUMNS = (
 
 def _csv_line(values: list[Any]) -> str:
     out = io.StringIO()
-    csv.writer(out).writerow([_sanitize_csv_cell(v) for v in values])
+    csv.writer(out).writerow([sanitize_csv_cell(v) for v in values])
     return out.getvalue()
 
 

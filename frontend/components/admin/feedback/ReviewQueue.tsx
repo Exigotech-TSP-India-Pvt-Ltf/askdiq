@@ -56,6 +56,8 @@ export interface ReviewQueueProps {
   filters: FeedbackFilters;
   onFilter: (patch: FilterPatch) => void;
   canTriage: boolean;
+  /** Global date range (inclusive UTC days); a chart-picked day filter wins. */
+  days?: { from?: string; to?: string };
 }
 
 interface TriageVars {
@@ -78,14 +80,14 @@ const SHORTCUT_HINTS: readonly [string, string][] = [
  * and idle prefetch of the next page. Operators (no `feedback:triage`) see a
  * read-only queue.
  */
-export function ReviewQueue({ token, audience, filters, onFilter, canTriage }: ReviewQueueProps) {
+export function ReviewQueue({ token, audience, filters, onFilter, canTriage, days }: ReviewQueueProps) {
   const toast = useToast();
   const rowVariants = useMotionVariants(fadeUp);
 
   // ---- data -------------------------------------------------------------
   const baseParams = useMemo<FeedbackListParams>(
-    () => ({ audience, ...toListParams(filters), limit: QUEUE_PAGE_SIZE }),
-    [audience, filters],
+    () => ({ audience, ...toListParams(filters, { from: days?.from, to: days?.to }), limit: QUEUE_PAGE_SIZE }),
+    [audience, filters, days?.from, days?.to],
   );
   const baseSignature = feedbackListPath(baseParams);
   // Reset to page 1 in the same render as a filter / sort change: an old

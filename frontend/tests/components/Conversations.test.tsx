@@ -6,7 +6,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import ConversationsPage from "@/app/(app)/admin/conversations/page";
+import ConversationsPage from "@/app/(app)/admin/visitors/page";
 import ConversationDetailPage from "@/app/(app)/admin/conversations/[id]/page";
 import { callsTo, currentParams, envelope, history, mockFetch, renderPage, type Route } from "../helpers/entity-harness";
 import {
@@ -32,12 +32,12 @@ afterEach(() => {
 });
 
 describe("Conversations list", () => {
-  beforeEach(() => history.reset("/admin/conversations"));
+  beforeEach(() => history.reset("/admin/visitors?tab=conversations"));
 
   it("a histogram bin filters by turn count (URL + request) and the chip clears it", async () => {
     const calls = mockFetch([listRoute, statsRoute]);
     renderPage(<ConversationsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "2–3: 120" }));
+    fireEvent.click(await screen.findByRole("button", { name: "2–3: 120 Conversations" }));
     await waitFor(() => expect(currentParams().get("min_turns")).toBe("2"));
     expect(currentParams().get("max_turns")).toBe("3");
     await waitFor(() => {
@@ -63,7 +63,7 @@ describe("Conversations list", () => {
   it("the open-ended bin sends only min_turns", async () => {
     const calls = mockFetch([listRoute, statsRoute]);
     renderPage(<ConversationsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "10+: 10" }));
+    fireEvent.click(await screen.findByRole("button", { name: "10+: 10 Conversations" }));
     await waitFor(() => expect(callsTo(calls, "/admin/conversations").at(-1)?.searchParams.get("min_turns")).toBe("10"));
     expect(callsTo(calls, "/admin/conversations").at(-1)?.searchParams.has("max_turns")).toBe(false);
   });
@@ -79,7 +79,7 @@ describe("Conversations list", () => {
   });
 
   it("row click opens the preview drawer and closing it keeps the page and filters", async () => {
-    history.reset(`/admin/conversations?ip=${IP}`);
+    history.reset(`/admin/visitors?tab=conversations&ip=${IP}`);
     const calls = mockFetch([listRoute, statsRoute, detailRoute]);
     renderPage(<ConversationsPage />);
     await screen.findByText("Leave policy");
@@ -132,9 +132,9 @@ describe("Conversation detail", () => {
     mockFetch([detailRoute]);
     renderPage(<ConversationDetailPage />, { url: `/admin/conversations/${CONV_ID}` });
     expect(await screen.findByRole("heading", { level: 1, name: "Leave policy" })).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("link", { name: "Conversations" })).toHaveAttribute(
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("link", { name: "Visitors & Conversations" })).toHaveAttribute(
       "href",
-      "/admin/conversations",
+      "/admin/visitors?tab=conversations",
     );
     expect(screen.getByRole("group", { name: "Stage latency for the selected turn" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Tokens per turn" })).toBeInTheDocument();

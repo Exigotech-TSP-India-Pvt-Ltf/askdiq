@@ -1,10 +1,17 @@
 "use client";
 
-import { forwardRef, useEffect, useRef, type FormEvent, type ReactNode } from "react";
+import { forwardRef, useCallback, useEffect, useRef, type FormEvent, type ReactNode } from "react";
 import { useChat } from "@/lib/chat-context";
 import { useBrand } from "@/lib/brand-context";
+import type { ChatMessage } from "@/lib/types";
 import { MessageBubble } from "@/components/MessageBubble";
 import { TraceLink } from "@/components/chat/TraceLink";
+
+/** The user's reply to the clarification at `index` (shown as the card's read-only summary). */
+function replyTo(messages: ChatMessage[], index: number): string | null {
+  const reply = messages[index + 1];
+  return reply && reply.role === "user" ? reply.content : null;
+}
 
 export type ChatConversationVariant = "page" | "panel";
 
@@ -55,7 +62,19 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
     const brand = useBrand();
     const layout = LAYOUT[variant];
     const scrollRef = useRef<HTMLDivElement>(null);
+    const composerEl = useRef<HTMLTextAreaElement | null>(null);
     const tour = (id: string) => (variant === "page" ? `chat-${id}` : undefined);
+
+    // The composer is also reachable by the parent (forwarded ref) and takes
+    // focus when a clarification card is dismissed with Esc.
+    const setComposer = useCallback(
+      (el: HTMLTextAreaElement | null) => {
+        composerEl.current = el;
+        if (typeof composerRef === "function") composerRef(el);
+        else if (composerRef) composerRef.current = el;
+      },
+      [composerRef],
+    );
 
     useEffect(() => {
       const el = scrollRef.current;
@@ -98,20 +117,28 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
             </div>
           ) : (
             <div className={`mx-auto space-y-5 ${layout.column}`} aria-live="polite" aria-relevant="additions">
-              {messages.map((message) => (
-                <div key={message.id}>
-                  <MessageBubble
-                    message={message}
-                    onDelete={() => deleteExchange(message.id)}
-                    onRetry={message.error ? () => void retryExchange(message.id) : undefined}
-                  />
-                  {message.role === "assistant" && (
-                    <div className="mt-1 pl-1">
-                      <TraceLink requestId={message.response?.request_id ?? message.requestId} />
-                    </div>
-                  )}
-                </div>
-              ))}
+              {messages.map((message, index) => {
+                const latest = index === messages.length - 1;
+                return (
+                  <div key={message.id}>
+                    <MessageBubble
+                      message={message}
+                      onDelete={() => deleteExchange(message.id)}
+                      onRetry={message.error ? () => void retryExchange(message.id) : undefined}
+                      onClarificationSubmit={(answers, summary) => void sendQuery(summary, answers)}
+                      onClarificationDismiss={() => composerEl.current?.focus()}
+                      clarificationAnswered={replyTo(messages, index)}
+                      clarificationDisabled={sending}
+                      clarificationAutoFocus={latest}
+                      extraActions={
+                        message.role === "assistant" ? (
+                          <TraceLink requestId={message.response?.request_id ?? message.requestId} />
+                        ) : undefined
+                      }
+                    />
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -123,7 +150,7 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
         >
           <div className={`mx-auto flex items-end gap-2 ${layout.column}`}>
             <textarea
-              ref={composerRef}
+              ref={setComposer}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {

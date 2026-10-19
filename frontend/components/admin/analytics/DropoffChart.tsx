@@ -14,6 +14,8 @@ export interface DropoffChartProps {
 
 const ROW = 30;
 const MARGIN = { t: 6, b: 6, r: 30 };
+/** Room under the rows for the value-axis title. */
+const TITLE_SPACE = 18;
 const MAX_LABEL_WIDTH = 170;
 const LABEL_SHARE = 0.4;
 const DOT_R = 6.5;
@@ -27,7 +29,7 @@ export function DropoffChart({ items, selected, onSelect }: DropoffChartProps) {
 
   if (rows.length === 0) return <ChartEmpty message="No dropped conversations in this selection." />;
 
-  const height = rows.length * ROW + MARGIN.t + MARGIN.b;
+  const height = rows.length * ROW + MARGIN.t + MARGIN.b + TITLE_SPACE;
   const max = Math.max(1, ...rows.map((r) => r.conversations));
   const geometry = (width: number) => {
     const left = Math.min(MAX_LABEL_WIDTH, Math.round(width * LABEL_SHARE));
@@ -53,7 +55,21 @@ export function DropoffChart({ items, selected, onSelect }: DropoffChartProps) {
     >
       {({ width }) => {
         const { left, x } = geometry(width);
-        return rows.map((d, i) => {
+        const title = (
+          <text
+            key="x-title"
+            x={left + Math.max(0, width - left - MARGIN.r) / 2}
+            y={height - 4}
+            textAnchor="middle"
+            fontSize={AXIS_FONT_SIZE}
+            fontWeight={500}
+            fill={ct.axis}
+            aria-hidden="true"
+          >
+            Conversations with this issue
+          </text>
+        );
+        return [title, ...rows.map((d, i) => {
           const y = MARGIN.t + i * ROW + ROW / 2;
           const isSelected = selected === d.issue;
           return (
@@ -71,7 +87,7 @@ export function DropoffChart({ items, selected, onSelect }: DropoffChartProps) {
               </g>
             </g>
           );
-        });
+        })];
       }}
     </ChartFrame>
   );

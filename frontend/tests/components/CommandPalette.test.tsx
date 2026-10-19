@@ -7,7 +7,7 @@ import { FileText, LayoutDashboard, UserCog } from "lucide-react";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { CommandPalette, SEARCH_DEBOUNCE_MS, type PaletteItem } from "@/components/ui/CommandPalette";
 import { CommandCenter, PALETTE_PAGES } from "@/components/shell/CommandCenter";
-import { isTypingTarget } from "@/lib/shortcuts";
+import { isApplePlatform, isTypingTarget, paletteShortcutLabel } from "@/lib/shortcuts";
 import { AuthProvider } from "@/lib/auth-context";
 import type { Role } from "@/lib/permissions";
 import { makeMe } from "../helpers/auth";
@@ -163,7 +163,7 @@ describe("CommandCenter shortcuts (F0.6.4)", () => {
     field.blur();
     fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
     const sheet = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
-    expect(sheet).toHaveTextContent("Open the command palette");
+    expect(sheet).toHaveTextContent("Go to page (open the command palette)");
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).not.toBeInTheDocument());
   });
@@ -202,5 +202,13 @@ describe("CommandCenter shortcuts (F0.6.4)", () => {
     expect(isTypingTarget(area)).toBe(true);
     expect(isTypingTarget(box)).toBe(false);
     expect(isTypingTarget(document.createElement("button"))).toBe(false);
+  });
+
+  it("labels the palette shortcut per platform (⌘K on Apple, Ctrl K elsewhere)", () => {
+    expect(isApplePlatform({ platform: "MacIntel", userAgent: "" })).toBe(true);
+    expect(isApplePlatform({ platform: "", userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)" })).toBe(true);
+    expect(isApplePlatform({ platform: "Win32", userAgent: "Mozilla/5.0 (Windows NT 10.0)" })).toBe(false);
+    expect(paletteShortcutLabel(true)).toBe("⌘K");
+    expect(paletteShortcutLabel(false)).toBe("Ctrl K");
   });
 });

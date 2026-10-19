@@ -148,8 +148,25 @@ def _share(cond: Any) -> Any:
     return func.avg(case((cond, 1.0), else_=0.0))
 
 
-async def live_runs(db: AsyncSession, limit: int = MAX_RUNS) -> list[Run]:
-    """Online evaluation per UTC day (one statement), oldest first."""
+def runs_in_window(
+    runs: Sequence[Run], window: tuple[datetime, datetime] | None
+) -> list[Run]:
+    """Runs that started in ``[start, end)`` (naive UTC); all of them without a window."""
+    if window is None:
+        return list(runs)
+    start, end = window
+    return [r for r in runs if start <= to_naive_utc(r.started_at) < end]
+
+
+async def live_runs(
+    db: AsyncSession,
+    limit: int = MAX_RUNS,
+    window: tuple[datetime, datetime] | None = None,
+) -> list[Run]:
+    """Online evaluation per UTC day (one statement), oldest first.
+
+    ``window`` keeps the records created in ``[start, end)`` (naive UTC).
+    """
     rec = EvaluationRecord
     day = func.date_trunc(literal_column("'day'"), rec.created_at)
     grounded = case((rec.grounded.is_(True), 1.0), (rec.grounded.is_(False), 0.0))
@@ -169,6 +186,8 @@ async def live_runs(db: AsyncSession, limit: int = MAX_RUNS) -> list[Run]:
         .order_by(day.desc())
         .limit(limit)
     )
+    if window is not None:
+        stmt = stmt.where(rec.created_at >= window[0], rec.created_at < window[1])
     runs = []
     for row in (await db.execute(stmt)).all():
         faithfulness = _number(row[6])

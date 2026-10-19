@@ -16,6 +16,7 @@ import type React from "react";
 import { useId, useState } from "react";
 import { m } from "motion/react";
 import { ChartColumnBig, RotateCcw, Table2, TriangleAlert } from "lucide-react";
+import { ChartBoundary } from "./ChartBoundary";
 import { ChartEmpty } from "./primitives";
 import { crossfade, useMotionVariants } from "@/lib/motion";
 import { StudioIconBadge, StudioPill, studioCardClass } from "@/components/ui/StudioCard";
@@ -66,6 +67,11 @@ export interface ChartCardProps {
   emptyMessage?: string;
   /** Data for the "View as table" fallback; the toggle is hidden without it. */
   table?: ChartTableData;
+  /**
+   * The chart's input (e.g. the query data): a render error in the chart is
+   * caught by a per-card boundary and cleared when this value changes.
+   */
+  resetKey?: unknown;
   className?: string;
   /** Size of the chart area. Default `h-64 w-full`. */
   bodyClassName?: string;
@@ -170,6 +176,7 @@ export function ChartCard({
   empty = false,
   emptyMessage,
   table,
+  resetKey,
   className = "",
   bodyClassName = "h-64 w-full",
   children,
@@ -190,7 +197,15 @@ export function ChartCard({
   else if (error) body = <ChartError message={error} onRetry={onRetry} />;
   else if (empty) body = <ChartEmpty message={emptyMessage} />;
   else if (showTable) body = <ChartTable table={table} labelledBy={titleId} />;
-  else body = children;
+  else
+    body = (
+      <ChartBoundary
+        resetKey={resetKey}
+        fallback={(reset) => <ChartError message="This chart could not be displayed." onRetry={reset} />}
+      >
+        {children}
+      </ChartBoundary>
+    );
 
   return (
     <section aria-labelledby={titleId} data-testid="chart-card" className={`${SECTION} ${className}`}>
@@ -200,8 +215,8 @@ export function ChartCard({
           className="pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-brand-400/10 blur-2xl dark:bg-brand-500/15"
         />
       )}
-      <div className={`relative z-10 flex items-center justify-between gap-3 border-b pb-3 ${studioDivider}`}>
-        <div className="flex min-w-0 items-center gap-2.5">
+      <div className={`relative z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b pb-3 ${studioDivider}`}>
+        <div className="flex min-w-[10rem] flex-1 items-center gap-2.5">
           {icon ? <StudioIconBadge icon={icon} tone={tone} /> : null}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">

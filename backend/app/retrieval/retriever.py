@@ -177,6 +177,7 @@ async def retrieve(
     top_k: int = 5,
     filters: dict | None = None,
     history: list[ChatTurn] | None = None,
+    max_documents: int | None = None,
 ) -> list[SourceChunk]:
 
     settings = get_settings()
@@ -234,6 +235,7 @@ async def retrieve(
                 top_k=per_query_k,
                 filters=filters,
                 query_text=sub_query,
+                **({"max_documents": max_documents} if max_documents else {}),
             )
         )
 

@@ -1,4 +1,4 @@
-// IdP redirect target (DEPLOYMENT.md frontend contract, steps 3-5).
+// IdP redirect target (docs/deployment/docker-and-auth-contract.md frontend contract, steps 3-5).
 // 3. Reject unless `state` equals the httpOnly askdiq_oidc_state cookie, then
 //    delete it. 4. POST {code, state} to the backend server-side (with the old
 //    session in X-Session so it is rotated). 5. Store the new session in the

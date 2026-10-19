@@ -2,7 +2,7 @@
  * Typed client for the entity pages (planchanges4 F3.2 to F3.4): Visitors,
  * Conversations and Documents, list and detail.
  *
- * Contract: `frontend/docs/contracts/entity-stats.md` (the backend PR-14,
+ * Contract: `docs/technical/frontend/contracts/entity-stats.md` (the backend PR-14,
  * planchanges4 B7.2 / B7.3, implements it). Every new endpoint and field is
  * ADDITIVE: the pages keep rendering existing data when an endpoint answers
  * 404 / 405 / 501 (not deployed yet), and the charts fed by it show their
@@ -22,7 +22,7 @@ const CLIENT_ID_STORAGE_KEY = "deployiq.client_id";
 // ---------------------------------------------------------------------------
 
 /** `turn_index` outcomes, mirrored from `chat_messages.outcome`. */
-export const OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed"] as const;
+export const OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed", "clarify"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 
 export const OUTCOME_LABELS: Record<Outcome, string> = {
@@ -31,6 +31,7 @@ export const OUTCOME_LABELS: Record<Outcome, string> = {
   blocked: "Blocked",
   conversational: "Conversational",
   llm_failed: "LLM failed",
+  clarify: "Clarifying question",
 };
 
 export function isOutcome(value: unknown): value is Outcome {
@@ -233,6 +234,14 @@ export interface CostDay {
   queries: number;
 }
 
+/** Per-day counts behind the visitor KPI sparklines (additive; absent on older backends). */
+export interface ActivityDay {
+  day: string;
+  sessions: number;
+  queries: number;
+  feedback: number;
+}
+
 export interface TimelineFeedback {
   id: string;
   message_id: string;
@@ -252,6 +261,7 @@ export interface VisitorTimeline {
   sessions: TimelineSession[];
   queries: TimelineQuery[];
   cost_series: CostDay[];
+  activity_series?: ActivityDay[];
   feedback: TimelineFeedback[];
   truncated: { sessions: boolean; queries: boolean; feedback: boolean };
 }
@@ -580,6 +590,9 @@ export interface ConversationListParams {
   outcome?: string | null;
   /** ... on this day (`YYYY-MM-DD`). */
   day?: string | null;
+  /** Global date range: conversations started in these inclusive UTC days (as the stats). */
+  from?: string;
+  to?: string;
 }
 
 export function getConversations(token: string, params: ConversationListParams, signal?: AbortSignal) {

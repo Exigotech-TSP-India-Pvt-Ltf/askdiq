@@ -1,4 +1,4 @@
-/** Responses shaped exactly like docs/contracts/entity-stats.md (typed against lib/entity-stats-api.ts). */
+/** Responses shaped exactly like docs/technical/frontend/contracts/entity-stats.md (typed against lib/entity-stats-api.ts). */
 import type {
   ConversationDetail,
   ConversationRow,

@@ -53,6 +53,12 @@ export function formatCount(value: number | null | undefined): string {
   return Math.abs(value) >= 10_000 ? compact.format(value) : integer.format(Math.round(value));
 }
 
+/** Full value with "en" digit grouping (19,452,869), e.g. for a compact value's `title`. */
+export function formatCountExact(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return integer.format(Math.round(value));
+}
+
 export function formatPct(value: number | null | undefined, digits = 1): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return `${value.toFixed(digits)}%`;
@@ -80,6 +86,8 @@ export function formatByUnit(value: number | null | undefined, unit: string | nu
 const SOURCE_LABELS: Record<string, string> = {
   in_memory_counter: "process counter",
   latency_metrics: "latency records",
+  // Overall p50 / p95: queries that ran the RAG pipeline (conversational replies excluded).
+  "latency_metrics.pipeline": "RAG queries",
   chat_sessions: "chat sessions",
   chat_messages: "chat turns",
 };

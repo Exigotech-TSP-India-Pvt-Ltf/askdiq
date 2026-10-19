@@ -13,7 +13,19 @@ import {
   useChartMarks,
   type ChartSize,
 } from "./primitives";
-import { Legend, XLabels, YGrid, num, plotArea, seriesColor, type SeriesDef } from "./cartesian";
+import {
+  AxisTitles,
+  Legend,
+  XLabels,
+  YGrid,
+  axisDescription,
+  num,
+  plotArea,
+  seriesColor,
+  titleInsets,
+  type AxisLabelProps,
+  type SeriesDef,
+} from "./cartesian";
 
 /** One clickable segment: the row it belongs to and its series. */
 export interface BarSegment<T> {
@@ -22,7 +34,12 @@ export interface BarSegment<T> {
   value: number;
 }
 
-export interface StackedBarProps<T extends object> {
+/**
+ * Axis titles: `xAxisLabel` is the horizontal axis (categories when vertical,
+ * the value axis when `orientation="horizontal"`); `yAxisLabel` the vertical
+ * one (values when vertical, categories when horizontal).
+ */
+export interface StackedBarProps<T extends object> extends AxisLabelProps {
   /** One row per category, e.g. `{ day: "2026-10-09", new: 4, returning: 12 }`. */
   data: readonly T[];
   xKey: Extract<keyof T, string>;
@@ -60,7 +77,10 @@ export function StackedBar<T extends object>({
   label = "Stacked bar chart",
   height,
   formatValue = formatCompact,
+  xAxisLabel,
+  yAxisLabel,
 }: StackedBarProps<T>) {
+  const titles = { xAxisLabel, yAxisLabel };
   const ct = useChartTheme();
   const [hoverSeries, setHoverSeries] = useState<string | null>(null);
   const category = useCallback((row: T) => String((row as Record<string, unknown>)[xKey] ?? ""), [xKey]);
@@ -102,18 +122,21 @@ export function StackedBar<T extends object>({
 
   const layout = ({ width, height: h }: ChartSize) => {
     if (horizontal) {
-      const labelW = Math.min(H_LABEL_WIDTH, width * 0.4);
-      const band = h / data.length;
+      const inset = titleInsets(titles);
+      const labelW = inset.left + Math.min(H_LABEL_WIDTH, (width - inset.left) * 0.4);
+      const rowsH = Math.max(1, h - inset.bottom);
+      const band = rowsH / data.length;
       const v = scaleLinear([0, max], [labelW + 8, Math.max(labelW + 9, width - 40)]);
+      const titleArea = { x0: labelW + 8, x1: Math.max(labelW + 9, width - 40), y0: 0, y1: rowsH };
       const rect = (s: (typeof spans)[number]) => ({
         x: v(s.lo),
         y: band * s.row + (band * BAR_GAP) / 2,
         w: Math.max(1, v(s.hi) - v(s.lo)),
         h: band * (1 - BAR_GAP),
       });
-      return { labelW, band, v, rect, area: null };
+      return { labelW, band, v, rect, area: null, titleArea };
     }
-    const area = plotArea(width, h);
+    const area = plotArea(width, h, titles);
     const band = (area.x1 - area.x0) / data.length;
     const v = scaleLinear([0, max], [area.y1, area.y0]);
     const rect = (s: (typeof spans)[number]) => ({
@@ -122,7 +145,7 @@ export function StackedBar<T extends object>({
       w: Math.max(1, band * (1 - BAR_GAP)),
       h: Math.max(0, v(s.lo) - v(s.hi)),
     });
-    return { labelW: 0, band, v, rect, area };
+    return { labelW: 0, band, v, rect, area, titleArea: area };
   };
 
   const tooltip = (size: ChartSize) => {
@@ -136,6 +159,7 @@ export function StackedBar<T extends object>({
       content: (
         <TooltipBody
           title={formatLabel(category(seg.row))}
+          caption={horizontal ? xAxisLabel : yAxisLabel}
           rows={series.map((s, i) => ({
             label: s.label,
             value: formatValue(num(seg.row, s.key)),
@@ -151,12 +175,14 @@ export function StackedBar<T extends object>({
       label={label}
       height={height}
       tooltip={tooltip}
+      description={axisDescription(titles)}
       footer={series.length > 1 ? <Legend series={series} ct={ct} onHover={setHoverSeries} /> : undefined}
     >
       {(size) => {
-        const { area, band, labelW, rect } = layout(size);
+        const { area, band, labelW, rect, titleArea } = layout(size);
         return (
           <>
+            <AxisTitles {...titles} area={titleArea} height={size.height} ct={ct} />
             {area ? (
               <>
                 <YGrid area={area} max={max} ct={ct} format={percent ? pct : formatValue} />

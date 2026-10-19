@@ -233,7 +233,12 @@ async def test_query_to_worker_to_rollup_to_endpoints(live):
     dropoff = await _get(client, "dropoff", **scoped)
     assert dropoff["items"] == []
     people = await _get(client, "people", **scoped)
-    assert people["items"][0]["person"] == "P01"
+    # Labels are numbered over the whole audience: stable under every filter.
+    assert people["items"][0]["person"].startswith("P")
+    person_detail = await _get(client, f"people/{person}")
+    assert person_detail["person"] == people["items"][0]["person"]
+    assert person_detail["identity"] == "account"
+    assert person_detail["conversations"] == 1
     assert people["items"][0]["dominant_outcome"] == "Served"
     conversations = await _get(client, "conversations", **scoped)
     assert [r["conv_id"] for r in conversations["items"]] == [session_id]

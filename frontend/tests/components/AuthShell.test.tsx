@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { AccessStepper, accessSteps } from "@/components/auth/AccessRequiredView";
-import { HeaderUtilities } from "@/components/shell/HeaderUtilities";
+import { SidebarAccount } from "@/components/shell/SidebarAccount";
 import { SuspendedView } from "@/components/auth/SuspendedView";
 import { AuthProvider } from "@/lib/auth-context";
 import { queryCache } from "@/lib/query-cache";
@@ -83,8 +83,8 @@ describe("Access Required stepper (F1.2.2)", () => {
   });
 });
 
-describe("Header: role badge and notification bell (F1.3)", () => {
-  it("superadmin: role badge in the profile menu and the pending access-request notification", async () => {
+describe("Account corner: role badge and notification bell (F1.3)", () => {
+  it("superadmin: role badge beside the name and the pending access-request notification", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(JSON.stringify({ items: [], total: 4, limit: 1, offset: 0 }), { status: 200 })),
@@ -92,7 +92,7 @@ describe("Header: role badge and notification bell (F1.3)", () => {
     render(
       <AuthProvider initialMe={makeMe("superadmin")}>
         <MotionProvider>
-          <HeaderUtilities />
+          <SidebarAccount collapsed={false} />
         </MotionProvider>
       </AuthProvider>,
     );
@@ -102,10 +102,8 @@ describe("Header: role badge and notification bell (F1.3)", () => {
     const link = within(panel).getByRole("link", { name: /4 access requests waiting/i });
     expect(link).toHaveAttribute("href", "/admin/user-management?tab=requests");
 
-    fireEvent.click(screen.getByRole("button", { name: "Account menu for Jane Doe" }));
-    const menu = await screen.findByRole("menu", { name: "Account" });
-    expect(within(menu).getByTestId("role-badge")).toHaveTextContent("Superadmin");
-    expect(menu).toHaveTextContent("jane@contoso.example");
+    expect(screen.getByTestId("role-badge")).toHaveTextContent("Superadmin");
+    expect(screen.getByTestId("account-email")).toHaveTextContent("jane@contoso.example");
   });
 
   it("admin: no access-request fetch, empty bell, Admin badge", async () => {
@@ -114,14 +112,15 @@ describe("Header: role badge and notification bell (F1.3)", () => {
     render(
       <AuthProvider initialMe={makeMe("admin")}>
         <MotionProvider>
-          <HeaderUtilities />
+          <SidebarAccount collapsed={false} />
         </MotionProvider>
       </AuthProvider>,
     );
     expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument();
-    expect(fetchSpy).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Account menu for Jane Doe" }));
-    expect(within(await screen.findByRole("menu")).getByTestId("role-badge")).toHaveTextContent("Admin");
+    // Only the bell's active-alerts poll (dashboard:read); no access-request fetch.
+    const urls = fetchSpy.mock.calls.map(([url]) => String(url));
+    expect(urls.filter((url) => !url.includes("/admin/alerts"))).toEqual([]);
+    expect(screen.getByTestId("role-badge")).toHaveTextContent("Admin");
   });
 });
 

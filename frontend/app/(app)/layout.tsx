@@ -22,6 +22,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Guided tours: outside CommandCenter so the palette can launch them. */}
       <TourProvider>
         <CommandCenter>
+          {/* Audience wraps the sidebar too: its links prefetch audience-scoped data. */}
+          <AudienceProvider>
           <div className="flex h-screen overflow-hidden bg-white dark:bg-dark-bg">
             {/* Permission-filtered: users without a role see Chat only. */}
             <Sidebar />
@@ -32,7 +34,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   query keeps running and its answer isn't lost when navigating to
                   Documents/Metrics and back — only this layout, not the page, stays
                   mounted across those route changes. */}
-              <AudienceProvider>
                 <ChatProvider>
                   <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-surface-page">
                     <GateContent decision={gate.decision}>{children}</GateContent>
@@ -42,9 +43,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {/* Tour launcher for pages without a header slot (hidden while a header one is mounted). */}
                   <TourLauncher variant="floating" />
                 </ChatProvider>
-              </AudienceProvider>
             </div>
           </div>
+          </AudienceProvider>
         </CommandCenter>
       </TourProvider>
     </MobileNavProvider>

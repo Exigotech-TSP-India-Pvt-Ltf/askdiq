@@ -5,9 +5,12 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { NAV_ITEMS, Sidebar, canSeeNavItem, isNavItemEnabled } from "@/components/Sidebar";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
+import { CommandCenter } from "@/components/shell/CommandCenter";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { MobileNavProvider } from "@/lib/mobile-nav-context";
 import { queryCache } from "@/lib/query-cache";
+import { BrandProvider } from "@/lib/brand-context";
+import { DEFAULT_BRAND } from "@/lib/brand";
 import type { Role } from "@/lib/permissions";
 import { authValue, makeMe } from "../helpers/auth";
 
@@ -32,6 +35,7 @@ afterEach(() => {
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/admin/usage",
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
 describe("Sidebar Navigation Component (Task 4.3)", () => {
@@ -40,13 +44,12 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
 
     const expectedLabels = [
       "Dashboard",
-      "Chat",
-      "Documents",
-      "Visitors",
+      "AskDIQ",
+      "Knowledge",
+      "Visitors & Conversations",
       "Usage & Cost",
-      "Conversation Logs",
       "Feedback",
-      "Evaluation (Live)",
+      "Evaluation",
       "Governance",
       "Analytics",
     ];
@@ -60,13 +63,13 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
     }
   });
 
-  it("no longer lists the retired Evaluation page or the old Users label", () => {
+  it("links Evaluation to the live page (not the retired one) and drops the old Users label", () => {
     render(<Sidebar />);
 
-    expect(screen.queryByText("Evaluation")).not.toBeInTheDocument();
+    expect(screen.getByText("Evaluation").closest("a")).toHaveAttribute("href", "/admin/evaluation-live");
     expect(screen.queryByText("Users")).not.toBeInTheDocument();
     expect(document.querySelector('a[href="/admin/evaluation"]')).toBeNull();
-    expect(screen.getByText("Visitors").closest("a")).toHaveAttribute("href", "/admin/users");
+    expect(screen.getByText("Visitors & Conversations").closest("a")).toHaveAttribute("href", "/admin/visitors");
   });
 
   it("shows one flat list with no collapsible group header (no ADMIN submenu)", () => {
@@ -80,13 +83,12 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
     expect(nav.querySelector("[aria-expanded]")).toBeNull();
     expect(within(nav).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual([
       "Dashboard",
-      "Chat",
-      "Documents",
-      "Visitors",
+      "AskDIQ",
+      "Knowledge",
+      "Visitors & Conversations",
       "Usage & Cost",
-      "Conversation Logs",
       "Feedback",
-      "Evaluation (Live)",
+      "Evaluation",
       "Governance",
       "Analytics",
       "User Management",
@@ -139,7 +141,7 @@ describe("Sidebar nav registry, icons and active indicator (PR-17)", () => {
     const um = NAV_ITEMS.find((item) => item.label === "User Management");
     expect(um?.badgeKey).toBe("pendingAccess");
     expect(um?.permission).toBe("users:manage");
-    expect(NAV_ITEMS.find((item) => item.label === "Settings")?.anyPermission).toEqual(["branding:write", "taxonomy:write"]);
+    expect(NAV_ITEMS.find((item) => item.label === "Settings")?.anyPermission).toEqual(["branding:write", "taxonomy:write", "models:write"]);
     expect(screen.getByRole("link", { name: /user management/i })).toHaveAttribute("href", "/admin/user-management");
     expect(screen.getByRole("link", { name: /^analytics$/i })).toHaveAttribute("href", "/admin/analytics");
     expect(screen.getByRole("link", { name: /^settings$/i })).toHaveAttribute("href", "/admin/settings");
@@ -186,10 +188,10 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
     expect(within(drawer).getByRole("link", { name: /feedback/i })).toHaveAttribute("href", "/admin/feedback");
     await waitFor(() => expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus());
 
-    // Shift+Tab from the first control wraps to the last link inside the drawer.
+    // Shift+Tab from the first control wraps to the last control inside the drawer:
+    // Sign out, at the end of the account corner.
     await user.tab({ shift: true });
-    // Admin's last item (no users:manage / branding:write) is Analytics.
-    expect(within(drawer).getByRole("link", { name: /^analytics$/i })).toHaveFocus();
+    expect(within(drawer).getByRole("button", { name: "Sign out" })).toHaveFocus();
     await user.tab();
     expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus();
 
@@ -209,8 +211,41 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
     const drawer = await screen.findByRole("dialog", { name: "Navigation" });
-    fireEvent.click(within(drawer).getByRole("link", { name: /documents/i }));
+    fireEvent.click(within(drawer).getByRole("link", { name: /knowledge/i }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).not.toBeInTheDocument());
+  });
+
+  it("the top bar holds only the hamburger and brand", () => {
+    render(
+      <MobileNavProvider>
+        <MobileTopBar />
+      </MobileNavProvider>,
+    );
+    const bar = screen.getByRole("banner");
+    expect(within(bar).getAllByRole("button")).toHaveLength(1);
+    expect(within(bar).getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+  });
+
+  it("the drawer ends with the account corner: identity, bell, theme and sign out", async () => {
+    signInAs("superadmin");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
+    render(
+      <MotionProvider>
+        <MobileNavProvider>
+          <MobileTopBar />
+          <Sidebar />
+        </MobileNavProvider>
+      </MotionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+    expect(within(drawer).getByTestId("role-badge")).toHaveTextContent("Superadmin");
+    expect(within(drawer).getByTestId("account-email")).toHaveTextContent("jane@contoso.example");
+    const actions = within(drawer).getByRole("group", { name: "Account actions" });
+    expect(within(actions).getByRole("button", { name: "Notifications" })).toBeInTheDocument();
+    expect(within(actions).getByRole("button", { name: /theme:/i })).toBeInTheDocument();
+    fireEvent.click(within(actions).getByRole("button", { name: "Sign out" }));
+    expect(auth.logout).toHaveBeenCalled();
   });
 
   it("the desktop aside is hidden below md", () => {
@@ -222,7 +257,7 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
 describe("Role-aware sidebar (PR-18, F1.3)", () => {
   beforeEach(() => window.localStorage.clear());
 
-  const DASHBOARD_LINKS = ["Dashboard", "Documents", "Visitors", "Usage & Cost", "Conversation Logs", "Feedback", "Governance", "Analytics"];
+  const DASHBOARD_LINKS = ["Dashboard", "Knowledge", "Visitors & Conversations", "Usage & Cost", "Feedback", "Governance", "Analytics"];
 
   const linkNames = () => screen.getAllByRole("link").map((a) => a.textContent?.trim());
 
@@ -245,7 +280,7 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     render(<Sidebar />);
-    expect(linkNames()).toEqual(["Chat"]);
+    expect(linkNames()).toEqual(["AskDIQ"]);
     // No access-request count is requested without users:manage.
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -271,18 +306,183 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
     render(<Sidebar />);
     fireEvent.click(screen.getByTitle("Collapse sidebar"));
     for (const link of screen.getAllByRole("link")) expect(link).toHaveAttribute("title");
-    expect(screen.getByRole("link", { name: /visitors/i })).toHaveAttribute("title", "Visitors");
+    expect(screen.getByRole("link", { name: /visitors/i })).toHaveAttribute("title", "Visitors & Conversations");
   });
 
   it("profile area shows the real name, email and role badge, and signs out", () => {
     signInAs("superadmin");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
     render(<Sidebar />);
-    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.getByText("jane@contoso.example")).toBeInTheDocument();
+    expect(screen.getByText("Jane Doe")).toHaveAttribute("title", "Jane Doe");
+    const email = screen.getByTestId("account-email");
+    expect(email).toHaveTextContent("jane@contoso.example");
+    // Full address on hover even when the line truncates.
+    expect(email).toHaveAttribute("title", "jane@contoso.example");
+    // One line, one trailing ellipsis: a single truncating text node (no local-part / domain split).
+    expect(email).toHaveClass("truncate");
+    expect(email.children).toHaveLength(0);
     expect(screen.getByTestId("role-badge")).toHaveTextContent("Superadmin");
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(auth.logout).toHaveBeenCalled();
+  });
+
+  it("puts the role badge on the name line and the actions on their own row", () => {
+    signInAs("superadmin");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
+    render(<Sidebar />);
+    const name = screen.getByText("Jane Doe");
+    const nameLine = name.parentElement!;
+    // Name truncates first; the badge never shrinks.
+    expect(name).toHaveClass("truncate", "min-w-0");
+    expect(nameLine).toContainElement(screen.getByTestId("role-badge"));
+    expect(nameLine).not.toContainElement(screen.getByTestId("account-email"));
+    const actions = screen.getByRole("group", { name: "Account actions" });
+    expect(actions).not.toContainElement(screen.getByTestId("role-badge"));
+    for (const control of [
+      screen.getByRole("button", { name: "Notifications" }),
+      screen.getByRole("button", { name: /theme:/i }),
+      screen.getByRole("button", { name: "Sign out" }),
+    ]) {
+      expect(actions).toContainElement(control);
+      expect(control).toHaveClass("h-8", "w-8", "rounded-lg", "border");
+      expect(control).toHaveAttribute("title");
+    }
+  });
+
+  it("the bell keeps its unread badge and opens its panel upward from the account row", async () => {
+    signInAs("superadmin");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ items: [], total: 2, limit: 1, offset: 0 }), { status: 200 })),
+    );
+    render(
+      <MotionProvider>
+        <Sidebar />
+      </MotionProvider>,
+    );
+    const bell = await screen.findByRole("button", { name: "Notifications (1 new)" });
+    expect(bell).toHaveTextContent("1");
+    fireEvent.click(bell);
+    expect(bell).toHaveAttribute("aria-expanded", "true");
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    expect(panel.className).toContain("bottom-full");
+    expect(within(panel).getByRole("link", { name: /2 access requests waiting/i })).toHaveAttribute(
+      "href",
+      "/admin/user-management?tab=requests",
+    );
+  });
+
+  it("offers Help when the brand sets a help URL, and hides it otherwise", () => {
+    const { unmount } = render(
+      <BrandProvider brand={{ ...DEFAULT_BRAND, links: { ...DEFAULT_BRAND.links, help: "https://help.example.com/askdiq" } }}>
+        <Sidebar />
+      </BrandProvider>,
+    );
+    const help = screen.getByRole("link", { name: "Help" });
+    expect(help).toHaveAttribute("href", "https://help.example.com/askdiq");
+    expect(help).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    expect(help).toHaveAttribute("title", "Help (opens in a new tab)");
+    unmount();
+    render(<Sidebar />);
+    expect(screen.queryByRole("link", { name: "Help" })).not.toBeInTheDocument();
+  });
+
+  it("collapsed account shows an avatar with the name, email and role as its label", () => {
+    signInAs("superadmin");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
+    render(<Sidebar />);
+    fireEvent.click(screen.getByTitle("Collapse sidebar"));
+    const avatar = screen.getByRole("img", { name: "Jane Doe, jane@contoso.example, Superadmin" });
+    expect(avatar).toHaveTextContent("JD");
+    expect(screen.queryByTestId("account-email")).not.toBeInTheDocument();
+    // Every action stays reachable, stacked under the avatar, each with a tooltip.
+    const actions = screen.getByRole("group", { name: "Account actions" });
+    expect(actions).toHaveClass("flex-col");
+    for (const control of [
+      screen.getByRole("button", { name: "Notifications" }),
+      screen.getByRole("button", { name: /theme:/i }),
+      screen.getByRole("button", { name: "Sign out" }),
+    ]) {
+      expect(actions).toContainElement(control);
+      expect(control).toHaveAttribute("title");
+    }
+  });
+
+  it("collapsed: the bell panel opens to the side of the rail", async () => {
+    render(
+      <MotionProvider>
+        <Sidebar />
+      </MotionProvider>,
+    );
+    fireEvent.click(screen.getByTitle("Collapse sidebar"));
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    expect((await screen.findByRole("dialog", { name: "Notifications" })).className).toContain("left-full");
+  });
+});
+
+describe("Go to page (command palette) in the sidebar", () => {
+  beforeEach(() => window.localStorage.clear());
+  afterEach(() => vi.restoreAllMocks());
+
+  function renderWithCenter(children: React.ReactNode = <Sidebar />) {
+    return render(
+      <MotionProvider>
+        <CommandCenter>{children}</CommandCenter>
+      </MotionProvider>,
+    );
+  }
+
+  it("is hidden without a CommandCenter", () => {
+    render(<Sidebar />);
+    expect(screen.queryByRole("button", { name: "Go to page" })).not.toBeInTheDocument();
+  });
+
+  it("expanded: a search-field button with the Ctrl K hint that opens the palette", async () => {
+    renderWithCenter();
+    const button = screen.getByRole("button", { name: "Go to page" });
+    expect(button).toHaveAttribute("data-tour", "shell-command-palette");
+    expect(button).toHaveAttribute("aria-keyshortcuts", "Control+K Meta+K");
+    expect(button).toHaveTextContent("Go to page…");
+    expect(button.querySelector("kbd")).toHaveTextContent("Ctrl K");
+    // Sits above the nav, not inside it.
+    expect(screen.getByRole("navigation", { name: "Main" })).not.toContainElement(button);
+    fireEvent.click(button);
+    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+  });
+
+  it("shows ⌘K on Apple platforms", async () => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    renderWithCenter();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Go to page" }).querySelector("kbd")).toHaveTextContent("⌘K"));
+  });
+
+  it("collapsed: an icon button with a tooltip", () => {
+    renderWithCenter();
+    fireEvent.click(screen.getByTitle("Collapse sidebar"));
+    const button = screen.getByRole("button", { name: "Go to page" });
+    expect(button).toHaveAttribute("title", "Go to page (Ctrl K)");
+    expect(button.querySelector("kbd")).toBeNull();
+  });
+
+  it("Ctrl+K still toggles the palette", async () => {
+    renderWithCenter();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+  });
+
+  it("mobile drawer offers it at the top and closes itself before opening the palette", async () => {
+    renderWithCenter(
+      <MobileNavProvider>
+        <MobileTopBar />
+        <Sidebar />
+      </MobileNavProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Go to page" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).not.toBeInTheDocument());
+    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("combobox")).toHaveFocus());
   });
 });
 

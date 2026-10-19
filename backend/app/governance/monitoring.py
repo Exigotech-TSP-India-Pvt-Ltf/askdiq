@@ -100,7 +100,7 @@ def derive_trace_status(
         return "blocked"
     if normalized == "ungrounded":
         return "ungrounded"
-    if normalized in ("answered", "conversational"):
+    if normalized in ("answered", "conversational", "clarify"):
         return "ok"
     if outcome is None and guardrail_flags is None:
         return "unknown"

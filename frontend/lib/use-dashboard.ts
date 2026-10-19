@@ -31,7 +31,8 @@ export function useDashboardSummary(params: DashboardParams) {
   return useApiQuery(
     token ? dashboardKeys.summary(params) : null,
     (signal) => dashboardApi.summary(token, params, signal),
-    { staleTime: SUMMARY_STALE_MS },
+    // A range / audience switch keeps the current charts until the new ones arrive.
+    { staleTime: SUMMARY_STALE_MS, keepPreviousData: true },
   );
 }
 

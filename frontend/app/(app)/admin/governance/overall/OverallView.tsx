@@ -154,7 +154,7 @@ export default function OverallView() {
   const overview = useApiQuery<GovernanceOverview>(
     ["admin/governance/overview", audience],
     (signal) => governanceApi.overview(token, audience, signal),
-    { enabled: Boolean(token), staleTime: 60_000, revalidateOnFocus: false },
+    { enabled: Boolean(token), staleTime: 60_000, revalidateOnFocus: false, keepPreviousData: true },
   );
   const traces = useApiQuery(
     ["admin/governance/traces-total", audience],

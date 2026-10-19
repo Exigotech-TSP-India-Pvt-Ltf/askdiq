@@ -1,5 +1,5 @@
 /**
- * Mocked responses that follow docs/contracts/dashboard-aggregations.md.
+ * Mocked responses that follow docs/technical/frontend/contracts/dashboard-aggregations.md.
  * `LEGACY_DASHBOARD` is the shape the backend returns today (no new fields).
  */
 import type { ActivityFeed, DashboardData } from "@/lib/dashboard-api";
@@ -55,6 +55,7 @@ export const FULL_DASHBOARD: DashboardData = {
     blocked: 2,
     conversational: 10,
     llm_failed: i % 2,
+    clarify: 1,
   })),
   latency_series: days.map((t, i) => ({ t, p50_ms: 1800 + i * 10, p95_ms: 3900 + i * 20, count: 100 + i })),
   cost: {

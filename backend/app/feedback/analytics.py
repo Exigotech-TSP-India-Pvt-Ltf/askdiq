@@ -337,15 +337,38 @@ def _by_intent(aud: ColumnElement[bool] | None) -> Factory:
     return run
 
 
+def _within(
+    cond: ColumnElement[bool] | None,
+    column_: Any,
+    window: tuple[datetime, datetime] | None,
+) -> ColumnElement[bool] | None:
+    """``cond`` narrowed to ``start <= column_ < end`` when a window is given."""
+    if window is None:
+        return cond
+    in_window = and_(column_ >= window[0], column_ < window[1])
+    return in_window if cond is None else and_(cond, in_window)
+
+
 async def compute_analytics(
     aud_feedback: ColumnElement[bool] | None,
     aud_queries: ColumnElement[bool] | None,
     session_factory: async_sessionmaker[AsyncSession],
     *,
     now: datetime | None = None,
+    window: tuple[datetime, datetime] | None = None,
 ) -> dict[str, Any]:
+    """All sections, optionally limited to ratings (and answers) in ``window``.
+
+    Without a window the totals are all time and the trend covers the last
+    ``feedback_trend_days``; with one, every section (KPIs, trend, funnel,
+    gaps, coverage) counts only ratings given in ``[start, end)``.
+    """
     settings = get_settings()
     since = (now or datetime.utcnow()) - timedelta(days=settings.feedback_trend_days)
+    if window is not None:
+        since = window[0]
+        aud_feedback = _within(aud_feedback, MessageFeedback.created_at, window)
+        aud_queries = _within(aud_queries, ChatMessageRecord.created_at, window)
     (
         summary,
         total_queries,

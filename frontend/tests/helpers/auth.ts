@@ -1,23 +1,11 @@
 import type { AuthMe } from "@/lib/auth-api";
-import type { Permission, Role, UserStatus } from "@/lib/permissions";
+import { ROLE_PERMISSIONS as CANONICAL_ROLE_PERMISSIONS, type Permission, type Role, type UserStatus } from "@/lib/permissions";
 
-/** Mirrors backend ROLE_PERMISSIONS (app/auth/permissions.py) for fixtures only. */
-const OPERATOR: Permission[] = ["dashboard:read"];
-const ADMIN: Permission[] = [
-  ...OPERATOR,
-  "documents:write",
-  "feedback:triage",
-  "feedback:export",
-  "eval:run",
-  "testip:write",
-  "usage:export",
-];
-const SUPERADMIN: Permission[] = [...ADMIN, "users:manage", "audit:auth:read", "branding:write", "taxonomy:write"];
-
+/** Fixture copy of the canonical role table (mutable arrays for spreading). */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
-  operator: OPERATOR,
-  admin: ADMIN,
-  superadmin: SUPERADMIN,
+  operator: [...CANONICAL_ROLE_PERMISSIONS.operator],
+  admin: [...CANONICAL_ROLE_PERMISSIONS.admin],
+  superadmin: [...CANONICAL_ROLE_PERMISSIONS.superadmin],
 };
 
 export function makeMe(

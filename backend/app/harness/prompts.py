@@ -3,6 +3,7 @@
 import asyncio
 import time
 from http import HTTPStatus
+from typing import Any
 
 import tiktoken
 from openai import AsyncAzureOpenAI
@@ -11,6 +12,7 @@ from app.core.circuit import CircuitOpenError, get_llm_breaker
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.quota import quota_monitor
+from app.model_settings.service import current_model_settings
 from app.retrieval.retriever import needs_conversation_context
 from app.schemas.query import ChatTurn, SourceChunk
 
@@ -22,7 +24,8 @@ _client = AsyncAzureOpenAI(
     api_key=settings.azure_openai_api_key,
     azure_endpoint=settings.azure_openai_endpoint,
     api_version=settings.azure_openai_api_version,
-    azure_deployment=settings.azure_deployment_name,
+    # No fixed `azure_deployment`: each call routes by its `model`, so the
+    # Settings > Models override (and INSIGHTS_MODEL) take effect at runtime.
     timeout=settings.azure_openai_request_timeout,
     max_retries=settings.azure_openai_max_retries,
 )
@@ -198,8 +201,13 @@ def _build_prompt(
     query: str,
     context_chunks: list[str | SourceChunk],
     history: list[ChatTurn] | None = None,
+    clarify_block: str = "",
 ) -> tuple[str, int]:
-    """Return (prompt, context_token_count) from a single context pass."""
+    """Return (prompt, context_token_count) from a single context pass.
+
+    ``clarify_block`` (app.harness.clarify.clarify_instruction) lets the model
+    ask a clarifying question instead of answering an ambiguous one.
+    """
     context = _format_context(context_chunks)
     history_block = _format_history(query, history)
 
@@ -208,6 +216,7 @@ def _build_prompt(
         "unsupported parts.\n\n"
         f"{history_block}"
         f"Context:\n{context}\n\n"
+        f"{clarify_block}"
         f"Question: {query}\n\n"
         "Answer:"
     )
@@ -226,8 +235,14 @@ async def call_llm(
     query: str,
     context_chunks: list[str | SourceChunk],
     history: list[ChatTurn] | None = None,
+    clarify_block: str = "",
+    response_format: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, int] | None]:
     """Generate a grounded RAG answer with the configured Azure deployment.
+
+    ``clarify_block`` and ``response_format`` are passed only when the query
+    qualifies for clarifying questions (see app.harness.clarify); the reply is
+    then strict JSON (an answer, or questions back) instead of plain text.
 
     Returns ``(answer_text, usage)`` where ``usage`` is the *actual*
     token accounting reported by Azure OpenAI in the response
@@ -239,16 +254,17 @@ async def call_llm(
 
     # Tokenizing is CPU work — keep it off the event loop.
     prompt, context_tokens = await asyncio.to_thread(
-        _build_prompt, query, context_chunks, history
+        _build_prompt, query, context_chunks, history, clarify_block
     )
 
+    model = current_model_settings().llm_deployment
     t_start = time.perf_counter()
     try:
         # Fails fast with CircuitOpenError while Azure is unhealthy; the
         # orchestrator turns that into its graceful `llm_failed` outcome.
         async with get_llm_breaker().guard():
             response = await _client.chat.completions.create(
-                model=settings.azure_deployment_name,
+                model=model,
                 messages=[
                     {"role": "system", "content": get_system_prompt()},
                     {
@@ -257,6 +273,7 @@ async def call_llm(
                     },
                 ],
                 reasoning_effort=settings.llm_reasoning_effort,
+                **({"response_format": response_format} if response_format else {}),
             )
     except CircuitOpenError:
         raise
@@ -267,7 +284,7 @@ async def call_llm(
         if is_429:
             logger.error(
                 "llm_throttle_429",
-                model=settings.azure_deployment_name,
+                model=model,
                 error=str(exc),
             )
         raise
@@ -319,7 +336,7 @@ async def call_llm(
 
     logger.info(
         "llm_call_completed",
-        model=settings.azure_deployment_name,
+        model=model,
         latency_ms=round(llm_latency_ms, 2),
         non_empty=bool(content and content.strip()),
         prompt_tok=usage["prompt_tokens"] if usage else 0,

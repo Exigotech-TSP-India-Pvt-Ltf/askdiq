@@ -538,8 +538,10 @@ def test_swagger_query_example_and_security_schemes() -> None:
         for requirement in spec["paths"]["/query"]["post"]["security"]
         for name in requirement
     }
-    assert {"ServiceKey", "ClientId", "Session"} <= schemes
-    assert spec["components"]["securitySchemes"]["ClientId"]["name"] == "X-Client-Id"
+    # Swagger's Authorize dialog offers only the service key (API_KEY_NAME);
+    # X-Session / X-Client-Id are proxy and website headers, read but hidden.
+    assert schemes == {"ServiceKey"}
+    assert list(spec["components"]["securitySchemes"]) == ["ServiceKey"]
 
 
 # ---------------------------------------------------------------------------
