@@ -11,15 +11,11 @@ import { ROLE_LABELS } from "@/lib/permissions";
 
 const avatarClass = "flex shrink-0 items-center justify-center rounded-full bg-brand-600 font-semibold text-white shadow-sm ring-2 ring-surface-card";
 
-/** Email with the local part truncating first, so the domain stays readable. */
+/** Email on one line with a single trailing ellipsis; the full address is in the tooltip. */
 function EmailLine({ email }: { email: string }) {
-  const at = email.lastIndexOf("@");
-  const local = at > 0 ? email.slice(0, at) : email;
-  const domain = at > 0 ? email.slice(at) : "";
   return (
-    <p title={email} data-testid="account-email" className="flex min-w-0 text-xs text-fg-subtle">
-      <span className="min-w-0 truncate">{local}</span>
-      {domain ? <span className="min-w-0 shrink-[0.2] truncate">{domain}</span> : null}
+    <p title={email} data-testid="account-email" className="truncate text-[11px] leading-4 text-fg-subtle">
+      {email}
     </p>
   );
 }
@@ -71,9 +67,9 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <div data-tour="shell-account" className="border-t border-line p-3">
-      <div className="rounded-xl border border-line bg-surface-muted/50 p-2.5 dark:bg-white/[0.03]">
-        <div className="flex items-center gap-2.5">
+    <div data-tour="shell-account" className="border-t border-line px-2 py-3">
+      <div className="rounded-xl border border-line bg-surface-muted/50 p-2 dark:bg-white/[0.03]">
+        <div className="flex items-center gap-2">
           <div aria-hidden="true" className={`${avatarClass} h-9 w-9 text-xs`}>
             {user ? initials(user.full_name) : "—"}
           </div>

@@ -283,6 +283,9 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
     expect(email).toHaveTextContent("jane@contoso.example");
     // Full address on hover even when the line truncates.
     expect(email).toHaveAttribute("title", "jane@contoso.example");
+    // One line, one trailing ellipsis: a single truncating text node (no local-part / domain split).
+    expect(email).toHaveClass("truncate");
+    expect(email.children).toHaveLength(0);
     expect(screen.getByTestId("role-badge")).toHaveTextContent("Superadmin");
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(auth.logout).toHaveBeenCalled();

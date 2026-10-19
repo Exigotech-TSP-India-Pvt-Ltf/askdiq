@@ -387,6 +387,7 @@ async def visitor_timeline(
     queries = await timeline_queries(db, visitor, days)
     cost = await timeline_cost(db, visitor, days)
     feedback = await timeline_feedback(db, visitor, days)
+    activity = await timeline_activity(db, visitor, days)
     return {
         "visitor_id": visitor.visitor_id,
         "ip_address": visitor.ip_address,
@@ -422,6 +423,16 @@ async def visitor_timeline(
                 "day": d.isoformat(),
                 "cost_usd": money(cost.get(d, (0.0, 0))[0]),
                 "queries": cost.get(d, (0.0, 0))[1],
+            }
+            for d in days.days()
+        ],
+        # Additive: per-day counts for the visitor KPI sparklines.
+        "activity_series": [
+            {
+                "day": d.isoformat(),
+                "sessions": activity.get((d, "sessions"), 0),
+                "queries": cost.get(d, (0.0, 0))[1],
+                "feedback": activity.get((d, "feedback"), 0),
             }
             for d in days.days()
         ],
