@@ -165,6 +165,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   conversational: "Conversational",
   llm_failed: "LLM failed",
   empty_llm_output: "Empty LLM reply",
+  clarify: "Clarifying question",
 };
 
 export function outcomeLabel(outcome: string | null | undefined): string {

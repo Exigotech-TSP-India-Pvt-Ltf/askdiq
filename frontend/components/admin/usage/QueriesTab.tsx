@@ -207,6 +207,13 @@ export function QueriesTab({
             Conversational
           </span>
         );
+      case "clarify":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700 border border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30">
+            <HelpCircle className="w-3 h-3" />
+            Clarifying question
+          </span>
+        );
       case "llm_failed":
         return (
           <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-fg-muted border border-line-strong">

@@ -21,6 +21,7 @@ class OutcomeName(StrEnum):
     BLOCKED = "blocked"
     CONVERSATIONAL = "conversational"
     LLM_FAILED = "llm_failed"
+    CLARIFY = "clarify"
 
 
 # ---------------------------------------------------------------------------

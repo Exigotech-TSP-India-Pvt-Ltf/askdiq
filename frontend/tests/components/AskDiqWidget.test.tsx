@@ -240,6 +240,66 @@ describe("AskDIQ drawer", () => {
     expect(within(dialog).getAllByRole("button", { name: "Copy message" }).length).toBeGreaterThan(0);
   });
 
+  it("renders a clarifying question as chips; picking one sends the follow-up with the choice", () => {
+    const sendQuery = vi.fn().mockResolvedValue(undefined);
+    const clarify: ChatMessage = {
+      id: "a3",
+      role: "assistant",
+      content: "Which pricing do you mean?\n\n1. Platform plans\n2. Support tiers",
+      createdAt: answer.createdAt,
+      clarification: {
+        question: "Which pricing do you mean?",
+        original_query: "pricing",
+        options: [
+          { id: "T1", label: "Platform plans" },
+          { id: "T2", label: "Support tiers" },
+        ],
+      },
+    };
+    chatState.current = baseChat({
+      sendQuery,
+      messages: [{ id: "u3", role: "user", content: "pricing", createdAt: answer.createdAt }, clarify],
+    });
+    renderDrawer();
+    const group = screen.getByRole("group", { name: "Which pricing do you mean?" });
+    fireEvent.click(within(group).getByRole("button", { name: "Support tiers" }));
+    expect(sendQuery).toHaveBeenCalledWith("Support tiers", {
+      original_query: "pricing",
+      option_id: "T2",
+      option_label: "Support tiers",
+    });
+
+    fireEvent.click(within(group).getByRole("button", { name: "Something else…" }));
+    expect(screen.getByRole("textbox", { name: "Message AskDIQ" })).toHaveFocus();
+  });
+
+  it("locks an answered clarification and marks the picked option", () => {
+    chatState.current = baseChat({
+      messages: [
+        {
+          id: "a4",
+          role: "assistant",
+          content: "Which one?",
+          createdAt: answer.createdAt,
+          clarification: {
+            question: "Which one?",
+            original_query: "plans",
+            options: [
+              { id: "T1", label: "Platform plans" },
+              { id: "T2", label: "Support tiers" },
+            ],
+          },
+        },
+        { id: "u5", role: "user", content: "2", createdAt: answer.createdAt },
+      ],
+    });
+    renderDrawer();
+    const picked = screen.getByRole("button", { name: "Support tiers" });
+    expect(picked).toBeDisabled();
+    expect(picked).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Platform plans" })).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("shows the brand's suggested prompts on an empty chat and sends one", () => {
     const sendQuery = vi.fn().mockResolvedValue(undefined);
     chatState.current = baseChat({ sendQuery });

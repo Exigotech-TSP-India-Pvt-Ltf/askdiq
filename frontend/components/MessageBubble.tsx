@@ -1,24 +1,34 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, ClarificationOption } from "@/lib/types";
 import { renderFormattedText } from "@/lib/format-text";
 import { useChat } from "@/lib/chat-context";
 import type { FeedbackDetails, ReasonTag } from "@/lib/feedback-api";
+import { ClarificationChips } from "@/components/chat/ClarificationChips";
 import { FeedbackReasonPanel } from "@/components/chat/FeedbackReasonPanel";
 import { SourceChips, citedSources } from "@/components/chat/SourceChips";
+import { ActionTooltip } from "@/components/ui/ActionTooltip";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/ToastProvider";
+import { focusRing } from "@/components/ui/styles";
 
 type FeedbackFn = (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
 
 const THUMBS_UP = 5;
 const THUMBS_DOWN = 1;
+/** Every message action icon is the same size (px). */
+const ICON_SIZE = 14;
+
+/** Icon-only message action: a 32 px touch target (28 px from `sm`), visible focus ring. */
+const actionButton = `inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:h-7 sm:w-7 ${focusRing}`;
+const actionIdle =
+  "text-slate-500 hover:bg-surface-muted hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-slate-200";
 
 function CopyIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <rect x="9" y="9" width="13" height="13" rx="2" />
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </svg>
@@ -27,7 +37,7 @@ function CopyIcon() {
 
 function CheckIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <polyline points="20 6 9 17 4 12" />
     </svg>
   );
@@ -35,7 +45,7 @@ function CheckIcon() {
 
 function TrashIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     </svg>
@@ -45,14 +55,15 @@ function TrashIcon() {
 function ThumbsUpIcon({ filled }: { filled?: boolean }) {
   return (
     <svg
-      width="13"
-      height="13"
+      width={ICON_SIZE}
+      height={ICON_SIZE}
       viewBox="0 0 24 24"
       fill={filled ? "currentColor" : "none"}
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden="true"
     >
       <path d="M7 10v12" />
       <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z" />
@@ -63,14 +74,15 @@ function ThumbsUpIcon({ filled }: { filled?: boolean }) {
 function ThumbsDownIcon({ filled }: { filled?: boolean }) {
   return (
     <svg
-      width="13"
-      height="13"
+      width={ICON_SIZE}
+      height={ICON_SIZE}
       viewBox="0 0 24 24"
       fill={filled ? "currentColor" : "none"}
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden="true"
     >
       <path d="M17 14V2" />
       <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z" />
@@ -80,7 +92,7 @@ function ThumbsDownIcon({ filled }: { filled?: boolean }) {
 
 function MessageSquareIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -102,6 +114,11 @@ export function MessageBubble({
   onDelete,
   onFeedback,
   onRetry,
+  onClarify,
+  onSomethingElse,
+  clarificationChosenId = null,
+  clarificationDisabled = false,
+  extraActions,
 }: {
   message: ChatMessage;
   /** Deletes the question/answer pair; a rejection is shown under the bubble. */
@@ -109,8 +126,18 @@ export function MessageBubble({
   onFeedback?: FeedbackFn;
   /** Shown on a failed answer: re-sends the question. */
   onRetry?: () => void;
+  /** Clarifying question: the user picked an option. */
+  onClarify?: (option: ClarificationOption) => void;
+  /** Clarifying question: "Something else…" (type a free-text answer). */
+  onSomethingElse?: () => void;
+  clarificationChosenId?: string | null;
+  /** The clarification was answered (or a reply is in flight). */
+  clarificationDisabled?: boolean;
+  /** More icon-only actions for the right-hand group (e.g. the admin trace link). */
+  extraActions?: ReactNode;
 }) {
   const isUser = message.role === "user";
+  const clarification = message.clarification ?? message.response?.clarification ?? null;
   const [copied, setCopied] = useState(false);
   const [activeRating, setActiveRating] = useState<number | null>(
     message.feedbackRating ?? null
@@ -283,29 +310,26 @@ export function MessageBubble({
           <div className="rounded-2xl rounded-tr-sm bg-brand-600 px-4 py-2.5 text-sm text-white">
             {message.content}
           </div>
-          <div className="mt-1 flex items-center justify-end gap-2 text-ink/35 dark:text-slate-500">
-            <span className="text-[11px]">
+          <div className="mt-1 flex items-center justify-end gap-0.5 text-ink/35 dark:text-slate-500">
+            <span className="mr-1 text-[11px]">
               <MessageTime at={message.createdAt} />
             </span>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="inline-flex items-center gap-1 text-[11px] transition hover:text-ink/70"
-              aria-label="Copy message"
-            >
-              {copied ? <CheckIcon /> : <CopyIcon />}
-              {copied ? "Copied" : "Copy"}
-            </button>
-            {onDelete && (
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(true)}
-                className="inline-flex items-center gap-1 text-[11px] transition hover:text-ink/70"
-                aria-label="Delete this exchange"
-              >
-                <TrashIcon />
-                Delete
+            <ActionTooltip label={copied ? "Copied" : "Copy"}>
+              <button type="button" onClick={handleCopy} className={`${actionButton} ${actionIdle}`} aria-label="Copy message">
+                {copied ? <CheckIcon /> : <CopyIcon />}
               </button>
+            </ActionTooltip>
+            {onDelete && (
+              <ActionTooltip label="Delete" align="end">
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(true)}
+                  className={`${actionButton} ${actionIdle}`}
+                  aria-label="Delete this exchange"
+                >
+                  <TrashIcon />
+                </button>
+              </ActionTooltip>
             )}
           </div>
           {deleteErrorNotice}
@@ -339,88 +363,103 @@ export function MessageBubble({
                 </button>
               ) : null}
             </div>
+          ) : clarification ? (
+            <p>{clarification.question}</p>
           ) : (
             renderFormattedText(message.content)
           )}
         </div>
 
+        {!message.pending && !message.error && clarification ? (
+          <ClarificationChips
+            clarification={clarification}
+            onSelect={onClarify}
+            onSomethingElse={onSomethingElse}
+            chosenId={clarificationChosenId}
+            disabled={clarificationDisabled || !onClarify}
+          />
+        ) : null}
+
         {!message.pending && !message.error && <SourceChips sources={citedSources(message.response)} />}
 
         {!message.pending && !message.error && (
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]" data-tour="chat-feedback">
+          <div className="mt-1 flex flex-wrap items-center gap-0.5 text-[11px]" data-tour="chat-feedback">
             {/* Feedback: Thumbs Up */}
-            <button
-              type="button"
-              onClick={() => handleRatingClick(THUMBS_UP)}
-              aria-label="Helpful response"
-              aria-pressed={activeRating === 5}
-              disabled={savingFeedback}
-              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition focus:outline-none focus:ring-1 focus:ring-brand-500 ${
-                activeRating === 5
-                  ? "bg-emerald-50 dark:bg-emerald-950/40 font-medium text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-300 dark:ring-emerald-700"
-                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
-            >
-              <ThumbsUpIcon filled={activeRating === 5} />
-              <span>Helpful</span>
-            </button>
+            <ActionTooltip label="Helpful">
+              <button
+                type="button"
+                onClick={() => handleRatingClick(THUMBS_UP)}
+                aria-label="Helpful response"
+                aria-pressed={activeRating === 5}
+                disabled={savingFeedback}
+                className={`${actionButton} ${
+                  activeRating === 5
+                    ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-700"
+                    : actionIdle
+                }`}
+              >
+                <ThumbsUpIcon filled={activeRating === 5} />
+              </button>
+            </ActionTooltip>
 
             {/* Feedback: Thumbs Down */}
-            <button
-              type="button"
-              onClick={() => handleRatingClick(THUMBS_DOWN)}
-              aria-label="Unhelpful response"
-              aria-pressed={activeRating === 1}
-              disabled={savingFeedback}
-              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition focus:outline-none focus:ring-1 focus:ring-brand-500 ${
-                activeRating === 1
-                  ? "bg-rose-50 dark:bg-rose-950/40 font-medium text-rose-700 dark:text-rose-300 ring-1 ring-rose-300 dark:ring-rose-700"
-                  : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
-            >
-              <ThumbsDownIcon filled={activeRating === 1} />
-              <span>Unhelpful</span>
-            </button>
+            <ActionTooltip label="Unhelpful">
+              <button
+                type="button"
+                onClick={() => handleRatingClick(THUMBS_DOWN)}
+                aria-label="Unhelpful response"
+                aria-pressed={activeRating === 1}
+                disabled={savingFeedback}
+                className={`${actionButton} ${
+                  activeRating === 1
+                    ? "bg-rose-50 text-rose-700 ring-1 ring-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-700"
+                    : actionIdle
+                }`}
+              >
+                <ThumbsDownIcon filled={activeRating === 1} />
+              </button>
+            </ActionTooltip>
 
             {/* Add Note trigger if rating has been selected */}
             {activeRating !== null && (
-              <button
-                type="button"
-                onClick={() => setCommentOpen(!commentOpen)}
-                aria-label="Add feedback note"
-                aria-expanded={commentOpen}
-                className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 transition hover:text-slate-800 dark:hover:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              >
-                <MessageSquareIcon />
-                <span>{commentText ? "Edit note" : "Add note"}</span>
-              </button>
+              <ActionTooltip label={commentText ? "Edit note" : "Add note"}>
+                <button
+                  type="button"
+                  onClick={() => setCommentOpen(!commentOpen)}
+                  aria-label="Add feedback note"
+                  aria-expanded={commentOpen}
+                  className={`${actionButton} ${actionIdle}`}
+                >
+                  <MessageSquareIcon />
+                </button>
+              </ActionTooltip>
             )}
 
-            <div className="ml-auto flex items-center gap-2 text-slate-400 dark:text-slate-500" data-tour="chat-message-actions">
-              <MessageTime at={message.createdAt} />
+            <div className="ml-auto flex items-center gap-0.5 text-slate-400 dark:text-slate-500" data-tour="chat-message-actions">
+              <span className="mr-1">
+                <MessageTime at={message.createdAt} />
+              </span>
               {/* Copy */}
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="inline-flex items-center gap-1 transition hover:text-slate-700 dark:hover:text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                aria-label="Copy message"
-              >
-                {copied ? <CheckIcon /> : <CopyIcon />}
-                <span>{copied ? "Copied" : "Copy"}</span>
-              </button>
+              <ActionTooltip label={copied ? "Copied" : "Copy"}>
+                <button type="button" onClick={handleCopy} className={`${actionButton} ${actionIdle}`} aria-label="Copy message">
+                  {copied ? <CheckIcon /> : <CopyIcon />}
+                </button>
+              </ActionTooltip>
 
               {/* Delete */}
               {onDelete && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmingDelete(true)}
-                  className="inline-flex items-center gap-1 transition hover:text-slate-700 dark:hover:text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                  aria-label="Delete this exchange"
-                >
-                  <TrashIcon />
-                  <span>Delete</span>
-                </button>
+                <ActionTooltip label="Delete" align="end">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDelete(true)}
+                    className={`${actionButton} ${actionIdle}`}
+                    aria-label="Delete this exchange"
+                  >
+                    <TrashIcon />
+                  </button>
+                </ActionTooltip>
               )}
+              {extraActions}
             </div>
           </div>
         )}

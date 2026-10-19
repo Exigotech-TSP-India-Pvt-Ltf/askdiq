@@ -1,29 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { Activity } from "lucide-react";
 import { entityHref } from "@/lib/entity-links";
 import { useCan } from "@/lib/use-can";
+import { ActionTooltip } from "@/components/ui/ActionTooltip";
+import { focusRing } from "@/components/ui/styles";
 
 /**
- * Admin-only "View trace" link under an answer (newplan §1 Chat row). Shown to
- * console roles only (`dashboard:read`, the same guard as the Governance trace
- * API); chat-only users and users without a role never see it.
+ * Admin-only "View trace" icon action in an answer's action row (newplan §1
+ * Chat row). Shown to console roles only (`dashboard:read`, the same guard as
+ * the Governance trace API); chat-only users and users without a role never
+ * see it. Icon only: the name shows on hover / focus and is the aria-label.
  */
 export function TraceLink({ requestId }: { requestId: string | null | undefined }) {
   const allowed = useCan("dashboard:read");
   if (!allowed || !requestId) return null;
   return (
-    <Link
-      href={entityHref({ kind: "trace", id: requestId })}
-      className="group inline-flex items-center gap-1 rounded-md text-[11px] font-medium text-fg-subtle transition-colors duration-150 hover:text-accent-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-    >
-      View trace
-      <ArrowUpRight
-        className="h-3.5 w-3.5 transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 motion-reduce:transition-none"
-        strokeWidth={1.75}
-        aria-hidden="true"
-      />
-    </Link>
+    <ActionTooltip label="View trace" align="end">
+      <Link
+        href={entityHref({ kind: "trace", id: requestId })}
+        aria-label="View trace"
+        className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-surface-muted hover:text-accent-fg dark:text-slate-400 dark:hover:bg-white/[0.06] sm:h-7 sm:w-7 ${focusRing}`}
+      >
+        <Activity className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+      </Link>
+    </ActionTooltip>
   );
 }

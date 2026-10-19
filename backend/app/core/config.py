@@ -103,6 +103,21 @@ class Settings(BaseSettings):
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).
     retrieval_filter_keys: list[str] = ["source_type", "corpus", "ingestion_source"]
+    # Clarifying questions (app/harness/clarify.py): a short, underspecified
+    # question whose evidence is spread over several distinct topics with
+    # similar scores lets the LLM ask "which one?" with 2-4 options taken from
+    # the retrieved document titles/sections, instead of guessing.
+    clarify_enabled: bool = True
+    # At most this many clarification turns in a row per session; after that
+    # the assistant always answers with its best interpretation.
+    clarify_max_consecutive: int = 2
+    # Only questions with at most this many content words are considered.
+    clarify_max_query_words: int = 4
+    # Topics whose best score is within this margin of the top score compete.
+    clarify_score_margin: float = 0.06
+    # Topics needed before a clarification is offered, and the most shown.
+    clarify_min_options: int = 2
+    clarify_max_options: int = 4
     # Honour `ip_address` in request bodies (/query, /sessions, feedback): the
     # website frontend calls server-to-server and forwards each end user's IP,
     # which is stored against that user. Only valid IPv4/IPv6 values are used.

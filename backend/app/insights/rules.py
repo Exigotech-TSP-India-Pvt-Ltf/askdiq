@@ -63,10 +63,13 @@ def map_outcome(
     | blocked                          | CORR (policy)/SCOPE  | yes     |
     | conversational                   | ACK                  | yes     |
     | llm_failed                       | OFF                  | no      |
+    | clarify                          | CLAR                 | no      |
     """
     normalized = normalize_outcome(outcome)
     if normalized == "conversational":
         return QualityMapping(BotQuality.ACK, handled=True)
+    if normalized == "clarify":
+        return QualityMapping(BotQuality.CLAR, handled=False)
     if normalized == "llm_failed":
         return QualityMapping(BotQuality.OFF, handled=False)
     if normalized == "blocked":
@@ -146,7 +149,8 @@ def classify_by_rule(turn: TurnInput, taxonomy: Taxonomy) -> TurnLabel | None:
         return _rule(turn, taxonomy, Intent.INJECTION, BotQuality.CORR, handled=True)
     if flags & SPAM_FLAGS:
         return _rule(turn, taxonomy, Intent.OTHER, BotQuality.SCOPE, handled=True)
-    if flags & UNCLEAR_FLAGS:
+    if flags & UNCLEAR_FLAGS or outcome == "clarify":
+        # The bot asked which topic was meant (app.harness.clarify).
         return _rule(turn, taxonomy, Intent.AMBIGUOUS, BotQuality.CLAR, handled=False)
     if outcome == "llm_failed":
         return _rule(

@@ -24,7 +24,7 @@ export type LogService = (typeof LOG_SERVICES)[number];
 export const TRACE_STATUSES = ["ok", "ungrounded", "blocked", "failed", "unknown"] as const;
 export type TraceStatus = (typeof TRACE_STATUSES)[number];
 
-export const TRACE_OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed"] as const;
+export const TRACE_OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed", "clarify"] as const;
 export type TraceOutcome = (typeof TRACE_OUTCOMES)[number];
 
 export const LATENCY_BUCKETS = ["fast", "moderate", "slow", "very_slow"] as const;

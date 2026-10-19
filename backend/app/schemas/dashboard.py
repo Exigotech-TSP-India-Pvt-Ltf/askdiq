@@ -54,6 +54,7 @@ class OutcomePoint(BaseModel):
     blocked: int
     conversational: int
     llm_failed: int
+    clarify: int = 0
 
 
 class LatencyPoint(BaseModel):

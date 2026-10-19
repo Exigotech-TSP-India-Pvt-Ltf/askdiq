@@ -59,7 +59,7 @@ export const DASHBOARD_KPI_KEYS = [
 export type DashboardKpiKey = (typeof DASHBOARD_KPI_KEYS)[number];
 
 /** Outcome keys, the same set as `UsageSummary.quality.outcomes`. */
-export const DASHBOARD_OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed"] as const;
+export const DASHBOARD_OUTCOMES = ["answered", "ungrounded", "blocked", "conversational", "llm_failed", "clarify"] as const;
 export type DashboardOutcome = (typeof DASHBOARD_OUTCOMES)[number];
 
 export type SeriesBucket = "hour" | "day";
