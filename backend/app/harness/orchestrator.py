@@ -20,9 +20,12 @@ from app.guardrails.conversational import detect_conversational_intent
 from app.guardrails.post_checks import run_post_checks
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
 from app.harness.clarify import (
+    ANSWER_OR_CLARIFY,
     CLARIFY_OUTCOME,
+    boost_documents,
+    clarify_eligible,
     clarify_instruction,
-    parse_clarification,
+    parse_decision,
     plan_clarification,
     render_clarification_text,
 )
@@ -138,8 +141,15 @@ def _clarification_response(
     token_details["clarification"] = clarification.model_dump()
     logger.info(
         "clarification_requested",
-        options=len(clarification.options),
-        documents=sorted({o.document_id or "" for o in clarification.options}),
+        questions=len(clarification.questions),
+        documents=sorted(
+            {
+                d
+                for q in clarification.questions
+                for o in q.options
+                for d in o.document_ids
+            }
+        ),
         latency_ms=round(latency_ms, 2),
     )
     return QueryResponse(
@@ -173,8 +183,12 @@ async def run_query(
     request_id: str,
     stage_timings: dict,
     history: list[ChatTurn] | None = None,
+    boost_document_ids: list[str] | None = None,
 ) -> QueryResponse:
     """Run the complete RAG query pipeline.
+
+    ``boost_document_ids``: documents of the clarification options the user
+    picked; their chunks are put first in the answer context.
 
     Flow:
 
@@ -275,13 +289,19 @@ async def run_query(
 
     t0 = time.perf_counter()
 
+    # A short question that may need clarifying is retrieved wider (more
+    # documents), so any options cover the knowledge base's real intents.
+    wide = clarify_eligible(query, history, follow_up=follow_up_detected)
     sources: list[SourceChunk] = await retrieve(
         vector_store,
         effective_query,
-        top_k=top_k,
+        top_k=max(top_k, settings.clarify_retrieval_top_k) if wide else top_k,
         filters=filters,
         history=history,
+        **({"max_documents": settings.clarify_retrieval_max_documents} if wide else {}),
     )
+    # Reply to a clarification: the chosen options' documents lead the context.
+    sources = boost_documents(sources, boost_document_ids)
 
     stage_timings["retrieval"] = (time.perf_counter() - t0) * 1000
 
@@ -360,8 +380,11 @@ async def run_query(
     clarify_candidates = plan_clarification(
         query, sources, history, follow_up=follow_up_detected
     )
-    llm_kwargs: dict[str, str] = (
-        {"clarify_block": clarify_instruction(clarify_candidates)}
+    llm_kwargs: dict[str, object] = (
+        {
+            "clarify_block": clarify_instruction(clarify_candidates),
+            "response_format": ANSWER_OR_CLARIFY,
+        }
         if clarify_candidates
         else {}
     )
@@ -389,7 +412,8 @@ async def run_query(
     tot_reasoning = 0
     tot_cached = 0
 
-    max_attempts = settings.max_llm_retries + 1
+    # An ungrounded clarification earns one direct-answer attempt on top.
+    max_attempts = settings.max_llm_retries + 1 + (1 if clarify_candidates else 0)
     retry_reason = ""
     for attempt in range(max_attempts):
         if attempt > 0:
@@ -416,6 +440,11 @@ async def run_query(
                 tot_reasoning += usage.get("reasoning_tokens", 0)
                 tot_cached += usage.get("cached_tokens", 0)
             answer = attempt_answer
+            if clarify_candidates:
+                # Strict JSON: either the answer, or questions back.
+                decision = parse_decision(answer, clarify_candidates, query)
+                answer = decision.answer
+                clarification = decision.clarification
         except Exception as exc:
             last_error = exc
             answer = ""
@@ -445,15 +474,21 @@ async def run_query(
                 break
             continue
 
+        if clarification is not None:
+            # Questions back to the user: nothing to ground-check.
+            break
+
+        if not answer.strip() and clarify_candidates:
+            # Asked, but no option was grounded in the retrieved context:
+            # answer directly on the next attempt instead.
+            clarify_candidates = []
+            llm_kwargs = {}
+            retry_reason = "clarification_ungrounded"
+            continue
+
         if not answer.strip():
             retry_reason = "empty_llm_output"
             continue
-
-        if clarify_candidates:
-            clarification = parse_clarification(answer, clarify_candidates, query)
-            if clarification is not None:
-                # A question back to the user: nothing to ground-check.
-                break
 
         t_post = time.perf_counter()
         grounded, confidence, post_flags = await run_post_checks(
@@ -500,7 +535,7 @@ async def run_query(
     # 5. LLM FAILURE / EMPTY RESPONSE
     # ---------------------------------------------------------
 
-    if not answer.strip():
+    if not answer.strip() and clarification is None:
         flags = ["llm_call_failed"] if last_error else ["empty_llm_output"]
         outcome = "llm_failed" if last_error else "empty_llm_output"
         token_details["outcome"] = outcome

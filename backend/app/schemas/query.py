@@ -1,42 +1,111 @@
 """Request/response schemas for the main /query endpoint."""
 
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+_OptionId = Annotated[str, StringConstraints(min_length=1, max_length=16)]
 
 
 class ClarificationOption(BaseModel):
-    """One choice of a clarifying question, grounded in a retrieved document."""
+    """One choice of a clarifying question, grounded in the retrieved context."""
 
-    id: str = Field(..., max_length=16, description="Stable option id, e.g. `T1`.")
-    label: str = Field(..., max_length=120, description="Short text shown to the user.")
-    document_id: str | None = Field(
-        default=None, description="Retrieved document the option comes from."
+    id: str = Field(
+        ..., max_length=16, description="Option id within its question, e.g. `O1`."
     )
-    source_name: str | None = Field(default=None, description="Document title.")
-    section: str | None = Field(default=None, description="Section heading, if any.")
+    label: str = Field(..., max_length=80, description="1-5 words shown to the user.")
+    description: str = Field(
+        default="", max_length=200, description="One line: what choosing it means."
+    )
+    document_ids: list[str] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Retrieved documents that can answer this option (boosted on reply).",
+    )
+    sources: list[str] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Their document names (shown as a subtle `from:` hint).",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _upgrade_single_source(cls, data: Any) -> Any:
+        """Rows stored before per-option source lists had one document."""
+        if isinstance(data, dict) and "document_ids" not in data:
+            doc, name = data.get("document_id"), data.get("source_name")
+            data = {
+                **{
+                    k: v
+                    for k, v in data.items()
+                    if k not in ("document_id", "source_name", "section")
+                },
+                "document_ids": [doc] if doc else [],
+                "sources": [name] if name else [],
+            }
+        return data
+
+
+class ClarificationQuestion(BaseModel):
+    """One question of a clarification (shown as one tab of the question card)."""
+
+    id: str = Field(..., max_length=16, description="Question id, e.g. `Q1`.")
+    header: str = Field(
+        ..., max_length=12, description="Short tab label, e.g. `Topic`."
+    )
+    question: str = Field(
+        ..., max_length=300, description="Full sentence ending with `?`."
+    )
+    multi_select: bool = Field(
+        default=False, description="Several options may be picked together."
+    )
+    options: list[ClarificationOption] = Field(..., min_length=2, max_length=4)
 
 
 class Clarification(BaseModel):
-    """A clarifying question returned instead of an answer (outcome `clarify`)."""
+    """Questions asked instead of an answer (outcome `clarify`), all in one turn."""
 
-    question: str = Field(..., max_length=300)
-    options: list[ClarificationOption] = Field(..., min_length=2, max_length=4)
+    preamble: str = Field(
+        default="",
+        max_length=300,
+        description="One framing sentence shown above the questions.",
+    )
+    questions: list[ClarificationQuestion] = Field(..., min_length=1, max_length=5)
     original_query: str = Field(
         ..., max_length=2000, description="The question that was ambiguous."
     )
     allow_free_text: bool = Field(
         default=True,
-        description="The user may type their own answer instead of picking one.",
+        description="Each question also accepts an `Other` free-text answer.",
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _upgrade_single_question(cls, data: Any) -> Any:
+        """Rows stored before multi-question support had one `question` + `options`."""
+        if isinstance(data, dict) and "questions" not in data and "question" in data:
+            data = {
+                **{k: v for k, v in data.items() if k not in ("question", "options")},
+                "questions": [
+                    {
+                        "id": "Q1",
+                        "header": "Topic",
+                        "question": data["question"],
+                        "options": data.get("options") or [],
+                    }
+                ],
+            }
+        return data
 
-class ClarificationChoice(BaseModel):
-    """The option a user picked in reply to a clarifying question."""
 
-    original_query: str = Field(..., min_length=1, max_length=2000)
-    option_id: str | None = Field(default=None, max_length=16)
-    option_label: str = Field(..., min_length=1, max_length=120)
+class ClarificationAnswer(BaseModel):
+    """The user's answer to one clarification question."""
+
+    question_id: str = Field(..., min_length=1, max_length=16)
+    option_ids: list[_OptionId] = Field(default_factory=list, max_length=4)
+    other_text: str | None = Field(
+        default=None, max_length=300, description="Free text typed under `Other`."
+    )
 
 
 class ChatTurn(BaseModel):
@@ -81,16 +150,17 @@ class QueryRequest(BaseModel):
     # IP). Omit in normal use — the real client IP is auto-detected server-
     # side (see app.core.request_meta.get_client_ip) and used instead.
     ip_address: str | None = None
-    # Reply to a clarifying question (response `clarification`): the picked
-    # option and the original question, so the next answer uses both. Optional:
-    # a client that ignores clarifications can reply with the option's number
-    # or text as a plain `query` and the server matches it.
-    clarification_choice: ClarificationChoice | None = Field(
+    # Reply to a clarification (response `clarification`): every answer at
+    # once. Optional: a client that ignores clarifications can reply with the
+    # option's name (or number, for one question) as a plain `query`.
+    clarification_answers: list[ClarificationAnswer] | None = Field(
         default=None,
+        max_length=5,
         description=(
-            "Reply to a clarifying question: the picked option plus the original "
-            "question. Omit otherwise; a plain `query` with the option's number "
-            "or text is matched against the last clarifying question too."
+            "Answers to the session's last clarification, one per question "
+            "(picked option ids and/or `other_text`). The original question and "
+            "these answers are rewritten into one explicit query. Omit otherwise; "
+            "a plain `query` naming an option is matched too."
         ),
     )
 

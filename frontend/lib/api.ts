@@ -2,7 +2,7 @@ import type {
   DocumentSummary,
   LatencyReport,
   QueryResponse,
-  ClarificationChoice,
+  ClarificationAnswer,
   AuditLogEntry,
   ChatSessionSummary,
   ChatSessionDetail,
@@ -86,7 +86,7 @@ export const api = {
       query: string;
       filters?: Record<string, string>;
       session_id?: string | null;
-      clarification_choice?: ClarificationChoice | null;
+      clarification_answers?: ClarificationAnswer[] | null;
     }
   ) =>
     request<QueryResponse>("/query", {
