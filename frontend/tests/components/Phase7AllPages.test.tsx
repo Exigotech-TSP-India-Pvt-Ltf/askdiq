@@ -4,8 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
 import AdminDashboard from "@/app/(app)/admin/page";
-import UsersPage from "@/app/(app)/admin/users/page";
-import ConversationsPage from "@/app/(app)/admin/conversations/page";
+import UsersPage from "@/app/(app)/admin/visitors/page";
 import FeedbackPage from "@/app/(app)/admin/feedback/page";
 import { LegacyEvaluationReport } from "@/components/admin/evaluation/LegacyEvaluationReport";
 import GovernancePage from "@/app/(app)/admin/governance/page";
@@ -270,19 +269,13 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
     expect((await screen.findAllByText("Active visitors")).length).toBeGreaterThan(0);
   });
 
-  it("renders Admin Visitors Page with DashboardHeader and TableCard", async () => {
+  it("renders the Visitors & Conversations page with DashboardHeader, tabs and TableCard", async () => {
     render(<UsersPage />);
     await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 1, name: "Visitors" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "Visitors & Conversations" })).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
-  });
-
-  it("renders Conversations Page with DashboardHeader and TableCard", async () => {
-    render(<ConversationsPage />);
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /Conversations/i })).toBeInTheDocument();
-    });
+    expect(screen.getByRole("tab", { name: /Visitors/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Conversations/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
   });
 

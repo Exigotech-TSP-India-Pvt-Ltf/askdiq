@@ -12,12 +12,15 @@ const ROUTES: [string, TourId][] = [
   ["/admin/feedback", "feedback"],
   ["/admin/usage", "usage"],
   ["/admin/users", "visitors"],
+  ["/admin/visitors", "visitors"],
   ["/documents", "documents"],
   ["/chat", "chat"],
   ["/admin", "dashboard"],
 ];
 
-export function tourIdForPath(pathname: string): TourId | null {
+export function tourIdForPath(pathname: string, search = ""): TourId | null {
+  // The merged Visitors & Conversations page: the tour follows the open tab.
+  if (pathname === "/admin/visitors" && new URLSearchParams(search).get("tab") === "conversations") return "conversations";
   for (const [prefix, id] of ROUTES) {
     if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return id;
   }

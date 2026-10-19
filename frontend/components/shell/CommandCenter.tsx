@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { CommandCenterContext, useCommandCenter } from "@/components/shell/command-center-context";
 import { CommandPalette, type PaletteItem, type PaletteSearchProvider } from "@/components/ui/CommandPalette";
 import { ShortcutsSheet } from "@/components/ui/ShortcutsSheet";
 import { NAV_ITEMS, isNavItemEnabled } from "@/components/Sidebar";
@@ -12,17 +13,7 @@ import { useRouter } from "next/navigation";
 import { useTourOptional } from "@/components/tour/TourProvider";
 import { tourIdForPath } from "@/lib/tour/routes";
 
-interface CommandCenterValue {
-  openPalette: () => void;
-  openShortcuts: () => void;
-}
-
-const CommandCenterContext = createContext<CommandCenterValue | null>(null);
-
-/** Null outside CommandCenter (the header hides its palette button). */
-export function useCommandCenter(): CommandCenterValue | null {
-  return useContext(CommandCenterContext);
-}
+export { useCommandCenter };
 
 /** Pages offered by the palette: the enabled sidebar items (permission-filtered when shown). */
 export const PALETTE_PAGES: PaletteItem[] = NAV_ITEMS.filter(isNavItemEnabled).map((item) => ({
@@ -87,7 +78,7 @@ export function CommandCenter({ children, searchProvider, canAccess: canAccessOv
         router.push(href);
         return;
       }
-      const id = href === SHELL_TOUR_HREF ? "shell" : tourIdForPath(window.location.pathname);
+      const id = href === SHELL_TOUR_HREF ? "shell" : tourIdForPath(window.location.pathname, window.location.search);
       if (id) tour?.start(id);
     },
     [router, tour],

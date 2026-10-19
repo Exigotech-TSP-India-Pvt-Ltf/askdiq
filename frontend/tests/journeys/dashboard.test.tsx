@@ -93,7 +93,7 @@ describe("Dashboard: KPI cards (F3.1.1)", () => {
   it("deep-links every card to the page that owns the number, pre-filtered (newplan §1)", async () => {
     renderDashboard();
     const expected: Record<string, string> = {
-      users: "/admin/users",
+      users: "/admin/visitors",
       active_users: "/admin/usage?tab=users",
       sessions: "/admin/usage?tab=sessions",
       queries: "/admin/usage?tab=queries",

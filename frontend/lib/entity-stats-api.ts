@@ -233,6 +233,14 @@ export interface CostDay {
   queries: number;
 }
 
+/** Per-day counts behind the visitor KPI sparklines (additive; absent on older backends). */
+export interface ActivityDay {
+  day: string;
+  sessions: number;
+  queries: number;
+  feedback: number;
+}
+
 export interface TimelineFeedback {
   id: string;
   message_id: string;
@@ -252,6 +260,7 @@ export interface VisitorTimeline {
   sessions: TimelineSession[];
   queries: TimelineQuery[];
   cost_series: CostDay[];
+  activity_series?: ActivityDay[];
   feedback: TimelineFeedback[];
   truncated: { sessions: boolean; queries: boolean; feedback: boolean };
 }

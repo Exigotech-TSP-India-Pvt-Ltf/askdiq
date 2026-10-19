@@ -27,7 +27,16 @@ export function TourLauncher({ variant = "header" }: TourLauncherProps) {
 
 function TourLauncherInner({ tour, variant }: { tour: TourContextValue; variant: TourLauncherVariant }) {
   const pathname = usePathname() ?? "";
-  const pageId = tourIdForPath(pathname);
+  // Tabbed pages pick their tour from ?tab= (read after mount: no hydration mismatch).
+  // Re-checked after every render (a tab switch re-renders the header) and only set
+  // when it changed, so it cannot loop; useSearchParams here would need a Suspense
+  // boundary around the layout-level launcher.
+  const [search, setSearch] = useState("");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (window.location.search !== search) setSearch(window.location.search);
+  });
+  const pageId = tourIdForPath(pathname, search);
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
