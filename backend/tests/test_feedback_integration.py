@@ -8,6 +8,7 @@ import uuid
 
 import pytest
 
+from app.core.cache import dashboard_cache
 from app.core.rate_limit import _feedback_ip_log, _feedback_user_log
 from tests.feedback_helpers import make_exchange, make_session, marker
 
@@ -105,6 +106,9 @@ async def test_feedback_loop_end_to_end(client, db_session):
     assert pair["complete"] is True
 
     # 6. Analytics reflect the new signal.
+    # Analytics are precomputed: rows written straight to the DB show up
+    # once the snapshot refreshes (the jobs worker does it within seconds).
+    dashboard_cache.clear()
     after = (await client.get("/admin/feedback/analytics")).json()
     assert after["total"] - before["total"] == 1
     assert after["negative_count"] - before["negative_count"] == 1

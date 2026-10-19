@@ -13,9 +13,15 @@ from app.alerts.sampler import AlertSampler
 from app.branding.service import BRANDING_CACHE_ID, invalidate_branding_cache
 from app.core.cache import aggregation_cache, dashboard_cache
 from app.core.config import Settings, get_settings
-from app.core.events import TOPIC_CACHE_INVALIDATE, Event, EventBus, get_event_bus
+from app.core.events import (
+    TOPIC_CACHE_INVALIDATE,
+    TOPIC_SNAPSHOT_UPDATED,
+    Event,
+    EventBus,
+    get_event_bus,
+)
 from app.core.logging_config import get_logger
-from app.dashboard.snapshots import SnapshotRefresher
+from app.dashboard.snapshots import SnapshotRefresher, on_snapshot_updated
 from app.governance.audience import invalidate_audience_cache
 from app.governance.metrics_sampler import MetricsSampler
 from app.jobs.worker import JobWorker
@@ -86,6 +92,11 @@ class PlatformServices:
                 _invalidate_local_caches(event)
 
         bus.on(TOPIC_CACHE_INVALIDATE, _on_invalidate)
+        # Snapshots recomputed elsewhere replace this process's memory copy.
+        bus.on(
+            TOPIC_SNAPSHOT_UPDATED,
+            lambda event: on_snapshot_updated(event, bus.instance_id),
+        )
         await bus.start()
         cfg = get_settings()
         if cfg.jobs_worker_enabled:

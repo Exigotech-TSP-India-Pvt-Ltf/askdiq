@@ -39,6 +39,12 @@ TOPIC_CACHE_INVALIDATE = "cache.invalidate"
 # A CRITICAL / ALERT audit row was written (id = audit_log.id); wakes the
 # governance SSE producers on every replica.
 TOPIC_GOVERNANCE_INCIDENT = "governance.incident"
+# A dashboard snapshot was (re)computed (id = "<kind>|<key>"): every process
+# reloads its in-memory copy, so reads never touch the table.
+TOPIC_SNAPSHOT_UPDATED = "snapshot.updated"
+# The console's data changed (id = a scope: "data", "alerts", or a snapshot
+# kind); fanned out to the console live stream (GET /admin/live).
+TOPIC_CONSOLE_CHANGED = "console.changed"
 
 
 @dataclass(frozen=True, slots=True)

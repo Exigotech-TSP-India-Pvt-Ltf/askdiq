@@ -31,6 +31,7 @@ from app.core.database import get_db, read_only_session
 from app.core.exceptions import get_request_id
 from app.core.http_cache import cached_response
 from app.core.request_meta import get_client_ip
+from app.dashboard.snapshots import Gather, register, snapshot_response
 from app.insights.analytics_service import InsightsAnalyticsService, ParallelRunner
 from app.insights.taxonomy import TaxonomyKind
 from app.insights.taxonomy_service import AuditContext, TaxonomyError, TaxonomyService
@@ -371,10 +372,33 @@ async def get_conversation(
     responses=READ_ERRORS,
 )
 async def get_pending(
+    request: Request,
     user: AuthUser = Depends(read_guard),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     service: InsightsAnalyticsService = Depends(get_service),
-) -> PendingClassification:
-    return await service.pending()
+) -> Response:
+    """Precomputed (``dashboard_snapshots``), recomputed within seconds of
+    new turns or labels; ``X-Data-As-Of`` is its age."""
+
+    async def build(_gather: Gather) -> dict:
+        return _pending_json(await service.pending())
+
+    return await snapshot_response(request, PENDING_KIND, {}, runner.gather, build)
+
+
+PENDING_KIND = "insights.pending"
+
+
+async def _pending_snapshot(gather: Gather, _params: dict) -> dict:
+    (payload,) = await gather(lambda db: InsightsAnalyticsService(db, gather).pending())
+    return _pending_json(payload)
+
+
+def _pending_json(payload: PendingClassification) -> dict:
+    return PendingClassification.model_validate(payload).model_dump(mode="json")
+
+
+register(PENDING_KIND, _pending_snapshot, [{}])
 
 
 # ---------------------------------------------------------------------------

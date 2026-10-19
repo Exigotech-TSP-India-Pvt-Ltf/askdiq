@@ -202,6 +202,14 @@ class SWRCache:
         """Store a value computed elsewhere (e.g. by a background refresher)."""
         self._put(key, value)
 
+    def has(self, key: str) -> bool:
+        return key in self._store
+
+    def peek(self, key: str) -> Any | None:
+        """The stored value whatever its age (no refresh, no stats)."""
+        entry = self._store.get(key)
+        return None if entry is None else entry[0]
+
     def _put(self, key: str, value: Any) -> None:
         if key not in self._store and len(self._store) >= self._max_size:
             # Drop the oldest computation first.

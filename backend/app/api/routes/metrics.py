@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -12,12 +12,19 @@ from sqlalchemy.orm import aliased
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging_config import get_logger
 from app.core.stats import percentile
 from app.dashboard import eval_series
-from app.dashboard.range_params import optional_day_range
+from app.dashboard.range_params import (
+    day_params,
+    optional_day_range,
+    params_days,
+    preset_day_ranges,
+)
+from app.dashboard.snapshots import Gather, register, snapshot_response
 from app.dashboard.window import DayRange
 from app.governance.audience import build_audience_filter
 from app.models.db_models import (
@@ -616,20 +623,54 @@ async def _build_live_user_evaluation(
 
 @router.get("/metrics/evaluation/live")
 async def live_evaluation_report(
+    request: Request,
     audience: str = Query("users"),
     compare: bool = Query(False),
     days: DayRange | None = Depends(optional_day_range),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
+    runner: ScopedRunner = Depends(get_scoped_runner),
+) -> Response:
     """Continuous Live RAG evaluation with real database metrics and benchmark comparison.
 
     Optional ``from`` / ``to`` (inclusive UTC days) limit the live records and
     the pass-rate trend runs to that range (the response then echoes
     ``window``); without them it is the latest records and runs, as before.
     The benchmark golden suite itself is a fixed file, so only its run
-    history is filtered.
+    history is filtered. Precomputed per audience and range
+    (``dashboard_snapshots``); ``X-Data-As-Of`` is its age. ``compare`` is
+    accepted for old clients (the comparison is always included).
     """
+    del compare
+    params = {"audience": audience, **day_params(days)}
+    return await snapshot_response(request, LIVE_EVAL_KIND, params, runner.gather)
+
+
+LIVE_EVAL_KIND = "evaluation.live"
+
+
+async def _live_eval_snapshot(gather: Gather, params: dict) -> dict:
+    days = params_days(params)
+    (payload,) = await gather(
+        lambda db: _live_evaluation_payload(db, params["audience"], days)
+    )
+    return payload
+
+
+def _live_eval_defaults() -> list[dict]:
+    """The Evaluation page's views: each audience, all time and every preset."""
+    return [
+        {"audience": audience, **day_params(days)}
+        for audience in ("overview", "users", "testing")
+        for days in preset_day_ranges()
+    ]
+
+
+register(LIVE_EVAL_KIND, _live_eval_snapshot, _live_eval_defaults)
+
+
+async def _live_evaluation_payload(
+    db: AsyncSession, audience: str, days: DayRange | None
+) -> dict:
     window = (days.start, days.end) if days else None
     run_limit = (
         max(eval_series.MAX_RUNS, len(days.days())) if days else eval_series.MAX_RUNS

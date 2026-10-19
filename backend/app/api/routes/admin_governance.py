@@ -326,6 +326,52 @@ async def governance_traces_page(
         date_from=start,
         date_to=end,
     )
+    if position is None and start is None and end is None and filters.q is None:
+        # First pages without a date range (the Overall tab's total, the
+        # Traces tab's default): precomputed, refreshed within seconds of new
+        # traces.
+        return await get_snapshot(
+            GOVERNANCE_TRACES_KIND, _traces_params(filters, limit), runner.gather
+        )
+    return await _governance_traces_page(runner, filters, position, limit)
+
+
+GOVERNANCE_TRACES_KIND = "governance.traces"
+
+
+def _traces_params(filters: traces.TraceFilters, limit: int) -> dict[str, Any]:
+    return {
+        "audience": filters.audience,
+        "statuses": list(filters.statuses),
+        "outcomes": list(filters.outcomes),
+        "latency_buckets": list(filters.latency_buckets),
+        "q": filters.q,
+        "limit": limit,
+    }
+
+
+async def _governance_traces_snapshot(gather: Any, params: dict) -> dict[str, Any]:
+    filters = traces.TraceFilters(
+        audience=params["audience"],
+        statuses=tuple(params["statuses"]),
+        outcomes=tuple(params["outcomes"]),
+        latency_buckets=tuple(params["latency_buckets"]),
+        q=params["q"],
+    )
+    return await _governance_traces_page(
+        GatherRunner(gather),  # type: ignore[arg-type]
+        filters,
+        None,
+        params["limit"],
+    )
+
+
+async def _governance_traces_page(
+    runner: ScopedRunner,
+    filters: traces.TraceFilters,
+    position: Cursor | None,
+    limit: int,
+) -> dict[str, Any]:
     cap = get_settings().governance_exact_count_cap
     (items, next_cursor), total = await runner.gather(
         lambda s: traces.fetch_page(s, filters, position, limit),
@@ -483,13 +529,26 @@ async def _governance_logs_snapshot(gather: Any, params: dict) -> dict[str, Any]
     )
 
 
+# The Overall tab's totals (limit 1) and the Logs / Traces tabs' first page.
+_FIRST_PAGE_LIMITS = (1, 10)
+
 register(
     GOVERNANCE_LOGS_KIND,
     _governance_logs_snapshot,
     [
-        _logs_params(logs.LogFilters(audience=aud, hidden_actions=hidden), 1)
+        _logs_params(logs.LogFilters(audience=aud, hidden_actions=hidden), limit)
         for aud in ("overview", "users", "testing")
         for hidden in (frozenset(), AUTH_AUDIT_ACTIONS)
+        for limit in _FIRST_PAGE_LIMITS
+    ],
+)
+register(
+    GOVERNANCE_TRACES_KIND,
+    _governance_traces_snapshot,
+    [
+        _traces_params(traces.TraceFilters(audience=aud), limit)
+        for aud in ("overview", "users", "testing")
+        for limit in _FIRST_PAGE_LIMITS
     ],
 )
 
