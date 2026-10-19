@@ -51,6 +51,7 @@ export const PERMISSION_LABEL: Readonly<Record<Permission, string>> = {
   "branding:write": "Edit branding",
   "taxonomy:write": "Edit the taxonomy",
   "models:write": "Change models and pricing",
+  "alerts:manage": "Acknowledge and resolve alerts",
 };
 
 /** `app/auth/audit.py` `AuthEvent`. */
