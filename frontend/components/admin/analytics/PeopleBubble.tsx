@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { ChartEmpty, ChartFrame, TooltipBody, useChartMarks } from "@/components/charts/primitives";
 import type { PersonItem } from "@/lib/insights-api";
 import { useInsightsPalette } from "./colors";
@@ -26,31 +26,81 @@ const LABEL_MIN_R = 13;
 const FILL_OPACITY = 0.78;
 const LEGEND = ["Served", "Partly served", "Not served"] as const;
 
+/** Offset that keeps grid cell coordinates positive inside one numeric key. */
+const CELL_KEY_OFFSET = 1 << 20;
+const CELL_KEY_STRIDE = 2 * CELL_KEY_OFFSET;
+const MIN_CELL_RADIUS = 0.5;
+
 /**
  * Packs circles (radius = sqrt(value)) around the centre, largest first,
  * along an Archimedean spiral. Unit space; the caller scales to fit.
+ *
+ * Same layout as the naive search (every spiral point tested against every
+ * placed circle) without its O(n² × steps) cost, which froze the page for
+ * minutes with ~2,000 people:
+ * - a uniform grid: each placed circle is registered in every cell a later,
+ *   no-larger circle could collide from, so a candidate point only checks
+ *   the circles of its own cell;
+ * - circles of equal radius resume the spiral where the previous one landed:
+ *   every earlier point was already blocked for that radius and the placed
+ *   set only grows, so they stay blocked.
  */
 export function packCircles(values: readonly number[]): PackedCircle[] {
   const order = values.map((v, i) => ({ i, r: Math.sqrt(Math.max(0, v)) })).sort((a, b) => b.r - a.r);
-  const placed: (PackedCircle & { i: number })[] = [];
+  const out: PackedCircle[] = new Array(values.length);
+  if (order.length === 0) return out;
+  const cell = 2 * Math.max(order[order.length - 1].r, MIN_CELL_RADIUS) + PADDING;
+  const grid = new Map<number, PackedCircle[]>();
+  const cellOf = (v: number) => Math.floor(v / cell) + CELL_KEY_OFFSET;
+  const resume = new Map<number, { step: number; t: number }>();
   for (const { i, r } of order) {
-    let t = 0;
+    const from = resume.get(r);
+    let step = from?.step ?? 0;
+    let t = from?.t ?? 0;
     let spot: PackedCircle = { x: 0, y: 0, r };
-    for (let step = 0; step < MAX_STEPS; step++) {
+    for (; step < MAX_STEPS; step++) {
       const x = t * Math.cos(t * 4);
       const y = t * Math.sin(t * 4);
-      const free = placed.every((p) => Math.hypot(p.x - x, p.y - y) >= p.r + r + PADDING);
-      if (free) {
+      const near = grid.get(cellOf(x) * CELL_KEY_STRIDE + cellOf(y));
+      if (!near || near.every((p) => Math.hypot(p.x - x, p.y - y) >= p.r + r + PADDING)) {
         spot = { x, y, r };
         break;
       }
       t += SPIRAL_STEP;
     }
-    placed.push({ ...spot, i });
+    resume.set(r, { step, t });
+    out[i] = spot;
+    // Later circles are no larger than this one: they collide with it only
+    // from within 2r + padding of its centre.
+    const reach = 2 * r + PADDING;
+    for (let cx = cellOf(spot.x - reach); cx <= cellOf(spot.x + reach); cx++) {
+      for (let cy = cellOf(spot.y - reach); cy <= cellOf(spot.y + reach); cy++) {
+        const key = cx * CELL_KEY_STRIDE + cy;
+        const bucket = grid.get(key);
+        if (bucket) bucket.push(spot);
+        else grid.set(key, [spot]);
+      }
+    }
   }
-  const out: PackedCircle[] = new Array(values.length);
-  for (const p of placed) out[p.i] = { x: p.x, y: p.y, r: p.r };
   return out;
+}
+
+/** Scales the unit-space packing into a `width` × `height` box (4 px margin). */
+export function fitCircles(packed: readonly PackedCircle[], width: number, height: number): PackedCircle[] {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const c of packed) {
+    minX = Math.min(minX, c.x - c.r);
+    maxX = Math.max(maxX, c.x + c.r);
+    minY = Math.min(minY, c.y - c.r);
+    maxY = Math.max(maxY, c.y + c.r);
+  }
+  const k = Math.min((width - 4) / Math.max(1e-6, maxX - minX), (height - 4) / Math.max(1e-6, maxY - minY));
+  const ox = width / 2 - ((minX + maxX) / 2) * k;
+  const oy = height / 2 - ((minY + maxY) / 2) * k;
+  return packed.map((c) => ({ x: ox + c.x * k, y: oy + c.y * k, r: c.r * k }));
 }
 
 /** Conversations per probable person, coloured by their most common outcome (the HTML's `bubble()`). */
@@ -64,19 +114,17 @@ export function PeopleBubble({ items, selected, onSelect, height = 220 }: People
     [],
   );
   const { active, getMarkProps, opacityFor } = useChartMarks(data, describe, onSelect, ct.dimOpacity);
+  // Hover re-renders every mark: reuse the scaled layout for an unchanged box.
+  const fitted = useRef<{ packed: readonly PackedCircle[]; width: number; height: number; out: PackedCircle[] } | null>(null);
+  const fit = (width: number, h: number): PackedCircle[] => {
+    const last = fitted.current;
+    if (last && last.packed === packed && last.width === width && last.height === h) return last.out;
+    const out = fitCircles(packed, width, h);
+    fitted.current = { packed, width, height: h, out };
+    return out;
+  };
 
   if (data.length === 0) return <ChartEmpty message="No people in this selection." height={height} />;
-
-  const fit = (width: number, h: number) => {
-    const minX = Math.min(...packed.map((c) => c.x - c.r));
-    const maxX = Math.max(...packed.map((c) => c.x + c.r));
-    const minY = Math.min(...packed.map((c) => c.y - c.r));
-    const maxY = Math.max(...packed.map((c) => c.y + c.r));
-    const k = Math.min((width - 4) / Math.max(1e-6, maxX - minX), (h - 4) / Math.max(1e-6, maxY - minY));
-    const ox = width / 2 - ((minX + maxX) / 2) * k;
-    const oy = h / 2 - ((minY + maxY) / 2) * k;
-    return packed.map((c) => ({ x: ox + c.x * k, y: oy + c.y * k, r: c.r * k }));
-  };
 
   return (
     <ChartFrame

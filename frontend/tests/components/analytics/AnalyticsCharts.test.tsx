@@ -60,6 +60,44 @@ describe("geometry helpers", () => {
     }
   });
 
+  it("packCircles matches the naive spiral search exactly", () => {
+    // Reference: every spiral point tested against every placed circle.
+    const naive = (values: number[]) => {
+      const order = values.map((v, i) => ({ i, r: Math.sqrt(Math.max(0, v)) })).sort((a, b) => b.r - a.r);
+      const placed: { x: number; y: number; r: number; i: number }[] = [];
+      for (const { i, r } of order) {
+        let t = 0;
+        let spot = { x: 0, y: 0, r };
+        for (let step = 0; step < 200_000; step++) {
+          const x = t * Math.cos(t * 4);
+          const y = t * Math.sin(t * 4);
+          if (placed.every((p) => Math.hypot(p.x - x, p.y - y) >= p.r + r + 0.12)) {
+            spot = { x, y, r };
+            break;
+          }
+          t += 0.05;
+        }
+        placed.push({ ...spot, i });
+      }
+      const out: { x: number; y: number; r: number }[] = new Array(values.length);
+      for (const p of placed) out[p.i] = { x: p.x, y: p.y, r: p.r };
+      return out;
+    };
+    // Many ties (most people have 1-3 conversations), a few large ones, a zero.
+    const values = Array.from({ length: 300 }, (_, i) => (i % 17 === 0 ? 20 + (i % 7) * 9 : 1 + (i % 3)));
+    values[5] = 0;
+    expect(packCircles(values)).toEqual(naive(values));
+  });
+
+  it("packCircles lays out thousands of people in well under a frame budget", () => {
+    const values = Array.from({ length: 2500 }, (_, i) => (i < 10 ? 100 - i * 5 : 1 + (i % 4)));
+    const start = performance.now();
+    const packed = packCircles(values);
+    const elapsed = performance.now() - start;
+    expect(packed).toHaveLength(values.length);
+    expect(elapsed).toBeLessThan(1500);
+  });
+
   it("orderQuality keeps the donut() order and puts unknown codes last", () => {
     const items = [
       { quality: "ZZZ", label: "New", color: null, questions: 1, pct: 1 },
