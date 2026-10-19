@@ -159,6 +159,9 @@ def aggregate(
             "scope": "host",
             "cpu_percent": _max([_get(s, "host", "cpu_percent") for s in live]),
             "memory_percent": _max([_get(s, "host", "memory_percent") for s in live]),
+            "memory_total_mb": _sum(
+                [_get(s, "host", "memory_total_mb") for s in by_host.values()]
+            ),
             "hosts": len(by_host),
         },
         "container": {

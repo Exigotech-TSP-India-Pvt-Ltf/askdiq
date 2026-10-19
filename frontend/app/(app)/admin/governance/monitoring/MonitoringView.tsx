@@ -30,9 +30,11 @@ import {
   type GovernanceStreamEvent,
   type LabelledCount,
   type QuotaMetrics,
+  type ResourcesSnapshot,
   type Stage,
   type TraceOutcome,
 } from "@/lib/governance-api";
+import { resourceGauges } from "@/lib/resource-gauges";
 import { logsHref, tabHref, tracesHref } from "@/lib/governance-links";
 import { useCarryHref } from "@/lib/entity-routes";
 import {
@@ -361,8 +363,15 @@ export default function MonitoringView() {
   useEffect(() => {
     lastRefetch.current = 0;
   }, [audience]);
+  // Resource gauges update in place from the stream (every sample interval);
+  // the REST snapshot is the fallback when the stream is not live.
+  const [liveResources, setLiveResources] = useState<Partial<ResourcesSnapshot> | null>(null);
   const onEvent = useCallback(
     (event: GovernanceStreamEvent) => {
+      if (event.type === "resources") {
+        setLiveResources(event.data);
+        return;
+      }
       const now = Date.now();
       if (event.type === "snapshot" && lastRefetch.current === 0) {
         lastRefetch.current = now;
@@ -405,7 +414,9 @@ export default function MonitoringView() {
   const counts = m?.counts ?? {};
   const total = m?.stage_percentiles?.total;
   const quality = m?.online_quality_kpis ?? {};
-  const ramCaption = typeof m?.process_ram_mb === "number" ? `RAM · ${Math.round(m.process_ram_mb)} MB` : "RAM";
+  const resources = liveResources ?? m?.resources;
+  const gauges = resourceGauges(resources);
+  const sampleEvery = resources?.interval_seconds;
   const quota = m?.azure_quota_telemetry;
   const throttled = (quota?.chat?.azure_429_count_60s ?? 0) + (quota?.embedding?.azure_429_count_60s ?? 0);
   const windowH = m?.window_hours ?? 24;
@@ -531,12 +542,14 @@ export default function MonitoringView() {
             Resources and Azure quota
           </h2>
           <p className="text-[11px] text-fg-subtle">
-            This API process · Azure rolling 60 s window{throttled ? ` · ${throttled} throttled (429)` : ""}
+            All API workers{sampleEvery ? ` · sampled every ${sampleEvery} s` : ""} · Azure rolling 60 s window
+            {throttled ? ` · ${throttled} throttled (429)` : ""}
           </p>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
-          <RadialGauge label="CPU" value={m?.process_cpu_percent ?? null} bands={{ warn: 70, danger: 90 }} higherIsBetter={false} caption="CPU" />
-          <RadialGauge label="RAM" value={m?.process_ram_percent ?? null} bands={{ warn: 75, danger: 90 }} higherIsBetter={false} caption={ramCaption} />
+          {gauges.map((g) => (
+            <RadialGauge key={g.key} label={g.label} value={g.value} bands={g.bands} higherIsBetter={false} caption={g.caption} />
+          ))}
           <RadialGauge
             label="Azure TPM used"
             value={quotaUtilisation(quota, "tpm_headroom_pct")}
