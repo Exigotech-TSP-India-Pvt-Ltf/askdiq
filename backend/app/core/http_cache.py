@@ -46,8 +46,12 @@ def encoded_response(
     max_age: int | None = None,
 ) -> Response:
     """``cached_response`` for a body already JSON-encoded with a known ETag
-    (per-user, ``private``): a matching ``If-None-Match`` costs no encoding."""
-    headers = _cache_headers(etag, max_age)
+    (per-user, ``private``): a matching ``If-None-Match`` costs no encoding.
+
+    ``max_age`` defaults to 0: browsers revalidate every read (a 304 here is
+    a memory lookup), so a refetch after a live update never gets an old
+    copy from the browser cache."""
+    headers = _cache_headers(etag, 0 if max_age is None else max_age)
     if extra_headers:
         headers.update(extra_headers)
     if _etag_matches(request.headers.get("if-none-match"), etag):

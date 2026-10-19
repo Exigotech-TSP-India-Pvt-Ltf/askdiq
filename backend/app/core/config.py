@@ -336,7 +336,9 @@ class Settings(BaseSettings):
     events_reconnect_max_seconds: float = 30.0
     # HTTP efficiency.
     gzip_minimum_size: int = 1024
-    http_cache_max_age_seconds: int = 15
+    # 0 = browsers revalidate every read (ETag -> 304): the console keeps its own
+    # cache, and a refetch after a live update must never get an old copy.
+    http_cache_max_age_seconds: int = 0
     sse_heartbeat_seconds: float = 15.0
     sse_retry_ms: int = 3000
     # Each SSE response ends after this long and the browser reconnects (retry),
