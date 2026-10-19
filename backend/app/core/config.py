@@ -199,8 +199,9 @@ class Settings(BaseSettings):
     price_embed_per_million: float = 0.02
     price_prompt_per_million: float = 0.25
     price_output_per_million: float = 2.00
-    # Real Azure cached-input rate is 50% discount ($0.125/1M vs $0.25/1M prompt)
-    price_cached_per_million: float = 0.125
+    # gpt-5-mini cached input is 10% of the input rate ($0.025 vs $0.25 per 1M;
+    # Azure Retail Prices API, Global deployment).
+    price_cached_per_million: float = 0.025
     # Settings > Models runtime overrides (DB row over the values above and
     # AZURE_DEPLOYMENT_NAME / EMBEDDING_MODEL): per-worker refresh interval and
     # the bound on one read (the last good values are kept on failure).
