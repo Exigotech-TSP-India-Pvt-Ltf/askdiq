@@ -21,28 +21,40 @@ export interface SourceChunk {
   metadata: Record<string, unknown>;
 }
 
-/** One option of a clarifying question (a retrieved document / section). */
+/** One option of a clarification question, grounded in retrieved documents. */
 export interface ClarificationOption {
   id: string;
   label: string;
-  document_id?: string | null;
-  source_name?: string | null;
-  section?: string | null;
+  /** One line: what choosing it means. */
+  description?: string;
+  document_ids?: string[];
+  /** Document names the option comes from (shown as a subtle "from:" hint). */
+  sources?: string[];
 }
 
-/** A clarifying question asked instead of an answer (outcome "clarify"). */
-export interface Clarification {
+/** One question of a clarification (one tab of the question card). */
+export interface ClarificationQuestion {
+  id: string;
+  /** Short tab label (at most 12 characters), e.g. "Topic". */
+  header: string;
   question: string;
+  multi_select?: boolean;
   options: ClarificationOption[];
+}
+
+/** Questions asked instead of an answer (outcome "clarify"), all in one turn. */
+export interface Clarification {
+  preamble?: string;
+  questions: ClarificationQuestion[];
   original_query: string;
   allow_free_text?: boolean;
 }
 
-/** Sent with the follow-up turn when the user picks a clarification option. */
-export interface ClarificationChoice {
-  original_query: string;
-  option_id?: string | null;
-  option_label: string;
+/** The user's answer to one question, sent back with the follow-up turn. */
+export interface ClarificationAnswer {
+  question_id: string;
+  option_ids: string[];
+  other_text?: string | null;
 }
 
 export interface QueryResponse {

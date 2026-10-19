@@ -3,18 +3,14 @@
 import { forwardRef, useCallback, useEffect, useRef, type FormEvent, type ReactNode } from "react";
 import { useChat } from "@/lib/chat-context";
 import { useBrand } from "@/lib/brand-context";
-import type { ChatMessage, Clarification, ClarificationOption } from "@/lib/types";
+import type { ChatMessage } from "@/lib/types";
 import { MessageBubble } from "@/components/MessageBubble";
 import { TraceLink } from "@/components/chat/TraceLink";
 
-/** Option the user picked for the clarification at `index` (the next user turn's text), if any. */
-function chosenOptionId(messages: ChatMessage[], index: number, clarification: Clarification): string | null {
+/** The user's reply to the clarification at `index` (shown as the card's read-only summary). */
+function replyTo(messages: ChatMessage[], index: number): string | null {
   const reply = messages[index + 1];
-  if (!reply || reply.role !== "user") return null;
-  const text = reply.content.trim().toLowerCase();
-  const byNumber = /^\d+$/.test(text) ? clarification.options[Number(text) - 1] : undefined;
-  const match = byNumber ?? clarification.options.find((o) => o.label.trim().toLowerCase() === text);
-  return match?.id ?? null;
+  return reply && reply.role === "user" ? reply.content : null;
 }
 
 export type ChatConversationVariant = "page" | "panel";
@@ -69,8 +65,8 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
     const composerEl = useRef<HTMLTextAreaElement | null>(null);
     const tour = (id: string) => (variant === "page" ? `chat-${id}` : undefined);
 
-    // The composer is also reachable by the parent (forwarded ref) and by
-    // "Something else…" under a clarifying question.
+    // The composer is also reachable by the parent (forwarded ref) and takes
+    // focus when a clarification card is dismissed with Esc.
     const setComposer = useCallback(
       (el: HTMLTextAreaElement | null) => {
         composerEl.current = el;
@@ -79,14 +75,6 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
       },
       [composerRef],
     );
-
-    function pickOption(clarification: Clarification, option: ClarificationOption) {
-      void sendQuery(option.label, {
-        original_query: clarification.original_query,
-        option_id: option.id,
-        option_label: option.label,
-      });
-    }
 
     useEffect(() => {
       const el = scrollRef.current;
@@ -130,17 +118,18 @@ export const ChatConversation = forwardRef<HTMLTextAreaElement, { variant?: Chat
           ) : (
             <div className={`mx-auto space-y-5 ${layout.column}`} aria-live="polite" aria-relevant="additions">
               {messages.map((message, index) => {
-                const clarification = message.clarification ?? message.response?.clarification ?? null;
+                const latest = index === messages.length - 1;
                 return (
                   <div key={message.id}>
                     <MessageBubble
                       message={message}
                       onDelete={() => deleteExchange(message.id)}
                       onRetry={message.error ? () => void retryExchange(message.id) : undefined}
-                      onClarify={clarification ? (option) => pickOption(clarification, option) : undefined}
-                      onSomethingElse={() => composerEl.current?.focus()}
-                      clarificationChosenId={clarification ? chosenOptionId(messages, index, clarification) : null}
-                      clarificationDisabled={sending || index < messages.length - 1}
+                      onClarificationSubmit={(answers, summary) => void sendQuery(summary, answers)}
+                      onClarificationDismiss={() => composerEl.current?.focus()}
+                      clarificationAnswered={replyTo(messages, index)}
+                      clarificationDisabled={sending}
+                      clarificationAutoFocus={latest}
                       extraActions={
                         message.role === "assistant" ? (
                           <TraceLink requestId={message.response?.request_id ?? message.requestId} />

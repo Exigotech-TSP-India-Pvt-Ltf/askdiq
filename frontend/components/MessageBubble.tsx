@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
-import type { ChatMessage, ClarificationOption } from "@/lib/types";
+import type { ChatMessage, ClarificationAnswer } from "@/lib/types";
 import { renderFormattedText } from "@/lib/format-text";
 import { useChat } from "@/lib/chat-context";
 import type { FeedbackDetails, ReasonTag } from "@/lib/feedback-api";
-import { ClarificationChips } from "@/components/chat/ClarificationChips";
+import { ClarificationCard } from "@/components/chat/ClarificationCard";
 import { FeedbackReasonPanel } from "@/components/chat/FeedbackReasonPanel";
 import { SourceChips, citedSources } from "@/components/chat/SourceChips";
 import { ActionTooltip } from "@/components/ui/ActionTooltip";
@@ -114,10 +114,11 @@ export function MessageBubble({
   onDelete,
   onFeedback,
   onRetry,
-  onClarify,
-  onSomethingElse,
-  clarificationChosenId = null,
+  onClarificationSubmit,
+  onClarificationDismiss,
+  clarificationAnswered = null,
   clarificationDisabled = false,
+  clarificationAutoFocus = false,
   extraActions,
 }: {
   message: ChatMessage;
@@ -126,13 +127,16 @@ export function MessageBubble({
   onFeedback?: FeedbackFn;
   /** Shown on a failed answer: re-sends the question. */
   onRetry?: () => void;
-  /** Clarifying question: the user picked an option. */
-  onClarify?: (option: ClarificationOption) => void;
-  /** Clarifying question: "Something else…" (type a free-text answer). */
-  onSomethingElse?: () => void;
-  clarificationChosenId?: string | null;
-  /** The clarification was answered (or a reply is in flight). */
+  /** Clarification card: every answer at once, plus their one-line summary. */
+  onClarificationSubmit?: (answers: ClarificationAnswer[], summary: string) => void;
+  /** Clarification card dismissed with Esc (the composer takes over). */
+  onClarificationDismiss?: () => void;
+  /** Summary of the answers already given (read-only card). */
+  clarificationAnswered?: string | null;
+  /** A reply is in flight. */
   clarificationDisabled?: boolean;
+  /** Move focus into the card (the latest turn only). */
+  clarificationAutoFocus?: boolean;
   /** More icon-only actions for the right-hand group (e.g. the admin trace link). */
   extraActions?: ReactNode;
 }) {
@@ -339,9 +343,21 @@ export function MessageBubble({
     );
   }
 
+  const showCard = !!clarification && !message.pending && !message.error;
+
   return (
     <div className="flex justify-start">
-      <div className="relative max-w-[80%] space-y-2">
+      <div className={`relative space-y-2 ${showCard ? "w-full max-w-xl" : "max-w-[80%]"}`}>
+        {showCard && clarification ? (
+          <ClarificationCard
+            clarification={clarification}
+            onSubmit={onClarificationSubmit}
+            onDismiss={onClarificationDismiss}
+            answeredSummary={clarificationAnswered}
+            disabled={clarificationDisabled || !onClarificationSubmit}
+            autoFocus={clarificationAutoFocus}
+          />
+        ) : (
         <div data-tour="chat-answer" className="rounded-2xl rounded-tl-sm border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-sm">
           {message.pending ? (
             <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400" role="status" aria-label="Thinking">
@@ -363,22 +379,11 @@ export function MessageBubble({
                 </button>
               ) : null}
             </div>
-          ) : clarification ? (
-            <p>{clarification.question}</p>
           ) : (
             renderFormattedText(message.content)
           )}
         </div>
-
-        {!message.pending && !message.error && clarification ? (
-          <ClarificationChips
-            clarification={clarification}
-            onSelect={onClarify}
-            onSomethingElse={onSomethingElse}
-            chosenId={clarificationChosenId}
-            disabled={clarificationDisabled || !onClarify}
-          />
-        ) : null}
+        )}
 
         {!message.pending && !message.error && <SourceChips sources={citedSources(message.response)} />}
 

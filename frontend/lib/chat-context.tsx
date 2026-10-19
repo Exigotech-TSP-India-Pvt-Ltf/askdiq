@@ -14,7 +14,7 @@ import { useAuth } from "./auth-context";
 import { useBrand } from "./brand-context";
 import { submitMessageFeedback, type FeedbackDetails } from "./feedback-api";
 import { parseServerDate } from "./time";
-import type { ChatMessage, ChatMessageOut, ChatSessionSummary, ClarificationChoice } from "./types";
+import type { ChatMessage, ChatMessageOut, ChatSessionSummary, ClarificationAnswer } from "./types";
 
 function newId() {
   return Math.random().toString(36).slice(2);
@@ -41,8 +41,8 @@ interface ChatContextValue {
   setInput: (value: string) => void;
   sending: boolean;
   loadingMessages: boolean;
-  /** `choice` marks the text as the answer to a clarifying question (picked option). */
-  sendQuery: (text: string, choice?: ClarificationChoice) => Promise<void>;
+  /** `answers`: the text is the reply to the last clarification (all its answers at once). */
+  sendQuery: (text: string, answers?: ClarificationAnswer[]) => Promise<void>;
   /** Upserts the rating; `details` carries thumbs-down reason chips and the corrected answer. */
   submitFeedback: (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => Promise<void>;
   /** Removes a question/answer pair; restores it and rejects if the server delete fails. */
@@ -131,7 +131,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function sendQuery(text: string, choice?: ClarificationChoice) {
+  async function sendQuery(text: string, answers?: ClarificationAnswer[]) {
     if (!token || !text.trim() || sending) return;
 
     const trimmedText = text.trim();
@@ -161,7 +161,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const response = await api.query(token, {
         query: trimmedText,
         session_id: activeSessionId,
-        ...(choice ? { clarification_choice: choice } : {}),
+        ...(answers?.length ? { clarification_answers: answers } : {}),
       });
 
       setMessages((prev) =>
