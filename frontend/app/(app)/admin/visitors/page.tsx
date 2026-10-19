@@ -64,10 +64,11 @@ function AudienceContent() {
                 onClick={() => setConfigOpen(true)}
                 className={secondaryButton}
                 data-tour="visitors-manage-test-ips"
-                title="Test IPs are excluded from the Users audience"
+                title="Manage test IPs (excluded from the Users audience)"
+                aria-label="Manage test IPs"
               >
                 <SettingsIcon {...ICON} />
-                <span className="hidden sm:inline">Manage test IPs</span>
+                <span className="hidden whitespace-nowrap xl:inline">Manage test IPs</span>
               </button>
             ) : undefined
           }
