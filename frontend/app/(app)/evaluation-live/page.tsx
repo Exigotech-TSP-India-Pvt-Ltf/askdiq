@@ -37,6 +37,7 @@ import { Pagination, type PageSize } from "@/components/admin/Pagination";
 import { EvaluationRecordDrawer } from "@/components/admin/EvaluationRecordDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
+import { StatCard } from "@/components/admin/insights/StatCard";
 import { JudgeDisabledState, hasJudgedSamples } from "@/components/admin/evaluation/JudgeDisabledState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import {
@@ -98,8 +99,8 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md px-4 py-3.5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
       <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">{label}</p>
-      {value === "Not measured" ? (
-        <p className="mt-2 text-sm font-semibold text-fg-subtle">{value}</p>
+      {value === "Not measured" || value === "—" ? (
+        <p className="mt-2 text-sm font-semibold text-fg-subtle">Not measured</p>
       ) : (
         <p className={`mt-1 whitespace-nowrap text-xl font-black font-mono tracking-tight tabular-nums ${isPct ? statusColor(value) : "text-slate-900 dark:text-white"}`}>
           {value}
@@ -128,17 +129,16 @@ function HeroStat({
   icon: React.ElementType;
   accent?: string;
 }) {
+  // Shared KPI card (same as the rest of the console); no dash-only values.
+  const measured = value !== "—" && value !== "Not measured";
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md p-5 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 hover:shadow-md">
-      <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl transition-transform group-hover:scale-125" />
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">{label}</p>
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-teal-500/10 dark:bg-teal-400/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 shadow-xs">
-          <Icon className="h-4 w-4" />
-        </div>
-      </div>
-      <p className="mt-2 text-2xl font-black font-mono text-slate-900 dark:text-white tracking-tight tabular-nums">{value}</p>
-    </div>
+    <StatCard
+      title={label}
+      value={measured ? value : <span className="text-base font-medium text-fg-subtle">Not measured</span>}
+      subtitle={measured ? undefined : "No scored evaluation in this range"}
+      icon={Icon as React.ComponentType<{ className?: string }>}
+      className={accent ?? ""}
+    />
   );
 }
 
@@ -263,7 +263,7 @@ export default function EvaluationLivePage() {
           }`}
         >
           <GitCompare className="w-4 h-4" />
-          <span>{compareMode ? "Exit Comparison" : "Compare Live vs Benchmark"}</span>
+          <span className="whitespace-nowrap">{compareMode ? "Exit comparison" : "Compare with benchmark"}</span>
           {compareMode && (
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           )}
@@ -358,7 +358,7 @@ export default function EvaluationLivePage() {
                         <Cell key={idx} fill={pieColors[idx % pieColors.length]} />
                       ))}
                     </Pie>
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Legend verticalAlign="top" height={24} wrapperStyle={{ fontSize: 11 }} />
                     <Tooltip
                       contentStyle={tooltipStyle}
                     />
@@ -375,6 +375,8 @@ export default function EvaluationLivePage() {
             <div data-tour="evaluation-overview-breakdown" className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <ChartCard
                 title="Pass rate by query type"
+                empty={caseTypeBars.length === 0}
+                emptyMessage="No scored cases in this range yet"
                 subtitle="Distribution of passing answers per intent"
                 variant="aurora"
                 titleStyle="eyebrow"
@@ -416,6 +418,8 @@ export default function EvaluationLivePage() {
 
               <ChartCard
                 title="Latency by pipeline stage"
+                empty={latencyBars.every((b) => !Number(b.p50) && !Number(b.p95) && !Number(b.p99))}
+                emptyMessage="No stage timings in this range yet"
                 subtitle="p50 / p95 / p99 across stages (seconds)"
                 variant="aurora"
                 titleStyle="eyebrow"
@@ -447,7 +451,7 @@ export default function EvaluationLivePage() {
                       contentStyle={tooltipStyle}
                       formatter={(v, name) => [`${v} s`, name]}
                     />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Legend verticalAlign="top" height={24} wrapperStyle={{ fontSize: 11 }} />
                     <Bar dataKey="p50" name="p50" fill={ct.categorical[0]} radius={[4, 4, 0, 0]} />
                     <Bar dataKey="p95" name="p95" fill={ct.status.warn} radius={[4, 4, 0, 0]} />
                     <Bar dataKey="p99" name="p99" fill={ct.status.danger} radius={[4, 4, 0, 0]} />
