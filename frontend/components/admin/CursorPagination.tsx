@@ -2,6 +2,7 @@
 
 import React from "react";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ALLOWED_PAGE_SIZES } from "./Pagination";
 
 export interface CursorPaginationProps {
   /** Whether a newer / older page exists (from the API's cursors). */
@@ -25,7 +26,6 @@ export interface CursorPaginationProps {
   className?: string;
 }
 
-const PAGE_SIZES = [10, 25, 50, 100] as const;
 
 const navButton =
   "inline-flex items-center gap-1 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500";
@@ -82,7 +82,7 @@ export function CursorPagination({
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className="rounded-md border border-line bg-surface-card px-2 py-1 text-xs font-medium text-fg focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             >
-              {PAGE_SIZES.map((sz) => (
+              {ALLOWED_PAGE_SIZES.map((sz) => (
                 <option key={sz} value={sz} className="bg-surface-elevated text-fg">
                   {sz}
                 </option>

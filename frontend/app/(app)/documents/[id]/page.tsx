@@ -499,7 +499,7 @@ function DocumentDetailContent() {
         title={title}
         icon={FileText}
         showAudienceTabs={false}
-        breadcrumb={[{ label: "Documents", href: "/documents" }, { label: title }]}
+        breadcrumb={[{ label: "Knowledge", href: "/documents" }, { label: title }]}
       />
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">

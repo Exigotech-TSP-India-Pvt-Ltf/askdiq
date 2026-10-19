@@ -672,3 +672,38 @@ class BrandSettings(Base):
             name="ck_brand_settings_hex",
         ),
     )
+
+
+class ModelSettings(Base):
+    """Runtime model and pricing overrides (Settings > Models); singleton ``id = 1``.
+
+    A null column means "use the .env value". Prices are USD per 1M tokens and
+    only affect exchanges recorded after the change (each exchange snapshots
+    the rates it was billed at).
+    """
+
+    __tablename__ = "model_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    llm_deployment: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    price_prompt_per_million: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_cached_per_million: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_output_per_million: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_embed_per_million: Mapped[float | None] = mapped_column(Float, nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_model_settings_singleton"),
+        CheckConstraint(
+            "coalesce(price_prompt_per_million, 0) >= 0 "
+            "AND coalesce(price_cached_per_million, 0) >= 0 "
+            "AND coalesce(price_output_per_million, 0) >= 0 "
+            "AND coalesce(price_embed_per_million, 0) >= 0",
+            name="ck_model_settings_prices",
+        ),
+    )

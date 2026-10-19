@@ -2,7 +2,7 @@ import type { PageTour } from "../types";
 
 export const evaluationTour: PageTour = {
   id: "evaluation",
-  title: "Evaluation (Live)",
+  title: "Evaluation",
   steps: [
     {
       title: "Answer-quality scorecard",

@@ -315,7 +315,7 @@ describe("Phase 7: All Dashboard Pages Migration Verification", () => {
   it("renders Documents Page with top hero cards and TableCard", async () => {
     render(<DocumentsPage />);
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /Knowledge Base Documents/i })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /^Knowledge$/i })).toBeInTheDocument();
     });
     expect(screen.getByText("Total Canonical Documents")).toBeInTheDocument();
   });

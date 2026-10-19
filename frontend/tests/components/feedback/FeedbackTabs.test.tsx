@@ -44,7 +44,7 @@ describe("Golden Cases tab", () => {
       </Providers>,
     );
     expect(await screen.findByText("Failed")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /evaluation \(live\)/i })).toHaveAttribute("href", "/admin/evaluation-live");
+    expect(screen.getByRole("link", { name: /^evaluation$/i })).toHaveAttribute("href", "/admin/evaluation-live");
 
     fireEvent.click(screen.getByRole("button", { name: "Run golden case fb_case_1 now" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));

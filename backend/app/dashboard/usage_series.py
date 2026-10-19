@@ -37,6 +37,8 @@ from app.dashboard.window import (
     truncate,
 )
 from app.governance.audience import build_audience_filter
+from app.governance.costing import RateCard
+from app.model_settings.service import current_model_settings
 from app.models.db_models import AuditLog
 
 PER_MILLION = 1_000_000
@@ -107,7 +109,7 @@ async def ingestion_cost_rows(
 
 
 def stage_costs(
-    tokens: dict[str, float], ingestion: float, cfg: Settings
+    tokens: dict[str, float], ingestion: float, cfg: RateCard
 ) -> dict[str, float]:
     """USD per stage for one bucket (the summary's formulas, cache split out)."""
     prompt = tokens.get("prompt", 0.0)
@@ -140,7 +142,7 @@ def series_points(
     starts: list[datetime],
     tokens: dict[datetime, dict[str, float]],
     ingestion: dict[datetime, float],
-    cfg: Settings,
+    cfg: RateCard,
 ) -> list[dict[str, Any]]:
     return [
         {
@@ -188,7 +190,9 @@ async def cost_by_stage_series(
     )
     return {
         "bucket": bucket,
-        "points": series_points(bucket, starts, tokens, ingestion, cfg),
+        "points": series_points(
+            bucket, starts, tokens, ingestion, current_model_settings()
+        ),
     }
 
 

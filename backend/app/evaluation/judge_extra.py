@@ -18,6 +18,7 @@ from app.evaluation.judge import (
     _client_for,
     _extract_json,
 )
+from app.model_settings.service import current_model_settings
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,7 @@ async def _deep(question, chunks, answer, key_facts) -> DeepJudgeScores | None:
     settings = get_settings()
     deployment = (
         getattr(settings, "azure_judge_deployment_name", None)
-        or settings.azure_deployment_name
+        or current_model_settings().llm_deployment
     )
     client = _client_for(deployment)
     common = {

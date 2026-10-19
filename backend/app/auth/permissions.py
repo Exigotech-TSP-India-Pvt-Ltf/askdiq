@@ -43,6 +43,7 @@ class Permission(StrEnum):
     AUDIT_AUTH_READ = "audit:auth:read"
     BRANDING_WRITE = "branding:write"
     TAXONOMY_WRITE = "taxonomy:write"
+    MODELS_WRITE = "models:write"
 
 
 _OPERATOR = frozenset({Permission.DASHBOARD_READ})
@@ -59,6 +60,7 @@ _SUPERADMIN = _ADMIN | {
     Permission.AUDIT_AUTH_READ,
     Permission.BRANDING_WRITE,
     Permission.TAXONOMY_WRITE,
+    Permission.MODELS_WRITE,
 }
 
 ROLE_PERMISSIONS: MappingProxyType[Role, frozenset[Permission]] = MappingProxyType(

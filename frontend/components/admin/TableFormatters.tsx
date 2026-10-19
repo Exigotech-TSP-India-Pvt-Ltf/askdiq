@@ -220,29 +220,3 @@ export function OutcomeBadge({ outcome }: { outcome: string }) {
       return <TableBadge label={outcome || "Unknown"} variant="neutral" />;
   }
 }
-
-/** Pre-configured AudienceBadge */
-export function AudienceBadge({
-  isTest,
-  label,
-}: {
-  isTest: boolean;
-  label?: string;
-}) {
-  if (isTest) {
-    return (
-      <TableBadge
-        label={label || "Test"}
-        variant="warning"
-        title="Internal developer test loopback or configured test IP"
-      />
-    );
-  }
-  return (
-    <TableBadge
-      label={label || "Production"}
-      variant="success"
-      title="Verified end-user production traffic"
-    />
-  );
-}

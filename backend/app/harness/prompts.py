@@ -11,6 +11,7 @@ from app.core.circuit import CircuitOpenError, get_llm_breaker
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.quota import quota_monitor
+from app.model_settings.service import current_model_settings
 from app.retrieval.retriever import needs_conversation_context
 from app.schemas.query import ChatTurn, SourceChunk
 
@@ -22,7 +23,8 @@ _client = AsyncAzureOpenAI(
     api_key=settings.azure_openai_api_key,
     azure_endpoint=settings.azure_openai_endpoint,
     api_version=settings.azure_openai_api_version,
-    azure_deployment=settings.azure_deployment_name,
+    # No fixed `azure_deployment`: each call routes by its `model`, so the
+    # Settings > Models override (and INSIGHTS_MODEL) take effect at runtime.
     timeout=settings.azure_openai_request_timeout,
     max_retries=settings.azure_openai_max_retries,
 )
@@ -242,13 +244,14 @@ async def call_llm(
         _build_prompt, query, context_chunks, history
     )
 
+    model = current_model_settings().llm_deployment
     t_start = time.perf_counter()
     try:
         # Fails fast with CircuitOpenError while Azure is unhealthy; the
         # orchestrator turns that into its graceful `llm_failed` outcome.
         async with get_llm_breaker().guard():
             response = await _client.chat.completions.create(
-                model=settings.azure_deployment_name,
+                model=model,
                 messages=[
                     {"role": "system", "content": get_system_prompt()},
                     {
@@ -267,7 +270,7 @@ async def call_llm(
         if is_429:
             logger.error(
                 "llm_throttle_429",
-                model=settings.azure_deployment_name,
+                model=model,
                 error=str(exc),
             )
         raise
@@ -319,7 +322,7 @@ async def call_llm(
 
     logger.info(
         "llm_call_completed",
-        model=settings.azure_deployment_name,
+        model=model,
         latency_ms=round(llm_latency_ms, 2),
         non_empty=bool(content and content.strip()),
         prompt_tok=usage["prompt_tokens"] if usage else 0,

@@ -3,11 +3,10 @@
 import React from "react";
 import { AnimatePresence, m, useMotionValue } from "motion/react";
 import { AlertCircle } from "lucide-react";
-import { BrandLogo } from "@/components/brand/BrandLogo";
 import { BrandPanelDecor } from "@/components/auth/BrandPanelDecor";
 import { MicrosoftSignInButton } from "@/components/auth/MicrosoftSignInButton";
 import { useBrand } from "@/lib/brand-context";
-import type { Brand } from "@/lib/brand";
+import { LOGIN_LOGO_SRC, type Brand } from "@/lib/brand";
 import { loginErrorMessage } from "@/lib/login-errors";
 import { fadeUp, pop, stagger, useMotionVariants, usePrefersReducedMotion } from "@/lib/motion";
 import { focusRing } from "@/components/ui/styles";
@@ -58,6 +57,12 @@ function FooterLink({ href, children }: { href: string; children: React.ReactNod
   );
 }
 
+/** The all-white wordmark, shown only on the sign-in screen. */
+function LoginLogo({ alt, className }: { alt: string; className: string }) {
+  // eslint-disable-next-line @next/next/no-img-element -- SVG logo: next/image adds nothing here.
+  return <img src={LOGIN_LOGO_SRC} alt={alt} className={`w-auto max-w-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)] ${className}`} />;
+}
+
 /**
  * Branded split-screen sign-in (newplan §7.7 rev 3.2): teal brand panel with
  * animated hexagons on the left (hidden below md, replaced by a teal header
@@ -100,7 +105,7 @@ export function LoginView({ errorCode, next, contactEmail, year }: LoginViewProp
     <div className="flex min-h-screen flex-col bg-surface-page text-fg md:flex-row" data-motion={reduced ? "static" : "animated"}>
       {/* Mobile: teal header strip with the logo above the card. */}
       <header className="relative overflow-hidden bg-gradient-to-br from-brand-600 to-brand-800 px-6 py-5 md:hidden">
-        <BrandLogo tone="onDark" className="h-12 max-w-none drop-shadow-[0_2px_6px_rgba(0,0,0,0.25)]" />
+        <LoginLogo alt={brand.companyName} className="h-12" />
       </header>
 
       <aside
@@ -114,8 +119,7 @@ export function LoginView({ errorCode, next, contactEmail, year }: LoginViewProp
         <BrandPanelDecor pointerX={pointerX} pointerY={pointerY} reduced={reduced} />
 
         <div className="relative">
-          {/* Prominent transparent logo (same artwork as the dashboard, incl. the tagline), light-on-teal variant. */}
-          <BrandLogo tone="onDark" className="h-20 max-w-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)] lg:h-24" />
+          <LoginLogo alt={brand.companyName} className="h-20 lg:h-24" />
         </div>
 
         <m.div className="relative max-w-xl" {...motionProps}>

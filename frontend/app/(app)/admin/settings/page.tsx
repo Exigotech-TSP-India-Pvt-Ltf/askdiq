@@ -1,26 +1,34 @@
 "use client";
 
 import { Suspense } from "react";
-import { Palette, Settings2, ShieldAlert, Tags } from "lucide-react";
+import { BrainCircuit, Palette, Settings2, ShieldAlert, Tags } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import { BrandingTab } from "@/components/admin/settings/BrandingTab";
+import { ModelsTab } from "@/components/admin/settings/ModelsTab";
 import { TaxonomyTab } from "@/components/admin/settings/TaxonomyTab";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MascotLoader } from "@/components/ui/MascotLoader";
 import { useDeepLinkParam } from "@/lib/use-deep-link";
 import { useCan } from "@/lib/use-can";
 
-type SettingsTab = "branding" | "taxonomy";
+type SettingsTab = "branding" | "taxonomy" | "models";
 
 const SETTINGS_TABS: TabItem<SettingsTab>[] = [
   { id: "branding", label: "Branding", icon: Palette, description: "White-label names, colours, logos and login copy" },
   { id: "taxonomy", label: "Insights Taxonomy", icon: Tags, description: "Intents, bot-quality values and issues" },
+  { id: "models", label: "Models & Pricing", icon: BrainCircuit, description: "LLM and embedding deployments, token prices" },
 ];
 
-const isSettingsTab = (value: string | null): value is SettingsTab => value === "branding" || value === "taxonomy";
+const TAB_PANELS: Record<SettingsTab, () => JSX.Element> = {
+  branding: () => <BrandingTab key="branding" />,
+  taxonomy: () => <TaxonomyTab key="taxonomy" />,
+  models: () => <ModelsTab key="models" />,
+};
 
-/** Superadmin Settings (newplan §14, planchanges4 F7): Branding and Insights Taxonomy. */
+const isSettingsTab = (value: string | null): value is SettingsTab => SETTINGS_TABS.some((t) => t.id === value);
+
+/** Superadmin Settings (newplan §14, planchanges4 F7): Branding, Insights Taxonomy, Models & Pricing. */
 export default function SettingsPage() {
   // useSearchParams (tab deep link) needs a Suspense boundary for static prerendering.
   return (
@@ -33,38 +41,42 @@ export default function SettingsPage() {
 function SettingsView() {
   const canBrand = useCan("branding:write");
   const canTaxonomy = useCan("taxonomy:write");
+  const canModels = useCan("models:write");
   const [tabParam, setTabParam] = useDeepLinkParam("tab");
-  const tab: SettingsTab = isSettingsTab(tabParam) ? tabParam : "branding";
+  const allowed: Record<SettingsTab, boolean> = { branding: canBrand, taxonomy: canTaxonomy, models: canModels };
+  const tabs = SETTINGS_TABS.filter((t) => allowed[t.id]);
+  const fallback = tabs[0]?.id ?? "branding";
+  const tab: SettingsTab = isSettingsTab(tabParam) && allowed[tabParam] ? tabParam : fallback;
 
   return (
     <div className="flex min-h-full flex-col bg-surface-page text-fg">
       <div data-tour="settings-header">
         <DashboardHeader
           title="Settings"
-          subtitle="White-label branding and the insights taxonomy (superadmin)"
+          subtitle="White-label branding, the insights taxonomy, and models and pricing (superadmin)"
           icon={Settings2}
           showAudienceTabs={false}
         />
       </div>
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-5 p-4 sm:p-6 lg:p-8">
-        {!canBrand && !canTaxonomy ? (
+        {!tabs.length ? (
           <EmptyState
             icon={ShieldAlert}
             title="Superadmin only"
-            description="Branding and the insights taxonomy can only be changed by a superadmin."
+            description="Branding, the insights taxonomy and model settings can only be changed by a superadmin."
           />
         ) : (
           <>
             <div data-tour="settings-tabs">
               <TabGroup
-                tabs={SETTINGS_TABS}
+                tabs={tabs}
                 activeTab={tab}
-                onChange={(id) => setTabParam(id === "branding" ? null : id)}
+                onChange={(id) => setTabParam(id === fallback ? null : id)}
                 ariaLabel="Settings sections"
               />
             </div>
             <div role="tabpanel" aria-label={SETTINGS_TABS.find((t) => t.id === tab)?.label}>
-              {tab === "branding" ? <BrandingTab key="branding" /> : <TaxonomyTab key="taxonomy" />}
+              {TAB_PANELS[tab]()}
             </div>
           </>
         )}

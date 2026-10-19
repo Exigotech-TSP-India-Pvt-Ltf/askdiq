@@ -3,7 +3,7 @@
 import type { LucideIcon } from "lucide-react";
 import { CircleCheck, CircleHelp, MessagesSquare, Repeat, ShieldCheck, Users } from "lucide-react";
 import type { InsightsSummary } from "@/lib/insights-api";
-import { CountUp } from "./CountUp";
+import { CountUp } from "@/components/ui/CountUp";
 import { fmtDecimal, fmtInt, fmtPct } from "./format";
 
 export interface KpiDef {
@@ -89,7 +89,7 @@ export function KpiStrip({ summary, loading = false }: KpiStripProps) {
             </div>
             <p className="text-2xl font-semibold leading-none tabular-nums text-fg">
               {summary ? (
-                <CountUp value={k.value(summary)} format={k.format} />
+                <CountUp value={k.value(summary)} format={k.format} fallback="n/a" />
               ) : (
                 <span className="inline-block h-6 w-12 rounded bg-surface-muted motion-safe:animate-pulse" aria-hidden="true" />
               )}

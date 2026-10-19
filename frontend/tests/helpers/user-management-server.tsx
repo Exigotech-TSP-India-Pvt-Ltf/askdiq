@@ -67,6 +67,7 @@ export const ME: Me = {
     "audit:auth:read",
     "branding:write",
     "taxonomy:write",
+    "models:write",
   ],
   version: 1,
   access_contact_email: "it@contoso.example",

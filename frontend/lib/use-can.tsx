@@ -11,29 +11,10 @@
  */
 import React, { createContext, useContext } from "react";
 import { usePermission } from "@/lib/auth-context";
-import { PERMISSIONS, hasPermission, type Permission, type Role } from "@/lib/permissions";
+import { PERMISSIONS, ROLE_PERMISSIONS, hasPermission, type Permission, type Role } from "@/lib/permissions";
 
-export { PERMISSIONS };
+export { PERMISSIONS, ROLE_PERMISSIONS };
 export type { Permission, Role };
-
-const OPERATOR: readonly Permission[] = ["dashboard:read"];
-const ADMIN: readonly Permission[] = [
-  ...OPERATOR,
-  "documents:write",
-  "feedback:triage",
-  "feedback:export",
-  "eval:run",
-  "testip:write",
-  "usage:export",
-];
-const SUPERADMIN: readonly Permission[] = [...ADMIN, "users:manage", "audit:auth:read", "branding:write", "taxonomy:write"];
-
-/** Role table mirrored from the backend (newplan §7.3). */
-export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  operator: OPERATOR,
-  admin: ADMIN,
-  superadmin: SUPERADMIN,
-};
 
 interface MaybeAuthorizedUser {
   role?: string | null;

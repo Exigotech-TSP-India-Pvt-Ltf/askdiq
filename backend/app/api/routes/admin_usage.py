@@ -43,6 +43,7 @@ from app.core.concurrency import ScopedRunner, get_scoped_runner, single_flight
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
+from app.core.serialization import sanitize_csv_cell
 from app.dashboard import usage_series
 from app.dashboard.queries import cached_tokens_sql
 from app.dashboard.window import utcnow
@@ -53,12 +54,12 @@ from app.governance.audience import (
     get_classified_ips,
 )
 from app.governance.audit import record_audit_event
-from app.governance.costing import calculate_stage_costs
 from app.governance.outcomes import GENERATION_OUTCOMES
 from app.governance.usage_queries import (
     apply_usage_filters,
     escape_ilike_pattern,
 )
+from app.model_settings.service import current_model_settings
 from app.models.db_models import (
     AuditLog,
     ChatMessageRecord,
@@ -73,7 +74,25 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/usage", tags=["usage"])
 
-__all__ = ["calculate_stage_costs", "router"]
+__all__ = ["router"]
+
+
+def billed_rate_card(details: dict[str, Any]) -> dict[str, float]:
+    """Rates an exchange was billed at (its pricing snapshot), else today's rates."""
+    snapshot = details.get("pricing")
+    billed = snapshot if isinstance(snapshot, dict) else {}
+    live = current_model_settings()
+
+    def rate(key: str, fallback: float) -> float:
+        value = billed.get(key)
+        return float(value) if isinstance(value, int | float) else fallback
+
+    return {
+        "price_embed_per_million": rate("embed_per_m", live.price_embed_per_million),
+        "price_input_per_million": rate("prompt_per_m", live.price_prompt_per_million),
+        "price_output_per_million": rate("output_per_m", live.price_output_per_million),
+        "price_cached_per_million": rate("cached_per_m", live.price_cached_per_million),
+    }
 
 
 # Concurrency semaphore for heavy aggregations (Task 5.1.2)
@@ -496,10 +515,11 @@ async def _compute_usage_summary(
     )
 
     # Rates & Savings calculation
-    cached_rate = settings.price_cached_per_million
-    prompt_rate = settings.price_prompt_per_million
-    output_rate = settings.price_output_per_million
-    embed_rate = settings.price_embed_per_million
+    rates = current_model_settings()
+    cached_rate = rates.price_cached_per_million
+    prompt_rate = rates.price_prompt_per_million
+    output_rate = rates.price_output_per_million
+    embed_rate = rates.price_embed_per_million
 
     # Visible vs reasoning tokens
     visible_tokens = max(0, sum_completion - sum_reasoning)
@@ -1229,7 +1249,6 @@ async def get_query_detail(
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Single-turn inspector detail exposing rates and cached prompt details (Task 3.5.3)."""
-    settings = get_settings()
     user_msg = aliased(ChatMessageRecord, name="user_turn")
     asst_msg = aliased(ChatMessageRecord, name="asst_turn")
 
@@ -1276,6 +1295,7 @@ async def get_query_detail(
         lat_rerank,
     ) = row
     details = asst.token_details or {}
+    rate_card = billed_rate_card(details)
 
     return {
         "request_id": asst.request_id,
@@ -1311,18 +1331,10 @@ async def get_query_detail(
             + (asst.total_tokens or 0),
         },
         "rates": {
-            "price_embed_per_million": settings.price_embed_per_million,
-            "price_input_per_million": settings.price_prompt_per_million,
-            "price_prompt_per_million": settings.price_prompt_per_million,
-            "price_output_per_million": settings.price_output_per_million,
-            "price_cached_per_million": settings.price_cached_per_million,
+            **rate_card,
+            "price_prompt_per_million": rate_card["price_input_per_million"],
         },
-        "pricing_rate_card": {
-            "price_embed_per_million": settings.price_embed_per_million,
-            "price_input_per_million": settings.price_prompt_per_million,
-            "price_output_per_million": settings.price_output_per_million,
-            "price_cached_per_million": settings.price_cached_per_million,
-        },
+        "pricing_rate_card": rate_card,
         "latencies": {
             "total_ms": lat_total,
             "embedding_ms": lat_embed,
@@ -1336,16 +1348,6 @@ async def get_query_detail(
 # ============================================================================
 # STREAMING CSV EXPORT (Task 3.4)
 # ============================================================================
-
-
-def _sanitize_csv_cell(val: Any) -> str:
-    """Neutralize formula injection by prefixing leading special characters with a single quote."""
-    if val is None:
-        return ""
-    text = str(val)
-    if text.startswith(("=", "+", "-", "@", "\t", "\r")):
-        return f"'{text}"
-    return text
 
 
 @router.get("/export")
@@ -1461,20 +1463,20 @@ async def export_usage_csv(
             rows = (await db.execute(stmt)).all()
             for r in rows:
                 row_cells = [
-                    _sanitize_csv_cell(r[0]),
-                    _sanitize_csv_cell(r[1].isoformat() if r[1] else ""),
-                    _sanitize_csv_cell(r[2] or "Unknown"),
-                    _sanitize_csv_cell(r[3]),
-                    _sanitize_csv_cell(r[4]),
-                    _sanitize_csv_cell(r[5] or 0),
-                    _sanitize_csv_cell(r[6] or 0),
-                    _sanitize_csv_cell(r[7] or 0),
-                    _sanitize_csv_cell(r[8] or 0),
-                    _sanitize_csv_cell(
+                    sanitize_csv_cell(r[0]),
+                    sanitize_csv_cell(r[1].isoformat() if r[1] else ""),
+                    sanitize_csv_cell(r[2] or "Unknown"),
+                    sanitize_csv_cell(r[3]),
+                    sanitize_csv_cell(r[4]),
+                    sanitize_csv_cell(r[5] or 0),
+                    sanitize_csv_cell(r[6] or 0),
+                    sanitize_csv_cell(r[7] or 0),
+                    sanitize_csv_cell(r[8] or 0),
+                    sanitize_csv_cell(
                         f"{r[9]:.6f}" if r[9] is not None else "0.000000"
                     ),
-                    _sanitize_csv_cell(r[10] or "answered"),
-                    _sanitize_csv_cell("Yes" if r[11] else "No"),
+                    sanitize_csv_cell(r[10] or "answered"),
+                    sanitize_csv_cell("Yes" if r[11] else "No"),
                 ]
                 writer.writerow(row_cells)
                 yield out.getvalue()
@@ -1511,16 +1513,16 @@ async def export_usage_csv(
             for item in user_res["items"]:
                 writer.writerow(
                     [
-                        _sanitize_csv_cell(item["ip_address"]),
-                        _sanitize_csv_cell(item["type"]),
-                        _sanitize_csv_cell(item["sessions"]),
-                        _sanitize_csv_cell(item["queries"]),
-                        _sanitize_csv_cell(item["embed_tokens"]),
-                        _sanitize_csv_cell(item["prompt_tokens"]),
-                        _sanitize_csv_cell(item["reasoning_tokens"]),
-                        _sanitize_csv_cell(item["output_tokens"]),
-                        _sanitize_csv_cell(item["total_tokens"]),
-                        _sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
+                        sanitize_csv_cell(item["ip_address"]),
+                        sanitize_csv_cell(item["type"]),
+                        sanitize_csv_cell(item["sessions"]),
+                        sanitize_csv_cell(item["queries"]),
+                        sanitize_csv_cell(item["embed_tokens"]),
+                        sanitize_csv_cell(item["prompt_tokens"]),
+                        sanitize_csv_cell(item["reasoning_tokens"]),
+                        sanitize_csv_cell(item["output_tokens"]),
+                        sanitize_csv_cell(item["total_tokens"]),
+                        sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
                     ]
                 )
                 yield out.getvalue()
@@ -1556,13 +1558,13 @@ async def export_usage_csv(
             for item in sess_res["items"]:
                 writer.writerow(
                     [
-                        _sanitize_csv_cell(item["id"]),
-                        _sanitize_csv_cell(item["title"]),
-                        _sanitize_csv_cell(item["ip_address"]),
-                        _sanitize_csv_cell(item["queries"]),
-                        _sanitize_csv_cell(item["total_tokens"]),
-                        _sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
-                        _sanitize_csv_cell(item["last_active"] or ""),
+                        sanitize_csv_cell(item["id"]),
+                        sanitize_csv_cell(item["title"]),
+                        sanitize_csv_cell(item["ip_address"]),
+                        sanitize_csv_cell(item["queries"]),
+                        sanitize_csv_cell(item["total_tokens"]),
+                        sanitize_csv_cell(f"{item['cost_usd']:.6f}"),
+                        sanitize_csv_cell(item["last_active"] or ""),
                     ]
                 )
                 yield out.getvalue()

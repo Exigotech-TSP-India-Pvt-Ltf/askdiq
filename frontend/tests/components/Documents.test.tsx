@@ -79,7 +79,7 @@ describe("Document detail", () => {
     mockFetch([docsRoute, chunksRoute, lowRatedRoute]);
     renderPage(<DocumentDetailPage />, { url: `/documents/${DOC_ID}` });
     expect(await screen.findByRole("heading", { level: 1, name: "Leave policy.md" })).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("link", { name: "Documents" })).toHaveAttribute(
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("link", { name: "Knowledge" })).toHaveAttribute(
       "href",
       "/documents",
     );

@@ -31,6 +31,7 @@ from openai import AsyncAzureOpenAI
 
 from app.core.circuit import get_llm_breaker
 from app.core.config import get_settings
+from app.model_settings.service import current_model_settings
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,7 @@ async def _judge(
     settings = get_settings()
     deployment = (
         getattr(settings, "azure_judge_deployment_name", None)
-        or settings.azure_deployment_name
+        or current_model_settings().llm_deployment
     )
     client = _client_for(deployment)
 

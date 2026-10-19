@@ -11,14 +11,14 @@ import {
   LayoutDashboard,
   Loader2,
   LogOut,
-  MessageSquare,
-  FileText,
+  BotMessageSquare,
+  LibraryBig,
+  FlaskConical,
   Users,
   MessagesSquare,
   ThumbsUp,
   ShieldCheck,
   CircleDollarSign,
-  Sparkles,
   ChartColumnBig,
   UserCog,
   Settings2,
@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BrandLogo } from "@/components/brand/BrandLogo";
-import { crossfade, drawerLeft, layoutSpring, useMotionVariants } from "@/lib/motion";
+import { crossfade, drawerLeft, layoutSpring, pop, useMotionVariants } from "@/lib/motion";
 import { useMobileNav } from "@/lib/mobile-nav-context";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { readStorage, writeStorage } from "@/lib/storage";
@@ -34,7 +34,7 @@ import { focusRing, iconButton, overlayBackdrop } from "@/components/ui/styles";
 import { RoleBadge } from "@/components/shell/RoleBadge";
 import { hasPermission, type Permission } from "@/lib/permissions";
 import { usePendingAccessCount } from "@/lib/use-shell-notifications";
-import { pop } from "@/lib/motion";
+import { initials } from "@/lib/format";
 
 const COLLAPSED_STORAGE_KEY = "deployiq.sidebar.collapsed";
 
@@ -49,7 +49,7 @@ export interface NavItem {
   enabled?: boolean;
   /**
    * Permission the signed-in role needs to see the item (newplan §7.3). Items
-   * without one (Chat) are open to every signed-in, non-suspended user.
+   * without one (AskDIQ) are open to every signed-in, non-suspended user.
    */
   permission?: Permission;
   /** Visible with any one of these (when the page itself accepts either). */
@@ -63,14 +63,14 @@ const DASHBOARD: Permission = "dashboard:read";
 
 const ADMIN_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, permission: DASHBOARD },
-  { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/documents", label: "Documents", icon: FileText, permission: DASHBOARD },
+  { href: "/chat", label: "AskDIQ", icon: BotMessageSquare, keywords: ["chat", "assistant", "ask"] },
+  { href: "/documents", label: "Knowledge", icon: LibraryBig, permission: DASHBOARD, keywords: ["documents", "knowledge base", "upload"] },
   // Renamed from "Users" (newplan open item 6): these are chat visitors, not accounts.
   { href: "/admin/users", label: "Visitors", icon: Users, permission: DASHBOARD, keywords: ["users", "audience", "ip", "test ip"] },
   { href: "/admin/usage", label: "Usage & Cost", icon: CircleDollarSign, permission: DASHBOARD },
   { href: "/admin/conversations", label: "Conversation Logs", icon: MessagesSquare, permission: DASHBOARD },
   { href: "/admin/feedback", label: "Feedback", icon: ThumbsUp, permission: DASHBOARD },
-  { href: "/admin/evaluation-live", label: "Evaluation (Live)", icon: Sparkles, permission: DASHBOARD },
+  { href: "/admin/evaluation-live", label: "Evaluation", icon: FlaskConical, permission: DASHBOARD, keywords: ["quality", "live evaluation", "rag"] },
   { href: "/admin/governance", label: "Governance", icon: ShieldCheck, permission: DASHBOARD },
 ];
 
@@ -89,9 +89,9 @@ const PLANNED_ITEMS: NavItem[] = [
     href: "/admin/settings",
     label: "Settings",
     icon: Settings2,
-    // The page opens with either permission (Branding or Taxonomy tab).
-    anyPermission: ["branding:write", "taxonomy:write"],
-    keywords: ["branding", "taxonomy", "white-label"],
+    // The page opens with any of these (Branding, Taxonomy or Models tab).
+    anyPermission: ["branding:write", "taxonomy:write", "models:write"],
+    keywords: ["branding", "taxonomy", "white-label", "models", "llm", "embeddings", "pricing", "cost"],
   },
 ];
 
@@ -110,15 +110,6 @@ export function canSeeNavItem(item: NavItem, permissions: readonly string[] | nu
 /** The items a user with `permissions` sees, in sidebar order. */
 export function visibleNavItems(permissions: readonly string[] | null | undefined): NavItem[] {
   return NAV_ITEMS.filter((item) => canSeeNavItem(item, permissions));
-}
-
-function initials(name: string | undefined | null) {
-  return (name ?? "")
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
 }
 
 function isActive(pathname: string | null, href: string) {

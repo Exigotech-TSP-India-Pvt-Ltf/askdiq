@@ -29,7 +29,7 @@ import { TabGroup, EVALUATION_LIVE_TABS } from "@/components/admin/TabGroup";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination, type PageSize } from "@/components/admin/Pagination";
-import { QueryInspectorDrawer } from "@/components/admin/QueryInspectorDrawer";
+import { EvaluationRecordDrawer } from "@/components/admin/EvaluationRecordDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
 import { SkeletonCard } from "@/components/ui/Skeleton";
@@ -237,7 +237,7 @@ export default function EvaluationLivePage() {
     <div className="flex flex-col min-h-screen bg-surface-page text-ink dark:text-slate-100">
       <div data-tour="evaluation-header">
       <DashboardHeader
-        title="RAG Evaluation (Live)"
+        title="Evaluation"
         subtitle="Continuous production evaluation, live query audit, and benchmark comparative scorecard"
         icon={Sparkles}
       >
@@ -712,7 +712,7 @@ export default function EvaluationLivePage() {
       </div>
 
       {/* Deep Query Inspector Drawer */}
-      <QueryInspectorDrawer
+      <EvaluationRecordDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         recordId={selectedRecord?.id}

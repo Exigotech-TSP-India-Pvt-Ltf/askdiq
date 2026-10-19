@@ -240,7 +240,7 @@ export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS }: Golde
           href="/admin/evaluation-live"
           className={`group inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-surface-muted dark:text-brand-300 ${focusRing}`}
         >
-          Evaluation (Live)
+          Evaluation
           <ArrowUpRight
             className="h-3.5 w-3.5 transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
             strokeWidth={1.75}

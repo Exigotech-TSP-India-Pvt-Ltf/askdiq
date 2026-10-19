@@ -55,7 +55,7 @@ export function guardrailRows(
   ];
 }
 
-interface QueryInspectorDrawerProps {
+interface EvaluationRecordDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   recordId: string | null;
@@ -63,13 +63,13 @@ interface QueryInspectorDrawerProps {
   token: string | null;
 }
 
-export function QueryInspectorDrawer({
+export function EvaluationRecordDrawer({
   isOpen,
   onClose,
   recordId,
   initialData,
   token,
-}: QueryInspectorDrawerProps) {
+}: EvaluationRecordDrawerProps) {
   const [data, setData] = useState<any>(initialData || null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);

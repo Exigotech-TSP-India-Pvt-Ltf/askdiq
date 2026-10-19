@@ -31,6 +31,7 @@ from app.harness.prompts import count_tokens, get_chat_client
 from app.insights.rules import derive_handled, map_outcome
 from app.insights.taxonomy import ClassifiedBy, Friction, Intent, Taxonomy
 from app.insights.types import LlmUsage, TurnInput, TurnLabel
+from app.model_settings.service import current_model_settings
 
 logger = get_logger(__name__)
 
@@ -49,8 +50,7 @@ ClassifierLLM = Callable[
 
 
 def classifier_model() -> str:
-    settings = get_settings()
-    return settings.insights_model or settings.azure_deployment_name
+    return get_settings().insights_model or current_model_settings().llm_deployment
 
 
 def prepare_text(text: str | None, max_chars: int) -> str:

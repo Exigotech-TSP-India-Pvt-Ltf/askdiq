@@ -7,6 +7,7 @@ from openai import AsyncAzureOpenAI
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.quota import quota_monitor
+from app.model_settings.service import current_model_settings
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -18,6 +19,11 @@ _embedding_client = AsyncAzureOpenAI(
     timeout=settings.outbound_timeout_seconds,
     max_retries=settings.azure_openai_max_retries,
 )
+
+
+def get_embedding_client() -> AsyncAzureOpenAI:
+    """Shared Azure embeddings client."""
+    return _embedding_client
 
 
 # Per-request sink for query-embedding time, read by the latency middleware.
@@ -51,10 +57,11 @@ async def embed_texts(
     if not texts:
         return []
 
+    model = current_model_settings().embedding_model
     t_start = time.perf_counter()
     try:
         response = await _embedding_client.embeddings.create(
-            model=settings.embedding_model,
+            model=model,
             input=texts,
         )
     except Exception as exc:
@@ -64,7 +71,7 @@ async def embed_texts(
         if is_429:
             logger.error(
                 "embedding_throttle_429",
-                model=settings.embedding_model,
+                model=model,
                 texts_count=len(texts),
                 error=str(exc),
             )

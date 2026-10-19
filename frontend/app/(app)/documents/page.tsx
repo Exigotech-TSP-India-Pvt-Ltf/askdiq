@@ -377,7 +377,7 @@ function DocumentsContent() {
     <div className="flex min-h-screen flex-col bg-surface-page text-fg">
       <div data-tour="documents-header">
       <DashboardHeader
-        title="Knowledge Base Documents"
+        title="Knowledge"
         subtitle="Every uploaded .md and .docx file, standardized to canonical Markdown, chunked and embedded"
         icon={FileText}
         showAudienceTabs={false}

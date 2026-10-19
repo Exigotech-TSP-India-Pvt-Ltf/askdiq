@@ -9,21 +9,12 @@ import { useTheme, type ThemeMode } from "@/lib/theme-context";
 import { pop, useMotionVariants } from "@/lib/motion";
 import { usePopover } from "@/lib/use-popover";
 import { focusRing, menuItem, popoverPanel } from "@/components/ui/styles";
+import { initials } from "@/lib/format";
 
 const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: React.ElementType }[] = [
   { mode: "light", label: "Light", icon: Sun },
   { mode: "dark", label: "Dark", icon: Moon },
 ];
-
-function initials(name: string | undefined | null): string {
-  const letters = (name ?? "")
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-  return letters || "?";
-}
 
 interface ProfileMenuProps {
   /** Role badge (PR-18 passes the signed-in user's role). */

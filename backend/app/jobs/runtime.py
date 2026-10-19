@@ -16,6 +16,10 @@ from app.core.events import TOPIC_CACHE_INVALIDATE, Event, EventBus, get_event_b
 from app.core.logging_config import get_logger
 from app.governance.audience import invalidate_audience_cache
 from app.jobs.worker import JobWorker
+from app.model_settings.service import (
+    MODEL_SETTINGS_CACHE_ID,
+    invalidate_model_settings_cache,
+)
 
 logger = get_logger(__name__)
 
@@ -28,6 +32,9 @@ def _invalidate_local_caches(event: Event) -> None:
         return
     if event.id == BRANDING_CACHE_ID:
         invalidate_branding_cache()
+        return
+    if event.id == MODEL_SETTINGS_CACHE_ID:
+        invalidate_model_settings_cache()
         return
     aggregation_cache.invalidate_prefix(event.id)
 

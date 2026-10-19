@@ -26,6 +26,7 @@ from app.ingestion.normalizer import (
     doc_content_hash,
     normalize_markdown,
 )
+from app.model_settings.service import current_model_settings
 from app.models.db_models import Chunk, Document
 from app.retrieval.embeddings import embed_texts
 
@@ -55,7 +56,7 @@ def provenance_extras(
         "canonical_chars": len(canonical_markdown),
         "chunking_strategy_requested": requested_strategy,
         "chunking_strategy": strategy_used,
-        "embedding_model": settings.embedding_model,
+        "embedding_model": current_model_settings().embedding_model,
         "embedding_dim": settings.embedding_dim,
         "doc_hash_version": DOC_HASH_VERSION,
         "pipeline_version": PIPELINE_VERSION,
@@ -293,7 +294,9 @@ async def ingest_text(
     est_embed_tokens = sum(
         len(getattr(new_chunks[h], "content", "").split()) for h in to_add_hashes
     )
-    est_cost = (est_embed_tokens / 1_000_000) * settings.price_embed_per_million
+    est_cost = (
+        est_embed_tokens / 1_000_000
+    ) * current_model_settings().price_embed_per_million
 
     if dry_run:
         return {

@@ -90,7 +90,7 @@ export const feedbackTour: PageTour = {
     {
       target: '[data-tour="feedback-golden"]',
       title: "Golden cases",
-      body: "Answers promoted from feedback into the regression suite, with their last evaluation result. Use \"Run now\" to re-test a case, or the Evaluation (Live) link for the full scorecard. This list is not audience-scoped.",
+      body: "Answers promoted from feedback into the regression suite, with their last evaluation result. Use \"Run now\" to re-test a case, or the Evaluation link for the full scorecard. This list is not audience-scoped.",
       placement: "top",
       tab: "golden",
     },
@@ -110,7 +110,7 @@ export const feedbackTour: PageTour = {
     },
     {
       title: "Close the loop",
-      body: "Watch the trend, triage the low ratings, promote failures to golden cases and fill the gaps in Documents. Then check Evaluation (Live) to confirm quality recovers, and Conversation Logs for full sessions.",
+      body: "Watch the trend, triage the low ratings, promote failures to golden cases and fill the gaps in Knowledge. Then check Evaluation to confirm quality recovers, and Conversation Logs for full sessions.",
       placement: "center",
       tab: "overview",
     },

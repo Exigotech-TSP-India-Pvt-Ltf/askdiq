@@ -12,46 +12,28 @@ snapshots the applied pricing rates inside each exchange record.
 """
 
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from typing import Any, Protocol
 
-from app.core.config import get_settings
+from app.model_settings.service import current_model_settings
 
-settings = get_settings()
 
-# Default rates per 1,000,000 tokens (USD)
-DEFAULT_PRICE_EMBED_PER_M = Decimal("0.02")
-DEFAULT_PRICE_PROMPT_PER_M = Decimal("0.25")
-DEFAULT_PRICE_OUTPUT_PER_M = Decimal("2.00")
-DEFAULT_PRICE_CACHED_PER_M = Decimal("0.25")
+class RateCard(Protocol):
+    """USD per 1M tokens: `Settings` or the effective Settings > Models values."""
+
+    price_embed_per_million: float
+    price_prompt_per_million: float
+    price_output_per_million: float
+    price_cached_per_million: float
 
 
 def get_current_pricing_rates() -> dict[str, Decimal]:
-    """Return active pricing configuration as Decimal rates per 1M tokens."""
+    """Active rates (Settings > Models overrides over .env) as Decimal per 1M tokens."""
+    rates = current_model_settings()
     return {
-        "embed_per_m": Decimal(
-            str(getattr(settings, "price_embed_per_million", DEFAULT_PRICE_EMBED_PER_M))
-        ),
-        "prompt_per_m": Decimal(
-            str(
-                getattr(
-                    settings, "price_prompt_per_million", DEFAULT_PRICE_PROMPT_PER_M
-                )
-            )
-        ),
-        "output_per_m": Decimal(
-            str(
-                getattr(
-                    settings, "price_output_per_million", DEFAULT_PRICE_OUTPUT_PER_M
-                )
-            )
-        ),
-        "cached_per_m": Decimal(
-            str(
-                getattr(
-                    settings, "price_cached_per_million", DEFAULT_PRICE_CACHED_PER_M
-                )
-            )
-        ),
+        "embed_per_m": Decimal(str(rates.price_embed_per_million)),
+        "prompt_per_m": Decimal(str(rates.price_prompt_per_million)),
+        "output_per_m": Decimal(str(rates.price_output_per_million)),
+        "cached_per_m": Decimal(str(rates.price_cached_per_million)),
     }
 
 

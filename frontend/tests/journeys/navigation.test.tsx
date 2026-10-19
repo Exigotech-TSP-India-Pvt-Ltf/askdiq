@@ -30,13 +30,13 @@ vi.mock("@/lib/auth-context", async () => {
 // Every item a superadmin sees (role filtering is covered in Sidebar.test).
 const NAV_ITEMS: ReadonlyArray<readonly [label: string, href: string]> = [
   ["Dashboard", "/admin"],
-  ["Chat", "/chat"],
-  ["Documents", "/documents"],
+  ["AskDIQ", "/chat"],
+  ["Knowledge", "/documents"],
   ["Visitors", "/admin/users"],
   ["Usage & Cost", "/admin/usage"],
   ["Conversation Logs", "/admin/conversations"],
   ["Feedback", "/admin/feedback"],
-  ["Evaluation (Live)", "/admin/evaluation-live"],
+  ["Evaluation", "/admin/evaluation-live"],
   ["Governance", "/admin/governance"],
   ["Analytics", "/admin/analytics"],
   ["User Management", "/admin/user-management"],
@@ -95,12 +95,12 @@ describe("Navigation journey (Phase F2)", () => {
       }
     });
 
-    it("renders the Sparkles icon for Evaluation (Live)", () => {
+    it("renders the FlaskConical icon for Evaluation", () => {
       render(<Sidebar />);
       fireEvent.click(screen.getByTitle("Collapse sidebar"));
 
-      const link = screen.getByRole("link", { name: "Evaluation (Live)" });
-      expect(link.querySelector("svg.lucide-sparkles")).not.toBeNull();
+      const link = screen.getByRole("link", { name: "Evaluation" });
+      expect(link.querySelector("svg.lucide-flask-conical")).not.toBeNull();
     });
 
     it("drops the tooltips again when expanded", () => {

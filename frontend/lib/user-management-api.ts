@@ -10,6 +10,7 @@
  * route and `ApiError`, so error handling (409 toasts, retries) is shared.
  */
 import { ApiError } from "./api";
+import { isRole, isUserStatus, type Permission, type Role, type UserStatus } from "./permissions";
 
 const API_BASE_URL = "/api/proxy";
 const CLIENT_ID_STORAGE_KEY = "deployiq.client_id";
@@ -20,66 +21,15 @@ const CSRF_HEADER = { "X-Requested-With": "askdiq" } as const;
 // Enums (mirror app/auth/permissions.py)
 // ---------------------------------------------------------------------------
 
-export const ROLES = ["superadmin", "admin", "operator"] as const;
-export type Role = (typeof ROLES)[number];
-
-export const USER_STATUSES = ["pending", "active", "rejected", "suspended"] as const;
-export type UserStatus = (typeof USER_STATUSES)[number];
+export { ROLES, USER_STATUSES, PERMISSIONS, ROLE_PERMISSIONS, isRole, isUserStatus } from "./permissions";
+export type { Role, UserStatus, Permission } from "./permissions";
 
 export const ACCESS_REQUEST_STATUSES = ["pending", "approved", "rejected"] as const;
 export type AccessRequestStatus = (typeof ACCESS_REQUEST_STATUSES)[number];
 export type AccessRequestView = AccessRequestStatus | "all";
 export const ACCESS_REQUEST_VIEWS: readonly AccessRequestView[] = ["pending", "approved", "rejected", "all"];
 
-export const PERMISSIONS = [
-  "dashboard:read",
-  "documents:write",
-  "feedback:triage",
-  "feedback:export",
-  "eval:run",
-  "testip:write",
-  "usage:export",
-  "users:manage",
-  "audit:auth:read",
-  "branding:write",
-  "taxonomy:write",
-] as const;
-export type Permission = (typeof PERMISSIONS)[number];
-
-const OPERATOR_PERMISSIONS: readonly Permission[] = ["dashboard:read"];
-const ADMIN_PERMISSIONS: readonly Permission[] = [
-  ...OPERATOR_PERMISSIONS,
-  "documents:write",
-  "feedback:triage",
-  "feedback:export",
-  "eval:run",
-  "testip:write",
-  "usage:export",
-];
-const SUPERADMIN_PERMISSIONS: readonly Permission[] = [
-  ...ADMIN_PERMISSIONS,
-  "users:manage",
-  "audit:auth:read",
-  "branding:write",
-  "taxonomy:write",
-];
-
-/**
- * Mirror of `ROLE_PERMISSIONS` (the backend has no list endpoint; `/auth/me`
- * returns only the caller's set). The Roles tab cross-checks the caller's row
- * against `/auth/me` and flags any drift.
- */
-export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
-  superadmin: SUPERADMIN_PERMISSIONS,
-  admin: ADMIN_PERMISSIONS,
-  operator: OPERATOR_PERMISSIONS,
-};
-
-export const ROLE_LABEL: Readonly<Record<Role, string>> = {
-  superadmin: "Superadmin",
-  admin: "Admin",
-  operator: "Operator",
-};
+export { ROLE_LABELS as ROLE_LABEL } from "./permissions";
 
 export const STATUS_LABEL: Readonly<Record<UserStatus, string>> = {
   pending: "Pending",
@@ -100,6 +50,7 @@ export const PERMISSION_LABEL: Readonly<Record<Permission, string>> = {
   "audit:auth:read": "Read the auth audit trail",
   "branding:write": "Edit branding",
   "taxonomy:write": "Edit the taxonomy",
+  "models:write": "Change models and pricing",
 };
 
 /** `app/auth/audit.py` `AuthEvent`. */
@@ -132,12 +83,6 @@ export const AUTH_EVENT_LABEL: Readonly<Record<AuthEvent, string>> = {
   user_invited: "Invited",
 };
 
-export function isRole(value: unknown): value is Role {
-  return typeof value === "string" && (ROLES as readonly string[]).includes(value);
-}
-export function isUserStatus(value: unknown): value is UserStatus {
-  return typeof value === "string" && (USER_STATUSES as readonly string[]).includes(value);
-}
 export function isAuthEvent(value: unknown): value is AuthEvent {
   return typeof value === "string" && (AUTH_EVENTS as readonly string[]).includes(value);
 }

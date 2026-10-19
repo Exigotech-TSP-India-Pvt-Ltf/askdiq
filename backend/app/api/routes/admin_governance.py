@@ -21,7 +21,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes.admin_usage import _sanitize_csv_cell
 from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
@@ -32,6 +31,7 @@ from app.core.database import get_db, release_connection
 from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.middleware import METRICS
+from app.core.serialization import sanitize_csv_cell
 from app.core.sse import event_stream
 from app.dashboard import active_visitors
 from app.governance import logs, timeseries, traces
@@ -460,7 +460,7 @@ _CSV_COLUMNS = (
 
 def _csv_line(values: list[Any]) -> str:
     out = io.StringIO()
-    csv.writer(out).writerow([_sanitize_csv_cell(v) for v in values])
+    csv.writer(out).writerow([sanitize_csv_cell(v) for v in values])
     return out.getvalue()
 
 

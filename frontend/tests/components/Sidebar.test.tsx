@@ -40,13 +40,13 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
 
     const expectedLabels = [
       "Dashboard",
-      "Chat",
-      "Documents",
+      "AskDIQ",
+      "Knowledge",
       "Visitors",
       "Usage & Cost",
       "Conversation Logs",
       "Feedback",
-      "Evaluation (Live)",
+      "Evaluation",
       "Governance",
       "Analytics",
     ];
@@ -60,10 +60,10 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
     }
   });
 
-  it("no longer lists the retired Evaluation page or the old Users label", () => {
+  it("links Evaluation to the live page (not the retired one) and drops the old Users label", () => {
     render(<Sidebar />);
 
-    expect(screen.queryByText("Evaluation")).not.toBeInTheDocument();
+    expect(screen.getByText("Evaluation").closest("a")).toHaveAttribute("href", "/admin/evaluation-live");
     expect(screen.queryByText("Users")).not.toBeInTheDocument();
     expect(document.querySelector('a[href="/admin/evaluation"]')).toBeNull();
     expect(screen.getByText("Visitors").closest("a")).toHaveAttribute("href", "/admin/users");
@@ -80,13 +80,13 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
     expect(nav.querySelector("[aria-expanded]")).toBeNull();
     expect(within(nav).getAllByRole("link").map((a) => a.textContent?.trim())).toEqual([
       "Dashboard",
-      "Chat",
-      "Documents",
+      "AskDIQ",
+      "Knowledge",
       "Visitors",
       "Usage & Cost",
       "Conversation Logs",
       "Feedback",
-      "Evaluation (Live)",
+      "Evaluation",
       "Governance",
       "Analytics",
       "User Management",
@@ -139,7 +139,7 @@ describe("Sidebar nav registry, icons and active indicator (PR-17)", () => {
     const um = NAV_ITEMS.find((item) => item.label === "User Management");
     expect(um?.badgeKey).toBe("pendingAccess");
     expect(um?.permission).toBe("users:manage");
-    expect(NAV_ITEMS.find((item) => item.label === "Settings")?.anyPermission).toEqual(["branding:write", "taxonomy:write"]);
+    expect(NAV_ITEMS.find((item) => item.label === "Settings")?.anyPermission).toEqual(["branding:write", "taxonomy:write", "models:write"]);
     expect(screen.getByRole("link", { name: /user management/i })).toHaveAttribute("href", "/admin/user-management");
     expect(screen.getByRole("link", { name: /^analytics$/i })).toHaveAttribute("href", "/admin/analytics");
     expect(screen.getByRole("link", { name: /^settings$/i })).toHaveAttribute("href", "/admin/settings");
@@ -209,7 +209,7 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
     const drawer = await screen.findByRole("dialog", { name: "Navigation" });
-    fireEvent.click(within(drawer).getByRole("link", { name: /documents/i }));
+    fireEvent.click(within(drawer).getByRole("link", { name: /knowledge/i }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).not.toBeInTheDocument());
   });
 
@@ -222,7 +222,7 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
 describe("Role-aware sidebar (PR-18, F1.3)", () => {
   beforeEach(() => window.localStorage.clear());
 
-  const DASHBOARD_LINKS = ["Dashboard", "Documents", "Visitors", "Usage & Cost", "Conversation Logs", "Feedback", "Governance", "Analytics"];
+  const DASHBOARD_LINKS = ["Dashboard", "Knowledge", "Visitors", "Usage & Cost", "Conversation Logs", "Feedback", "Governance", "Analytics"];
 
   const linkNames = () => screen.getAllByRole("link").map((a) => a.textContent?.trim());
 
@@ -245,7 +245,7 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     render(<Sidebar />);
-    expect(linkNames()).toEqual(["Chat"]);
+    expect(linkNames()).toEqual(["AskDIQ"]);
     // No access-request count is requested without users:manage.
     expect(fetchSpy).not.toHaveBeenCalled();
   });

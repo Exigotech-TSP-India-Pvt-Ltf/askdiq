@@ -56,6 +56,7 @@ from app.guardrails.conversational import (
     THANKS_RESPONSE,
     detect_conversational_intent,
 )
+from app.model_settings.service import current_model_settings
 from app.models.db_models import (
     AuditLog,
     ChatMessageRecord,
@@ -710,7 +711,7 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
     (guardrail-blocked/fallback/conversational replies).
     """
 
-    get_settings()
+    rates = current_model_settings()
 
     rows = (
         await db.execute(
@@ -850,7 +851,7 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
                 cost = 0.0
             else:
                 q_embed_tok = p["embedding_tokens"] or _est_tokens(p["query"])
-                cost = (q_embed_tok * 0.02) / 1e6
+                cost = (q_embed_tok * rates.price_embed_per_million) / 1e6
             cost_query_embed = cost
             cost_guardrail_embed = 0.0
             cost_prompt = 0.0
@@ -871,13 +872,21 @@ async def _query_usage_rows(db: AsyncSession) -> list[dict]:
             g_embed_tok = p["guardrail_tokens"] or 0
             is_actual = True
             costs_map = details.get("costs_usd", {})
-            cost_query_embed = costs_map.get("query_embed", (q_embed_tok * 0.02) / 1e6)
-            cost_guardrail_embed = costs_map.get(
-                "guardrail_embed", (g_embed_tok * 0.02) / 1e6
+            cost_query_embed = costs_map.get(
+                "query_embed", (q_embed_tok * rates.price_embed_per_million) / 1e6
             )
-            cost_prompt = costs_map.get("prompt", (in_tok * 0.25) / 1e6)
-            cost_reasoning = costs_map.get("reasoning", (reasoning_tok * 2.0) / 1e6)
-            cost_visible = costs_map.get("visible", (visible_tok * 2.0) / 1e6)
+            cost_guardrail_embed = costs_map.get(
+                "guardrail_embed", (g_embed_tok * rates.price_embed_per_million) / 1e6
+            )
+            cost_prompt = costs_map.get(
+                "prompt", (in_tok * rates.price_prompt_per_million) / 1e6
+            )
+            cost_reasoning = costs_map.get(
+                "reasoning", (reasoning_tok * rates.price_output_per_million) / 1e6
+            )
+            cost_visible = costs_map.get(
+                "visible", (visible_tok * rates.price_output_per_million) / 1e6
+            )
             outcome = outcome_hint or ("answered" if p["grounded"] else "fallback")
         elif p["prompt_tokens"] is not None and p["completion_tokens"] is not None:
             in_tok = p["prompt_tokens"]
@@ -965,7 +974,7 @@ async def usage_llm(
         requests = lat["requests"]
         return {
             "provider": "Azure OpenAI",
-            "model": settings.azure_deployment_name,
+            "model": current_model_settings().llm_deployment,
             "requests": requests,
             "successful": max(requests - failed, 0),
             "failed": failed,
@@ -1027,14 +1036,14 @@ async def usage_embedding(
     tokens = int((chunk_chars or 0) // 4) + int(q_tokens)
     return {
         "provider": "Azure OpenAI",
-        "model": settings.embedding_model,
+        "model": current_model_settings().embedding_model,
         "dimensions": settings.embedding_dim,
         "documents": docs or 0,
         "chunks": chunks or 0,
         "requests": int(q_count) + (chunks or 0),
         "input_tokens": tokens,
         "average_latency_ms": _r(lat["embedding_ms"]),
-        "cost": f"${tokens / 1e6 * 0.02:.4f}",
+        "cost": f"${tokens / 1e6 * current_model_settings().price_embed_per_million:.4f}",
     }
 
 
@@ -1085,10 +1094,13 @@ async def usage_metadata(
     settings = get_settings()
 
     return {
-        "llm": {"provider": "Azure OpenAI", "model": settings.azure_deployment_name},
+        "llm": {
+            "provider": "Azure OpenAI",
+            "model": current_model_settings().llm_deployment,
+        },
         "embedding": {
             "provider": "Azure OpenAI",
-            "model": settings.embedding_model,
+            "model": current_model_settings().embedding_model,
             "dimensions": settings.embedding_dim,
         },
         "reranker": {
