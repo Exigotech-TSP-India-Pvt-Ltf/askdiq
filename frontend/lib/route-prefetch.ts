@@ -27,7 +27,7 @@ import { INSIGHTS_CACHE_PREFIX, insightsApi, insightsQuery, type InsightsEndpoin
 import { prefetch, runWhenIdle } from "@/lib/query-cache";
 import { DEFAULT_PRESET, presetRange, rangeUtcDays } from "@/lib/range-context";
 import type { Audience } from "@/lib/types";
-import { fetchUsageList, usageKeys, usageListKey } from "@/lib/use-usage-data";
+import { fetchUsageList, usageKeys, usageListKey, type UsageListKind } from "@/lib/use-usage-data";
 import { AUDIT_LIMIT_MAX, umKeys, userManagementApi } from "@/lib/user-management-api";
 
 /** Every card of the Analytics Overview tab (same keys as use-insights). */
@@ -46,6 +46,12 @@ const TOP_CITED_LIMIT = 10;
 const VISITORS_PAGE_SIZE = 10;
 const UM_STATS_DAYS = 30;
 const LIVE_FEED_LIMIT = 8;
+const USAGE_PAGE_SIZE = 10;
+const USAGE_TAB_DEFAULTS: ReadonlyArray<readonly [UsageListKind, string]> = [
+  ["users", "cost_desc"],
+  ["sessions", "cost_desc"],
+  ["queries", "created_at_desc"],
+];
 /** Spacing between destinations during the idle preload (keeps it gentle). */
 export const PRELOAD_STEP_MS = 150;
 
@@ -130,6 +136,11 @@ const PREFETCHERS: Record<string, Prefetcher> = {
       limit: LIVE_FEED_LIMIT,
     };
     warm(usageListKey("queries", feed), (signal) => fetchUsageList("queries", token, feed, signal));
+    // First page of each tab (All Users / All Sessions / All Queries defaults).
+    for (const [kind, sort] of USAGE_TAB_DEFAULTS) {
+      const page = { audience, from_date: days.from, to_date: days.to, sort, limit: USAGE_PAGE_SIZE, offset: 0 };
+      warm(usageListKey(kind, page), (signal) => fetchUsageList(kind, token, page, signal));
+    }
   },
   "/admin/feedback": (token, audience) => {
     const days = defaultDays();
