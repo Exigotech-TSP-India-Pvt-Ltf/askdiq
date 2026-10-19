@@ -9,6 +9,8 @@ import { CommandCenter } from "@/components/shell/CommandCenter";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { MobileNavProvider } from "@/lib/mobile-nav-context";
 import { queryCache } from "@/lib/query-cache";
+import { BrandProvider } from "@/lib/brand-context";
+import { DEFAULT_BRAND } from "@/lib/brand";
 import type { Role } from "@/lib/permissions";
 import { authValue, makeMe } from "../helpers/auth";
 
@@ -186,10 +188,10 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
     expect(within(drawer).getByRole("link", { name: /feedback/i })).toHaveAttribute("href", "/admin/feedback");
     await waitFor(() => expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus());
 
-    // Shift+Tab from the first control wraps to the last link inside the drawer.
+    // Shift+Tab from the first control wraps to the last control inside the drawer:
+    // Sign out, at the end of the account corner.
     await user.tab({ shift: true });
-    // Admin's last item (no users:manage / branding:write) is Analytics.
-    expect(within(drawer).getByRole("link", { name: /^analytics$/i })).toHaveFocus();
+    expect(within(drawer).getByRole("button", { name: "Sign out" })).toHaveFocus();
     await user.tab();
     expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus();
 
@@ -211,6 +213,39 @@ describe("Mobile off-canvas sidebar (F0.6.6)", () => {
     const drawer = await screen.findByRole("dialog", { name: "Navigation" });
     fireEvent.click(within(drawer).getByRole("link", { name: /knowledge/i }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).not.toBeInTheDocument());
+  });
+
+  it("the top bar holds only the hamburger and brand", () => {
+    render(
+      <MobileNavProvider>
+        <MobileTopBar />
+      </MobileNavProvider>,
+    );
+    const bar = screen.getByRole("banner");
+    expect(within(bar).getAllByRole("button")).toHaveLength(1);
+    expect(within(bar).getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
+  });
+
+  it("the drawer ends with the account corner: identity, bell, theme and sign out", async () => {
+    signInAs("superadmin");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
+    render(
+      <MotionProvider>
+        <MobileNavProvider>
+          <MobileTopBar />
+          <Sidebar />
+        </MobileNavProvider>
+      </MotionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+    expect(within(drawer).getByTestId("role-badge")).toHaveTextContent("Superadmin");
+    expect(within(drawer).getByTestId("account-email")).toHaveTextContent("jane@contoso.example");
+    const actions = within(drawer).getByRole("group", { name: "Account actions" });
+    expect(within(actions).getByRole("button", { name: "Notifications" })).toBeInTheDocument();
+    expect(within(actions).getByRole("button", { name: /theme:/i })).toBeInTheDocument();
+    fireEvent.click(within(actions).getByRole("button", { name: "Sign out" }));
+    expect(auth.logout).toHaveBeenCalled();
   });
 
   it("the desktop aside is hidden below md", () => {
@@ -291,17 +326,65 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
     expect(auth.logout).toHaveBeenCalled();
   });
 
-  it("puts the role badge, theme toggle and sign out on their own row, not beside the identity", () => {
+  it("puts the role badge on the name line and the actions on their own row", () => {
     signInAs("superadmin");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
     render(<Sidebar />);
-    const identity = screen.getByText("Jane Doe").parentElement!;
-    const signOut = screen.getByRole("button", { name: "Sign out" });
-    const actions = signOut.parentElement!.parentElement!;
-    expect(identity).not.toContainElement(signOut);
-    expect(identity).not.toContainElement(screen.getByTestId("role-badge"));
-    expect(actions).toContainElement(screen.getByTestId("role-badge"));
-    expect(actions).toContainElement(screen.getByRole("button", { name: /theme:/i }));
+    const name = screen.getByText("Jane Doe");
+    const nameLine = name.parentElement!;
+    // Name truncates first; the badge never shrinks.
+    expect(name).toHaveClass("truncate", "min-w-0");
+    expect(nameLine).toContainElement(screen.getByTestId("role-badge"));
+    expect(nameLine).not.toContainElement(screen.getByTestId("account-email"));
+    const actions = screen.getByRole("group", { name: "Account actions" });
+    expect(actions).not.toContainElement(screen.getByTestId("role-badge"));
+    for (const control of [
+      screen.getByRole("button", { name: "Notifications" }),
+      screen.getByRole("button", { name: /theme:/i }),
+      screen.getByRole("button", { name: "Sign out" }),
+    ]) {
+      expect(actions).toContainElement(control);
+      expect(control).toHaveClass("h-8", "w-8", "rounded-lg", "border");
+      expect(control).toHaveAttribute("title");
+    }
+  });
+
+  it("the bell keeps its unread badge and opens its panel upward from the account row", async () => {
+    signInAs("superadmin");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ items: [], total: 2, limit: 1, offset: 0 }), { status: 200 })),
+    );
+    render(
+      <MotionProvider>
+        <Sidebar />
+      </MotionProvider>,
+    );
+    const bell = await screen.findByRole("button", { name: "Notifications (1 new)" });
+    expect(bell).toHaveTextContent("1");
+    fireEvent.click(bell);
+    expect(bell).toHaveAttribute("aria-expanded", "true");
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    expect(panel.className).toContain("bottom-full");
+    expect(within(panel).getByRole("link", { name: /2 access requests waiting/i })).toHaveAttribute(
+      "href",
+      "/admin/user-management?tab=requests",
+    );
+  });
+
+  it("offers Help when the brand sets a help URL, and hides it otherwise", () => {
+    const { unmount } = render(
+      <BrandProvider brand={{ ...DEFAULT_BRAND, links: { ...DEFAULT_BRAND.links, help: "https://help.example.com/askdiq" } }}>
+        <Sidebar />
+      </BrandProvider>,
+    );
+    const help = screen.getByRole("link", { name: "Help" });
+    expect(help).toHaveAttribute("href", "https://help.example.com/askdiq");
+    expect(help).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    expect(help).toHaveAttribute("title", "Help (opens in a new tab)");
+    unmount();
+    render(<Sidebar />);
+    expect(screen.queryByRole("link", { name: "Help" })).not.toBeInTheDocument();
   });
 
   it("collapsed account shows an avatar with the name, email and role as its label", () => {
@@ -312,8 +395,28 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
     const avatar = screen.getByRole("img", { name: "Jane Doe, jane@contoso.example, Superadmin" });
     expect(avatar).toHaveTextContent("JD");
     expect(screen.queryByTestId("account-email")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /theme:/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    // Every action stays reachable, stacked under the avatar, each with a tooltip.
+    const actions = screen.getByRole("group", { name: "Account actions" });
+    expect(actions).toHaveClass("flex-col");
+    for (const control of [
+      screen.getByRole("button", { name: "Notifications" }),
+      screen.getByRole("button", { name: /theme:/i }),
+      screen.getByRole("button", { name: "Sign out" }),
+    ]) {
+      expect(actions).toContainElement(control);
+      expect(control).toHaveAttribute("title");
+    }
+  });
+
+  it("collapsed: the bell panel opens to the side of the rail", async () => {
+    render(
+      <MotionProvider>
+        <Sidebar />
+      </MotionProvider>,
+    );
+    fireEvent.click(screen.getByTitle("Collapse sidebar"));
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    expect((await screen.findByRole("dialog", { name: "Notifications" })).className).toContain("left-full");
   });
 });
 

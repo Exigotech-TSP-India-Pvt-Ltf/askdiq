@@ -1,13 +1,18 @@
 "use client";
 
 import React, { useState } from "react";
-import { Loader2, LogOut } from "lucide-react";
+import { HelpCircle, Loader2, LogOut } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { RoleBadge } from "@/components/shell/RoleBadge";
+import { NotificationBell } from "@/components/shell/NotificationBell";
+import { accountActionButton, type AccountPopoverPlacement } from "@/components/shell/account-actions";
+import { TourLauncher } from "@/components/tour/TourLauncher";
 import { focusRing } from "@/components/ui/styles";
 import { useAuth } from "@/lib/auth-context";
+import { useBrand } from "@/lib/brand-context";
 import { initials } from "@/lib/format";
 import { ROLE_LABELS } from "@/lib/permissions";
+import { useShellNotifications } from "@/lib/use-shell-notifications";
 
 const avatarClass = "flex shrink-0 items-center justify-center rounded-full bg-brand-600 font-semibold text-white shadow-sm ring-2 ring-surface-card";
 
@@ -20,17 +25,29 @@ function EmailLine({ email }: { email: string }) {
   );
 }
 
+interface SidebarAccountProps {
+  collapsed: boolean;
+  /** `drawer`: the mobile navigation drawer (its tour launcher does not hide the floating one). */
+  surface?: "sidebar" | "drawer";
+  /** Runs before an action takes the user to the page (the mobile drawer closes). */
+  onBeforeAction?: () => void;
+}
+
 /**
- * Sidebar footer: who is signed in (name, email, role) with the theme toggle
- * and sign out on their own row, so the identity text is never squeezed.
- * Collapsed, it stacks a tooltip avatar above the two icon actions.
+ * Sidebar footer: who is signed in (name with the role badge, email beneath)
+ * and the account actions (notifications, tours, help, theme, sign out) as
+ * equal icon buttons. Collapsed, it stacks a tooltip avatar above the actions,
+ * whose popovers then open to the side.
  */
-export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
+export function SidebarAccount({ collapsed, surface = "sidebar", onBeforeAction }: SidebarAccountProps) {
   const { user, logout, role } = useAuth();
+  const notifications = useShellNotifications();
+  const helpUrl = useBrand().links.help;
   const [signingOut, setSigningOut] = useState(false);
   const name = user?.full_name || "Signed out";
   const email = user?.email ?? "";
   const roleLabel = role ? ROLE_LABELS[role] : null;
+  const placement: AccountPopoverPlacement = collapsed ? "side" : "above";
 
   function signOut() {
     if (signingOut) return;
@@ -39,29 +56,40 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
     void Promise.resolve(logout()).finally(() => setSigningOut(false));
   }
 
-  const signOutButton = (
-    <button
-      type="button"
-      onClick={signOut}
-      disabled={signingOut}
-      aria-busy={signingOut}
-      title={signingOut ? "Signing out…" : "Sign out"}
-      aria-label="Sign out"
-      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-ink/10 bg-surface-card text-fg-muted shadow-sm transition-colors hover:border-status-danger/40 hover:bg-status-danger-bg hover:text-status-danger-fg disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:bg-dark-surface ${focusRing}`}
-    >
-      {signingOut ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogOut className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}
-    </button>
+  const actions = (
+    <>
+      <NotificationBell items={notifications} placement={placement} />
+      <TourLauncher variant={surface} placement={placement} onBeforeStart={onBeforeAction} />
+      {helpUrl ? (
+        <a href={helpUrl} target="_blank" rel="noopener noreferrer" title="Help (opens in a new tab)" aria-label="Help" className={accountActionButton}>
+          <HelpCircle className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+        </a>
+      ) : null}
+      <ThemeToggle size="sm" />
+      <button
+        type="button"
+        onClick={signOut}
+        disabled={signingOut}
+        aria-busy={signingOut}
+        title={signingOut ? "Signing out…" : "Sign out"}
+        aria-label="Sign out"
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-ink/10 bg-surface-card text-fg-muted shadow-sm transition-colors hover:border-status-danger/40 hover:bg-status-danger-bg hover:text-status-danger-fg disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:bg-dark-surface ${focusRing}`}
+      >
+        {signingOut ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogOut className="h-4 w-4" strokeWidth={2} aria-hidden="true" />}
+      </button>
+    </>
   );
 
   if (collapsed) {
     const summary = [name, email, roleLabel].filter(Boolean).join("\n");
     return (
-      <div data-tour="shell-account" className="flex flex-col items-center gap-2 border-t border-line p-3">
+      <div data-tour="shell-account" className="relative flex flex-col items-center gap-2 border-t border-line p-3">
         <div role="img" title={summary} aria-label={summary.replace(/\n/g, ", ")} className={`${avatarClass} h-9 w-9 text-xs`}>
           {user ? initials(user.full_name) : "—"}
         </div>
-        <ThemeToggle size="sm" />
-        {signOutButton}
+        <div role="group" aria-label="Account actions" className="flex flex-col items-center gap-1.5">
+          {actions}
+        </div>
       </div>
     );
   }
@@ -74,18 +102,25 @@ export function SidebarAccount({ collapsed }: { collapsed: boolean }) {
             {user ? initials(user.full_name) : "—"}
           </div>
           <div className="min-w-0 flex-1">
-            <p title={name} className="truncate text-sm font-semibold leading-5 text-fg">
-              {name}
-            </p>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p title={name} className="min-w-0 truncate text-sm font-semibold leading-5 text-fg">
+                {name}
+              </p>
+              {role ? (
+                <span className="shrink-0">
+                  <RoleBadge role={role} />
+                </span>
+              ) : null}
+            </div>
             {email ? <EmailLine email={email} /> : null}
           </div>
         </div>
-        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line/70 pt-2.5">
-          {role ? <RoleBadge role={role} /> : <span />}
-          <div className="flex items-center gap-1.5">
-            <ThemeToggle size="sm" />
-            {signOutButton}
-          </div>
+        <div
+          role="group"
+          aria-label="Account actions"
+          className="relative mt-2.5 flex items-center justify-between gap-1.5 border-t border-line/70 pt-2.5"
+        >
+          {actions}
         </div>
       </div>
     </div>
