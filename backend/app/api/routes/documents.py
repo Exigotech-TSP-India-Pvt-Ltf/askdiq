@@ -22,7 +22,12 @@ from app.core.database import get_db
 from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
-from app.dashboard.snapshots import Gather, get_snapshot, register
+from app.dashboard.snapshots import (
+    Gather,
+    get_snapshot,
+    register,
+    register_maintenance,
+)
 from app.documents import citations, inventory
 from app.governance.audit import record_audit_event
 from app.models.db_models import Chunk, Document
@@ -149,6 +154,8 @@ def _citation_defaults() -> list[dict]:
 
 
 register(CITATION_STATS_KIND, _citation_stats_snapshot, _citation_defaults)
+# Expand new citation sources every refresher cycle (any range stays fast).
+register_maintenance("citation_sources", citations.sync_citation_sources)
 
 
 @router.get(

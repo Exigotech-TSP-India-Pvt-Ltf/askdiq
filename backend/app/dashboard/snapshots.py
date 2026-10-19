@@ -126,6 +126,17 @@ def register(
     _KINDS[kind] = Kind(builder, defaults if callable(defaults) else tuple(defaults))
 
 
+# Incremental upkeep run at the start of every refresher cycle, under its
+# lock (e.g. expanding new citation sources): ``fn(session)``.
+_MAINTENANCE: dict[str, Callable[[AsyncSession], Awaitable[Any]]] = {}
+
+
+def register_maintenance(
+    name: str, fn: Callable[[AsyncSession], Awaitable[Any]]
+) -> None:
+    _MAINTENANCE[name] = fn
+
+
 def registered_kinds() -> dict[str, Kind]:
     return dict(_KINDS)
 
@@ -497,8 +508,16 @@ class SnapshotRefresher:
                     text("SELECT pg_advisory_unlock(:key)"), {"key": REFRESH_LOCK_KEY}
                 )
 
+    async def _maintain(self) -> None:
+        for name, fn in _MAINTENANCE.items():
+            try:
+                await self.gather(fn)
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.warning("snapshot_maintenance_failed", task=name, exc_info=True)
+
     async def _cycle(self) -> int:
         cfg = get_settings()
+        await self._maintain()
         built = await self._backfill_defaults()
         (stamp,) = await self.gather(lambda s: s.scalar(_DATA_STAMP_SQL))
         changed = stamp != self._last_stamp

@@ -10,6 +10,15 @@ import { queryCache, runWhenIdle } from "@/lib/query-cache";
 import { restoreQueryCache, startQueryPersistence } from "@/lib/query-persist";
 import { preloadConsole, prefetchShellData } from "@/lib/route-prefetch";
 
+/**
+ * Code split out of the pages (heavy charts, drawers): loaded once idle, so
+ * their first render shows content, not a skeleton.
+ */
+function preloadLazyModules(): void {
+  void import("@/components/admin/evaluation/QualityCharts").catch(() => undefined);
+  void import("@/components/admin/usage/QueryInspectorDrawer").catch(() => undefined);
+}
+
 /** Delay after sign-in / an audience switch before the background preload. */
 export const PRELOAD_DELAY_MS = 1_200;
 
@@ -44,6 +53,7 @@ export function ConsoleRuntime() {
     const timer = setTimeout(() => {
       cancelPreload = runWhenIdle(() => {
         prefetchShellData(token);
+        preloadLazyModules();
         const hrefs = visibleNavItems(permissions).map((item) => item.href);
         cancelPreload = preloadConsole(hrefs, token, audience);
       });

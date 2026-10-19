@@ -72,27 +72,47 @@ export function restoreQueryCache(owner: string, cache: QueryCache = queryCache,
   return restored;
 }
 
+/**
+ * JSON of each data object already serialised (data objects are replaced, not
+ * mutated, on refetch): a write only stringifies what changed, so persisting
+ * never becomes a long main-thread task.
+ */
+const encoded = new WeakMap<object, string>();
+
+function encodeData(data: unknown): string | null {
+  const memo = typeof data === "object" && data !== null;
+  if (memo) {
+    const hit = encoded.get(data as object);
+    if (hit !== undefined) return hit;
+  }
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(data);
+  } catch {
+    return null;
+  }
+  if (json === undefined) return null;
+  if (memo) encoded.set(data as object, json);
+  return json;
+}
+
 /** Serialises the newest entries within the size bounds. */
 export function serializeQueryCache(owner: string, cache: QueryCache = queryCache): string {
   const rows = cache
     .persistable()
     .filter(([key]) => persistableKey(key))
     .sort((a, b) => b[2] - a[2]);
-  const kept: Array<[string, unknown, number]> = [];
+  const parts: string[] = [];
   let total = 0;
-  for (const row of rows) {
-    let size: number;
-    try {
-      size = JSON.stringify(row).length;
-    } catch {
-      continue;
-    }
-    if (size > MAX_ENTRY_CHARS || total + size > MAX_TOTAL_CHARS) continue;
-    kept.push(row);
-    total += size;
+  for (const [key, data, updatedAt] of rows) {
+    const json = encodeData(data);
+    if (json === null || json.length > MAX_ENTRY_CHARS) continue;
+    const part = `[${JSON.stringify(key)},${json},${updatedAt}]`;
+    if (total + part.length > MAX_TOTAL_CHARS) continue;
+    parts.push(part);
+    total += part.length;
   }
-  const payload: Persisted = { v: 1, owner, entries: kept };
-  return JSON.stringify(payload);
+  return `{"v":1,"owner":${JSON.stringify(owner)},"entries":[${parts.join(",")}]}`;
 }
 
 function write(owner: string, cache: QueryCache): void {

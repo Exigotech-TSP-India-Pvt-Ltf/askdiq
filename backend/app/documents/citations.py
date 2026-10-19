@@ -10,8 +10,11 @@ Sources are stored in two places, both read here:
 
 A source resolves to a document through its chunk (when the chunk still
 exists), its ``document_id``, or its source name. Each turn counts once per
-document and once per chunk. Computed live (bounded by date range); there is
-no rollup table.
+document and once per chunk. The JSON is expanded once into
+``citation_sources`` (``sync_citation_sources``, run by the jobs worker); a
+read combines those rows with a live expansion of the rows newer than the
+sync point, so any date range is an indexed aggregation with the same result
+as expanding everything.
 """
 
 from __future__ import annotations
@@ -23,13 +26,14 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import TextClause, or_, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.documents.inventory import as_utc
 from app.governance.pii import redact_pii
 from app.governance.usage_queries import escape_ilike_pattern
-from app.models.db_models import Chunk, Document
+from app.models.db_models import Chunk, CitationSyncState, Document
 from app.schemas.document import (
     CitationCoverage,
     CitedDocument,
@@ -46,18 +50,8 @@ HIT_WEEKS = 8
 DAYS_PER_WEEK = 7
 SECONDS_PER_DAY = 86_400
 
-# Every cited source in [:start, :end) as (request_id, cited_at, chunk_ref,
-# doc_ref, name_ref), then resolved to (chunk_id, chunk_index, document_id).
-# Static SQL: every value is a bound parameter.
-_RAW_CTE = """
-WITH audit_src AS (
-    SELECT a.request_id,
-           a.created_at AS cited_at,
-           COALESCE(e.value ->> 'chunk_id', e.value #>> '{}') AS chunk_ref,
-           e.value ->> 'document_id' AS doc_ref,
-           CAST(NULL AS text) AS name_ref
-    FROM audit_log a
-    CROSS JOIN LATERAL json_array_elements(
+# The JSON arrays holding a row's cited sources (one element per source).
+_AUDIT_ELEMENTS = """json_array_elements(
         CASE
             WHEN json_typeof(a.detail -> 'sources') = 'array'
                  THEN CASE
@@ -71,26 +65,64 @@ WITH audit_src AS (
                  THEN a.detail -> 'source_ids'
             ELSE CAST('[]' AS json)
         END
-    ) AS e(value)
-    WHERE a.action = 'query'
-      AND a.created_at >= :start AND a.created_at < :end
-),
-eval_src AS (
-    SELECT r.request_id,
-           r.created_at AS cited_at,
-           e.value ->> 'chunk_id' AS chunk_ref,
-           CAST(NULL AS text) AS doc_ref,
-           COALESCE(e.value ->> 'source_name', e.value ->> 'doc') AS name_ref
-    FROM evaluation_records r
-    CROSS JOIN LATERAL json_array_elements(
+    )"""
+_EVAL_ELEMENTS = """json_array_elements(
         CASE
             WHEN json_typeof(r.retrieved_chunks) = 'array' THEN r.retrieved_chunks
             ELSE CAST('[]' AS json)
         END
-    ) AS e(value)
-    WHERE r.created_at >= :start AND r.created_at < :end
+    )"""
+_AUDIT_REFS = """COALESCE(e.value ->> 'chunk_id', e.value #>> '{}') AS chunk_ref,
+           e.value ->> 'document_id' AS doc_ref,
+           CAST(NULL AS text) AS name_ref"""
+_EVAL_REFS = """e.value ->> 'chunk_id' AS chunk_ref,
+           CAST(NULL AS text) AS doc_ref,
+           COALESCE(e.value ->> 'source_name', e.value ->> 'doc') AS name_ref"""
+
+# Every cited source in [:start, :end) as (request_id, cited_at, chunk_ref,
+# doc_ref, name_ref), then resolved to (chunk_id, chunk_index, document_id).
+# Sources older than each table's sync cut (:audit_cut / :eval_cut) come from
+# ``citation_sources`` (expanded once, indexed on cited_at); newer ones are
+# expanded live from the JSON, so the result is the same as expanding all.
+# Static SQL: every value is a bound parameter.
+# Concatenates static SQL fragments only (no user input).
+_RAW_CTE = (  # nosec B608
+    """
+WITH audit_src AS (
+    SELECT a.request_id,
+           a.created_at AS cited_at,
+           """  # noqa: S608 - static fragments only
+    + _AUDIT_REFS
+    + """
+    FROM audit_log a
+    CROSS JOIN LATERAL """
+    + _AUDIT_ELEMENTS
+    + """ AS e(value)
+    WHERE a.action = 'query'
+      AND a.created_at >= GREATEST(CAST(:start AS timestamp), CAST(:audit_cut AS timestamp)) AND a.created_at < :end
+),
+eval_src AS (
+    SELECT r.request_id,
+           r.created_at AS cited_at,
+           """
+    + _EVAL_REFS
+    + """
+    FROM evaluation_records r
+    CROSS JOIN LATERAL """
+    + _EVAL_ELEMENTS
+    + """ AS e(value)
+    WHERE r.created_at >= GREATEST(CAST(:start AS timestamp), CAST(:eval_cut AS timestamp)) AND r.created_at < :end
+),
+stored_src AS (
+    SELECT s.request_id, s.cited_at, s.chunk_ref, s.doc_ref, s.name_ref
+    FROM citation_sources s
+    WHERE s.cited_at >= :start AND s.cited_at < :end
+      AND ((s.audit_id IS NOT NULL AND s.cited_at < :audit_cut)
+        OR (s.eval_id IS NOT NULL AND s.cited_at < :eval_cut))
 ),
 raw AS (
+    SELECT * FROM stored_src
+    UNION ALL
     SELECT * FROM audit_src
     UNION ALL
     SELECT * FROM eval_src
@@ -109,10 +141,116 @@ resolved AS (
           AND lower(dn.source_name) = lower(raw.name_ref)
 )
 """
+)
 
 
 def _with_sources(body: str) -> TextClause:
     return text(_RAW_CTE + body)
+
+
+# --- citation_sources: the expanded sources, kept in step incrementally ----------
+
+# Rows this close to the sync point are always read live: a row committed late
+# (its created_at set before the sync ran) is never missed.
+SYNC_OVERLAP = timedelta(minutes=5)
+# Never synced: everything is expanded live.
+NEVER_SYNCED = datetime(1970, 1, 1)
+# One sync expands at most this much history per table (gentle backfill).
+SYNC_MAX_SPAN = timedelta(days=30)
+SYNC_MAX_STEPS = 12
+ORIGIN_AUDIT = "audit"
+ORIGIN_EVAL = "eval"
+
+_SYNC_SQL = {
+    ORIGIN_AUDIT: text(
+        """
+INSERT INTO citation_sources
+    (audit_id, ordinal, request_id, cited_at, chunk_ref, doc_ref, name_ref)
+SELECT a.id, e.ordinality, a.request_id, a.created_at,
+       """
+        + _AUDIT_REFS
+        + """
+FROM audit_log a
+CROSS JOIN LATERAL """
+        + _AUDIT_ELEMENTS
+        + """ WITH ORDINALITY AS e(value, ordinality)
+WHERE a.action = 'query' AND a.created_at >= :since AND a.created_at < :until
+ON CONFLICT DO NOTHING
+"""
+    ),
+    ORIGIN_EVAL: text(
+        """
+INSERT INTO citation_sources
+    (eval_id, ordinal, request_id, cited_at, chunk_ref, doc_ref, name_ref)
+SELECT r.id, e.ordinality, r.request_id, r.created_at,
+       """
+        + _EVAL_REFS
+        + """
+FROM evaluation_records r
+CROSS JOIN LATERAL """
+        + _EVAL_ELEMENTS
+        + """ WITH ORDINALITY AS e(value, ordinality)
+WHERE r.created_at >= :since AND r.created_at < :until
+ON CONFLICT DO NOTHING
+"""
+    ),
+}
+_FIRST_ROW_SQL = {
+    ORIGIN_AUDIT: text("SELECT min(created_at) FROM audit_log WHERE action = 'query'"),
+    ORIGIN_EVAL: text("SELECT min(created_at) FROM evaluation_records"),
+}
+
+
+async def source_cuts(db: AsyncSession) -> dict[str, datetime]:
+    """Per table, the time before which ``citation_sources`` is complete."""
+    synced = dict(
+        (
+            await db.execute(
+                select(CitationSyncState.origin, CitationSyncState.synced_until)
+            )
+        ).all()
+    )
+
+    def cut(origin: str) -> datetime:
+        until = synced.get(origin)
+        return until - SYNC_OVERLAP if until is not None else NEVER_SYNCED
+
+    return {"audit_cut": cut(ORIGIN_AUDIT), "eval_cut": cut(ORIGIN_EVAL)}
+
+
+async def sync_citation_sources(db: AsyncSession, now: datetime | None = None) -> int:
+    """Expand the source rows written since the last sync (re-reading the
+    overlap; duplicates are ignored), at most ``SYNC_MAX_SPAN`` of history per
+    step and ``SYNC_MAX_STEPS`` steps per call (the first backfill spreads
+    over a few cycles; reads stay exact meanwhile). Idempotent; returns the
+    rows inserted."""
+    now = now or datetime.now(UTC).replace(tzinfo=None)
+    inserted = 0
+    for origin, sql in _SYNC_SQL.items():
+        for _step in range(SYNC_MAX_STEPS):
+            last = await db.scalar(
+                select(CitationSyncState.synced_until).where(
+                    CitationSyncState.origin == origin
+                )
+            )
+            if last is None:
+                since = await db.scalar(_FIRST_ROW_SQL[origin]) or now
+            else:
+                since = last - SYNC_OVERLAP
+            until = min(now, since + SYNC_MAX_SPAN)
+            result = await db.execute(sql, {"since": since, "until": until})
+            inserted += max(int(getattr(result, "rowcount", 0) or 0), 0)
+            stmt = insert(CitationSyncState).values(origin=origin, synced_until=until)
+            await db.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=[CitationSyncState.origin],
+                    set_={"synced_until": stmt.excluded.synced_until},
+                )
+            )
+            await db.commit()
+            if until >= now:
+                break
+    return inserted
 
 
 _DOC_CITATIONS = _with_sources(
@@ -308,7 +446,7 @@ async def citation_stats(
     db: AsyncSession, *, start: date, end: date, limit: int
 ) -> DocumentCitationStats:
     lo, hi = day_bounds(start, end)
-    params = {"start": lo, "end": hi}
+    params = {"start": lo, "end": hi, **await source_cuts(db)}
     docs = [
         DocRow(*row)
         for row in (
@@ -391,6 +529,7 @@ async def chunk_hits(
         "doc": document_id,
         "window_start": window_lo,
         "low_max": LOW_RATING_MAX,
+        **await source_cuts(db),
     }
     out: dict[uuid.UUID, ChunkHits] = defaultdict(ChunkHits)
     for chunk_id, hits, low, last in (await db.execute(_CHUNK_HITS, params)).all():
@@ -445,6 +584,7 @@ async def low_rated_citations(
                 "doc": document_id,
                 "low_max": LOW_RATING_MAX,
                 "limit": limit,
+                **await source_cuts(db),
             },
         )
     ).all()

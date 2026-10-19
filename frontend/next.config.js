@@ -31,10 +31,10 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "recharts", "motion"],
     // Client router cache: a page visited (or fully prefetched) in the last
-    // 30 s / 3 min re-renders from memory with no RSC round trip. Pages are
+    // 5 / 10 min re-renders from memory with no RSC round trip. Pages are
     // client components (their data comes from the query cache), so a
     // cached payload is never stale data.
-    staleTimes: { dynamic: 30, static: 180 },
+    staleTimes: { dynamic: 300, static: 600 },
   },
   // The retired Evaluation page (newplan 2.3). A config redirect answers with a
   // real 307 + Location before the (app) layout starts streaming; the page-level
