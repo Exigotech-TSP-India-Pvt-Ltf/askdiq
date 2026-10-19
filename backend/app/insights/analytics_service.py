@@ -28,6 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import dashboard_cache, dashboard_cached
 from app.core.config import get_settings
 from app.core.database import release_connection
+from app.dashboard.snapshots import CACHE_PREFIX as SNAPSHOT_CACHE_PREFIX
+from app.dashboard.snapshots import get_snapshot, register
 from app.governance.audience import get_classified_ips
 from app.governance.pii import redact_pii
 from app.insights.analytics_repository import (
@@ -74,6 +76,8 @@ T = TypeVar("T")
 
 # Prefix of every insights aggregate in ``dashboard_cache``.
 INSIGHTS_CACHE_PREFIX = "insights:"
+# Snapshot kinds of the insights endpoints ("insights.summary", ...).
+INSIGHTS_KIND_PREFIX = "insights."
 
 # Donut order of the reference HTML; ACK (closings) is not a question.
 QUALITY_ORDER = ("OK", "CORR", "SCOPE", "PART", "FB", "CLAR", "OFF", "FALSE")
@@ -121,7 +125,12 @@ def context_key(ctx: QueryContext) -> str:
 
 
 def invalidate_insights_cache() -> int:
-    """Drop every cached insights aggregate (taxonomy edits, reclassification)."""
+    """Drop every in-process insights aggregate (taxonomy edits).
+
+    Stored snapshots are deleted by the writer in its own transaction
+    (``app.dashboard.snapshots.delete_snapshots``).
+    """
+    dashboard_cache.invalidate_prefix(SNAPSHOT_CACHE_PREFIX)
     return dashboard_cache.invalidate_prefix(INSIGHTS_CACHE_PREFIX)
 
 
@@ -190,27 +199,32 @@ class InsightsAnalyticsService:
         (result,) = await self.runner(task)
         return result
 
-    async def _cached(
-        self, name: str, ctx: QueryContext, compute: Callable[[], Awaitable[T]]
-    ) -> T:
-        """Every aggregate is cached per resolved context (stale-while-revalidate).
+    async def _snapshot(
+        self,
+        name: str,
+        filters: InsightsFilters,
+        page: ConversationPage | None = None,
+    ) -> Any:
+        """The precomputed payload of ``name`` (app.dashboard.snapshots).
 
-        The key holds the resolved day range, so relative periods roll over at
-        midnight, and the audience's test IPs, so a classification change
-        never serves another audience's numbers.
+        Keyed by the raw filters: the builder resolves the day range and the
+        audience's test IPs each time it runs, so relative periods roll over
+        and classification changes apply on the next refresh.
         """
+        params: dict[str, Any] = {"filters": filters.model_dump(mode="json")}
+        if page is not None:
+            params["page"] = page.model_dump(mode="json")
         # The work runs on its own sessions: hand the request's connection
         # back to the pool instead of holding it idle meanwhile.
         await release_connection(self.db)
-        return await dashboard_cached(
-            f"{INSIGHTS_CACHE_PREFIX}{name}:{context_key(ctx)}", compute
-        )
+        return await get_snapshot(f"{INSIGHTS_KIND_PREFIX}{name}", params, self.runner)
 
     async def _cube(self, ctx: QueryContext) -> Cube:
         """The exchange cube, computed once per context for summary, trend,
         topics and quality (each used to rebuild it on every request)."""
-        return await self._cached(
-            "cube", ctx, lambda: self._one(lambda s: self.cube(s, ctx))
+        return await dashboard_cached(
+            f"{INSIGHTS_CACHE_PREFIX}cube:{context_key(ctx)}",
+            lambda: self._one(lambda s: self.cube(s, ctx)),
         )
 
     def rollup_allowed(self, filters: InsightsFilters) -> bool:
@@ -237,8 +251,7 @@ class InsightsAnalyticsService:
     # aggregate; the ``_compute_*`` twin does the SQL on its own sessions.
 
     async def summary(self, filters: InsightsFilters) -> InsightsSummary:
-        ctx = await self.context(filters)
-        return await self._cached("summary", ctx, lambda: self._compute_summary(ctx))
+        return await self._snapshot("summary", filters)
 
     async def _compute_summary(self, ctx: QueryContext) -> InsightsSummary:
         async def kpis(session: AsyncSession) -> Any:
@@ -273,8 +286,7 @@ class InsightsAnalyticsService:
         )
 
     async def trend(self, filters: InsightsFilters) -> InsightsTrend:
-        ctx = await self.context(filters)
-        return await self._cached("trend", ctx, lambda: self._compute_trend(ctx))
+        return await self._snapshot("trend", filters)
 
     async def _compute_trend(self, ctx: QueryContext) -> InsightsTrend:
         async def bounds(session: AsyncSession) -> tuple[date | None, date | None]:
@@ -307,8 +319,7 @@ class InsightsAnalyticsService:
         )
 
     async def hourly(self, filters: InsightsFilters) -> InsightsHourly:
-        ctx = await self.context(filters)
-        return await self._cached("hourly", ctx, lambda: self._compute_hourly(ctx))
+        return await self._snapshot("hourly", filters)
 
     async def _compute_hourly(self, ctx: QueryContext) -> InsightsHourly:
         counts = await self._one(lambda s: InsightsAnalyticsRepository(s).hourly(ctx))
@@ -322,8 +333,7 @@ class InsightsAnalyticsService:
         )
 
     async def flow(self, filters: InsightsFilters) -> InsightsFlow:
-        ctx = await self.context(filters)
-        return await self._cached("flow", ctx, lambda: self._compute_flow(ctx))
+        return await self._snapshot("flow", filters)
 
     async def _compute_flow(self, ctx: QueryContext) -> InsightsFlow:
         rows = await self._one(lambda s: InsightsAnalyticsRepository(s).flow(ctx))
@@ -355,8 +365,7 @@ class InsightsAnalyticsService:
         )
 
     async def topics(self, filters: InsightsFilters) -> InsightsTopics:
-        ctx = await self.context(filters)
-        return await self._cached("topics", ctx, lambda: self._compute_topics(ctx))
+        return await self._snapshot("topics", filters)
 
     async def _compute_topics(self, ctx: QueryContext) -> InsightsTopics:
         cube = await self._cube(ctx)
@@ -384,8 +393,7 @@ class InsightsAnalyticsService:
         )
 
     async def quality(self, filters: InsightsFilters) -> InsightsQuality:
-        ctx = await self.context(filters)
-        return await self._cached("quality", ctx, lambda: self._compute_quality(ctx))
+        return await self._snapshot("quality", filters)
 
     async def _compute_quality(self, ctx: QueryContext) -> InsightsQuality:
         cube = await self._cube(ctx)
@@ -411,8 +419,7 @@ class InsightsAnalyticsService:
         return InsightsQuality(total=total, items=items, source=cube.source)
 
     async def dropoff(self, filters: InsightsFilters) -> InsightsDropoff:
-        ctx = await self.context(filters)
-        return await self._cached("dropoff", ctx, lambda: self._compute_dropoff(ctx))
+        return await self._snapshot("dropoff", filters)
 
     async def _compute_dropoff(self, ctx: QueryContext) -> InsightsDropoff:
         rows = await self._one(lambda s: InsightsAnalyticsRepository(s).dropoff(ctx))
@@ -426,8 +433,7 @@ class InsightsAnalyticsService:
         return InsightsDropoff(total=sum(i.conversations for i in items), items=items)
 
     async def people(self, filters: InsightsFilters) -> InsightsPeople:
-        ctx = await self.context(filters)
-        return await self._cached("people", ctx, lambda: self._compute_people(ctx))
+        return await self._snapshot("people", filters)
 
     async def _compute_people(self, ctx: QueryContext) -> InsightsPeople:
         rows = await self._one(lambda s: InsightsAnalyticsRepository(s).people(ctx))
@@ -452,14 +458,7 @@ class InsightsAnalyticsService:
     async def conversations(
         self, filters: InsightsFilters, page: ConversationPage
     ) -> ConversationList:
-        ctx = await self.context(filters)
-        name = (
-            f"conversations:{page.sort.value}:{page.direction.value}"
-            f":{page.limit}:{page.offset}"
-        )
-        return await self._cached(
-            name, ctx, lambda: self._compute_conversations(ctx, page)
-        )
+        return await self._snapshot("conversations", filters, page)
 
     async def _compute_conversations(
         self, ctx: QueryContext, page: ConversationPage
@@ -545,3 +544,60 @@ class InsightsAnalyticsService:
             classified_by=row.classified_by,
             pending=pending,
         )
+
+
+# ---------------------------------------------------------------------------
+# Snapshot builders (app.dashboard.snapshots)
+# ---------------------------------------------------------------------------
+
+_SNAPSHOT_ENDPOINTS = (
+    "summary",
+    "trend",
+    "hourly",
+    "flow",
+    "topics",
+    "quality",
+    "dropoff",
+    "people",
+    "conversations",
+)
+
+
+def _snapshot_builder(name: str) -> Callable[..., Awaitable[Any]]:
+    async def build(gather: ParallelRunner, params: dict[str, Any]) -> Any:
+        filters = InsightsFilters.model_validate(params["filters"])
+
+        async def resolve(session: AsyncSession) -> QueryContext:
+            return await InsightsAnalyticsService(session, gather).context(filters)
+
+        (ctx,) = await gather(resolve)
+        # The compute paths only use their own sessions (``gather``).
+        service = InsightsAnalyticsService(None, gather)  # type: ignore[arg-type]
+        if name == "conversations":
+            page = ConversationPage.model_validate(params.get("page", {}))
+            return await service._compute_conversations(ctx, page)  # noqa: SLF001
+        return await getattr(service, f"_compute_{name}")(ctx)
+
+    return build
+
+
+def _default_snapshot_params(name: str) -> list[dict[str, Any]]:
+    """The Analytics page's first view in the configured zone, each period."""
+    tz = get_settings().insights_timezone
+    out: list[dict[str, Any]] = []
+    for period in (Period.ALL, Period.LAST_7_DAYS, Period.LAST_30_DAYS):
+        params: dict[str, Any] = {
+            "filters": InsightsFilters(period=period, tz=tz).model_dump(mode="json")
+        }
+        if name == "conversations":
+            params["page"] = ConversationPage().model_dump(mode="json")
+        out.append(params)
+    return out
+
+
+for _name in _SNAPSHOT_ENDPOINTS:
+    register(
+        f"{INSIGHTS_KIND_PREFIX}{_name}",
+        _snapshot_builder(_name),
+        _default_snapshot_params(_name),
+    )

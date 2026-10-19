@@ -45,33 +45,52 @@ async def _drain(c: SWRCache) -> None:
 async def test_fresh_entries_are_served_without_recomputing(clock: Clock) -> None:
     c = SWRCache()
     runs: list[int] = []
-    assert await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60) == 1
+    assert (
+        await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60)
+        == 1
+    )
     clock.now += 5
-    assert await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60) == 1
+    assert (
+        await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60)
+        == 1
+    )
     assert runs == [1]
     assert (c.hits, c.misses) == (1, 1)
 
 
-async def test_stale_entries_return_at_once_and_refresh_in_background(clock: Clock) -> None:
+async def test_stale_entries_return_at_once_and_refresh_in_background(
+    clock: Clock,
+) -> None:
     c = SWRCache()
     runs: list[int] = []
     await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60)
     clock.now += 30
     # Stale: the old value comes back immediately ...
-    assert await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60) == 1
+    assert (
+        await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60)
+        == 1
+    )
     await _drain(c)
     # ... and the background refresh stored the new one.
     assert runs == [1, 2]
-    assert await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60) == 2
+    assert (
+        await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60)
+        == 2
+    )
     assert c.stale_hits == 1
 
 
-async def test_expired_entries_are_recomputed_while_the_caller_waits(clock: Clock) -> None:
+async def test_expired_entries_are_recomputed_while_the_caller_waits(
+    clock: Clock,
+) -> None:
     c = SWRCache()
     runs: list[int] = []
     await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60)
     clock.now += 61
-    assert await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60) == 2
+    assert (
+        await c.get_or_compute("k", counter(runs), fresh_seconds=10, stale_seconds=60)
+        == 2
+    )
 
 
 async def test_concurrent_misses_share_one_computation() -> None:
@@ -86,7 +105,9 @@ async def test_concurrent_misses_share_one_computation() -> None:
         return "v"
 
     tasks = [
-        asyncio.create_task(c.get_or_compute("k", slow, fresh_seconds=10, stale_seconds=60))
+        asyncio.create_task(
+            c.get_or_compute("k", slow, fresh_seconds=10, stale_seconds=60)
+        )
         for _ in range(5)
     ]
     await asyncio.sleep(0.01)

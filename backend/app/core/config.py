@@ -200,6 +200,18 @@ class Settings(BaseSettings):
     # STALE, recomputed while the caller waits after that. FRESH=0 disables.
     dashboard_cache_fresh_seconds: float = Field(default=15.0, ge=0)
     dashboard_cache_stale_seconds: float = Field(default=600.0, ge=0)
+    # Precomputed dashboard aggregates (app.dashboard.snapshots, table
+    # dashboard_snapshots). The refresher runs every REFRESH s (0 = off) in the
+    # jobs worker process, recomputing watched snapshots when data changed and
+    # every snapshot at least every IDLE_REFRESH s; a read of a snapshot older
+    # than MAX_AGE also triggers a background recompute. Unused ones are
+    # dropped after KEEP_HOURS.
+    dashboard_snapshot_refresh_seconds: float = Field(default=30.0, ge=0)
+    # false = in-process cache only (no dashboard_snapshots reads / writes).
+    dashboard_snapshots_persist: bool = True
+    dashboard_snapshot_idle_refresh_seconds: float = Field(default=900.0, ge=1)
+    dashboard_snapshot_max_age_seconds: float = Field(default=1800.0, ge=1)
+    dashboard_snapshot_keep_hours: float = Field(default=168.0, gt=0)
     usage_page_max_limit: int = 200
     usage_max_offset: int = 10_000
     usage_export_max_rows: int = 10_000

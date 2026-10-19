@@ -2,8 +2,8 @@
 
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from dataclasses import asdict, dataclass
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -16,10 +16,10 @@ from app.api.routes.admin_feedback import router as feedback_router
 from app.api.routes.admin_governance import router as governance_router
 from app.api.routes.admin_usage import USAGE_CARD_CACHE_PREFIX
 from app.api.routes.admin_usage import router as usage_router
+from app.api.routes.admin_usage import summary_totals as usage_summary_totals
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
-from app.core.cache import dashboard_cached, dashboard_query
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, release_connection
@@ -31,6 +31,12 @@ from app.dashboard import active_visitors
 from app.dashboard import activity as dashboard_activity
 from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
+from app.dashboard.snapshots import (
+    GatherRunner,
+    get_snapshot,
+    register,
+    snapshot_query,
+)
 from app.entities import conversations as conversation_stats
 from app.entities import visitors
 from app.governance.audience import (
@@ -195,9 +201,10 @@ async def list_users(
 
     # Three whole-table aggregates per IP: cached stale-while-revalidate and
     # shared by every filter / sort / page of the list.
-    ip_rows, queries_by_ip, feedback_counts = await dashboard_query(
-        VISITOR_AGGREGATES_CACHE_KEY, runner, _visitor_aggregates
-    )
+    aggregates = await get_snapshot(VISITOR_AGGREGATES_KIND, {}, runner.gather)
+    ip_rows = [_VisitorRow.from_json(r) for r in aggregates["ips"]]
+    queries_by_ip: dict[str, int] = aggregates["queries"]
+    feedback_counts: dict[str, int] = aggregates["feedback"]
 
     all_users = []
     for row in ip_rows:
@@ -255,7 +262,39 @@ async def list_users(
     }
 
 
-VISITOR_AGGREGATES_CACHE_KEY = "visitor-aggregates"
+def _naive_utc_iso(value: str) -> datetime:
+    """ISO-8601 to naive UTC (the columns' form); "Z" / "+05:30" are converted."""
+    parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+VISITOR_AGGREGATES_KIND = "visitors.aggregates"
+
+
+@dataclass(frozen=True, slots=True)
+class _VisitorRow:
+    ip: str
+    first_seen: datetime | None
+    last_active: datetime | None
+    sessions: int
+
+    @classmethod
+    def from_json(cls, raw: list[Any]) -> "_VisitorRow":
+        def when(value: str | None) -> datetime | None:
+            return datetime.fromisoformat(value) if value else None
+
+        return cls(raw[0], when(raw[1]), when(raw[2]), int(raw[3]))
+
+
+async def _visitor_aggregates_snapshot(gather: Any, _params: dict) -> dict[str, Any]:
+    (ip_rows, queries, feedback) = (await gather(_visitor_aggregates))[0]
+    return {
+        "ips": [[r.ip, r.first_seen, r.last_active, r.sessions] for r in ip_rows],
+        "queries": queries,
+        "feedback": feedback,
+    }
 
 
 async def _visitor_aggregates(
@@ -511,9 +550,21 @@ async def list_conversations(
     )
     # Full grouped scan of sessions x messages (counted, then paged): cached
     # stale-while-revalidate per parameter set, on its own session.
-    return await dashboard_query(
-        f"conversations:{args!r}", runner, lambda s: _conversations_page(s, args)
-    )
+    return await get_snapshot(CONVERSATIONS_KIND, asdict(args), runner.gather)
+
+
+CONVERSATIONS_KIND = "admin.conversations"
+
+
+async def _conversations_snapshot(gather: Any, params: dict) -> dict:
+    values = dict(params)
+    if values["day"]:
+        values["day"] = date.fromisoformat(values["day"])
+    if values["outcome"]:
+        values["outcome"] = OutcomeName(values["outcome"])
+    args = ConversationListArgs(**values)
+    (page,) = await gather(lambda s: _conversations_page(s, args))
+    return page
 
 
 @dataclass(frozen=True, slots=True)
@@ -1013,39 +1064,65 @@ async def usage_llm(
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    async def compute(db: AsyncSession) -> dict:
-        lat = await _latency_stats(db)
-        query_rows = await _query_usage_rows(db)
-        in_tokens = sum(q["input_tokens"] for q in query_rows)
-        out_tokens = sum(q["output_tokens"] for q in query_rows)
-        cost = sum(q["cost_usd"] for q in query_rows)
-        failed = sum(1 for q in query_rows if q["grounded"] is False)
-        actual_count = sum(1 for q in query_rows if q["is_actual"])
-        requests = lat["requests"]
-        return {
-            "provider": "Azure OpenAI",
-            "model": current_model_settings().llm_deployment,
-            "requests": requests,
-            "successful": max(requests - failed, 0),
-            "failed": failed,
-            "input_tokens": in_tokens,
-            "output_tokens": out_tokens,
-            "total_tokens": in_tokens + out_tokens,
-            "average_latency_ms": _r(lat["llm_ms"]),
-            "cost": f"${cost:.4f}",
-            # How many of the queries counted above used the real Azure usage
-            # numbers vs. the legacy text-length estimate (pre-migration rows
-            # or exchanges with no actual LLM call).
-            "token_accounting": {
-                "actual": actual_count,
-                "estimated": len(query_rows) - actual_count,
-            },
-        }
-
     # Per-exchange cost accounting runs in Python over every exchange (seconds):
     # the all-time totals are cached stale-while-revalidate, on their own
     # session, and concurrent callers share one run.
-    return await dashboard_query(_usage_card_key("llm"), runner, compute)
+    return await snapshot_query(
+        USAGE_LLM_KIND, {"scope": _usage_card_key("llm")}, runner, _usage_llm_payload
+    )
+
+
+USAGE_LLM_KIND = "usage.llm"
+
+
+async def _usage_llm_snapshot(gather: Any, _params: dict) -> dict:
+    (payload,) = await gather(_usage_llm_payload)
+    return payload
+
+
+async def _usage_llm_payload(db: AsyncSession) -> dict:
+    """All-time LLM usage card (Monitoring tab), aggregated in SQL.
+
+    Same accounting as the Usage & Cost summary (``_summary_totals``: the
+    tokens and cost recorded per exchange at generation time), instead of
+    loading and re-pricing every exchange in Python.
+    """
+    lat = await _latency_stats(db)
+    totals = await usage_summary_totals(db, "overview", None, None)
+    failed = int(
+        await db.scalar(
+            select(func.count(ChatMessageRecord.id)).where(
+                ChatMessageRecord.role == "assistant",
+                ChatMessageRecord.grounded.is_(False),
+            )
+        )
+        or 0
+    )
+    in_tokens = int(totals.sum_prompt)
+    out_tokens = int(totals.sum_completion)
+    cost = float(totals.sum_cost)
+    exchanges = int(totals.total_turns)
+    estimated = int(totals.estimated_turns)
+    requests = lat["requests"]
+    return {
+        "provider": "Azure OpenAI",
+        "model": current_model_settings().llm_deployment,
+        "requests": requests,
+        "successful": max(requests - failed, 0),
+        "failed": failed,
+        "input_tokens": in_tokens,
+        "output_tokens": out_tokens,
+        "total_tokens": in_tokens + out_tokens,
+        "average_latency_ms": _r(lat["llm_ms"]),
+        "cost": f"${cost:.4f}",
+        # How many of the queries counted above used the real Azure usage
+        # numbers vs. the legacy text-length estimate (pre-migration rows
+        # or exchanges with no actual LLM call).
+        "token_accounting": {
+            "actual": max(exchanges - estimated, 0),
+            "estimated": estimated,
+        },
+    }
 
 
 @router.get("/usage/embedding")
@@ -1278,7 +1355,7 @@ async def usage_cost_breakdown(
     filtered = all_queries
     if from_date:
         try:
-            f_dt = datetime.fromisoformat(from_date.replace("Z", ""))
+            f_dt = _naive_utc_iso(from_date)
             filtered = [
                 item
                 for item in filtered
@@ -1288,7 +1365,7 @@ async def usage_cost_breakdown(
             pass
     if to_date:
         try:
-            t_dt = datetime.fromisoformat(to_date.replace("Z", ""))
+            t_dt = _naive_utc_iso(to_date)
             filtered = [
                 item
                 for item in filtered
@@ -1592,19 +1669,50 @@ async def admin_dashboard(
         return cached_response(request, await _dashboard_payload(db, audience))
     await release_connection(db)  # never hold a pool slot while waiting for more
 
-    async def compute() -> dict:
-        # Own sessions (runner): the result may be refreshed in the background.
-        (panels,) = await runner.gather(lambda s: _dashboard_panels(s, audience))
-        return {
-            **panels,
-            **await dashboard_service.window_payload(
-                runner, audience, window, dashboard_window.utcnow()
-            ),
-        }
+    return cached_response(
+        request,
+        await get_snapshot(
+            DASHBOARD_KIND, _dashboard_params(audience, window, now), runner.gather
+        ),
+    )
 
-    # The frontend sends minute-aligned windows, so repeat visits share a key.
-    key = f"dashboard:{audience}:{window.start.isoformat()}:{window.end.isoformat()}"
-    return cached_response(request, await dashboard_cached(key, compute))
+
+DASHBOARD_KIND = "admin.dashboard"
+# A window ending this close to "now" is a rolling preset ("Last 7 days"):
+# it is stored per span and recomputed for the current time.
+ROLLING_WINDOW_SLACK = timedelta(minutes=5)
+
+
+def _dashboard_params(audience: str, window: Any, now: datetime) -> dict[str, Any]:
+    if abs(now - window.end) <= ROLLING_WINDOW_SLACK:
+        return {"audience": audience, "span_seconds": int(window.span.total_seconds())}
+    return {
+        "audience": audience,
+        "start": window.start.isoformat(),
+        "end": window.end.isoformat(),
+    }
+
+
+async def _dashboard_snapshot(gather: Any, params: dict) -> dict:
+    now = dashboard_window.utcnow()
+    if "span_seconds" in params:
+        end = now.replace(second=0, microsecond=0)
+        window = dashboard_window.Window(
+            end - timedelta(seconds=params["span_seconds"]), end
+        )
+    else:
+        window = dashboard_window.Window(
+            datetime.fromisoformat(params["start"]),
+            datetime.fromisoformat(params["end"]),
+        )
+    audience = params["audience"]
+    (panels,) = await gather(lambda s: _dashboard_panels(s, audience))
+    return {
+        **panels,
+        **await dashboard_service.window_payload(
+            GatherRunner(gather), audience, window, now
+        ),
+    }
 
 
 @router.get(
@@ -1831,3 +1939,38 @@ async def _governance_status(db: AsyncSession, since: datetime) -> dict:
         "audit_logs": f"{audit_total or 0:,} entries",
         "guardrails": f"{flagged or 0:,} responses with flags (24h)",
     }
+
+
+# ============================================================================
+# PRECOMPUTED AGGREGATES (app.dashboard.snapshots): each page's default view
+# is computed at startup and kept fresh in the background.
+# ============================================================================
+
+_DAY_SECONDS = 86_400
+_DASHBOARD_SPANS_DAYS = (1, 7, 30, 90)
+_DEFAULT_SPAN_DAYS = 7
+
+register(VISITOR_AGGREGATES_KIND, _visitor_aggregates_snapshot, [{}])
+register(USAGE_LLM_KIND, _usage_llm_snapshot, [{"scope": _usage_card_key("llm")}])
+register(
+    CONVERSATIONS_KIND,
+    _conversations_snapshot,
+    [
+        asdict(
+            ConversationListArgs(
+                aud, None, None, "last_activity_desc", 10, 0, None, None, None, None
+            )
+        )
+        for aud in ("overview", "users", "testing")
+    ],
+)
+register(
+    DASHBOARD_KIND,
+    _dashboard_snapshot,
+    [
+        {"audience": aud, "span_seconds": days * _DAY_SECONDS}
+        for aud in ("overview", "users", "testing")
+        for days in _DASHBOARD_SPANS_DAYS
+        if aud == "overview" or days == _DEFAULT_SPAN_DAYS
+    ],
+)

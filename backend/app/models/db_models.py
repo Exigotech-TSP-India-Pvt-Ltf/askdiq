@@ -707,3 +707,25 @@ class ModelSettings(Base):
             name="ck_model_settings_prices",
         ),
     )
+
+
+class DashboardSnapshot(Base):
+    """Precomputed dashboard aggregate: one API payload per kind + params.
+
+    Written by the snapshot refresher (app.dashboard.snapshots) under an
+    advisory lock and read by the dashboard routes, so a page visit reads one
+    row instead of aggregating the history. ``requested_at`` marks the
+    combinations people actually open; only those are kept fresh.
+    """
+
+    __tablename__ = "dashboard_snapshots"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(64))
+    params: Mapped[dict] = mapped_column(JSONB)
+    payload: Mapped[dict | list] = mapped_column(JSONB)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    compute_ms: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (Index("ix_dashboard_snapshots_requested_at", "requested_at"),)

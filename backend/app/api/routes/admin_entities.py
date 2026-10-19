@@ -21,6 +21,7 @@ from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
+from app.dashboard.snapshots import Gather, GatherRunner, get_snapshot, register
 from app.dashboard.window import DayRange, resolve_days, utcnow
 from app.entities import conversations, visitors
 from app.governance.audience import Audience, audience_scope
@@ -75,9 +76,44 @@ async def visitor_stats(
 ) -> Response:
     """A visitor is one client IP (as `GET /admin/users`). `active_now` is the
     last 30 minutes, independent of the range."""
-    payload = await visitors.visitor_stats(runner, audience, days, utcnow())
-    body = VisitorStats.model_validate(payload).model_dump(mode="json", by_alias=True)
+    params = {
+        "audience": audience,
+        "from": days.first.isoformat(),
+        "to": days.last.isoformat(),
+    }
+    body = await get_snapshot(VISITOR_STATS_KIND, params, runner.gather)
     return cached_response(request, body)
+
+
+VISITOR_STATS_KIND = "visitors.stats"
+
+
+async def _visitor_stats_snapshot(gather: Gather, params: dict) -> dict:
+    days = DayRange(
+        date.fromisoformat(params["from"]), date.fromisoformat(params["to"])
+    )
+    payload = await visitors.visitor_stats(
+        GatherRunner(gather), params["audience"], days, utcnow()
+    )
+    return VisitorStats.model_validate(payload).model_dump(mode="json", by_alias=True)
+
+
+def _visitor_stats_defaults() -> list[dict]:
+    """The Visitors page's default view (last 7 UTC days) for each audience."""
+    days = resolve_days(
+        None, None, today=utcnow().date(), max_days=get_settings().usage_max_range_days
+    )
+    return [
+        {
+            "audience": audience,
+            "from": days.first.isoformat(),
+            "to": days.last.isoformat(),
+        }
+        for audience in ("overview", "users", "testing")
+    ]
+
+
+register(VISITOR_STATS_KIND, _visitor_stats_snapshot, _visitor_stats_defaults)
 
 
 @router.get(

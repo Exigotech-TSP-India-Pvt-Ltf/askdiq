@@ -15,7 +15,7 @@ import csv
 import io
 import logging
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -41,8 +41,6 @@ from app.auth.principal import AuthUser
 from app.core.cache import (
     aggregation_cache,
     dashboard_cache,
-    dashboard_cached,
-    dashboard_query,
 )
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import Settings, get_settings
@@ -51,6 +49,8 @@ from app.core.http_cache import cached_response
 from app.core.serialization import sanitize_csv_cell
 from app.dashboard import usage_series
 from app.dashboard.queries import cached_tokens_sql
+from app.dashboard.snapshots import CACHE_PREFIX as SNAPSHOT_CACHE_PREFIX
+from app.dashboard.snapshots import Gather, GatherRunner, get_snapshot, register
 from app.dashboard.window import utcnow
 from app.governance.audience import (
     Audience,
@@ -108,19 +108,16 @@ _SUMMARY_CACHE_SCOPE = Permission.DASHBOARD_READ.value
 
 # dashboard_cache keys / prefixes of the usage aggregates.
 USAGE_CARD_CACHE_PREFIX = "usage-card:"
-USAGE_SUMMARY_CACHE_PREFIX = "usage-summary:"
-AUDIENCE_COUNTS_CACHE_KEY = "usage-audience-counts"
 
 
 def clear_usage_caches() -> None:
-    """Clear all usage summary, audience counts and usage card caches (Task 5.1.1)."""
+    """Clear the in-process usage caches (Task 5.1.1).
+
+    Stored snapshots stay (the refresher replaces them); drop them with
+    ``app.dashboard.snapshots.delete_snapshots`` to force a recompute.
+    """
     aggregation_cache.invalidate_prefix(USAGE_CARD_CACHE_PREFIX)
-    for prefix in (
-        USAGE_CARD_CACHE_PREFIX,
-        USAGE_SUMMARY_CACHE_PREFIX,
-        AUDIENCE_COUNTS_CACHE_KEY,
-    ):
-        dashboard_cache.invalidate_prefix(prefix)
+    dashboard_cache.invalidate_prefix(SNAPSHOT_CACHE_PREFIX)
 
 
 # ============================================================================
@@ -139,7 +136,15 @@ async def get_audience_counts(
     stale-while-revalidate (``dashboard_cache``): after the first computation
     each page gets them at once while one background task refreshes them.
     """
-    return await dashboard_query(AUDIENCE_COUNTS_CACHE_KEY, runner, _audience_counts)
+    return await get_snapshot(AUDIENCE_COUNTS_KIND, {}, runner.gather)
+
+
+AUDIENCE_COUNTS_KIND = "usage.audience_counts"
+
+
+async def _audience_counts_snapshot(gather: Gather, _params: dict) -> dict:
+    (counts,) = await gather(_audience_counts)
+    return counts
 
 
 async def _audience_counts(db: AsyncSession) -> dict:
@@ -272,23 +277,9 @@ async def _usage_summary_payload(
 ) -> dict:
     settings = get_settings()
 
-    # Parse and validate dates
-    from_dt: datetime | None = None
-    to_dt: datetime | None = None
-    if from_date:
-        try:
-            from_dt = datetime.fromisoformat(from_date.replace("Z", ""))
-        except ValueError:
-            raise HTTPException(
-                status_code=422, detail="Invalid from_date format. Use ISO 8601."
-            ) from None
-    if to_date:
-        try:
-            to_dt = datetime.fromisoformat(to_date.replace("Z", ""))
-        except ValueError:
-            raise HTTPException(
-                status_code=422, detail="Invalid to_date format. Use ISO 8601."
-            ) from None
+    # Naive UTC like the columns; any offset ("Z", "+05:30") is converted.
+    from_dt = parse_usage_bound(from_date, "from_date")
+    to_dt = parse_usage_bound(to_date, "to_date")
 
     if from_dt and to_dt and (to_dt - from_dt).days > settings.usage_max_range_days:
         raise HTTPException(
@@ -296,19 +287,43 @@ async def _usage_summary_payload(
             detail=f"Requested date range exceeds maximum allowed limit of {settings.usage_max_range_days} days.",
         )
 
-    cache_key = (_SUMMARY_CACHE_SCOPE, audience, from_date, to_date)
+    params: dict[str, Any] = {"scope": _SUMMARY_CACHE_SCOPE, "audience": audience}
+    if from_dt and (to_dt is None or abs(utcnow() - to_dt) <= ROLLING_RANGE_SLACK):
+        # "Last N days" ending now: one snapshot per span, recomputed for the
+        # current time by the refresher (a raw `to` changes every request).
+        start = from_dt
+        end = to_dt or utcnow()
+        params["span_seconds"] = int((end - start).total_seconds())
+    else:
+        params["from_date"] = from_date
+        params["to_date"] = to_date
+    # Precomputed (dashboard_snapshots): identical concurrent requests share
+    # one computation; different audiences / ranges run side by side.
+    return await get_snapshot(USAGE_SUMMARY_KIND, params, runner.gather)
 
-    async def compute() -> dict:
-        # The computation opens its own sessions (runner), so it can also run
-        # as a background refresh after this request has returned.
-        async with _agg_semaphore:
-            return await _compute_usage_summary(
-                runner, audience, from_dt, to_dt, settings
-            )
 
-    # Stale-while-revalidate: identical concurrent requests share one
-    # computation; different audiences / ranges run side by side.
-    return await dashboard_cached(f"{USAGE_SUMMARY_CACHE_PREFIX}{cache_key!r}", compute)
+USAGE_SUMMARY_KIND = "usage.summary"
+# A range ending this close to "now" is a rolling preset ("Last 30 days").
+ROLLING_RANGE_SLACK = timedelta(minutes=5)
+
+
+async def _usage_summary_snapshot(gather: Gather, params: dict) -> dict:
+    def parse(raw: str | None) -> datetime | None:
+        return parse_usage_bound(raw, "date")
+
+    if "span_seconds" in params:
+        to_dt: datetime | None = utcnow()
+        from_dt = to_dt - timedelta(seconds=params["span_seconds"])
+    else:
+        from_dt, to_dt = parse(params["from_date"]), parse(params["to_date"])
+    async with _agg_semaphore:
+        return await _compute_usage_summary(
+            GatherRunner(gather),  # type: ignore[arg-type]
+            params["audience"],
+            from_dt,
+            to_dt,
+            get_settings(),
+        )
 
 
 def _turn_aliases() -> tuple[Any, Any]:
@@ -380,6 +395,10 @@ async def _summary_totals(
     stmt = _join_user_turn(stmt, asst_msg, user_msg).where(asst_msg.role == "assistant")
     stmt = await _scope_turns(db, stmt, user_msg, audience, from_dt, to_dt)
     return (await db.execute(stmt)).one()
+
+
+# Public name: the Monitoring LLM card uses the same accounting.
+summary_totals = _summary_totals
 
 
 async def _ingest_overhead(
@@ -1084,9 +1103,20 @@ async def get_usage_queries(
     )
     # Header stats aggregate every matching turn: cached stale-while-revalidate
     # per parameter set, computed on its own session.
-    return await dashboard_query(
-        f"usage-queries:{args!r}", runner, lambda s: _usage_queries_page(s, args)
-    )
+    return await get_snapshot(USAGE_QUERIES_KIND, asdict(args), runner.gather)
+
+
+USAGE_QUERIES_KIND = "usage.queries"
+
+
+async def _usage_queries_snapshot(gather: Gather, params: dict) -> dict:
+    values = dict(params)
+    for name in ("lo", "hi"):
+        if isinstance(values[name], str):
+            values[name] = datetime.fromisoformat(values[name])
+    args = UsageQueryArgs(**values)
+    (page,) = await gather(lambda s: _usage_queries_page(s, args))
+    return page
 
 
 @dataclass(frozen=True, slots=True)
@@ -1590,3 +1620,49 @@ async def export_usage_csv(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+# ============================================================================
+# PRECOMPUTED AGGREGATES (app.dashboard.snapshots): the defaults each page
+# opens with are computed at startup and kept fresh in the background.
+# ============================================================================
+
+_AUDIENCES = ("overview", "users", "testing")
+# The shared range picker's presets (days), kept warm per audience.
+_PRESET_DAYS = (7, 30, 90)
+_DAY_SECONDS = 86_400
+
+register(AUDIENCE_COUNTS_KIND, _audience_counts_snapshot, [{}])
+register(
+    USAGE_SUMMARY_KIND,
+    _usage_summary_snapshot,
+    [
+        {"scope": _SUMMARY_CACHE_SCOPE, "audience": audience, **window}
+        for audience in _AUDIENCES
+        for window in (
+            {"from_date": None, "to_date": None},
+            *({"span_seconds": d * _DAY_SECONDS} for d in _PRESET_DAYS),
+        )
+    ],
+)
+register(
+    USAGE_QUERIES_KIND,
+    _usage_queries_snapshot,
+    [
+        asdict(
+            UsageQueryArgs(
+                "overview",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "created_at_desc",
+                8,
+                0,
+            )
+        )
+    ],
+)
