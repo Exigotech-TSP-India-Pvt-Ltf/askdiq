@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+# Feature job modules register their handlers on import.
+from app.alerts import jobs as alerts_jobs  # noqa: F401 - alerts.evaluate / notify
 from app.core.logging_config import get_logger
 from app.core.state import PostgresState
-
-# Feature job modules register their handlers on import.
 from app.feedback import jobs as feedback_jobs  # noqa: F401 - registers eval.golden_run
 from app.insights import jobs as insights_jobs  # noqa: F401
 from app.jobs.queue import prune_finished

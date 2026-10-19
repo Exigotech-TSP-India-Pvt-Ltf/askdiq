@@ -9,9 +9,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 
+from app.alerts.sampler import AlertSampler
 from app.branding.service import BRANDING_CACHE_ID, invalidate_branding_cache
 from app.core.cache import aggregation_cache
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.events import TOPIC_CACHE_INVALIDATE, Event, EventBus, get_event_bus
 from app.core.logging_config import get_logger
 from app.governance.audience import invalidate_audience_cache
@@ -39,6 +40,25 @@ def _invalidate_local_caches(event: Event) -> None:
     aggregation_cache.invalidate_prefix(event.id)
 
 
+def log_alert_delivery_status(settings: Settings) -> None:
+    """One startup line saying whether alerts are emailed (never logs secrets)."""
+    if not settings.alerts_enabled:
+        logger.info("alerts_disabled", reason="ALERTS_ENABLED=false")
+    elif settings.alert_email_configured:
+        logger.info(
+            "alerts_email_delivery_on",
+            smtp_host=settings.smtp_host,
+            smtp_port=settings.smtp_port,
+            recipients=len(settings.alert_email_recipients),
+        )
+    else:
+        logger.info(
+            "alerts_email_delivery_off",
+            reason="SMTP_HOST, ALERT_EMAIL_FROM or ALERT_EMAIL_TO not set; "
+            "alerts are stored and shown in the admin console only",
+        )
+
+
 # Upper bound on waiting for the job worker to stop cleanly at shutdown.
 _WORKER_STOP_TIMEOUT_SECONDS = 5.0
 
@@ -50,6 +70,7 @@ class PlatformServices:
         self.bus = bus or get_event_bus()
         self._stop = asyncio.Event()
         self._worker_task: asyncio.Task[None] | None = None
+        self._sampler_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         bus = self.bus
@@ -61,13 +82,24 @@ class PlatformServices:
 
         bus.on(TOPIC_CACHE_INVALIDATE, _on_invalidate)
         await bus.start()
-        if get_settings().jobs_worker_enabled:
+        settings = get_settings()
+        if settings.jobs_worker_enabled:
             self._worker_task = asyncio.create_task(
                 JobWorker().run(self._stop), name="jobs-worker"
+            )
+        log_alert_delivery_status(settings)
+        if settings.alerts_enabled:
+            self._sampler_task = asyncio.create_task(
+                AlertSampler(bus=bus).run(self._stop), name="alerts-sampler"
             )
 
     async def aclose(self) -> None:
         self._stop.set()
+        if self._sampler_task is not None:
+            sampler, self._sampler_task = self._sampler_task, None
+            sampler.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await sampler
         if self._worker_task is not None:
             task = self._worker_task
             self._worker_task = None

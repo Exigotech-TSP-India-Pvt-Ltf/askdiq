@@ -44,6 +44,7 @@ class Permission(StrEnum):
     BRANDING_WRITE = "branding:write"
     TAXONOMY_WRITE = "taxonomy:write"
     MODELS_WRITE = "models:write"
+    ALERTS_MANAGE = "alerts:manage"
 
 
 _OPERATOR = frozenset({Permission.DASHBOARD_READ})
@@ -54,6 +55,7 @@ _ADMIN = _OPERATOR | {
     Permission.EVAL_RUN,
     Permission.TESTIP_WRITE,
     Permission.USAGE_EXPORT,
+    Permission.ALERTS_MANAGE,
 }
 _SUPERADMIN = _ADMIN | {
     Permission.USERS_MANAGE,
