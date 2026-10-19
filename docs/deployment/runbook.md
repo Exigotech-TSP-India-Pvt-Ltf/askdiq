@@ -38,7 +38,7 @@ The kit never contains a compose file, an nginx conf or a `.env` outside
 ## 0. Decisions before the first dashboard deploy
 
 1. **Dashboard domain.** Decided: `askdiqui.ethub.co` (DNS record + TLS certificate on
-   et-platform nginx). Every `askdiqui.ethub.co` below means this value.
+   et-platform nginx); older notes call it `<dashboard-domain>`.
 2. **nginx change** (et-platform nginx owner): a new server block from
    `deploy-kit/infra/nginx/askdiq-admin.conf.example`. The existing
    `askdiq.ethub.co` conf is not touched.

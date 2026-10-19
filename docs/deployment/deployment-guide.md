@@ -7,7 +7,7 @@ pasted as is, except the placeholders below.
 
 | Placeholder | Meaning |
 |---|---|
-| `askdiqui.ethub.co` | Dashboard host name (decided). Older kits and notes call it `askdiqui.ethub.co`. |
+| `askdiqui.ethub.co` | Dashboard host name (decided). Older notes call it `<DASHBOARD_DOMAIN>`; the nginx template `infra/nginx/askdiq-admin.append.conf` still uses that placeholder (replaced by `sed` in 1b). |
 | `<public site key>` | The API key the public website sends (`API_KEY_NAME` in the backend `.env`). Never paste it into a ticket or chat. |
 | `<release-branch>` | The git branch/commit being released. |
 
@@ -112,7 +112,7 @@ sudo grep -nE 'acme-challenge|root |ssl_certificate|include' "$CONF"
 ### 1b. Append PART 1 (HTTP), issue the certificate (no email)
 
 The ready-to-append file is `infra/nginx/askdiq-admin.append.conf` (its only
-placeholder is `askdiqui.ethub.co`). PART 1 goes in first: the PART 2 (443)
+placeholder is `<DASHBOARD_DOMAIN>`). PART 1 goes in first: the PART 2 (443)
 block references the certificate, and appending it before the certificate
 exists makes `nginx -t` fail, which would block reloads for every app on the
 shared proxy. PART 1 uses ACME webroot `/var/www/certbot`; if the existing
@@ -122,8 +122,8 @@ From Windows (once): `scp C:\Projects\askdiq\infra\nginx\askdiq-admin.append.con
 (it is also in every kit under `deploy-kit/infra/nginx/`).
 
 ```bash
-sed "s#askdiqui.ethub.co#$D#g" ~/askdiq-admin.append.conf > /tmp/askdiq-web.conf
-grep -n 'askdiqui.ethub.co' /tmp/askdiq-web.conf || echo "placeholder replaced"
+sed "s#<DASHBOARD_DOMAIN>#$D#g" ~/askdiq-admin.append.conf > /tmp/askdiq-web.conf
+grep -n '<DASHBOARD_DOMAIN>' /tmp/askdiq-web.conf || echo "placeholder replaced"
 sed -n '/^# === PART 1/,/^# === PART 2/{/^# === PART 2/d;p}' /tmp/askdiq-web.conf > /tmp/askdiq-web-part1.conf
 sed -n '/^# === PART 2/,$p' /tmp/askdiq-web.conf > /tmp/askdiq-web-part2.conf
 cat /tmp/askdiq-web-part1.conf                     # review
