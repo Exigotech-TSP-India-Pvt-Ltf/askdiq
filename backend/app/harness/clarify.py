@@ -321,7 +321,7 @@ def clarify_instruction(candidates: list[ClarifyCandidate]) -> str:
     settings = get_settings()
     topics = "\n".join(f'{c.id}: {c.label} - "{c.excerpt}"' for c in candidates)
     return (
-        "Clarification brief. The question is short and the context covers "
+        "Clarification brief. The question is short and the context covers "  # nosec B608 - LLM prompt text, not SQL
         "these distinct topics (id: document / section - excerpt):\n"
         f"{topics}\n\n"
         "Reply in the required JSON.\n"

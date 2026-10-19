@@ -65,6 +65,7 @@ async def test_outcome_counts_normalise_every_outcome(db_session) -> None:
         "blocked": 2,
         "conversational": 1,
         "llm_failed": 2,
+        "clarify": 0,
         "unknown": 1,
     }
 

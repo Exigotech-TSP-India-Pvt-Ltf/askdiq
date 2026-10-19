@@ -16,7 +16,7 @@ afterEach(cleanup);
 describe("Monitoring helpers", () => {
   it("outcomeRows lists every outcome, zero rows included, unknown only when present", () => {
     const rows = outcomeRows({ answered: 30 });
-    expect(rows.map((r) => r.key)).toEqual(["answered", "ungrounded", "blocked", "conversational", "llm_failed"]);
+    expect(rows.map((r) => r.key)).toEqual(["answered", "ungrounded", "blocked", "conversational", "llm_failed", "clarify"]);
     expect(rows.find((r) => r.key === "blocked")?.value).toBe(0);
     expect(outcomeRows({ answered: 1, unknown: 2 }).at(-1)).toEqual({ key: "unknown", label: "Unknown", value: 2 });
     expect(outcomeRows(undefined).every((r) => r.value === 0)).toBe(true);
