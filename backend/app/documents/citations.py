@@ -79,38 +79,41 @@ _EVAL_REFS = """e.value ->> 'chunk_id' AS chunk_ref,
            CAST(NULL AS text) AS doc_ref,
            COALESCE(e.value ->> 'source_name', e.value ->> 'doc') AS name_ref"""
 
+
+def _fill(template: str) -> str:
+    """Substitute the static SQL fragments into ``template`` by name."""
+    return (
+        template.replace("{AUDIT_REFS}", _AUDIT_REFS)
+        .replace("{AUDIT_ELEMENTS}", _AUDIT_ELEMENTS)
+        .replace("{EVAL_REFS}", _EVAL_REFS)
+        .replace("{EVAL_ELEMENTS}", _EVAL_ELEMENTS)
+    )
+
+
 # Every cited source in [:start, :end) as (request_id, cited_at, chunk_ref,
 # doc_ref, name_ref), then resolved to (chunk_id, chunk_index, document_id).
 # Sources older than each table's sync cut (:audit_cut / :eval_cut) come from
 # ``citation_sources`` (expanded once, indexed on cited_at); newer ones are
 # expanded live from the JSON, so the result is the same as expanding all.
 # Static SQL: every value is a bound parameter.
-# Concatenates static SQL fragments only (no user input).
-_RAW_CTE = (  # nosec B608
-    """
+# One static template; the shared fragments above are substituted by name
+# (no user input ever reaches the SQL text).
+_RAW_CTE_TEMPLATE = """
 WITH audit_src AS (
     SELECT a.request_id,
            a.created_at AS cited_at,
-           """  # noqa: S608 - static fragments only
-    + _AUDIT_REFS
-    + """
+           {AUDIT_REFS}
     FROM audit_log a
-    CROSS JOIN LATERAL """
-    + _AUDIT_ELEMENTS
-    + """ AS e(value)
+    CROSS JOIN LATERAL {AUDIT_ELEMENTS} AS e(value)
     WHERE a.action = 'query'
       AND a.created_at >= GREATEST(CAST(:start AS timestamp), CAST(:audit_cut AS timestamp)) AND a.created_at < :end
 ),
 eval_src AS (
     SELECT r.request_id,
            r.created_at AS cited_at,
-           """
-    + _EVAL_REFS
-    + """
+           {EVAL_REFS}
     FROM evaluation_records r
-    CROSS JOIN LATERAL """
-    + _EVAL_ELEMENTS
-    + """ AS e(value)
+    CROSS JOIN LATERAL {EVAL_ELEMENTS} AS e(value)
     WHERE r.created_at >= GREATEST(CAST(:start AS timestamp), CAST(:eval_cut AS timestamp)) AND r.created_at < :end
 ),
 stored_src AS (
@@ -141,7 +144,7 @@ resolved AS (
           AND lower(dn.source_name) = lower(raw.name_ref)
 )
 """
-)
+_RAW_CTE = _fill(_RAW_CTE_TEMPLATE)
 
 
 def _with_sources(body: str) -> TextClause:
@@ -163,36 +166,32 @@ ORIGIN_EVAL = "eval"
 
 _SYNC_SQL = {
     ORIGIN_AUDIT: text(
-        """
+        _fill(
+            """
 INSERT INTO citation_sources
     (audit_id, ordinal, request_id, cited_at, chunk_ref, doc_ref, name_ref)
 SELECT a.id, e.ordinality, a.request_id, a.created_at,
-       """
-        + _AUDIT_REFS
-        + """
+       {AUDIT_REFS}
 FROM audit_log a
-CROSS JOIN LATERAL """
-        + _AUDIT_ELEMENTS
-        + """ WITH ORDINALITY AS e(value, ordinality)
+CROSS JOIN LATERAL {AUDIT_ELEMENTS} WITH ORDINALITY AS e(value, ordinality)
 WHERE a.action = 'query' AND a.created_at >= :since AND a.created_at < :until
 ON CONFLICT DO NOTHING
 """
+        )
     ),
     ORIGIN_EVAL: text(
-        """
+        _fill(
+            """
 INSERT INTO citation_sources
     (eval_id, ordinal, request_id, cited_at, chunk_ref, doc_ref, name_ref)
 SELECT r.id, e.ordinality, r.request_id, r.created_at,
-       """
-        + _EVAL_REFS
-        + """
+       {EVAL_REFS}
 FROM evaluation_records r
-CROSS JOIN LATERAL """
-        + _EVAL_ELEMENTS
-        + """ WITH ORDINALITY AS e(value, ordinality)
+CROSS JOIN LATERAL {EVAL_ELEMENTS} WITH ORDINALITY AS e(value, ordinality)
 WHERE r.created_at >= :since AND r.created_at < :until
 ON CONFLICT DO NOTHING
 """
+        )
     ),
 }
 _FIRST_ROW_SQL = {
