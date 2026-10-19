@@ -42,8 +42,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -104,8 +104,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -138,7 +138,7 @@ jobs:
         run: python -m pytest -q -m "not perf" --cov=app --cov-report=xml --cov-report=term --cov-fail-under=${{ env.COV_FAIL_UNDER }}
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-coverage
           path: backend/coverage.xml
@@ -150,8 +150,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -187,13 +187,13 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: backend/requirements.txt
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -240,7 +240,7 @@ jobs:
         run: python scripts/smoke_e2e.py --frontend-url http://localhost:3000 --backend-url http://127.0.0.1:8000
       - name: Upload server logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fullstack-smoke-logs
           path: |
@@ -273,7 +273,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Check load test supports --smoke
         id: guard
         run: |
@@ -283,7 +283,7 @@ jobs:
             echo "supported=false" >> "$GITHUB_OUTPUT"
             echo "::notice::run_admin_load_test.py has no --smoke flag yet (added in B1.6); skipping perf smoke."
           fi
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: steps.guard.outputs.supported == 'true'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -310,7 +310,7 @@ jobs:
         run: python scripts/run_admin_load_test.py --smoke
       - name: Upload backend log
         if: failure() && steps.guard.outputs.supported == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: perf-smoke-logs
           path: ${{ runner.temp }}/backend.log
