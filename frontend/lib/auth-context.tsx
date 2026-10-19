@@ -3,6 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { UserOut } from "./types";
 import { fetchMe, logoutRequest, type AuthMe } from "./auth-api";
+import { queryCache } from "./query-cache";
+import { clearPersistedQueryCache } from "./query-persist";
 import { hasPermission, type Permission, type Role, type UserStatus } from "./permissions";
 import { redirectTo } from "./navigation";
 
@@ -74,6 +76,9 @@ function signOut(): Promise<void> {
     } catch {
       // Timed out or failed: leave for /login regardless.
     }
+    // No cached console data survives a sign-out (memory or this tab's storage).
+    clearPersistedQueryCache();
+    queryCache.clear();
     redirectTo("/login", { replace: true });
   })().finally(() => {
     signingOut = null;

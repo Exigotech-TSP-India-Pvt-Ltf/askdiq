@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
+import { queryErrorMessage, useUsageList } from "@/lib/use-usage-data";
 import type { PageEnvelope, UsageSessionRow } from "@/lib/types";
-import { api } from "@/lib/api";
 import { useTableState } from "@/lib/use-table-state";
 import { DataTable, type ColumnDef } from "../DataTable";
 import { TableToolbar } from "../TableToolbar";
@@ -54,7 +54,6 @@ export function SessionsTab({
     setPageSize,
     setSort,
     setSearchInput,
-    getSignal,
   } = useTableState({
     tableKey: "sessions",
     defaultSort: "cost_desc",
@@ -72,9 +71,6 @@ export function SessionsTab({
   // The IP filter is owned by the page URL (prop) so it can be cleared here.
   const ipFilter = initialIp ?? "";
 
-  const [data, setData] = useState<PageEnvelope<UsageSessionRow> | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const firstRun = useRef(true);
   useEffect(() => {
@@ -85,37 +81,23 @@ export function SessionsTab({
     setPage(1);
   }, [ipFilter, fromDay, toDay, setPage]);
 
-  const fetchData = React.useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await api.getUsageSessions(
-        token,
-        {
-          audience,
-          q: search || undefined,
-          ip: ipFilter || undefined,
-          from_date: fromDay || undefined,
-          to_date: toDay || undefined,
-          sort,
-          limit: pageSize,
-          offset,
-        },
-        getSignal()
-      );
-      setData(res);
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        setError(err.message || "Failed to load session analytics.");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [token, audience, search, ipFilter, fromDay, toDay, sort, pageSize, offset, getSignal]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // Cached per parameter set (app-wide query cache): tab switches, paging
+  // back and revisits render at once; the previous page stays on screen
+  // while a new one loads.
+  const query = useUsageList<PageEnvelope<UsageSessionRow>>("sessions", token, {
+      audience,
+      q: search || undefined,
+      ip: ipFilter || undefined,
+      from_date: fromDay || undefined,
+      to_date: toDay || undefined,
+      sort,
+      limit: pageSize,
+      offset,
+    });
+  const data = query.data ?? null;
+  const isLoading = query.isLoading;
+  const error = queryErrorMessage(query.error, "Failed to load session analytics.");
+  const fetchData = query.refetch;
 
   const stats = data?.stats || {};
   const topSessions = (stats.top_sessions || []) as Array<{

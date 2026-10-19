@@ -5,6 +5,7 @@ import { ChatProvider } from "@/lib/chat-context";
 import { AudienceProvider } from "@/lib/audience-context";
 import { MobileNavProvider } from "@/lib/mobile-nav-context";
 import { CommandCenter } from "@/components/shell/CommandCenter";
+import { ConsoleRuntime } from "@/components/shell/ConsoleRuntime";
 import { MobileTopBar } from "@/components/shell/MobileTopBar";
 import { GateContent, useRouteGate } from "@/components/auth/RouteGate";
 import { AskDiqLauncher } from "@/components/askdiq/AskDiqLauncher";
@@ -24,6 +25,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <CommandCenter>
           {/* Audience wraps the sidebar too: its links prefetch audience-scoped data. */}
           <AudienceProvider>
+          {/* Cache restore, live stream and background preload (renders nothing; ahead of the page). */}
+          <ConsoleRuntime />
           <div className="flex h-screen overflow-hidden bg-white dark:bg-dark-bg">
             {/* Permission-filtered: users without a role see Chat only. */}
             <Sidebar />

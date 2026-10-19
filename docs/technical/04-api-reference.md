@@ -126,7 +126,7 @@ Common statuses: 401 (no/wrong key or session), 403 (CSRF, suspended, pending, m
 
 | Mode | Headers |
 |---|---|
-| private (default) | `Cache-Control: private, max-age=HTTP_CACHE_MAX_AGE_SECONDS` (15), `Vary: X-API-Key, X-Client-Id` |
+| private (default) | `Cache-Control: private, max-age=HTTP_CACHE_MAX_AGE_SECONDS` (0), `Vary: X-API-Key, X-Client-Id` |
 | public | `Cache-Control: public, max-age=<n>` |
 
 | Route | Mode / max-age |

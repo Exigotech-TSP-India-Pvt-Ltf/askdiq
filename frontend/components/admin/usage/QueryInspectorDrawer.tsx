@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
+import { useApiQuery } from "@/lib/query-cache";
+import { QUERY_DETAIL_STALE_MS, queryDetailKey } from "@/lib/use-usage-data";
 import { RefreshCw, Copy, Check, Clock, ShieldCheck } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { entityHref } from "@/lib/entity-links";
@@ -32,36 +34,21 @@ export function QueryInspectorDrawer({
   token,
   onClose,
 }: QueryInspectorDrawerProps) {
-  const [detail, setDetail] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [copiedQuery, setCopiedQuery] = useState(false);
   const [copiedAnswer, setCopiedAnswer] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  // Fetch query detail
-  useEffect(() => {
-    if (!token || !requestId) return;
-    setLoading(true);
-    setError(null);
-
-    const abortController = new AbortController();
-    api
-      .getQueryDetail(token, requestId, abortController.signal)
-      .then((res) => {
-        setDetail(res);
-      })
-      .catch((err) => {
-        if (err.name !== "AbortError") {
-          setError(
-            err instanceof ApiError ? err.message : "Failed to load query breakdown."
-          );
-        }
-      })
-      .finally(() => setLoading(false));
-
-    return () => abortController.abort();
-  }, [token, requestId, reloadKey]);
+  // Cached per request id (a row hover can warm it: `prefetchQueryDetail`).
+  const query = useApiQuery<any>(
+    token && requestId ? queryDetailKey(requestId) : null,
+    (signal) => api.getQueryDetail(token, requestId as string, signal),
+    { staleTime: QUERY_DETAIL_STALE_MS },
+  );
+  const detail = query.data ?? null;
+  const loading = query.isLoading;
+  const error = query.error
+    ? query.error instanceof ApiError
+      ? query.error.message
+      : "Failed to load query breakdown."
+    : null;
 
   const handleCopy = (text: string, type: "query" | "answer") => {
     navigator.clipboard.writeText(text);
@@ -242,7 +229,7 @@ export function QueryInspectorDrawer({
           title="Failed to load query breakdown"
           message={error}
           requestId={requestId}
-          onRetry={() => setReloadKey((key) => key + 1)}
+          onRetry={() => void query.refetch()}
         />
       )}
 

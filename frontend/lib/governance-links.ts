@@ -76,8 +76,12 @@ const DAY_MS = 24 * HOUR_MS;
  * auto-refresh keeps seeing new rows; a custom range ends after its last
  * (inclusive) local day.
  */
+const MINUTE_MS = 60_000;
+
 export function rangeBounds(range: { kind: string; from: Date; to: Date } | undefined): { from?: string; to?: string } {
   if (!range) return {};
-  if (range.kind !== "custom") return { from: range.from.toISOString() };
+  // A rolling preset starts on a whole minute: the same view keeps one cache
+  // key (and the backend serves it from its precomputed first page).
+  if (range.kind !== "custom") return { from: new Date(Math.floor(range.from.getTime() / MINUTE_MS) * MINUTE_MS).toISOString() };
   return { from: range.from.toISOString(), to: new Date(range.to.getTime() + DAY_MS).toISOString() };
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
+import { queryErrorMessage, useUsageList } from "@/lib/use-usage-data";
 import type { PageEnvelope, UsageUserRow } from "@/lib/types";
-import { api } from "@/lib/api";
 import { useTableState } from "@/lib/use-table-state";
 import { DataTable, type ColumnDef } from "../DataTable";
 import { TableToolbar } from "../TableToolbar";
@@ -41,7 +41,6 @@ export function UsersTab({ token, onSelectUserIp, fromDay = "", toDay = "" }: Us
     setSort,
     setSearchInput,
     setFilter,
-    getSignal,
   } = useTableState({
     tableKey: "users",
     defaultSort: "cost_desc",
@@ -60,9 +59,6 @@ export function UsersTab({ token, onSelectUserIp, fromDay = "", toDay = "" }: Us
     defaultFilters: { type: "all" },
   });
 
-  const [data, setData] = useState<PageEnvelope<UsageUserRow> | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // A new date range starts from the first page.
   const firstRun = useRef(true);
@@ -74,37 +70,23 @@ export function UsersTab({ token, onSelectUserIp, fromDay = "", toDay = "" }: Us
     setPage(1);
   }, [fromDay, toDay, setPage]);
 
-  const fetchData = React.useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await api.getUsageUsers(
-        token,
-        {
-          audience,
-          q: search || undefined,
-          type: filters.type !== "all" ? filters.type : undefined,
-          from_date: fromDay || undefined,
-          to_date: toDay || undefined,
-          sort,
-          limit: pageSize,
-          offset,
-        },
-        getSignal()
-      );
-      setData(res);
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        setError(err.message || "Failed to load user analytics.");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [token, audience, search, filters.type, fromDay, toDay, sort, pageSize, offset, getSignal]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // Cached per parameter set (app-wide query cache): tab switches, paging
+  // back and revisits render at once; the previous page stays on screen
+  // while a new one loads.
+  const query = useUsageList<PageEnvelope<UsageUserRow>>("users", token, {
+      audience,
+      q: search || undefined,
+      type: filters.type !== "all" ? filters.type : undefined,
+      from_date: fromDay || undefined,
+      to_date: toDay || undefined,
+      sort,
+      limit: pageSize,
+      offset,
+    });
+  const data = query.data ?? null;
+  const isLoading = query.isLoading;
+  const error = queryErrorMessage(query.error, "Failed to load user analytics.");
+  const fetchData = query.refetch;
 
   const stats = data?.stats || {};
   const topUsers = (stats.top_users || []) as Array<{

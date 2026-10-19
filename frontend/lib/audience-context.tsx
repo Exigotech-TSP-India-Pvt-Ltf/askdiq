@@ -10,6 +10,10 @@ import React, {
 import type { Audience, AudienceCounts } from "./types";
 import { api } from "./api";
 import { useAuth } from "./auth-context";
+import { useApiQuery } from "./query-cache";
+
+export const AUDIENCE_COUNTS_KEY = "admin/usage/audience-counts";
+const AUDIENCE_COUNTS_STALE_MS = 30_000;
 
 const STORAGE_KEY = "askdiq.audience_scope";
 const VALID_AUDIENCES: Set<Audience> = new Set(["overview", "users", "testing"]);
@@ -55,21 +59,18 @@ export function AudienceProvider({ children }: { children: React.ReactNode }) {
     return "overview";
   });
 
-  const [counts, setCounts] = useState<AudienceCounts | null>(null);
-
+  // One cached request however many providers are nested (and persisted with
+  // the query cache); the live stream refreshes it when the counts change.
+  const countsQuery = useApiQuery<AudienceCounts>(
+    token ? AUDIENCE_COUNTS_KEY : null,
+    (signal) => api.getAudienceCounts(token, signal),
+    { staleTime: AUDIENCE_COUNTS_STALE_MS },
+  );
+  const counts = countsQuery.data ?? null;
+  const refetchCounts = countsQuery.refetch;
   const refreshCounts = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await api.getAudienceCounts(token);
-      setCounts(data);
-    } catch {
-      // Silently keep existing counts
-    }
-  }, [token]);
-
-  useEffect(() => {
-    refreshCounts();
-  }, [refreshCounts]);
+    await refetchCounts();
+  }, [refetchCounts]);
 
   // Listen for browser back / forward navigation (popstate)
   useEffect(() => {
