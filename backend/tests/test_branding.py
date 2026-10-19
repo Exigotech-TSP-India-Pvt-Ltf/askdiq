@@ -45,7 +45,7 @@ from app.branding.palette import (
     relative_luminance,
 )
 from app.core.config import Settings, get_settings
-from app.core.database import get_db
+from app.core.database import get_db, get_session_factory
 from app.schemas.branding import BrandingUpdate, validate_link
 from main import app
 
@@ -101,9 +101,21 @@ def no_db() -> Iterator[None]:
     async def _db() -> AsyncIterator[_NoDb]:
         yield _NoDb()
 
+    def _no_factory():
+        # GET /branding opens its own sessions through the factory; make that
+        # fail too, so the test never reaches a real (or stale pooled) DB.
+        def _factory():
+            raise ConnectionRefusedError("database unavailable (test)")
+
+        return _factory
+
     app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[get_session_factory] = _no_factory
+    service.invalidate_branding_cache()
     yield
     app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(get_session_factory, None)
+    service.invalidate_branding_cache()
 
 
 # ---------------------------------------------------------------------------
