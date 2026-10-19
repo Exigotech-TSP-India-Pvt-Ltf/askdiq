@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, m } from "motion/react";
 import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
+import { prefetchRouteData } from "@/lib/route-prefetch";
 import {
   ChevronLeft,
   LayoutDashboard,
@@ -48,7 +50,7 @@ export interface NavItem {
   /** False pre-registers a page that is not built yet: it is not rendered. */
   enabled?: boolean;
   /**
-   * Permission the signed-in role needs to see the item (newplan §7.3). Items
+   * Permission the signed-in role needs to see the item (newplan Â§7.3). Items
    * without one (AskDIQ) are open to every signed-in, non-suspended user.
    */
   permission?: Permission;
@@ -74,7 +76,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: "/admin/governance", label: "Governance", icon: ShieldCheck, permission: DASHBOARD },
 ];
 
-/** Pages from newplan §6, §7.8 and §14; all built and enabled in this preview. */
+/** Pages from newplan Â§6, Â§7.8 and Â§14; all built and enabled in this preview. */
 const PLANNED_ITEMS: NavItem[] = [
   { href: "/admin/analytics", label: "Analytics", icon: ChartColumnBig, permission: DASHBOARD },
   {
@@ -129,6 +131,11 @@ interface NavListProps {
 
 function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: NavListProps) {
   const badgeVariants = useMotionVariants(pop);
+  const { token } = useAuth();
+  const { audience } = useAudience();
+  // Navigation intent: <Link> already prefetches the route in production;
+  // also warm the page's first queries so the click paints from cache.
+  const warm = (href: string) => prefetchRouteData(href, token, audience);
   return (
     <>
       {items.filter(isNavItemEnabled).map((item) => {
@@ -142,6 +149,8 @@ function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: N
             title={collapsed ? item.label : undefined}
             aria-current={active ? "page" : undefined}
             onClick={onNavigate}
+            onMouseEnter={() => warm(item.href)}
+            onFocus={() => warm(item.href)}
             className={`group relative flex items-center gap-2.5 rounded-lg py-1.5 text-[13px] font-medium transition-colors ${focusRing} ${
               collapsed ? "justify-center px-0" : "px-3"
             } ${
@@ -202,7 +211,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
 
   // Read synchronously on mount (not in useState initializer) so server
   // and first client render both start expanded, avoiding a hydration
-  // mismatch — the stored preference is then applied right after mount.
+  // mismatch â€” the stored preference is then applied right after mount.
   const [collapsed, setCollapsed] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -231,7 +240,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
       onClick={signOut}
       disabled={signingOut}
       aria-busy={signingOut}
-      title={signingOut ? "Signing out…" : "Sign out"}
+      title={signingOut ? "Signing outâ€¦" : "Sign out"}
       aria-label="Sign out"
       className={`rounded-md p-1.5 text-ink/40 dark:text-slate-400 hover:bg-ink/5 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white transition disabled:cursor-wait disabled:opacity-60 ${focusRing}`}
     >
@@ -291,7 +300,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
                 title={user?.full_name ?? "Signed out"}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white"
               >
-                {user ? initials(user.full_name) : "—"}
+                {user ? initials(user.full_name) : "â€”"}
               </div>
               {signOutButton}
             </div>
@@ -300,7 +309,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
               <div
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white"
               >
-                {user ? initials(user.full_name) : "—"}
+                {user ? initials(user.full_name) : "â€”"}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-ink dark:text-slate-100">
@@ -326,7 +335,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
   );
 }
 
-/** Off-canvas sidebar below `md` (newplan §15.1), opened by the header hamburger. */
+/** Off-canvas sidebar below `md` (newplan Â§15.1), opened by the header hamburger. */
 function MobileSidebar({
   pathname,
   items,

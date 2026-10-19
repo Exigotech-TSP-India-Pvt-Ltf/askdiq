@@ -19,7 +19,7 @@ import { EntityLink } from "@/components/ui/EntityLink";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { MascotLoader } from "@/components/ui/MascotLoader";
+import { PageShellSkeleton } from "@/components/ui/PageShellSkeleton";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { secondaryButton } from "@/components/ui/styles";
 import {
@@ -194,7 +194,7 @@ function VisitorDetailContent() {
 
   if (visitor.isLoading) {
     return (
-      <MascotLoader variant="page" label="Loading visitor" />
+      <PageShellSkeleton label="Loading visitor" />
     );
   }
 

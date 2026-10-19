@@ -8,7 +8,7 @@ import { BrandingTab } from "@/components/admin/settings/BrandingTab";
 import { ModelsTab } from "@/components/admin/settings/ModelsTab";
 import { TaxonomyTab } from "@/components/admin/settings/TaxonomyTab";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { MascotLoader } from "@/components/ui/MascotLoader";
+import { PageShellSkeleton } from "@/components/ui/PageShellSkeleton";
 import { useDeepLinkParam } from "@/lib/use-deep-link";
 import { useCan } from "@/lib/use-can";
 
@@ -32,7 +32,7 @@ const isSettingsTab = (value: string | null): value is SettingsTab => SETTINGS_T
 export default function SettingsPage() {
   // useSearchParams (tab deep link) needs a Suspense boundary for static prerendering.
   return (
-    <Suspense fallback={<MascotLoader variant="page" label="Loading settings" />}>
+    <Suspense fallback={<PageShellSkeleton label="Loading settings" />}>
       <SettingsView />
     </Suspense>
   );

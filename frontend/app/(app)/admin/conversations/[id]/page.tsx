@@ -14,7 +14,7 @@ import { EntityLink } from "@/components/ui/EntityLink";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { MascotLoader } from "@/components/ui/MascotLoader";
+import { PageShellSkeleton } from "@/components/ui/PageShellSkeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
 import {
@@ -142,7 +142,7 @@ function ConversationDetailContent() {
 
   if (detail.isLoading) {
     return (
-      <MascotLoader variant="page" label="Loading conversation" />
+      <PageShellSkeleton label="Loading conversation" />
     );
   }
 
