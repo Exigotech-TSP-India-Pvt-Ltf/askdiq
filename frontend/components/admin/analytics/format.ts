@@ -37,3 +37,10 @@ export function clock(ts: string): string {
 export function shortId(id: string): string {
   return id.split("-")[0] ?? id;
 }
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** 9 -> "09:00-10:00" (the hour-of-day filter). */
+export function hourRangeLabel(hour: number): string {
+  return `${pad2(hour)}:00–${pad2((hour + 1) % 24)}:00`;
+}

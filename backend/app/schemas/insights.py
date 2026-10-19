@@ -19,6 +19,12 @@ from app.insights.taxonomy import TaxonomyKind
 
 CODE_PATTERN = r"^[A-Z][A-Z0-9_]{0,31}$"
 PERSON_PATTERN = r"^[0-9a-f]{16}$"
+# A visitor id as the Visitors page builds it: ``client-<ip>`` or a user UUID.
+VISITOR_PATTERN = (
+    r"^(client-[A-Za-z0-9:._-]{1,64}"
+    r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+)
+HOURS_PER_DAY = 24
 TZ_PATTERN = r"^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$"
 COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}$"
 MAX_CUSTOM_RANGE_DAYS = 731
@@ -103,12 +109,21 @@ class InsightsFilters(BaseModel):
     intent: str | None = Field(default=None, pattern=CODE_PATTERN)
     quality: str | None = Field(default=None, pattern=CODE_PATTERN)
     person: str | None = Field(default=None, pattern=PERSON_PATTERN)
+    visitor: str | None = Field(default=None, pattern=VISITOR_PATTERN)
+    hour: int | None = Field(default=None, ge=0, lt=HOURS_PER_DAY)
     q: str | None = Field(default=None, max_length=MAX_SEARCH_CHARS)
     audience: Audience = Audience.OVERVIEW
     tz: str = Field(min_length=1, max_length=64, pattern=TZ_PATTERN)
 
     @field_validator(
-        "user_type", "issue", "intent", "quality", "person", "q", mode="before"
+        "user_type",
+        "issue",
+        "intent",
+        "quality",
+        "person",
+        "visitor",
+        "q",
+        mode="before",
     )
     @classmethod
     def _blank_is_none(cls, value: object) -> object:
@@ -146,7 +161,10 @@ class InsightsFilters(BaseModel):
 
     @property
     def has_conversation_filters(self) -> bool:
-        """Filters that need conversation-level fields (not in the rollup)."""
+        """Filters that need conversation-level fields (not in the rollup).
+
+        ``hour`` is exchange-level but the daily rollup has no hour grain.
+        """
         return any(
             value is not None
             for value in (
@@ -155,6 +173,8 @@ class InsightsFilters(BaseModel):
                 self.rating,
                 self.issue,
                 self.person,
+                self.visitor,
+                self.hour,
                 self.q,
             )
         )
@@ -278,7 +298,12 @@ class InsightsDropoff(BaseModel):
 
 
 class PersonItem(BaseModel):
-    person: str = Field(description="Display label, P01... per result set.")
+    person: str = Field(
+        description=(
+            "Display label P01, P02...: the person's rank by first conversation "
+            "in the audience, the same under every filter and period."
+        )
+    )
     person_id: str = Field(description="Stable pseudonym (salted hash), no PII.")
     conversations: int
     dominant_outcome: ConversationOutcome
@@ -314,6 +339,46 @@ class ConversationList(BaseModel):
     offset: int
     sort: ConversationSort
     direction: SortDirection
+
+
+class PersonIdentity(StrEnum):
+    """What a probable person is grouped on (never returned itself)."""
+
+    ACCOUNT = "account"
+    NETWORK = "network"
+    SESSION = "session"
+
+
+class PersonVisitor(BaseModel):
+    visitor_id: str = Field(description="`client-<ip>` (/admin/users/{id}).")
+    sessions: int
+    first_seen: datetime
+    last_seen: datetime
+
+
+class PersonDetail(BaseModel):
+    """One probable person and the real visitors and sessions behind it."""
+
+    person: str | None = Field(
+        description="Display label (see PersonItem.person); null before labelling."
+    )
+    person_id: str
+    identity: PersonIdentity = Field(
+        description=(
+            "account: one signed-in e-mail (case-insensitive); network: the "
+            "creating IP of sessions without a usable e-mail; session: a "
+            "session with neither."
+        )
+    )
+    conversations: int = Field(description="Labelled conversations, all time.")
+    sessions: int = Field(description="Chat sessions, labelled or not, all time.")
+    first_seen: datetime
+    last_seen: datetime
+    visitors: list[PersonVisitor]
+    account_visitor_id: str | None = Field(
+        default=None,
+        description="User UUID when the e-mail belongs to a console user.",
+    )
 
 
 class TurnDetail(BaseModel):

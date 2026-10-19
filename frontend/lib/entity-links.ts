@@ -13,7 +13,20 @@ export type EntityRef =
   | { kind: "feedback"; id: string }
   | { kind: "document"; id: string }
   | { kind: "chunk"; id: string; documentId: string }
-  | { kind: "analytics"; intent?: string; quality?: string };
+  | {
+      kind: "analytics";
+      /** Analytics tab (`overview` when omitted). */
+      tab?: string;
+      intent?: string;
+      quality?: string;
+      issue?: string;
+      /** Probable-person pseudonym (person_id). */
+      person?: string;
+      /** Visitors-page id (`client-<ip>` or a user UUID). */
+      visitor?: string;
+      /** Free-text search (a conversation id matches its own row). */
+      q?: string;
+    };
 
 export type EntityKind = EntityRef["kind"];
 
@@ -72,7 +85,15 @@ export function entityHref(ref: EntityRef): string {
     case "chunk":
       return withQuery(`/documents/${seg(ref.documentId)}`, { chunk: ref.id });
     case "analytics":
-      return withQuery("/admin/analytics", { intent: ref.intent, quality: ref.quality });
+      return withQuery("/admin/analytics", {
+        tab: ref.tab,
+        intent: ref.intent,
+        quality: ref.quality,
+        issue: ref.issue,
+        person: ref.person,
+        visitor: ref.visitor,
+        q: ref.q,
+      });
   }
 }
 

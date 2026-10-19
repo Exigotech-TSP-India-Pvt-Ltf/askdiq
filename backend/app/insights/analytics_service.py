@@ -38,6 +38,7 @@ from app.insights.analytics_repository import (
     QueryContext,
     person_salt,
     resolve_range,
+    visitor_id,
 )
 from app.insights.taxonomy import NON_SUBSTANTIVE_INTENTS, TaxonomyKind
 from app.schemas.insights import (
@@ -62,7 +63,10 @@ from app.schemas.insights import (
     InsightsTrend,
     PendingClassification,
     Period,
+    PersonDetail,
+    PersonIdentity,
     PersonItem,
+    PersonVisitor,
     QualityItem,
     TopicItem,
     TrendDay,
@@ -88,6 +92,9 @@ OUTCOME_ORDER = (
 )
 MAX_TREND_DAYS = 400  # the HTML's days() cap
 HOURS_PER_DAY = 24
+# Zone the Analytics page queries in: UTC, like every other console page,
+# so the same days give the same counts (frontend ANALYTICS_TIME_ZONE).
+ANALYTICS_PAGE_TZ = "UTC"
 PCT_DIGITS = 2
 
 
@@ -455,6 +462,50 @@ class InsightsAnalyticsService:
         items.sort(key=lambda p: numbers[p.person_id])
         return InsightsPeople(total=len(items), items=items)
 
+    async def person(
+        self, person_id: str, filters: InsightsFilters
+    ) -> PersonDetail | None:
+        """The visitors and sessions behind one probable person (audience scope).
+
+        Other filters are ignored: the detail explains who the person is, the
+        charts show what they did in the selected range.
+        """
+        ctx = await self.context(
+            InsightsFilters(audience=filters.audience, tz=filters.tz)
+        )
+        repo = InsightsAnalyticsRepository(self.db)
+        sessions = await repo.person_sessions(ctx, person_id)
+        if not sessions:
+            return None
+        number = await repo.person_number(ctx, person_id)
+        identity = PersonIdentity(sessions[0].identity)
+        account = (
+            await repo.person_account(ctx, person_id)
+            if identity is PersonIdentity.ACCOUNT
+            else None
+        )
+        visitors = [
+            PersonVisitor(
+                visitor_id=vid,
+                sessions=int(row.sessions),
+                first_seen=row.first_at,
+                last_seen=row.last_at,
+            )
+            for row in sessions
+            if (vid := visitor_id(row.ip)) is not None
+        ]
+        return PersonDetail(
+            person=person_label(number.pn) if number else None,
+            person_id=person_id,
+            identity=identity,
+            conversations=int(number.conversations) if number else 0,
+            sessions=sum(int(r.sessions) for r in sessions),
+            first_seen=min(r.first_at for r in sessions),
+            last_seen=max(r.last_at for r in sessions),
+            visitors=visitors,
+            account_visitor_id=str(account) if account else None,
+        )
+
     async def conversations(
         self, filters: InsightsFilters, page: ConversationPage
     ) -> ConversationList:
@@ -582,8 +633,8 @@ def _snapshot_builder(name: str) -> Callable[..., Awaitable[Any]]:
 
 
 def _default_snapshot_params(name: str) -> list[dict[str, Any]]:
-    """The Analytics page's first view in the configured zone, each period."""
-    tz = get_settings().insights_timezone
+    """The Analytics page's first view (in its zone), each period."""
+    tz = ANALYTICS_PAGE_TZ
     out: list[dict[str, Any]] = []
     for period in (Period.ALL, Period.LAST_7_DAYS, Period.LAST_30_DAYS):
         params: dict[str, Any] = {

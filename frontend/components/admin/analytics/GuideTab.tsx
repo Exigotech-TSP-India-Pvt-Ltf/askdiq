@@ -56,7 +56,8 @@ export const METRIC_DEFINITIONS: readonly { term: string; definition: string }[]
   },
   {
     term: "Handled",
-    definition: "The answer was correct and grounded in the documents (Answered correctly), or a correct refusal (Correct refusal).",
+    definition:
+      "The classifier judged that the reply dealt with the question: in practice Answered correctly, Correct refusal and Out of scope (a polite redirect).",
   },
   { term: "Questions handled", definition: "Handled substantive questions divided by all substantive questions." },
   {
@@ -78,11 +79,12 @@ export const METRIC_DEFINITIONS: readonly { term: string; definition: string }[]
   },
   {
     term: "Probable person",
-    definition: "A stable pseudonym from the signed-in email (or network and browser for older chats). Shown as P01, P02 per result; no personal data is displayed.",
+    definition:
+      "One signed-in account (e-mail, case-insensitive), the same rule as active visitors on the Dashboard. Sessions without a usable sign-in are grouped on the client IP they came from. P01, P02 rank people by their first conversation and stay the same under every filter; click a person to open the real visitor records behind them. On Overview it includes test traffic; the Dashboard's Users count always leaves test IPs out, so compare the two on the Users audience.",
   },
   {
     term: "Hours and days",
-    definition: "Bucketed in your browser's time zone.",
+    definition: "Bucketed in UTC, like the Dashboard, Visitors and Conversations pages, so the same days give the same counts everywhere.",
   },
   {
     term: "Pending classification",

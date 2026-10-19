@@ -28,6 +28,8 @@ from typing import Any, Literal
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.dashboard.active_visitors import ANONYMOUS_ACTORS
+from app.entities.visitors import CLIENT_PREFIX
 from app.governance.usage_queries import escape_ilike_pattern
 from app.insights.repository import ROLLUP_OVERLAP
 from app.models.db_models import InsightTaxonomy, TurnInsight
@@ -45,6 +47,29 @@ from app.schemas.insights import (
 USER_TYPE_DOMINANCE_PCT = 60
 PERIOD_DAYS = {Period.LAST_7_DAYS: 7, Period.LAST_30_DAYS: 30}
 PERSON_SALT_CONTEXT = b"askdiq-insights-person:"
+
+# A probable person (newplan 6.4), the dashboard's visitor identity rule
+# (app.dashboard.active_visitors.identity_sql) at session level: the signed-in
+# e-mail (trimmed, case-insensitive) unless empty or the default / anonymous
+# actor, else the session's creating IP, else the session itself. The key is
+# a salted hash of that value; e-mails and IPs never leave SQL.
+_PERSON_SOURCE = """CASE
+    WHEN NULLIF(lower(trim(cs.user_email)), '') IS NOT NULL
+         AND lower(trim(cs.user_email)) <> ALL(CAST(:anon_actors AS text[]))
+        THEN lower(trim(cs.user_email))
+    WHEN cs.created_ip IS NOT NULL THEN 'ip:' || cs.created_ip
+    ELSE 'sid:' || CAST(cs.id AS text) END"""
+_PERSON_KEY = (
+    "left(encode(sha256(convert_to(CAST(:salt AS text) || "
+    + _PERSON_SOURCE
+    + ", 'UTF8')), 'hex'), 16)"
+)
+_PERSON_IDENTITY = """CASE
+    WHEN NULLIF(lower(trim(cs.user_email)), '') IS NOT NULL
+         AND lower(trim(cs.user_email)) <> ALL(CAST(:anon_actors AS text[]))
+        THEN 'account'
+    WHEN cs.created_ip IS NOT NULL THEN 'network'
+    ELSE 'session' END"""
 
 _EX = """
 ex AS (
@@ -68,6 +93,9 @@ ex AS (
     LEFT JOIN insight_taxonomy tx ON tx.kind = 'intent' AND tx.code = ti.intent
     WHERE TRUE {ex_where}
 )"""
+
+# Exchange hour in the viewer's zone (the hour-of-day cross-filter).
+_EX_HOUR = "CAST(extract(hour FROM ex.ts) AS integer) = :hour"
 
 # Lean variants (no text, groups or feedback): used when no filter needs a
 # conversation-level field, e.g. the KPI strip and exchange counts.
@@ -99,12 +127,7 @@ sess AS (
 ),
 conv AS (
     SELECT s.*,
-           left(encode(sha256(convert_to(
-               CAST(:salt AS text) || COALESCE(
-                   NULLIF(lower(cs.user_email), ''),
-                   'ip:' || cs.created_ip,
-                   'sid:' || CAST(cs.id AS text)),
-               'UTF8')), 'hex'), 16) AS person_key,
+           {person_key} AS person_key,
            CASE WHEN s.substantive = 0 THEN 'Greeting only'
                 WHEN s.handled = s.substantive THEN 'Served'
                 WHEN s.handled = 0 THEN 'Not served'
@@ -151,12 +174,8 @@ fb AS (
 ),
 conv0 AS (
     SELECT s.*,
-           left(encode(sha256(convert_to(
-               CAST(:salt AS text) || COALESCE(
-                   NULLIF(lower(cs.user_email), ''),
-                   'ip:' || cs.created_ip,
-                   'sid:' || CAST(cs.id AS text)),
-               'UTF8')), 'hex'), 16) AS person_key,
+           {person_key} AS person_key,
+           cs.created_ip,
            CASE WHEN s.substantive = 0 THEN 'Greeting only'
                 WHEN s.handled = s.substantive THEN 'Served'
                 WHEN s.handled = 0 THEN 'Not served'
@@ -192,11 +211,15 @@ scoped_ex AS (
     SELECT ex.* FROM ex JOIN scoped USING (session_id) WHERE TRUE {scoped_ex_where}
 )"""
 
+# Labels are numbered over every conversation of the audience (``conv``, not
+# the filtered ``scoped``), so a person keeps the same P-number under every
+# filter and period, and a filtered view never renumbers people.
 _PERSON_LABELS = """,
 plabel AS (
     SELECT person_key,
-           row_number() OVER (ORDER BY min(start_ts), person_key) AS pn
-    FROM scoped GROUP BY person_key
+           row_number() OVER (ORDER BY min(start_ts), person_key) AS pn,
+           count(*) AS conversations
+    FROM conv GROUP BY person_key
 )"""
 
 _SORT_SQL: dict[ConversationSort, str] = {
@@ -269,6 +292,31 @@ _CONVERSATION_ONE = """
     s.exchanges, s.substantive
     FROM scoped s JOIN plabel p USING (person_key)
 """
+_PERSON_NUMBER = """
+    SELECT pn, conversations FROM plabel WHERE person_key = :person
+"""
+# Every session of one person (labelled or not), per creating IP.
+_PERSON_SESSIONS = """
+    SELECT cs.created_ip AS ip,
+           max({identity}) AS identity,
+           count(*) AS sessions,
+           (min(cs.created_at) AT TIME ZONE 'UTC')
+               AT TIME ZONE CAST(:tz AS text) AS first_at,
+           (max(cs.last_activity_at) AT TIME ZONE 'UTC')
+               AT TIME ZONE CAST(:tz AS text) AS last_at
+    FROM chat_sessions cs
+    WHERE {person_key} = :person {audience}
+    GROUP BY cs.created_ip
+    ORDER BY max(cs.last_activity_at) DESC
+"""
+_PERSON_ACCOUNT = """
+    SELECT u.id FROM users u
+    WHERE lower(u.email) IN (
+        SELECT lower(trim(cs.user_email)) FROM chat_sessions cs
+        WHERE {person_key} = :person {audience}
+    )
+    LIMIT 1
+"""
 _COUNT_SCOPED = " SELECT count(*) AS n FROM scoped"
 _LIVE_CUBE = """
     SELECT CAST(ts AS date) AS day, intent, quality,
@@ -276,6 +324,14 @@ _LIVE_CUBE = """
     FROM scoped_ex
     GROUP BY 1, 2, 3
 """
+# The Visitors page's visitor: ``client-<ip>`` (sessions created from that
+# IP) or a user UUID (sessions of that user's e-mail).
+_VISITOR_IP = "c.created_ip = :visitor_ip"
+_VISITOR_USER = (
+    "EXISTS (SELECT 1 FROM chat_sessions vs JOIN users vu"
+    " ON lower(vu.email) = lower(trim(vs.user_email))"
+    " WHERE vs.id = c.session_id AND vu.id = CAST(:visitor_user AS uuid))"
+)
 _AUDIENCE_SQL = {
     Audience.TESTING: (
         " AND EXISTS (SELECT 1 FROM chat_sessions aud WHERE aud.id = {session_col}"
@@ -349,6 +405,18 @@ _TURNS_SQL = """
 """
 
 
+def split_visitor(visitor: str) -> tuple[str | None, str | None]:
+    """(ip, user uuid) of a Visitors-page id: ``client-<ip>`` or a user UUID."""
+    if visitor.startswith(CLIENT_PREFIX):
+        return visitor.removeprefix(CLIENT_PREFIX), None
+    return None, visitor
+
+
+def visitor_id(ip: str | None) -> str | None:
+    """The Visitors-page id of a creating IP (``/admin/users/client-<ip>``)."""
+    return f"{CLIENT_PREFIX}{ip}" if ip else None
+
+
 def person_salt(secret: str) -> str:
     """Salt for the person pseudonym, derived from the server secret.
 
@@ -417,7 +485,13 @@ class InsightsAnalyticsRepository:
             "intent": f.intent,
             "quality": f.quality,
             "person": f.person,
+            "hour": f.hour,
+            "anon_actors": list(ANONYMOUS_ACTORS),
         }
+        if f.visitor is not None:
+            ip, user = split_visitor(f.visitor)
+            params["visitor_ip"] = ip
+            params["visitor_user"] = user
         if f.q:
             params["q"] = f"%{escape_ilike_pattern(f.q)}%"
         return params
@@ -425,7 +499,9 @@ class InsightsAnalyticsRepository:
     @staticmethod
     def _audience_sql(
         audience: Audience,
-        session_col: Literal["ti.session_id", "u.session_id"] = "ti.session_id",
+        session_col: Literal[
+            "ti.session_id", "u.session_id", "cs.id"
+        ] = "ti.session_id",
     ) -> str:
         template = _AUDIENCE_SQL.get(audience)
         return template.format(session_col=session_col) if template else ""
@@ -472,7 +548,13 @@ class InsightsAnalyticsRepository:
         ):
             if value is not None:
                 conv_where.append(clause)
+        if f.visitor is not None:
+            ip, _user = split_visitor(f.visitor)
+            conv_where.append(_VISITOR_IP if ip is not None else _VISITOR_USER)
         turn_match: list[str] = []
+        if f.hour is not None:
+            turn_match.append(_EX_HOUR.replace("ex.ts", "e2.ts"))
+            ex_filters.append(_EX_HOUR)
         if f.intent:
             turn_match.append("e2.intent = :intent")
             ex_filters.append("ex.intent = :intent")
@@ -489,6 +571,7 @@ class InsightsAnalyticsRepository:
             ex_sql.format(ex_where=ex_where)
             + ","
             + conv_sql.format(
+                person_key=_PERSON_KEY,
                 conv_where="".join(f" AND {c}" for c in conv_where),
                 scoped_ex_where="".join(f" AND {c}" for c in ex_filters),
             )
@@ -577,6 +660,33 @@ class InsightsAnalyticsRepository:
             return rows, int(rows[0].total)
         total = (await self._select_rows(ctx, _COUNT_SCOPED))[0].n
         return rows, int(total)
+
+    async def person_number(self, ctx: QueryContext, person: str) -> Any:
+        """(pn, conversations) of ``person`` over the audience, or None."""
+        rows = await self._select_rows(
+            ctx, _PERSON_NUMBER, person_labels=True, params={"person": person}
+        )
+        return rows[0] if rows else None
+
+    async def person_sessions(self, ctx: QueryContext, person: str) -> Sequence[Any]:
+        """Every session of ``person`` (labelled or not) grouped by creating IP."""
+        audience = self._audience_sql(ctx.filters.audience, "cs.id")
+        params = {**self._params(ctx), "person": person}
+        return await self._rows(
+            _PERSON_SESSIONS.format(
+                identity=_PERSON_IDENTITY, person_key=_PERSON_KEY, audience=audience
+            ),
+            params,
+        )
+
+    async def person_account(self, ctx: QueryContext, person: str) -> uuid.UUID | None:
+        """The console user whose e-mail ``person`` is, if any."""
+        audience = self._audience_sql(ctx.filters.audience, "cs.id")
+        params = {**self._params(ctx), "person": person}
+        rows = await self._rows(
+            _PERSON_ACCOUNT.format(person_key=_PERSON_KEY, audience=audience), params
+        )
+        return rows[0].id if rows else None
 
     async def conversation(self, ctx: QueryContext, session_id: uuid.UUID) -> Any:
         rows = await self._select_rows(

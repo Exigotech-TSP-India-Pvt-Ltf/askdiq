@@ -15,6 +15,7 @@ import { ChartCard } from "@/components/charts/ChartCard";
 import { StackedBar, type BarSegment } from "@/components/charts/StackedBar";
 import { Waterfall, type WaterfallStep } from "@/components/charts/Waterfall";
 import { EntityLink } from "@/components/ui/EntityLink";
+import { entityHref } from "@/lib/entity-links";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -234,6 +235,14 @@ function ConversationDetailContent() {
             }
             subtitle={conversation.created_ip ? "Client IP · select to open the visitor" : "No client IP was captured"}
             icon={User}
+            badge={
+              <Link
+                href={entityHref({ kind: "analytics", tab: "conversations", q: conversation.id })}
+                className={`rounded text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+              >
+                In Analytics
+              </Link>
+            }
           />
           <StatCard
             title="Started"

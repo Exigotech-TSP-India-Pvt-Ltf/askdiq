@@ -15,6 +15,7 @@ import {
 } from "./AnalyticsCards";
 import { ConversationsTable } from "./ConversationsTable";
 import { GuideTab } from "./GuideTab";
+import { SectionBoundary } from "./SectionBoundary";
 import type { AnalyticsTabId } from "./url-state";
 
 const GRID = "grid grid-cols-1 gap-4 lg:grid-cols-2";
@@ -67,7 +68,9 @@ export function AnalyticsTabPanel({ tab, ...card }: CardProps & { tab: Analytics
       );
       break;
     case "conversations":
-      content = <ConversationsTable state={card.state} filters={card.filters} update={card.update} />;
+      content = <SectionBoundary label="The conversations table" resetKey={card.filters}>
+            <ConversationsTable state={card.state} filters={card.filters} update={card.update} />
+          </SectionBoundary>;
       break;
     default:
       content = (
@@ -86,7 +89,9 @@ export function AnalyticsTabPanel({ tab, ...card }: CardProps & { tab: Analytics
             <PeopleCard {...card} />
           </div>
           <div data-tour="analytics-conversations">
+            <SectionBoundary label="The conversations table" resetKey={card.filters}>
             <ConversationsTable state={card.state} filters={card.filters} update={card.update} />
+          </SectionBoundary>
           </div>
         </>
       );

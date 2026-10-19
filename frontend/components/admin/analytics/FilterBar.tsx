@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { CONVERSATION_OUTCOMES, EXPERIENCE_RATINGS, MAX_SEARCH_CHARS } from "@/lib/insights-api";
+import { hourRangeLabel } from "./format";
 import { stripControlChars, type AnalyticsState } from "./url-state";
 
 /** User types the classifier assigns (taxonomy groups) plus the derived ones. */
@@ -174,6 +175,8 @@ export function FilterChips({
   if (state.intent) chips.push({ key: "intent", text: labels.intent ?? state.intent, clear: { intent: "" } });
   if (state.quality) chips.push({ key: "quality", text: labels.quality ?? state.quality, clear: { quality: "" } });
   if (state.person) chips.push({ key: "person", text: labels.person ?? "Selected person", clear: { person: "" } });
+  if (state.visitor) chips.push({ key: "visitor", text: `Visitor ${state.visitor.replace(/^client-/, "")}`, clear: { visitor: "" } });
+  if (state.hour !== null) chips.push({ key: "hour", text: hourRangeLabel(state.hour), clear: { hour: null } });
   if (state.q) chips.push({ key: "q", text: `“${state.q}”`, clear: { q: "" } });
 
   if (chips.length === 0) return null;

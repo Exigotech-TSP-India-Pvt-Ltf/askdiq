@@ -15,25 +15,25 @@ import {
 import { useApiQuery, usePrefetchNextPage, type UseApiQueryResult } from "@/lib/query-cache";
 import { toInsightsFilters, type AnalyticsState } from "./url-state";
 
-const TZ_RE = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/;
+/**
+ * Zone for Analytics days and hours: UTC, like the Visitors, Conversations
+ * and Dashboard pages (their days are UTC), so the same range gives the same
+ * conversation, question and people counts on every page. The browser's zone
+ * used to shift day boundaries and made the numbers disagree.
+ */
+export const ANALYTICS_TIME_ZONE = "UTC";
 
-/** The viewer's IANA zone (days and hours are bucketed in it, newplan §6.4). */
-export function viewerTimeZone(): string | undefined {
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return tz && TZ_RE.test(tz) ? tz : undefined;
-  } catch {
-    return undefined;
-  }
+/** The zone Analytics queries are bucketed in (see `ANALYTICS_TIME_ZONE`). */
+export function viewerTimeZone(): string {
+  return ANALYTICS_TIME_ZONE;
 }
 
-/** API filters for the current URL state plus audience scope and viewer zone. */
+/** API filters for the current URL state plus audience scope and zone. */
 export function useInsightsFilters(state: AnalyticsState): InsightsFilters {
   const { audience } = useAudience();
   return useMemo(() => {
     const filters = toInsightsFilters(state);
-    const tz = viewerTimeZone();
-    return { ...filters, audience, ...(tz ? { tz } : {}) };
+    return { ...filters, audience, tz: viewerTimeZone() };
   }, [state, audience]);
 }
 

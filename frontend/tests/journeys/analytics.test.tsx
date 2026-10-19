@@ -72,6 +72,8 @@ describe("URL state", () => {
       intent: "SVC",
       quality: "PART",
       person: "0123456789abcdef",
+      visitor: "client-203.0.113.9",
+      hour: 14,
       q: "cloud & security",
       sort: "exchanges",
       dir: "asc",

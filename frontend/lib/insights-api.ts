@@ -54,6 +54,9 @@ export type InsightsSource = "rollup" | "live";
 export const CODE_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
 /** Stable person pseudonym (`PERSON_PATTERN`). */
 export const PERSON_RE = /^[0-9a-f]{16}$/;
+/** Visitors-page id (`VISITOR_PATTERN`): `client-<ip>` or a user UUID. */
+export const VISITOR_RE = /^(client-[A-Za-z0-9:._-]{1,64}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+export const HOURS_PER_DAY = 24;
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export const MAX_SEARCH_CHARS = 200;
 export const MAX_USER_TYPE_CHARS = 64;
@@ -82,6 +85,10 @@ export interface InsightsFilters {
   quality?: string;
   /** `person_id` (stable pseudonym), not the P01 label. */
   person?: string;
+  /** Visitors-page id: conversations started by that visitor. */
+  visitor?: string;
+  /** Hour of day 0-23 in `tz`: exchanges asked in that hour. */
+  hour?: number;
   q?: string;
   audience?: Audience;
   /** IANA zone for days and hours (viewer's zone). */
@@ -106,6 +113,8 @@ const FILTER_KEYS = [
   "intent",
   "quality",
   "person",
+  "visitor",
+  "hour",
   "q",
   "audience",
   "tz",
@@ -234,13 +243,39 @@ export interface InsightsDropoff {
 }
 
 export interface PersonItem {
-  /** Display label, P01... per result set. */
+  /** Display label P01...: rank by first conversation in the audience, stable under filters. */
   person: string;
   /** Stable pseudonym (salted hash), no PII. */
   person_id: string;
   conversations: number;
   dominant_outcome: ConversationOutcome;
   outcomes: Record<string, number>;
+}
+
+/** How a probable person is grouped (`GET /admin/insights/people/{id}`). */
+export type PersonIdentity = "account" | "network" | "session";
+
+export interface PersonVisitor {
+  /** `client-<ip>`: `/admin/users/{visitor_id}`. */
+  visitor_id: string;
+  sessions: number;
+  first_seen: string;
+  last_seen: string;
+}
+
+export interface PersonDetail {
+  person: string | null;
+  person_id: string;
+  identity: PersonIdentity;
+  /** Labelled conversations, all time, in the audience. */
+  conversations: number;
+  /** Chat sessions, labelled or not. */
+  sessions: number;
+  first_seen: string;
+  last_seen: string;
+  visitors: PersonVisitor[];
+  /** Console user (`/admin/users/{uuid}`) when the e-mail is one. */
+  account_visitor_id: string | null;
 }
 
 export interface InsightsPeople {
@@ -427,6 +462,19 @@ export const insightsApi = {
       token,
       signal,
     );
+  },
+
+  /** Only `audience` and `tz` apply; 404 (ApiError) for an unknown person. */
+  getPerson: (
+    token: string | null,
+    personId: string,
+    filters: Pick<InsightsFilters, "audience" | "tz">,
+    signal?: AbortSignal,
+  ) => {
+    const qs = new URLSearchParams();
+    if (filters.audience) qs.set("audience", filters.audience);
+    if (filters.tz) qs.set("tz", filters.tz);
+    return get<PersonDetail>(withQuery(`/people/${encodeURIComponent(personId)}`, qs.toString()), token, signal);
   },
 
   getPending: (token: string | null, signal?: AbortSignal) => get<PendingClassification>("/pending", token, signal),

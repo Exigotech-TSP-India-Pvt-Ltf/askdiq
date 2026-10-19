@@ -59,6 +59,7 @@ export function TrendCard({ state, filters, update }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && days.length === 0}
       emptyMessage="Choose a valid date range."
       bodyClassName="h-[250px] w-full"
@@ -73,16 +74,17 @@ export function TrendCard({ state, filters, update }: CardProps) {
   );
 }
 
-export function HourCard({ filters }: CardProps) {
+export function HourCard({ state, filters, update }: CardProps) {
   const { data, error, isLoading, refetch } = useInsightsAggregate("hourly", filters);
   const hours = data?.hours ?? [];
   return (
     <ChartCard
       title="Questions by hour of day"
-      subtitle={data ? `Your time zone (${data.tz})` : undefined}
+      subtitle={data ? `Substantive questions by hour (${data.tz}, like the Visitors heatmap). Click an hour to filter.` : undefined}
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && (data?.total ?? 0) === 0}
       emptyMessage="No questions in this selection."
       bodyClassName="h-[300px] w-full"
@@ -94,7 +96,7 @@ export function HourCard({ filters }: CardProps) {
         ],
       )}
     >
-      <HourOfDayChart hours={hours} />
+      <HourOfDayChart hours={hours} selected={state.hour} onSelect={(hour) => update(toggleValue(state, "hour", hour))} />
     </ChartCard>
   );
 }
@@ -108,6 +110,7 @@ export function FlowCard({ state, filters, update }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && (data?.total ?? 0) === 0}
       emptyMessage="No conversations in this selection."
       bodyClassName="min-h-[190px] w-full"
@@ -138,6 +141,7 @@ export function TopicsCard({ state, filters, update, learnLabel }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && items.length === 0}
       emptyMessage="No questions in this selection."
       bodyClassName="h-[280px] w-full"
@@ -169,6 +173,7 @@ export function QualityCard({ state, filters, update, learnLabel }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && (data?.total ?? 0) === 0}
       emptyMessage="No questions in this selection."
       bodyClassName="min-h-[260px] w-full"
@@ -201,6 +206,7 @@ export function DropoffCard({ state, filters, update, learnLabel }: CardProps) {
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && items.length === 0}
       emptyMessage="No dropped conversations in this selection."
       bodyClassName="min-h-[120px] w-full"
@@ -227,10 +233,11 @@ export function PeopleCard({ state, filters, update, learnLabel }: CardProps) {
   return (
     <ChartCard
       title="Conversations per person"
-      subtitle={data ? `${data.total} probable people` : undefined}
+      subtitle={data ? `${data.total} probable people (account e-mail, else network). Click a person for their visitors.` : undefined}
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
+      resetKey={data}
       empty={!isLoading && !error && items.length === 0}
       emptyMessage="No people in this selection."
       bodyClassName="min-h-[260px] w-full"
