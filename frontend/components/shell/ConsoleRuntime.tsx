@@ -52,7 +52,7 @@ export function ConsoleRuntime() {
     let cancelPreload: (() => void) | null = null;
     const timer = setTimeout(() => {
       cancelPreload = runWhenIdle(() => {
-        prefetchShellData(token);
+        prefetchShellData(token, canRead);
         preloadLazyModules();
         const hrefs = visibleNavItems(permissions).map((item) => item.href);
         cancelPreload = preloadConsole(hrefs, token, audience);
@@ -62,7 +62,7 @@ export function ConsoleRuntime() {
       clearTimeout(timer);
       cancelPreload?.();
     };
-  }, [token, audience, permissions]);
+  }, [token, audience, permissions, canRead]);
 
   return null;
 }

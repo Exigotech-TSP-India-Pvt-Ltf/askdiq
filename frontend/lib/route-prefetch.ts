@@ -18,6 +18,7 @@ import { DEFAULT_STATE } from "@/components/admin/analytics/url-state";
 import { pageOf, prefetchBundle, viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
+import { azureApi, azureKeys } from "@/lib/azure-capacity-api";
 import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
 import { summaryFetcher } from "@/lib/use-dashboard";
 import { listDocumentInventory } from "@/lib/documents-api";
@@ -79,6 +80,10 @@ function defaultDays(): { from: string; to: string } {
 
 function governanceOverall(token: string, audience: Audience): void {
   warm(dashboardKeys.health(audience), (signal) => governanceApi.overview(token, audience, signal));
+  // Monitoring's Azure capacity / health / Advisor panels (snapshots).
+  warm(azureKeys.capacity(), (signal) => azureApi.capacity(token, signal));
+  warm(azureKeys.health(), (signal) => azureApi.health(token, signal));
+  warm(azureKeys.advisor(), (signal) => azureApi.advisor(token, signal));
   warm(["admin/governance/traces-total", audience], (signal) =>
     governanceApi.traces(token, { audience, limit: 1 }, signal),
   );
@@ -166,10 +171,11 @@ export function prefetchRouteData(href: string, token: string | null, audience: 
   PREFETCHERS[href]?.(token, audience);
 }
 
-/** Shell data every page shows (header audience counts). */
-export function prefetchShellData(token: string | null): void {
+/** Shell data every page shows (header audience counts, Azure health banner). */
+export function prefetchShellData(token: string | null, canReadDashboard = false): void {
   if (!token) return;
   warm(AUDIENCE_COUNTS_KEY, (signal) => api.getAudienceCounts(token, signal));
+  if (canReadDashboard) warm(azureKeys.health(), (signal) => azureApi.health(token, signal));
 }
 
 /** Starts `href`'s prefetches and returns their promises. */

@@ -7,6 +7,7 @@
  * first pages).
  */
 import { api } from "@/lib/api";
+import { prefetchAzurePanels } from "@/lib/azure-capacity-api";
 import { governanceApi, governanceKeys, type GovernanceTraceItem } from "@/lib/governance-api";
 import { rangeBounds } from "@/lib/governance-links";
 import { prefetch } from "@/lib/query-cache";
@@ -43,6 +44,7 @@ export function prefetchMonitoring(token: string | null, audience: Audience): vo
   void prefetch(governanceKeys.monitoring(audience), (signal) => governanceApi.monitoring(token, audience, signal));
   void prefetch(["admin/usage/llm"], () => api.adminGet(token, "/usage/llm"));
   void prefetch(["admin/usage/embedding"], () => api.adminGet(token, "/usage/embedding"));
+  void Promise.allSettled(prefetchAzurePanels(token));
 }
 
 export function prefetchTracesFirstPage(token: string | null, audience: Audience, range: Range): void {

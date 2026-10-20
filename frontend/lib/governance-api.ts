@@ -251,9 +251,13 @@ export interface LabelledCount {
 
 export interface QuotaMetrics {
   tpm_current?: number;
+  tpm_limit?: number;
   tpm_headroom_pct?: number | null;
   rpm_current?: number;
   rpm_limit?: number;
+  /** "azure": the deployment's real TPM/RPM (Azure Insights capacity poll); "settings": AZURE_OPENAI_*_LIMIT. */
+  tpm_limit_source?: "azure" | "settings";
+  rpm_limit_source?: "azure" | "settings";
   rpm_headroom_pct?: number | null;
   azure_429_count_60s?: number;
 }
