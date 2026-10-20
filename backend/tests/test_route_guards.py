@@ -108,6 +108,11 @@ EXPECTED_B7_READS: dict[str, str] = {
     "/admin/visitors/{visitor_id}/timeline": Permission.DASHBOARD_READ,
     "/admin/conversations/stats": Permission.DASHBOARD_READ,
 }
+# Azure Insights reads (served from snapshots): each must exist and need
+# exactly dashboard:read.
+EXPECTED_AZURE_READS: dict[str, str] = {
+    "/admin/azure/status": Permission.DASHBOARD_READ,
+}
 # Open to every signed-in user, whatever their status.
 SIGNED_IN_ROUTES = frozenset({("GET", "/auth/me"), ("POST", "/auth/logout")})
 
@@ -236,6 +241,12 @@ def test_read_routes_are_operator_level_and_chat_is_open() -> None:
 def test_chart_aggregation_routes_need_dashboard_read() -> None:
     reads = {p: req for m, p, req in guarded_endpoints() if m == "GET"}
     for path, permission in EXPECTED_B7_READS.items():
+        assert reads.get(path) == str(permission), path
+
+
+def test_azure_insights_routes_need_dashboard_read() -> None:
+    reads = {p: req for m, p, req in guarded_endpoints() if m == "GET"}
+    for path, permission in EXPECTED_AZURE_READS.items():
         assert reads.get(path) == str(permission), path
 
 

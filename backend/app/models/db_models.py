@@ -942,3 +942,35 @@ class ResourceSample(Base):
         Index("ix_resource_samples_sampled_at", "sampled_at"),
         Index("ix_resource_samples_worker_sampled", "worker_id", "sampled_at"),
     )
+
+
+# --- Azure Insights (app/azure_insights) ---
+
+
+class AzureSyncStatus(Base):
+    """Per Azure source: what the console's "Azure connection" card shows,
+    plus the monthly call counter behind the hard cap (metrics)."""
+
+    __tablename__ = "azure_sync_status"
+
+    source: Mapped[str] = mapped_column(String(32), primary_key=True)
+    state: Mapped[str] = mapped_column(
+        String(24), default="never_run", server_default="never_run"
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(80))
+    last_error_message: Mapped[str | None] = mapped_column(Text)
+    consecutive_failures: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    calls_month: Mapped[date | None] = mapped_column(Date)
+    calls_this_month: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detail: Mapped[dict | None] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )

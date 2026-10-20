@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 
 from app.alerts.sampler import AlertSampler
+from app.azure_insights.scheduler import bootstrap_azure_insights
 from app.branding.service import BRANDING_CACHE_ID, invalidate_branding_cache
 from app.core.cache import aggregation_cache, dashboard_cache
 from app.core.config import Settings, get_settings
@@ -21,6 +22,7 @@ from app.core.events import (
     get_event_bus,
 )
 from app.core.logging_config import get_logger
+from app.core.tasks import spawn
 from app.dashboard.snapshots import SnapshotRefresher, on_snapshot_updated
 from app.governance.audience import invalidate_audience_cache
 from app.governance.metrics_sampler import MetricsSampler
@@ -109,6 +111,8 @@ class PlatformServices:
                 self._snapshot_task = asyncio.create_task(
                     SnapshotRefresher().run(self._stop), name="dashboard-snapshots"
                 )
+            # Azure Insights: queues the sources only when enabled + configured.
+            spawn(bootstrap_azure_insights(), name="azure-insights-bootstrap")
         log_alert_delivery_status(cfg)
         if cfg.alerts_enabled:
             self._sampler_task = asyncio.create_task(
