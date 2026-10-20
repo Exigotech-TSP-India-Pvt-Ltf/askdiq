@@ -40,8 +40,14 @@ import { useCan } from "@/lib/use-can";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
-import { invalidate, useApiQuery } from "@/lib/query-cache";
-import { getDocumentCitationStats, type CitedDocument } from "@/lib/entity-stats-api";
+import { invalidate, runWhenIdle, useApiQuery } from "@/lib/query-cache";
+import {
+  documentFetchers,
+  documentKeys,
+  prefetchCitationPresets,
+  prefetchDocument,
+} from "@/lib/document-detail-data";
+import type { CitedDocument } from "@/lib/entity-stats-api";
 import {
   DEFAULT_INVENTORY_SORT,
   FORMAT_FILTERS,
@@ -64,7 +70,6 @@ import {
   type UploadResult,
 } from "@/lib/documents-api";
 
-const TOP_CITED_LIMIT = 10;
 const COVERAGE_BANDS = { warn: 80, danger: 60 } as const;
 const DEFAULT_PAGE_SIZE: PageSize = 10;
 const TABLE_ID = "documents-inventory";
@@ -158,8 +163,10 @@ function DocumentsContent() {
   const docs = useApiQuery(token ? [DOCS_KEY, "inventory"] : null, (signal) => listDocumentInventory(token ?? "", signal));
   const documents = docs.data;
   const citations = useApiQuery(
-    token ? [DOCS_KEY, "stats", "citations", range.from, range.to] : null,
-    (signal) => getDocumentCitationStats(token ?? "", { from: range.from, to: range.to, limit: TOP_CITED_LIMIT }, signal),
+    token ? documentKeys.citations(range.from, range.to) : null,
+    documentFetchers.citations(token ?? "", range.from, range.to),
+    // A range switch keeps the current charts until the new ones arrive.
+    { keepPreviousData: true },
   );
   const citationStats = citations.data ?? null;
   const citationsAbsent = !citations.isLoading && !citations.error && citationStats === null;
@@ -169,6 +176,17 @@ function DocumentsContent() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Idle time warms what one click away shows: each visible document's page
+  // and the citation charts of every range preset.
+  const pagedIds = paged.map((d) => d.document_id).join(",");
+  useEffect(() => {
+    if (!token || !pagedIds) return undefined;
+    return runWhenIdle(() => {
+      prefetchCitationPresets(token);
+      for (const docId of pagedIds.split(",")) prefetchDocument(token, docId);
+    });
+  }, [token, pagedIds]);
 
   const totals = useMemo(() => {
     const list = documents ?? [];
@@ -535,6 +553,7 @@ function DocumentsContent() {
               if (base) set({ sort: `${base}_${dir}` === DEFAULT_INVENTORY_SORT ? null : `${base}_${dir}`, page: null });
             }}
             onRowClick={(doc) => router.push(entityHref({ kind: "document", id: doc.document_id }))}
+            onRowIntent={(doc) => prefetchDocument(token, doc.document_id)}
             density={prefs.density}
             animateRows
             emptyMessage={documents?.length ? "No documents match these filters" : "No documents yet"}

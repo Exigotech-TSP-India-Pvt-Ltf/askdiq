@@ -83,7 +83,8 @@ _DATA_STAMP_SQL = text(
         (SELECT max(created_at) FROM latency_metrics),
         (SELECT max(created_at) FROM evaluation_records),
         (SELECT max(updated_at) FROM insight_taxonomy),
-        (SELECT count(*) FROM test_ip_configs))
+        (SELECT count(*) FROM test_ip_configs),
+        (SELECT concat(count(*), '@', max(updated_at)) FROM documents))
     """
 )
 # Alerts raised, re-seen, acknowledged or resolved (the notification bell).
