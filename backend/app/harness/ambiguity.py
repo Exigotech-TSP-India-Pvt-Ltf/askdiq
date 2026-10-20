@@ -108,6 +108,14 @@ def _re(pattern: str) -> re.Pattern[str]:
     return re.compile(pattern, re.IGNORECASE)
 
 
+# User text is collapsed to single spaces and bounded before any pattern runs.
+_MAX_SCAN_CHARS = 2000
+
+
+def _scan_text(text: str) -> str:
+    return " ".join(text.split())[:_MAX_SCAN_CHARS]
+
+
 def _hit(pattern: re.Pattern[str], text: str) -> bool:
     return pattern.search(text) is not None
 
@@ -120,13 +128,13 @@ def _strip(pattern: re.Pattern[str], text: str) -> str:
 CATALOGUE: tuple[CatalogueEntry, ...] = (
     CatalogueEntry(
         "Essential Eight",
-        _re(r"\b(essential[\s_-]*(eight|8)|e8|acsc)\b"),
+        _re(r"\b(essential[ _-]{0,3}(eight|8)|e8|acsc)\b"),
         "ACSC Essential Eight implementation and maturity uplift",
         framework=True,
     ),
     CatalogueEntry(
         "ISO 27001",
-        _re(r"\biso(?:[\s/_-]*iec)?[\s_-]*27001\b|\biso\b"),
+        _re(r"\biso(?:[ /_-]{0,3}iec)?[ _-]{0,3}27001\b|\biso\b"),
         "ISO/IEC 27001 technical controls in Microsoft 365",
         framework=True,
     ),
@@ -138,17 +146,17 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
     ),
     CatalogueEntry(
         "Zero Trust",
-        _re(r"\bzero[\s_-]*trust\b"),
+        _re(r"\bzero[ _-]{0,3}trust\b"),
         "Zero Trust assessment and implementation",
     ),
     CatalogueEntry(
         "Security Baseline",
-        _re(r"\bsecurity[\s_-]*baseline\b"),
+        _re(r"\bsecurity[ _-]{0,3}baseline\b"),
         "Microsoft 365 Security Baseline Assessment",
     ),
     CatalogueEntry(
         "DeployIQ platform",
-        _re(r"\bdeploy[\s_-]*iq[\s_-]*platform\b|\bplatform\b"),
+        _re(r"\bdeploy[ _-]{0,3}iq[ _-]{0,3}platform\b|\bplatform\b"),
         "The DeployIQ orchestration platform",
     ),
 )
@@ -278,7 +286,7 @@ SLOTS: tuple[SlotSpec, ...] = (
             SlotOption(
                 "Mostly in place",
                 "Controls largely in place; validate and evidence them",
-                _re(r"evidence|audit[\s-]*ready|validat|verif"),
+                _re(r"evidence|audit[ -]{0,3}ready|validat|verif"),
             ),
         ),
     ),
@@ -291,7 +299,7 @@ SLOTS: tuple[SlotSpec, ...] = (
             r"tight|rush)\b"
         ),
         filled=_re(
-            r"\b\d+\s*(day|week|month|year)s?\b|\b(next|this) (week|month|quarter)\b|"
+            r"\b\d{1,4} ?(day|week|month|year)s?\b|\b(next|this) (week|month|quarter)\b|"
             r"\bq[1-4]\b|\bend of\b|\b(by|before|in) (jan|feb|mar|apr|may|jun|jul|aug|"
             r"sep|oct|nov|dec)\w*\b"
         ),
@@ -308,9 +316,9 @@ SLOTS: tuple[SlotSpec, ...] = (
         question="Which environment is in scope?",
         filled=_re(
             r"\b(microsoft 365|m365|office 365|o365|azure|entra|intune|aws|gcp|google|"
-            r"on[\s-]?prem\w*|hybrid|windows|tenant)\b"
+            r"on[ -]?prem\w*|hybrid|windows|tenant)\b"
         ),
-        evidence=_re(r"microsoft 365|entra|intune|hybrid|on[\s-]?prem"),
+        evidence=_re(r"microsoft 365|entra|intune|hybrid|on[ -]?prem"),
         options=(
             SlotOption(
                 "Microsoft 365",
@@ -325,7 +333,7 @@ SLOTS: tuple[SlotSpec, ...] = (
             SlotOption(
                 "Hybrid or on-premises",
                 "Cloud plus on-premises systems",
-                _re(r"hybrid|on[\s-]?prem"),
+                _re(r"hybrid|on[ -]?prem"),
             ),
         ),
         multi_select=True,
@@ -336,6 +344,7 @@ _SLOTS_BY_ID = {s.id: s for s in SLOTS}
 
 def _missing_slots(query: str) -> tuple[str, ...]:
     """Open details of a compliance planning request; () when it is not one."""
+    query = _scan_text(query)
     if not (_PLANNING_RE.search(query) and _COMPLIANCE_RE.search(query)):
         return ()
     if any(_hit(e.pattern, query) for e in CATALOGUE):
@@ -395,7 +404,7 @@ _SCAFFOLD = frozenset(
 )
 # "Is it possible to ...": a dummy "it", not a reference.
 _EXPLETIVE_RE = _re(
-    r"\bit\s+(is|was|be)?\s*(possible|necessary|true|ok|okay|worth|required|"
+    r"\bit (?:(?:is|was|be) )?(possible|necessary|true|ok|okay|worth|required|"
     r"mandatory|important|hard|easy|difficult)\b"
 )
 _COMPARISON_RE = _re(
@@ -403,7 +412,8 @@ _COMPARISON_RE = _re(
     r"than (it|that|this|them|those)|compared? (to|with) (it|that|this|them)|"
     r"which one|both of them)\b"
 )
-_PROPER_RE = re.compile(r"\b[A-Z][A-Za-z0-9]*[A-Z0-9][A-Za-z0-9]*\b|\b[A-Z][a-z]+\b")
+# Capitalised word of 2+ characters (acronyms, product names, Titlecase).
+_PROPER_RE = re.compile(r"\b[A-Z][A-Za-z0-9]+\b")
 
 
 _COMMON = _SCAFFOLD | {"i", "we", "our", "you", "your", "my", "hi", "hello", "please"}
@@ -411,6 +421,7 @@ _COMMON = _SCAFFOLD | {"i", "we", "our", "you", "your", "my", "hi", "hello", "pl
 
 def _subjects(text: str) -> set[str]:
     """Named subjects: catalogue services/frameworks and proper nouns."""
+    text = _scan_text(text)
     found: set[str] = set()
     for entry in CATALOGUE:
         if _hit(entry.pattern, text):
@@ -432,6 +443,7 @@ def _history_subjects(history: list[ChatTurn] | None) -> set[str]:
 
 
 def _dangling_pronoun(query: str) -> bool:
+    query = _scan_text(query)
     if _EXPLETIVE_RE.search(query):
         return False
     for word in (w.lower() for w in _WORD_RE.findall(query)):
@@ -449,6 +461,7 @@ def assess(
     clarification_reply: bool = False,
 ) -> Assessment:
     """Rule gate (no I/O): does this question need asking back?"""
+    query = _scan_text(query)
     settings = get_settings()
     if (
         not settings.clarify_enabled
@@ -492,9 +505,10 @@ def _service_question(
                 options=options,
             ),
         )
-    if _COST_RE.search(query):
+    scan = _scan_text(query)
+    if _COST_RE.search(scan):
         text = "Which service would you like pricing for?"
-    elif _TIME_RE.search(query):
+    elif _TIME_RE.search(scan):
         text = "Which service would you like the timeline for?"
     else:
         text = f"Which {brand} service do you mean?"
@@ -564,7 +578,7 @@ def slot_clarification(
                     header="Framework",
                     question=(
                         "Which framework is the audit against?"
-                        if _AUDIT_RE.search(query)
+                        if _AUDIT_RE.search(_scan_text(query))
                         else "Which framework do you need to meet?"
                     ),
                     options=options,
