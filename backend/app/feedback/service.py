@@ -409,6 +409,31 @@ def build_pair(row: Any) -> dict[str, Any]:
     }
 
 
+async def iter_pairs(
+    db: AsyncSession,
+    *,
+    triage_status: TriageStatus | None,
+    include_dismissed: bool,
+    complete_only: bool,
+    batch_size: int,
+    window: tuple[datetime, datetime] | None = None,
+) -> AsyncIterator[dict[str, Any]]:
+    """Preference pairs, oldest first, read in keyset batches."""
+    async for rows in repo.iter_pair_batches(
+        db,
+        triage_status=triage_status,
+        include_dismissed=include_dismissed,
+        batch_size=batch_size,
+        window=window,
+        corrected_only=complete_only,
+    ):
+        for row in rows:
+            pair = build_pair(row)
+            if complete_only and not pair["complete"]:
+                continue
+            yield pair
+
+
 async def export_pairs_jsonl(
     db: AsyncSession,
     *,
@@ -418,15 +443,36 @@ async def export_pairs_jsonl(
     batch_size: int,
     window: tuple[datetime, datetime] | None = None,
 ) -> AsyncIterator[str]:
-    """One JSON line per pair; rows come off a server-side cursor in batches."""
-    async for row in repo.stream_pair_rows(
+    """One JSON line per pair; no connection is held between batches."""
+    async for pair in iter_pairs(
         db,
         triage_status=triage_status,
         include_dismissed=include_dismissed,
+        complete_only=complete_only,
         batch_size=batch_size,
         window=window,
     ):
-        pair = build_pair(row)
-        if complete_only and not pair["complete"]:
-            continue
         yield json.dumps(pair, ensure_ascii=False) + "\n"
+
+
+async def preview_pairs(
+    db: AsyncSession,
+    *,
+    complete_only: bool,
+    limit: int,
+    window: tuple[datetime, datetime] | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """The first ``limit`` pairs of the default export and whether more exist."""
+    out: list[dict[str, Any]] = []
+    async for pair in iter_pairs(
+        db,
+        triage_status=None,
+        include_dismissed=False,
+        complete_only=complete_only,
+        batch_size=limit + 1,
+        window=window,
+    ):
+        if len(out) == limit:
+            return out, True
+        out.append(pair)
+    return out, False

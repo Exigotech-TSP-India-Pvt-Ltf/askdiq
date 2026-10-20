@@ -28,6 +28,37 @@ def _etag_matches(if_none_match: str | None, etag: str) -> bool:
     return any(candidate == opaque for candidate in candidates)
 
 
+def _cache_headers(etag: str, max_age: int | None) -> dict[str, str]:
+    if max_age is None:
+        max_age = get_settings().http_cache_max_age_seconds
+    return {
+        "ETag": etag,
+        "Cache-Control": f"private, max-age={max_age}",
+        "Vary": PRIVATE_VARY,
+    }
+
+
+def encoded_response(
+    request: Request,
+    body: bytes,
+    etag: str,
+    extra_headers: dict[str, str] | None = None,
+    max_age: int | None = None,
+) -> Response:
+    """``cached_response`` for a body already JSON-encoded with a known ETag
+    (per-user, ``private``): a matching ``If-None-Match`` costs no encoding.
+
+    ``max_age`` defaults to 0: browsers revalidate every read (a 304 here is
+    a memory lookup), so a refetch after a live update never gets an old
+    copy from the browser cache."""
+    headers = _cache_headers(etag, 0 if max_age is None else max_age)
+    if extra_headers:
+        headers.update(extra_headers)
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
+
+
 def cached_response(
     request: Request,
     payload: Any,

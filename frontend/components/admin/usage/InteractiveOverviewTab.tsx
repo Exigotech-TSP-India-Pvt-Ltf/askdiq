@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import type { UsageSummary, UsageQueryRow, Audience } from "@/lib/types";
-import { api } from "@/lib/api";
+import React, { useState } from "react";
+import { overviewFeedParams, queryErrorMessage, useUsageList } from "@/lib/use-usage-data";
+import type { UsageSummary, UsageQueryRow, Audience, PageEnvelope } from "@/lib/types";
 import dynamic from "next/dynamic";
 import {
   DollarSign,
@@ -99,38 +99,16 @@ export function InteractiveOverviewTab({
   const [tokenViewMode, setTokenViewMode] = useState<"absolute" | "percentage">("absolute");
   const [inspectRequestId, setInspectRequestId] = useState<string | null>(null);
 
-  // Real Chatbot Queries Feed State
-  const [realQueries, setRealQueries] = useState<UsageQueryRow[]>([]);
-  const [loadingQueries, setLoadingQueries] = useState(false);
-  const [queriesError, setQueriesError] = useState<string | null>(null);
-
-  // Fetch actual queries whenever token, audience, or selectedOutcome changes
-  const fetchActualQueries = useCallback(async () => {
-    if (!token) return;
-    setLoadingQueries(true);
-    setQueriesError(null);
-    try {
-      const res = await api.getUsageQueries(token, {
-        audience: audience as Audience,
-        outcome: selectedOutcome !== "all" ? selectedOutcome : undefined,
-        from_date: fromDay || undefined,
-        to_date: toDay || undefined,
-        sort: "created_at_desc",
-        limit: 8,
-      });
-      setRealQueries(res.items || []);
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        setQueriesError(err.message || "Failed to load real chatbot query feed.");
-      }
-    } finally {
-      setLoadingQueries(false);
-    }
-  }, [token, audience, selectedOutcome, fromDay, toDay]);
-
-  useEffect(() => {
-    fetchActualQueries();
-  }, [fetchActualQueries]);
+  // Live query feed: cached per filter set (the backend serves the default
+  // feed from a snapshot), previous rows stay while another filter loads.
+  const feed = useUsageList<PageEnvelope<UsageQueryRow>>(
+    "queries",
+    token || null,
+    overviewFeedParams(audience as Audience, { from: fromDay, to: toDay }, selectedOutcome),
+  );
+  const realQueries = feed.data?.items ?? [];
+  const loadingQueries = feed.isLoading;
+  const queriesError = queryErrorMessage(feed.error, "Failed to load real chatbot query feed.");
 
   if (isLoading && !summary) {
     return (
@@ -231,7 +209,7 @@ export function InteractiveOverviewTab({
                   type="button"
                   onClick={() => {
                     onRetry();
-                    fetchActualQueries();
+                    void feed.refetch();
                   }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white border border-white/20 hover:bg-white/25 transition shadow-sm"
                   title="Synchronize live backend telemetry"
@@ -888,7 +866,7 @@ export function InteractiveOverviewTab({
       {/* ========================================================================= */}
       {/* 3. REAL CHATBOT CONVERSATIONAL QUERY STREAM (Option 2 Aurora Glass) */}
       {/* ========================================================================= */}
-      <div data-tour="usage-feed" className="rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl space-y-4 transition-all hover:border-teal-400 dark:hover:border-teal-400/60">
+      <div data-tour="usage-feed" data-feed-state={loadingQueries || feed.isPlaceholderData ? "pending" : "ready"} className="rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 shadow-card dark:shadow-xl space-y-4 transition-all hover:border-teal-400 dark:hover:border-teal-400/60">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-teal-100 dark:border-teal-500/20 pb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">

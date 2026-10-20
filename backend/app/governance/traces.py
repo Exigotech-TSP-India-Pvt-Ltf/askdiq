@@ -24,9 +24,11 @@ from sqlalchemy import (
     or_,
     select,
     true,
+    union,
 )
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.config import get_settings
 from app.governance.audience import build_audience_filter
@@ -224,13 +226,33 @@ async def _base(
         stmt = stmt.where(or_(*(bucket_condition(b) for b in f.latency_buckets)))
     if f.q:
         pattern = f"%{escape_ilike_pattern(f.q)}%"
+        # Candidates first (trigram indexes, only latency_metrics columns, so
+        # the filter runs before the laterals): requests whose query-audit
+        # text or whose id matches. The second condition keeps the exact
+        # semantics (the latest query row of the request must match).
+        by_id = aliased(LatencyRecord)
+        candidates = union(
+            select(AuditLog.request_id).where(
+                AuditLog.action == QUERY_ACTION,
+                audit_query_text().ilike(pattern, escape="\\"),
+            ),
+            select(by_id.request_id).where(
+                by_id.request_id.ilike(pattern, escape="\\")
+            ),
+        )
         stmt = stmt.where(
+            LatencyRecord.request_id.in_(candidates),
             or_(
                 cast(audit.c.detail, JSONB)["query"].astext.ilike(pattern, escape="\\"),
                 LatencyRecord.request_id.ilike(pattern, escape="\\"),
-            )
+            ),
         )
     return stmt
+
+
+def audit_query_text() -> Any:
+    """``detail->>'query'`` of an audit row (the trigram-indexed expression)."""
+    return cast(AuditLog.detail, JSONB)["query"].astext
 
 
 def _ordered(stmt: Select) -> Select:

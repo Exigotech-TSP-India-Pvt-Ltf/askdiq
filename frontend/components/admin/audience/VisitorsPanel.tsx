@@ -27,17 +27,27 @@ import { useAuth } from "@/lib/auth-context";
 import { useCan } from "@/lib/use-can";
 import { invalidate, useApiMutation, useApiQuery } from "@/lib/query-cache";
 import type { PageEnvelope } from "@/lib/types";
+import { HOURS_PER_DAY, VISITOR_SORTS, WEEKDAYS, intParam, type VisitorRow } from "@/lib/entity-stats-api";
 import {
-  HOURS_PER_DAY,
-  VISITOR_SORTS,
-  WEEKDAYS,
-  getVisitorStats,
-  getVisitors,
-  intParam,
-  type VisitorRow,
-} from "@/lib/entity-stats-api";
+  AUDIENCES,
+  VISITOR_DEFAULT_FILTERS,
+  VISITOR_DEFAULT_SORT,
+  VISITOR_SORT_COLUMNS,
+  isOtherRange,
+  nextSort,
+  prefetchVisitor,
+  presetDayRanges,
+  useIdlePrefetch,
+  useRowIntent,
+  visitorListQuery,
+  visitorStatsQuery,
+  type Query,
+  type VisitorListState,
+} from "@/lib/audience-data";
 
 const ACTIVE_WINDOW_MS = 30 * 60 * 1000;
+/** Search-as-you-type delay (the list answers from in-memory aggregates). */
+const SEARCH_DEBOUNCE_MS = 150;
 const HOUR_LABELS = Array.from({ length: HOURS_PER_DAY }, (_, h) => String(h).padStart(2, "0"));
 const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
 
@@ -65,50 +75,34 @@ export function VisitorsPanel() {
   const { page, pageSize, offset, sort, search, filters, audience, setPage, setPageSize, setSort, setSearchInput, setFilter } =
     useTableState({
       tableKey: "users",
-      defaultSort: "last_active_desc",
+      defaultSort: VISITOR_DEFAULT_SORT,
       allowedSorts: [...VISITOR_SORTS],
-      defaultFilters: { status: "all", type: "all" },
+      defaultFilters: VISITOR_DEFAULT_FILTERS,
+      searchDebounceMs: SEARCH_DEBOUNCE_MS,
     });
 
-  const listKey = useMemo(
-    () => [
-      "visitors",
-      "list",
+  const listState = useMemo<VisitorListState>(
+    () => ({
       audience,
       search,
-      filters.status,
-      filters.type,
+      status: filters.status,
+      type: filters.type,
       sort,
       pageSize,
       offset,
-      heat?.weekday,
-      heat?.hour,
-      heat ? range.from : null,
-      heat ? range.to : null,
-    ],
+      heat,
+      range: { from: range.from, to: range.to },
+    }),
     [audience, search, filters.status, filters.type, sort, pageSize, offset, heat, range.from, range.to],
   );
+  const listQuery = useMemo(() => visitorListQuery(token ?? "", listState), [token, listState]);
+  const listKey = listQuery.key;
+  // Switching page, sort, filter, audience or range swaps the rows in place
+  // (the previous ones stay until the new ones arrive): never a blank table.
+  const list = useApiQuery(token ? listKey : null, listQuery.fetch, { keepPreviousData: true });
 
-  const list = useApiQuery(token ? listKey : null, (signal) =>
-    getVisitors(
-      token ?? "",
-      {
-        audience,
-        q: search || undefined,
-        status: filters.status,
-        type: filters.type,
-        sort,
-        limit: pageSize,
-        offset,
-        ...(heat ? { weekday: heat.weekday, hour: heat.hour, from: range.from, to: range.to } : {}),
-      },
-      signal,
-    ),
-  );
-
-  const stats = useApiQuery(token ? ["visitors", "stats", audience, range.from, range.to] : null, (signal) =>
-    getVisitorStats(token ?? "", { audience, from: range.from, to: range.to }, signal),
-  );
+  const statsQuery = visitorStatsQuery(token ?? "", audience, range);
+  const stats = useApiQuery(token ? statsQuery.key : null, statsQuery.fetch, { keepPreviousData: true });
 
   const markTestIp = useApiMutation<VisitorRow, unknown, PageEnvelope<VisitorRow>>({
     mutationFn: (row) => api.addTestIp(token ?? "", row.ip_address, "Marked from Visitors"),
@@ -165,6 +159,33 @@ export function VisitorsPanel() {
 
   const items = list.data?.items ?? [];
   const total = list.data?.total ?? 0;
+
+  // While idle, warm what the next click most likely reads: the neighbour
+  // pages, each sort toggle, the other audiences and the range presets.
+  const idleQueries = useMemo<Query<unknown>[] | null>(() => {
+    if (!token || !list.data || list.isPlaceholderData) return null;
+    const out: Query<unknown>[] = [];
+    if (offset + pageSize < total) out.push(visitorListQuery(token, { ...listState, offset: offset + pageSize }));
+    if (offset > 0) out.push(visitorListQuery(token, { ...listState, offset: Math.max(0, offset - pageSize) }));
+    for (const column of VISITOR_SORT_COLUMNS) {
+      out.push(visitorListQuery(token, { ...listState, sort: nextSort(sort, column), offset: 0 }));
+    }
+    for (const other of AUDIENCES.filter((a) => a !== audience)) {
+      out.push(visitorStatsQuery(token, other, range));
+      out.push(visitorListQuery(token, { ...listState, audience: other, offset: 0 }));
+    }
+    for (const preset of presetDayRanges().filter((r) => isOtherRange(r, range))) {
+      out.push(visitorStatsQuery(token, audience, preset));
+    }
+    return out;
+  }, [token, list.data, list.isPlaceholderData, listState, offset, pageSize, total, sort, audience, range]);
+  useIdlePrefetch(idleQueries);
+
+  // Hovering a row warms its detail page.
+  const rowIntent = useRowIntent((index) => {
+    const row = items[index];
+    if (token && row) prefetchVisitor(token, row.id, range);
+  });
   const statsData = stats.data ?? null;
   const statsAbsent = !stats.isLoading && !stats.error && statsData === null;
   const statsError = errorMessage(stats.error, "Couldn't load visitor stats.");
@@ -466,12 +487,12 @@ export function VisitorsPanel() {
             </div>
           }
         >
-          <div data-tour="visitors-table">
+          <div data-tour="visitors-table" {...rowIntent}>
             <DataTable
               columns={columns}
               data={items}
               keyField="ip_address"
-              isLoading={list.isLoading}
+              isLoading={list.isLoading || list.isPlaceholderData}
               error={errorMessage(list.error, "Failed to load visitors.")}
               onRetry={() => void list.refetch()}
               currentSort={sort}

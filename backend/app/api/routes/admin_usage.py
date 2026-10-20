@@ -22,11 +22,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import (
-    String,
     and_,
     asc,
     case,
-    cast,
     desc,
     func,
     or_,
@@ -61,8 +59,13 @@ from app.governance.audience import (
 from app.governance.audit import record_audit_event
 from app.governance.outcomes import GENERATION_OUTCOMES
 from app.governance.usage_queries import (
-    apply_usage_filters,
-    escape_ilike_pattern,
+    OUTPUT_TOKENS,
+    force_custom_plans,
+    sessions_base,
+    sessions_page,
+    turn_filters,
+    users_base,
+    users_page,
 )
 from app.model_settings.service import current_model_settings
 from app.models.db_models import (
@@ -70,10 +73,8 @@ from app.models.db_models import (
     ChatMessageRecord,
     ChatSession,
     LatencyRecord,
+    UsageTurn,
 )
-
-# A single IP above this many queries likely fronts a shared gateway/NAT.
-_SHARED_GATEWAY_QUERY_THRESHOLD = 50
 
 logger = logging.getLogger(__name__)
 
@@ -644,179 +645,58 @@ async def get_usage_users(
     offset: int = Query(0, ge=0, le=_PAGE_MAX_OFFSET),
     from_date: str | None = Query(None, description=_FROM_DOC),
     to_date: str | None = Query(None, description=_TO_DOC),
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Per-IP usage rows; ``from_date`` / ``to_date`` keep the turns in that window."""
-    lo, hi = usage_date_range(from_date, to_date)
-    return await _usage_users_page(
-        db,
-        audience=audience,
-        q=q,
-        user_type=user_type,
-        sort=sort,
-        limit=limit,
-        offset=offset,
-        from_dt=lo,
-        to_dt=hi,
-    )
+    """Per-IP usage rows; ``from_date`` / ``to_date`` keep the turns in that window.
 
-
-async def _usage_users_page(
-    db: AsyncSession,
-    *,
-    audience: Audience,
-    q: str | None,
-    user_type: str | None,
-    sort: str,
-    limit: int,
-    offset: int,
-    from_dt: datetime | None = None,
-    to_dt: datetime | None = None,
-) -> dict:
-    """Users rows for the tab (page-capped) and the CSV export (export-capped)."""
+    Every IP of the (audience, range) is precomputed once
+    (``dashboard_snapshots``, refreshed within seconds of new turns while
+    watched); search, type, sort and paging are applied to it in memory."""
     if sort not in _ALLOWED_USER_SORTS:
         raise HTTPException(
             status_code=422,
             detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(_ALLOWED_USER_SORTS)}",
         )
-
-    test_ips, _, _ = await get_classified_ips(db)
-
-    user_msg = aliased(ChatMessageRecord, name="user_turn")
-    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
-
-    # Base grouping by client IP
-    ip_col = func.coalesce(user_msg.ip_address, "Unknown")
-    query = (
-        select(
-            ip_col.label("ip_address"),
-            func.count(func.distinct(user_msg.session_id)).label("sessions"),
-            func.count(asst_msg.id).label("queries"),
-            func.coalesce(func.sum(asst_msg.embedding_tokens), 0).label("embed_tokens"),
-            func.coalesce(func.sum(asst_msg.prompt_tokens), 0).label("prompt_tokens"),
-            func.coalesce(func.sum(asst_msg.reasoning_tokens), 0).label(
-                "reasoning_tokens"
-            ),
-            func.coalesce(
-                func.sum(
-                    func.greatest(
-                        0, asst_msg.completion_tokens - asst_msg.reasoning_tokens
-                    )
-                ),
-                0,
-            ).label("output_tokens"),
-            func.coalesce(func.sum(asst_msg.total_tokens), 0).label("total_tokens"),
-            func.coalesce(func.sum(asst_msg.cost_usd), 0.0).label("cost_usd"),
-            func.max(user_msg.created_at).label("last_active"),
-        )
-        .select_from(user_msg)
-        .join(
-            asst_msg,
-            and_(
-                user_msg.session_id == asst_msg.session_id,
-                user_msg.turn_index == asst_msg.turn_index,
-                asst_msg.role == "assistant",
-            ),
-        )
-        .where(user_msg.role == "user")
-        .group_by(ip_col)
+    lo, hi = usage_date_range(from_date, to_date)
+    rows = await get_snapshot(
+        USAGE_USERS_BASE_KIND, _range_params(audience, lo, hi), runner.gather
+    )
+    return users_page(
+        rows["rows"], q=q, user_type=user_type, sort=sort, limit=limit, offset=offset
     )
 
-    aud_cond = await build_audience_filter(db, user_msg.ip_address, audience)
-    if aud_cond is not None:
-        query = query.where(aud_cond)
-    query = _turn_time_filter(query, user_msg, from_dt, to_dt)
 
-    if q and q.strip():
-        escaped = escape_ilike_pattern(q.strip())
-        query = query.where(
-            cast(user_msg.ip_address, String).ilike(f"%{escaped}%", escape="\\")
-        )
+# One stored aggregate per (audience, range): every IP / session row of it.
+USAGE_USERS_BASE_KIND = "usage.users_base"
+USAGE_SESSIONS_BASE_KIND = "usage.sessions_base"
 
-    all_rows = (await db.execute(query)).all()
-    items = []
-    total_tokens_all = sum(r.total_tokens for r in all_rows) or 1
 
-    for r in all_rows:
-        is_test = r.ip_address in test_ips or r.ip_address == "Unknown"
-        t_type = "Test" if is_test else "Production"
-        if user_type and user_type.lower() != t_type.lower():
-            continue
+def _range_params(audience: str, lo: datetime | None, hi: datetime | None) -> dict:
+    return {"audience": audience, "from_dt": lo, "to_dt": hi}
 
-        items.append(
-            {
-                "ip_address": r.ip_address,
-                "is_test": is_test,
-                "type": t_type,
-                "sessions": r.sessions,
-                "queries": r.queries,
-                "embed_tokens": int(r.embed_tokens),
-                "prompt_tokens": int(r.prompt_tokens),
-                "reasoning_tokens": int(r.reasoning_tokens),
-                "output_tokens": int(r.output_tokens),
-                "total_tokens": int(r.total_tokens),
-                "cost_usd": round(float(r.cost_usd), 6),
-                "last_active": r.last_active.isoformat() + "Z"
-                if r.last_active
-                else None,
-            }
-        )
 
-    # Sort
-    reverse = "asc" not in sort
-    sort_key = "cost_usd"
-    if sort.startswith("last_active"):
-        # Same-format ISO-8601 strings sort chronologically.
-        items.sort(key=lambda x: x["last_active"] or "", reverse=reverse)
-        sort_key = ""
-    elif "queries" in sort:
-        sort_key = "queries"
-    elif "sessions" in sort:
-        sort_key = "sessions"
-    elif "tokens" in sort:
-        sort_key = "total_tokens"
-    if sort_key:
-        items.sort(
-            key=lambda x: x.get(sort_key) if x.get(sort_key) is not None else 0,
-            reverse=reverse,
-        )
+def _parse_range_params(
+    params: dict,
+) -> tuple[Audience, datetime | None, datetime | None]:
+    lo, hi = params.get("from_dt"), params.get("to_dt")
+    return (
+        params["audience"],
+        datetime.fromisoformat(lo) if isinstance(lo, str) else lo,
+        datetime.fromisoformat(hi) if isinstance(hi, str) else hi,
+    )
 
-    # Compute header intelligence stats
-    top_3 = items[:3]
-    top_consumer_tokens = sum(x["total_tokens"] for x in top_3)
-    top_consumer_share_pct = round((top_consumer_tokens / total_tokens_all * 100), 1)
 
-    top_cards = [
-        {
-            "ip_address": x["ip_address"],
-            "queries": x["queries"],
-            "tokens": x["total_tokens"],
-            "cost_usd": x["cost_usd"],
-            "token_share_pct": round(x["total_tokens"] / total_tokens_all * 100, 1),
-        }
-        for x in top_3
-    ]
+async def _usage_users_base_snapshot(gather: Gather, params: dict) -> dict:
+    audience, lo, hi = _parse_range_params(params)
+    (rows,) = await gather(lambda db: users_base(db, audience, lo, hi))
+    return {"rows": rows}
 
-    total_count = len(items)
-    paged_items = items[offset : offset + limit]
 
-    return {
-        "items": paged_items,
-        "total": total_count,
-        "limit": limit,
-        "offset": offset,
-        "stats": {
-            "unique_users": total_count,
-            "active_sessions": sum(x["sessions"] for x in items),
-            "queries_driven": sum(x["queries"] for x in items),
-            "top_consumer_share_pct": top_consumer_share_pct,
-            "top_users": top_cards,
-            "shared_gateway_hint": any(
-                x["queries"] > _SHARED_GATEWAY_QUERY_THRESHOLD for x in items
-            ),
-        },
-    }
+async def _usage_sessions_base_snapshot(gather: Gather, params: dict) -> dict:
+    audience, lo, hi = _parse_range_params(params)
+    (rows,) = await gather(lambda db: sessions_base(db, audience, lo, hi))
+    return {"rows": rows}
 
 
 # ============================================================================
@@ -846,194 +726,31 @@ async def get_usage_sessions(
     offset: int = Query(0, ge=0),
     from_date: str | None = Query(None, description=_FROM_DOC),
     to_date: str | None = Query(None, description=_TO_DOC),
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2).
 
     ``from_date`` / ``to_date`` keep only the turns asked in that window, so a
-    session's queries, tokens and cost are the ones inside the range.
+    session's queries, tokens and cost are the ones inside the range. Every
+    session of the (audience, range) is precomputed once; search, IP filter,
+    sort and paging are applied to it in memory.
     """
     settings = get_settings()
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
         raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
-    lo, hi = usage_date_range(from_date, to_date)
-    return await _usage_sessions_page(
-        db,
-        audience=audience,
-        q=q,
-        ip=ip,
-        sort=sort,
-        limit=limit,
-        offset=offset,
-        from_dt=lo,
-        to_dt=hi,
-    )
-
-
-async def _usage_sessions_page(
-    db: AsyncSession,
-    *,
-    audience: Audience,
-    q: str | None,
-    ip: str | None,
-    sort: str,
-    limit: int,
-    offset: int,
-    from_dt: datetime | None = None,
-    to_dt: datetime | None = None,
-) -> dict:
-    """Sessions rows for the tab (page-capped) and the CSV export (export-capped)."""
     if sort not in _ALLOWED_SESSION_SORTS:
         raise HTTPException(
             status_code=422,
             detail=f"Invalid sort parameter '{sort}'. Allowed: {sorted(_ALLOWED_SESSION_SORTS)}",
         )
-
-    user_msg = aliased(ChatMessageRecord, name="user_turn")
-    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
-
-    query = (
-        select(
-            ChatSession.id.label("id"),
-            ChatSession.title.label("title"),
-            ChatSession.created_ip.label("ip_address"),
-            ChatSession.last_activity_at.label("last_active"),
-            func.count(asst_msg.id).label("queries"),
-            func.coalesce(func.sum(asst_msg.embedding_tokens), 0).label("embed_tokens"),
-            func.coalesce(func.sum(asst_msg.prompt_tokens), 0).label("prompt_tokens"),
-            func.coalesce(func.sum(asst_msg.reasoning_tokens), 0).label(
-                "reasoning_tokens"
-            ),
-            func.coalesce(
-                func.sum(
-                    func.greatest(
-                        0, asst_msg.completion_tokens - asst_msg.reasoning_tokens
-                    )
-                ),
-                0,
-            ).label("output_tokens"),
-            func.coalesce(func.sum(asst_msg.total_tokens), 0).label("total_tokens"),
-            func.coalesce(func.sum(asst_msg.cost_usd), 0.0).label("cost_usd"),
-        )
-        .select_from(ChatSession)
-        .join(
-            user_msg,
-            and_(
-                ChatSession.id == user_msg.session_id,
-                user_msg.role == "user",
-            ),
-        )
-        .join(
-            asst_msg,
-            and_(
-                user_msg.session_id == asst_msg.session_id,
-                user_msg.turn_index == asst_msg.turn_index,
-                asst_msg.role == "assistant",
-            ),
-        )
-        .group_by(
-            ChatSession.id,
-            ChatSession.title,
-            ChatSession.created_ip,
-            ChatSession.last_activity_at,
-        )
+    lo, hi = usage_date_range(from_date, to_date)
+    rows = await get_snapshot(
+        USAGE_SESSIONS_BASE_KIND, _range_params(audience, lo, hi), runner.gather
     )
-
-    aud_cond = await build_audience_filter(db, ChatSession.created_ip, audience)
-    if aud_cond is not None:
-        query = query.where(aud_cond)
-    query = _turn_time_filter(query, user_msg, from_dt, to_dt)
-
-    if ip and ip.strip():
-        query = query.where(ChatSession.created_ip == ip.strip())
-
-    if q and q.strip():
-        escaped = escape_ilike_pattern(q.strip())
-        pattern = f"%{escaped}%"
-        query = query.where(
-            or_(
-                ChatSession.title.ilike(pattern, escape="\\"),
-                cast(ChatSession.id, String).ilike(pattern, escape="\\"),
-                cast(ChatSession.created_ip, String).ilike(pattern, escape="\\"),
-            )
-        )
-
-    all_rows = (await db.execute(query)).all()
-    items = [
-        {
-            "id": str(r.id),
-            "title": r.title,
-            "ip_address": r.ip_address or "Unknown",
-            "queries": r.queries,
-            "embed_tokens": int(r.embed_tokens),
-            "prompt_tokens": int(r.prompt_tokens),
-            "reasoning_tokens": int(r.reasoning_tokens),
-            "output_tokens": int(r.output_tokens),
-            "total_tokens": int(r.total_tokens),
-            "cost_usd": round(float(r.cost_usd), 6),
-            "last_active": r.last_active.isoformat() + "Z" if r.last_active else None,
-        }
-        for r in all_rows
-    ]
-
-    reverse = "asc" not in sort
-    if "cost" in sort:
-        items.sort(
-            key=lambda x: x.get("cost_usd") if x.get("cost_usd") is not None else 0.0,
-            reverse=reverse,
-        )
-    elif "queries" in sort:
-        items.sort(
-            key=lambda x: x.get("queries") if x.get("queries") is not None else 0,
-            reverse=reverse,
-        )
-    elif "tokens" in sort:
-        items.sort(key=lambda x: x.get("total_tokens") or 0, reverse=reverse)
-    else:
-        items.sort(key=lambda x: x.get("last_active") or "", reverse=reverse)
-
-    top_3 = sorted(items, key=lambda x: x["cost_usd"], reverse=True)[:3]
-    top_cards = [
-        {
-            "id": x["id"],
-            "title": x["title"],
-            "ip_address": x["ip_address"],
-            "queries": x["queries"],
-            "tokens": x["total_tokens"],
-            "cost_usd": x["cost_usd"],
-        }
-        for x in top_3
-    ]
-
-    total_count = len(items)
-    avg_turns = (
-        round(sum(x["queries"] for x in items) / total_count, 1)
-        if total_count > 0
-        else 0
+    return sessions_page(
+        rows["rows"], q=q, ip=ip, sort=sort, limit=limit, offset=offset
     )
-    avg_cost = (
-        round(sum(x["cost_usd"] for x in items) / total_count, 6)
-        if total_count > 0
-        else 0.0
-    )
-    max_depth = max((x["queries"] for x in items), default=0)
-
-    paged_items = items[offset : offset + limit]
-
-    return {
-        "items": paged_items,
-        "total": total_count,
-        "limit": limit,
-        "offset": offset,
-        "stats": {
-            "total_sessions": total_count,
-            "avg_turns_per_session": avg_turns,
-            "avg_cost_per_session": avg_cost,
-            "max_depth": max_depth,
-            "top_sessions": top_cards,
-        },
-    }
 
 
 # ============================================================================
@@ -1100,17 +817,6 @@ def usage_date_range(
     return lo, hi
 
 
-def _turn_time_filter(
-    query: Any, user_msg: Any, lo: datetime | None, hi: datetime | None
-) -> Any:
-    """Keep the user turns asked inside ``[lo, hi]`` (either end optional)."""
-    if lo is not None:
-        query = query.where(user_msg.created_at >= lo)
-    if hi is not None:
-        query = query.where(user_msg.created_at <= hi)
-    return query
-
-
 @router.get("/queries")
 async def get_usage_queries(
     audience: Audience = Depends(audience_scope),
@@ -1141,29 +847,29 @@ async def get_usage_queries(
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
         raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
     lo, hi = usage_date_range(from_date, to_date)
-    args = UsageQueryArgs(
-        audience, q, ip, session_id, outcome, grounded, lo, hi, sort, limit, offset
+    filters = QueryFilters(audience, q, ip, session_id, outcome, grounded, lo, hi)
+    # Header stats aggregate every matching turn: stored per filter set (not
+    # per page), so sorting and paging never recompute them.
+    stats = await get_snapshot(USAGE_QUERY_STATS_KIND, asdict(filters), runner.gather)
+    (items,) = await runner.gather(
+        lambda db: _query_page_items(db, filters, sort, limit, offset)
     )
-    # Header stats aggregate every matching turn: cached stale-while-revalidate
-    # per parameter set, computed on its own session.
-    return await get_snapshot(USAGE_QUERIES_KIND, asdict(args), runner.gather)
+    return {
+        "items": items,
+        "total": stats["total_queries"],
+        "limit": limit,
+        "offset": offset,
+        "stats": stats,
+    }
 
 
-USAGE_QUERIES_KIND = "usage.queries"
-
-
-async def _usage_queries_snapshot(gather: Gather, params: dict) -> dict:
-    values = dict(params)
-    for name in ("lo", "hi"):
-        if isinstance(values[name], str):
-            values[name] = datetime.fromisoformat(values[name])
-    args = UsageQueryArgs(**values)
-    (page,) = await gather(lambda s: _usage_queries_page(s, args))
-    return page
+USAGE_QUERY_STATS_KIND = "usage.query_stats"
 
 
 @dataclass(frozen=True, slots=True)
-class UsageQueryArgs:
+class QueryFilters:
+    """Filters of the All Queries tab (the key of its stored header stats)."""
+
     audience: str
     q: str | None
     ip: str | None
@@ -1172,150 +878,175 @@ class UsageQueryArgs:
     grounded: bool | None
     lo: datetime | None
     hi: datetime | None
-    sort: str
-    limit: int
-    offset: int
 
+    @classmethod
+    def from_params(cls, params: dict) -> "QueryFilters":
+        values = dict(params)
+        for name in ("lo", "hi"):
+            if isinstance(values[name], str):
+                values[name] = datetime.fromisoformat(values[name])
+        return cls(**values)
 
-async def _usage_queries_page(db: AsyncSession, args: UsageQueryArgs) -> dict:
-    audience, q, ip, session_id = args.audience, args.q, args.ip, args.session_id
-    outcome, grounded, lo, hi = args.outcome, args.grounded, args.lo, args.hi
-    sort, limit, offset = args.sort, args.limit, args.offset
-    user_msg = aliased(ChatMessageRecord, name="user_turn")
-    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
-
-    query = (
-        select(
-            asst_msg.request_id.label("request_id"),
-            user_msg.created_at.label("created_at"),
-            user_msg.content.label("query"),
-            asst_msg.content.label("answer"),
-            func.coalesce(user_msg.ip_address, ChatSession.created_ip, "Unknown").label(
-                "ip_address"
-            ),
-            ChatSession.id.label("session_id"),
-            ChatSession.title.label("session_title"),
-            func.coalesce(asst_msg.prompt_tokens, 0).label("prompt_tokens"),
-            func.coalesce(asst_msg.reasoning_tokens, 0).label("reasoning_tokens"),
-            func.coalesce(
-                func.greatest(
-                    0, asst_msg.completion_tokens - asst_msg.reasoning_tokens
-                ),
-                0,
-            ).label("output_tokens"),
-            func.coalesce(asst_msg.embedding_tokens, 0).label("embed_tokens"),
-            func.coalesce(asst_msg.cost_usd, 0.0).label("cost_usd"),
-            asst_msg.outcome.label("outcome"),
-            asst_msg.grounded.label("grounded"),
-            LatencyRecord.total_ms.label("latency_ms"),
+    async def conditions(self, db: AsyncSession) -> list[Any]:
+        return await turn_filters(
+            db,
+            self.audience,  # type: ignore[arg-type]
+            lo=self.lo,
+            hi=self.hi,
+            ip=self.ip,
+            session_id=self.session_id,
+            outcome=self.outcome,
+            grounded=self.grounded,
+            search=self.q,
         )
-        .select_from(user_msg)
-        .join(
-            asst_msg,
-            and_(
-                user_msg.session_id == asst_msg.session_id,
-                user_msg.turn_index == asst_msg.turn_index,
-                asst_msg.role == "assistant",
-            ),
-        )
-        .join(ChatSession, user_msg.session_id == ChatSession.id)
-        .outerjoin(LatencyRecord, asst_msg.request_id == LatencyRecord.request_id)
-        .where(user_msg.role == "user")
+
+
+async def _usage_query_stats_snapshot(gather: Gather, params: dict) -> dict:
+    filters = QueryFilters.from_params(params)
+
+    async def stats(db: AsyncSession) -> dict:
+        await force_custom_plans(db)
+        return await _query_stats(db, await filters.conditions(db))
+
+    (result,) = await gather(stats)
+    return result
+
+
+async def _query_page_items(
+    db: AsyncSession, filters: QueryFilters, sort: str, limit: int, offset: int
+) -> list[dict[str, Any]]:
+    """One page of turns, read live through the ledger's sort indexes; the
+    question / answer texts and session title are joined for its rows only."""
+    await force_custom_plans(db)
+    conds = await filters.conditions(db)
+    page = (
+        select(UsageTurn)
+        .where(*conds)
+        .order_by(*_query_order(UsageTurn.__table__.c, sort))
+        .limit(limit)
+        .offset(offset)
+        .subquery("page")
     )
+    rows = await db.execute(_query_rows(page).order_by(*_query_order(page.c, sort)))
+    return [_query_item(r) for r in rows]
 
-    query = await apply_usage_filters(
-        query=query,
-        db=db,
-        user_alias=user_msg,
-        asst_alias=asst_msg,
-        audience=audience,
-        from_date=lo,
-        to_date=hi,
-        ip=ip,
-        session_id=session_id,
-        outcome=outcome,
-        grounded=grounded,
-        search=q,
-    )
 
-    stats = await _query_stats(db, query)
-    total_count = stats["total_queries"]
-
-    sort_column = {
-        "cost": asst_msg.cost_usd,
-        "tokens": asst_msg.total_tokens,
-        "latency": LatencyRecord.total_ms,
-        "created_at": user_msg.created_at,
+def _query_order(c: Any, sort: str) -> list[Any]:
+    """ORDER BY of an All Queries sort over ledger columns ``c`` (newest first
+    within equal values; the assistant message id makes the order total)."""
+    key = {
+        "cost": c.cost_usd,
+        "tokens": c.total_tokens,
+        "latency": c.latency_ms,
+        "created_at": c.created_at,
     }[sort.rsplit("_", 1)[0]]
     direction = asc if sort.endswith("_asc") else desc
-    query = query.order_by(
-        direction(sort_column).nulls_last(), desc(user_msg.created_at)
+    newest = [] if key is c.created_at else [desc(c.created_at)]
+    # Matches an ``ix_usage_turns_*`` index exactly.
+    return [direction(key).nulls_last(), *newest, c.asst_msg_id]
+
+
+# Characters of the question / answer shown in a list row.
+_QUERY_PREVIEW = 160
+_ANSWER_PREVIEW = 200
+
+
+def _query_rows(page: Any) -> Any:
+    """Display columns of the ledger rows in ``page`` (in ``page``'s order)."""
+    user_msg = aliased(ChatMessageRecord, name="user_turn")
+    asst_msg = aliased(ChatMessageRecord, name="asst_turn")
+    return (
+        select(
+            page.c.request_id,
+            page.c.created_at,
+            func.left(user_msg.content, _QUERY_PREVIEW).label("query"),
+            func.left(asst_msg.content, _ANSWER_PREVIEW).label("answer"),
+            func.coalesce(page.c.user_ip, page.c.session_ip, "Unknown").label(
+                "ip_address"
+            ),
+            page.c.session_id,
+            ChatSession.title.label("session_title"),
+            func.coalesce(page.c.prompt_tokens, 0).label("prompt_tokens"),
+            func.coalesce(page.c.reasoning_tokens, 0).label("reasoning_tokens"),
+            func.coalesce(
+                func.greatest(0, page.c.completion_tokens - page.c.reasoning_tokens),
+                0,
+            ).label("output_tokens"),
+            func.coalesce(page.c.embedding_tokens, 0).label("embed_tokens"),
+            func.coalesce(page.c.cost_usd, 0.0).label("cost_usd"),
+            page.c.outcome,
+            page.c.grounded,
+            page.c.latency_ms,
+        )
+        .select_from(page)
+        .join(user_msg, user_msg.id == page.c.user_msg_id)
+        .join(asst_msg, asst_msg.id == page.c.asst_msg_id)
+        .join(ChatSession, ChatSession.id == page.c.session_id)
     )
 
-    paged_rows = (await db.execute(query.limit(limit).offset(offset))).all()
 
-    items = [
-        {
-            "request_id": r.request_id or "unknown",
-            "created_at": r.created_at.isoformat() + "Z" if r.created_at else None,
-            "query": (r.query or "")[:160],
-            "answer": (r.answer or "")[:200],
-            "ip_address": r.ip_address,
-            "session_id": str(r.session_id),
-            "session_title": r.session_title,
-            "prompt_tokens": int(r.prompt_tokens),
-            "reasoning_tokens": int(r.reasoning_tokens),
-            "output_tokens": int(r.output_tokens),
-            "embed_tokens": int(r.embed_tokens),
-            "cost_usd": round(float(r.cost_usd), 6),
-            "outcome": r.outcome or "answered",
-            "grounded": r.grounded,
-            "latency_ms": round(float(r.latency_ms), 1) if r.latency_ms else None,
-        }
-        for r in paged_rows
-    ]
-
+def _query_item(r: Any) -> dict[str, Any]:
     return {
-        "items": items,
-        "total": total_count,
-        "limit": limit,
-        "offset": offset,
-        "stats": stats,
+        "request_id": r.request_id or "unknown",
+        "created_at": r.created_at.isoformat() + "Z" if r.created_at else None,
+        "query": r.query or "",
+        "answer": r.answer or "",
+        "ip_address": r.ip_address,
+        "session_id": str(r.session_id),
+        "session_title": r.session_title,
+        "prompt_tokens": int(r.prompt_tokens),
+        "reasoning_tokens": int(r.reasoning_tokens),
+        "output_tokens": int(r.output_tokens),
+        "embed_tokens": int(r.embed_tokens),
+        "cost_usd": round(float(r.cost_usd), 6),
+        "outcome": r.outcome or "answered",
+        "grounded": r.grounded,
+        "latency_ms": round(float(r.latency_ms), 1) if r.latency_ms else None,
     }
 
 
-async def _query_stats(db: AsyncSession, query: Any) -> dict[str, Any]:
-    """Header stats of the Queries tab over every row matching the filters."""
-    sub = query.subquery()
-    outcome = func.coalesce(sub.c.outcome, "answered")
+async def _query_stats(db: AsyncSession, conds: list[Any]) -> dict[str, Any]:
+    """Header stats of the Queries tab over every turn matching ``conds``
+    (one grouped scan: per-outcome counts, sums for the averages)."""
+    outcome = func.coalesce(UsageTurn.outcome, "answered")
     generation = outcome.in_(GENERATION_OUTCOMES)
-    agg = (
+    tokens = (
+        func.coalesce(UsageTurn.prompt_tokens, 0)
+        + func.coalesce(UsageTurn.reasoning_tokens, 0)
+        + func.coalesce(OUTPUT_TOKENS, 0)
+    )
+    groups = (
         await db.execute(
             select(
+                outcome.label("outcome"),
                 func.count().label("total"),
                 func.count().filter(generation).label("evaluated"),
                 func.count()
-                .filter(generation & sub.c.grounded.is_(True))
+                .filter(generation & UsageTurn.grounded.is_(True))
                 .label("passed"),
-                func.avg(sub.c.latency_ms).label("avg_latency_ms"),
-                func.avg(
-                    sub.c.prompt_tokens + sub.c.reasoning_tokens + sub.c.output_tokens
-                ).label("avg_tokens"),
+                func.sum(UsageTurn.latency_ms).label("latency_sum"),
+                func.count(UsageTurn.latency_ms).label("latency_n"),
+                func.sum(tokens).label("tokens_sum"),
             )
+            .where(*conds)
+            .group_by(outcome)
         )
-    ).one()
-    by_outcome = (
-        await db.execute(select(outcome, func.count()).group_by(outcome))
     ).all()
-    evaluated = int(agg.evaluated or 0)
-    passed = int(agg.passed or 0)
+    total = sum(int(g.total) for g in groups)
+    evaluated = sum(int(g.evaluated) for g in groups)
+    passed = sum(int(g.passed) for g in groups)
+    latency_n = sum(int(g.latency_n) for g in groups)
+    latency_sum = sum(float(g.latency_sum or 0) for g in groups)
+    tokens_sum = sum(int(g.tokens_sum or 0) for g in groups)
     stats: dict[str, Any] = {
-        "total_queries": int(agg.total or 0),
-        "outcomes": {str(k): int(v) for k, v in by_outcome},
+        "total_queries": total,
+        "outcomes": {str(g.outcome): int(g.total) for g in groups},
         "groundedness_evaluated_turns": evaluated,
         "groundedness_passed_turns": passed,
-        "avg_latency_ms": _round_or_none(agg.avg_latency_ms),
-        "avg_tokens_per_query": _round_or_none(agg.avg_tokens),
+        "avg_latency_ms": _round_or_none(latency_sum / latency_n)
+        if latency_n
+        else None,
+        "avg_tokens_per_query": _round_or_none(tokens_sum / total) if total else None,
     }
     if evaluated:
         stats["groundedness_pass_rate"] = round(100 * passed / evaluated, 1)
@@ -1433,6 +1164,9 @@ async def get_query_detail(
 # STREAMING CSV EXPORT (Task 3.4)
 # ============================================================================
 
+# Rows fetched (and written to the response) per round trip of the export.
+_EXPORT_BATCH_ROWS = 500
+
 
 @router.get("/export")
 async def export_usage_csv(
@@ -1494,75 +1228,64 @@ async def export_usage_csv(
             out.seek(0)
             out.truncate(0)
 
-            # Query data
-            user_msg = aliased(ChatMessageRecord, name="user_turn")
-            asst_msg = aliased(ChatMessageRecord, name="asst_turn")
-            stmt = (
-                select(
-                    asst_msg.request_id,
-                    user_msg.created_at,
-                    user_msg.ip_address,
-                    ChatSession.title,
-                    user_msg.content,
-                    asst_msg.prompt_tokens,
-                    asst_msg.reasoning_tokens,
-                    func.greatest(
-                        0, asst_msg.completion_tokens - asst_msg.reasoning_tokens
-                    ),
-                    asst_msg.embedding_tokens,
-                    asst_msg.cost_usd,
-                    asst_msg.outcome,
-                    asst_msg.grounded,
-                )
-                .select_from(user_msg)
-                .join(
-                    asst_msg,
-                    and_(
-                        user_msg.session_id == asst_msg.session_id,
-                        user_msg.turn_index == asst_msg.turn_index,
-                        asst_msg.role == "assistant",
-                    ),
-                )
-                .join(ChatSession, user_msg.session_id == ChatSession.id)
-                .where(user_msg.role == "user")
-            )
-            stmt = await apply_usage_filters(
-                query=stmt,
-                db=db,
-                user_alias=user_msg,
-                asst_alias=asst_msg,
-                audience=audience,
-                from_date=lo,
-                to_date=hi,
+            # Rows stream from a server-side cursor: the first bytes leave
+            # before the last row is read.
+            conds = await turn_filters(
+                db,
+                audience,
+                lo=lo,
+                hi=hi,
                 ip=ip,
                 session_id=session_id,
                 outcome=outcome,
                 grounded=grounded,
                 search=q,
             )
-            stmt = stmt.order_by(desc(user_msg.created_at)).limit(
-                settings.usage_export_max_rows
+            user_msg = aliased(ChatMessageRecord, name="user_turn")
+            stmt = (
+                select(
+                    UsageTurn.request_id,
+                    UsageTurn.created_at,
+                    UsageTurn.user_ip,
+                    ChatSession.title,
+                    user_msg.content,
+                    UsageTurn.prompt_tokens,
+                    UsageTurn.reasoning_tokens,
+                    OUTPUT_TOKENS,
+                    UsageTurn.embedding_tokens,
+                    UsageTurn.cost_usd,
+                    UsageTurn.outcome,
+                    UsageTurn.grounded,
+                )
+                .join(user_msg, user_msg.id == UsageTurn.user_msg_id)
+                .join(ChatSession, ChatSession.id == UsageTurn.session_id)
+                .where(*conds)
+                .order_by(desc(UsageTurn.created_at))
+                .limit(settings.usage_export_max_rows)
             )
-
-            rows = (await db.execute(stmt)).all()
-            for r in rows:
-                row_cells = [
-                    sanitize_csv_cell(r[0]),
-                    sanitize_csv_cell(r[1].isoformat() if r[1] else ""),
-                    sanitize_csv_cell(r[2] or "Unknown"),
-                    sanitize_csv_cell(r[3]),
-                    sanitize_csv_cell(r[4]),
-                    sanitize_csv_cell(r[5] or 0),
-                    sanitize_csv_cell(r[6] or 0),
-                    sanitize_csv_cell(r[7] or 0),
-                    sanitize_csv_cell(r[8] or 0),
-                    sanitize_csv_cell(
-                        f"{r[9]:.6f}" if r[9] is not None else "0.000000"
-                    ),
-                    sanitize_csv_cell(r[10] or "answered"),
-                    sanitize_csv_cell("Yes" if r[11] else "No"),
-                ]
-                writer.writerow(row_cells)
+            result = await db.stream(
+                stmt.execution_options(yield_per=_EXPORT_BATCH_ROWS)
+            )
+            async for batch in result.partitions():
+                for r in batch:
+                    writer.writerow(
+                        [
+                            sanitize_csv_cell(r[0]),
+                            sanitize_csv_cell(r[1].isoformat() if r[1] else ""),
+                            sanitize_csv_cell(r[2] or "Unknown"),
+                            sanitize_csv_cell(r[3]),
+                            sanitize_csv_cell(r[4]),
+                            sanitize_csv_cell(r[5] or 0),
+                            sanitize_csv_cell(r[6] or 0),
+                            sanitize_csv_cell(r[7] or 0),
+                            sanitize_csv_cell(r[8] or 0),
+                            sanitize_csv_cell(
+                                f"{r[9]:.6f}" if r[9] is not None else "0.000000"
+                            ),
+                            sanitize_csv_cell(r[10] or "answered"),
+                            sanitize_csv_cell("Yes" if r[11] else "No"),
+                        ]
+                    )
                 yield out.getvalue()
                 out.seek(0)
                 out.truncate(0)
@@ -1585,16 +1308,13 @@ async def export_usage_csv(
             out.seek(0)
             out.truncate(0)
 
-            user_res = await _usage_users_page(
-                db,
-                audience=audience,
+            user_res = users_page(
+                await users_base(db, audience, lo, hi),
                 q=q,
                 user_type=user_type,
                 sort="cost_desc",
                 limit=settings.usage_export_max_rows,
                 offset=0,
-                from_dt=lo,
-                to_dt=hi,
             )
             for item in user_res["items"]:
                 writer.writerow(
@@ -1632,16 +1352,13 @@ async def export_usage_csv(
 
             # Not the page route: its 200-row page cap would reject the
             # export size with a 422 after the CSV header was already sent.
-            sess_res = await _usage_sessions_page(
-                db,
-                audience=audience,
+            sess_res = sessions_page(
+                await sessions_base(db, audience, lo, hi),
                 q=q,
                 ip=ip,
                 sort="cost_desc",
                 limit=settings.usage_export_max_rows,
                 offset=0,
-                from_dt=lo,
-                to_dt=hi,
             )
             for item in sess_res["items"]:
                 writer.writerow(
@@ -1692,24 +1409,38 @@ register(
         )
     ],
 )
-register(
-    USAGE_QUERIES_KIND,
-    _usage_queries_snapshot,
-    [
-        asdict(
-            UsageQueryArgs(
-                "overview",
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                "created_at_desc",
-                8,
-                0,
-            )
-        )
-    ],
-)
+
+
+def _list_range_defaults() -> list[tuple[datetime | None, datetime | None]]:
+    """The range picker's presets as the lists receive them (inclusive UTC
+    days ending today: 24 h spans yesterday and today)."""
+    today = utcnow().date()
+    firsts = (
+        today - timedelta(days=1),
+        *(today - timedelta(days=d - 1) for d in _PRESET_DAYS),
+    )
+    return [usage_date_range(first.isoformat(), today.isoformat()) for first in firsts]
+
+
+def _list_base_defaults() -> list[dict]:
+    return [
+        _range_params(audience, lo, hi)
+        for audience in _AUDIENCES
+        for lo, hi in _list_range_defaults()
+    ]
+
+
+def _query_stats_defaults() -> list[dict]:
+    # All time, overview: the dashboard's recent-queries card.
+    windows = [(None, None), *_list_range_defaults()]
+    return [
+        asdict(QueryFilters(audience, None, None, None, None, None, lo, hi))
+        for audience in _AUDIENCES
+        for lo, hi in windows
+        if audience == "overview" or lo is not None
+    ]
+
+
+register(USAGE_USERS_BASE_KIND, _usage_users_base_snapshot, _list_base_defaults)
+register(USAGE_SESSIONS_BASE_KIND, _usage_sessions_base_snapshot, _list_base_defaults)
+register(USAGE_QUERY_STATS_KIND, _usage_query_stats_snapshot, _query_stats_defaults)

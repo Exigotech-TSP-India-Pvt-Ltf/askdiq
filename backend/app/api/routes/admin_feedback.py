@@ -3,6 +3,7 @@
 - GET    /admin/feedback                          enriched review queue (F1, F9)
 - GET    /admin/feedback/analytics                trend, distribution, funnel, gaps (F2, F3, F8)
 - GET    /admin/feedback/export?format=jsonl      preference pairs, streamed
+- GET    /admin/feedback/pairs                    first preference pairs (preview)
 - GET    /admin/feedback/golden                   promoted golden cases
 - POST   /admin/feedback/golden/{case_id}/run     queue an eval run (deduped)
 - POST   /admin/feedback/bulk                     bulk triage, all-or-nothing
@@ -33,11 +34,23 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
-from app.core.database import get_db, get_session_factory, release_connection
-from app.core.http_cache import cached_response
-from app.dashboard.range_params import optional_day_range
+from app.core.database import get_db, get_session_factory
+from app.dashboard.range_params import (
+    day_params,
+    optional_day_range,
+    params_days,
+    preset_day_ranges,
+)
+from app.dashboard.snapshots import (
+    Gather,
+    register,
+    schedule_drop_snapshots,
+    snapshot_response,
+)
 from app.dashboard.window import DayRange
+from app.entities.conversations import DETAIL_SNAPSHOT_KIND
 from app.feedback import analytics, service
 from app.feedback import repository as repo
 from app.feedback.jobs import enqueue_golden_run
@@ -57,6 +70,8 @@ from app.schemas.feedback import (
     GoldenCase,
     GoldenCasePage,
     GoldenRunResponse,
+    PreferencePair,
+    PreferencePairPreview,
     PromoteRequest,
     PromoteResponse,
     TriageStatus,
@@ -179,7 +194,7 @@ async def get_feedback_analytics(
     request: Request,
     audience: str = Query("overview"),
     days: DayRange | None = Depends(optional_day_range),
-    db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> Response:
@@ -188,18 +203,68 @@ async def get_feedback_analytics(
 
     Optional ``from`` / ``to`` (inclusive UTC days) limit every section to
     ratings given in that range; without them totals are all time and the
-    trend covers the last ``FEEDBACK_TREND_DAYS``."""
-    scope = audience_scope(audience)
-    aud_feedback = await build_audience_filter(db, repo.CLIENT_IP, scope)
-    aud_queries = await build_audience_filter(db, ChatSession.created_ip, scope)
-    await release_connection(db)  # never hold a pool slot while waiting for more
-    payload = await analytics.compute_analytics(
+    trend covers the last ``FEEDBACK_TREND_DAYS``. Precomputed per audience
+    and range (``dashboard_snapshots``); ``X-Data-As-Of`` is its age."""
+    params = {"audience": audience_scope(audience), **day_params(days)}
+    return await snapshot_response(
+        request,
+        FEEDBACK_ANALYTICS_KIND,
+        params,
+        runner.gather,
+        lambda gather: _feedback_analytics(gather, params, session_factory),
+    )
+
+
+FEEDBACK_ANALYTICS_KIND = "feedback.analytics"
+
+
+def _feedback_changed() -> None:
+    """A triage / promotion changed the counts: drop the analytics snapshots
+    (the next read recomputes them; the live stream notifies open consoles).
+    Conversation details show each turn's ratings and promoted case."""
+    schedule_drop_snapshots(FEEDBACK_ANALYTICS_KIND)
+    schedule_drop_snapshots(DETAIL_SNAPSHOT_KIND)
+
+
+async def _feedback_analytics_snapshot(gather: Gather, params: dict) -> dict:
+    return await _feedback_analytics(gather, params, get_session_factory())
+
+
+async def _feedback_analytics(
+    gather: Gather,
+    params: dict,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> dict:
+    scope = params["audience"]
+
+    async def filters(db: AsyncSession) -> tuple[Any, Any]:
+        return (
+            await build_audience_filter(db, repo.CLIENT_IP, scope),
+            await build_audience_filter(db, ChatSession.created_ip, scope),
+        )
+
+    ((aud_feedback, aud_queries),) = await gather(filters)
+    days = params_days(params)
+    return await analytics.compute_analytics(
         aud_feedback,
         aud_queries,
         session_factory,
         window=(days.start, days.end) if days else None,
     )
-    return cached_response(request, payload)
+
+
+def _feedback_analytics_defaults() -> list[dict]:
+    """The Feedback page's views: each audience, all time and every preset."""
+    return [
+        {"audience": audience, **day_params(days)}
+        for audience in ("overview", "users", "testing")
+        for days in preset_day_ranges()
+    ]
+
+
+register(
+    FEEDBACK_ANALYTICS_KIND, _feedback_analytics_snapshot, _feedback_analytics_defaults
+)
 
 
 @router.get(
@@ -246,6 +311,35 @@ def _golden(r: EvalPromotedCase) -> GoldenCase:
 # ---------------------------------------------------------------------------
 # Export (feedback:export)
 # ---------------------------------------------------------------------------
+
+MAX_PREVIEW_PAIRS = 100
+
+
+@router.get(
+    "/pairs",
+    response_model=PreferencePairPreview,
+    summary="Preview the first preference pairs of the export",
+    responses=_READ_ERRORS,
+)
+async def preview_feedback_pairs(
+    limit: int = Query(50, ge=1, le=MAX_PREVIEW_PAIRS),
+    complete_only: bool = False,
+    days: DayRange | None = Depends(optional_day_range),
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_permission(Permission.FEEDBACK_EXPORT)),
+) -> PreferencePairPreview:
+    """The first ``limit`` pairs of ``GET /export`` with the same defaults
+    (oldest first, dismissed excluded, PII-masked), as one bounded JSON
+    page. Optional ``from`` / ``to`` (inclusive UTC days)."""
+    pairs, truncated = await service.preview_pairs(
+        db,
+        complete_only=complete_only,
+        limit=limit,
+        window=(days.start, days.end) if days else None,
+    )
+    return PreferencePairPreview(
+        pairs=[PreferencePair(**p) for p in pairs], truncated=truncated
+    )
 
 
 @router.get(
@@ -356,7 +450,9 @@ async def bulk_triage_feedback(
 ) -> FeedbackBulkResponse:
     """One transaction: if any id is missing (404) or cannot make the
     transition (409), nothing is changed."""
-    return await service.bulk_triage(db, body, user.email)
+    result = await service.bulk_triage(db, body, user.email)
+    _feedback_changed()
+    return result
 
 
 @router.patch(
@@ -374,7 +470,9 @@ async def triage_feedback(
     """Transitions: new -> reviewed | promoted | dismissed; reviewed ->
     promoted | dismissed; dismissed -> new. Send the ``version`` you read;
     a stale version returns 409."""
-    return await service.triage(db, feedback_id, body, user.email)
+    result = await service.triage(db, feedback_id, body, user.email)
+    _feedback_changed()
+    return result
 
 
 @router.post(
@@ -397,6 +495,8 @@ async def promote_feedback_to_test(
         raise HTTPException(
             status_code=400, detail="Invalid message ID format"
         ) from None
-    return await service.promote_message(
+    result = await service.promote_message(
         db, mid, user.email, body.review_note if body else None
     )
+    _feedback_changed()
+    return result

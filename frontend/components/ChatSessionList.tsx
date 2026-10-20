@@ -38,6 +38,7 @@ export function ChatSessionList({
   onNew,
   onRename,
   onDelete,
+  onIntent,
   className = "w-64 shrink-0 border-r border-ink/10 bg-ink/[0.015] dark:border-white/10 dark:bg-dark-surface/60",
 }: {
   sessions: ChatSessionSummary[];
@@ -46,6 +47,8 @@ export function ChatSessionList({
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
+  /** Hover / focus on a row: warm that conversation so it opens instantly. */
+  onIntent?: (id: string) => void;
   /** Container sizing / surface (the /chat sidebar by default; the AskDIQ drawer passes its own). */
   className?: string;
 }) {
@@ -95,6 +98,8 @@ export function ChatSessionList({
             <div
               key={session.id}
               onClick={() => editingId !== session.id && onSelect(session.id)}
+              onMouseEnter={onIntent ? () => onIntent(session.id) : undefined}
+              onFocus={onIntent ? () => onIntent(session.id) : undefined}
               className={`group flex cursor-pointer items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs transition ${
                 active
                   ? "bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-semibold"

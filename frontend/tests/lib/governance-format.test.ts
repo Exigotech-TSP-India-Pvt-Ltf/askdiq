@@ -107,6 +107,11 @@ describe("query strings and links", () => {
     expect(rangeBounds(undefined)).toEqual({});
   });
 
+  it("starts rolling presets on a whole minute (stable cache key)", () => {
+    const from = new Date(Date.UTC(2026, 9, 1, 10, 30, 41, 123));
+    expect(rangeBounds({ kind: "7d", from, to: new Date() })).toEqual({ from: "2026-10-01T10:30:00.000Z" });
+  });
+
   it("builds Logs deep links", () => {
     expect(logsHref({ level: ["CRITICAL", "ALERT"], at: "2026-10-15T03:00:00Z" })).toBe(
       "/admin/governance?tab=Logs&level=CRITICAL%2CALERT&at=2026-10-15T03%3A00%3A00Z",

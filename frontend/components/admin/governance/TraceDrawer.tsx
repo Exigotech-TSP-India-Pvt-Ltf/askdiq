@@ -2,7 +2,7 @@
 
 import React from "react";
 import { FileText, Flag, MessagesSquare } from "lucide-react";
-import { governanceApi, type GovernanceTraceDetail, type WaterfallStage } from "@/lib/governance-api";
+import { governanceApi, governanceKeys, type GovernanceTraceDetail, type WaterfallStage } from "@/lib/governance-api";
 import { formatCountExact, formatDateTime, formatMs, formatUsd, humanize } from "@/lib/governance-format";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useApiQuery } from "@/lib/query-cache";
@@ -175,7 +175,7 @@ export interface TraceDrawerProps {
 /** Trace inspector (newplan §4.2): waterfall, sources with scores, flags, conversation link. */
 export function TraceDrawer({ requestId, audience, token, onClose, onPrev, onNext }: TraceDrawerProps) {
   const query = useApiQuery<GovernanceTraceDetail>(
-    requestId ? ["admin/governance/trace", requestId, audience] : null,
+    requestId ? governanceKeys.trace(requestId, audience) : null,
     (signal) => governanceApi.trace(token, requestId ?? "", audience, signal),
     { enabled: Boolean(token && requestId) },
   );

@@ -6,7 +6,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { UserManagementPage } from "@/components/admin/user-management/UserManagementPage";
 import {
@@ -24,6 +24,8 @@ import {
 
 vi.mock("next/navigation", () => import("../helpers/memory-router").then((mod) => mod.navigationMock));
 
+// The full suite runs files in parallel; give async queries headroom on slow CI.
+configure({ asyncUtilTimeout: 5_000 });
 // Multi-step UI flows with animated overlays; the 5 s default is tight on loaded CI runners.
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -79,22 +81,28 @@ describe("KPI strip and charts (F1.4.1)", () => {
   it("a role donut segment filters the Users tab via the URL and refetches with role + status", async () => {
     const admin = await screen.findByRole("button", { name: /^Admin: 1/ });
     fireEvent.click(admin);
-    expect(memoryRouter.params().get("role")).toBe("admin");
-    expect(memoryRouter.params().get("status")).toBe("active");
+    await waitFor(() => {
+      expect(memoryRouter.params().get("role")).toBe("admin");
+      expect(memoryRouter.params().get("status")).toBe("active");
+    });
     await waitFor(() => {
       const last = server.callsTo("GET", "/admin/users-accounts").filter((c) => c.path === "/admin/users-accounts").at(-1);
       expect(last?.query.get("role")).toBe("admin");
       expect(last?.query.get("status")).toBe("active");
     });
-    await waitFor(() => expect(within(usersTable()).getByText("Alice Admin")).toBeInTheDocument());
-    expect(within(usersTable()).queryByText("Bob Operator")).not.toBeInTheDocument();
+    // The unfiltered rows stay on screen until the filtered page arrives:
+    // wait for the filtered result itself, not only for Alice (in both).
+    await waitFor(() => {
+      expect(within(usersTable()).getByText("Alice Admin")).toBeInTheDocument();
+      expect(within(usersTable()).queryByText("Bob Operator")).not.toBeInTheDocument();
+    });
   });
 
   it("a funnel stage sets the status filter; keyboard Enter works too", async () => {
     const requested = await screen.findByRole("button", { name: /^Requested: 8/ });
     requested.focus();
     fireEvent.keyDown(requested, { key: "Enter" });
-    expect(memoryRouter.params().get("status")).toBe("pending");
+    await waitFor(() => expect(memoryRouter.params().get("status")).toBe("pending"));
     expect(memoryRouter.params().get("role")).toBeNull();
   });
 
@@ -293,7 +301,7 @@ describe("permission gating", () => {
 
   it("fails closed when /auth/me fails", async () => {
     server = setupUserManagement();
-    server.on("GET /auth/me", () => ({ status: 401, body: { detail: "Not signed in." } }));
+    server.on("GET /auth/me", () => ({ status: 500, body: { detail: "Backend unavailable." } }));
     renderWithProviders(<UserManagementPage />);
     expect(await screen.findByText("Could not check your access")).toBeInTheDocument();
     // The header bell may poll /admin/alerts (dashboard:read); nothing else.

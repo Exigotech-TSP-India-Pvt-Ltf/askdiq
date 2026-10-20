@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Timer } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
@@ -14,12 +14,14 @@ import {
   TRACE_OUTCOMES,
   TRACE_STATUSES,
   governanceApi,
+  governanceKeys,
   type GovernanceTraceItem,
   type GovernanceTracePage,
 } from "@/lib/governance-api";
 import { formatCount, formatMs, formatUsd, humanize } from "@/lib/governance-format";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { parseOne, rangeBounds } from "@/lib/governance-links";
+import { prefetchTrace, prefetchTraceNeighbours } from "@/lib/governance-prefetch";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
@@ -152,11 +154,11 @@ export default function TracesView() {
   const [autoRefresh, setAutoRefresh] = React.useState(false);
 
   const [pageSize, setPageSize] = useState<number>(TRACES_PAGE_SIZE);
-  const filterKey = [audience, status, outcome, latencyBucket, q, from, to, pageSize].join("|");
+  const filterKey = governanceKeys.tracesFilter({ audience, status, outcome, latencyBucket, q, from, to, pageSize });
   const pager = useCursorStack(filterKey);
 
   const query = useApiQuery<GovernanceTracePage>(
-    ["admin/governance/traces", filterKey, pager.cursor],
+    governanceKeys.traces(filterKey, pager.cursor),
     (signal) =>
       governanceApi.traces(
         token,
@@ -184,6 +186,11 @@ export default function TracesView() {
   const idx = requestId ? items.findIndex((t) => t.request_id === requestId) : -1;
   const onPrev = idx > 0 ? () => openTrace(items[idx - 1].request_id) : undefined;
   const onNext = idx >= 0 && idx < items.length - 1 ? () => openTrace(items[idx + 1].request_id) : undefined;
+  // Drawer next / previous open from cache.
+  useEffect(() => {
+    if (idx >= 0) prefetchTraceNeighbours(token, items, idx, audience);
+  }, [audience, idx, items, token]);
+  const onRowIntent = useCallback((row: GovernanceTraceItem) => prefetchTrace(token, row.request_id, audience), [audience, token]);
 
   const columns = useMemo(() => traceColumns((id) => openTrace(id)), [openTrace]);
   const total = page ? `${page.total_is_estimate ? "≈ " : ""}${formatCount(page.total)} traces` : undefined;
@@ -270,6 +277,7 @@ export default function TracesView() {
           error={query.error && !page ? "Couldn't load traces." : null}
           onRetry={() => void refetch()}
           onRowClick={(row) => openTrace(row.request_id)}
+          onRowIntent={onRowIntent}
           emptyMessage="No request traces match these filters."
         />
       </TableCard>

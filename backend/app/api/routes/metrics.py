@@ -1,10 +1,12 @@
 import asyncio
 import json
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -12,12 +14,29 @@ from sqlalchemy.orm import aliased
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
+from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.http_cache import cached_response, encoded_response
 from app.core.logging_config import get_logger
 from app.core.stats import percentile
 from app.dashboard import eval_series
-from app.dashboard.range_params import optional_day_range
+from app.dashboard import evaluation_views as eval_views
+from app.dashboard.range_params import (
+    day_params,
+    optional_day_range,
+    params_days,
+    preset_day_ranges,
+)
+from app.dashboard.snapshots import (
+    Gather,
+    compute_and_store,
+    get_snapshot,
+    register,
+    snapshot_as_of,
+    snapshot_key,
+    snapshot_response,
+)
 from app.dashboard.window import DayRange
 from app.governance.audience import build_audience_filter
 from app.models.db_models import (
@@ -616,20 +635,170 @@ async def _build_live_user_evaluation(
 
 @router.get("/metrics/evaluation/live")
 async def live_evaluation_report(
+    request: Request,
     audience: str = Query("users"),
     compare: bool = Query(False),
     days: DayRange | None = Depends(optional_day_range),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
+    runner: ScopedRunner = Depends(get_scoped_runner),
+) -> Response:
     """Continuous Live RAG evaluation with real database metrics and benchmark comparison.
 
     Optional ``from`` / ``to`` (inclusive UTC days) limit the live records and
     the pass-rate trend runs to that range (the response then echoes
     ``window``); without them it is the latest records and runs, as before.
     The benchmark golden suite itself is a fixed file, so only its run
-    history is filtered.
+    history is filtered. Precomputed per audience and range
+    (``dashboard_snapshots``); ``X-Data-As-Of`` is its age. ``compare`` is
+    accepted for old clients (the comparison is always included).
     """
+    del compare
+    params = {"audience": audience, **day_params(days)}
+    return await snapshot_response(request, LIVE_EVAL_KIND, params, runner.gather)
+
+
+LIVE_EVAL_KIND = "evaluation.live"
+
+
+async def _live_eval_snapshot(gather: Gather, params: dict) -> dict:
+    days = params_days(params)
+    (payload,) = await gather(
+        lambda db: _live_evaluation_payload(db, params["audience"], days)
+    )
+    return payload
+
+
+def _live_eval_defaults() -> list[dict]:
+    """The Evaluation page's views: each audience, all time and every preset."""
+    return [
+        {"audience": audience, **day_params(days)}
+        for audience in ("overview", "users", "testing")
+        for days in preset_day_ranges()
+    ]
+
+
+register(LIVE_EVAL_KIND, _live_eval_snapshot, _live_eval_defaults)
+
+
+async def _live_eval_view(
+    request: Request,
+    runner: ScopedRunner,
+    params: dict,
+    view: tuple[str, ...],
+    build: Callable[[dict], dict],
+) -> Response:
+    """A derived view of the live-eval snapshot (memory), encoded once per
+    payload, with its ETag and ``as_of``."""
+    payload = await get_snapshot(LIVE_EVAL_KIND, params, runner.gather)
+    as_of = snapshot_as_of(LIVE_EVAL_KIND, params)
+    if eval_views.payload_may_be_behind(params, as_of):
+        newest = await eval_views.newest_evaluation(runner.gather)
+        if newest is not None and eval_views.is_after(newest, as_of):
+            snap = snapshot_key(LIVE_EVAL_KIND, params)
+            eval_views.rebuild_in_background(
+                snap,
+                lambda: compute_and_store(
+                    LIVE_EVAL_KIND, params, ScopedRunner().gather, snap
+                ),
+            )
+    stamp = as_of.isoformat() if as_of is not None else None
+    key = (snapshot_key(LIVE_EVAL_KIND, params), *view)
+    body, etag = eval_views.view_cache.get(
+        key, payload, lambda: {**build(payload), "as_of": stamp}
+    )
+    extra = {"X-Data-As-Of": stamp} if stamp else None
+    return encoded_response(request, body, etag, extra)
+
+
+@router.get("/metrics/evaluation/live/summary")
+async def live_evaluation_summary(
+    request: Request,
+    audience: str = Query("users"),
+    days: DayRange | None = Depends(optional_day_range),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
+    runner: ScopedRunner = Depends(get_scoped_runner),
+) -> Response:
+    """``GET /metrics/evaluation/live`` without the case lists (the Evaluation
+    page's charts and scorecards), plus ``outcomes`` (scored cases passed /
+    failed) and ``as_of``. Same snapshot, same numbers; a few KB."""
+    params = {"audience": audience, **day_params(days)}
+    return await _live_eval_view(
+        request, runner, params, ("summary",), eval_views.summary_view
+    )
+
+
+@router.get("/metrics/evaluation/live/cases")
+async def live_evaluation_cases(
+    request: Request,
+    audience: str = Query("users"),
+    outcome: Literal["all", "passed", "failed"] = Query("all"),
+    grounded: Literal["all", "grounded", "ungrounded"] = Query("all"),
+    q: str = Query(
+        "", max_length=200, description="Matches query, answer, id or type."
+    ),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=200),
+    days: DayRange | None = Depends(optional_day_range),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
+    runner: ScopedRunner = Depends(get_scoped_runner),
+) -> Response:
+    """One page of the report's cases for the Query & Case Explorer: slim
+    rows (no answers or chunks), filtered and searched on the server, with
+    the filtered ``total``. A page past the end returns the last page."""
+    params = {"audience": audience, **day_params(days)}
+    needle = q.strip().lower()
+    return await _live_eval_view(
+        request,
+        runner,
+        params,
+        ("cases", outcome, grounded, needle, str(offset), str(limit)),
+        lambda payload: eval_views.cases_view(
+            payload,
+            outcome=outcome,
+            grounded=grounded,
+            q=needle,
+            offset=offset,
+            limit=limit,
+        ),
+    )
+
+
+@router.get("/metrics/evaluation/live/cases/{case_id}")
+async def live_evaluation_case(
+    case_id: str,
+    request: Request,
+    audience: str = Query("users"),
+    days: DayRange | None = Depends(optional_day_range),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
+    runner: ScopedRunner = Depends(get_scoped_runner),
+) -> Response:
+    """One full case of the report (the record drawer). A live record
+    without stored chunks is answered with its record detail (as
+    ``GET /metrics/evaluation/record/{id}``), which is what the drawer showed
+    for it before. 404 when the report lacks the case."""
+    params = {"audience": audience, **day_params(days)}
+    payload = await get_snapshot(LIVE_EVAL_KIND, params, runner.gather)
+    case = eval_views.find_case(payload, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Evaluation case not found")
+    if not case.get("retrieved_chunks") and _is_uuid(case_id):
+        (detail,) = await runner.gather(lambda db: _record_detail(db, case_id))
+        if detail is not None:
+            return cached_response(request, detail, max_age=0)
+    return cached_response(request, case, max_age=0)
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+async def _live_evaluation_payload(
+    db: AsyncSession, audience: str, days: DayRange | None
+) -> dict:
     window = (days.start, days.end) if days else None
     run_limit = (
         max(eval_series.MAX_RUNS, len(days.days())) if days else eval_series.MAX_RUNS
@@ -769,6 +938,14 @@ async def get_evaluation_record_detail(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Retrieve full deep inspection detail for a single evaluated query."""
+    detail = await _record_detail(db, record_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Evaluation record not found")
+    return detail
+
+
+async def _record_detail(db: AsyncSession, record_id: str) -> dict | None:
+    """The record detail by id or request id (``None`` when unknown)."""
     rec = None
     try:
         u = uuid.UUID(record_id)
@@ -781,7 +958,7 @@ async def get_evaluation_record_detail(
         rec = (await db.execute(q)).scalars().first()
 
     if rec is None:
-        raise HTTPException(status_code=404, detail="Evaluation record not found")
+        return None
 
     return {
         "id": str(rec.id),

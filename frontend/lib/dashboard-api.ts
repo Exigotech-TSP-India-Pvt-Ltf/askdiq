@@ -15,7 +15,7 @@
 import type { ActiveVisitors } from "@/lib/active-visitors";
 import { ApiError } from "@/lib/api";
 import type { Audience } from "@/lib/types";
-import { utcMidnight, type DateRange } from "@/lib/range-context";
+import { presetRange, utcMidnight, type DateRange } from "@/lib/range-context";
 
 const PROXY_BASE = "/api/proxy/admin";
 
@@ -224,6 +224,23 @@ export function rangeParams(range: DateRange, audience: Audience): DashboardPara
   return { audience, from: isoMinute(range.from), to: isoMinute(range.to) };
 }
 
+/**
+ * Stable cache identity of a range. A preset rolls with the clock, so it is
+ * keyed by its name (its window is computed when fetched): a page opened a
+ * minute after the preload, or after a reload, still renders from cache.
+ * Custom ranges are whole days and key by their request window.
+ */
+export function rangeKey(range: DateRange): string {
+  if (range.kind !== "custom") return range.kind;
+  const { from, to } = rangeParams(range, "overview");
+  return `${from}/${to}`;
+}
+
+/** Request params of `range` as of now (a preset window ends at the fetch time). */
+export function currentRangeParams(range: DateRange, audience: Audience): DashboardParams {
+  return rangeParams(range.kind === "custom" ? range : presetRange(range.kind), audience);
+}
+
 export function buildQuery(params: Record<string, string | number | undefined>): string {
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -258,7 +275,7 @@ async function getJson<T>(path: string, token: string | null, signal?: AbortSign
 }
 
 export const dashboardKeys = {
-  summary: (p: DashboardParams) => ["admin/dashboard", p.audience, p.from, p.to] as const,
+  summary: (audience: Audience, range: DateRange) => ["admin/dashboard", audience, rangeKey(range)] as const,
   activity: (audience: Audience) => ["admin/dashboard/activity", audience] as const,
   health: (audience: Audience) => ["admin/governance/overview", audience] as const,
 };

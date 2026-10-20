@@ -97,11 +97,14 @@ describe("Conversations list", () => {
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     await waitFor(() => expect(currentParams().get("preview")).toBeNull());
     expect(currentParams().get("ip")).toBe(IP);
-    // Same page, same filters: no list refetch with a different offset.
+    // Same page, same filters: the list is never refetched. Later list
+    // requests are only idle prefetches (neighbour pages, sort toggles) of the
+    // same filter, each a view not loaded before.
+    expect(screen.getByRole("button", { current: "page" })).toHaveTextContent("2");
     const after = callsTo(calls, "/admin/conversations");
-    expect(after.length).toBe(listCalls);
-    expect(after.at(-1)?.searchParams.get("offset")).toBe("10");
-    expect(after.at(-1)?.searchParams.get("ip")).toBe(IP);
+    const views = after.map((u) => u.search);
+    expect(new Set(views).size).toBe(views.length);
+    expect(after.slice(listCalls).every((u) => u.searchParams.get("ip") === IP)).toBe(true);
   });
 
   it("renders the table when the stats endpoint is absent", async () => {

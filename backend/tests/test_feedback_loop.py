@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import authenticate_session
 from app.auth.permissions import Role, UserStatus
 from app.auth.principal import AuthUser
+from app.core.cache import dashboard_cache
 from app.core.config import get_settings
 from app.core.rate_limit import _feedback_ip_log, _feedback_user_log
 from app.feedback import repository as repo
@@ -1042,6 +1043,9 @@ async def test_analytics_exact_counts_and_unfiltered_total(client, db_session):
             reason_tags=tags,
             triage_status=st,
         )
+    # Analytics are precomputed: rows written straight to the DB show up
+    # once the snapshot refreshes (the jobs worker does it within seconds).
+    dashboard_cache.clear()
     after = await _analytics(client)
 
     assert after["total"] - before["total"] == 6

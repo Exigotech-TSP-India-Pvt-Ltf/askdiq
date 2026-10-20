@@ -187,6 +187,10 @@ export const api = {
     return request<Record<string, any>>(`/metrics/evaluation/record/${recordId}`, { token, signal });
   },
 
+  /** `/metrics/evaluation/live/{summary|cases|cases/<id>}` (query string pre-built). */
+  evaluationLiveView: (token: string, view: string, query: string, signal?: AbortSignal) =>
+    request<Record<string, any>>(`/metrics/evaluation/live/${view}${query ? `?${query}` : ""}`, { token, signal }),
+
   ingest: (
     token: string,
     body: {

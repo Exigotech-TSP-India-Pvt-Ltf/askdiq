@@ -32,7 +32,8 @@ import { MascotLoader } from "@/components/ui/MascotLoader";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
 import { SectionCard, ToneChip, errorMessage, formatDay, ratingTone } from "@/components/admin/entity/shared";
-import { useApiQuery } from "@/lib/query-cache";
+import { prefetch, runWhenIdle, useApiQuery } from "@/lib/query-cache";
+import { documentFetchers, documentKeys } from "@/lib/document-detail-data";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { crossfade, fadeUp, stagger, useMotionVariants, usePrefersReducedMotion } from "@/lib/motion";
 import { RelativeTime } from "@/components/ui/RelativeTime";
@@ -40,8 +41,6 @@ import {
   CHUNK_SEARCH_DEBOUNCE_MS,
   MAX_CHUNK_QUERY_CHARS,
   applyChunkQuery,
-  getDocumentChunks,
-  getLowRatedCitations,
   isChunkSort,
   type ChunkSort,
   type DocumentChunk,
@@ -49,8 +48,6 @@ import {
 import {
   documentStatus,
   formatBytes,
-  getCanonicalMarkdown,
-  getDocumentDetail,
   ingestedAt,
   isOneOf,
   isStandardized,
@@ -263,7 +260,7 @@ function downloadMarkdown(name: string, content: string) {
 function CanonicalTab({ token, id, sourceName }: { token: string; id: string; sourceName: string }) {
   const [view, setView] = useState<"rendered" | "source">("rendered");
   const variants = useMotionVariants(crossfade);
-  const canonical = useApiQuery(["document", id, "canonical"], (signal) => getCanonicalMarkdown(token, id, signal));
+  const canonical = useApiQuery(documentKeys.canonical(id), documentFetchers.canonical(token, id));
   const data = canonical.data;
 
   if (canonical.isLoading) return <SkeletonCard label="Loading canonical Markdown" />;
@@ -423,31 +420,30 @@ function DocumentDetailContent() {
     return () => clearTimeout(timer);
   }, [searchInput, set]);
 
-  const detailQ = useApiQuery(token && id ? ["document", id, "detail"] : null, async (signal) => {
-    try {
-      return await getDocumentDetail(token ?? "", id, signal);
-    } catch {
-      return null; // fall back to the inventory row
-    }
-  });
+  // `null` on failure: fall back to the inventory row.
+  const detailQ = useApiQuery(token && id ? documentKeys.detail(id) : null, documentFetchers.detail(token ?? "", id));
   const docs = useApiQuery(token ? ["documents", "inventory"] : null, (signal) => listDocumentInventory(token ?? "", signal));
   const listMatch = useMemo(() => docs.data?.find((d) => d.document_id === id) ?? null, [docs.data, id]);
   const detail = detailQ.data ?? null;
   const doc: DocumentInventoryItem | null = detail ?? listMatch;
   const notFound = !doc && !detailQ.isLoading && !docs.isLoading && (docs.data !== undefined || Boolean(docs.error));
 
-  const chunks = useApiQuery(token && id ? ["document", id, "chunks", urlQuery, sort] : null, (signal) =>
-    getDocumentChunks(token ?? "", id, { q: urlQuery, sort }, signal),
+  // Every chunk once; the search filters in the browser as you type (the
+  // same match as the server's `q`), so it never waits for a request.
+  const chunks = useApiQuery(token && id ? documentKeys.chunks(id) : null, documentFetchers.chunks(token ?? "", id));
+  const liveQuery = searchInput.trim().slice(0, MAX_CHUNK_QUERY_CHARS);
+  const rawChunks = useMemo(
+    () => (chunks.data ? (applyChunkQuery(chunks.data, liveQuery, "index") as ChunkRow[]) : null),
+    [chunks.data, liveQuery],
   );
-  // Keep the previous result on screen while a new search loads (no flash).
-  const lastChunks = useRef<ChunkRow[] | null>(null);
-  if (chunks.data) lastChunks.current = chunks.data;
-  const rawChunks = chunks.data ?? lastChunks.current;
-  const shown = useMemo(() => (rawChunks ? (applyChunkQuery(rawChunks, urlQuery, sort) as ChunkRow[]) : null), [rawChunks, urlQuery, sort]);
+  const shown = useMemo(() => (rawChunks ? (applyChunkQuery(rawChunks, "", sort) as ChunkRow[]) : null), [rawChunks, sort]);
 
-  const lowRated = useApiQuery(token && id ? ["document", id, "low-rated"] : null, (signal) =>
-    getLowRatedCitations(token ?? "", id, signal),
-  );
+  const lowRated = useApiQuery(token && id ? documentKeys.lowRated(id) : null, documentFetchers.lowRated(token ?? "", id));
+  // The Canonical Markdown tab opens from cache.
+  useEffect(() => {
+    if (!token || !id || !chunks.data) return undefined;
+    return runWhenIdle(() => void prefetch(documentKeys.canonical(id), documentFetchers.canonical(token, id)));
+  }, [token, id, chunks.data]);
   const lowRatedAbsent = !lowRated.isLoading && !lowRated.error && lowRated.data === null;
 
   const hasHits = (rawChunks ?? []).some((c) => Array.isArray(c.weekly_hits));

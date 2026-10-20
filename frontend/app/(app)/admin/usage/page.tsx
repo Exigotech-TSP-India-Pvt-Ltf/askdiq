@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
-import { useUsageSummary } from "@/lib/use-usage-data";
+import { useUsageSummary, warmUsageOverview } from "@/lib/use-usage-data";
 import { DEFAULT_PRESET, useRange } from "@/lib/range-context";
 import { useRangeParams } from "@/components/admin/entity/shared";
 import { InteractiveOverviewTab } from "@/components/admin/usage/InteractiveOverviewTab";
@@ -65,8 +65,17 @@ function UsageCostContent() {
   const { from: fromDay = "", to: toDay = "" } = useRangeParams();
   const days = { from: fromDay || undefined, to: toDay || undefined };
 
-  // Hook for Tab 1 summary
-  const { summary, isLoading, error, refresh } = useUsageSummary(token, audience, days);
+  // Overview summary: cached per audience + range; a switch keeps the
+  // previous one on screen until the new one arrives (never skeletons).
+  const { summary, isLoading, isUpdating, error, refresh } = useUsageSummary(token, audience, days);
+
+  // Once the Overview shows data, warm what one click can show next (other
+  // presets, other audiences) while the browser is idle.
+  const overviewReady = activeTab === "overview" && summary !== null;
+  useEffect(() => {
+    if (!overviewReady) return undefined;
+    return warmUsageOverview(token, audience, { from: fromDay || undefined, to: toDay || undefined });
+  }, [overviewReady, token, audience, fromDay, toDay]);
 
   // The URL is the source of truth: tab, ip and session.
   useEffect(() => {
@@ -172,7 +181,13 @@ function UsageCostContent() {
         {/* Tab Panels */}
         <div className="pt-1">
           {activeTab === "overview" && (
-            <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" className="space-y-6">
+            <div
+              role="tabpanel"
+              id="panel-overview"
+              aria-labelledby="tab-overview"
+              data-usage-key={isUpdating || !summary ? "pending" : `${audience}|${fromDay}|${toDay}`}
+              className={`space-y-6 transition-opacity duration-150 ${isUpdating ? "opacity-70" : ""}`}
+            >
               <CostInsights summary={summary} isLoading={isLoading} error={error} onRetry={refresh} />
               <InteractiveOverviewTab
                 summary={summary}

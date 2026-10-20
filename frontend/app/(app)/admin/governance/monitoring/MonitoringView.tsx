@@ -54,7 +54,8 @@ import {
   type TraceOutcome,
 } from "@/lib/governance-api";
 import { OUTCOMES, OUTCOME_LABELS } from "@/lib/entity-stats-api";
-import { resourceGauges } from "@/lib/resource-gauges";
+import { quotaTrend, resourceGauges, type TrendPoint } from "@/lib/resource-gauges";
+import { ResourceTrend } from "@/components/admin/governance/ResourceTrend";
 import { logsHref, tabHref, tracesHref } from "@/lib/governance-links";
 import { useCarryHref } from "@/lib/entity-routes";
 import {
@@ -400,6 +401,7 @@ function ResourceGaugeCard({
   value,
   bands,
   caption,
+  trend,
 }: {
   title: string;
   subtitle: string;
@@ -407,6 +409,7 @@ function ResourceGaugeCard({
   value: number | null;
   bands: GaugeBands;
   caption: string;
+  trend: readonly TrendPoint[];
 }) {
   const reading = value === null ? "no measurement yet" : formatPct(value, 0);
   return (
@@ -427,16 +430,26 @@ function ResourceGaugeCard({
           ],
         )}
       >
-        <div title={`${title}: ${reading}. Warning at ${bands.warn}%, critical at ${bands.danger}%`}>
-          <RadialGauge
-            label={`${title} used`}
-            value={value}
-            bands={bands}
-            higherIsBetter={false}
-            caption={caption}
-            formatValue={(v) => `${Math.round(v)}%`}
-          />
-          <p className="mt-2 flex items-center justify-center gap-3 text-[11px] text-fg-subtle">
+        <div className="flex flex-col gap-2" data-testid="resource-gauge-card">
+          <div title={`${title}: ${reading}. Warning at ${bands.warn}%, critical at ${bands.danger}%`}>
+            <RadialGauge
+              label={`${title} used`}
+              value={value}
+              bands={bands}
+              higherIsBetter={false}
+              formatValue={(v) => `${Math.round(v)}%`}
+            />
+          </div>
+          {/* Below the arc (never on it); two lines reserved so cards stay equal height. */}
+          <p
+            className="line-clamp-2 min-h-[2rem] px-1 text-center text-xs leading-4 tabular-nums text-fg-muted"
+            title={caption}
+            data-testid="gauge-caption"
+          >
+            {caption}
+          </p>
+          <ResourceTrend points={trend} warn={bands.warn} danger={bands.danger} label={title} />
+          <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-fg-muted">
             <span className="inline-flex items-center gap-1">
               <span aria-hidden="true" className="h-2 w-2 rounded-full bg-status-warn" />
               Warn {bands.warn}%
@@ -445,6 +458,7 @@ function ResourceGaugeCard({
               <span aria-hidden="true" className="h-2 w-2 rounded-full bg-status-danger" />
               Critical {bands.danger}%
             </span>
+            <span>15 min trend</span>
           </p>
         </div>
       </ChartCard>
@@ -613,6 +627,8 @@ export default function MonitoringView() {
   const gauges = resourceGauges(resources);
   const sampleEvery = resources?.interval_seconds;
   const quota = m?.azure_quota_telemetry;
+  const tpmTrend = quotaTrend(m?.azure_quota_series, "tpm");
+  const rpmTrend = quotaTrend(m?.azure_quota_series, "rpm");
   const throttled = (quota?.chat?.azure_429_count_60s ?? 0) + (quota?.embedding?.azure_429_count_60s ?? 0);
   const windowH = m?.window_hours ?? 24;
   const windowLabel = `last ${windowH} h`;
@@ -783,6 +799,7 @@ export default function MonitoringView() {
               value={g.value}
               bands={g.bands}
               caption={g.caption}
+              trend={g.trend}
             />
           ))}
           <ResourceGaugeCard
@@ -792,6 +809,7 @@ export default function MonitoringView() {
             value={quotaUtilisation(quota, "tpm_headroom_pct")}
             bands={RESOURCE_BANDS.quota}
             caption="Busiest of chat and embedding"
+            trend={tpmTrend}
           />
           <ResourceGaugeCard
             title="Azure RPM"
@@ -800,6 +818,7 @@ export default function MonitoringView() {
             value={quotaUtilisation(quota, "rpm_headroom_pct")}
             bands={RESOURCE_BANDS.quota}
             caption="Busiest of chat and embedding"
+            trend={rpmTrend}
           />
         </Stagger>
       </section>

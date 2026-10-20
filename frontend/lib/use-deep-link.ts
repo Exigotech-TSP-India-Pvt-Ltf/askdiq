@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { writeUrl } from "@/lib/url-write";
 
 export type DeepLinkUpdate = Record<string, string | number | null | undefined>;
 
@@ -23,8 +24,8 @@ export function mergeSearch(search: string, update: DeepLinkUpdate): string {
 
 /**
  * Reads and writes URL query params (newplan §1). State lives in the URL, so
- * back / forward and shared links restore the same view. Writes use
- * `router.replace(..., { scroll: false })` so the page does not jump.
+ * back / forward and shared links restore the same view. Writes go through
+ * `writeUrl` (History API: no server round trip, no scroll jump).
  */
 export function useDeepLink() {
   const router = useRouter();
@@ -49,8 +50,7 @@ export function useDeepLink() {
       const merged = mergeSearch(base, update);
       pending.current = { render: renders.current, next: merged.replace(/^\?/, "") };
       const href = `${pathname ?? ""}${merged}`;
-      if (history === "push") router.push(href, { scroll: false });
-      else router.replace(href, { scroll: false });
+      writeUrl(router, href, history);
     },
     [pathname, router, search],
   );

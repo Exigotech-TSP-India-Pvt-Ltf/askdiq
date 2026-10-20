@@ -12,6 +12,7 @@ from app.api.routes import (
     alerts,
     auth,
     branding,
+    console,
     documents,
     governance,
     health,
@@ -84,6 +85,8 @@ async def lifespan(_app: FastAPI):
     await asyncio.to_thread(preload_reranker)
     # Event bus (LISTEN/NOTIFY) and, if JOBS_WORKER_ENABLED, the job worker.
     platform_services = await start_platform_services()
+    # Governance Overall / Monitoring copies, computed before the first visit.
+    get_governance_hub().warm()
     try:
         yield
     finally:
@@ -150,6 +153,7 @@ app.include_router(model_settings.router)
 app.include_router(auth.router)
 app.include_router(user_management.router)
 app.include_router(alerts.router)
+app.include_router(console.router)
 # Local mock Entra IdP, only with AUTH_DEV_MOCK=true (settings refuse it
 # outside ENV=development).
 mount_mock_idp(app, settings)

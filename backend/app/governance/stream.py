@@ -31,7 +31,8 @@ from app.core.config import get_settings
 from app.core.events import TOPIC_GOVERNANCE_INCIDENT, EventBus, get_event_bus
 from app.core.logging_config import get_logger
 from app.core.sse import SSEEvent
-from app.governance.overview import overview_payload
+from app.governance.monitoring_snapshot import monitoring_cache
+from app.governance.overview import overview_cache
 from app.governance.resource_store import resources_snapshot
 
 logger = get_logger(__name__)
@@ -39,10 +40,19 @@ logger = get_logger(__name__)
 SnapshotFn = Callable[[str], Awaitable[dict[str, Any]]]
 ResourcesFn = Callable[[], Awaitable[dict[str, Any]]]
 _QUEUE_SIZE = 100
+# A Monitoring copy read this recently is refreshed on every stream tick.
+MONITORING_WATCH_SECONDS = 120.0
 
 
 async def _default_snapshot(audience: str) -> dict[str, Any]:
-    return await overview_payload(ScopedRunner(), audience)
+    # Computed into the shared memory copy, so GET /governance/overview
+    # serves exactly what the stream just pushed.
+    payload = (await overview_cache.refresh(audience)).payload
+    # Monitoring on screen follows the same tick, before the events go out
+    # (its view refetches on them and must get the new copy).
+    if monitoring_cache.recently_read(audience, MONITORING_WATCH_SECONDS):
+        await monitoring_cache.refresh(audience)
+    return payload
 
 
 async def _default_resources() -> dict[str, Any]:
@@ -126,8 +136,29 @@ class GovernanceStreamHub:
         )
         self._resources_task: asyncio.Task[None] | None = None
         self._latest_resources: dict[str, Any] | None = None
+        self._warm_task: asyncio.Task[None] | None = None
+
+    # -- startup --------------------------------------------------------------
+
+    def warm(self) -> None:
+        """Compute every audience's overview and monitoring copy in the
+        background (startup), so the first visit reads memory."""
+        if self._warm_task is None or self._warm_task.done():
+            self._warm_task = asyncio.create_task(
+                self._warm(), name="governance-live-warm"
+            )
+
+    @staticmethod
+    async def _warm() -> None:
+        await overview_cache.warm()
+        await monitoring_cache.warm()
 
     # -- introspection (tests, metrics) -------------------------------------
+
+    @property
+    def latest_resources(self) -> dict[str, Any] | None:
+        """The last resource snapshot pushed to subscribers (None when idle)."""
+        return self._latest_resources if self._resources_task else None
 
     def subscriber_count(self, audience: str) -> int:
         return len(self._subscribers.get(audience, ()))
@@ -255,6 +286,9 @@ class GovernanceStreamHub:
 
     async def aclose(self) -> None:
         tasks = list(self._producers.values())
+        if self._warm_task is not None:
+            tasks.append(self._warm_task)
+            self._warm_task = None
         if self._resources_task is not None:
             tasks.append(self._resources_task)
             self._resources_task = None

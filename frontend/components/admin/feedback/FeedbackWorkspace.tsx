@@ -1,20 +1,28 @@
 "use client";
 
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { FileJson, FlaskConical, Inbox, LayoutDashboard, SearchX, ThumbsUp } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
-import { useApiQuery } from "@/lib/query-cache";
+import { prefetch, runWhenIdle, useApiQuery } from "@/lib/query-cache";
 import { useCan } from "@/lib/use-can";
-import { feedbackKeys, getFeedbackAnalytics, type FeedbackAnalytics } from "@/lib/feedback-api";
+import {
+  feedbackKeys,
+  feedbackListPath,
+  getFeedbackAnalytics,
+  listFeedback,
+  listGoldenCases,
+  previewPairs,
+  type FeedbackAnalytics,
+} from "@/lib/feedback-api";
 import { hasClientFilters, type FilterPatch } from "@/lib/feedback-filters";
 import { FilterChips } from "./FilterChips";
 import { FeedbackOverview } from "./FeedbackOverview";
-import { ReviewQueue } from "./ReviewQueue";
-import { GoldenCasesTab } from "./GoldenCasesTab";
-import { PreferenceDataTab } from "./PreferenceDataTab";
+import { ReviewQueue, queueBaseParams } from "./ReviewQueue";
+import { GOLDEN_PAGE_SIZE, GoldenCasesTab } from "./GoldenCasesTab";
+import { PREVIEW_LIMIT, PreferenceDataTab } from "./PreferenceDataTab";
 import { KnowledgeGapsTab } from "./KnowledgeGapsTab";
 import { useFeedbackUrl, type FeedbackTab } from "./use-feedback-url";
 import { useRangeParams } from "@/components/admin/entity/shared";
@@ -41,7 +49,27 @@ export function FeedbackWorkspace() {
   const analytics = useApiQuery<FeedbackAnalytics>(
     token ? feedbackKeys.analytics(audience, days) : null,
     analyticsFetcher,
+    // Range / audience switches swap the numbers in place (no skeletons).
+    { keepPreviousData: true },
   );
+
+  // Every tab's first view is warmed while idle, under the exact keys the
+  // tabs read, so opening one paints at once.
+  useEffect(() => {
+    if (!token) return undefined;
+    return runWhenIdle(() => {
+      const list = { ...queueBaseParams(audience, filters, days), cursor: null };
+      prefetch(feedbackKeys.list(feedbackListPath(list)), (signal) => listFeedback(token, list, signal));
+      prefetch(feedbackKeys.goldenFor(days), (signal) =>
+        listGoldenCases(token, { limit: GOLDEN_PAGE_SIZE, from: days.from, to: days.to }, signal),
+      );
+      if (canExport) {
+        prefetch(feedbackKeys.pairs(false, days), (signal) =>
+          previewPairs(token, { complete_only: false, from: days.from, to: days.to }, PREVIEW_LIMIT, signal),
+        );
+      }
+    });
+  }, [token, audience, filters, days, canExport]);
 
   const filterQueue = useCallback((patch: FilterPatch) => applyFilters(patch, { openQueue: true }), [applyFilters]);
 
