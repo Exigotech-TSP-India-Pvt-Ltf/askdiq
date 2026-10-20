@@ -279,7 +279,31 @@ async def governance_traces_page(
             {**_traces_params(filters, limit), **window},
             runner.gather,
         )
+    if filters.q is None and window is not None:
+        # Later pages: the total does not depend on the cursor, so it comes
+        # from the (precomputed) first page; only the keyset page is read.
+        first = await get_snapshot(
+            GOVERNANCE_TRACES_KIND,
+            {**_traces_params(filters, limit), **window},
+            runner.gather,
+        )
+        ((items, next_cursor),) = await runner.gather(
+            lambda s: traces.fetch_page(s, filters, position, limit)
+        )
+        return _with_page(first, items, next_cursor)
     return await _governance_traces_page(runner, filters, position, limit)
+
+
+def _with_page(
+    first: dict[str, Any], items: list[Any], next_cursor: Cursor | None
+) -> dict[str, Any]:
+    """A later page: ``first``'s totals / counts with this page's rows."""
+    return {
+        **first,
+        "items": items,
+        "next_cursor": next_cursor.encode() if next_cursor else None,
+        "has_more": next_cursor is not None,
+    }
 
 
 GOVERNANCE_TRACES_KIND = "governance.traces"
@@ -444,6 +468,22 @@ async def governance_logs(
     scope = replace(filters, hidden_actions=frozenset())
     hidden = ",".join(sorted(filters.hidden_actions))
     key = f"gov-logs:{scope!r}:{hidden}:{cursor}:{limit}"
+    if window is not None:
+        # Later pages: chip counts and total do not depend on the cursor, so
+        # they come from the (precomputed) first page; only the keyset page
+        # is read.
+        async def later_page() -> dict[str, Any]:
+            first = await get_snapshot(
+                GOVERNANCE_LOGS_KIND,
+                {**_logs_params(filters, limit), **window},
+                runner.gather,
+            )
+            ((rows, next_cursor),) = await runner.gather(
+                lambda s: logs.fetch_page(s, filters, position, limit)
+            )
+            return _with_page(first, [logs.to_item(row) for row in rows], next_cursor)
+
+        return await dashboard_cached(key, later_page)
     return await dashboard_cached(
         key, lambda: _governance_logs_page(runner, filters, position, limit, cap)
     )
