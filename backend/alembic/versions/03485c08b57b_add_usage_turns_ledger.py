@@ -18,8 +18,9 @@ update, delete or truncate of ``chat_messages``; latency rows; a session's
 ``created_ip``), so it is never behind the data. The lists aggregate and page
 it through narrow indexes.
 
-A trigram (``pg_trgm``) GIN index on ``chat_messages.content`` serves the
-All Queries text search (built ``CONCURRENTLY``; skipped when the extension
+Trigram (``pg_trgm``) GIN indexes on ``chat_messages.content``,
+``chat_sessions.title`` and the ledger's IP / request id serve the All
+Queries text search (built ``CONCURRENTLY``; skipped when the extension
 is unavailable, the search then still works unindexed).
 """
 
@@ -37,7 +38,13 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 TABLE = "usage_turns"
-CONTENT_TRGM = "ix_chat_messages_content_trgm"
+# Trigram indexes of the All Queries search (table, column).
+_TRGM = {
+    "ix_chat_messages_content_trgm": ("chat_messages", "content"),
+    "ix_chat_sessions_title_trgm": ("chat_sessions", "title"),
+    "ix_usage_turns_user_ip_trgm": ("usage_turns", "user_ip"),
+    "ix_usage_turns_request_id_trgm": ("usage_turns", "request_id"),
+}
 
 # The ledger rows of the pairs selected by ``{where}`` (``u`` user message,
 # ``a`` assistant message): the join the usage lists ran per request.
@@ -241,15 +248,17 @@ def upgrade() -> None:
     except sa.exc.DBAPIError:
         return
     with op.get_context().autocommit_block():
-        op.execute(
-            f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {CONTENT_TRGM} "
-            "ON chat_messages USING gin (content gin_trgm_ops)"
-        )
+        for name, (table, column) in _TRGM.items():
+            op.execute(
+                f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} "
+                f"ON {table} USING gin ({column} gin_trgm_ops)"
+            )
 
 
 def downgrade() -> None:
     with op.get_context().autocommit_block():
-        op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {CONTENT_TRGM}")
+        for name in _TRGM:
+            op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {name}")
     for name, table in _TRIGGER_TABLES.items():
         op.execute(f"DROP TRIGGER IF EXISTS {name} ON {table}")
     for name in _FUNCTIONS:

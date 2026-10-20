@@ -36,6 +36,8 @@ from sqlalchemy import (
     or_,
     select,
     text,
+    tuple_,
+    union,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -409,19 +411,21 @@ def sessions_page(
 
 
 def _text_search(pattern: str) -> ColumnElement[bool]:
-    """Question or answer text (trigram index), session title, user IP or
-    request id contains ``pattern``."""
-    matching_messages = select(ChatMessageRecord.id).where(
+    """Question or answer text, session title, user IP or request id contains
+    ``pattern``: a union of trigram / key index lookups (no per-turn scan)."""
+    messages = select(ChatMessageRecord.id).where(
         _ilike(ChatMessageRecord.content, pattern)
     )
-    matching_sessions = select(ChatSession.id).where(_ilike(ChatSession.title, pattern))
-    return or_(
-        T.user_msg_id.in_(matching_messages),
-        T.asst_msg_id.in_(matching_messages),
-        T.session_id.in_(matching_sessions),
-        _ilike(T.user_ip, pattern),
-        _ilike(T.request_id, pattern),
+    sessions = select(ChatSession.id).where(_ilike(ChatSession.title, pattern))
+    pair = (T.asst_msg_id, T.user_msg_id)
+    matching = union(
+        select(*pair).where(T.user_msg_id.in_(messages)),
+        select(*pair).where(T.asst_msg_id.in_(messages)),
+        select(*pair).where(T.session_id.in_(sessions)),
+        select(*pair).where(_ilike(T.user_ip, pattern)),
+        select(*pair).where(_ilike(T.request_id, pattern)),
     )
+    return tuple_(*pair).in_(matching)
 
 
 async def turn_filters(
@@ -453,3 +457,15 @@ async def turn_filters(
     if search and search.strip():
         conds.append(_text_search(f"%{escape_ilike_pattern(search.strip())}%"))
     return conds
+
+
+_CUSTOM_PLANS = text("SET LOCAL plan_cache_mode = force_custom_plan")
+
+
+async def force_custom_plans(db: AsyncSession) -> None:
+    """Plan this transaction's statements for their actual values.
+
+    The driver re-executes prepared statements; after a few runs Postgres may
+    switch to a generic plan that cannot see the offset, limit or date range
+    (a page at offset 10 000 then sorted every matching turn)."""
+    await db.execute(_CUSTOM_PLANS)

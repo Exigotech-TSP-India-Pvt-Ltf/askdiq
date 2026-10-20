@@ -60,6 +60,7 @@ from app.governance.audit import record_audit_event
 from app.governance.outcomes import GENERATION_OUTCOMES
 from app.governance.usage_queries import (
     OUTPUT_TOKENS,
+    force_custom_plans,
     sessions_base,
     sessions_page,
     turn_filters,
@@ -904,6 +905,7 @@ async def _usage_query_stats_snapshot(gather: Gather, params: dict) -> dict:
     filters = QueryFilters.from_params(params)
 
     async def stats(db: AsyncSession) -> dict:
+        await force_custom_plans(db)
         return await _query_stats(db, await filters.conditions(db))
 
     (result,) = await gather(stats)
@@ -915,6 +917,7 @@ async def _query_page_items(
 ) -> list[dict[str, Any]]:
     """One page of turns, read live through the ledger's sort indexes; the
     question / answer texts and session title are joined for its rows only."""
+    await force_custom_plans(db)
     conds = await filters.conditions(db)
     page = (
         select(UsageTurn)
