@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     admin,
+    admin_azure,
     alerts,
     auth,
     branding,
@@ -154,6 +155,7 @@ app.include_router(auth.router)
 app.include_router(user_management.router)
 app.include_router(alerts.router)
 app.include_router(console.router)
+app.include_router(admin_azure.router)
 # Local mock Entra IdP, only with AUTH_DEV_MOCK=true (settings refuse it
 # outside ENV=development).
 mount_mock_idp(app, settings)

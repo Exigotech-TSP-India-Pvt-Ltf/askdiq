@@ -1,0 +1,21 @@
+{
+ "cost": 0,
+ "timespan": "2031-03-10T08:08:00Z/2031-03-10T10:08:00Z",
+ "interval": "PT1M",
+ "value": [
+  {
+   "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.CognitiveServices/accounts/example-foundry/providers/Microsoft.Insights/metrics/FoundryModelEstimatedCost",
+   "type": "Microsoft.Insights/metrics",
+   "name": {
+    "value": "FoundryModelEstimatedCost",
+    "localizedValue": "Estimated Cost (Preview)"
+   },
+   "displayDescription": "Estimated Cost (Preview)",
+   "unit": "Count",
+   "timeseries": [],
+   "errorCode": "Success"
+  }
+ ],
+ "namespace": "Microsoft.CognitiveServices/accounts",
+ "resourceregion": "australiaeast"
+}

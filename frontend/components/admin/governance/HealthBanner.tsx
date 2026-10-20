@@ -1,8 +1,13 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { m } from "motion/react";
-import { AlertOctagon, AlertTriangle, CheckCircle2, type LucideIcon } from "lucide-react";
+import { AlertOctagon, AlertTriangle, ArrowRight, CheckCircle2, type LucideIcon } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { azureApi, azureKeys, type AzureHealth, type HealthBannerState } from "@/lib/azure-capacity-api";
+import { hasPermission } from "@/lib/permissions";
+import { useApiQuery } from "@/lib/query-cache";
 import { duration, ease } from "@/lib/motion";
 import { semanticTokens } from "@/lib/theme-tokens";
 import { useResolvedThemeClass } from "@/lib/use-chart-theme";
@@ -100,5 +105,65 @@ export function HealthBanner({ health }: { health: HealthStatus }) {
         </ul>
       </div>
     </m.section>
+  );
+}
+
+const AZURE_TONE = {
+  warning: { box: "border-status-warn bg-status-warn-bg", text: "text-status-warn-fg", icon: AlertTriangle },
+  critical: { box: "border-status-danger bg-status-danger-bg", text: "text-status-danger-fg", icon: AlertOctagon },
+} as const;
+
+/**
+ * Azure service health banner (Azure Insights): the Azure OpenAI account is
+ * Degraded / Unavailable, or Service Health has an active incident for our
+ * service and region. Renders nothing while Azure reports it Available.
+ */
+export function AzureServiceBanner({ banner }: { banner: HealthBannerState | undefined }) {
+  if (!banner?.show) return null;
+  const tone = AZURE_TONE[banner.level === "critical" ? "critical" : "warning"];
+  const Icon = tone.icon;
+  return (
+    <section
+      role="alert"
+      aria-label="Azure service health"
+      data-azure-health={banner.level ?? "warning"}
+      className={`flex flex-col gap-2 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${tone.box}`}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${tone.text}`} strokeWidth={1.75} aria-hidden="true" />
+        <div className="min-w-0">
+          <p className={`text-sm font-semibold ${tone.text}`}>{banner.title}</p>
+          {banner.message ? <p className="mt-0.5 line-clamp-2 text-xs text-fg-muted">{banner.message}</p> : null}
+        </div>
+      </div>
+      <Link
+        href={banner.href || "/admin/governance?tab=Monitoring#azure-health"}
+        className={`inline-flex shrink-0 items-center gap-1 text-xs font-semibold underline-offset-2 hover:underline ${tone.text}`}
+      >
+        Details
+        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+      </Link>
+    </section>
+  );
+}
+
+/**
+ * The banner on every admin page: reads the precomputed `azure.health`
+ * snapshot (prefetched with the shell data) and refetches when the live
+ * stream announces `azure.health` after a poll, so a new incident appears
+ * within one poll interval without a reload.
+ */
+export function ConsoleAzureBanner({ className = "" }: { className?: string }) {
+  const { token, permissions } = useAuth();
+  const enabled = Boolean(token) && hasPermission(permissions, "dashboard:read");
+  const { data } = useApiQuery<AzureHealth>(azureKeys.health(), (signal) => azureApi.health(token, signal), {
+    enabled,
+    revalidateOnFocus: false,
+  });
+  if (!enabled || !data?.banner?.show) return null;
+  return (
+    <div className={className}>
+      <AzureServiceBanner banner={data.banner} />
+    </div>
   );
 }

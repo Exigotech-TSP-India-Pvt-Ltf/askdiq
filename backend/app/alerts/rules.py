@@ -17,6 +17,12 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts import catalogue as c
+from app.alerts.azure_cost_rules import azure_cost_rule
+from app.alerts.azure_rules import (
+    azure_quota_rule,
+    azure_sync_failing_rule,
+    azure_unhealthy_rule,
+)
 from app.alerts.catalogue import Severity
 from app.alerts.resource_rules import resource_rule
 from app.alerts.service import NOTIFY_JOB, Finding
@@ -34,6 +40,7 @@ from app.models.db_models import (
 
 Rule = Callable[[AsyncSession, datetime, Settings], Awaitable[list[Finding]]]
 RESOURCES_GROUP = "resources"
+AZURE_COSTS_GROUP = "azure_costs"
 
 _SAMPLE_IDS = 5
 _MAX_ACCESS_REQUEST_ALERTS = 20
@@ -41,6 +48,10 @@ _MAX_ERROR_CHARS = 300
 _NEGATIVE_RATING_MAX = 2
 INGEST_PATHS = ("/ingest", "/ingest/file")
 _LEAK_FLAGS = frozenset({"secret_leak_detected"})
+_AZURE_429_CRITICAL_FACTOR = 5
+# Stored minute points older than this (beyond the poll interval) are stale:
+# the Azure 429 rule then stays quiet instead of judging old data.
+_AZURE_POINTS_SLACK = timedelta(minutes=15)
 
 
 def naive_utc(moment: datetime) -> datetime:
@@ -231,6 +242,71 @@ async def llm_failures_rule(
                 "window_minutes": window,
                 "counts": by_type,
                 "request_ids": await _recent_request_ids(db, "llm_call_failed", since),
+            },
+        )
+    ]
+
+
+_AZURE_429_SQL = text(
+    """
+    SELECT deployment, sum(total) AS n
+    FROM azure_metric_points
+    WHERE grain = 'PT1M' AND metric = 'AzureOpenAIRequests'
+      AND status_code = '429' AND ts > :since AND ts <= :latest
+    GROUP BY deployment
+    """
+)
+_AZURE_LATEST_SQL = text(
+    "SELECT max(ts) FROM azure_metric_points "
+    "WHERE grain = 'PT1M' AND metric = 'AzureOpenAIRequests'"
+)
+
+
+async def azure_monitor_429_rule(
+    db: AsyncSession, now: datetime, cfg: Settings
+) -> list[Finding]:
+    """Azure-side 429s in the newest window of stored minute points (the
+    metrics poll lags by its interval, so the window ends at the newest point,
+    not at ``now``)."""
+    if not cfg.azure_insights_configured:
+        return []
+    latest = (await db.execute(_AZURE_LATEST_SQL)).scalar_one_or_none()
+    window = cfg.alert_azure_monitor_429_window_minutes
+    stale_after = (
+        timedelta(seconds=cfg.azure_metrics_interval_seconds)
+        + timedelta(minutes=window)
+        + _AZURE_POINTS_SLACK
+    )
+    if latest is None or latest < now - stale_after:
+        return []
+    since = latest - timedelta(minutes=window)
+    rows = (await db.execute(_AZURE_429_SQL, {"since": since, "latest": latest})).all()
+    counts = {safe_text(d): int(n or 0) for d, n in rows if n}
+    total = sum(counts.values())
+    threshold = cfg.alert_azure_monitor_429_threshold
+    if total < threshold:
+        return []
+    critical = total >= threshold * _AZURE_429_CRITICAL_FACTOR
+    return [
+        Finding(
+            rule=c.AZURE_MONITOR_429_SPIKE,
+            dedupe_key=c.AZURE_MONITOR_429_SPIKE,
+            severity=Severity.CRITICAL if critical else Severity.WARNING,
+            title=f"Azure counted {total} throttled requests (429) in {window} min",
+            summary=(
+                f"Azure Monitor reports {total} HTTP 429 responses across the "
+                f"deployments in the {window} minutes up to "
+                f"{latest:%H:%M} UTC (threshold {threshold}). This counts every "
+                "caller of the resource, not only AskDIQ."
+            ),
+            component="Azure OpenAI",
+            details={
+                "value": total,
+                "threshold": threshold,
+                "unit": "429 responses",
+                "window_minutes": window,
+                "counts": counts,
+                "latest_point": latest.isoformat(),
             },
         )
     ]
@@ -541,13 +617,22 @@ DATABASE_RULE_FUNCS: dict[str, Rule] = {
     c.JOB_FAILURES: job_failures_rule,
     c.INGESTION_FAILURES: ingestion_failures_rule,
     c.ONLINE_EVAL_VIOLATIONS: online_eval_rule,
+    c.AZURE_MONITOR_429_SPIKE: azure_monitor_429_rule,
+    c.AZURE_QUOTA_NEAR_LIMIT: azure_quota_rule,
+    c.AZURE_RESOURCE_UNHEALTHY: azure_unhealthy_rule,
+    c.AZURE_SYNC_FAILING: azure_sync_failing_rule,
     # One pass over resource_samples raises all five resource rules.
     RESOURCES_GROUP: resource_rule,
+    # Billed budget + estimate drift from azure_billed_costs.
+    AZURE_COSTS_GROUP: azure_cost_rule,
 }
 
 # Registry key -> catalogue rule ids it evaluates (a key not listed covers
 # itself). Only rules whose function ran cleanly may auto-resolve.
-RULE_GROUPS: dict[str, frozenset[str]] = {RESOURCES_GROUP: c.RESOURCE_RULES}
+RULE_GROUPS: dict[str, frozenset[str]] = {
+    RESOURCES_GROUP: c.RESOURCE_RULES,
+    AZURE_COSTS_GROUP: c.AZURE_COST_RULES,
+}
 
 
 def rules_covered(key: str) -> frozenset[str]:

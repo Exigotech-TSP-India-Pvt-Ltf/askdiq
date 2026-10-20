@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Annotated, Any, Self
+from datetime import date, datetime
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -26,6 +26,7 @@ PRICE_FIELDS = (
     "price_embed_per_million",
 )
 OVERRIDE_FIELDS = (*MODEL_FIELDS, *PRICE_FIELDS)
+PriceSource = Literal["manual", "azure_retail"]
 
 
 class ModelConfigValues(BaseModel):
@@ -56,6 +57,16 @@ class ModelSettingsRead(ModelConfigValues):
     version: int = 0
     updated_at: datetime | None = None
     updated_by: str | None = None
+    price_source: PriceSource | None = Field(
+        default=None,
+        description="Where the saved prices came from (null = .env / never saved).",
+    )
+    prices_synced_at: datetime | None = Field(
+        default=None, description="When the confirmed Azure retail prices were fetched."
+    )
+    prices_effective_date: date | None = Field(
+        default=None, description="Effective date of the confirmed Azure retail prices."
+    )
 
 
 class ModelSettingsUpdate(BaseModel):
@@ -73,12 +84,23 @@ class ModelSettingsUpdate(BaseModel):
     price_cached_per_million: PricePerMillion | None = None
     price_output_per_million: PricePerMillion | None = None
     price_embed_per_million: PricePerMillion | None = None
+    price_source: PriceSource = Field(
+        default="manual",
+        description=(
+            "`azure_retail` when the admin confirmed the official Azure retail "
+            "prices (each changed price must equal the stored official price); "
+            "records the effective and sync dates. Otherwise `manual`."
+        ),
+    )
 
     @model_validator(mode="after")
     def _has_changes(self) -> Self:
-        if not self.model_fields_set - {"version"}:
+        if not self.model_fields_set - _META_FIELDS:
             raise ValueError("No fields to update")
         return self
 
     def changes(self) -> dict[str, Any]:
-        return self.model_dump(include=self.model_fields_set - {"version"})
+        return self.model_dump(include=self.model_fields_set - _META_FIELDS)
+
+
+_META_FIELDS = frozenset({"version", "price_source"})

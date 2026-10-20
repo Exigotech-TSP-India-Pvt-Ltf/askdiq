@@ -442,6 +442,10 @@ class Settings(BaseSettings):
     alert_llm_failure_window_minutes: int = Field(default=15, ge=1)
     alert_llm_failures_threshold: int = Field(default=5, ge=1)
     alert_azure_429_threshold: int = Field(default=3, ge=1)
+    # Azure-side 429s (Azure Monitor metrics, every caller of the resource) in
+    # the last window of stored PT1M points (azure_monitor_429_spike).
+    alert_azure_monitor_429_threshold: int = Field(default=10, ge=1)
+    alert_azure_monitor_429_window_minutes: int = Field(default=15, ge=5, le=120)
     alert_budget_warning_pct: float = Field(default=80.0, gt=0)
     alert_budget_critical_pct: float = Field(default=100.0, gt=0)
     alert_feedback_window_minutes: int = Field(default=60, ge=5)
@@ -463,6 +467,13 @@ class Settings(BaseSettings):
     # Leak heuristic: RSS rising (almost) every sample by at least this much.
     alert_rss_growth_mb: float = Field(default=256.0, gt=0)
     alert_rss_growth_min_samples: int = Field(default=24, ge=3)
+    # Azure Insights rules (evaluated only while AZURE_INSIGHTS_ENABLED, from
+    # the stored Azure data): peak 1-min tokens / requests or regional quota
+    # at or above this % of the Azure-reported limits; a source failing this
+    # many consecutive runs.
+    alert_azure_quota_pct: float = Field(default=85.0, gt=0, le=100)
+    alert_azure_quota_window_minutes: int = Field(default=15, ge=1, le=1440)
+    alert_azure_sync_failures: int = Field(default=3, ge=1)
     # SMTP delivery: off unless SMTP_HOST, ALERT_EMAIL_FROM and ALERT_EMAIL_TO
     # are all set. SMTP_SSL = implicit TLS (465); otherwise STARTTLS (587).
     smtp_host: str = ""
@@ -475,6 +486,68 @@ class Settings(BaseSettings):
     alert_email_from: str = ""
     # Comma-separated recipients.
     alert_email_to: str = ""
+
+    # --- Azure Insights (app/azure_insights): free Foundry / Azure data ---
+    # Off = nothing is polled and the console shows "Not connected". When on,
+    # every id below is required (a separate app registration from ENTRA_*,
+    # read-only roles only). The secret has no default and is never logged.
+    azure_insights_enabled: bool = False
+    azure_tenant_id: str | None = None
+    azure_client_id: str | None = None
+    azure_client_secret: SecretStr | None = None
+    azure_subscription_id: str | None = None
+    azure_resource_group: str | None = None
+    azure_openai_resource_name: str | None = None
+    azure_openai_region: str | None = None
+    # Second retail currency (USD is always fetched: model prices are USD).
+    azure_pricing_currency: str = Field(default="AUD", pattern=r"^[A-Z]{3}$")
+    azure_deployment_type: Literal["Global", "DataZone", "Regional"] = "Global"
+    # Retail lookups need no credentials; this region is used while
+    # AZURE_OPENAI_REGION is unset (Global meters are listed there).
+    azure_retail_fallback_region: str = Field(
+        default="eastus2", pattern=r"^[a-z0-9]{2,40}$"
+    )
+    # Model names priced by the retail sync (prompt/cached/output, embeddings).
+    azure_retail_llm_model: str = "gpt-5-mini"
+    azure_retail_embedding_model: str = "text-embedding-3-small"
+    # Poll intervals (seconds); every result is stored with its history.
+    azure_metrics_interval_seconds: int = Field(default=900, ge=300)
+    azure_costs_interval_seconds: int = Field(default=86_400, ge=21_600)
+    azure_capacity_interval_seconds: int = Field(default=21_600, ge=3_600)
+    azure_health_interval_seconds: int = Field(default=600, ge=300)
+    azure_service_health_interval_seconds: int = Field(default=1_800, ge=600)
+    azure_retail_interval_seconds: int = Field(default=604_800, ge=86_400)
+    # Hard stop at 10% of the 1M free metrics calls per month (never billed).
+    azure_metrics_monthly_call_cap: int = Field(default=100_000, ge=0, le=1_000_000)
+    azure_service_health_enabled: bool = False
+    azure_advisor_enabled: bool = False
+    azure_http_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    # Interactive "Sync official prices" calls per admin per minute.
+    azure_retail_sync_rate_limit_per_minute: int = Field(default=5, ge=1)
+    # Governance > Monitoring "Azure vs AskDIQ": rows whose drift (|Azure -
+    # AskDIQ| / Azure) is at or above this percentage are highlighted.
+    azure_reconciliation_drift_pct: float = Field(default=10.0, gt=0, le=1000)
+
+    # Advisor recommendations (AZURE_ADVISOR_ENABLED): daily by default.
+    azure_advisor_interval_seconds: int = Field(default=86_400, ge=21_600)
+
+    # Cost Management (billed cost): polled once per AZURE_COSTS_INTERVAL_SECONDS
+    # at this local time (INSIGHTS_TIMEZONE); Azure itself lags 8-72 h.
+    azure_costs_run_at: str = Field(
+        default="03:00", pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
+    )
+    azure_costs_api_version: str = Field(
+        default="2026-06-01", pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?$"
+    )
+    # Billed-cost history kept (days).
+    azure_costs_retention_days: int = Field(default=400, ge=400)
+    # Monthly Azure budget in the BILLING currency (for a non-USD bill; a USD
+    # bill falls back to MONTHLY_COST_BUDGET_USD). Unset = no billed budget.
+    azure_monthly_budget: float | None = Field(default=None, ge=0)
+    # Estimate drift alert: a closed day where |billed - estimated| / billed
+    # exceeds this %, and billed is at least ALERT_AZURE_DRIFT_MIN.
+    alert_azure_drift_pct: float = Field(default=15.0, gt=0)
+    alert_azure_drift_min: float = Field(default=1.0, ge=0)
 
     # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
     # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).
@@ -588,6 +661,52 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_azure_insights(self) -> Self:
+        """When enabled, every id must be present and URL-safe (they are
+        interpolated into ARM paths); disabled, nothing is checked."""
+        if not self.azure_insights_enabled:
+            return self
+        missing = [
+            name.upper()
+            for name in _AZURE_INSIGHTS_REQUIRED
+            if not _has_value(getattr(self, name))
+        ]
+        if missing:
+            raise ValueError(
+                f"AZURE_INSIGHTS_ENABLED=true but missing: {', '.join(missing)} "
+                "(see foundry-usage-data-review.md, 'How to enable')."
+            )
+        bad = [
+            name.upper()
+            for name, pattern in _AZURE_ID_PATTERNS.items()
+            if not re.fullmatch(pattern, str(getattr(self, name)).strip())
+        ]
+        if bad:
+            raise ValueError(f"Invalid Azure Insights identifiers: {', '.join(bad)}.")
+        return self
+
+    @property
+    def azure_insights_configured(self) -> bool:
+        """Enabled (the validator guarantees every id is then present)."""
+        return self.azure_insights_enabled
+
+    @property
+    def azure_account_resource_id(self) -> str | None:
+        """ARM id of the Cognitive Services (Foundry) account, or None."""
+        if not self.azure_insights_configured:
+            return None
+        return (
+            f"/subscriptions/{self.azure_subscription_id}"
+            f"/resourceGroups/{self.azure_resource_group}"
+            "/providers/Microsoft.CognitiveServices/accounts/"
+            f"{self.azure_openai_resource_name}"
+        )
+
+    @property
+    def azure_retail_region(self) -> str:
+        return (self.azure_openai_region or self.azure_retail_fallback_region).strip()
+
     @property
     def alert_email_recipients(self) -> list[str]:
         return [a.strip() for a in self.alert_email_to.split(",") if a.strip()]
@@ -622,6 +741,26 @@ class Settings(BaseSettings):
         """`scheme://host[:port]` of APP_BASE_URL (CSRF Origin check)."""
         parts = urlsplit(self.app_base_url)
         return f"{parts.scheme}://{parts.netloc}".lower()
+
+
+_AZURE_INSIGHTS_REQUIRED = (
+    "azure_tenant_id",
+    "azure_client_id",
+    "azure_client_secret",
+    "azure_subscription_id",
+    "azure_resource_group",
+    "azure_openai_resource_name",
+    "azure_openai_region",
+)
+_GUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+_AZURE_ID_PATTERNS = {
+    "azure_tenant_id": rf"{_GUID}|[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+",
+    "azure_client_id": _GUID,
+    "azure_subscription_id": _GUID,
+    "azure_resource_group": r"[-\w.()]{1,90}",
+    "azure_openai_resource_name": r"[A-Za-z0-9][A-Za-z0-9-]{1,63}",
+    "azure_openai_region": r"[a-z0-9]{2,40}",
+}
 
 
 def _has_value(value: object) -> bool:

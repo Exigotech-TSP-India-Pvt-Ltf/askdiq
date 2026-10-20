@@ -1,0 +1,158 @@
+{
+ "cost": 0,
+ "timespan": "2031-03-10T08:08:00Z/2031-03-10T10:08:00Z",
+ "interval": "PT1M",
+ "value": [
+  {
+   "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.CognitiveServices/accounts/example-foundry/providers/Microsoft.Insights/metrics/AzureOpenAITTLTInMS",
+   "type": "Microsoft.Insights/metrics",
+   "name": {
+    "value": "AzureOpenAITTLTInMS",
+    "localizedValue": "Time to Last Byte"
+   },
+   "displayDescription": "Time to Last Byte",
+   "unit": "MilliSeconds",
+   "timeseries": [
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "gpt-5-mini"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z",
+       "average": 1200,
+       "maximum": 2000
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "average": 1500,
+       "maximum": 2500
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z",
+       "average": 900,
+       "maximum": 1100
+      }
+     ]
+    },
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "text-embedding-3-small"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z",
+       "average": 80,
+       "maximum": 120
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z"
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z",
+       "average": 60,
+       "maximum": 70
+      }
+     ]
+    }
+   ],
+   "errorCode": "Success"
+  },
+  {
+   "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.CognitiveServices/accounts/example-foundry/providers/Microsoft.Insights/metrics/AzureOpenAINormalizedTTFTInMS",
+   "type": "Microsoft.Insights/metrics",
+   "name": {
+    "value": "AzureOpenAINormalizedTTFTInMS",
+    "localizedValue": "Normalized Time to First Byte"
+   },
+   "displayDescription": "Normalized Time to First Byte",
+   "unit": "MilliSeconds",
+   "timeseries": [
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "gpt-5-mini"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z",
+       "average": 400,
+       "maximum": 600
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "average": 450,
+       "maximum": 700
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z",
+       "average": 350,
+       "maximum": 500
+      }
+     ]
+    }
+   ],
+   "errorCode": "Success"
+  },
+  {
+   "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.CognitiveServices/accounts/example-foundry/providers/Microsoft.Insights/metrics/AzureOpenAIAvailabilityRate",
+   "type": "Microsoft.Insights/metrics",
+   "name": {
+    "value": "AzureOpenAIAvailabilityRate",
+    "localizedValue": "Azure OpenAI Availability Rate"
+   },
+   "displayDescription": "Azure OpenAI Availability Rate",
+   "unit": "Percent",
+   "timeseries": [
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "gpt-5-mini"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z",
+       "average": 100,
+       "maximum": 100
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "average": 100,
+       "maximum": 100
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z",
+       "average": 100,
+       "maximum": 100
+      }
+     ]
+    }
+   ],
+   "errorCode": "Success"
+  }
+ ],
+ "namespace": "Microsoft.CognitiveServices/accounts",
+ "resourceregion": "australiaeast"
+}

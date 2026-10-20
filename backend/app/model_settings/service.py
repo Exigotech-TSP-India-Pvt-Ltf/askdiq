@@ -12,6 +12,7 @@ stay in use.
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.azure_insights.prices import official_prices
 from app.core.concurrency import SessionFactory
 from app.core.config import Settings, get_settings
 from app.core.events import TOPIC_CACHE_INVALIDATE, publish_event
@@ -31,6 +33,7 @@ from app.governance.audit import record_audit_event
 from app.models.db_models import ModelSettings
 from app.schemas.model_settings import (
     OVERRIDE_FIELDS,
+    PRICE_FIELDS,
     ModelConfigValues,
     ModelSettingsRead,
     ModelSettingsUpdate,
@@ -85,6 +88,9 @@ def resolve(row: ModelSettings | None, settings: Settings) -> ModelSettingsRead:
         version=row.version if row is not None else 0,
         updated_at=row.updated_at if row is not None else None,
         updated_by=row.updated_by if row is not None else None,
+        price_source=row.price_source if row is not None else None,
+        prices_synced_at=row.prices_synced_at if row is not None else None,
+        prices_effective_date=row.prices_effective_date if row is not None else None,
     )
 
 
@@ -170,6 +176,59 @@ def _changed_models(
     return effective("llm_deployment"), effective("embedding_model")
 
 
+DETAIL_NOT_OFFICIAL = (
+    "{field} does not match the official Azure retail price. Sync the official "
+    "prices again or save it as a manual price."
+)
+
+
+async def _price_provenance(
+    db: AsyncSession,
+    payload: ModelSettingsUpdate,
+    changes: dict[str, Any],
+    settings: Settings,
+) -> dict[str, Any]:
+    """Where changed prices come from. ``azure_retail`` is accepted only when
+    every changed price equals the stored official USD price (422 otherwise);
+    any other price change is ``manual``. No price change: unchanged."""
+    changed = [field for field in PRICE_FIELDS if field in changes]
+    if not changed:
+        return {}
+    if payload.price_source != "azure_retail":
+        return {
+            "price_source": "manual",
+            "prices_synced_at": None,
+            "prices_effective_date": None,
+        }
+    official = {
+        price.field: price
+        for price in await official_prices(db, settings, datetime.now(UTC).date())
+    }
+    for field in changed:
+        price = official.get(field)
+        value = changes[field]
+        if (
+            price is None
+            or price.usd_per_million is None
+            or value is None
+            or not math.isclose(
+                value, price.usd_per_million, rel_tol=1e-9, abs_tol=1e-9
+            )
+        ):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=DETAIL_NOT_OFFICIAL.format(field=field),
+            )
+    used = [official[field] for field in changed]
+    return {
+        "price_source": "azure_retail",
+        "prices_synced_at": max(p.fetched_at for p in used if p.fetched_at),
+        "prices_effective_date": max(
+            p.effective_date for p in used if p.effective_date
+        ),
+    }
+
+
 async def update_model_settings(
     db: AsyncSession,
     payload: ModelSettingsUpdate,
@@ -192,6 +251,7 @@ async def update_model_settings(
     llm, embedding = _changed_models(changes, before)
     if llm or embedding:
         await verify(llm, embedding)
+    provenance = await _price_provenance(db, payload, changes, settings)
 
     await db.execute(
         insert(ModelSettings)
@@ -207,6 +267,7 @@ async def update_model_settings(
             )
             .values(
                 **changes,
+                **provenance,
                 updated_by=actor,
                 updated_at=datetime.now(UTC),
                 version=ModelSettings.version + 1,
@@ -230,6 +291,7 @@ async def update_model_settings(
                 field: {"from": getattr(before, field), "to": getattr(after, field)}
                 for field in changes
             },
+            "price_source": provenance.get("price_source"),
             "from_version": payload.version,
             "to_version": new_version,
         },

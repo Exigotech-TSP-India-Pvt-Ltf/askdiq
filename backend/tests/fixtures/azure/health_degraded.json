@@ -1,0 +1,16 @@
+{
+ "id": "/subscriptions/33333333-3333-4333-8333-333333333333/resourceGroups/rg-askdiq/providers/Microsoft.CognitiveServices/accounts/askdiq-foundry/providers/Microsoft.ResourceHealth/availabilityStatuses/current",
+ "name": "current",
+ "type": "Microsoft.ResourceHealth/AvailabilityStatuses",
+ "location": "australiaeast",
+ "properties": {
+  "availabilityState": "Degraded",
+  "title": "Degraded",
+  "summary": "Your Azure OpenAI resource is experiencing <b>increased latency</b>.",
+  "reasonType": "Unplanned",
+  "occuredTime": "2026-10-20T10:02:00Z",
+  "reasonChronicity": "Persistent",
+  "reportedTime": "2026-10-20T10:05:00Z",
+  "resolutionETA": "2026-10-20T12:00:00Z"
+ }
+}

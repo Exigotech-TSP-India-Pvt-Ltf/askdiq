@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -708,6 +710,13 @@ class ModelSettings(Base):
         DateTime(timezone=True), default=_utcnow, server_default=func.now()
     )
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # Where the current prices came from: 'manual' or 'azure_retail' (the
+    # admin confirmed the official Azure retail prices), with their dates.
+    price_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    prices_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    prices_effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     __table_args__ = (
         CheckConstraint("id = 1", name="ck_model_settings_singleton"),
@@ -996,4 +1005,240 @@ class ResourceSample(Base):
     __table_args__ = (
         Index("ix_resource_samples_sampled_at", "sampled_at"),
         Index("ix_resource_samples_worker_sampled", "worker_id", "sampled_at"),
+    )
+
+
+# --- Azure Insights (app/azure_insights) ---
+
+
+class AzureSyncStatus(Base):
+    """Per Azure source: what the console's "Azure connection" card shows,
+    plus the monthly call counter behind the hard cap (metrics)."""
+
+    __tablename__ = "azure_sync_status"
+
+    source: Mapped[str] = mapped_column(String(32), primary_key=True)
+    state: Mapped[str] = mapped_column(
+        String(24), default="never_run", server_default="never_run"
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(80))
+    last_error_message: Mapped[str | None] = mapped_column(Text)
+    consecutive_failures: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    calls_month: Mapped[date | None] = mapped_column(Date)
+    calls_this_month: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detail: Mapped[dict | None] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+
+class AzureRetailPrice(Base):
+    """One Azure Retail Prices API row (public list price) per meter, currency
+    and effective date; history is kept (a new effective date is a new row).
+    ``role`` / ``model_key`` come from the explicit meter mapping
+    (``app.azure_insights.prices``); unmapped meters keep them null."""
+
+    __tablename__ = "azure_retail_prices"
+
+    meter_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    currency: Mapped[str] = mapped_column(String(3), primary_key=True)
+    effective_start_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    meter_name: Mapped[str] = mapped_column(String(200))
+    product_name: Mapped[str | None] = mapped_column(String(200))
+    sku_name: Mapped[str | None] = mapped_column(String(200))
+    service_name: Mapped[str | None] = mapped_column(String(100))
+    arm_region_name: Mapped[str] = mapped_column(String(40))
+    unit_of_measure: Mapped[str] = mapped_column(String(20))
+    retail_price: Mapped[Decimal] = mapped_column(Numeric(18, 10))
+    price_per_million: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    role: Mapped[str | None] = mapped_column(String(16))
+    model_key: Mapped[str | None] = mapped_column(String(64))
+    deployment_type: Mapped[str | None] = mapped_column(String(16))
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_azure_retail_prices_lookup",
+            "arm_region_name",
+            "meter_name",
+            "currency",
+            "effective_start_date",
+        ),
+    )
+
+
+class AzureMetricPoint(Base):
+    """One Azure Monitor platform-metric data point of the Foundry / Azure
+    OpenAI account (Phase 2): per deployment, metric, HTTP status (requests
+    only; '' otherwise), grain (PT1M | PT1H) and bucket start. Upserted on
+    this natural key, so re-reading an overlapping window is harmless.
+    PT1M rows are kept 7 days, PT1H rows 93 days (``app.azure_insights.metrics``)."""
+
+    __tablename__ = "azure_metric_points"
+
+    deployment: Mapped[str] = mapped_column(String(128), primary_key=True)
+    metric: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status_code: Mapped[str] = mapped_column(
+        String(16), primary_key=True, default="", server_default=""
+    )
+    grain: Mapped[str] = mapped_column(String(8), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    total: Mapped[float | None] = mapped_column(Float)
+    average: Mapped[float | None] = mapped_column(Float)
+    maximum: Mapped[float | None] = mapped_column(Float)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "grain IN ('PT1M', 'PT1H')", name="ck_azure_metric_points_grain"
+        ),
+        Index("ix_azure_metric_points_grain_ts", "grain", "ts"),
+        Index("ix_azure_metric_points_metric_grain_ts", "metric", "grain", "ts"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Azure Insights, Phase 4: capacity, quota and health (history kept)
+# ---------------------------------------------------------------------------
+
+
+class AzureDeploymentSnapshot(Base):
+    """One row per deployment per capacity poll (``fetched_at``): SKU,
+    capacity and the Azure-reported TPM/RPM (``rateLimits`` normalised to a
+    minute). The latest row per name feeds the quota gauges."""
+
+    __tablename__ = "azure_deployments"
+    __table_args__ = (Index("ix_azure_deployments_fetched_at", "fetched_at"),)
+
+    name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+    model_name: Mapped[str | None] = mapped_column(String(128))
+    model_version: Mapped[str | None] = mapped_column(String(64))
+    sku_name: Mapped[str | None] = mapped_column(String(64))
+    sku_capacity: Mapped[int | None] = mapped_column(Integer)
+    current_capacity: Mapped[int | None] = mapped_column(Integer)
+    tpm_limit: Mapped[int | None] = mapped_column(BigInteger)
+    rpm_limit: Mapped[int | None] = mapped_column(BigInteger)
+    rate_limits: Mapped[list | None] = mapped_column(JSONB)
+    provisioning_state: Mapped[str | None] = mapped_column(String(32))
+
+
+class AzureQuotaUsage(Base):
+    """Regional quota (``locations/{region}/usages``) per poll: allocated
+    ``current_value`` against ``limit_value`` per model/SKU quota name."""
+
+    __tablename__ = "azure_quota_usage"
+    __table_args__ = (Index("ix_azure_quota_usage_fetched_at", "fetched_at"),)
+
+    location: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+    localized_name: Mapped[str | None] = mapped_column(String(200))
+    current_value: Mapped[float | None] = mapped_column(Float)
+    limit_value: Mapped[float | None] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String(32))
+    status: Mapped[str | None] = mapped_column(String(32))
+
+
+class AzureHealthStatus(Base):
+    """Resource Health of the account, one row per status *change*
+    (``started_at``); polls with the same status only move ``checked_at``.
+    ``ended_at`` is set when the next status starts."""
+
+    __tablename__ = "azure_health_status"
+    __table_args__ = (Index("ix_azure_health_status_started_at", "started_at"),)
+
+    resource_id: Mapped[str] = mapped_column(String(400), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+    availability_state: Mapped[str] = mapped_column(String(24))
+    summary: Mapped[str | None] = mapped_column(Text)
+    reason_type: Mapped[str | None] = mapped_column(String(64))
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AzureServiceEvent(Base):
+    """Service Health events for our service (OpenAI / Foundry / Cognitive)
+    in our region or global, upserted by tracking id (``name``)."""
+
+    __tablename__ = "azure_service_events"
+    __table_args__ = (Index("ix_azure_service_events_last_seen", "last_seen_at"),)
+
+    tracking_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    event_type: Mapped[str | None] = mapped_column(String(48))
+    status: Mapped[str | None] = mapped_column(String(24))
+    level: Mapped[str | None] = mapped_column(String(24))
+    title: Mapped[str | None] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    services: Mapped[list | None] = mapped_column(JSONB)
+    regions: Mapped[list | None] = mapped_column(JSONB)
+    impact_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    impact_mitigation: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_update: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AzureAdvisorRec(Base):
+    """Advisor recommendations for our resource group, upserted by id;
+    ``resolved_at`` is set once Advisor stops returning one."""
+
+    __tablename__ = "azure_advisor_recs"
+
+    rec_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    category: Mapped[str | None] = mapped_column(String(48))
+    impact: Mapped[str | None] = mapped_column(String(16))
+    impacted_field: Mapped[str | None] = mapped_column(String(200))
+    impacted_value: Mapped[str | None] = mapped_column(String(200))
+    problem: Mapped[str | None] = mapped_column(Text)
+    solution: Mapped[str | None] = mapped_column(Text)
+    learn_more_link: Mapped[str | None] = mapped_column(Text)
+    extended: Mapped[dict | None] = mapped_column(JSONB)
+    last_updated: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AzureBilledCost(Base):
+    """Azure Cost Management billed cost per UTC usage day, meter and resource
+    (``app.azure_insights.costs``). Re-read days are upserted (rerating);
+    ``is_final`` once the month closed + 3 days. Kept AZURE_COSTS_RETENTION_DAYS."""
+
+    __tablename__ = "azure_billed_costs"
+
+    usage_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    meter: Mapped[str] = mapped_column(String(200), primary_key=True)
+    resource_id: Mapped[str] = mapped_column(String(512), primary_key=True)
+    cost: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    currency: Mapped[str] = mapped_column(String(3))
+    is_final: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
     )

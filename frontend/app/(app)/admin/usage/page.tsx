@@ -13,6 +13,9 @@ import { SessionsTab } from "@/components/admin/usage/SessionsTab";
 import { QueriesTab } from "@/components/admin/usage/QueriesTab";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { CostInsights } from "@/components/admin/usage/CostInsights";
+import { AzureTokensPanel } from "@/components/admin/azure/AzureTokensPanel";
+import { BilledVsEstimated } from "@/components/admin/usage/BilledVsEstimated";
+import { warmAzureCosts } from "@/lib/azure-costs-api";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import {
@@ -74,7 +77,12 @@ function UsageCostContent() {
   const overviewReady = activeTab === "overview" && summary !== null;
   useEffect(() => {
     if (!overviewReady) return undefined;
-    return warmUsageOverview(token, audience, { from: fromDay || undefined, to: toDay || undefined });
+    const stopUsage = warmUsageOverview(token, audience, { from: fromDay || undefined, to: toDay || undefined });
+    const stopAzure = warmAzureCosts(token);
+    return () => {
+      stopUsage();
+      stopAzure();
+    };
   }, [overviewReady, token, audience, fromDay, toDay]);
 
   // The URL is the source of truth: tab, ip and session.
@@ -189,6 +197,8 @@ function UsageCostContent() {
               className={`space-y-6 transition-opacity duration-150 ${isUpdating ? "opacity-70" : ""}`}
             >
               <CostInsights summary={summary} isLoading={isLoading} error={error} onRetry={refresh} />
+              <BilledVsEstimated token={token} days={days} />
+              <AzureTokensPanel />
               <InteractiveOverviewTab
                 summary={summary}
                 isLoading={isLoading}
