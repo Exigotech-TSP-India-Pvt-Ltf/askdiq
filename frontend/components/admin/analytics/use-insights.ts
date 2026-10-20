@@ -181,6 +181,23 @@ export function prefetchConversation(token: string | null, convId: string, filte
   );
 }
 
+/** Cache key of one person's detail (only audience and zone apply). */
+export const personKey = (personId: string, filters: InsightsFilters) =>
+  [`${INSIGHTS_CACHE_PREFIX}/person`, personId, filters.audience, filters.tz] as const;
+
+/** Warms what a person click shows: the detail panel and the filtered bundle. */
+export function prefetchPerson(
+  token: string | null,
+  personId: string,
+  filters: InsightsFilters,
+  page: ConversationPageParams,
+): void {
+  void prefetch(personKey(personId, filters), (signal) =>
+    insightsApi.getPerson(token, personId, { audience: filters.audience, tz: filters.tz }, signal),
+  );
+  if (filters.person !== personId) prefetchBundle(token, { ...filters, person: personId }, { ...page, offset: 0 });
+}
+
 /** Readable message for a failed query. */
 export function errorText(error: unknown): string | null {
   if (!error) return null;
