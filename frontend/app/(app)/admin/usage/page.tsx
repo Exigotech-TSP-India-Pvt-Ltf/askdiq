@@ -13,6 +13,7 @@ import { SessionsTab } from "@/components/admin/usage/SessionsTab";
 import { QueriesTab } from "@/components/admin/usage/QueriesTab";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { CostInsights } from "@/components/admin/usage/CostInsights";
+import { AzureTokensPanel } from "@/components/admin/azure/AzureTokensPanel";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import {
@@ -189,6 +190,7 @@ function UsageCostContent() {
               className={`space-y-6 transition-opacity duration-150 ${isUpdating ? "opacity-70" : ""}`}
             >
               <CostInsights summary={summary} isLoading={isLoading} error={error} onRetry={refresh} />
+              <AzureTokensPanel />
               <InteractiveOverviewTab
                 summary={summary}
                 isLoading={isLoading}

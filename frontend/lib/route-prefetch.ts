@@ -17,6 +17,7 @@ import { filtersForPreset } from "@/components/admin/analytics/use-analytics-pre
 import { DEFAULT_STATE } from "@/components/admin/analytics/url-state";
 import { pageOf, prefetchBundle, viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
+import { azureApi, azureKeys, TOKENS_SERIES } from "@/lib/azure-metrics-api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
 import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
 import { summaryFetcher } from "@/lib/use-dashboard";
@@ -77,6 +78,12 @@ function defaultDays(): { from: string; to: string } {
   return rangeUtcDays(presetRange(DEFAULT_PRESET));
 }
 
+/** Azure Insights reads shown on Usage & Cost and Governance > Monitoring. */
+function azureViews(token: string, withSeries: boolean): void {
+  warm(azureKeys.summary(), (signal) => azureApi.summary(token, undefined, signal));
+  if (withSeries) warm(azureKeys.series(TOKENS_SERIES), (signal) => azureApi.series(token, TOKENS_SERIES, signal));
+}
+
 function governanceOverall(token: string, audience: Audience): void {
   warm(dashboardKeys.health(audience), (signal) => governanceApi.overview(token, audience, signal));
   warm(["admin/governance/traces-total", audience], (signal) =>
@@ -85,6 +92,8 @@ function governanceOverall(token: string, audience: Audience): void {
   warm(["admin/governance/logs-total", audience], (signal) =>
     governanceApi.logs(token, { audience, limit: 1 }, signal),
   );
+  // Monitoring tab: Azure vs AskDIQ.
+  azureViews(token, false);
 }
 
 const PREFETCHERS: Record<string, Prefetcher> = {
@@ -122,6 +131,7 @@ const PREFETCHERS: Record<string, Prefetcher> = {
       const page = { audience, from_date: days.from, to_date: days.to, sort, limit: USAGE_PAGE_SIZE, offset: 0 };
       warm(usageListKey(kind, page), (signal) => fetchUsageList(kind, token, page, signal));
     }
+    azureViews(token, true);
   },
   "/admin/feedback": (token, audience) => {
     const days = defaultDays();
