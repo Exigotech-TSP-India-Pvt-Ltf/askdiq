@@ -47,6 +47,7 @@ export function PreferenceDataTab({ token, canExport, days }: PreferenceDataTabP
   const { data, error, isLoading, refetch } = useApiQuery(
     canExport ? feedbackKeys.pairs(completeOnly, { from, to }) : null,
     fetcher,
+    { keepPreviousData: true },
   );
 
   const counts = useMemo(() => {

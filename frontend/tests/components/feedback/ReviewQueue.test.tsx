@@ -96,6 +96,23 @@ describe("Review Queue triage workspace", () => {
     expect(screen.getByRole("status", { name: "Notifications" })).toHaveTextContent("Marked reviewed");
   });
 
+  it("triages row after row without waiting for the previous request", async () => {
+    calls = route();
+    renderQueue();
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    const [first, second] = rows();
+    fireEvent.click(within(first).getByRole("button", { name: /^Mark reviewed/ }));
+    // Same tick: the first PATCH has not resolved yet.
+    fireEvent.click(within(second).getByRole("button", { name: /^Dismiss/ }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(2));
+    const bodies = calls.filter((c) => c.method === "PATCH").map((c) => [c.path, c.body]);
+    expect(bodies).toEqual([
+      [`/admin/feedback/${items[0].id}`, { version: 1, triage_status: "reviewed" }],
+      [`/admin/feedback/${items[1].id}`, { version: 1, triage_status: "dismissed" }],
+    ]);
+    await waitFor(() => expect(rows()).toHaveLength(1));
+  });
+
   it("p promotes through promote-to-test (message id) and the promoted row animates out", async () => {
     calls = route();
     renderQueue();
