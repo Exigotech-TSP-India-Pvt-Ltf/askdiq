@@ -83,6 +83,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { stageLabel } from "@/components/admin/governance/TraceDrawer";
 import { LiveIndicator } from "@/components/admin/governance/badges";
 import { ActiveVisitorsInfo } from "@/components/admin/ActiveVisitorsPanel";
+import { AzureReconciliationPanel } from "@/components/admin/azure/AzureReconciliationPanel";
 import { ACTIVE_VISITORS_LABEL } from "@/lib/active-visitors";
 
 /** SSE events arrive every few seconds; refetch the full snapshot at most this often. */
@@ -935,6 +936,8 @@ export default function MonitoringView() {
       </section>
 
       <AiUsagePanel />
+
+      <AzureReconciliationPanel />
     </div>
   );
 }

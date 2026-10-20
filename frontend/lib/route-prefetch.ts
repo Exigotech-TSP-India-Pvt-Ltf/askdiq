@@ -18,6 +18,7 @@ import { DEFAULT_STATE } from "@/components/admin/analytics/url-state";
 import { pageOf, prefetchBundle, viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
 import { azureApi, azureKeys } from "@/lib/azure-api";
+import { azureApi as azureMetricsApi, azureKeys as azureMetricsKeys, TOKENS_SERIES } from "@/lib/azure-metrics-api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
 import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
 import { summaryFetcher } from "@/lib/use-dashboard";
@@ -78,6 +79,12 @@ function defaultDays(): { from: string; to: string } {
   return rangeUtcDays(presetRange(DEFAULT_PRESET));
 }
 
+/** Azure Insights reads shown on Usage & Cost and Governance > Monitoring. */
+function azureViews(token: string, withSeries: boolean): void {
+  warm(azureMetricsKeys.summary(), (signal) => azureMetricsApi.summary(token, undefined, signal));
+  if (withSeries) warm(azureMetricsKeys.series(TOKENS_SERIES), (signal) => azureMetricsApi.series(token, TOKENS_SERIES, signal));
+}
+
 function governanceOverall(token: string, audience: Audience): void {
   warm(dashboardKeys.health(audience), (signal) => governanceApi.overview(token, audience, signal));
   warm(["admin/governance/traces-total", audience], (signal) =>
@@ -86,7 +93,9 @@ function governanceOverall(token: string, audience: Audience): void {
   warm(["admin/governance/logs-total", audience], (signal) =>
     governanceApi.logs(token, { audience, limit: 1 }, signal),
   );
+  // Monitoring tab: the Azure connection card and Azure vs AskDIQ.
   warm(azureKeys.status, (signal) => azureApi.status(signal));
+  azureViews(token, false);
 }
 
 const PREFETCHERS: Record<string, Prefetcher> = {
@@ -124,6 +133,7 @@ const PREFETCHERS: Record<string, Prefetcher> = {
       const page = { audience, from_date: days.from, to_date: days.to, sort, limit: USAGE_PAGE_SIZE, offset: 0 };
       warm(usageListKey(kind, page), (signal) => fetchUsageList(kind, token, page, signal));
     }
+    azureViews(token, true);
   },
   "/admin/feedback": (token, audience) => {
     const days = defaultDays();
