@@ -28,7 +28,7 @@ from app.alerts.azure_rules import (
 )
 from app.alerts.catalogue import Severity
 from app.alerts.rules import DATABASE_RULE_FUNCS
-from app.azure_insights import advisor, capacity, health, scheduler
+from app.azure_insights import advisor, capacity, health, metrics, scheduler
 from app.azure_insights.capacity_schemas import ResourceHealth, ServiceEvent
 from app.core.cache import dashboard_cache
 from app.core.config import get_settings
@@ -45,6 +45,7 @@ from app.models.db_models import (
     AzureAdvisorRec,
     AzureDeploymentSnapshot,
     AzureHealthStatus,
+    AzureMetricPoint,
     AzureQuotaUsage,
     AzureServiceEvent,
     AzureSyncStatus,
@@ -685,6 +686,59 @@ async def test_quota_rule_uses_real_limits_and_regional_quota(
         f"{c.AZURE_QUOTA_NEAR_LIMIT}:region:OpenAI.GlobalStandard.gpt-5-mini"
     ]
     assert regional.details["value"] == 90.0
+
+
+def _metric_point(
+    deployment: str, metric: str, ts: datetime, total: float, status_code: str = ""
+) -> AzureMetricPoint:
+    return AzureMetricPoint(
+        deployment=deployment,
+        metric=metric,
+        status_code=status_code,
+        grain=metrics.GRAIN_MINUTE,
+        ts=ts,
+        total=total,
+    )
+
+
+async def test_quota_rule_prefers_fresh_azure_minute_peaks(db_session, enabled) -> None:
+    now = datetime.now(UTC)
+    chat = enabled.azure_deployment_name
+    db_session.add(
+        AzureDeploymentSnapshot(name=chat, fetched_at=now, tpm_limit=1000, rpm_limit=10)
+    )
+    await _seed_turns(db_session, [100])  # app-recorded: 100 tokens, 1 request
+    stale = now.replace(second=0, microsecond=0) - timedelta(hours=2)
+    db_session.add_all(
+        [
+            _metric_point(chat, metrics.TOKEN_TRANSACTION, stale, 990),
+            _metric_point(chat, metrics.REQUESTS, stale, 10, "200"),
+        ]
+    )
+    await db_session.flush()
+    # Azure points outside the window are stale: fall back to chat_messages.
+    assert await azure_quota_rule(db_session, now, enabled) == []
+
+    minute = now.replace(second=0, microsecond=0) - timedelta(minutes=3)
+    db_session.add_all(
+        [
+            _metric_point(chat.upper(), metrics.TOKEN_TRANSACTION, minute, 950),
+            _metric_point(chat, metrics.REQUESTS, minute, 6, "200"),
+            _metric_point(chat, metrics.REQUESTS, minute, 3, "429"),
+            _metric_point("other-deployment", metrics.TOKEN_TRANSACTION, minute, 5000),
+        ]
+    )
+    await db_session.flush()
+    findings = {
+        f.dedupe_key: f for f in await azure_quota_rule(db_session, now, enabled)
+    }
+    tpm = findings[f"{c.AZURE_QUOTA_NEAR_LIMIT}:{chat}:tpm"]
+    assert tpm.details["value"] == 95.0
+    assert tpm.details["peak_source"] == "azure_monitor"
+    rpm = findings[f"{c.AZURE_QUOTA_NEAR_LIMIT}:{chat}:rpm"]
+    # Requests are summed over status codes per minute (6 OK + 3 throttled).
+    assert rpm.details["value"] == 90.0
+    assert rpm.details["counts"]["peak_requests_per_minute"] == 9
 
 
 async def test_unhealthy_rule_raises_for_status_and_active_incident(

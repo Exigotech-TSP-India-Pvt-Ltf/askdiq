@@ -4,10 +4,13 @@ They read only what the Azure Insights polls stored (never call Azure) and
 return nothing while AZURE_INSIGHTS_ENABLED is off:
 
 - ``azure_quota_near_limit``: peak 1-minute tokens / requests of the chat
-  deployment (app-recorded assistant turns, ``chat_messages``) over
-  ALERT_AZURE_QUOTA_WINDOW_MINUTES at or above ALERT_AZURE_QUOTA_PCT of the
-  Azure-reported TPM / RPM, or regional quota ``currentValue / limit`` at or
-  above it;
+  deployment over ALERT_AZURE_QUOTA_WINDOW_MINUTES at or above
+  ALERT_AZURE_QUOTA_PCT of the Azure-reported TPM / RPM, or regional quota
+  ``currentValue / limit`` at or above it. The peak prefers Azure Monitor's
+  PT1M ``TokenTransaction`` / ``AzureOpenAIRequests`` points
+  (``azure_metric_points``, every caller of the deployment) when they cover
+  the window, and falls back to app-recorded assistant turns
+  (``chat_messages``) otherwise;
 - ``azure_resource_unhealthy``: Resource Health Degraded / Unavailable, or an
   active ServiceIssue for our service and region;
 - ``azure_insights_sync_failing``: a scheduled source failed at least
@@ -32,10 +35,11 @@ from app.azure_insights.health import (
     UNAVAILABLE,
     read_health,
 )
+from app.azure_insights.metrics import GRAIN_MINUTE, REQUESTS, TOKEN_TRANSACTION
 from app.azure_insights.scheduler import is_scheduled, registered_sources
 from app.core.config import Settings
 from app.model_settings.service import current_model_settings
-from app.models.db_models import AzureQuotaUsage, ChatMessageRecord
+from app.models.db_models import AzureMetricPoint, AzureQuotaUsage, ChatMessageRecord
 
 COMPONENT = "Azure OpenAI"
 FAILING_STATES = frozenset(
@@ -74,6 +78,60 @@ async def peak_minute(db: AsyncSession, since: datetime) -> tuple[int, int]:
     return int(row[0]), int(row[1])
 
 
+async def azure_peak_minute(
+    db: AsyncSession, deployment: str, since: datetime
+) -> tuple[int | None, int | None]:
+    """(peak tokens, peak requests) per minute since ``since`` (aware UTC) from
+    Azure Monitor PT1M points of ``deployment``; None for a metric with no
+    point in the window (not polled yet, metrics off or stale)."""
+    pts = AzureMetricPoint
+    per_minute = (
+        select(
+            pts.metric.label("metric"),
+            func.sum(pts.total).label("total"),
+        )
+        .where(
+            pts.grain == GRAIN_MINUTE,
+            pts.metric.in_((TOKEN_TRANSACTION, REQUESTS)),
+            func.lower(pts.deployment) == deployment.lower(),
+            pts.ts >= since,
+            pts.total.is_not(None),
+        )
+        .group_by(pts.metric, pts.ts)  # requests: sum over status codes
+        .subquery()
+    )
+    rows = await db.execute(
+        select(per_minute.c.metric, func.max(per_minute.c.total)).group_by(
+            per_minute.c.metric
+        )
+    )
+    peaks = {metric: int(peak) for metric, peak in rows if peak is not None}
+    return peaks.get(TOKEN_TRANSACTION), peaks.get(REQUESTS)
+
+
+async def window_peaks(
+    db: AsyncSession, deployment: str, since: datetime
+) -> tuple[int, int, dict[str, str]]:
+    """(peak tokens, peak requests, source per metric) since ``since``.
+
+    Azure counts every caller of the deployment, so a minute Azure reported
+    is never below what AskDIQ recorded for it; taking the larger peak
+    therefore prefers Azure wherever its points cover the window and lets
+    the app-recorded turns cover only minutes Azure has not ingested yet."""
+    app_tokens, app_requests = await peak_minute(db, _naive(since))
+    az_tokens, az_requests = await azure_peak_minute(db, deployment, since)
+    sources: dict[str, str] = {}
+    peaks: list[int] = []
+    for metric, app, azure in (
+        ("tokens", app_tokens, az_tokens),
+        ("requests", app_requests, az_requests),
+    ):
+        use_azure = azure is not None and azure >= app
+        sources[metric] = "azure_monitor" if use_azure else "chat_messages"
+        peaks.append(azure if use_azure and azure is not None else app)
+    return peaks[0], peaks[1], sources
+
+
 def _quota_severity(pct: float) -> Severity:
     return Severity.CRITICAL if pct >= FULL_PCT else Severity.WARNING
 
@@ -88,7 +146,9 @@ async def _deployment_findings(
     if chat is None or not (chat.tpm_limit or chat.rpm_limit):
         return []
     window = cfg.alert_azure_quota_window_minutes
-    tokens, requests = await peak_minute(db, _naive(now - timedelta(minutes=window)))
+    tokens, requests, sources = await window_peaks(
+        db, chat.name, now - timedelta(minutes=window)
+    )
     findings = []
     for metric, unit, peak, limit in (
         ("tokens", "TPM", tokens, chat.tpm_limit),
@@ -117,6 +177,7 @@ async def _deployment_findings(
                     "unit": "%",
                     "window_minutes": window,
                     "counts": {f"peak_{metric}_per_minute": peak, "limit": limit},
+                    "peak_source": sources[metric],
                 },
             )
         )
