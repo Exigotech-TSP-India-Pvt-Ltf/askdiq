@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -241,6 +241,11 @@ def test_only_payloads_reaching_today_follow_new_evaluations() -> None:
     # Table times are naive UTC.
     assert views.is_after(datetime(2020, 2, 11, 9, 1), as_of)
     assert not views.is_after(datetime(2020, 2, 11, 9, 0), as_of)
+    # Never a rebuild loop: not for future rows, not right after a rebuild.
+    now = datetime.now(UTC)
+    future = (now + timedelta(hours=5)).replace(tzinfo=None)
+    assert not views.is_after(future, as_of)
+    assert not views.is_after(now.replace(tzinfo=None), now)
 
 
 @pytest.mark.asyncio

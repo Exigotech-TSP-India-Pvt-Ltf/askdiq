@@ -19,10 +19,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -184,10 +183,9 @@ view_cache = ViewCache()
 # newest evaluation then recomputes it in the background at once (one build,
 # ~100 ms) instead of waiting for the refresher's next cycle; the recompute
 # announces itself, so the page refetches the new numbers. The newest
-# evaluation time is read at most once per EVAL_STAMP_TTL per process.
+# evaluation time is read on every such view read (an index-only max, ~1 ms):
+# a cached one could predate the very change the refetch is about.
 
-EVAL_STAMP_TTL = 1.0
-_newest: dict[str, Any] = {"value": None, "checked": float("-inf")}
 _rebuilds: set[asyncio.Task[Any]] = set()
 
 
@@ -200,20 +198,27 @@ def payload_may_be_behind(params: dict[str, Any], as_of: datetime | None) -> boo
 
 
 async def newest_evaluation(gather: Gather) -> datetime | None:
-    now = time.monotonic()
-    if now - _newest["checked"] >= EVAL_STAMP_TTL:
-        _newest["checked"] = now
-        (value,) = await gather(
-            lambda db: db.scalar(select(func.max(EvaluationRecord.created_at)))
-        )
-        _newest["value"] = value
-    return _newest["value"]
+    """Creation time of the newest evaluation record."""
+    (value,) = await gather(
+        lambda db: db.scalar(select(func.max(EvaluationRecord.created_at)))
+    )
+    return value
+
+
+# A payload rebuilt this recently is not rebuilt again, and evaluation times
+# in the future (clock skew, bad rows) never trigger one: no rebuild loops.
+MIN_REBUILD_AGE = timedelta(seconds=1)
+MAX_CLOCK_SKEW = timedelta(seconds=60)
 
 
 def is_after(created_at: datetime, as_of: datetime) -> bool:
-    """``created_at`` (naive UTC in the table) is later than ``as_of``."""
+    """``created_at`` (naive UTC in the table) is a real evaluation later
+    than a payload computed at ``as_of`` (at least MIN_REBUILD_AGE ago)."""
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
+    if now - as_of < MIN_REBUILD_AGE or created_at > now + MAX_CLOCK_SKEW:
+        return False
     return created_at > as_of
 
 
