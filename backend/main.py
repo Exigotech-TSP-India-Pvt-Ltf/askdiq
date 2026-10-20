@@ -85,6 +85,8 @@ async def lifespan(_app: FastAPI):
     await asyncio.to_thread(preload_reranker)
     # Event bus (LISTEN/NOTIFY) and, if JOBS_WORKER_ENABLED, the job worker.
     platform_services = await start_platform_services()
+    # Governance Overall / Monitoring copies, computed before the first visit.
+    get_governance_hub().warm()
     try:
         yield
     finally:
