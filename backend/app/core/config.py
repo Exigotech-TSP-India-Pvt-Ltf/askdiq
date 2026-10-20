@@ -124,7 +124,16 @@ class Settings(BaseSettings):
     clarify_min_options: int = 2
     clarify_max_options: int = 4
     # The model asks as few questions as needed, at most this many, in one turn.
-    clarify_max_questions: int = 3
+    clarify_max_questions: int = 4
+    # Rule-detected ambiguity (a referent with nothing to point at, or an
+    # underspecified compliance request, see app/harness/ambiguity.py) asks
+    # before the low-confidence fallback, as long as the best retrieved score
+    # reaches this floor (lower than min_retrieval_score: spread-out evidence).
+    clarify_min_retrieval_score: float = 0.12
+    # The one cheap LLM call that confirms a borderline underspecified request;
+    # past the timeout (or on any error) the question is answered as usual.
+    clarify_decision_timeout_seconds: float = 3.0
+    clarify_decision_max_tokens: int = 400
     # A short question that may need clarifying is retrieved wider, so the
     # options cover the knowledge base's real distinct intents.
     clarify_retrieval_top_k: int = 10
