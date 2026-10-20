@@ -1110,3 +1110,115 @@ class AzureMetricPoint(Base):
         Index("ix_azure_metric_points_grain_ts", "grain", "ts"),
         Index("ix_azure_metric_points_metric_grain_ts", "metric", "grain", "ts"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Azure Insights, Phase 4: capacity, quota and health (history kept)
+# ---------------------------------------------------------------------------
+
+
+class AzureDeploymentSnapshot(Base):
+    """One row per deployment per capacity poll (``fetched_at``): SKU,
+    capacity and the Azure-reported TPM/RPM (``rateLimits`` normalised to a
+    minute). The latest row per name feeds the quota gauges."""
+
+    __tablename__ = "azure_deployments"
+    __table_args__ = (Index("ix_azure_deployments_fetched_at", "fetched_at"),)
+
+    name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+    model_name: Mapped[str | None] = mapped_column(String(128))
+    model_version: Mapped[str | None] = mapped_column(String(64))
+    sku_name: Mapped[str | None] = mapped_column(String(64))
+    sku_capacity: Mapped[int | None] = mapped_column(Integer)
+    current_capacity: Mapped[int | None] = mapped_column(Integer)
+    tpm_limit: Mapped[int | None] = mapped_column(BigInteger)
+    rpm_limit: Mapped[int | None] = mapped_column(BigInteger)
+    rate_limits: Mapped[list | None] = mapped_column(JSONB)
+    provisioning_state: Mapped[str | None] = mapped_column(String(32))
+
+
+class AzureQuotaUsage(Base):
+    """Regional quota (``locations/{region}/usages``) per poll: allocated
+    ``current_value`` against ``limit_value`` per model/SKU quota name."""
+
+    __tablename__ = "azure_quota_usage"
+    __table_args__ = (Index("ix_azure_quota_usage_fetched_at", "fetched_at"),)
+
+    location: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+    localized_name: Mapped[str | None] = mapped_column(String(200))
+    current_value: Mapped[float | None] = mapped_column(Float)
+    limit_value: Mapped[float | None] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String(32))
+    status: Mapped[str | None] = mapped_column(String(32))
+
+
+class AzureHealthStatus(Base):
+    """Resource Health of the account, one row per status *change*
+    (``started_at``); polls with the same status only move ``checked_at``.
+    ``ended_at`` is set when the next status starts."""
+
+    __tablename__ = "azure_health_status"
+    __table_args__ = (Index("ix_azure_health_status_started_at", "started_at"),)
+
+    resource_id: Mapped[str] = mapped_column(String(400), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True
+    )
+    availability_state: Mapped[str] = mapped_column(String(24))
+    summary: Mapped[str | None] = mapped_column(Text)
+    reason_type: Mapped[str | None] = mapped_column(String(64))
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AzureServiceEvent(Base):
+    """Service Health events for our service (OpenAI / Foundry / Cognitive)
+    in our region or global, upserted by tracking id (``name``)."""
+
+    __tablename__ = "azure_service_events"
+    __table_args__ = (Index("ix_azure_service_events_last_seen", "last_seen_at"),)
+
+    tracking_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    event_type: Mapped[str | None] = mapped_column(String(48))
+    status: Mapped[str | None] = mapped_column(String(24))
+    level: Mapped[str | None] = mapped_column(String(24))
+    title: Mapped[str | None] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    services: Mapped[list | None] = mapped_column(JSONB)
+    regions: Mapped[list | None] = mapped_column(JSONB)
+    impact_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    impact_mitigation: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_update: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AzureAdvisorRec(Base):
+    """Advisor recommendations for our resource group, upserted by id;
+    ``resolved_at`` is set once Advisor stops returning one."""
+
+    __tablename__ = "azure_advisor_recs"
+
+    rec_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    category: Mapped[str | None] = mapped_column(String(48))
+    impact: Mapped[str | None] = mapped_column(String(16))
+    impacted_field: Mapped[str | None] = mapped_column(String(200))
+    impacted_value: Mapped[str | None] = mapped_column(String(200))
+    problem: Mapped[str | None] = mapped_column(Text)
+    solution: Mapped[str | None] = mapped_column(Text)
+    learn_more_link: Mapped[str | None] = mapped_column(Text)
+    extended: Mapped[dict | None] = mapped_column(JSONB)
+    last_updated: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

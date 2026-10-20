@@ -56,6 +56,9 @@ import {
 import { OUTCOMES, OUTCOME_LABELS } from "@/lib/entity-stats-api";
 import { quotaTrend, resourceGauges, type TrendPoint } from "@/lib/resource-gauges";
 import { ResourceTrend } from "@/components/admin/governance/ResourceTrend";
+import { AzureConnectionCard } from "@/components/admin/governance/AzureConnectionCard";
+import { AzureMonitoringSection } from "@/components/admin/governance/AzurePanels";
+import { quotaLimitCaption, usesAzureLimits } from "@/lib/azure-capacity-api";
 import { logsHref, tabHref, tracesHref } from "@/lib/governance-links";
 import { useCarryHref } from "@/lib/entity-routes";
 import {
@@ -788,7 +791,14 @@ export default function MonitoringView() {
           icon={Gauge}
           title={<span id="gov-resources">Resources and Azure quota</span>}
           subtitle="All API workers (live) · Azure quota over a rolling 60 s window"
-          actions={throttled ? <StudioPill tone="danger">{`${formatCount(throttled)} throttled (429)`}</StudioPill> : undefined}
+          actions={
+            throttled || usesAzureLimits(quota) ? (
+              <span className="flex flex-wrap items-center gap-2">
+                {usesAzureLimits(quota) ? <StudioPill tone="info">Limits from Azure</StudioPill> : null}
+                {throttled ? <StudioPill tone="danger">{`${formatCount(throttled)} throttled (429)`}</StudioPill> : null}
+              </span>
+            ) : undefined
+          }
         />
         <Stagger className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {gauges.map((g) => (
@@ -809,7 +819,7 @@ export default function MonitoringView() {
             icon={Zap}
             value={quotaUtilisation(quota, "tpm_headroom_pct")}
             bands={RESOURCE_BANDS.quota}
-            caption="Busiest of chat and embedding"
+            caption={quotaLimitCaption(quota, "tpm")}
             trend={tpmTrend}
           />
           <ResourceGaugeCard
@@ -818,11 +828,16 @@ export default function MonitoringView() {
             icon={Activity}
             value={quotaUtilisation(quota, "rpm_headroom_pct")}
             bands={RESOURCE_BANDS.quota}
-            caption="Busiest of chat and embedding"
+            caption={quotaLimitCaption(quota, "rpm")}
             trend={rpmTrend}
           />
         </Stagger>
       </section>
+
+      {/* Azure (free Foundry data): connection, capacity / health, then Azure vs AskDIQ. */}
+      <AzureConnectionCard />
+      <AzureMonitoringSection />
+      <AzureReconciliationPanel />
 
       <Stagger className="grid grid-cols-1 gap-6 xl:grid-cols-2" data-tour="governance-mon-guardrails">
         <Enter className="h-full">
@@ -936,8 +951,6 @@ export default function MonitoringView() {
       </section>
 
       <AiUsagePanel />
-
-      <AzureReconciliationPanel />
     </div>
   );
 }

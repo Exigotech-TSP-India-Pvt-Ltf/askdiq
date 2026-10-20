@@ -1,0 +1,15 @@
+{
+ "id": "/subscriptions/33333333-3333-4333-8333-333333333333/resourceGroups/rg-askdiq/providers/Microsoft.CognitiveServices/accounts/askdiq-foundry/providers/Microsoft.ResourceHealth/availabilityStatuses/current",
+ "name": "current",
+ "type": "Microsoft.ResourceHealth/AvailabilityStatuses",
+ "location": "australiaeast",
+ "properties": {
+  "availabilityState": "Unavailable",
+  "title": "Unavailable",
+  "summary": "Your resource is unavailable due to a platform incident.",
+  "reasonType": "Unplanned",
+  "occuredTime": "2026-10-20T10:20:00Z",
+  "reasonChronicity": "Persistent",
+  "reportedTime": "2026-10-20T10:21:00Z"
+ }
+}

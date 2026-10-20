@@ -20,6 +20,7 @@ import { api } from "@/lib/api";
 import { azureApi, azureKeys } from "@/lib/azure-api";
 import { azureApi as azureMetricsApi, azureKeys as azureMetricsKeys, TOKENS_SERIES } from "@/lib/azure-metrics-api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
+import { azureApi as azureCapacityApi, azureKeys as azureCapacityKeys } from "@/lib/azure-capacity-api";
 import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
 import { summaryFetcher } from "@/lib/use-dashboard";
 import { listDocumentInventory } from "@/lib/documents-api";
@@ -87,6 +88,10 @@ function azureViews(token: string, withSeries: boolean): void {
 
 function governanceOverall(token: string, audience: Audience): void {
   warm(dashboardKeys.health(audience), (signal) => governanceApi.overview(token, audience, signal));
+  // Monitoring's Azure capacity / health / Advisor panels (snapshots).
+  warm(azureCapacityKeys.capacity(), (signal) => azureCapacityApi.capacity(token, signal));
+  warm(azureCapacityKeys.health(), (signal) => azureCapacityApi.health(token, signal));
+  warm(azureCapacityKeys.advisor(), (signal) => azureCapacityApi.advisor(token, signal));
   warm(["admin/governance/traces-total", audience], (signal) =>
     governanceApi.traces(token, { audience, limit: 1 }, signal),
   );
@@ -179,10 +184,11 @@ export function prefetchRouteData(href: string, token: string | null, audience: 
   PREFETCHERS[href]?.(token, audience);
 }
 
-/** Shell data every page shows (header audience counts). */
-export function prefetchShellData(token: string | null): void {
+/** Shell data every page shows (header audience counts, Azure health banner). */
+export function prefetchShellData(token: string | null, canReadDashboard = false): void {
   if (!token) return;
   warm(AUDIENCE_COUNTS_KEY, (signal) => api.getAudienceCounts(token, signal));
+  if (canReadDashboard) warm(azureCapacityKeys.health(), (signal) => azureCapacityApi.health(token, signal));
 }
 
 /** Starts `href`'s prefetches and returns their promises. */

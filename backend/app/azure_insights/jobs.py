@@ -5,8 +5,10 @@ API routes). Add new source modules here."""
 # pylint: disable=unused-import
 from __future__ import annotations
 
-# pylint: disable=unused-import
 from app.azure_insights import (
+    advisor,  # noqa: F401 - azure.advisor (Phase 4)
+    capacity,  # noqa: F401 - azure.capacity (Phase 4)
+    health,  # noqa: F401 - azure.health (Phase 4)
     metrics,  # noqa: F401 - azure.metrics (Phase 2)
     reconciliation,  # noqa: F401 - azure.reconciliation snapshots (Phase 2)
     retail,  # noqa: F401 - azure.retail (Phase 1)
