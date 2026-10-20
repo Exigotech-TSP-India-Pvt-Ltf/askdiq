@@ -4,6 +4,7 @@ import React from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, AlertCircle, Inbox } from "lucide-react";
 import { m } from "motion/react";
 import { fadeUp, useMotionVariants } from "@/lib/motion";
+import { useRowIntentHandlers } from "@/lib/query-cache";
 import type { TableDensity } from "@/lib/use-table-preferences";
 import { secondaryButton, studioSurface, tableBody, tableHead, tableRow } from "@/components/ui/styles";
 
@@ -35,13 +36,20 @@ export interface DataTableProps<T> {
   currentSort?: string;
   onSortChange?: (sortKey: string) => void;
   onRowClick?: (row: T) => void;
-  /** Hover / focus on a row (warm what a click on it opens). */
+  /** Hover / focus (120 ms dwell) on a row: warm what a click on it opens. */
   onRowIntent?: (row: T) => void;
   nested?: boolean;
   /** Row density from `useTablePreferences` / the TableToolbar toggle. */
   density?: TableDensity;
   /** Rows fade up as they mount (page changes, new data); off by default. */
   animateRows?: boolean;
+  /**
+   * Detail under a row (an expanded row): rendered as a full-width row right
+   * after it whenever it returns something other than null.
+   */
+  renderExpanded?: (row: T) => React.ReactNode;
+  /** `data-testid` of each data row. */
+  rowTestId?: string;
   className?: string;
 }
 
@@ -61,9 +69,13 @@ export function DataTable<T extends Record<string, any>>({
   nested = true,
   density = "comfortable",
   animateRows = false,
+  renderExpanded,
+  rowTestId,
   className = "",
 }: DataTableProps<T>) {
   const rowVariants = useMotionVariants(fadeUp);
+  // Hover / focus a row for 120 ms: warm what a click on it opens.
+  const intentHandlers = useRowIntentHandlers(onRowIntent);
   const Row = animateRows ? m.tr : "tr";
   const rowMotion = animateRows ? { variants: rowVariants, initial: "hidden", animate: "visible" } : {};
   const getRowKey = (row: T, idx: number): string => {
@@ -215,13 +227,24 @@ export function DataTable<T extends Record<string, any>>({
               data.map((row, idx) => {
                 const rowKey = getRowKey(row, idx);
                 const isClickable = Boolean(onRowClick);
+                const expanded = renderExpanded ? renderExpanded(row) : null;
 
                 return (
+                  <React.Fragment key={rowKey}>
                   <Row
                     {...rowMotion}
-                    key={rowKey}
+                    data-testid={rowTestId}
                     onClick={() => isClickable && onRowClick?.(row)}
-                    onMouseEnter={onRowIntent ? () => onRowIntent(row) : undefined}
+                    // Keyboard: a clickable row is focusable (focus warms it) and Enter opens it.
+                    tabIndex={isClickable ? 0 : undefined}
+                    onKeyDown={
+                      isClickable
+                        ? (e: React.KeyboardEvent) => {
+                            if (e.key === "Enter" && e.target === e.currentTarget) onRowClick?.(row);
+                          }
+                        : undefined
+                    }
+                    {...intentHandlers(row)}
                     className={`${tableRow} ${isClickable ? "cursor-pointer" : ""}`}
                   >
                     {columns.map((col) => {
@@ -248,6 +271,14 @@ export function DataTable<T extends Record<string, any>>({
                       );
                     })}
                   </Row>
+                  {expanded !== null && expanded !== undefined ? (
+                    <tr data-expanded-for={rowKey}>
+                      <td colSpan={columns.length} className="p-0">
+                        {expanded}
+                      </td>
+                    </tr>
+                  ) : null}
+                  </React.Fragment>
                 );
               })
             )}

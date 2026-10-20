@@ -24,9 +24,10 @@ import {
   parseUsageTab,
   type UsageTabId,
 } from "@/lib/usage-tabs";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import {
   CircleDollarSign,
-  Settings as SettingsIcon,
+  Network,
   Sparkles,
   Users,
   MessageSquare,
@@ -162,15 +163,13 @@ function UsageCostContent() {
         icon={CircleDollarSign}
         showDateRange
         actions={
-          <button
-            type="button"
+          <HeaderIconButton
+            icon={Network}
+            label="Configure Test IPs"
             data-tour="usage-test-ips"
+            aria-haspopup="dialog"
             onClick={() => setIsConfigOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-surface px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-xs hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition"
-          >
-            <SettingsIcon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-            <span>Configure Test IPs</span>
-          </button>
+          />
         }
       />
 

@@ -60,7 +60,8 @@ export const HOURS_PER_DAY = 24;
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export const MAX_SEARCH_CHARS = 200;
 export const MAX_USER_TYPE_CHARS = 64;
-export const DEFAULT_PAGE_SIZE = 25;
+/** Conversations table rows per page (the console's table default). */
+export const DEFAULT_PAGE_SIZE = 10;
 export const MAX_PAGE_SIZE = 100;
 
 // ---------------------------------------------------------------------------
@@ -298,6 +299,28 @@ export interface ConversationRow {
   failing_question: string | null;
   exchanges: number;
   substantive_exchanges: number;
+  /**
+   * The labelled questions, compact (bundle pages only): expanding the row
+   * renders them without a request. Absent on other routes.
+   */
+  questions?: QuestionSummary[];
+}
+
+/** One labelled question of a table row (text masked, cut to 160 chars). */
+export interface QuestionSummary {
+  turn: number;
+  /** Wall-clock `HH:MM`. */
+  time: string;
+  text: string;
+  intent: string | null;
+  intent_label: string | null;
+  substantive: boolean;
+  handled: boolean | null;
+  quality: string | null;
+  quality_label: string | null;
+  issue: string | null;
+  issue_label: string | null;
+  friction: string | null;
 }
 
 export interface ConversationList {

@@ -85,12 +85,30 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-const getServerSnapshot = (): QueryState<never> => EMPTY_STATE;
+const HTTP_UNAUTHORIZED = 401;
+const HTTP_FORBIDDEN = 403;
+
+/** A 401 / 403: the server refuses this user the resource. */
+export function isAccessDenied(error: unknown): boolean {
+  const status = errorStatus(error);
+  return status === HTTP_UNAUTHORIZED || status === HTTP_FORBIDDEN;
+}
+
+const getServerSnapshot =(): QueryState<never> => EMPTY_STATE;
 
 export class QueryCache {
   private readonly entries = new Map<string, Entry>();
   private readonly changeListeners = new Set<(key: string) => void>();
   private focusListenerInstalled = false;
+  private gen = 0;
+
+  /**
+   * Bumped by `reset` / `clear`: hooks drop data they kept from before
+   * (`keepPreviousData`), so nothing cached under the old access renders.
+   */
+  get generation(): number {
+    return this.gen;
+  }
 
   private entry(key: string): Entry {
     let e = this.entries.get(key);
@@ -199,7 +217,13 @@ export class QueryCache {
             e.failures += 1;
             e.retryAt =
               Date.now() + Math.min(ERROR_BACKOFF_BASE_MS * 2 ** (e.failures - 1), ERROR_BACKOFF_MAX_MS);
-            this.setState(k, { error, isFetching: false });
+            // Refused (signed out, or access withdrawn): the cached data must
+            // not keep rendering, so drop it with the error.
+            const refused = isAccessDenied(error);
+            this.setState(
+              k,
+              refused ? { data: undefined, updatedAt: 0, error, isFetching: false } : { error, isFetching: false },
+            );
           }
         }
         throw error;
@@ -295,8 +319,32 @@ export class QueryCache {
 
   /** Drops every entry and aborts in-flight requests (tests, sign-out). */
   clear(): void {
+    this.gen += 1;
     this.entries.forEach((e) => e.controller?.abort());
     this.entries.clear();
+  }
+
+  /**
+   * Drops all data, errors and in-flight requests while keeping mounted
+   * subscribers attached (unlike `clear`), notifies them, then refetches the
+   * observed keys under the current access (a key now refused is evicted).
+   * Used when the signed-in user's role or permissions change.
+   */
+  reset(): void {
+    this.gen += 1;
+    this.entries.forEach((e, k) => {
+      const controller = e.controller;
+      e.controller = undefined;
+      e.promise = undefined;
+      controller?.abort();
+      e.failures = 0;
+      e.retryAt = 0;
+      this.setState(k, { data: undefined, error: undefined, updatedAt: 0, isFetching: false });
+    });
+    this.entries.forEach((e, k) => {
+      if (e.observers.size === 0 && e.listeners.size === 0) this.entries.delete(k);
+      else this.revalidate(k, e);
+    });
   }
 }
 
@@ -410,6 +458,11 @@ export function useApiQuery<T>(
 
   // Last data this hook rendered (any key), for `keepPreviousData`.
   const shown = useRef<T | undefined>(undefined);
+  const shownGeneration = useRef(cache.generation);
+  if (shownGeneration.current !== cache.generation) {
+    shown.current = undefined;
+    shownGeneration.current = cache.generation;
+  }
   if (state.data !== undefined) shown.current = state.data;
   const placeholder =
     keepPreviousData && active && state.data === undefined && !state.error ? shown.current : undefined;
@@ -522,6 +575,161 @@ export function usePrefetchNextPage<T>(
     if (k === null) return undefined;
     return prefetchNextPage(k, (signal) => fetcherRef.current(signal), { staleTime, cache });
   }, [k, staleTime, cache]);
+}
+
+// ---------------------------------------------------------------------------
+// Row details: batched / bounded prefetch of what a click on a row opens
+// ---------------------------------------------------------------------------
+
+/** Most ids sent in one batch (the backend's `BATCH_MAX_IDS`). */
+export const BATCH_PREFETCH_MAX = 25;
+/** Most per-row detail requests in flight at once (`prefetchEach`). */
+export const PREFETCH_CONCURRENCY = 2;
+
+/** Response of the backend `GET …/batch?ids=` routes. */
+export interface BatchDetails<T> {
+  /** id -> exactly what the single-item route returns. */
+  items: Record<string, T>;
+  /** Unknown ids (or outside the caller's scope). */
+  missing: string[];
+}
+
+export interface PrefetchBatchOptions {
+  staleTime?: number;
+  /** Ids sent at most (the rest are left to hover / click). */
+  max?: number;
+  cache?: QueryCache;
+}
+
+/** Keys a running batch is filling (no second batch asks for them meanwhile). */
+const batchPending = new Set<string>();
+
+/** The ids whose key is stale, not loading and not in a running batch. */
+function idsToWarm(
+  ids: readonly string[],
+  keyOf: (id: string) => QueryKey,
+  staleTime: number,
+  cache: QueryCache,
+): string[] {
+  return Array.from(new Set(ids)).filter((id) => {
+    if (!id) return false;
+    const key = keyOf(id);
+    const k = serializeKey(key);
+    return !batchPending.has(k) && !cache.getState(key).isFetching && cache.isStale(key, staleTime);
+  });
+}
+
+/**
+ * Warms the detail of every id with ONE request: ids whose key is fresh or
+ * loading are skipped, the rest (at most `max`) go to `fetchBatch`, and each
+ * returned item is written under its own key, so the drawer / detail page
+ * (`useApiQuery(keyOf(id))`) renders from cache and revalidates as usual.
+ * Failures are swallowed (a click still loads the item itself).
+ */
+export async function prefetchBatch<T>(
+  ids: readonly string[],
+  keyOf: (id: string) => QueryKey,
+  fetchBatch: (ids: string[], signal: AbortSignal) => Promise<BatchDetails<T>>,
+  { staleTime = DEFAULT_STALE_TIME_MS, max = BATCH_PREFETCH_MAX, cache = queryCache }: PrefetchBatchOptions = {},
+): Promise<void> {
+  const want = idsToWarm(ids, keyOf, staleTime, cache).slice(0, max);
+  if (want.length === 0) return;
+  const keys = want.map((id) => serializeKey(keyOf(id)));
+  keys.forEach((k) => batchPending.add(k));
+  try {
+    const res = await fetchBatch(want, new AbortController().signal);
+    for (const id of want) {
+      const item = res?.items?.[id];
+      // A key that started its own request meanwhile keeps that answer.
+      if (item !== undefined && !cache.getState(keyOf(id)).isFetching) cache.setData(keyOf(id), item);
+    }
+  } catch {
+    // Best effort: hover and click still fetch the item.
+  } finally {
+    keys.forEach((k) => batchPending.delete(k));
+  }
+}
+
+/**
+ * Warms one request per id, at most `concurrency` at a time (endpoints
+ * without a batch route). Ids beyond `max` are left to hover / click.
+ */
+export async function prefetchEach<T>(
+  ids: readonly string[],
+  keyOf: (id: string) => QueryKey,
+  fetchOne: (id: string) => Fetcher<T>,
+  {
+    staleTime = DEFAULT_STALE_TIME_MS,
+    max = BATCH_PREFETCH_MAX,
+    concurrency = PREFETCH_CONCURRENCY,
+    cache = queryCache,
+  }: PrefetchBatchOptions & { concurrency?: number } = {},
+): Promise<void> {
+  const queue = idsToWarm(ids, keyOf, staleTime, cache).slice(0, max);
+  const worker = async () => {
+    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      await cache.prefetch(keyOf(id), fetchOne(id), staleTime);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
+}
+
+/**
+ * Hook form: once the browser is idle, warms the details of the rows on
+ * screen (`ids`). Runs again when the rows change or `version` does (pass the
+ * list's `updatedAt`: a live update refetches the list, then the details
+ * it marked stale in one more batch). `ids = null` (or `enabled = false`,
+ * e.g. without the permission) does nothing.
+ */
+export function usePrefetchRows<T>(
+  ids: readonly string[] | null,
+  keyOf: (id: string) => QueryKey,
+  warm: { batch: (ids: string[], signal: AbortSignal) => Promise<BatchDetails<T>> } | { one: (id: string) => Fetcher<T> },
+  { version = 0, enabled = true, ...options }: PrefetchBatchOptions & { version?: number; enabled?: boolean; concurrency?: number } = {},
+): void {
+  const ref = useRef({ keyOf, warm, options });
+  ref.current = { keyOf, warm, options };
+  const signature = ids && enabled ? ids.join("\u0000") : "";
+  useEffect(() => {
+    if (!signature) return undefined;
+    const list = signature.split("\u0000");
+    return runWhenIdle(() => {
+      const { keyOf: k, warm: w, options: o } = ref.current;
+      if ("batch" in w) void prefetchBatch(list, k, w.batch, o);
+      else void prefetchEach(list, k, w.one, o);
+    });
+  }, [signature, version]);
+}
+
+/**
+ * Row hover / focus intent for tables: after `delay` ms on a row (pointer
+ * or keyboard focus inside it) `onIntent(row)` fires; leaving earlier
+ * cancels. Spread `handlers(row)` on the row element.
+ */
+export function useRowIntentHandlers<T>(onIntent: ((row: T) => void) | undefined, delay = INTENT_DELAY_MS) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cbRef = useRef(onIntent);
+  cbRef.current = onIntent;
+  const cancel = useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+  useEffect(() => cancel, [cancel]);
+  return useCallback(
+    (row: T) => {
+      if (!onIntent) return {};
+      const start = () => {
+        cancel();
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          cbRef.current?.(row);
+        }, delay);
+      };
+      return { onPointerEnter: start, onFocus: start, onPointerLeave: cancel, onBlur: cancel };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only presence of the callback matters
+    [Boolean(onIntent), cancel, delay],
+  );
 }
 
 // ---------------------------------------------------------------------------

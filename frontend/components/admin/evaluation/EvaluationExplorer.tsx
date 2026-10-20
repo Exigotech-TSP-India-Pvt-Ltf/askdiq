@@ -17,6 +17,7 @@ import {
   evaluationCasesKey,
   fetchEvaluationCase,
   fetchEvaluationCases,
+  fetchEvaluationCasesBatch,
   type CasePage,
   type CaseQuery,
   type EvaluationRange,
@@ -24,8 +25,11 @@ import {
   type OutcomeFilter,
 } from "@/lib/evaluation-live";
 import { formatLatencyMs } from "@/lib/format";
-import { useApiQuery, usePrefetchNextPage, usePrefetchOnIntent } from "@/lib/query-cache";
+import { useApiQuery, usePrefetchNextPage, usePrefetchOnIntent, usePrefetchRows } from "@/lib/query-cache";
 import type { Audience } from "@/lib/types";
+
+/** A case of the precomputed report changes rarely (hover / batch warm it for a minute). */
+const CASE_DETAIL_STALE_MS = 60_000;
 
 /** Search runs on the server: one request per pause in typing, not per key. */
 export const SEARCH_DEBOUNCE_MS = 120;
@@ -97,6 +101,13 @@ export function EvaluationExplorer({ token, audience, range, state, onStateChang
       ? evaluationCasesKey(audience, range, nextQuery)
       : null,
     (signal) => fetchEvaluationCases(token ?? "", audience, range, nextQuery, signal),
+  );
+  // While idle, the drawer of every case on screen in one request (a click opens from cache).
+  usePrefetchRows(
+    token && data && !page.isPlaceholderData ? (data.items ?? []).map((c) => String(c.id ?? "")).filter(Boolean) : null,
+    (id) => evaluationCaseKey(audience, range, id),
+    { batch: (ids, signal) => fetchEvaluationCasesBatch(token ?? "", audience, range, ids, signal) },
+    { staleTime: CASE_DETAIL_STALE_MS, version: page.updatedAt },
   );
 
   return (
@@ -191,7 +202,7 @@ function CaseRow({
   const intent = usePrefetchOnIntent(
     token && id ? evaluationCaseKey(audience, range, id) : null,
     (signal) => fetchEvaluationCase(token ?? "", audience, range, id, signal),
-    { staleTime: 60_000 },
+    { staleTime: CASE_DETAIL_STALE_MS },
   );
   const faith = useMemo(
     () => (c.faithfulness !== undefined ? `${Number(c.faithfulness).toFixed(1)} / 5` : "—"),

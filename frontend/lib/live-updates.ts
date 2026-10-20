@@ -10,7 +10,7 @@
  * While the tab is hidden the stream is closed; on return it reconnects and
  * refreshes everything once (whatever changed meanwhile).
  */
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { queryCache, type QueryCache } from "@/lib/query-cache";
 
 export const LIVE_STREAM_URL = "/api/proxy/admin/live";
@@ -124,11 +124,30 @@ export function useLiveConnected(): boolean {
   );
 }
 
-/** Opens the console live stream while `enabled` (dashboard readers). */
-export function useConsoleLive(enabled: boolean): void {
+/** Scope of user, role and access changes (app.auth.live): the viewer's own access may have changed. */
+export const ACCESS_SCOPE = "users";
+/** At most one access re-check per this interval (bursts of user changes). */
+export const ACCESS_RECHECK_MIN_MS = 5_000;
+
+/**
+ * Opens the console live stream while `enabled` (dashboard readers).
+ * `onAccessChange` (throttled) runs when a frame reports user / access changes
+ * or the server closes the stream, so the caller can re-read `/auth/me`.
+ */
+export function useConsoleLive(enabled: boolean, onAccessChange?: () => void): void {
+  const accessChanged = useRef(onAccessChange);
+  accessChanged.current = onAccessChange;
+
   useEffect(() => {
     if (!enabled || typeof window === "undefined" || typeof EventSource === "undefined") return undefined;
     const invalidator = createInvalidator();
+    let lastAccessCheck = 0;
+    const recheckAccess = () => {
+      const now = Date.now();
+      if (now - lastAccessCheck < ACCESS_RECHECK_MIN_MS) return;
+      lastAccessCheck = now;
+      accessChanged.current?.();
+    };
     let source: EventSource | null = null;
     let retryMs = RETRY_MIN_MS;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -154,7 +173,9 @@ export function useConsoleLive(enabled: boolean): void {
       es.addEventListener("changed", (event) => {
         try {
           const { scopes } = JSON.parse((event as MessageEvent<string>).data) as { scopes?: string[] };
-          if (Array.isArray(scopes)) invalidator.invalidate(prefixesForScopes(scopes));
+          if (!Array.isArray(scopes)) return;
+          invalidator.invalidate(prefixesForScopes(scopes));
+          if (scopes.includes(ACCESS_SCOPE)) recheckAccess();
         } catch {
           // malformed frame: ignore
         }
@@ -164,6 +185,7 @@ export function useConsoleLive(enabled: boolean): void {
         // (auth, server gone) is retried here with backoff.
         if (es.readyState === EventSource.CLOSED) {
           close();
+          recheckAccess();
           retryTimer = setTimeout(open, retryMs);
           retryMs = Math.min(retryMs * 2, RETRY_MAX_MS);
         } else {

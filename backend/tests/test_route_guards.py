@@ -110,6 +110,14 @@ EXPECTED_B7_READS: dict[str, str] = {
     "/admin/visitors/{visitor_id}/timeline": Permission.DASHBOARD_READ,
     "/admin/conversations/stats": Permission.DASHBOARD_READ,
 }
+# Batched detail reads (a list page warms its rows' drawers): each must exist
+# and need exactly the permission of its single-item route.
+EXPECTED_BATCH_READS: dict[str, str] = {
+    "/admin/conversations/batch": Permission.DASHBOARD_READ,
+    "/admin/usage/queries/batch": Permission.DASHBOARD_READ,
+    "/admin/governance/traces/batch": Permission.DASHBOARD_READ,
+    "/metrics/evaluation/live/cases/batch": Permission.DASHBOARD_READ,
+}
 # Azure Insights reads (served from snapshots): each must exist and need
 # exactly dashboard:read.
 EXPECTED_AZURE_READS: dict[str, str] = {
@@ -250,6 +258,16 @@ def test_chart_aggregation_routes_need_dashboard_read() -> None:
     reads = {p: req for m, p, req in guarded_endpoints() if m == "GET"}
     for path, permission in EXPECTED_B7_READS.items():
         assert reads.get(path) == str(permission), path
+
+
+def test_batch_detail_routes_need_their_item_permission() -> None:
+    reads = {p: req for m, p, req in guarded_endpoints() if m == "GET"}
+    for path, permission in EXPECTED_BATCH_READS.items():
+        assert reads.get(path) == str(permission), path
+        item = path.removesuffix("/batch")
+        siblings = [p for p in reads if p.startswith(item + "/{")]
+        assert siblings, path
+        assert all(reads[p] == reads[path] for p in siblings), path
 
 
 def test_azure_insights_routes_need_dashboard_read() -> None:

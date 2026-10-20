@@ -12,7 +12,7 @@ import { prefetchAzureSummary } from "@/lib/azure-prefetch";
 import { prefetchAzurePanels } from "@/lib/azure-capacity-api";
 import { governanceApi, governanceKeys, type GovernanceTraceItem } from "@/lib/governance-api";
 import { rangeBounds } from "@/lib/governance-links";
-import { prefetch } from "@/lib/query-cache";
+import { prefetch, usePrefetchRows } from "@/lib/query-cache";
 import type { Audience } from "@/lib/types";
 
 /** Page sizes the Traces / Logs tables open with (TRACES_PAGE_SIZE / LOGS_PAGE_SIZE). */
@@ -74,4 +74,22 @@ export function prefetchGovernanceTab(tab: string, token: string | null, audienc
   if (tab === "Monitoring") prefetchMonitoring(token, audience);
   else if (tab === "Traces") prefetchTracesFirstPage(token, audience, range);
   else if (tab === "Logs") prefetchLogsFirstPage(token, audience, range);
+}
+
+/**
+ * Once idle, warms the drawer of every trace on screen with ONE request
+ * (`GET /governance/traces/batch`); `version` = the page's `updatedAt`.
+ */
+export function usePrefetchTraceRows(
+  token: string | null,
+  items: readonly GovernanceTraceItem[] | null,
+  audience: Audience,
+  version = 0,
+): void {
+  usePrefetchRows(
+    token && items ? items.map((t) => t.request_id) : null,
+    (id) => governanceKeys.trace(id, audience),
+    { batch: (ids, signal) => governanceApi.tracesBatch(token, ids, audience, signal) },
+    { version },
+  );
 }

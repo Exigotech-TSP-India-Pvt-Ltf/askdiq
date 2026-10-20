@@ -106,6 +106,22 @@ export function fetchEvaluationCases(
 export const evaluationCaseKey = (audience: Audience, range: EvaluationRange, id: string) =>
   ["metrics/evaluation/live/case", audience, range.from ?? "", range.to ?? "", id] as const;
 
+/** `GET /metrics/evaluation/live/cases/batch`: the drawers of a page of cases in one request. */
+export function fetchEvaluationCasesBatch(
+  token: string,
+  audience: Audience,
+  range: EvaluationRange,
+  ids: readonly string[],
+  signal?: AbortSignal,
+): Promise<{ items: Record<string, Record<string, any>>; missing: string[] }> {
+  const params = new URLSearchParams(viewQuery(audience, range));
+  ids.forEach((id) => params.append("ids", id));
+  return api.evaluationLiveView(token, "cases/batch", params.toString(), signal) as Promise<{
+    items: Record<string, Record<string, any>>;
+    missing: string[];
+  }>;
+}
+
 export function fetchEvaluationCase(
   token: string,
   audience: Audience,
