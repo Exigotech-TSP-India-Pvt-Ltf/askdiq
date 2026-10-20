@@ -20,7 +20,7 @@ const CASES: [EntityRef, string][] = [
   [{ kind: "analytics", intent: "pricing", quality: "low" }, "/admin/analytics?intent=pricing&quality=low"],
 ];
 
-describe("entityHref (newplan §1 deep links)", () => {
+describe("entityHref", () => {
   it.each(CASES)("%o -> %s", (ref, href) => {
     expect(entityHref(ref)).toBe(href);
   });

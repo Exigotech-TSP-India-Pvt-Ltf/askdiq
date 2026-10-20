@@ -1,4 +1,4 @@
-"""Governance Traces: filtered keyset list and per-request detail (newplan §4.2).
+"""Governance Traces: filtered keyset list and per-request detail.
 
 A trace is one ``latency_metrics`` row. The assistant turn (outcome, flags,
 tokens, cost) and the ``query`` audit row (actor, IP, redacted query, sources)

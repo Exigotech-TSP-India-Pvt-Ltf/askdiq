@@ -10,7 +10,7 @@ function progress(p: PendingClassification): number {
 }
 
 /**
- * "N turns pending classification" with a progress bar (planchanges4 F6.3).
+ * "N turns pending classification" with a progress bar.
  * Sits above the charts while a backlog is being classified; the charts keep
  * rendering whatever is already labelled (each shows its own empty state), so
  * a partial backfill never hides the page.

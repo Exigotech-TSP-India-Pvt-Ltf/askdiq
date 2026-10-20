@@ -64,7 +64,7 @@ function LoginLogo({ alt, className }: { alt: string; className: string }) {
 }
 
 /**
- * Branded split-screen sign-in (newplan §7.7 rev 3.2): teal brand panel with
+ * Branded split-screen sign-in: teal brand panel with
  * animated hexagons on the left (hidden below md, replaced by a teal header
  * strip), the Microsoft SSO card on the right. Every string, URL and logo
  * comes from the brand.

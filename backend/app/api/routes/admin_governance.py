@@ -1,4 +1,4 @@
-"""Governance endpoints under ``/admin/governance`` (newplan §4.5, B4.2).
+"""Governance endpoints under ``/admin/governance``.
 
 Monitoring, traces (legacy array + keyset page + detail), logs (keyset page +
 streaming CSV export), the one-call overview and the live SSE stream. All are
@@ -425,7 +425,7 @@ def _log_filters(
         q=_clean_q(q),
         date_from=start,
         date_to=end,
-        # Auth events (newplan §7.5) are superadmin-only (`audit:auth:read`).
+        # Auth events are superadmin-only (`audit:auth:read`).
         hidden_actions=frozenset()
         if user.has(Permission.AUDIT_AUTH_READ)
         else AUTH_AUDIT_ACTIONS,

@@ -29,7 +29,7 @@ interface MicrosoftSignInButtonProps {
 }
 
 /**
- * Full-width "Sign in with Microsoft" (newplan §7.7): 1 px border, rounded-xl,
+ * Full-width "Sign in with Microsoft": 1 px border, rounded-xl,
  * hover lift + brand-tinted border + sheen sweep, focus ring, and a spinner
  * with the button disabled once clicked (no double submits).
  */

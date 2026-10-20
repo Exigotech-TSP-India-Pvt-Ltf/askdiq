@@ -53,7 +53,7 @@ export const PALETTE_TOURS: PaletteItem[] = [
 
 interface CommandCenterProps {
   children: React.ReactNode;
-  /** `/admin/search` results once that endpoint exists (newplan §15.1). */
+  /** `/admin/search` results once that endpoint exists. */
   searchProvider?: PaletteSearchProvider;
   /** Overrides the permission check (default: the signed-in role's permissions). */
   canAccess?: (permission: string) => boolean;

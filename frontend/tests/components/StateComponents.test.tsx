@@ -9,7 +9,7 @@ import { Skeleton, SkeletonCard, SkeletonRows, SkeletonText } from "@/components
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("EmptyState / ErrorState / Skeleton (F0.6.2)", () => {
+describe("EmptyState / ErrorState / Skeleton", () => {
   it("EmptyState shows the title, description and action", () => {
     render(<EmptyState title="No feedback yet" description="Ratings appear here." action={<button>Refresh</button>} />);
     expect(screen.getByText("No feedback yet")).toBeInTheDocument();

@@ -1,5 +1,5 @@
 /**
- * User Management tabs (planchanges4 F1.4.3): Access Requests (approve with a
+ * User Management tabs: Access Requests (approve with a
  * role, reject with a note, bulk approve, keyboard `a` / `x`, animate-out and
  * rollback, history), Roles & Permissions matrix and the auth Audit Trail.
  */

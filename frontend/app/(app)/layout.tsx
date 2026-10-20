@@ -13,7 +13,7 @@ import { TourProvider } from "@/components/tour/TourProvider";
 import { TourLauncher } from "@/components/tour/TourLauncher";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  // Route gate (F1.2.3): login redirect, suspended page, Access Required in
+  // Route gate: login redirect, suspended page, Access Required in
   // place of dashboard routes for users without an approved role.
   const gate = useRouteGate();
   if (gate.screen) return <>{gate.screen}</>;

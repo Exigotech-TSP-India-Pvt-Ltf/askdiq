@@ -78,7 +78,7 @@ describe("DashboardHeader utilities", () => {
   });
 });
 
-describe("Branded error pages (F0.6.6)", () => {
+describe("Branded error pages", () => {
   it("not-found uses BrandLogo and offers a way back", () => {
     render(<NotFound />);
     expect(screen.getAllByRole("img", { name: "Exigo Tech" }).length).toBeGreaterThan(0);

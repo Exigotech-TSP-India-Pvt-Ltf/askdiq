@@ -1,4 +1,4 @@
-"""Sign-in session lifecycle (planchanges4 B2.3.1, OWASP A04/A07).
+"""Sign-in session lifecycle (OWASP A04/A07).
 
 - Ids are ``secrets.token_urlsafe(32)``; only an HMAC-SHA256 of the id
   (keyed with ``SESSION_SECRET``) is stored, so a database leak yields no

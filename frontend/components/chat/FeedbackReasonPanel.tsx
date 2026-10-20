@@ -22,7 +22,7 @@ const CHIP_ON = "border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-4
 const CHIP_OFF = "border-line bg-surface-card text-fg-muted hover:border-brand-300 hover:text-fg dark:hover:border-brand-700/60";
 
 /**
- * Thumbs-down follow-up (planchanges4 F5.1): allow-listed reason chips that
+ * Thumbs-down follow-up: allow-listed reason chips that
  * pop in, plus an optional "what should it have said?" box with a counter.
  */
 export function FeedbackReasonPanel({

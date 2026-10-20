@@ -1,7 +1,7 @@
 # Entity pages: stats and per-entity endpoints (contract)
 
-**Consumer:** PR-22 `feat/ui-entity-pages-deeplinks` (planchanges4 F3.2, F3.3, F3.4).
-**Producer:** PR-14 `feat/dashboard-chart-aggregations` (planchanges4 B7.2, B7.3).
+**Consumer:** PR-22 `feat/ui-entity-pages-deeplinks`.
+**Producer:** PR-14 `feat/dashboard-chart-aggregations`.
 **Client types:** `frontend/lib/entity-stats-api.ts` (the TypeScript interfaces are the source of truth; this
 page explains them).
 
@@ -228,7 +228,7 @@ Page URL: `/admin/conversations?ip=&min_turns=&max_turns=&outcome=&day=&preview=
   `latency_records.total_ms`.
 - `tokens.prompt` **includes** `cached_prompt`; `tokens.completion` **includes** `reasoning` (as stored in
   `chat_messages`). `tokens` is `null` for turns without usage data.
-- `labels` comes from the insights classifier (B6); `null` until classified, individual keys `null` when unknown.
+- `labels` comes from the insights classifier; `null` until classified, individual keys `null` when unknown.
 - `focus_turn` echoes `turn` when that turn exists, else `null` (never an error; `turn` < 0 or non-integer is `422`).
 - `promoted_case_id` is set once the turn was promoted (`POST /admin/feedback/{assistant_message_id}/promote-to-test`).
 
@@ -333,7 +333,7 @@ Query: `limit` (`1..100`, default 20). Unknown document is `404`.
 - `POST /ingest/file` accepts `dry_run` / `force` as form fields or query parameters and returns
   `original_size_bytes` / `canonical_size_bytes`.
 
-## Deep links that read these params (newplan §1)
+## Deep links that read these params
 
 | Element | href | Target parses into |
 |---|---|---|

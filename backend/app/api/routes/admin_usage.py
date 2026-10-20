@@ -602,7 +602,7 @@ async def _compute_usage_summary(
                 "p95_ms": round(p95_lat, 1),
             },
         },
-        # B7.4 chart additions (contract: dashboard-aggregations.md §4).
+        # Chart additions (contract: dashboard-aggregations.md §4).
         "cost_by_stage_series": stage_series,
         "forecast": forecast,
         "cache": usage_series.cache_stats(sum_cached, sum_prompt),

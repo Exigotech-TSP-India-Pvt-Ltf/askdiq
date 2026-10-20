@@ -23,7 +23,7 @@ export function mergeSearch(search: string, update: DeepLinkUpdate): string {
 }
 
 /**
- * Reads and writes URL query params (newplan §1). State lives in the URL, so
+ * Reads and writes URL query params. State lives in the URL, so
  * back / forward and shared links restore the same view. Writes go through
  * `writeUrl` (History API: no server round trip, no scroll jump).
  */

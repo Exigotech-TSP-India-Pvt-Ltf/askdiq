@@ -1,5 +1,5 @@
 /**
- * Chart kit (newplan §15.4). Import from "@/components/charts".
+ * Chart kit. Import from "@/components/charts".
  * Every chart reads colours from `useChartTheme()`, takes typed data and an
  * optional `onSelect(datum)` that fires on click and on Enter / Space.
  */

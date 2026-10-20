@@ -32,7 +32,7 @@ export function openDocumentHref(gap: KnowledgeGap): string {
 export const ADD_DOCUMENT_HREF = "/documents?action=upload";
 
 /**
- * Knowledge Gaps tab (planchanges4 F5.4): topics ranked by negative feedback
+ * Knowledge Gaps tab: topics ranked by negative feedback
  * and low retrieval confidence, with links into Documents.
  */
 export function KnowledgeGapsTab({ analytics, loading, error, onRetry, onFilter }: KnowledgeGapsTabProps) {

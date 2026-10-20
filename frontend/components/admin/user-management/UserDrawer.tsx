@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * User detail drawer (planchanges4 F1.4.2): profile, live sessions, recent
+ * User detail drawer: profile, live sessions, recent
  * activity and audit entries, plus change role, suspend / reactivate and
  * revoke sessions. Self-changes and demoting or suspending the last active
  * superadmin are blocked with the reason shown as a tooltip (the API enforces

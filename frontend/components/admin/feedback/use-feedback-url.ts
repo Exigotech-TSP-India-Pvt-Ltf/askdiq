@@ -31,8 +31,8 @@ export interface FeedbackUrlState {
 }
 
 /**
- * Tab and queue filters for the Feedback page, kept in the URL (newplan §5.4:
- * "active filters show as removable chips and sync to the URL").
+ * Tab and queue filters for the Feedback page, kept in the URL
+ * ("active filters show as removable chips and sync to the URL").
  */
 export function useFeedbackUrl(): FeedbackUrlState {
   const { get, set, search } = useDeepLink();

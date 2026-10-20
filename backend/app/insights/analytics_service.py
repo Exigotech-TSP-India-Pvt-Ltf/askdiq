@@ -1,6 +1,6 @@
 """Insights dashboard service: the reference HTML's renderer formulas server-side.
 
-Each method mirrors one renderer function (newplan 6.4): ``summary`` is
+Each method mirrors one renderer function: ``summary`` is
 ``metrics()``, ``trend``/``hourly``/``flow``/``topics``/``quality``/
 ``dropoff``/``people`` are ``trend()``/``radial()``/``flow()``/``treemap()``/
 ``donut()``/``lollipop()``/``bubble()``, and ``conversations`` is ``table()``.

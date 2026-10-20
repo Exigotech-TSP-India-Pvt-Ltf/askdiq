@@ -35,7 +35,7 @@ settings = get_settings()
 
 
 class User(Base):
-    """A person who signs in through Entra ID SSO (newplan §7.5).
+    """A person who signs in through Entra ID SSO.
 
     Rows are keyed on the Entra object id (`entra_oid`); `email` is the
     `actor` identity threaded through audit logging and chat ownership.
@@ -300,7 +300,7 @@ class MessageFeedback(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
-    # --- RLHF triage loop (PR-11, newplan §5.4) ---
+    # --- RLHF triage loop (PR-11) ---
     reason_tags: Mapped[list] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")
     )
@@ -508,7 +508,7 @@ class AuthSession(Base):
     __table_args__ = (Index("ix_auth_sessions_user_revoked", "user_id", "revoked_at"),)
 
 
-# --- Insights (PR-12, planchanges4 B6.1) ---
+# --- Insights (PR-12) ---
 
 
 class InsightTaxonomy(Base):
@@ -522,7 +522,7 @@ class InsightTaxonomy(Base):
     label: Mapped[str] = mapped_column(String(128))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    # Intent group used to derive a conversation's user_type (newplan 6.4).
+    # Intent group used to derive a conversation's user_type.
     group: Mapped[str | None] = mapped_column(String(64), nullable=True)
     substantive: Mapped[bool] = mapped_column(Boolean, server_default=true())
     handled: Mapped[bool] = mapped_column(Boolean, server_default=false())
@@ -641,7 +641,7 @@ def _asset_fk() -> Mapped[str | None]:
 
 
 class BrandSettings(Base):
-    """The single white-label row (``id = 1``); newplan section 14."""
+    """The single white-label row (``id = 1``)."""
 
     __tablename__ = "brand_settings"
 

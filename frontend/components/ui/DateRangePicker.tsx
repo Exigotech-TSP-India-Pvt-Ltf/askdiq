@@ -16,7 +16,7 @@ function parseInputDay(value: string): Date | null {
 }
 
 /**
- * Global date-range control for `DashboardHeader` (newplan §15.1): presets
+ * Global date-range control for `DashboardHeader`: presets
  * 24h / 7d / 30d / 90d plus a custom range, all synced to the URL by
  * `RangeProvider`. Renders nothing outside a RangeProvider.
  */

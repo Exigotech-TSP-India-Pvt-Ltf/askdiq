@@ -48,7 +48,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("Access Required stepper (F1.2.2)", () => {
+describe("Access Required stepper", () => {
   it("models requested -> under review -> approved, and a rejection", () => {
     const states = (steps: ReturnType<typeof accessSteps>) => steps.map((s) => s.state);
     expect(states(accessSteps(null, false))).toEqual(["current", "upcoming", "upcoming"]);
@@ -83,7 +83,7 @@ describe("Access Required stepper (F1.2.2)", () => {
   });
 });
 
-describe("Account corner: role badge and notification bell (F1.3)", () => {
+describe("Account corner: role badge and notification bell", () => {
   it("superadmin: role badge beside the name and the pending access-request notification", async () => {
     vi.stubGlobal(
       "fetch",
@@ -124,7 +124,7 @@ describe("Account corner: role badge and notification bell (F1.3)", () => {
   });
 });
 
-describe("Suspended page (F1.2.2)", () => {
+describe("Suspended page", () => {
   it("shows the contact email and a sign-out action when signed in", () => {
     const onSignOut = vi.fn();
     render(<SuspendedView contactEmail="it@contoso.example" onSignOut={onSignOut} />);

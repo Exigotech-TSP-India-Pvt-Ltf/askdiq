@@ -1,4 +1,4 @@
-"""Phase B4 integration (planchanges4 B4.4): 2k logs + 500 traces end to end.
+"""Phase B4 integration: 2k logs + 500 traces end to end.
 
 Seeds a far-past window inside the rolled-back test transaction, then walks
 the logs cursor, applies filters, reads the overview, a trace detail, the CSV

@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * KPI strip and charts above the tabs (planchanges4 F1.4.1, newplan §7.8 and
- * §15.4). Every card and chart mark drills down by writing the Users-tab
+ * KPI strip and charts above the tabs.
+ * Every card and chart mark drills down by writing the Users-tab
  * filters to the URL.
  */
 import React, { useMemo } from "react";

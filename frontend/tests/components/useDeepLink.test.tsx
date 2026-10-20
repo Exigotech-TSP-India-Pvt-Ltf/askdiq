@@ -68,7 +68,7 @@ describe("mergeSearch", () => {
   });
 });
 
-describe("useDeepLink (F0.6.1)", () => {
+describe("useDeepLink", () => {
   it("composes several writes in one tick (a toolbar 'Reset all' clears every filter)", () => {
     history.reset("/admin/governance?tab=Logs&level=ERROR&service=system&q=boom");
     const { result } = renderHook(() => useDeepLink());

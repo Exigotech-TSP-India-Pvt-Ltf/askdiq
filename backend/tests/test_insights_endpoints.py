@@ -1,4 +1,4 @@
-"""``/admin/insights/*`` endpoints (planchanges4 B6.3).
+"""``/admin/insights/*`` endpoints.
 
 Validation, injection and RBAC tests need no database. The rest run against
 the 49-conversation reference fixture (Postgres, in CI).

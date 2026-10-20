@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Full-stack sign-in smoke journeys through the frontend (planchanges4 B2.8.1).
+"""Full-stack sign-in smoke journeys through the frontend.
 
 Drives the real stack on port 3000 with an ``httpx.AsyncClient`` cookie jar,
 against the mock IdP (``AUTH_DEV_MOCK=true``, ``ENV=development``):

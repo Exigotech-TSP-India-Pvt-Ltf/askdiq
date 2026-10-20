@@ -28,7 +28,7 @@ import { useFeedbackUrl, type FeedbackTab } from "./use-feedback-url";
 import { useRangeParams } from "@/components/admin/entity/shared";
 
 /**
- * Feedback / RLHF workspace (newplan §5.4, planchanges4 F5): Overview,
+ * Feedback / RLHF workspace: Overview,
  * Review Queue, Golden Cases, Preference Data and Knowledge Gaps.
  */
 export function FeedbackWorkspace() {

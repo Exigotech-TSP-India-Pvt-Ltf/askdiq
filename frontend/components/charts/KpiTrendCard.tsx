@@ -62,7 +62,7 @@ function DeltaBadge({ delta, goodDirection }: { delta: number; goodDirection: "u
 const CARD = `group flex flex-col gap-3 p-5 ${studioSurface}`;
 const CARD_INTERACTIVE = studioInteractive;
 
-/** KPI tile with value, period delta and a sparkline (newplan §15.4 Dashboard). */
+/** KPI tile with value, period delta and a sparkline. */
 export function KpiTrendCard({
   label,
   value,

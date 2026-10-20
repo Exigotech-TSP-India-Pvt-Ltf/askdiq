@@ -191,7 +191,7 @@ export const DOCUMENTS_TABS: TabItem[] = [
   { id: "inventory", label: "Document Inventory", icon: FileText },
 ];
 
-/** Analytics (Chatbot Insights port, planchanges4 F6.1). Ids match the `?tab=` values. */
+/** Analytics (Chatbot Insights port). Ids match the `?tab=` values. */
 export const ANALYTICS_TABS: TabItem[] = [
   { id: "guide", label: "Guide", icon: BookOpen },
   { id: "overview", label: "Overview", icon: LayoutDashboard },

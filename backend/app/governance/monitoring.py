@@ -1,4 +1,4 @@
-"""Governance monitoring and trace helpers (newplan §4.1 G1-G7, G9).
+"""Governance monitoring and trace helpers.
 
 Everything here reads persisted rows (``latency_metrics``, ``chat_messages``,
 ``audit_log``) so the numbers survive restarts and respect the audience

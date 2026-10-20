@@ -1,11 +1,10 @@
 # AskDIQ plan
 
 The single plan for the AskDIQ system. It replaces the old root plan files
-(`PLAN.md`, `newplan.md`, `planchanges*.md`, `pr_raising_plan.md`) and
-`docs/technical/11-in-flight-work.md`.
+and the archived phase plans, which have been removed.
 
-Status was last checked against the code on 2026-10-19 (base commit
-`f1b2a60`). An item is **Done** only if the code for it exists in the repo.
+Status was last checked against the code on 2026-10-20 (after PR #58 and
+#59). An item is **Done** only if the code for it exists in the repo.
 
 | Status | Meaning |
 |---|---|
@@ -39,24 +38,32 @@ Architecture and features: [README](../README.md). Details:
 
 ---
 
-## 2. Current work (2026-10)
+## 2. October 2026 release
 
-| # | Work item | Status | Where |
-|---|---|---|---|
-| a1 | Settings > Models & Pricing: runtime overrides of the LLM deployment, embedding deployment and token prices, verified with one live Azure call before saving | Done | branch `feat/settings-models-renames` (`backend/app/model_settings/`, `/admin/models`) |
-| a2 | Nav renames: Chat -> AskDIQ, Documents -> Knowledge, Evaluation (Live) -> Evaluation | Done | `feat/settings-models-renames` (`frontend/components/Sidebar.tsx`) |
-| a3 | White logo on the login page | Done | `feat/settings-models-renames` (`frontend/public/exigotech-logo-white.svg`) |
-| a4 | Dedupes (shared QueryInspector/Evaluation drawer, permission shims) | Done | `feat/settings-models-renames` |
-| b | Instant dashboard loading: find the root cause of slow pages, freezes on range and tab switches, and the visitor-detail timeout; DB-side caching | In progress | `perf/dashboard-load-speed` |
-| c | Clarifying questions with 2-4 options in the RAG pipeline and the chat UI; icon-only chat actions with hover labels | In progress | `feat/chat-clarifications` |
-| d | Alert catalogue and email alerts over SMTP, one standard error envelope, `get_db` cancellation fix | In progress | `feat/email-alerts-error-hardening` |
-| e1 | Merge Visitors and Conversation Logs into one page | Planned | |
-| e2 | Governance: p50 latency is shown in ms while p95 is shown in s; use one unit | Planned | |
-| e3 | Evaluation: semantic-quality cards show only dashes when online evaluation is off; show an explanatory empty state | Planned | |
-| e4 | Blank origin IP cells in tables | Planned | |
-| f | Dependabot updates | In progress | `chore/dependency-updates` |
-| g | Branch cleanup: only `main` remains | Planned | |
-| h | Docs and infra consolidation: one plan, one README, all markdown under `docs/`, deploy files under `infra/`, unused files removed, production env and SSO guide | In progress | `chore/docs-infra-consolidation` |
+Shipped in PR #58 (admin console release) and PR #59 (concurrency gate in
+steady state), both merged to `main`.
+
+| # | Work item | Status |
+|---|---|---|
+| a1 | Settings > Models & Pricing: runtime overrides of the LLM deployment, embedding deployment and token prices, verified with one live Azure call before saving (`backend/app/model_settings/`, `/admin/models`) | Done |
+| a2 | Nav renames: Chat -> AskDIQ, Documents -> Knowledge, Evaluation (Live) -> Evaluation | Done |
+| a3 | White logo on the login page | Done |
+| a4 | Dedupes (shared QueryInspector/Evaluation drawer, permission shims) | Done |
+| b | Instant dashboards: precomputed `dashboard_snapshots` kept warm by the jobs worker, stale-while-revalidate cache, persisted client cache, live push over `/admin/live` | Done |
+| c | Clarifying questions with options in the RAG pipeline and the chat UI; icon-only chat actions | Done |
+| d | Alert catalogue, `alerts` table and email alerts over SMTP; header notification bell | Done |
+| d2 | Resource monitoring: host/container/process sampler (`resource_samples`), live gauges and resource alerts | Done |
+| d3 | One standard error envelope (coded problem+json), dependency-failure mapping, safe `get_db` close | Done |
+| d4 | Swagger exposes only the ServiceKey scheme | Done |
+| e1 | Visitors and Conversation Logs merged into one Visitors & Conversations page | Done |
+| e2 | Comparable latency units on Governance and every chart's axis titles, units and legends | Done |
+| e3 | Evaluation shows "Not measured" and an empty state when online evaluation is off | Done |
+| e4 | Blank origin IP shows "Not recorded" with an explanation | Done |
+| e5 | Analytics integrity: UTC bucketing, stable probable people, drill-downs and linkages | Done |
+| f | Dependency decisions: safe Dependabot minor/patch and Actions updates merged; framework majors tracked in section 3 | Done |
+| h | Docs and infra consolidation: one plan, one README, all markdown under `docs/`, deploy files under `infra/` | Done |
+| g | Branch cleanup: only `main` remains | Planned |
+| i | Foundry free-data integration: planned (local plan) | Planned |
 
 ---
 
@@ -86,7 +93,7 @@ still missing.
 | Item | Evidence |
 |---|---|
 | OpenAPI snapshot and backend contract test (and frontend type sync from it) | No `tests/snapshots/` or contract test |
-| Platform integration test (B1.8) | `backend/tests/test_platform_integration.py` missing |
+| Platform integration test | `backend/tests/test_platform_integration.py` missing |
 | Concurrency correctness test | `test_concurrency_correctness.py` missing |
 | End-to-end journeys against a seeded DB (`backend/tests/e2e/`, `scripts/seed_e2e.py`) | Missing; `scripts/smoke_journeys.py` covers sign-in only |
 | OWASP verification: one test class per Top 10 row | `test_owasp_compliance.py` covers A01, A03, A04, A07, A08 |
@@ -96,13 +103,13 @@ still missing.
 | Pay down ignored lint rules (C901, PLR0911, FAST001/FAST002 on about 50 handlers) | `backend/pyproject.toml` |
 | Accessibility checks (axe) and visual-regression baselines | None in the repo |
 | Remove `@playwright/test` (Playwright was ruled out) | Still in `frontend/package.json` devDependencies |
-| Dashboard speed baseline script | `scripts/measure_dashboard_speed.py` missing (folded into item b) |
+| Dashboard speed baseline script | `scripts/measure_dashboard_speed.py` missing |
 
 ### Platform and operations
 
 | Item | Evidence |
 |---|---|
-| Next.js 14.2.35 -> 15.5.24+ (or 16) and FastAPI 0.115 -> 0.133+ with Starlette 1.x | Advisories sit on CI allow-lists that expire **2026-12-31** (`.github/audit/`); CI fails after that (item f) |
+| Next.js 14.2.35 -> 15.5.24+ (or 16) and FastAPI 0.115 -> 0.133+ with Starlette 1.x | Advisories sit on CI allow-lists that expire **2026-12-31** (`.github/audit/`); CI fails after that |
 | Stable pydantic | `pydantic==2.14.0b2` (pre-release) in `backend/requirements.txt` |
 | Split dev tools out of the production image | ruff, pylint, bandit, pip-audit and pytest are in `backend/requirements.txt` |
 | `CODEOWNERS` and branch protection on `main` | Not in the repo / not recorded |
@@ -140,7 +147,7 @@ still missing.
    migration, so the pre-deploy backup is mandatory.
 7. **Per-process state.** Some caches and counters (audience and summary
    caches, metrics) live in one process and reset on restart.
-8. **Pricing.** Cached-input pricing assumes a 50 % discount; check it
+8. **Pricing.** Cached-input pricing defaults to 10 % of input; check it
    against the Azure rate card (now editable in Settings > Models & Pricing).
 9. **Audit table** is append-only; demo-data purges must never bypass the
    immutability trigger.
@@ -154,7 +161,7 @@ feedback rating, Redis, Playwright, Lighthouse.
 
 ## 6. Completed
 
-Everything below exists in the code (checked 2026-10-19).
+Everything below exists in the code (checked 2026-10-20).
 
 - **RAG pipeline**: structure-aware chunking; pgvector recall with dedupe and
   a cross-document quota; rule-based query decomposition; cross-encoder rerank
@@ -175,7 +182,7 @@ Everything below exists in the code (checked 2026-10-19).
   breaker and timeouts; Postgres job queue (`SKIP LOCKED`) and worker; shared
   state (rate limits, OIDC state) and LISTEN/NOTIFY event bus; gzip, ETag and
   SSE; async-only and 50-concurrency gates; connection-release fixes.
-- **Admin console**: interactive dashboard; Visitors and Conversation Logs
+- **Admin console**: interactive dashboard with precomputed snapshots and live push; Visitors & Conversations
   with detail pages and deep links; Usage & Cost tabs with inspector and test
   IPs; Feedback triage workspace (review queue, golden cases, preference data,
   knowledge gaps); Evaluation; Governance (overview, monitoring, traces, logs,
@@ -185,7 +192,3 @@ Everything below exists in the code (checked 2026-10-19).
 - **Delivery**: CI (lint, tests with Postgres, coverage, audits, build,
   full-stack smoke, perf smoke), Dependabot, PR template, deploy kit, server
   deploy/rollback scripts, autoheal watchdog, production deployment guide.
-
-History: the original phase plans are kept unchanged in
-[archive/](archive/) because code comments cite their section ids
-(for example "planchanges4 B1.6" or "newplan section 13.2").

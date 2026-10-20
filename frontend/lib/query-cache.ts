@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Small request cache for the admin console (newplan §13.3, planchanges4 F0.5).
+ * Small request cache for the admin console.
  *
  * - One in-flight promise per key: identical concurrent requests share a fetch.
  * - Stale-while-revalidate: cached data is returned immediately and refreshed
@@ -15,7 +15,7 @@
  * - `invalidate(prefix)` marks matching keys stale and refetches observed ones.
  * - Prefetch on intent (120 ms dwell) and idle prefetch of the next page.
  * - `useApiMutation`: optimistic update, rollback on failure, undo, and a
- *   typed `onConflict` hook (409) that the toast layer (F0.6) plugs into.
+ *   typed `onConflict` hook (409) that the toast layer plugs into.
  *
  * No dependency: plain React (`useSyncExternalStore`) and the Fetch API.
  */
@@ -28,7 +28,7 @@ export type QueryKey = string | readonly QueryKeyPart[];
 export type Fetcher<T> = (signal: AbortSignal) => Promise<T>;
 
 export const DEFAULT_STALE_TIME_MS = 30_000;
-/** Hover / focus dwell before an intent prefetch fires (newplan §13.3). */
+/** Hover / focus dwell before an intent prefetch fires. */
 export const INTENT_DELAY_MS = 120;
 /** First wait after a failed request before stale checks refetch the key. */
 export const ERROR_BACKOFF_BASE_MS = 1_000;

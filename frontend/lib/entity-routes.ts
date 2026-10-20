@@ -1,5 +1,5 @@
 /**
- * In-page deep links for the entity pages (newplan §1). `lib/entity-links.ts`
+ * In-page deep links for the entity pages. `lib/entity-links.ts`
  * owns the cross-page entity chain; these are the list filters and detail
  * routes the Visitors / Conversations / Documents pages read back from the
  * URL, so every chart click is a shareable, back-button-safe URL.
@@ -58,7 +58,7 @@ export function turnsFilterLabel(bin: Pick<TurnsBin, "min_turns" | "max_turns">)
 }
 
 
-/** Global URL state that follows the user across admin pages (newplan §1, F3.6). */
+/** Global URL state that follows the user across admin pages. */
 export const CARRIED_PARAMS = ["range", "from", "to"] as const;
 
 /**

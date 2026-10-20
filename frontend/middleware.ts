@@ -1,5 +1,5 @@
-// Per-request CSP nonce (planchanges4 F0.1.2) and the signed-out redirect
-// (F1.1.3). The redirect is UX only: the API is the security boundary and
+// Per-request CSP nonce and the signed-out redirect.
+// The redirect is UX only: the API is the security boundary and
 // every backend route checks the session itself.
 import { NextResponse, type NextRequest } from "next/server";
 import { sessionCookieName } from "@/lib/server/auth-cookies";

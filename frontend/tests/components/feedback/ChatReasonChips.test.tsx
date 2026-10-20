@@ -1,5 +1,5 @@
 /**
- * planchanges4 F5.1: thumbs-down pops the reason chips and the optional
+ * Thumbs-down pops the reason chips and the optional
  * "what should it have said?" box; the payload carries the allow-listed tags
  * and the corrected answer; a resubmission updates the same feedback; thumbs
  * up stays one click; success shows a toast.

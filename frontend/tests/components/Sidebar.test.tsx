@@ -165,7 +165,7 @@ describe("Sidebar nav registry, icons and active indicator (PR-17)", () => {
   });
 });
 
-describe("Mobile off-canvas sidebar (F0.6.6)", () => {
+describe("Mobile off-canvas sidebar", () => {
   beforeEach(() => window.localStorage.clear());
 
   it("opens from the hamburger, traps focus, closes on Esc and returns focus", async () => {

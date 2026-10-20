@@ -1,5 +1,5 @@
 /**
- * Phase F3 integration journey (planchanges4 F3.6, newplan §1 audit table).
+ * Phase F3 integration journey.
  *
  * For every row of the audit table that PR-22 owns, each clickable element
  * produces the expected deep-link href, and the target page parses that URL
@@ -76,7 +76,7 @@ afterEach(() => {
 
 const lastCall = (path: string) => callsTo(calls, path).at(-1);
 
-describe("Visitors (newplan §1 row: Users -> Visitors)", () => {
+describe("Visitors (Users -> Visitors)", () => {
   it("heatmap cell -> /admin/users?weekday=&hour= -> same filter on load", async () => {
     renderPage(<VisitorsPage />, { url: "/admin/visitors" });
     fireEvent.click(await screen.findByRole("button", { name: "Wed 14: 5" }));

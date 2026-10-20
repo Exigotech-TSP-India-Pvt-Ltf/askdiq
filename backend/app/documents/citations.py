@@ -1,4 +1,4 @@
-"""Citation analytics for documents and chunks (contract B7.3).
+"""Citation analytics for documents and chunks.
 
 A **citation** is one assistant turn (``request_id``) that listed a source.
 Sources are stored in two places, both read here:

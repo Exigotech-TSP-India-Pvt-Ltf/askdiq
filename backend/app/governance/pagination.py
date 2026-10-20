@@ -1,6 +1,6 @@
 """Keyset (cursor) pagination and bounded totals for large governance tables.
 
-newplan §13.2: lists over ``audit_log`` / ``latency_metrics`` page on
+Keyset pagination: lists over ``audit_log`` / ``latency_metrics`` page on
 ``(created_at, id)`` instead of OFFSET, and an exact ``total`` is only
 computed while it is cheap. Above ``GOVERNANCE_EXACT_COUNT_CAP`` matching
 rows the total becomes the planner's estimate and is flagged as such.

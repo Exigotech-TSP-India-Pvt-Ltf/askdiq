@@ -58,7 +58,7 @@ export interface FeedbackOverviewProps {
   onFilter: (patch: FilterPatch) => void;
 }
 
-/** Overview tab (planchanges4 F5.2): KPIs, trend, distribution, breakdowns, funnel, quadrant. */
+/** Overview tab: KPIs, trend, distribution, breakdowns, funnel, quadrant. */
 export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter }: FeedbackOverviewProps) {
   const container = useMotionVariants(stagger);
   const item = useMotionVariants(fadeUp);

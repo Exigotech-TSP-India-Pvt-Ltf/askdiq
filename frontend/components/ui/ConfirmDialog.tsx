@@ -22,7 +22,7 @@ export interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
-/** Confirmation dialog with optional typed confirmation (newplan §15.1). */
+/** Confirmation dialog with optional typed confirmation. */
 export function ConfirmDialog({
   open,
   title,

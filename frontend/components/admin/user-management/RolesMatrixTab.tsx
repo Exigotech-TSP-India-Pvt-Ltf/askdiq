@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Roles & Permissions tab (planchanges4 F1.4.3, newplan §7.3): a read-only
+ * Roles & Permissions tab: a read-only
  * matrix of the permission table the API enforces. The backend exposes no
  * list endpoint, so the matrix is `ROLE_PERMISSIONS` (mirrored from
  * app/auth/permissions.py) and the caller's column is checked against the

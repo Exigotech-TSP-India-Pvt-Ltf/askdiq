@@ -46,7 +46,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("proxy forwards the session (F1.1.2)", () => {
+describe("proxy forwards the session", () => {
   it("sends X-Session from the httpOnly cookie and the service key on reads, with no CSRF headers", async () => {
     backendReturns(200, { ok: true });
     await GET(request("auth/me", { cookie: "askdiq_session=sess-abc-123" }), params("auth/me"));

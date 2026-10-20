@@ -1,4 +1,4 @@
-"""User Management API (superadmin only: `users:manage`; B2.4.2, newplan §7.8).
+"""User Management API (superadmin only: `users:manage`).
 
 `/admin/users-accounts` (list, detail, stats, PATCH role/status, revoke
 sessions, invite) and `/admin/access-requests` (queue, approve, reject, bulk

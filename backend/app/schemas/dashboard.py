@@ -1,4 +1,4 @@
-"""Response models for the dashboard, usage and evaluation chart additions (B7.1, B7.4).
+"""Response models for the dashboard, usage and evaluation chart additions.
 
 Mirrors ``frontend/lib/dashboard-api.ts`` and ``frontend/lib/usage-insights-api.ts``
 (contract: ``docs/technical/frontend/contracts/dashboard-aggregations.md``). Units:

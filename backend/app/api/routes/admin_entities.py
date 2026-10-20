@@ -1,4 +1,4 @@
-"""Visitors and conversations entity-page stats under ``/admin`` (B7.2).
+"""Visitors and conversations entity-page stats under ``/admin``.
 
 Contract: ``docs/technical/frontend/contracts/entity-stats.md``. Every route is async,
 guarded with ``dashboard:read`` and audience-scoped; ranges are inclusive UTC

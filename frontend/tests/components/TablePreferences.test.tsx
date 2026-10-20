@@ -45,7 +45,7 @@ function headers() {
 beforeEach(() => window.localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 
-describe("TableToolbar column visibility, density and export (F0.6.5)", () => {
+describe("TableToolbar column visibility, density and export", () => {
   it("hides a column, switches density and persists both per table", () => {
     const { unmount } = render(<UsersTable />);
     expect(headers()).toEqual(["Email", "Role", "Last login"]);
@@ -106,7 +106,7 @@ describe("TableToolbar column visibility, density and export (F0.6.5)", () => {
   });
 });
 
-describe("TableCard cursor-pagination variant (F0.6.5)", () => {
+describe("TableCard cursor-pagination variant", () => {
   it("renders Newer / Older controls driven by cursors", () => {
     const onNext = vi.fn();
     const onPrev = vi.fn();

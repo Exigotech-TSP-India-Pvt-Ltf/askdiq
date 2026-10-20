@@ -1,4 +1,4 @@
-"""Live-data integration for insights (planchanges4 B6.4.3).
+"""Live-data integration for insights.
 
 The real pipeline end to end: ``/query`` (LLM and retrieval mocked) persists
 the exchanges and enqueues ``insights.classify`` in the same transaction; the

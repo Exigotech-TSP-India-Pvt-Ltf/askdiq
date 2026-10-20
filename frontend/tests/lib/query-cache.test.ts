@@ -14,7 +14,7 @@ import {
   type Fetcher,
 } from "@/lib/query-cache";
 
-/** planchanges4 F0.5.1 to F0.5.3 (newplan §13.3). */
+/** Query cache behaviour. */
 
 function deferred<T>() {
   let resolve!: (v: T) => void;

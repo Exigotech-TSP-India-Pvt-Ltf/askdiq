@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { readStorageJson, writeStorage } from "@/lib/storage";
 
-/** Row density for admin tables (newplan §15.1). */
+/** Row density for admin tables. */
 export type TableDensity = "comfortable" | "compact";
 
 interface StoredPrefs {

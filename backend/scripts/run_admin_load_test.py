@@ -1,8 +1,8 @@
-"""HTTP load and concurrency test with performance budgets (newplan 13.4 / 13.5).
+"""HTTP load and concurrency test with performance budgets.
 
 Virtual users hit a running API (directly, or through the nginx load balancer)
-for ``--duration`` seconds and the run is graded against the newplan 13.4
-budgets. Profiles:
+for ``--duration`` seconds and the run is graded against the latency
+budgets below. Profiles:
 
 - ``admin``: admin console mix (dashboard, usage, feedback analytics,
   governance logs and traces, paginated lists).
@@ -71,7 +71,7 @@ class Profile(StrEnum):
 
 
 class BudgetKind(StrEnum):
-    """newplan 13.4 latency budget classes (p95, milliseconds)."""
+    """Latency budget classes (p95, milliseconds)."""
 
     AGGREGATION = "aggregation"
     LIST = "list"
@@ -241,7 +241,7 @@ def exit_code(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="HTTP load test graded against the newplan 13.4 budgets."
+        description="HTTP load test graded against the latency budgets."
     )
     parser.add_argument(
         "--profile",

@@ -1,4 +1,4 @@
-"""Async-only guard (plan B1.5.5 / B1.7): no blocking endpoints or helpers."""
+"""Async-only guard: no blocking endpoints or helpers."""
 
 from __future__ import annotations
 

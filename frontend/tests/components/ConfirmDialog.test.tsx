@@ -37,7 +37,7 @@ async function open() {
   return { trigger, dialog: await screen.findByRole("alertdialog", { name: "Delete policy.pdf?" }) };
 }
 
-describe("ConfirmDialog (F0.6.2)", () => {
+describe("ConfirmDialog", () => {
   it("blocks a mismatched typed confirmation and allows the exact text", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();

@@ -1,4 +1,4 @@
-"""Security headers, CORS and docs hardening (planchanges4 B1.1, OWASP A02).
+"""Security headers, CORS and docs hardening (OWASP A02).
 
 These tests do not need a database: ``get_db`` is overridden with a stub that
 fails, which also exercises the error paths.

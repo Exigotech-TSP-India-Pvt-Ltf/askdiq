@@ -34,7 +34,7 @@ const TONE_DOT: Record<NonNullable<NotificationItem["tone"]>, string> = {
 };
 
 /**
- * Notification bell of the sidebar account corner (newplan §15.1). The wrapper
+ * Notification bell of the sidebar account corner. The wrapper
  * is static so the panel anchors to the account row / collapsed rail.
  */
 export function NotificationBell({ items = [], placement = "above" }: NotificationBellProps) {

@@ -1,4 +1,4 @@
-"""`scripts/verify_sso_config.py` (B2.2.4): one FAIL line per broken condition,
+"""`scripts/verify_sso_config.py`: one FAIL line per broken condition,
 exit code 1, and no secret ever printed. HTTP is mocked; Microsoft is never
 called."""
 

@@ -1,4 +1,4 @@
-"""Event-loop blocking detector (plan B1.7.2).
+"""Event-loop blocking detector.
 
 A high-frequency ticker task runs on the loop under test and records how
 late each tick wakes up. A late tick means some callback held the loop.
@@ -8,7 +8,7 @@ its own overhead and reports every slow callback on a noisy shared runner.
 Thresholds:
 - ``HARD_BLOCK_SECONDS`` (250 ms): any single stall this long is a real
   blocking call (a sync DB/HTTP/file call or ``time.sleep``). Fail at once.
-- ``SLOW_BLOCK_SECONDS`` (50 ms): the B1.7.2 budget for one callback.
+- ``SLOW_BLOCK_SECONDS`` (50 ms): the budget for one callback.
 - ``MAX_SLOW_BLOCKS`` (3): shared CI runners get descheduled now and then
   (CPU steal, GC), so a few isolated 50-250 ms stalls are tolerated. A
   systematic offender trips it on every request, so it still fails.

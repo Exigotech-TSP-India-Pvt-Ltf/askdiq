@@ -1,4 +1,4 @@
-"""Persisted, audience-scoped governance aggregates (newplan §4.2, B4.2.3/4).
+"""Persisted, audience-scoped governance aggregates.
 
 Every function issues exactly one SQL statement, so callers can run them in
 parallel with ``gather_scoped`` (one session per task) and the query count of

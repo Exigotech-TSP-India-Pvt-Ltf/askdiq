@@ -40,7 +40,7 @@ function renderPalette(props: Partial<React.ComponentProps<typeof CommandPalette
   return { onClose, onNavigate };
 }
 
-describe("CommandPalette (F0.6.4)", () => {
+describe("CommandPalette", () => {
   it("moves with the arrow keys and opens the active result with Enter", async () => {
     const { onNavigate, onClose } = renderPalette();
     const input = await screen.findByRole("combobox", { name: /search pages and records/i });
@@ -115,7 +115,7 @@ describe("CommandPalette (F0.6.4)", () => {
   });
 });
 
-describe("CommandCenter shortcuts (F0.6.4)", () => {
+describe("CommandCenter shortcuts", () => {
   function renderCenter(role: Role = "admin") {
     render(
       <AuthProvider initialMe={makeMe(role)}>

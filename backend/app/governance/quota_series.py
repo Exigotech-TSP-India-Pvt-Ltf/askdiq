@@ -1,4 +1,4 @@
-"""Per-process Azure OpenAI quota time series for Monitoring (newplan §4.2).
+"""Per-process Azure OpenAI quota time series for Monitoring.
 
 ``quota_monitor`` only keeps a rolling 60 s window. This keeps a bounded ring
 of throttled snapshots (at most one per ``GOVERNANCE_QUOTA_SAMPLE_SECONDS``),

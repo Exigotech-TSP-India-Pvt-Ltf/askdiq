@@ -1,6 +1,6 @@
 "use client";
 
-// Retired benchmark report (newplan 2.3/2.5). No route mounts it: /evaluation and
+// Retired benchmark report. No route mounts it: /evaluation and
 // /admin/evaluation redirect to /admin/evaluation-live. It is kept, unmounted,
 // until its offline-benchmark features are ported to Evaluation (Live).
 

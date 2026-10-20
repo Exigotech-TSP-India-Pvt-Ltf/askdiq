@@ -62,7 +62,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("Login page (F1.2.1, newplan §7.7)", () => {
+describe("Login page", () => {
   it("renders every string from the brand: panel copy, welcome, description and © footer", () => {
     renderLogin();
     const panel = screen.getByRole("complementary", { name: "Contoso IQ introduction" });

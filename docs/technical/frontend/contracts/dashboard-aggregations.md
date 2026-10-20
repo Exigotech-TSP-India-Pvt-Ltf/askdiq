@@ -1,7 +1,7 @@
 # Contract: Dashboard, Usage and Evaluation aggregations
 
 Owner: frontend PR-21 (`feat/ui-dashboard-interactive-charts`). Implemented by backend PR-14
-(`feat/dashboard-chart-aggregations`, planchanges4 B7.1 and B7.4).
+(`feat/dashboard-chart-aggregations`).
 TypeScript source of truth: `frontend/lib/dashboard-api.ts` and `frontend/lib/usage-insights-api.ts`.
 Keep this file and those types in sync.
 
@@ -24,7 +24,7 @@ Keep this file and those types in sync.
   (default `overview`) and applies it to every new field.
 - **Guards and caching.** Same guard as the existing route (`require_permission(DASHBOARD_READ)`
   for `/admin/*`). New aggregation endpoints use `gather_scoped` (one session per task) and
-  `cached_response` (ETag), per newplan §13.2.
+  `cached_response` (ETag).
 
 ## 1. `GET /admin/dashboard?audience=&from=&to=` (extended, B7.1)
 
@@ -221,7 +221,7 @@ Suggested dimensions (keys): `retrieval_recall`, `groundedness`, `faithfulness` 
 current run only, from the existing measured fields, and only when `n_cases > 0`.
 A pass-rate marker opens `/admin/evaluation?run={run_id}`.
 
-## 6. Deep links produced by the Dashboard (newplan §1)
+## 6. Deep links produced by the Dashboard
 
 | Element | Link |
 |---|---|

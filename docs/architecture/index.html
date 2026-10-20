@@ -275,7 +275,7 @@ footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex
       <svg class="hex" viewBox="0 0 34 34" aria-hidden="true"><path d="M17 1.5 30.4 9.25v15.5L17 32.5 3.6 24.75V9.25Z"/><circle class="eye" cx="12.5" cy="16.5" r="2.4"/><circle class="eye" cx="21.5" cy="16.5" r="2.4"/></svg>
       <div>
         <h1>AskDIQ System Architecture</h1>
-        <div class="snap">Snapshot <b>16 Oct 2026</b> · preview/view <b>9115c45</b> · production = main 1a88798 + hotfix <b>f9d76ed</b></div>
+        <div class="snap">Snapshot <b>20 Oct 2026</b> · production = <b>main</b> after PR #58 and #59</div>
       </div>
     </div>
     <div class="tools">
@@ -342,7 +342,7 @@ footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex
 </main>
 
 <footer>
-  <span>Sources: backend/app, frontend/app, alembic (23 migrations, head 254857d10a20), docker and nginx files, docs/archive/newplan.md rev 3.3, docs/archive/planchanges4.md, and the seven in-flight branches.</span>
+  <span>Sources: backend/app, frontend/app and frontend/components, alembic (33 migrations, head 03485c08b57b), infra/ compose and nginx files, docs/plan.md.</span>
   <span>Keyboard: <span class="mono">Tab</span> through nodes, <span class="mono">Enter</span> to inspect, <span class="mono">Esc</span> to close, <span class="mono">1–6</span> views, <span class="mono">S</span> security, <span class="mono">+ − 0</span> zoom.</span>
 </footer>
 
@@ -376,17 +376,16 @@ def("visitors", { name: "Website visitors", kind: "person", status: "live",
   desc: "Members of the public chatting through the widget on the company website. They never reach AskDIQ directly; the website server calls /query for them and forwards their IP.",
   tech: ["Browser"], rel: ["website"] });
 def("website", { name: "Company website + chat widget", kind: "external", status: "live", sub: "Other team's Next.js app",
-  desc: "Owned by another team. Its server calls AskDIQ server to server: POST /query with the shared X-API-Key, an X-Client-Id that partitions chat sessions per visitor, and the visitor's ip_address in the body. Since the hotfix that IP is honoured (ALLOW_CLIENT_IP_OVERRIDE) and the per-IP rate limit keys on it.",
+  desc: "Owned by another team. Its server calls AskDIQ server to server: POST /query with the shared X-API-Key, an X-Client-Id that partitions chat sessions per visitor, and the visitor's ip_address in the body. That IP is honoured (ALLOW_CLIENT_IP_OVERRIDE) and the per-IP rate limit keys on it.",
   tech: ["Next.js", "Server-side fetch"],
   endpoints: ["POST /query", "GET|POST /sessions", "POST feedback (ip_address forwarded)"],
   env: ["X-API-Key = API_KEY_NAME (shared secret, server side only)", "X-Client-Id (session partition, not an identity)"],
-  note: "Contract change to watch: on preview/view, POST /query depends on require_role_or_chat, which needs a signed-in SSO session (X-Session). The website's key-only path must be kept or re-added before preview/view is released to production.",
   sec: { A01: "Shared X-API-Key gate; key never reaches the visitor's browser.", A06: "Per-IP limit (RATE_LIMIT_PER_MINUTE_PER_IP=30) on the forwarded end-user IP." },
   rel: ["visitors", "api", "nginx", "p_validate", "p_session"] });
-def("admins", { name: "Admins and operators", kind: "person", status: "preview",
+def("admins", { name: "Admins and operators", kind: "person", status: "live",
   desc: "Superadmins, admins and operators of the dashboard. They sign in with Microsoft Entra ID; the role on their users row decides which pages and actions they get.",
   tech: ["Browser"], rel: ["dashboard", "entra", "d_browser"] });
-def("entra", { name: "Microsoft Entra ID", kind: "external", status: "preview",
+def("entra", { name: "Microsoft Entra ID", kind: "external", status: "live",
   desc: "Identity provider for the dashboard. OIDC authorization code flow with PKCE; the backend validates the ID token (JWKS signature, iss, aud, tid, exp, nonce) and keeps the client secret server side. A local mock IdP is mounted only with AUTH_DEV_MOCK=true in development.",
   tech: ["OIDC", "PKCE", "JWKS"],
   files: ["backend/app/auth/oidc.py", "backend/app/auth/service.py", "backend/app/api/routes/auth.py", "backend/app/auth/mock_idp.py", "frontend/app/auth/callback/[provider]/route.ts", "backend/scripts/verify_sso_config.py"],
@@ -399,12 +398,12 @@ def("aoai", { name: "Azure OpenAI", kind: "external", status: "live", sub: "gpt-
   tech: ["openai SDK (AsyncAzureOpenAI)", "tiktoken"],
   files: ["backend/app/harness/prompts.py", "backend/app/retrieval/embeddings.py", "backend/app/core/circuit.py", "backend/scripts/check_tpm.py"],
   env: ["AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_API_VERSION", "AZURE_DEPLOYMENT_NAME", "EMBEDDING_MODEL=text-embedding-3-small", "EMBEDDING_DIM=1536", "LLM_REASONING_EFFORT=minimal", "AZURE_OPENAI_REQUEST_TIMEOUT=60", "AZURE_OPENAI_TPM_LIMIT / RPM_LIMIT"],
-  sec: { A06: "LLM_MAX_CONCURRENCY=64 gate returns 429 instead of queueing without bound.", A10: "60 s timeouts, bounded retries, circuit breaker (preview) fails fast with a fallback answer." },
+  sec: { A06: "LLM_MAX_CONCURRENCY=64 gate returns 429 instead of queueing without bound.", A10: "60 s timeouts, bounded retries, circuit breaker fails fast with a fallback answer." },
   rel: ["p_embed", "p_llm", "p_post", "p_eval", "i_embed", "d_insights"] });
 def("postgres", { name: "PostgreSQL + pgvector", kind: "store", status: "live", sub: "et-platform-postgres-1 · db askdiq",
-  desc: "One shared Exigo Tech platform Postgres instance holds everything: relational data, vector embeddings (pgvector, created by init_db), and the shared state that replaces Redis (rate_limit_buckets, oidc_states, jobs queue, LISTEN/NOTIFY). 22 tables on preview/view (19 ORM models plus jobs, oidc_states and rate_limit_buckets created in migrations); production is at migration d6e7f8a9b0c1. chunks.embedding has no HNSW or ivfflat index, so similarity search is an exact scan, which is fine at the current corpus size.",
+  desc: "One shared Exigo Tech platform Postgres instance holds everything: relational data, vector embeddings (pgvector, created by init_db), and the shared state that replaces Redis (rate_limit_buckets, oidc_states, jobs queue, LISTEN/NOTIFY). 29 tables (26 ORM models plus jobs, oidc_states and rate_limit_buckets created in migrations); 33 migrations, head 03485c08b57b. chunks.embedding has no HNSW or ivfflat index, so similarity search is an exact scan, which is fine at the current corpus size.",
   tech: ["PostgreSQL", "pgvector", "SQLAlchemy 2 async", "asyncpg", "Alembic"],
-  files: ["backend/app/models/db_models.py", "backend/app/core/database.py", "backend/alembic/versions/ (23 migrations, head 254857d10a20)"],
+  files: ["backend/app/models/db_models.py", "backend/app/core/database.py", "backend/alembic/versions/ (33 migrations, head 03485c08b57b)"],
   env: ["DATABASE_URL (no default)", "DB_POOL_SIZE=20", "DB_MAX_OVERFLOW=10", "DASHBOARD_STATEMENT_TIMEOUT_MS=5000", "STATE_BACKEND=auto", "EVENTS_CHANNEL=askdiq_events"],
   sec: { A05: "Parameterised SQLAlchemy everywhere; sort and filter allow-lists in db/query_builders.py.", A08: "audit_log is append-only (trg_audit_log_immutable)." },
   rel: ["api", "t_chunks", "t_audit_log", "d_ro", "d_events", "d_jobs"] });
@@ -414,44 +413,44 @@ def("api", { name: "askdiq-api", kind: "container", status: "live", sub: "FastAP
   desc: "The RAG backend. Serves the public /query contract, ingestion, and every dashboard route. Middleware order from the outside in: SecurityHeadersMiddleware, SSEAwareGZipMiddleware, LatencyMiddleware, CORS. On startup it runs init_db, sizes the thread pool, checks Azure OpenAI, preloads the ONNX reranker and starts the event bus and (if JOBS_WORKER_ENABLED) the job worker.",
   tech: ["Python", "FastAPI", "uvicorn", "Pydantic v2 + pydantic-settings", "SQLAlchemy async", "fastembed (ONNX)"],
   files: ["backend/main.py", "backend/app/api/routes/", "backend/app/core/config.py", "backend/app/core/middleware.py", "backend/app/core/security_headers.py", "backend/app/core/exceptions.py", "backend/Dockerfile.prod"],
-  endpoints: ["POST /query", "/sessions", "POST /ingest, /ingest/file", "/documents", "/metrics/latency, /metrics/evaluation(/live)", "/governance/audit-log", "/admin/* (usage, governance, feedback, insights, users-accounts, branding)", "/auth/*", "/branding", "GET /health"],
+  endpoints: ["POST /query", "/sessions", "POST /ingest, /ingest/file", "/documents", "/metrics/latency, /metrics/evaluation(/live)", "/governance/audit-log", "/admin/* (usage, governance, feedback, insights, entities, users-accounts, branding, models, alerts)", "GET /admin/live (SSE)", "/auth/*", "/branding", "GET /health"],
   env: ["ENV", "DATABASE_URL", "API_KEY_NAME", "TRUST_PROXY_HEADERS", "CORS_ALLOWED_ORIGINS", "ENABLE_API_DOCS=false", "WEB_CONCURRENCY", "JOBS_WORKER_ENABLED"],
-  sec: { A02: "Security headers on every response (preview); /docs and /openapi.json off when ENV=production; explicit CORS allow-lists.", A10: "Global handlers return problem+json with request_id and no internals; supervised background tasks drained on shutdown." },
+  sec: { A02: "Security headers on every response; /docs and /openapi.json off when ENV=production; explicit CORS allow-lists.", A10: "Global handlers return problem+json with request_id and no internals; supervised background tasks drained on shutdown." },
   rel: ["nginx", "postgres", "aoai", "prestart", "worker", "p_validate", "d_authdeps"] });
-def("nginx", { name: "et-platform-nginx-1", kind: "container", status: "live", sub: "TLS · askdiq.ethub.co",
-  desc: "The shared platform reverse proxy. Terminates TLS for askdiq.ethub.co and proxies to the API on port 8000; stream and events locations turn buffering off for SSE. A second server block for askdiq-admin.ethub.co is prepared for the dashboard container. The repo template infra/scale-out/askdiq-api.conf still lists a two-replica upstream (askdiq-api-1/-2).",
+def("nginx", { name: "et-platform-nginx-1", kind: "container", status: "live", sub: "TLS · askdiq.ethub.co + askdiqui.ethub.co",
+  desc: "The shared platform reverse proxy. Terminates TLS for askdiq.ethub.co and proxies to the API on port 8000; stream and events locations turn buffering off for SSE. A second server block for askdiqui.ethub.co is prepared for the dashboard container. The repo template infra/scale-out/askdiq-api.conf still lists a two-replica upstream (askdiq-api-1/-2).",
   tech: ["nginx", "Let's Encrypt"],
-  files: ["infra/scale-out/askdiq-api.conf", "infra/nginx/askdiq-admin.conf.example (branch)"],
-  endpoints: ["https://askdiq.ethub.co → askdiq-api:8000", "https://askdiq-admin.ethub.co → askdiq-web:3000 (planned)"],
+  files: ["infra/scale-out/askdiq-api.conf", "infra/nginx/askdiq-admin.conf.example"],
+  endpoints: ["https://askdiq.ethub.co → askdiq-api:8000", "https://askdiqui.ethub.co → askdiq-web:3000"],
   sec: { A02: "server_tokens off; HSTS, nosniff, Referrer-Policy and Permissions-Policy at server level.", A04: "TLS only at the edge; port 80 redirects to 443." },
   rel: ["api", "web", "website"] });
-def("prestart", { name: "Startup sequence", kind: "module", status: "progress", branch: "chore/prod-deploy-fullstack", sub: "docker-entrypoint.sh → prestart.py",
+def("prestart", { name: "Startup sequence", kind: "module", status: "live", sub: "docker-entrypoint.sh → prestart.py",
   desc: "Runs before uvicorn only when the command contains uvicorn. Waits for Postgres, runs alembic upgrade head while holding pg_try_advisory_lock so only one container migrates, then runs idempotent ingestion (content hash skips unchanged documents; skipped if another replica holds the lock), then the optional usage backfill, then execs uvicorn main:app with WEB_CONCURRENCY workers. A failed migration stops the container.",
   tech: ["sh", "Alembic", "Postgres advisory lock"],
   files: ["backend/docker-entrypoint.sh", "backend/scripts/prestart.py", "backend/Dockerfile.prod", "docs/deployment/runbook.md"],
   env: ["RUN_MIGRATIONS=true", "RUN_INGESTION=true", "RUN_USAGE_BACKFILL=false", "DB_WAIT_RETRIES=30"],
   sec: { A08: "Single migrator under an advisory lock; ingestion is idempotent by content hash.", A10: "Migration failure is fatal, so a half-migrated API never serves traffic." },
   rel: ["api", "postgres", "i_hash", "i_scripts"] });
-def("web", { name: "askdiq-web", kind: "container", status: "planned", branch: "chore/prod-deploy-fullstack", sub: "Next.js standalone · no host port",
-  desc: "The dashboard as its own container: Next.js standalone on node:20-alpine, running as user node, port 3000 reachable only on askdiq_internal. nginx serves it at askdiq-admin.ethub.co; the API stays on askdiq.ethub.co. It talks to the API by service name. No NEXT_PUBLIC_ variables are used.",
+def("web", { name: "askdiq-web", kind: "container", status: "live", sub: "Next.js standalone · no host port",
+  desc: "The dashboard as its own container: Next.js standalone on node:20-alpine, running as user node, port 3000 reachable only on askdiq_internal. nginx serves it at askdiqui.ethub.co; the API stays on askdiq.ethub.co. It talks to the API by service name. No NEXT_PUBLIC_ variables are used.",
   tech: ["Next.js (App Router)", "Node 20", "Docker multi-stage"],
   files: ["frontend/Dockerfile.prod", "infra/docker-compose.prod.example.yml", "infra/frontend.env.prod.example"],
-  env: ["API_BASE_URL=http://askdiq-api:8000", "API_KEY (= backend API_KEY_NAME)", "APP_BASE_URL=https://askdiq-admin.ethub.co", "SESSION_COOKIE_NAME=askdiq_session", "SESSION_COOKIE_SECURE=true", "AUTH_DEV_MOCK=false"],
+  env: ["API_BASE_URL=http://askdiq-api:8000", "API_KEY (= backend API_KEY_NAME)", "APP_BASE_URL=https://askdiqui.ethub.co", "SESSION_COOKIE_NAME=askdiq_session", "SESSION_COOKIE_SECURE=true", "AUTH_DEV_MOCK=false"],
   sec: { A02: "No published host port; strict headers from next.config.js.", A04: "Secure, httpOnly, SameSite=Lax session cookie in production." },
   rel: ["dashboard", "nginx", "api", "d_proxy"] });
-def("worker", { name: "askdiq-worker", kind: "container", status: "progress", branch: "chore/prod-deploy-fullstack", sub: "python -m app.jobs.worker",
-  desc: "Runs the Postgres job queue outside the API (compose profile worker). The API then runs with JOBS_WORKER_ENABLED=false. Job types: eval.golden_run, insights.classify, insights.backfill, insights.rollup, state.cleanup. The queue code is merged in preview; the container is on the deploy branch.",
+def("worker", { name: "askdiq-worker (optional)", kind: "container", status: "live", sub: "python -m app.jobs.worker",
+  desc: "Runs the Postgres job queue outside the API (compose profile worker). The API then runs with JOBS_WORKER_ENABLED=false. Job types: eval.golden_run, insights.classify, insights.backfill, insights.rollup, state.cleanup. By default the jobs run in-process in askdiq-api (JOBS_WORKER_ENABLED=true, as in production); this container is the optional compose profile worker.",
   tech: ["Python asyncio", "Postgres SKIP LOCKED"],
   files: ["backend/app/jobs/worker.py", "backend/app/jobs/runtime.py", "backend/app/jobs/handlers.py"],
   env: ["JOBS_WORKER_ENABLED=false (on the API)", "JOBS_MAX_CONCURRENCY=4", "WORKER_DB_POOL_SIZE"],
   sec: { A10: "Failures are recorded on the job row and retried with backoff; dead after JOBS_MAX_ATTEMPTS." },
   rel: ["d_jobs", "postgres", "aoai", "d_insights"] });
-def("dashboard", { name: "AskDIQ dashboard", kind: "service", status: "preview", sub: "Next.js admin console",
-  desc: "Admin console: overview, Usage and Cost, Governance, Feedback (RLHF triage), Analytics (Chatbot Insights), Conversations, Users, User Management, Settings and branding, Evaluation and Live Evaluation, Documents, and Chat. The browser only talks to its own origin; every API call goes through the /api/proxy route handler. Not deployed in production yet (production ships backend/ only).",
+def("dashboard", { name: "AskDIQ dashboard", kind: "service", status: "live", sub: "Next.js admin console",
+  desc: "Admin console served by askdiq-web at askdiqui.ethub.co. Pages: Dashboard, AskDIQ (chat), Knowledge, Visitors & Conversations (one merged page with visitor and conversation detail), Usage & Cost, Feedback (RLHF triage), Evaluation, Governance, Analytics (Chatbot Insights), User Management and Settings (Branding, Insights Taxonomy, Models & Pricing). The browser only talks to its own origin; every API call goes through the /api/proxy route handler. Data is cached client side and refreshed by the /admin/live stream.",
   tech: ["Next.js App Router", "React", "Tailwind tokens", "Motion", "Recharts"],
   files: ["frontend/app/(app)/admin/", "frontend/app/(app)/chat", "frontend/app/(app)/documents", "frontend/app/api/proxy/[...path]/route.ts", "frontend/middleware.ts", "frontend/lib/"],
   rel: ["admins", "api", "web", "d_proxy", "entra", "w_widget"] });
-def("w_widget", { name: "In-dashboard AskDIQ widget", kind: "module", status: "progress", branch: "feat/askdiq-chat-widget",
+def("w_widget", { name: "In-dashboard AskDIQ widget", kind: "module", status: "live",
   desc: "Floating mascot launcher on every dashboard page (hidden on /chat) that opens a lazily loaded right-side drawer; full screen below 639 px. It reuses ChatProvider.sendQuery, so it calls POST /query through the same proxy. This is not the website widget built by the other team.",
   tech: ["React", "next/dynamic", "Motion"],
   files: ["frontend/components/askdiq/AskDiqLauncher.tsx", "frontend/components/askdiq/AskDiqDrawer.tsx", "frontend/components/chat/ChatConversation.tsx", "frontend/lib/askdiq-widget.ts"],
@@ -460,16 +459,16 @@ def("w_widget", { name: "In-dashboard AskDIQ widget", kind: "module", status: "p
 
 /* ---- /query pipeline stages ---- */
 def("p_validate", { name: "Validate + rate limit", kind: "step", status: "live", ms: 3, metric: "part of total_ms",
-  desc: "Pydantic QueryRequest validation, then llm_capacity (429 with Retry-After when LLM_MAX_CONCURRENCY slots are taken), then the sliding-window limits: per user or client id, and per end-user IP. Production keeps the windows in memory; preview shares them across workers in the UNLOGGED rate_limit_buckets table.",
+  desc: "Pydantic QueryRequest validation, then llm_capacity (429 with Retry-After when LLM_MAX_CONCURRENCY slots are taken), then the sliding-window limits: per user or client id, and per end-user IP. All workers share them in the UNLOGGED rate_limit_buckets table.",
   files: ["backend/app/api/routes/query.py", "backend/app/schemas/query.py", "backend/app/core/rate_limit.py", "backend/app/core/concurrency.py", "backend/app/core/state.py"],
   endpoints: ["POST /query → 422 | 429 | 401"],
   env: ["MAX_QUERY_LENGTH=2000", "RATE_LIMIT_PER_MINUTE=10", "RATE_LIMIT_PER_MINUTE_PER_IP=30", "RATE_LIMIT_EXEMPT_ACTORS", "LLM_MAX_CONCURRENCY=64", "LLM_SATURATED_RETRY_AFTER_SECONDS=2"],
   sec: { A01: "Production: X-API-Key + X-Client-Id. Preview: proxy key + SSO session (require_role_or_chat).", A06: "Per-user and per-IP windows; bounded LLM concurrency." },
   rel: ["p_session", "website", "t_rate_limit_buckets"] });
 def("p_session", { name: "Resolve session + IP", kind: "step", status: "live", ms: 8, metric: "part of total_ms",
-  desc: "resolve_client_ip uses a valid body ip_address when ALLOW_CLIENT_IP_OVERRIDE is on (hotfix), otherwise X-Forwarded-For when TRUST_PROXY_HEADERS is on, otherwise the socket. resolve_session_for_query finds or opens the chat session, load_recent_history loads earlier turns, then db.commit() returns the pooled connection before the slow stages.",
+  desc: "resolve_client_ip uses a valid body ip_address when ALLOW_CLIENT_IP_OVERRIDE is on, otherwise X-Forwarded-For when TRUST_PROXY_HEADERS is on, otherwise the socket. resolve_session_for_query finds or opens the chat session, load_recent_history loads earlier turns, then db.commit() returns the pooled connection before the slow stages.",
   files: ["backend/app/core/request_meta.py", "backend/app/core/sessions.py"],
-  env: ["ALLOW_CLIENT_IP_OVERRIDE (hotfix)", "TRUST_PROXY_HEADERS", "SESSION_TIMEOUT_MINUTES=60", "SESSION_HISTORY_MAX_MESSAGES=20"],
+  env: ["ALLOW_CLIENT_IP_OVERRIDE", "TRUST_PROXY_HEADERS", "SESSION_TIMEOUT_MINUTES=60", "SESSION_HISTORY_MAX_MESSAGES=20"],
   note: "Hotfix default mismatch: config.py defaults ALLOW_CLIENT_IP_OVERRIDE to true while backend/.env.example says false.",
   sec: { A01: "Sessions scoped to the actor; only valid IPv4/IPv6 values are accepted from the body." },
   rel: ["p_validate", "p_guard", "t_chat_sessions"] });
@@ -486,7 +485,7 @@ def("p_embed", { name: "Embed query", kind: "step", status: "live", ms: 180, met
 def("p_vector", { name: "pgvector similarity", kind: "step", status: "live", ms: 45, metric: "retrieval_ms (spans the whole retrieve call)",
   desc: "Broad cosine-distance recall over chunks.embedding (Chunk.embedding.cosine_distance), at least RETRIEVAL_CANDIDATE_MIN candidates, deduped by chunk id keeping the best score. Metadata filters pass through usable_filters: only allow-listed keys with scalar values; anything else, such as Swagger's additionalProp1, is dropped and logged.",
   files: ["backend/app/retrieval/vector_store.py"],
-  env: ["DEFAULT_TOP_K=5", "RETRIEVAL_CANDIDATE_MIN=8", "RETRIEVAL_CANDIDATE_MULTIPLIER=1", "RETRIEVAL_FILTER_KEYS=source_type,corpus,ingestion_source (hotfix)"],
+  env: ["DEFAULT_TOP_K=5", "RETRIEVAL_CANDIDATE_MIN=8", "RETRIEVAL_CANDIDATE_MULTIPLIER=1", "RETRIEVAL_FILTER_KEYS=source_type,corpus,ingestion_source"],
   sec: { A05: "Filter keys allow-listed; values bound as parameters." },
   rel: ["postgres", "t_chunks", "p_rerank"] });
 def("p_rerank", { name: "ONNX rerank", kind: "step", status: "live", ms: 320, metric: "reranker_ms",
@@ -495,7 +494,7 @@ def("p_rerank", { name: "ONNX rerank", kind: "step", status: "live", ms: 320, me
   env: ["ENABLE_RERANKER=true", "RERANKER_MODEL", "RERANK_MAX_CONCURRENCY=4", "RERANK_BATCH_SIZE=1"],
   rel: ["p_vector", "p_quota"] });
 def("p_quota", { name: "Cross-doc quota + gate", kind: "step", status: "live", ms: 1, metric: "retrieval_relevance_score",
-  desc: "_select_diverse_chunks fills DEFAULT_TOP_K round-robin across up to three documents so one long document cannot crowd out others. Then the relevance gate: no sources returns flag no_sources (hotfix) and a top score under MIN_RETRIEVAL_SCORE returns off_topic. injection_in_chunks drops chunks that carry instructions (indirect prompt injection).",
+  desc: "_select_diverse_chunks fills DEFAULT_TOP_K round-robin across up to three documents so one long document cannot crowd out others. Then the relevance gate: no sources returns flag no_sources and a top score under MIN_RETRIEVAL_SCORE returns off_topic. injection_in_chunks drops chunks that carry instructions (indirect prompt injection).",
   files: ["backend/app/retrieval/vector_store.py", "backend/app/harness/orchestrator.py"],
   env: ["CROSS_DOC_QUOTA_MAX_DOCUMENTS=3", "MIN_RETRIEVAL_SCORE=0.15"],
   sec: { A05: "Poisoned chunks removed before they reach the prompt (LLM01, indirect)." },
@@ -513,7 +512,7 @@ def("p_post", { name: "Groundedness + guardrails", kind: "step", status: "live",
   sec: { A05: "Output checked against sources before it is returned." },
   rel: ["p_llm", "p_persist", "aoai"] });
 def("p_persist", { name: "Persist exchange", kind: "step", status: "live", ms: 0, async: true, metric: "written after the response",
-  desc: "compute_exchange_cost prices the tokens; redact_pii masks the query for the audit row. schedule_exchange_write stores both chat_messages turns (tokens, cost_usd, outcome, ip_address, token_details) and an audit_log row with the sources and scores. LatencyMiddleware persists latency_metrics (total and per stage) in a supervised background task. On preview, INSIGHTS_CLASSIFY_ON_WRITE enqueues insights.classify.",
+  desc: "compute_exchange_cost prices the tokens; redact_pii masks the query for the audit row. schedule_exchange_write stores both chat_messages turns (tokens, cost_usd, outcome, ip_address, token_details) and an audit_log row with the sources and scores. LatencyMiddleware persists latency_metrics (total and per stage) in a supervised background task. INSIGHTS_CLASSIFY_ON_WRITE enqueues insights.classify.",
   files: ["backend/app/core/sessions.py", "backend/app/governance/costing.py", "backend/app/governance/pii.py", "backend/app/core/middleware.py", "backend/app/core/tasks.py"],
   env: ["PRICE_PROMPT_PER_MILLION=0.25", "PRICE_OUTPUT_PER_MILLION=2.00", "PRICE_EMBED_PER_MILLION=0.02", "PRICE_CACHED_PER_MILLION=0.125"],
   sec: { A09: "Every exchange audited with request_id; PII masked first.", A08: "audit_log rows cannot be updated or deleted." },
@@ -525,76 +524,75 @@ def("p_eval", { name: "Online eval sampling", kind: "step", status: "live", ms: 
   rel: ["t_evaluation_records", "aoai", "p_persist"] });
 
 /* ---- Dashboard data flow ---- */
-def("d_browser", { name: "Admin browser", kind: "person", status: "preview",
+def("d_browser", { name: "Admin browser", kind: "person", status: "live",
   desc: "React client. Data hooks (useApiQuery in lib/query-cache.ts) dedupe requests and keep stale-while-revalidate caches. Governance opens an EventSource on the stream route. The browser never holds the API key or a token, only the httpOnly session cookie.",
   files: ["frontend/lib/api.ts", "frontend/lib/query-cache.ts", "frontend/lib/use-dashboard.ts", "frontend/lib/governance-api.ts"],
   rel: ["d_middleware", "d_tables", "d_proxy", "admins"] });
-def("d_tables", { name: "Admin table kit", kind: "module", status: "preview", sub: "TableCard · TableToolbar · pagination",
+def("d_tables", { name: "Admin table kit", kind: "module", status: "live", sub: "TableCard · TableToolbar · pagination",
   desc: "Every admin table is a TableCard (header, toolbar, grid, footer) over DataTable. The toolbar sits above the grid in stacking order so the Filters and Columns popovers are never covered by rows. Pages default to 10 rows with a 10/25/50/100 selector. Offset tables use Pagination (numbered pages); cursor endpoints (governance traces and logs) use CursorPagination with useCursorStack, which shows Page X of Y from the bounded total. Traces list Request, Time, IP, Query, Status, Latency, Slowest stage, Tokens and Cost (no User column).",
   tech: ["React", "Tailwind tokens"],
   files: ["frontend/components/admin/TableCard.tsx", "frontend/components/admin/TableToolbar.tsx", "frontend/components/admin/DataTable.tsx", "frontend/components/admin/Pagination.tsx", "frontend/components/admin/CursorPagination.tsx", "frontend/lib/use-cursor-stack.ts"],
   rel: ["d_browser", "d_proxy", "d_routes"] });
-def("d_middleware", { name: "middleware.ts", kind: "module", status: "preview",
+def("d_middleware", { name: "middleware.ts", kind: "module", status: "live",
   desc: "Redirects page requests without a session cookie to /login. A UX redirect only; the real boundary is the backend check on every proxied call. The shell branch updates it for logout.",
   files: ["frontend/middleware.ts", "frontend/lib/auth-gate.ts", "frontend/lib/safe-redirect.ts"],
   sec: { A01: "Open-redirect safe return paths (safe-redirect.ts)." },
   rel: ["d_proxy", "d_browser"] });
-def("d_proxy", { name: "/api/proxy/[...path]", kind: "route", status: "preview", sub: "Next route handler",
+def("d_proxy", { name: "/api/proxy/[...path]", kind: "route", status: "live", sub: "Next route handler",
   desc: "Reads the httpOnly askdiq_session cookie and forwards it as X-Session, adds the server-only X-API-Key, forwards X-Client-Id, and X-Forwarded-For (the first hop, else X-Real-IP, so the dashboard user is identified; POST /query also gets that IP as ip_address so traces and logs show the Client IP). On POST/PATCH/DELETE adds X-Requested-With: askdiq plus the browser Origin for the CSRF check. Backend Set-Cookie is dropped; a 401 clears the cookie.",
   files: ["frontend/app/api/proxy/[...path]/route.ts", "frontend/lib/server/backend.ts", "frontend/lib/server/auth-cookies.ts"],
-  env: ["API_BASE_URL", "API_KEY", "SESSION_COOKIE_NAME=askdiq_session", "BACKEND_TIMEOUT_MS=60000 (branch)", "BACKEND_WRITE_TIMEOUT_MS=180000 (branch)", "BACKEND_RETRIES=2 (branch)"],
+  env: ["API_BASE_URL", "API_KEY", "SESSION_COOKIE_NAME=askdiq_session", "BACKEND_TIMEOUT_MS=60000", "BACKEND_WRITE_TIMEOUT_MS=180000", "BACKEND_RETRIES=2"],
   note: "fix/chat-page-fetch-timeouts (uncommitted): bounded wait for response headers, then 504; idempotent calls retried with jittered backoff; SSE never cut once headers arrive.",
-  sec: { A01: "CSRF: SameSite=Lax + Origin + X-Requested-With on state changes.", A07: "Session id only ever in an httpOnly cookie.", A10: "Upstream timeouts become a typed error, not a hang (branch)." },
+  sec: { A01: "CSRF: SameSite=Lax + Origin + X-Requested-With on state changes.", A07: "Session id only ever in an httpOnly cookie.", A10: "Upstream timeouts become a typed error, not a hang." },
   rel: ["d_authdeps", "d_browser", "d_callback", "w_widget"] });
-def("d_callback", { name: "/auth/callback/[provider]", kind: "route", status: "preview", sub: "+ /auth/login, /auth/logout",
+def("d_callback", { name: "/auth/callback/[provider]", kind: "route", status: "live", sub: "+ /auth/login, /auth/logout",
   desc: "Receives Entra's redirect, forwards code and state to POST /auth/sso/callback, and sets the session id as an httpOnly, SameSite=Lax cookie (Secure in production). The logout route on fix/shell-nav-logout-theme-dates revokes the server session (4 s bound) and always clears the cookie.",
-  files: ["frontend/app/auth/callback/[provider]/route.ts", "frontend/app/auth/login/route.ts", "frontend/app/auth/logout/route.ts (branch)"],
+  files: ["frontend/app/auth/callback/[provider]/route.ts", "frontend/app/auth/login/route.ts", "frontend/app/auth/logout/route.ts"],
   sec: { A07: "Session rotation on login; server-side revocation on logout." },
   rel: ["entra", "d_proxy", "t_auth_sessions"] });
-def("d_authdeps", { name: "Auth dependencies", kind: "module", status: "preview", sub: "require_permission(p)",
+def("d_authdeps", { name: "Auth dependencies", kind: "module", status: "live", sub: "require_permission(p)",
   desc: "Deny by default. current_user checks the proxy key with hmac.compare_digest and resolves X-Session against auth_sessions (stored as an HMAC hash). require_role_or_chat for chat, require_active_user for any dashboard route, require_permission(p) for actions. The user row is reloaded on every request, so a role change or suspension applies immediately.",
   files: ["backend/app/auth/deps.py", "backend/app/auth/permissions.py", "backend/app/auth/sessions.py", "backend/app/auth/principal.py"],
   env: ["API_KEY_NAME", "SESSION_TTL_MINUTES=480", "SESSION_IDLE_MINUTES=60", "APP_BASE_URL (allowed Origin)"],
   tech: ["Roles: operator < admin < superadmin", "dashboard:read, documents:write, feedback:triage, feedback:export, eval:run, testip:write, usage:export, users:manage, audit:auth:read, branding:write, taxonomy:write"],
   sec: { A01: "Guard on every route (route-walk test); object-level checks on detail routes.", A04: "Session ids from secrets.token_urlsafe, stored hashed.", A07: "Idle and absolute timeouts; revoked sessions rejected." },
   rel: ["d_routes", "d_proxy", "t_users", "t_auth_sessions"] });
-def("d_routes", { name: "Admin routers", kind: "service", status: "preview",
+def("d_routes", { name: "Admin routers", kind: "service", status: "live",
   desc: "Thin routers that validate and call domain modules (app/dashboard, app/governance, app/feedback, app/insights, app/entities). Heavy analytics share a 60 per minute per-user and per-IP limit.",
   files: ["backend/app/api/routes/admin.py", "admin_usage.py", "admin_governance.py", "admin_feedback.py", "admin_entities.py", "insights.py", "user_management.py", "branding.py", "documents.py", "metrics.py"],
   endpoints: ["/admin/usage/summary, /users, /sessions, /queries, /export", "/admin/governance/overview, /monitoring, /traces, /logs, /logs/export.csv", "/admin/feedback, /analytics, /golden, /bulk", "/admin/insights/summary, /trend, /topics, /quality, /taxonomy", "/admin/users-accounts, /access-requests", "/admin/visitors/stats, /conversations/stats", "/documents, /metrics/evaluation/live"],
   sec: { A05: "Sort and filter allow-lists (ALLOWED_*_SORTS), LIKE escaping, Enum params.", A06: "limit ≤ 200, offset ≤ 10k, export ≤ 10k rows; CSV formula prefixes neutralised." },
   rel: ["d_authdeps", "d_cache", "d_ro", "d_sse"] });
-def("d_cache", { name: "ETag + TTL cache", kind: "module", status: "preview",
-  desc: "cached_response adds a weak ETag and answers 304 on If-None-Match, with Cache-Control private. aggregation_cache is an in-process TTLCache (15 s) for expensive aggregates. perf/dashboard-load-speed moves usage cards and the summary onto get_or_compute, so concurrent callers share one computation.",
+def("d_cache", { name: "ETag + TTL cache", kind: "module", status: "live",
+  desc: "cached_response adds a weak ETag and answers 304 on If-None-Match, with Cache-Control private. aggregation_cache is an in-process TTLCache (15 s) for expensive aggregates. Usage cards and the summary use get_or_compute, so concurrent callers share one computation.",
   files: ["backend/app/core/http_cache.py", "backend/app/core/cache.py"],
   env: ["USAGE_SUMMARY_CACHE_TTL_SECONDS=15"],
-  note: "perf/dashboard-load-speed (uncommitted) also adds index ix_chat_messages_user_created_desc (/admin/usage/queries 3.9 s → 58 ms) and server-side preload of /auth/me.",
   sec: { A01: "Cache keys include role and permission set so roles never share cached data.", A02: "private caching only; Vary on X-API-Key and X-Client-Id." },
   rel: ["d_routes", "d_ro", "d_events"] });
-def("d_ro", { name: "read_only_session + gather_scoped", kind: "module", status: "preview",
+def("d_ro", { name: "read_only_session + gather_scoped", kind: "module", status: "live",
   desc: "Dashboard reads run in read_only_session, which sets SET LOCAL statement_timeout so a slow query becomes a clean 503. gather_scoped runs a page's independent queries in parallel, each with its own session, under a semaphore.",
   files: ["backend/app/core/database.py", "backend/app/core/concurrency.py", "backend/app/dashboard/service.py", "backend/app/governance/overview.py"],
-  env: ["DASHBOARD_STATEMENT_TIMEOUT_MS=5000", "DB_POOL_TIMEOUT_SECONDS=120 (branch)", "AGG_POOL_RESERVE=5 (branch)"],
+  env: ["DASHBOARD_STATEMENT_TIMEOUT_MS=5000", "DB_POOL_TIMEOUT_SECONDS=120", "AGG_POOL_RESERVE=5"],
   note: "fix/chat-page-fetch-timeouts adds release_connection, pool_stats (exposed on /health) and a process-wide fanout_slots semaphore to stop pool exhaustion.",
   sec: { A06: "Bounded statement time and parallelism.", A10: "Timeouts surface as problem+json, never a hung worker." },
   rel: ["postgres", "d_cache", "d_routes"] });
-def("d_sse", { name: "Governance SSE stream", kind: "route", status: "preview", sub: "GET /admin/governance/stream",
+def("d_sse", { name: "Governance SSE stream", kind: "route", status: "live", sub: "GET /admin/governance/stream",
   desc: "GovernanceStreamHub runs one producer per audience shared by every subscriber, takes a snapshot every few seconds and sends only the differences (diff_events). GZip skips SSE; nginx turns buffering off for stream locations.",
   files: ["backend/app/governance/stream.py", "backend/app/core/sse.py", "backend/app/core/compression.py", "backend/app/api/routes/admin_governance.py"],
-  env: ["GOVERNANCE_STREAM_INTERVAL_SECONDS=5", "GOVERNANCE_STREAM_SNAPSHOT_TIMEOUT_SECONDS=60 (branch)"],
+  env: ["GOVERNANCE_STREAM_INTERVAL_SECONDS=5", "GOVERNANCE_STREAM_SNAPSHOT_TIMEOUT_SECONDS=60"],
   rel: ["d_routes", "d_events", "d_browser"] });
-def("d_events", { name: "Event bus", kind: "module", status: "preview", sub: "LISTEN/NOTIFY askdiq_events",
+def("d_events", { name: "Event bus", kind: "module", status: "live", sub: "LISTEN/NOTIFY askdiq_events",
   desc: "Each process keeps one asyncpg connection that LISTENs on the events channel and fans out in process. publish(topic, id) sends a NOTIFY carrying ids only. Used for cross-worker cache invalidation and waking the job worker. Postgres replaces Redis.",
   files: ["backend/app/core/events.py", "backend/app/jobs/runtime.py"],
   env: ["EVENTS_CHANNEL=askdiq_events"],
   rel: ["postgres", "d_cache", "d_jobs", "d_sse"] });
-def("d_jobs", { name: "Job queue", kind: "module", status: "preview", sub: "FOR UPDATE SKIP LOCKED",
+def("d_jobs", { name: "Job queue", kind: "module", status: "live", sub: "FOR UPDATE SKIP LOCKED",
   desc: "Postgres-backed queue: enqueue with an optional dedupe_key, claim with FOR UPDATE SKIP LOCKED, exponential backoff on failure, reclaim stale locks, mark dead after max attempts, prune finished rows.",
   files: ["backend/app/jobs/queue.py", "backend/app/jobs/registry.py", "backend/app/jobs/worker.py"],
   env: ["JOBS_MAX_CONCURRENCY=4", "JOBS_MAX_ATTEMPTS=5", "JOBS_LOCK_TIMEOUT_SECONDS=300", "JOBS_RETENTION_DAYS=7"],
   sec: { A08: "Idempotent jobs: partial unique dedupe_key while queued or running.", A10: "Errors stored in last_error; no silent fire-and-forget." },
   rel: ["t_jobs", "worker", "d_insights", "d_events"] });
-def("d_insights", { name: "Insights classifier + rollups", kind: "module", status: "preview",
+def("d_insights", { name: "Insights classifier + rollups", kind: "module", status: "live",
   desc: "insights.classify labels each turn (intent, bot quality, issue, friction) with rules first and the LLM second; output is JSON-schema constrained and validated against the taxonomy. insights.rollup aggregates per day into insight_daily_rollup for the Analytics page.",
   files: ["backend/app/insights/classifier.py", "backend/app/insights/jobs.py", "backend/app/insights/rules.py", "backend/app/insights/analytics_service.py", "backend/scripts/backfill_turn_insights.py"],
   endpoints: ["/admin/insights/summary, /trend, /hourly, /flow, /topics, /quality, /dropoff, /people, /conversations, /pending, /taxonomy"],
@@ -604,13 +602,13 @@ def("d_insights", { name: "Insights classifier + rollups", kind: "module", statu
 
 /* ---- Ingestion ---- */
 def("i_upload", { name: "Upload .docx / .md", kind: "route", status: "live", sub: "POST /ingest/file",
-  desc: "The Documents page uploads a file (multipart) or scripts post JSON text. Allowed extensions: .md, .markdown, .docx. On preview both routes need documents:write.",
+  desc: "The Documents page uploads a file (multipart) or scripts post JSON text. Allowed extensions: .md, .markdown, .docx. Both routes need documents:write.",
   files: ["backend/app/api/routes/ingest.py", "backend/app/ingestion/naming.py", "frontend/app/(app)/documents", "frontend/lib/documents-api.ts"],
   endpoints: ["POST /ingest (JSON)", "POST /ingest/file (multipart)", "GET /documents, /documents/{id}/chunks, DELETE /documents/{id}"],
-  sec: { A01: "require_permission(documents:write) (preview).", A06: "Extension allow-list and size caps." },
+  sec: { A01: "require_permission(documents:write).", A06: "Extension allow-list and size caps." },
   rel: ["i_convert", "i_scripts"] });
 def("i_scripts", { name: "Batch ingestion", kind: "module", status: "live",
-  desc: "Scripts ingest the knowledge base from backend/data/real_docs. The hotfix ships that markdown inside the image so production ingestion finds it; the deploy branch runs ingestion at container start via prestart.py.",
+  desc: "Scripts ingest the knowledge base from backend/data/real_docs. The image ships that markdown so production ingestion finds it; the entrypoint runs ingestion at container start via prestart.py.",
   files: ["backend/scripts/ingest_real_docs.py", "backend/scripts/seed_ingest.py", "backend/scripts/inventory_kb_docs.py", "backend/scripts/reconcile_document_names.py", "backend/data/real_docs/"],
   rel: ["i_convert", "prestart"] });
 def("i_convert", { name: "Convert to Markdown", kind: "module", status: "live",
@@ -628,7 +626,7 @@ def("i_hash", { name: "Content hash check", kind: "module", status: "live",
   files: ["backend/app/ingestion/service.py"],
   sec: { A08: "Re-ingestion is idempotent and auditable." },
   rel: ["i_skip", "i_chunk", "t_documents"] });
-def("i_skip", { name: "Skip unchanged", kind: "module", status: "preview", sub: "backfill missing provenance",
+def("i_skip", { name: "Skip unchanged", kind: "module", status: "live", sub: "backfill missing provenance",
   desc: "Returns status unchanged and keeps the existing chunks. backfill_provenance fills provenance fields older ingests never recorded (commit be1b646).",
   files: ["backend/app/ingestion/service.py"],
   rel: ["i_hash", "i_store"] });
@@ -651,6 +649,64 @@ def("i_store", { name: "Store chunks + provenance", kind: "module", status: "liv
   sec: { A09: "Ingest audited with actor, request_id and client IP." },
   rel: ["t_documents", "t_chunks", "t_audit_log"] });
 
+/* ---- Console services added in the October release ---- */
+def("smtp", { name: "SMTP server", kind: "external", status: "live", sub: "Alert email",
+  desc: "Mail relay for alert emails (STARTTLS on 587 by default). Configured only through the server .env; with SMTP_HOST empty, alerts still show in the console bell and email delivery is reported as off at startup.",
+  tech: ["SMTP", "STARTTLS"],
+  env: ["SMTP_HOST", "SMTP_PORT=587", "SMTP_USERNAME", "SMTP_PASSWORD (secret)", "SMTP_STARTTLS=true", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO"],
+  sec: { A04: "STARTTLS or implicit TLS; the password is a SecretStr and never logged." },
+  rel: ["d_alerts"] });
+def("d_shell", { name: "Console shell", kind: "module", status: "live", sub: "Sidebar · account corner · cache",
+  desc: "Sidebar with Go-to-page search and the merged Visitors & Conversations entry; account corner with role badge, notification bell (active alerts), tour, help, theme and sign out; page shell instead of full-page loaders with hover prefetch. The query cache keeps previous data on range and tab switches and is persisted, and live-updates.ts refetches only the scopes the /admin/live stream names.",
+  tech: ["React", "Next.js App Router", "query-cache"],
+  files: ["frontend/components/Sidebar.tsx", "frontend/components/shell/", "frontend/lib/navigation.ts", "frontend/lib/query-cache.ts", "frontend/lib/live-updates.ts"],
+  rel: ["d_browser", "d_proxy", "d_live", "dashboard"] });
+def("d_live", { name: "Console live stream", kind: "route", status: "live", sub: "GET /admin/live",
+  desc: "One SSE stream per open console. Sends a changed frame with scope names only (data, alerts, snapshot kinds), coalesced, never data. Sources arrive over LISTEN/NOTIFY so every replica sees every change; the browser refetches those scopes, which are snapshot reads.",
+  tech: ["SSE", "LISTEN/NOTIFY"],
+  files: ["backend/app/api/routes/console.py", "backend/app/dashboard/live.py", "frontend/lib/live-updates.ts"],
+  endpoints: ["GET /admin/live"],
+  env: ["CONSOLE_STREAM_COALESCE_SECONDS", "DASHBOARD_WATCH_SECONDS=2"],
+  sec: { A01: "dashboard:read; scope names only, no row data on the wire." },
+  rel: ["d_events", "d_proxy", "d_shell", "d_snapshots"] });
+def("d_snapshots", { name: "Dashboard snapshots", kind: "module", status: "live", sub: "SnapshotRefresher · change watcher",
+  desc: "Every heavy aggregate is a registered kind whose payload is stored per parameter set in dashboard_snapshots. Reads come from the in-process stale-while-revalidate cache, else the stored row at once; only a never-seen parameter set is computed while the caller waits. SnapshotRefresher (one process, Postgres advisory lock) backfills the defaults at startup and keeps watched snapshots fresh; the change watcher checks a data stamp every DASHBOARD_WATCH_SECONDS and announces changes on the event bus.",
+  tech: ["Postgres advisory lock", "JSONB", "SWR cache"],
+  files: ["backend/app/dashboard/snapshots.py", "backend/app/dashboard/live.py", "backend/app/jobs/runtime.py"],
+  env: ["DASHBOARD_SNAPSHOT_REFRESH_SECONDS=30", "DASHBOARD_SNAPSHOT_IDLE_REFRESH_SECONDS=900", "DASHBOARD_SNAPSHOT_MAX_AGE_SECONDS=1800", "DASHBOARD_SNAPSHOT_KEEP_HOURS=168", "DASHBOARD_WATCH_SECONDS=2"],
+  sec: { A06: "Dashboard reads never run an unbounded aggregation on the request path." },
+  rel: ["t_dashboard_snapshots", "d_events", "d_live", "d_routes", "d_jobs"] });
+def("d_alerts", { name: "Alerts + email", kind: "module", status: "live", sub: "catalogue · rules · sampler",
+  desc: "An alert catalogue (budget, latency, LLM failures, negative feedback, online-eval violations, event bus, circuit breaker, Azure 429s, resources). Each process samples its in-memory signals; the alerts.evaluate job runs the SQL rules; rows are deduped in Postgres so N processes raise one alert. alerts.notify sends branded email over SMTP with cooldown and retries; the header bell shows active alerts.",
+  tech: ["Postgres dedupe", "Jobs", "SMTP"],
+  files: ["backend/app/alerts/", "backend/app/api/routes/alerts.py", "frontend/components/shell/NotificationBell.tsx"],
+  endpoints: ["GET /admin/alerts", "POST /admin/alerts/{id}/ack"],
+  env: ["ALERTS_ENABLED=true", "ALERTS_EVALUATE_INTERVAL_SECONDS=30", "ALERTS_SAMPLE_INTERVAL_SECONDS=30", "ALERT_COOLDOWN_MINUTES=60", "ALERT_EMAIL_MIN_SEVERITY=info", "ALERT_BUDGET_WARNING_PCT=80"],
+  sec: { A09: "Operational and security conditions alert by email, not only in logs." },
+  rel: ["t_alerts", "smtp", "d_jobs", "d_resources", "d_live"] });
+def("d_resources", { name: "Resource metrics sampler", kind: "module", status: "live", sub: "every API worker",
+  desc: "Each API worker samples host, container and process telemetry (CPU, memory, RSS, event-loop lag, DB pool use, active /query requests) every METRICS_SAMPLE_INTERVAL_SECONDS into resource_samples. Governance > Monitoring shows live gauges from the stream; resource rules alert only when a condition holds for the whole sustain window.",
+  tech: ["/proc and /sys", "asyncio"],
+  files: ["backend/app/governance/metrics_sampler.py", "backend/app/governance/resource_store.py", "backend/app/alerts/resource_rules.py"],
+  env: ["METRICS_SAMPLE_INTERVAL_SECONDS=5", "ALERT_RESOURCE_SUSTAIN_SECONDS=120", "ALERT_CPU_WARNING_PCT=80", "ALERT_MEMORY_WARNING_PCT=85"],
+  rel: ["t_resource_samples", "d_alerts", "d_sse"] });
+def("d_modelsettings", { name: "Models & Pricing", kind: "module", status: "live", sub: "runtime overrides · /admin/models",
+  desc: "Settings > Models & Pricing overrides the chat deployment, embedding model and per-million token prices at runtime (singleton model_settings row, versioned). A change is verified with one live Azure call before it is saved, and a cache invalidation event makes every process pick it up.",
+  tech: ["Pydantic", "LISTEN/NOTIFY invalidation"],
+  files: ["backend/app/model_settings/service.py", "backend/app/model_settings/verify.py", "backend/app/api/routes/model_settings.py"],
+  endpoints: ["GET /admin/models", "PUT /admin/models"],
+  sec: { A01: "Superadmin only.", A08: "Optimistic version check; verified before save." },
+  rel: ["t_model_settings", "aoai", "d_events", "d_routes"] });
+def("d_citations", { name: "Citation sources sync", kind: "module", status: "live", sub: "citation_sources",
+  desc: "Expands the sources listed on query audit rows and evaluation records into one row per cited source, incrementally from a per-origin watermark, so Knowledge page citation stats read a table instead of parsing JSON for every range.",
+  files: ["backend/app/documents/citations.py"],
+  rel: ["t_citation_sources", "t_citation_sync_state", "t_audit_log", "t_evaluation_records"] });
+def("p_clarify", { name: "Clarification plan", kind: "step", status: "live", ms: 1, metric: "part of llm_ms · outcome clarify",
+  desc: "A short, underspecified, standalone question is retrieved wider; if the evidence spreads over 2 to 4 distinct topics with similar scores, the prompt lets the model ask one clarifying question with options instead of answering (same generation call, no extra LLM call). Never more than CLARIFY_MAX_CONSECUTIVE times in a row.",
+  files: ["backend/app/harness/clarify.py", "backend/app/harness/orchestrator.py", "frontend/components/chat/"],
+  env: ["CLARIFY_ENABLED=true", "CLARIFY_MAX_CONSECUTIVE=2", "CLARIFY_MAX_QUERY_WORDS=4", "CLARIFY_MIN_OPTIONS=2", "CLARIFY_MAX_OPTIONS=4", "CLARIFY_RETRIEVAL_TOP_K=10"],
+  rel: ["p_quota", "p_llm"] });
+
 /* ---- Tables ---- */
 function tbl(id, group, status, desc, cols, rel, extra) {
   var o = { name: id, kind: "table", status: status, desc: desc, cols: cols, rel: (rel || []).map(function (r) { return "t_" + r; }), group: group,
@@ -659,15 +715,15 @@ function tbl(id, group, status, desc, cols, rel, extra) {
   def("t_" + id, o);
 }
 tbl("documents", "Content", "live", "One row per knowledge-base document, keyed by canonical name.", [
-  ["id", "UUID PK"], ["source_name", "String(512), unique on lower()"], ["source_type", "String(64)"], ["content_hash", "String(64)"], ["doc_metadata", "JSON"], ["canonical_markdown", "Text, deferred (preview)"], ["created_at / updated_at", "DateTime"]], ["chunks"]);
+  ["id", "UUID PK"], ["source_name", "String(512), unique on lower()"], ["source_type", "String(64)"], ["content_hash", "String(64)"], ["doc_metadata", "JSON"], ["canonical_markdown", "Text, deferred"], ["created_at / updated_at", "DateTime"]], ["chunks"]);
 tbl("chunks", "Content", "live", "Retrieval units with their embedding and provenance. No ANN index: similarity is an exact scan.", [
   ["id", "UUID PK"], ["document_id", "FK → documents.id"], ["content", "Text"], ["embedding", "vector(1536)"], ["strategy", "String(64)"], ["chunk_index", "Integer"], ["chunk_metadata", "JSON provenance"], ["content_hash", "String(64), ix (document_id, content_hash)"]], ["documents"]);
 tbl("chat_sessions", "Chat", "live", "A conversation for one actor (email or client id).", [
   ["id", "UUID PK"], ["user_email", "String(320), ix"], ["title", "String(256)"], ["created_at / last_activity_at / expires_at", "DateTime"], ["created_ip", "String(64), ix"]], ["chat_messages"]);
 tbl("chat_messages", "Chat", "live", "Each user and assistant turn with tokens, cost and outcome.", [
   ["id", "UUID PK"], ["session_id", "FK → chat_sessions, CASCADE"], ["turn_index / role / content", ""], ["request_id", "String(64)"], ["grounded / guardrail_flags", "Bool / JSON"], ["ip_address / outcome", "String, ix"], ["prompt/completion/reasoning/embedding/guardrail_tokens", "Integer"], ["cost_usd / token_details", "Float / JSON"]], ["chat_sessions"],
-  { note: "perf/dashboard-load-speed adds partial index ix_chat_messages_user_created_desc WHERE role='user'." });
-tbl("message_feedback", "Chat", "live", "Ratings and triage for answers (RLHF loop). Triage columns arrive with preview.", [
+  { note: "Partial index ix_chat_messages_user_created_desc WHERE role='user'." });
+tbl("message_feedback", "Chat", "live", "Ratings and triage for answers (RLHF loop). Includes the triage columns.", [
   ["id", "UUID PK"], ["message_id", "FK → chat_messages, CASCADE"], ["session_id", "FK → chat_sessions"], ["actor", "unique with message_id"], ["rating", "1–5 CHECK"], ["reason_tags", "JSONB"], ["triage_status", "new | reviewed | promoted | dismissed"], ["promoted_case_id", "FK → eval_promoted_cases"], ["version", "optimistic lock"]], ["chat_messages", "chat_sessions", "eval_promoted_cases"]);
 tbl("audit_log", "Observability", "live", "Append-only event log. trg_audit_log_immutable raises on UPDATE or DELETE.", [
   ["id", "UUID PK"], ["created_at", "DateTime"], ["request_id", "String(64), ix"], ["actor", "String(256)"], ["action", "String(64)"], ["detail", "JSON (PII masked)"], ["ip_address", "String(64)"]], ["chat_messages"],
@@ -676,54 +732,72 @@ tbl("latency_metrics", "Observability", "live", "Total and per-stage latency for
   ["id", "UUID PK"], ["request_id", "ix"], ["total_ms", "Float"], ["embedding_ms / retrieval_ms / reranker_ms", "Float"], ["guardrail_pre_ms / llm_ms / guardrail_post_ms", "Float"]], ["chat_messages"]);
 tbl("evaluation_records", "Observability", "live", "Judge results from online sampling and offline runs.", [
   ["id", "UUID PK"], ["message_id / session_id", "FK, CASCADE"], ["audience", "String(32), ix"], ["passed", "Bool"], ["faithfulness / relevance / completeness", "Float"], ["citation_precision / citation_coverage / retrieval_recall", "Float"], ["unsupported_claims / retrieved_chunks", "JSON"], ["judge_reason", "Text"]], ["chat_messages", "chat_sessions"]);
-tbl("eval_promoted_cases", "Observability", "preview", "Golden test cases promoted from feedback (moved out of a JSON file).", [
+tbl("eval_promoted_cases", "Observability", "live", "Golden test cases promoted from feedback (moved out of a JSON file).", [
   ["id", "String(64) PK"], ["query / reference_answer", "Text"], ["case_type / expected_outcome", "String"], ["source_message_id", "UUID, unique, no FK"], ["reason_tags / last_run_detail", "JSONB"], ["promoted_by / promoted_at", ""]], []);
 tbl("test_ip_configs", "Observability", "live", "Internal and test IPs excluded from usage and active-visitor counts.", [
   ["id", "UUID PK"], ["ip_address", "String(64), unique"], ["description", "String(256)"], ["is_active", "Bool"]], []);
-tbl("users", "Auth", "preview", "Dashboard users keyed on the Entra object id.", [
+tbl("users", "Auth", "live", "Dashboard users keyed on the Entra object id.", [
   ["id", "UUID PK"], ["email", "unique"], ["entra_oid", "String(64), unique"], ["tenant_id", "String(64)"], ["role", "superadmin | admin | operator"], ["status", "pending | active | rejected | suspended"], ["approved_by", "FK → users (self)"], ["version", "optimistic lock"]], ["access_requests", "auth_sessions"]);
-tbl("access_requests", "Auth", "preview", "Requests for a role; at most one pending per user.", [
+tbl("access_requests", "Auth", "live", "Requests for a role; at most one pending per user.", [
   ["id", "UUID PK"], ["user_id", "FK → users, CASCADE"], ["requested_role", "CHECK"], ["justification", "Text"], ["status", "pending | approved | rejected"], ["decided_by", "FK → users"]], ["users"]);
-tbl("auth_sessions", "Auth", "preview", "Server-side sessions; the raw id is never stored.", [
+tbl("auth_sessions", "Auth", "live", "Server-side sessions; the raw id is never stored.", [
   ["id", "UUID PK"], ["id_hash", "HMAC-SHA256, unique"], ["user_id", "FK → users, CASCADE"], ["expires_at / idle_expires_at", "timestamptz"], ["last_seen_at / revoked_at", "timestamptz"], ["ip_address / user_agent", ""]], ["users"],
   { sec: { A04: "Only the HMAC of the session id is stored.", A07: "Idle and absolute expiry; revocation." } });
-tbl("oidc_states", "Auth", "preview", "Short-lived OIDC state, nonce and PKCE verifier (raw SQL, no ORM model).", [
+tbl("oidc_states", "Auth", "live", "Short-lived OIDC state, nonce and PKCE verifier (raw SQL, no ORM model).", [
   ["state_hash", "text PK"], ["payload", "jsonb"], ["expires_at", "timestamptz, ix"]], []);
-tbl("jobs", "Platform", "preview", "Postgres job queue (migration only, no ORM model).", [
+tbl("jobs", "Platform", "live", "Postgres job queue (migration only, no ORM model).", [
   ["id", "UUID PK"], ["type", "String(100)"], ["payload", "JSONB"], ["status", "queued | running | done | failed | dead"], ["attempts / max_attempts", "Integer"], ["run_after / locked_at / locked_by", ""], ["dedupe_key", "partial unique while active"], ["last_error", "Text"]], []);
-tbl("rate_limit_buckets", "Platform", "preview", "UNLOGGED table shared by all workers for sliding-window limits.", [
+tbl("rate_limit_buckets", "Platform", "live", "UNLOGGED table shared by all workers for sliding-window limits.", [
   ["key", "text"], ["window_start", "timestamptz"], ["count", "int"], ["PK", "(key, window_start)"]], []);
-tbl("insight_taxonomy", "Insights", "preview", "Editable labels for intents, quality and issues.", [
+tbl("insight_taxonomy", "Insights", "live", "Editable labels for intents, quality and issues.", [
   ["id", "Identity PK"], ["kind / code", "unique pair"], ["label / group / color", ""], ["substantive / handled / is_active / is_system", "Bool"], ["sort_order", "Integer"]], []);
-tbl("turn_insights", "Insights", "preview", "One classification per assistant turn.", [
+tbl("turn_insights", "Insights", "live", "One classification per assistant turn.", [
   ["id", "UUID PK"], ["message_id", "FK → chat_messages, unique"], ["session_id", "FK → chat_sessions"], ["intent / bot_quality", "ix"], ["issue / friction", "String"], ["confidence", "Float"], ["classified_by / model", "rules or LLM"]], ["chat_messages", "chat_sessions"]);
-tbl("insight_daily_rollup", "Insights", "preview", "Daily aggregates behind the Analytics page.", [
+tbl("insight_daily_rollup", "Insights", "live", "Daily aggregates behind the Analytics page.", [
   ["day / audience / intent / quality / outcome", "composite PK"], ["count / handled / substantive", "Integer"], ["computed_at", "ix"]], []);
-tbl("insight_llm_usage", "Insights", "preview", "Classifier spend, checked against the daily budget.", [
+tbl("insight_llm_usage", "Insights", "live", "Classifier spend, checked against the daily budget.", [
   ["id", "UUID PK"], ["model", "String(64)"], ["turns", "Integer"], ["prompt/completion/total_tokens", "Integer"], ["cost_usd", "Float"]], []);
-tbl("brand_settings", "Branding", "preview", "Singleton (id = 1) white-label settings.", [
+tbl("brand_settings", "Branding", "live", "Singleton (id = 1) white-label settings.", [
   ["product_name / assistant_name / company_name", ""], ["primary_hex / accent_hex / tint_hex", "CHECK #rrggbb"], ["logo_* / mark_* / favicon_asset_id", "FK → brand_assets"], ["chat_sample_questions", "JSON"], ["version", "optimistic lock"]], ["brand_assets"]);
-tbl("brand_assets", "Branding", "preview", "Content-addressed logo images (PNG, WebP, sanitised SVG).", [
+tbl("brand_assets", "Branding", "live", "Content-addressed logo images (PNG, WebP, sanitised SVG).", [
   ["sha256", "PK, CHECK hex"], ["mime", "png | webp | svg+xml"], ["data", "bytea"], ["size_bytes / width / height", "Integer"]], [],
   { sec: { A05: "SVG sanitised (no script, on*, external href); served with nosniff." } });
+
+tbl("model_settings", "Console", "live", "Singleton runtime overrides from Settings > Models & Pricing.", [
+  ["id", "Integer PK (1)"], ["llm_deployment / embedding_model", "String, nullable"], ["price_prompt / cached / output / embed _per_million", "Float, nullable"], ["updated_by / updated_at", ""], ["version", "Integer"]], []);
+tbl("alerts", "Console", "live", "Deduplicated alerts: one open row per rule and dedupe key.", [
+  ["id", "UUID PK"], ["rule / dedupe_key", "String"], ["severity / status", "String"], ["title / summary / component", "String"], ["details", "JSONB"], ["occurrences", "Integer"], ["first_seen_at / last_seen_at", "timestamptz"]], []);
+tbl("resource_samples", "Console", "live", "Per-worker telemetry samples behind Monitoring and resource alerts.", [
+  ["id", "Integer PK"], ["worker_id / hostname", "String"], ["sampled_at", "timestamptz, ix"], ["sample", "JSONB"]], []);
+tbl("dashboard_snapshots", "Console", "live", "Precomputed dashboard payloads, one per kind and parameter set.", [
+  ["key", "String PK"], ["kind", "String"], ["params / payload", "JSONB"], ["computed_at / requested_at", "timestamptz"], ["compute_ms", "Integer"]], []);
+tbl("citation_sources", "Console", "live", "One row per cited source of a query audit row or evaluation record.", [
+  ["id", "Integer PK"], ["audit_id / eval_id", "UUID, nullable"], ["ordinal", "Integer"], ["request_id", "String"], ["cited_at", "timestamptz"], ["chunk_ref / doc_ref / name_ref", "String"]], ["citation_sync_state"]);
+tbl("usage_turns", "Console", "live", "Per-turn usage ledger kept in step by row triggers on chat_messages, latency_metrics and chat_sessions; the Usage & Cost lists and CSV export page it through narrow indexes.", [
+  ["user/assistant pair", "one row per (session_id, turn_index)"], ["created_at / ip_address / session_ip", "user turn and session"], ["request_id / outcome / grounded", "assistant turn"], ["tokens / cost_usd / total_ms", "usage and latency"]], ["chat_messages"],
+  { note: "Maintained by triggers inside the writing transaction, so it is never behind the data. pg_trgm GIN indexes serve the All Queries search." });
+tbl("citation_sync_state", "Console", "live", "Watermark per origin for the citation sync.", [
+  ["origin", "String PK"], ["synced_until", "timestamptz"]], []);
 
 /* ------------------------------------------------------------------ */
 /* Views                                                               */
 /* ------------------------------------------------------------------ */
 var VIEWS = [
- { id: "context", label: "System context", w: 1200, h: 700,
+ { id: "context", label: "System context", w: 1200, h: 800,
    blurb: "Who uses AskDIQ and what it depends on. Visitors reach it only through the other team's website; admins use the dashboard with Entra sign-in.",
    groups: [
      { label: "AskDIQ", x: 290, y: 30, w: 560, h: 640, cls: "zone" },
      { label: "Exigo Tech platform", x: 880, y: 250, w: 290, h: 190, cls: "ext" },
      { label: "Microsoft cloud", x: 880, y: 30, w: 290, h: 190, cls: "ext" },
      { label: "Microsoft cloud", x: 880, y: 470, w: 290, h: 200, cls: "ext" },
-     { label: "Other team", x: 20, y: 30, w: 250, h: 340, cls: "ext" }],
+     { label: "Other team", x: 20, y: 30, w: 250, h: 340, cls: "ext" },
+     { label: "Mail relay", x: 880, y: 690, w: 290, h: 100, cls: "ext" }],
    nodes: [
      ["visitors", 45, 70, 200, 76], ["website", 45, 220, 200, 110],
      ["admins", 45, 500, 200, 76],
      ["dashboard", 320, 470, 230, 110], ["api", 560, 220, 240, 120],
-     ["aoai", 905, 75, 240, 110], ["postgres", 905, 290, 240, 110], ["entra", 905, 520, 240, 100]],
+     ["aoai", 905, 75, 240, 110], ["postgres", 905, 290, 240, 110], ["entra", 905, 520, 240, 100],
+     ["smtp", 905, 705, 240, 76]],
    edges: [
      { f: "visitors", t: "website", l: "chat UI" },
      { f: "website", t: "api", l: "POST /query · X-API-Key · X-Client-Id", d: "Server to server over HTTPS through nginx at askdiq.ethub.co. The visitor's IP is forwarded in the body and used for attribution and the per-IP limit." },
@@ -732,10 +806,11 @@ var VIEWS = [
      { f: "admins", t: "entra", l: "SSO sign-in", curve: 120 },
      { f: "api", t: "entra", l: "code exchange · JWKS", curve: -30 },
      { f: "api", t: "aoai", l: "chat + embeddings" },
-     { f: "api", t: "postgres", l: "SQL + pgvector", d: "SQLAlchemy async over asyncpg; vectors and relational data in one database." }] },
+     { f: "api", t: "postgres", l: "SQL + pgvector", d: "SQLAlchemy async over asyncpg; vectors and relational data in one database." },
+     { f: "api", t: "smtp", l: "alert email", curve: 60 }] },
 
  { id: "containers", label: "Containers", w: 1460, h: 790,
-   blurb: "Production on Internal-Dev-Ubuntu (/opt/askdiq). Dashed boxes are not running yet: the dashboard container and admin subdomain are planned, the startup sequence and separate worker are on chore/prod-deploy-fullstack.",
+   blurb: "Production on Internal-Dev-Ubuntu (/opt/askdiq): askdiq-api and askdiq-web behind the shared et-platform-nginx-1, on two external Docker networks. askdiq_internal joins nginx, the web container and the API; et-platform_internal joins the API to et-platform-postgres-1. The separate worker is optional (compose profile worker); by default jobs run inside askdiq-api.",
    groups: [
      { label: "Internal-Dev-Ubuntu · Docker host · /opt/askdiq", x: 230, y: 20, w: 1000, h: 750, cls: "host" },
      { label: "network askdiq_internal", x: 255, y: 70, w: 640, h: 670, cls: "net" },
@@ -750,49 +825,56 @@ var VIEWS = [
      ["web", 300, 560, 240, 110],
      ["postgres", 1010, 330, 190, 110],
      ["worker", 1010, 560, 190, 100],
-     ["aoai", 1265, 150, 170, 110], ["entra", 1265, 480, 170, 100]],
+     ["aoai", 1265, 150, 170, 110], ["entra", 1265, 480, 170, 100],
+     ["smtp", 25, 660, 170, 80]],
    edges: [
      { f: "website", t: "nginx", l: "HTTPS askdiq.ethub.co" },
-     { f: "admins", t: "nginx", l: "HTTPS askdiq-admin.ethub.co", s: "planned" },
+     { f: "admins", t: "nginx", l: "HTTPS askdiqui.ethub.co" },
      { f: "nginx", t: "api", l: "proxy_pass :8000" },
-     { f: "nginx", t: "web", l: "proxy_pass askdiq-web:3000", s: "planned" },
-     { f: "web", t: "api", l: "http://askdiq-api:8000", s: "planned", d: "API_BASE_URL=http://askdiq-api:8000 over askdiq_internal; the proxy adds API_KEY and the session." },
+     { f: "nginx", t: "web", l: "proxy_pass askdiq-web:3000" },
+     { f: "web", t: "api", l: "http://askdiq-api:8000", d: "API_BASE_URL=http://askdiq-api:8000 over askdiq_internal; the proxy adds API_KEY and the session." },
      { f: "prestart", t: "api", l: "runs before uvicorn" },
      { f: "prestart", t: "postgres", l: "alembic upgrade", d: "alembic upgrade head while holding pg_try_advisory_lock, then idempotent ingestion." },
      { f: "api", t: "postgres", l: "DATABASE_URL · db askdiq" },
      { f: "worker", t: "postgres", l: "claim jobs SKIP LOCKED" },
      { f: "api", t: "aoai", l: "HTTPS" },
-     { f: "api", t: "entra", l: "OIDC", s: "preview", curve: -200 },
+     { f: "api", t: "entra", l: "OIDC", curve: -200 },
+     { f: "api", t: "smtp", l: "SMTP 587", curve: 80 },
      { f: "worker", t: "aoai", l: "LLM jobs", curve: 40, d: "insights.classify and eval.golden_run call Azure OpenAI." }] },
 
- { id: "pipeline", label: "/query pipeline", w: 1240, h: 520, player: true,
+ { id: "pipeline", label: "/query pipeline", w: 1240, h: 690, player: true,
    blurb: "One POST /query request, stage by stage, as implemented in app/api/routes/query.py and app/harness/orchestrator.py. Any guardrail or relevance hit short-circuits to a fallback answer with flags.",
    groups: [
      { label: "Request path · blocks the response", x: 15, y: 20, w: 1210, h: 200, cls: "zone" },
-     { label: "Answer and after the response", x: 15, y: 290, w: 1210, h: 210, cls: "zone" }],
+     { label: "Answer and after the response", x: 15, y: 290, w: 1210, h: 210, cls: "zone" },
+     { label: "Clarification · short, ambiguous questions", x: 615, y: 520, w: 610, h: 160, cls: "zone" }],
    nodes: [
      ["p_validate", 35, 70, 175, 120], ["p_session", 235, 70, 175, 120], ["p_guard", 435, 70, 175, 120],
      ["p_embed", 635, 70, 175, 120], ["p_vector", 835, 70, 175, 120], ["p_rerank", 1035, 70, 175, 120],
-     ["p_quota", 1035, 345, 175, 120], ["p_llm", 835, 345, 175, 120], ["p_post", 635, 345, 175, 120],
+     ["p_quota", 1035, 345, 175, 120], ["p_clarify", 1035, 545, 175, 115], ["p_llm", 835, 345, 175, 120], ["p_post", 635, 345, 175, 120],
      ["p_persist", 335, 345, 200, 120], ["p_eval", 35, 345, 200, 120]],
    edges: [
      { f: "p_validate", t: "p_session" }, { f: "p_session", t: "p_guard" }, { f: "p_guard", t: "p_embed" },
      { f: "p_embed", t: "p_vector" }, { f: "p_vector", t: "p_rerank" }, { f: "p_rerank", t: "p_quota" },
-     { f: "p_quota", t: "p_llm" }, { f: "p_llm", t: "p_post" }, { f: "p_post", t: "p_persist", l: "respond", d: "The QueryResponse is returned here; persistence and evaluation continue in supervised background tasks." },
+     { f: "p_quota", t: "p_llm" },
+     { f: "p_quota", t: "p_clarify", l: "spread topics" }, { f: "p_clarify", t: "p_llm", l: "ask with options", d: "The model decides in the same call: answer, or one clarifying question with 2 to 4 options (outcome clarify)." }, { f: "p_llm", t: "p_post" }, { f: "p_post", t: "p_persist", l: "respond", d: "The QueryResponse is returned here; persistence and evaluation continue in supervised background tasks." },
      { f: "p_persist", t: "p_eval", l: "sampled" }] },
 
- { id: "dashboard", label: "Dashboard data flow", w: 1540, h: 760,
-   blurb: "How a dashboard page gets its data: the browser only calls its own origin, the proxy attaches credentials, the backend checks permissions, then reads Postgres through bounded sessions and caches. Governance pushes live updates over SSE.",
+ { id: "dashboard", label: "Dashboard data flow", w: 1540, h: 1000,
+   blurb: "How a dashboard page gets its data: the browser only calls its own origin, the proxy attaches credentials, the backend checks permissions, then reads Postgres through bounded sessions and caches. Heavy aggregates are precomputed snapshots; /admin/live tells open consoles which scopes changed, and Governance has its own SSE stream. Alerts, resource samples, model settings and citation sync run beside them.",
    groups: [
      { label: "Next.js (askdiq dashboard)", x: 220, y: 30, w: 280, h: 700, cls: "zone" },
-     { label: "askdiq-api", x: 530, y: 30, w: 720, h: 700, cls: "zone" }],
+     { label: "askdiq-api", x: 530, y: 30, w: 720, h: 900, cls: "zone" }],
    nodes: [
      ["d_browser", 20, 320, 180, 90], ["w_widget", 20, 540, 180, 110],
      ["d_middleware", 240, 70, 240, 90], ["d_tables", 240, 185, 240, 100], ["d_proxy", 240, 310, 240, 110], ["d_callback", 240, 560, 240, 110],
      ["d_authdeps", 555, 310, 210, 110],
      ["d_routes", 790, 120, 200, 100], ["d_sse", 790, 470, 200, 100],
      ["d_cache", 1025, 60, 200, 90], ["d_ro", 1025, 250, 200, 110], ["d_events", 1025, 440, 200, 100], ["d_jobs", 1025, 610, 200, 90],
-     ["postgres", 1290, 260, 230, 110], ["d_insights", 1290, 560, 230, 110], ["entra", 580, 600, 210, 90]],
+     ["postgres", 1290, 260, 230, 110], ["d_insights", 1290, 560, 230, 110], ["entra", 580, 600, 190, 90],
+     ["d_shell", 240, 430, 240, 110], ["d_modelsettings", 555, 110, 210, 110], ["d_live", 800, 610, 190, 100],
+     ["d_resources", 555, 770, 210, 110], ["d_alerts", 800, 770, 190, 110], ["d_snapshots", 1025, 770, 200, 120],
+     ["d_citations", 1290, 720, 230, 100], ["smtp", 1290, 870, 230, 76]],
    edges: [
      { f: "d_browser", t: "d_middleware", l: "page request", curve: 20 },
      { f: "d_browser", t: "d_tables", l: "render pages", curve: -20 },
@@ -813,7 +895,20 @@ var VIEWS = [
      { f: "postgres", t: "d_events", l: "NOTIFY askdiq_events" },
      { f: "d_jobs", t: "postgres", l: "SKIP LOCKED", curve: 40 },
      { f: "d_jobs", t: "d_insights", l: "insights.classify · rollup" },
-     { f: "d_insights", t: "postgres", l: "turn_insights · rollups" }] },
+     { f: "d_insights", t: "postgres", l: "turn_insights · rollups" },
+     { f: "d_browser", t: "d_shell", l: "navigate" },
+     { f: "d_shell", t: "d_proxy", l: "cached queries" },
+     { f: "d_live", t: "d_proxy", l: "SSE changed scopes", curve: 30 },
+     { f: "d_events", t: "d_live", l: "console.changed" },
+     { f: "d_routes", t: "d_modelsettings", l: "/admin/models" },
+     { f: "d_modelsettings", t: "postgres", l: "model_settings", curve: -60 },
+     { f: "d_routes", t: "d_snapshots", l: "get_snapshot", curve: -40 },
+     { f: "d_snapshots", t: "postgres", l: "dashboard_snapshots", curve: 30 },
+     { f: "d_snapshots", t: "d_events", l: "snapshot.updated" },
+     { f: "d_resources", t: "d_alerts", l: "resource rules" },
+     { f: "d_jobs", t: "d_alerts", l: "alerts.evaluate · notify" },
+     { f: "d_alerts", t: "smtp", l: "email", curve: 20 },
+     { f: "d_citations", t: "postgres", l: "citation_sources" }] },
 
  { id: "ingestion", label: "Ingestion", w: 1240, h: 650,
    blurb: "From an uploaded file to searchable chunks, as implemented in app/ingestion/service.py. Unchanged documents stop at the hash check, so re-running ingestion costs nothing.",
@@ -830,8 +925,8 @@ var VIEWS = [
      { f: "i_chunk", t: "i_diff" }, { f: "i_diff", t: "i_embed", l: "new only" },
      { f: "i_embed", t: "aoai", l: "embed_texts" }, { f: "i_embed", t: "i_store" }] },
 
- { id: "data", label: "Data model", w: 1160, h: 900,
-   blurb: "22 tables in one Postgres database. Teal dots are in production; violet dots arrive with preview/view. Solid lines are foreign keys; dashed lines are logical joins on request_id with no foreign key. Click a table for its key columns.",
+ { id: "data", label: "Data model", w: 1160, h: 1190,
+   blurb: "29 tables in one Postgres database (26 ORM models plus jobs, oidc_states and rate_limit_buckets from migrations). Solid lines are foreign keys; dashed lines are logical joins on request_id with no foreign key. Click a table for its key columns.",
    groups: [
      { label: "Content", x: 20, y: 30, w: 230, h: 260, cls: "zone" },
      { label: "Chat and feedback", x: 280, y: 30, w: 560, h: 260, cls: "zone" },
@@ -839,7 +934,8 @@ var VIEWS = [
      { label: "Observability and evaluation", x: 20, y: 330, w: 640, h: 260, cls: "zone" },
      { label: "Insights", x: 700, y: 330, w: 440, h: 260, cls: "zone" },
      { label: "Auth", x: 20, y: 630, w: 640, h: 250, cls: "zone" },
-     { label: "Platform (shared state)", x: 700, y: 630, w: 440, h: 250, cls: "zone" }],
+     { label: "Platform (shared state)", x: 700, y: 630, w: 440, h: 250, cls: "zone" },
+     { label: "Console: snapshots, alerts, monitoring, settings, citations, usage ledger", x: 20, y: 920, w: 1120, h: 250, cls: "zone" }],
    nodes: [
      ["t_documents", 45, 80, 180, 64], ["t_chunks", 45, 195, 180, 64],
      ["t_chat_sessions", 305, 80, 180, 64], ["t_chat_messages", 305, 195, 180, 64],
@@ -848,7 +944,9 @@ var VIEWS = [
      ["t_audit_log", 45, 385, 180, 64], ["t_latency_metrics", 245, 385, 180, 64], ["t_evaluation_records", 445, 385, 195, 64], ["t_test_ip_configs", 45, 495, 180, 64],
      ["t_turn_insights", 725, 385, 190, 64], ["t_insight_taxonomy", 935, 385, 190, 64], ["t_insight_daily_rollup", 725, 495, 190, 64], ["t_insight_llm_usage", 935, 495, 190, 64],
      ["t_users", 45, 690, 180, 64], ["t_access_requests", 45, 800, 180, 64], ["t_auth_sessions", 300, 690, 190, 64], ["t_oidc_states", 300, 800, 190, 64],
-     ["t_jobs", 725, 690, 190, 64], ["t_rate_limit_buckets", 935, 690, 190, 64]],
+     ["t_jobs", 725, 690, 190, 64], ["t_rate_limit_buckets", 935, 690, 190, 64],
+     ["t_dashboard_snapshots", 45, 975, 200, 64], ["t_alerts", 280, 975, 180, 64], ["t_resource_samples", 495, 975, 190, 64], ["t_model_settings", 725, 975, 190, 64],
+     ["t_citation_sources", 45, 1085, 200, 64], ["t_citation_sync_state", 280, 1085, 200, 64], ["t_usage_turns", 725, 1085, 190, 64]],
    edges: [
      { f: "t_chunks", t: "t_documents", l: "document_id" },
      { f: "t_chat_messages", t: "t_chat_sessions", l: "session_id" },
@@ -860,7 +958,9 @@ var VIEWS = [
      { f: "t_latency_metrics", t: "t_chat_messages", l: "request_id", dash: true, d: "Logical join on request_id (no foreign key)." },
      { f: "t_access_requests", t: "t_users", l: "user_id" },
      { f: "t_auth_sessions", t: "t_users", l: "user_id" },
-     { f: "t_brand_settings", t: "t_brand_assets", l: "logo_*, favicon" }] }
+     { f: "t_brand_settings", t: "t_brand_assets", l: "logo_*, favicon" },
+     { f: "t_usage_turns", t: "t_chat_messages", l: "triggers", dash: true, d: "Row triggers on chat_messages, latency_metrics and chat_sessions keep the ledger in step; no foreign key." },
+     { f: "t_citation_sources", t: "t_citation_sync_state", l: "watermark", dash: true, d: "citation_sync_state holds how far each origin (query audit rows, evaluation records) has been expanded into citation_sources." }] }
 ];
 
 /* ------------------------------------------------------------------ */
@@ -1182,7 +1282,7 @@ function showIntro() {
   });
   w.appendChild(how);
   if (v.id === "context" || v.id === "containers") {
-    w.appendChild(h("div", "note", "Contract change: production /query accepts X-API-Key + X-Client-Id from the website server. On preview/view /query also needs a signed-in SSO session. Keep a service path for the website before preview/view ships."));
+    w.appendChild(h("div", "note", "Two callers, one /query: the website server uses X-API-Key + X-Client-Id (require_chat_actor's key path); the console sends the proxy key plus the signed-in session. A request carrying a session header never falls back to the key path."));
   }
 }
 

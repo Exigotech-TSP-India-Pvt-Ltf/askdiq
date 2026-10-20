@@ -1,4 +1,4 @@
-"""Job queue (plan B1.3): enqueue/claim with SKIP LOCKED, retries, worker."""
+"""Job queue: enqueue/claim with SKIP LOCKED, retries, worker."""
 
 from __future__ import annotations
 
@@ -365,7 +365,7 @@ def _alembic(*args: str) -> str:
 
 
 async def test_migrations_upgrade_downgrade_upgrade(engine):
-    """B1.3.1 / B1.4.2: both migrations round-trip on the test database."""
+    """Both migrations round-trip on the test database."""
     await engine.dispose()
     heads = await asyncio.to_thread(_alembic, "heads")
     assert heads.count("(head)") == 1

@@ -1,5 +1,5 @@
 /**
- * Allow-listed sign-in error codes (planchanges4 F1.2.1). The route handlers
+ * Allow-listed sign-in error codes. The route handlers
  * redirect to `/login?error=<code>`; the login page only ever renders the
  * fixed message for a known code, never the raw query value.
  */

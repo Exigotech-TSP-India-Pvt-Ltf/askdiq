@@ -1,4 +1,4 @@
-"""`/auth/*` routes (planchanges4 B2.4.1) against the in-process mock IdP.
+"""`/auth/*` routes against the in-process mock IdP.
 
 Real sessions in Postgres (marker ``real_auth``; runs in CI). Covers: first
 login creates a pending user, SUPERADMIN_EMAILS bootstrap, upsert on ``oid``

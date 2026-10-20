@@ -44,7 +44,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
 
 # main.py (at backend/ root) defines `app` -> module path "main:app".
 # Multiple workers are safe: rate limits, OIDC state, the job queue and event
-# fan-out are shared through Postgres (planchanges4 B1.4), and a request's
+# fan-out are shared through Postgres, and a request's
 # post-answer writes stay inside the one process that served it.
 # WEB_CONCURRENCY sets the worker count (infra/scale-out/docker-compose.yml sets 2 per
 # replica); size the DB pool with the rule in docs/deployment/docker-and-auth-contract.md. Shell form so the

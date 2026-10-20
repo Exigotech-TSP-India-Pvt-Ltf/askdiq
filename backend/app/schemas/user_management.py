@@ -1,5 +1,5 @@
 """Request/response models for User Management (`/admin/users-accounts`,
-`/admin/access-requests`; newplan §7.6 and §7.8)."""
+`/admin/access-requests`)."""
 
 from __future__ import annotations
 

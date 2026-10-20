@@ -1,4 +1,4 @@
-"""User Management API (planchanges4 B2.4.2): `/admin/users-accounts` and
+"""User Management API: `/admin/users-accounts` and
 `/admin/access-requests`.
 
 Real sessions in Postgres (marker ``real_auth``; runs in CI). Covers list

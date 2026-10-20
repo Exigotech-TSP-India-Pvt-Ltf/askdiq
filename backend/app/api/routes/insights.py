@@ -1,4 +1,4 @@
-"""``/admin/insights/*``: Analytics (Chatbot Insights) endpoints (newplan 6.3, 6.4).
+"""``/admin/insights/*``: Analytics (Chatbot Insights) endpoints.
 
 Every read route needs ``dashboard:read``; taxonomy writes need
 ``taxonomy:write`` (superadmin). The aggregation happens server-side and

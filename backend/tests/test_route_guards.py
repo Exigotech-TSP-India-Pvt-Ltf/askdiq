@@ -1,4 +1,4 @@
-"""Route-walk guard tests (planchanges4 B2.3.4, OWASP A01: deny by default).
+"""Route-walk guard tests (OWASP A01: deny by default).
 
 Walks ``app.routes`` and fails the build when a non-allow-listed route has no
 guard dependency, then calls every guarded route to prove the guards answer
@@ -100,7 +100,7 @@ EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/access-requests": MANAGE,
     "/admin/auth-audit": Permission.AUDIT_AUTH_READ,
 }
-# Chart-aggregation reads added by PR-14 (planchanges4 B7.1, B7.2): each must
+# Chart-aggregation reads added by PR-14: each must
 # exist and need exactly dashboard:read.
 EXPECTED_B7_READS: dict[str, str] = {
     "/admin/dashboard/activity": Permission.DASHBOARD_READ,
@@ -326,7 +326,7 @@ async def test_no_session_gets_401_everywhere(raw_client: httpx.AsyncClient) -> 
 async def test_missing_service_key_gets_401_even_with_session(
     raw_client: httpx.AsyncClient, admin_user: None
 ) -> None:
-    """B2.5: a valid session alone never reaches the API (proxy-only)."""
+    """A valid session alone never reaches the API (proxy-only)."""
     for headers in ({}, {"X-API-Key": "wrong-key"}, {"X-API-Key": ""}):
         for method, path, _ in guarded_endpoints():
             response = await _call(

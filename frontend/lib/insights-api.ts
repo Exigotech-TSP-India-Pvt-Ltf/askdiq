@@ -1,5 +1,5 @@
 /**
- * Typed client for `/admin/insights/*` (newplan §6.3, §6.4; backend PR-13,
+ * Typed client for `/admin/insights/*` (backend PR-13,
  * `backend/app/schemas/insights.py` and `backend/app/api/routes/insights.py`).
  *
  * Kept separate from `lib/api.ts` (owned by the PR-16 follow-up); it uses the

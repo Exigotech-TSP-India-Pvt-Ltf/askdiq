@@ -4,7 +4,7 @@ import React, { createContext, useCallback, useContext, useMemo } from "react";
 import { useDeepLink } from "@/lib/use-deep-link";
 
 /**
- * Global date range (newplan §15.1), shared like `AudienceProvider` and kept
+ * Global date range, shared like `AudienceProvider` and kept
  * in the URL so links and back / forward restore it:
  *   preset  -> `?range=24h|30d|90d` (7d is the default and leaves the URL clean)
  *   custom  -> `?from=YYYY-MM-DD&to=YYYY-MM-DD`

@@ -48,7 +48,7 @@ const TONE: Record<ToastTone, { icon: React.ElementType; className: string }> = 
 };
 
 /**
- * Global toasts (newplan §15.1): Motion enter / exit inside a `role="status"`
+ * Global toasts: Motion enter / exit inside a `role="status"`
  * live region, an Undo action and auto-dismiss that pauses while the
  * pointer or keyboard focus is on the toast.
  */

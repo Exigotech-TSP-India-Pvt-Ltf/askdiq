@@ -26,7 +26,7 @@ export interface CostInsightsProps {
 }
 
 /**
- * Usage & Cost chart additions (planchanges4 F3.5, newplan §15.4): cost by
+ * Usage & Cost chart additions: cost by
  * stage, the linear month-end forecast and the prompt cache-hit ratio. All
  * three read optional fields of `/admin/usage/summary`; each shows its own
  * empty state when the server does not send them.

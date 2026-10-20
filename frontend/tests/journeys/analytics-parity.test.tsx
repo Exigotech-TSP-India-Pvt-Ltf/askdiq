@@ -1,5 +1,5 @@
 /**
- * Parity with the reference HTML (planchanges4 F6.4, newplan §6.4): the page
+ * Parity with the reference HTML: the page
  * renders the recorded `/admin/insights/*` responses for the HTML's own
  * dataset (49 conversations, 117 exchanges) and must show the HTML's numbers.
  */
