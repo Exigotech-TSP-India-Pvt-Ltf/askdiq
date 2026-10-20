@@ -243,7 +243,7 @@ block would drop the server-level security headers).
 ```bash
 # From backend/ (venv python). CI-sized smoke: 50 users for 15 s; exits 1 on a breach.
 python scripts/run_admin_load_test.py --smoke --base-url https://askdiq.ethub.co
-# Full admin profile (newplan §13.5): 50, then 100 users for 10 minutes.
+# Full admin profile: 50, then 100 users for 10 minutes.
 python scripts/run_admin_load_test.py --profile admin --concurrency 100 --duration 600
 # Chat profile against a fake-LLM stack; add loadtest-<n> to RATE_LIMIT_EXEMPT_ACTORS.
 python scripts/run_admin_load_test.py --profile chat --concurrency 50 --duration 120
@@ -251,7 +251,7 @@ python scripts/run_admin_load_test.py --profile chat --concurrency 50 --duration
 
 The API key comes from `--api-key` or `API_KEY_NAME`. The JSON report
 (`backend/reports/admin_load_report.json`, or `--output`) lists p50/p70/p95/p99,
-error % and 429s per route, plus every newplan §13.4 budget check: aggregation
+error % and 429s per route, plus every latency budget check: aggregation
 GETs p95 < 600 ms, paginated lists p95 < 250 ms, and an error rate below 0.5 %
 (429s excluded). `--report-only` always exits 0; `--profile usage` reproduces
 the original `/admin/usage/*` mix.

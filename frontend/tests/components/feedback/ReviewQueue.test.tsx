@@ -1,5 +1,5 @@
 /**
- * planchanges4 F5.3: keyboard triage calls the right endpoints, optimistic
+ * Keyboard triage calls the right endpoints, optimistic
  * updates with undo, 409 conflict toast, operator read-only, bulk actions,
  * the detail drawer and idle prefetch of the next page.
  */

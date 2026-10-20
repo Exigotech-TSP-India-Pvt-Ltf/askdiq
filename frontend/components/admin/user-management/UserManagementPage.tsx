@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * User Management (newplan §7.8, §15.4; planchanges4 F1.4): KPI strip and
+ * User Management: KPI strip and
  * charts, then Users, Access Requests, Roles & Permissions and Audit Trail
  * tabs. Superadmin only (`users:manage`); the API enforces the same guard.
  */

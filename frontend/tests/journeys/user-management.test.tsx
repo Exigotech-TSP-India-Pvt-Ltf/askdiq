@@ -1,5 +1,5 @@
 /**
- * User Management journey (planchanges4 F1.4, newplan §7.8): a superadmin
+ * User Management journey: a superadmin
  * drills from a chart into the Users tab, inspects a pending user, approves
  * their request from the queue with the keyboard, sees KPIs and lists
  * refresh, checks the audit trail, and the page follows light / dark

@@ -216,7 +216,7 @@ export function seriesColor(ct: ChartTheme, series: SeriesDef, index: number): s
   return series.color ?? ct.categorical[index % ct.categorical.length];
 }
 
-/** HTML legend; hovering an item dims the other series (newplan §15.2). */
+/** HTML legend; hovering an item dims the other series. */
 export function Legend({
   series,
   ct,

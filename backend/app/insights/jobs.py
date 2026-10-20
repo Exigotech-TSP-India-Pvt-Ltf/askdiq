@@ -1,4 +1,4 @@
-"""Insights job handlers and triggers (planchanges4 B6.2.3).
+"""Insights job handlers and triggers.
 
 - ``insights.classify``: one per assistant message (dedupe on message id),
   enqueued after the exchange is persisted; never runs in the request path.

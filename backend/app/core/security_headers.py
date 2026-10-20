@@ -1,4 +1,4 @@
-"""Response security headers (OWASP A02, newplan section 12.2).
+"""Response security headers (OWASP A02).
 
 A pure ASGI middleware (no ``BaseHTTPMiddleware``) so streaming responses are
 not buffered. Header values come from settings; HSTS is only emitted when

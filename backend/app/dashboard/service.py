@@ -1,4 +1,4 @@
-"""Windowed dashboard KPIs, sparklines, deltas and chart series (B7.1).
+"""Windowed dashboard KPIs, sparklines, deltas and chart series.
 
 ``window_payload`` runs the single-statement aggregates of
 ``app.dashboard.queries`` in parallel (``ScopedRunner.gather``: one session

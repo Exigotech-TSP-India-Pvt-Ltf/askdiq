@@ -1,4 +1,4 @@
-"""HTTP efficiency (plan B1.5): gzip, ETag/304, pool, statement timeout,
+"""HTTP efficiency: gzip, ETag/304, pool, statement timeout,
 gather_scoped and the SSE helper."""
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 /**
- * Phase F7 integration journey (planchanges4 F7.3): a superadmin opens
+ * Phase F7 integration journey: a superadmin opens
  * Settings from the sidebar, changes the brand colour (CSS variables update
  * app-wide without a reload), the logo pre-check rejects a bad file, the
  * taxonomy tab archives an entry, and an admin (non-superadmin) has no

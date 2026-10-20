@@ -4,8 +4,8 @@ Revision ID: 72125f44984d
 Revises: 5712ebd9d3c9
 Create Date: 2026-10-15 16:00:00.000000
 
-Composite indexes for the Governance endpoints (planchanges4 B4.2, newplan
-§13.2):
+Composite indexes for the Governance endpoints (keyset
+pagination):
 
 - ``audit_log (created_at, id)``: keyset pagination of ``/governance/logs``
   (newest first = backward index scan) and the export stream.

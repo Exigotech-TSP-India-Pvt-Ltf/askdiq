@@ -1,4 +1,4 @@
-/** Analytics page (Chatbot Insights port, planchanges4 F6, newplan §6.4). */
+/** Analytics page (Chatbot Insights port). */
 export { AnalyticsView } from "./AnalyticsView";
 export { ANALYTICS_NAV_ITEM } from "./nav";
 export { KpiStrip, KPIS } from "./KpiStrip";

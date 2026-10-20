@@ -28,7 +28,7 @@ function renderWithToasts(options: ToastOptions) {
   );
 }
 
-describe("ToastProvider (F0.6.2)", () => {
+describe("ToastProvider", () => {
   it("announces toasts through a persistent role=status live region", () => {
     renderWithToasts({ title: "Feedback promoted", description: "Added to the golden set", tone: "success" });
     const region = screen.getByRole("status", { name: "Notifications" });

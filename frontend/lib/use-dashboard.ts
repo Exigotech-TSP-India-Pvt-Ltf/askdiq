@@ -16,7 +16,7 @@ import {
 } from "@/lib/dashboard-api";
 import type { Audience } from "@/lib/types";
 
-/** Feed refresh while the live stream is down and the tab is visible (newplan §13.3). */
+/** Feed refresh while the live stream is down and the tab is visible. */
 export const ACTIVITY_REFRESH_MS = 15_000;
 const SUMMARY_STALE_MS = 30_000;
 const AUDIENCES: readonly Audience[] = ["overview", "users", "testing"];

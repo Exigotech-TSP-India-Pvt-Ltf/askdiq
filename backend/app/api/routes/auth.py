@@ -1,4 +1,4 @@
-"""`/auth/*`: SSO sign-in, current user, logout and access requests (B2.4.1).
+"""`/auth/*`: SSO sign-in, current user, logout and access requests.
 
 The Next.js proxy is the only caller (see ``app.auth.deps`` for the header
 contract). ``/auth/sso/*`` is public to users (no session yet) but still

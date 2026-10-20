@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Analytics page state lives in the URL (planchanges4 F6.1): tab, filters,
+ * Analytics page state lives in the URL: tab, filters,
  * sort and page round-trip through `?tab=...&period=...`. Every value is
  * validated against the same allow-lists as the backend, so a hand-edited
  * URL can never send an invalid request. Writes use `history.replaceState`

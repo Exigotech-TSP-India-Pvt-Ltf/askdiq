@@ -16,7 +16,7 @@ interface CopyButtonProps {
   className?: string;
 }
 
-/** Copy-to-clipboard icon button with a "Copied" tooltip (newplan §15.1). */
+/** Copy-to-clipboard icon button with a "Copied" tooltip. */
 export function CopyButton({ value, label = "Copy", className = "" }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);

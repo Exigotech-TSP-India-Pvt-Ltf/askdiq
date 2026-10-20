@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Users tab (planchanges4 F1.4.2): TableCard with search, one Filters popover
+ * Users tab: TableCard with search, one Filters popover
  * (role, status) and pagination. Filters, sort, page and the open drawer are
  * URL state, so drill-downs from the KPI cards and charts land here.
  */

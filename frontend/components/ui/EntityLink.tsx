@@ -20,7 +20,7 @@ interface EntityLinkProps {
 
 /**
  * Renders any entity id as a deep link to the page that owns it, plus a copy
- * button (newplan §1, §15.1). Clicks do not bubble to clickable table rows.
+ * button. Clicks do not bubble to clickable table rows.
  */
 export function EntityLink({ entity, children, copyable, mono, className = "" }: EntityLinkProps) {
   const carry = useCarryHref();

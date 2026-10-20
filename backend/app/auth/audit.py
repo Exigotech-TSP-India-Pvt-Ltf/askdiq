@@ -1,4 +1,4 @@
-"""Auth audit events (newplan §7.5) written to the immutable ``audit_log``.
+"""Auth audit events written to the immutable ``audit_log``.
 
 Every sign-in, access decision and user-management action is recorded in the
 caller's transaction (``commit=False``), so the audit row and the change it

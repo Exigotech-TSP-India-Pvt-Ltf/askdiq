@@ -73,7 +73,7 @@ interface StatusTimelineProps {
 }
 
 /**
- * 24 h status strip (newplan §15.4 Governance): one cell per hour coloured by
+ * 24 h status strip: one cell per hour coloured by
  * the hour's error rate against the health thresholds, with a marker on hours
  * that had CRITICAL / ALERT incidents. A marker links to Logs for that hour.
  */

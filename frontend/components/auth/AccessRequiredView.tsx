@@ -220,7 +220,7 @@ function RequestForm({ onCreated, resubmit }: { onCreated: () => void; resubmit:
 
 /**
  * Shown in place of any dashboard route for signed-in users without an
- * approved role (newplan §7.7, planchanges4 F1.2.2). Polls `/auth/me`; the
+ * approved role. Polls `/auth/me`; the
  * route gate swaps in the dashboard as soon as the status flips to active,
  * with no re-login.
  */

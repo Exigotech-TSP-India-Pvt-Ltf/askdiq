@@ -22,7 +22,7 @@ export function incidentLogsHref(item: GovernanceLogItem): string {
 }
 
 /**
- * Recent CRITICAL / ALERT rows (newplan §4.2). Rows that arrive over SSE are
+ * Recent CRITICAL / ALERT rows. Rows that arrive over SSE are
  * in `freshIds` and highlight briefly; each row links to Logs pre-filtered.
  */
 export function IncidentList({

@@ -45,10 +45,16 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
 from app.core.serialization import sanitize_csv_cell
-from app.dashboard import usage_series
+from app.dashboard import usage_rollup, usage_series
 from app.dashboard.queries import cached_tokens_sql
 from app.dashboard.snapshots import CACHE_PREFIX as SNAPSHOT_CACHE_PREFIX
-from app.dashboard.snapshots import Gather, GatherRunner, get_snapshot, register
+from app.dashboard.snapshots import (
+    Gather,
+    GatherRunner,
+    get_snapshot,
+    register,
+    register_maintenance,
+)
 from app.dashboard.window import utcnow
 from app.governance.audience import (
     Audience,
@@ -301,14 +307,13 @@ ROLLING_RANGE_SLACK = timedelta(minutes=5)
 
 
 async def _usage_summary_snapshot(gather: Gather, params: dict) -> dict:
-    def parse(raw: str | None) -> datetime | None:
-        return parse_usage_bound(raw, "date")
-
     if "span_seconds" in params:
         to_dt: datetime | None = utcnow()
         from_dt = to_dt - timedelta(seconds=params["span_seconds"])
     else:
-        from_dt, to_dt = parse(params["from_date"]), parse(params["to_date"])
+        # Same bounds as the request: a date-only ``to_date`` covers that
+        # whole UTC day (it used to stop at its midnight, leaving out today).
+        from_dt, to_dt = usage_date_range(params["from_date"], params["to_date"])
     async with _agg_semaphore:
         return await _compute_usage_summary(
             GatherRunner(gather),  # type: ignore[arg-type]
@@ -463,45 +468,40 @@ async def _compute_usage_summary(
     to_dt: datetime | None,
     settings: Settings,
 ) -> dict:
-    """Independent aggregates run in parallel, one short-lived session each."""
+    """Independent aggregates run in parallel, one short-lived session each.
+
+    Every one reads the hourly rollup plus a live aggregation of the rows it
+    does not cover yet (``app.dashboard.usage_rollup``): any range costs a
+    small indexed aggregation and equals the raw-row computation.
+    """
     now = utcnow()
     (
         row,
-        (ingest_embed_tokens, ingest_cost),
-        outcome_rows,
-        lat_row,
+        (avg_lat, p50_lat, p95_lat),
         stage_series,
         forecast,
     ) = await runner.gather(
-        lambda s: _summary_totals(s, audience, from_dt, to_dt),
-        lambda s: _ingest_overhead(s, audience, from_dt, to_dt),
-        lambda s: _outcome_counts(s, audience, from_dt, to_dt),
-        lambda s: _latency_stats(s, audience, from_dt, to_dt),
+        lambda s: usage_rollup.totals(s, audience, from_dt, to_dt),
+        lambda s: usage_rollup.latency(s, audience, from_dt, to_dt),
         lambda s: usage_series.cost_by_stage_series(
             s, audience, from_dt, to_dt, now, settings
         ),
         lambda s: usage_series.month_cost_forecast(s, audience, now, settings),
     )
+    ingest_embed_tokens, ingest_cost = row.ingest_tokens, row.ingest_cost
     total_turns = row.total_turns
-    sum_prompt = int(row.sum_prompt)
-    sum_completion = int(row.sum_completion)
-    sum_total_tokens = int(row.sum_total_tokens)
-    sum_reasoning = int(row.sum_reasoning)
-    sum_query_embed = int(row.sum_query_embed)
-    sum_guardrail_embed = int(row.sum_guardrail_embed)
-    sum_cost = float(row.sum_cost)
+    sum_prompt = row.sum_prompt
+    sum_completion = row.sum_completion
+    sum_total_tokens = row.sum_total_tokens
+    sum_reasoning = row.sum_reasoning
+    sum_query_embed = row.sum_query_embed
+    sum_guardrail_embed = row.sum_guardrail_embed
+    sum_cost = row.sum_cost
     sum_cached = min(int(row.sum_cached), sum_prompt)
-    estimated_turns = int(row.estimated_turns)
+    estimated_turns = row.estimated_turns
     actual_turns = max(0, total_turns - estimated_turns)
 
-    outcomes_dist = {
-        "answered": outcome_rows.get("answered", 0),
-        "ungrounded": outcome_rows.get("ungrounded", 0),
-        "blocked": outcome_rows.get("blocked", 0),
-        "conversational": outcome_rows.get("conversational", 0),
-        "llm_failed": outcome_rows.get("llm_failed", 0),
-        "clarify": outcome_rows.get("clarify", 0),
-    }
+    outcomes_dist = dict(row.outcomes)
 
     # Groundedness pass rate over GENERATION_OUTCOMES only
     gen_turns = sum(outcomes_dist[k] for k in GENERATION_OUTCOMES)
@@ -597,12 +597,12 @@ async def _compute_usage_summary(
             if total_turns > 0
             else 0,
             "latency": {
-                "avg_ms": round(float(lat_row.avg_lat), 1),
-                "p50_ms": round(float(lat_row.p50_lat), 1),
-                "p95_ms": round(float(lat_row.p95_lat), 1),
+                "avg_ms": round(avg_lat, 1),
+                "p50_ms": round(p50_lat, 1),
+                "p95_ms": round(p95_lat, 1),
             },
         },
-        # B7.4 chart additions (contract: dashboard-aggregations.md §4).
+        # Chart additions (contract: dashboard-aggregations.md §4).
         "cost_by_stage_series": stage_series,
         "forecast": forecast,
         "cache": usage_series.cache_stats(sum_cached, sum_prompt),
@@ -1397,18 +1397,34 @@ _PRESET_DAYS = (7, 30, 90)
 _DAY_SECONDS = 86_400
 
 register(AUDIENCE_COUNTS_KIND, _audience_counts_snapshot, [{}])
-register(
-    USAGE_SUMMARY_KIND,
-    _usage_summary_snapshot,
-    [
+
+
+def _summary_defaults() -> list[dict[str, Any]]:
+    """Per audience: all time, the rolling presets, and the UTC-day ranges the
+    Usage page sends for its presets (``rangeUtcDays``: "Last 24 hours" is the
+    two days it touches, "Last N days" the N days ending today)."""
+    today = utcnow().date()
+    day_ranges = [
+        {
+            "from_date": (today - timedelta(days=n - 1)).isoformat(),
+            "to_date": today.isoformat(),
+        }
+        for n in (2, *_PRESET_DAYS)
+    ]
+    return [
         {"scope": _SUMMARY_CACHE_SCOPE, "audience": audience, **window}
         for audience in _AUDIENCES
         for window in (
             {"from_date": None, "to_date": None},
             *({"span_seconds": d * _DAY_SECONDS} for d in _PRESET_DAYS),
+            *day_ranges,
         )
-    ],
-)
+    ]
+
+
+register(USAGE_SUMMARY_KIND, _usage_summary_snapshot, _summary_defaults)
+# Roll finished hours into usage_hourly_rollup every refresher cycle.
+register_maintenance("usage_rollup", usage_rollup.sync_usage_rollup)
 
 
 def _list_range_defaults() -> list[tuple[datetime | None, datetime | None]]:

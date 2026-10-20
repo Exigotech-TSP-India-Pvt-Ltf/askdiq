@@ -78,7 +78,7 @@ export interface KpiDef {
   key: DashboardKpiKey;
   label: string;
   icon: LucideIcon;
-  /** Deep link to the page that owns the number (newplan §1). */
+  /** Deep link to the page that owns the number. */
   href: string;
   /** Admin-relative GET warmed on intent (the target page's first query). */
   prefetchPath: string;

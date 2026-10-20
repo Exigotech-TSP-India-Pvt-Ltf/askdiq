@@ -1,4 +1,4 @@
-"""Shared state (plan B1.4): StateBackend, PostgresState, event bus, semaphores."""
+"""Shared state: StateBackend, PostgresState, event bus, semaphores."""
 
 from __future__ import annotations
 

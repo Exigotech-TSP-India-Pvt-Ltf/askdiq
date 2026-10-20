@@ -1,5 +1,5 @@
-"""RBAC: permission table (B2.3.2), dependency family (B2.3.3), CSRF (B2.3.5),
-IDOR (B2.3.4) and the proxy contract (B2.5) with real sessions in Postgres."""
+"""RBAC: permission table, dependency family, CSRF,
+IDOR and the proxy contract with real sessions in Postgres."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from app.models.db_models import User
 from tests.auth_helpers import make_user, session_headers
 
 # ---------------------------------------------------------------------------
-# B2.3.2 permission matrix, generated from newplan §7.3
+# Permission matrix (role x page access)
 # ---------------------------------------------------------------------------
 
 # (capability, permissions, operator, admin, superadmin)
@@ -47,7 +47,7 @@ SECTION_7_3 = [
     ),
     ("User Management", {Permission.USERS_MANAGE}, 0, 0, 1),
     ("View the auth audit trail", {Permission.AUDIT_AUTH_READ}, 0, 0, 1),
-    # planchanges4 B2.3.2: superadmin also owns branding and taxonomy.
+    # Superadmin also owns branding and taxonomy.
     ("Branding", {Permission.BRANDING_WRITE}, 0, 0, 1),
     ("Taxonomy", {Permission.TAXONOMY_WRITE}, 0, 0, 1),
     ("Models and pricing", {Permission.MODELS_WRITE}, 0, 0, 1),
@@ -99,7 +99,7 @@ def test_only_active_users_hold_permissions(status: UserStatus) -> None:
 
 
 # ---------------------------------------------------------------------------
-# B2.3.3 dependency family with real sessions (Postgres, runs in CI)
+# Dependency family with real sessions (Postgres, runs in CI)
 # ---------------------------------------------------------------------------
 
 DASHBOARD_ROUTE = "/admin/usage/test-ips"
@@ -210,7 +210,7 @@ async def test_revoked_session_is_401(
 async def test_missing_service_key_is_401_even_with_valid_session(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """B2.5: the backend only answers our proxy."""
+    """The backend only answers our proxy."""
     user = await make_user(db_session, role="superadmin", status="active")
     headers = await session_headers(db_session, user)
     for key in ("", "wrong-service-key"):
@@ -221,7 +221,7 @@ async def test_missing_service_key_is_401_even_with_valid_session(
 
 
 # ---------------------------------------------------------------------------
-# B2.3.5 CSRF on cookie-authenticated state changes
+# CSRF on cookie-authenticated state changes
 # ---------------------------------------------------------------------------
 
 
@@ -269,7 +269,7 @@ async def test_safe_methods_need_no_csrf_headers(
 
 
 # ---------------------------------------------------------------------------
-# B2.3.4 IDOR: chat sessions are owned by the signed-in user
+# IDOR: chat sessions are owned by the signed-in user
 # ---------------------------------------------------------------------------
 
 

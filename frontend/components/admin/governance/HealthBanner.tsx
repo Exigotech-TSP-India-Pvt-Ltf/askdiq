@@ -61,7 +61,7 @@ function SignalChip({ name, signal }: { name: string; signal: HealthSignal }) {
 }
 
 /**
- * Overall health banner (newplan §4.2). The background and border animate
+ * Overall health banner. The background and border animate
  * between status colours (Motion), so a change from Healthy to Degraded is
  * noticed without a jarring swap. Colours come from the theme tokens.
  */

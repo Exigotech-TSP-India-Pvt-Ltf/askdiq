@@ -1,4 +1,4 @@
-"""Shared state backends (newplan section 13.6: Postgres instead of Redis).
+"""Shared state backends (Postgres instead of Redis).
 
 `StateBackend` covers the small amount of state that must be shared by every
 uvicorn worker and replica:

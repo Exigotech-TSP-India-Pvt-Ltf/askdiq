@@ -1,9 +1,9 @@
 /**
- * Typed client for the entity pages (planchanges4 F3.2 to F3.4): Visitors,
+ * Typed client for the entity pages: Visitors,
  * Conversations and Documents, list and detail.
  *
- * Contract: `docs/technical/frontend/contracts/entity-stats.md` (the backend PR-14,
- * planchanges4 B7.2 / B7.3, implements it). Every new endpoint and field is
+ * Contract: `docs/technical/frontend/contracts/entity-stats.md` (the backend PR-14
+ * implements it). Every new endpoint and field is
  * ADDITIVE: the pages keep rendering existing data when an endpoint answers
  * 404 / 405 / 501 (not deployed yet), and the charts fed by it show their
  * empty state. Nothing here invents data.
@@ -155,7 +155,7 @@ export interface ConversationHeader {
 }
 
 // ---------------------------------------------------------------------------
-// B7.2: visitors
+// Visitors
 // ---------------------------------------------------------------------------
 
 export interface RangeParams {
@@ -267,7 +267,7 @@ export interface VisitorTimeline {
 }
 
 // ---------------------------------------------------------------------------
-// B7.2: conversations
+// Conversations
 // ---------------------------------------------------------------------------
 
 export interface TurnsBin {
@@ -363,7 +363,7 @@ export interface PromoteResult {
 }
 
 // ---------------------------------------------------------------------------
-// B7.3: documents
+// Documents
 // ---------------------------------------------------------------------------
 
 export interface CitedDocument {
@@ -534,9 +534,9 @@ export interface VisitorListParams {
   sort?: string;
   limit?: number;
   offset?: number;
-  /** B7.2 heatmap filter: visitors with a session starting on this weekday (0 = Mon). */
+  /** Heatmap filter: visitors with a session starting on this weekday (0 = Mon). */
   weekday?: number | null;
-  /** B7.2 heatmap filter: ... and in this hour (0 to 23). */
+  /** Heatmap filter: ... and in this hour (0 to 23). */
   hour?: number | null;
   from?: string;
   to?: string;
@@ -583,10 +583,10 @@ export interface ConversationListParams {
   sort?: string;
   limit?: number;
   offset?: number;
-  /** B7.2 histogram filter, inclusive. */
+  /** Histogram filter, inclusive. */
   min_turns?: number | null;
   max_turns?: number | null;
-  /** B7.2 outcome-bar filter: conversations with a turn of this outcome ... */
+  /** Outcome-bar filter: conversations with a turn of this outcome ... */
   outcome?: string | null;
   /** ... on this day (`YYYY-MM-DD`). */
   day?: string | null;

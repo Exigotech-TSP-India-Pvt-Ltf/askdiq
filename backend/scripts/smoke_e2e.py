@@ -10,7 +10,7 @@ Base checks always run. Later PRs register sign-in and role journeys in
 cookie-carrying ``httpx.AsyncClient`` is shared by every step so a journey
 can sign in once and reuse the session cookie.
 
-``--journey signin`` (PR-18, planchanges4 F1.5) drives the SSO sign-in
+``--journey signin`` (PR-18) drives the SSO sign-in
 through port 3000 against the backend's mock Entra IdP, exactly as a browser
 would: ``/login`` -> ``/auth/login`` (state cookie) -> ``/mock-idp`` authorize
 form -> ``/auth/callback`` (httpOnly session cookie) -> ``/api/proxy/auth/me``
@@ -55,7 +55,7 @@ HTTP_SERVER_ERROR = 500
 HTTP_TEMPORARY_REDIRECT = 307
 HTTP_PERMANENT_REDIRECT = 308
 EVALUATION_LIVE_PATH = "/admin/evaluation-live"
-# Retired routes that must redirect to Evaluation (Live) (newplan §2.3).
+# Retired routes that must redirect to Evaluation (Live).
 LEGACY_EVALUATION_PATHS = ("/admin/evaluation", "/evaluation")
 REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 SESSION_COOKIE = "askdiq_session"

@@ -47,7 +47,7 @@ function Probe({ permission = "users:manage" as Permission }) {
   );
 }
 
-describe("AuthProvider: real state from GET /auth/me (F1.1.4)", () => {
+describe("AuthProvider: real state from GET /auth/me", () => {
   it.each([
     ["superadmin", "active", true],
     ["admin", "active", false],
@@ -219,7 +219,7 @@ describe("AuthProvider: real state from GET /auth/me (F1.1.4)", () => {
   });
 });
 
-describe("route gate: every status x route pair (F1.2.3)", () => {
+describe("route gate: every status x route pair", () => {
   const ROUTES = ["/chat", "/chat/s1", "/admin", "/admin/feedback", "/documents", "/admin/user-management"];
   const CASES: [string, ReturnType<typeof makeMe> | null, (route: string) => GateDecision][] = [
     ["signed out", null, () => "login"],

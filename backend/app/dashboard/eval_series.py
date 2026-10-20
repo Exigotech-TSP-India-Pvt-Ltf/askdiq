@@ -1,4 +1,4 @@
-"""Evaluation (Live) chart additions (B7.4): quality dimensions of the current
+"""Evaluation (Live) chart additions: quality dimensions of the current
 vs previous run and the pass-rate trend, for ``GET /metrics/evaluation/live``.
 
 What a "run" is depends on the view the endpoint already serves:

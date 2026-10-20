@@ -28,7 +28,7 @@ const TAB_PANELS: Record<SettingsTab, () => JSX.Element> = {
 
 const isSettingsTab = (value: string | null): value is SettingsTab => SETTINGS_TABS.some((t) => t.id === value);
 
-/** Superadmin Settings (newplan §14, planchanges4 F7): Branding, Insights Taxonomy, Models & Pricing. */
+/** Superadmin Settings: Branding, Insights Taxonomy, Models & Pricing. */
 export default function SettingsPage() {
   // useSearchParams (tab deep link) needs a Suspense boundary for static prerendering.
   return (

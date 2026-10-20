@@ -1,4 +1,4 @@
-"""Visitor stats and per-visitor timeline (B7.2).
+"""Visitor stats and per-visitor timeline.
 
 A visitor is one client IP, grouped on ``chat_sessions.created_ip`` exactly
 like ``GET /admin/users``. ``active_now`` and ``active_visitors`` use the

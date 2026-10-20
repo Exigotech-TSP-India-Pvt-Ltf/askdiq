@@ -63,8 +63,8 @@ const H_LABEL_WIDTH = 140;
 
 /**
  * Stacked (or 100 % stacked) bars with one keyboard / click mark per segment,
- * so a segment click can filter by category AND series (newplan §15.4:
- * new vs returning, outcome 100 % bars, top-cited documents).
+ * so a segment click can filter by category AND series (for
+ * example new vs returning, outcome 100 % bars, top-cited documents).
  */
 export function StackedBar<T extends object>({
   data,

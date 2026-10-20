@@ -1,5 +1,5 @@
 /**
- * Typed client for Settings (newplan §14, planchanges4 F7):
+ * Typed client for Settings:
  *
  * - Branding (backend PR-08, `backend/app/schemas/branding.py`,
  *   `backend/app/api/routes/branding.py`): `GET /branding`,

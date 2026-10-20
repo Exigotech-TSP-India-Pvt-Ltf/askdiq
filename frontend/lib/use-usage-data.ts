@@ -1,6 +1,6 @@
 import type { Audience, UsageSummary } from "@/lib/types";
 import { api } from "@/lib/api";
-import { prefetch, runWhenIdle, useApiQuery } from "@/lib/query-cache";
+import { prefetch, runWhenIdle, useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
 import { RANGE_PRESETS, presetRange, rangeUtcDays } from "@/lib/range-context";
 
 /** Matches the backend's USAGE_SUMMARY_CACHE_TTL_SECONDS (15 s). */
@@ -183,4 +183,24 @@ export const queryDetailKey = (requestId: string) => ["admin/usage/query", reque
 export function prefetchQueryDetail(token: string | null, requestId: string): void {
   if (!token || !requestId) return;
   void prefetch(queryDetailKey(requestId), (signal) => api.getQueryDetail(token, requestId, signal), QUERY_DETAIL_STALE_MS);
+}
+
+/**
+ * Warms the next page of a usage list while the browser is idle, once the
+ * current page is known to have one: "Next" then renders from the cache.
+ */
+export function usePrefetchNextUsagePage(
+  kind: UsageListKind,
+  token: string | null,
+  params: UsageListParams,
+  total: number | undefined,
+) {
+  const limit = Number(params.limit ?? 10);
+  const offset = Number(params.offset ?? 0);
+  const next = token && total !== undefined && offset + limit < total ? { ...params, offset: offset + limit } : null;
+  usePrefetchNextPage(
+    next ? usageListKey(kind, next) : null,
+    (signal) => fetchUsageList(kind, token ?? "", next ?? params, signal),
+    { staleTime: USAGE_SUMMARY_STALE_MS },
+  );
 }

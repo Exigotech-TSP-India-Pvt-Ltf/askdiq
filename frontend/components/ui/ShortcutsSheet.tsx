@@ -12,7 +12,7 @@ interface ShortcutsSheetProps {
   shortcuts?: readonly ShortcutDef[];
 }
 
-/** The `?` keyboard-shortcut help sheet (newplan §15.1). */
+/** The `?` keyboard-shortcut help sheet. */
 export function ShortcutsSheet({ open, onClose, shortcuts = SHORTCUTS }: ShortcutsSheetProps) {
   const titleId = useId();
   const groups = Array.from(new Set(shortcuts.map((s) => s.group)));

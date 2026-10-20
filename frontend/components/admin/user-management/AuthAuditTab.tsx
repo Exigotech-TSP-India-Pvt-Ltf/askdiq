@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Audit Trail tab (planchanges4 F1.4.3): the auth events (sign-ins, denials,
+ * Audit Trail tab: the auth events (sign-ins, denials,
  * approvals, role changes, suspensions, revocations) from
  * `GET /admin/auth-audit`, one keyset page at a time: the event filter and
  * the actor / target search run on the server, the next page is prefetched,

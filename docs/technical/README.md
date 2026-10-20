@@ -48,11 +48,9 @@ is in [the plan](../plan.md), and production setup is in
 | `docs/deployment/environment-and-sso.md` | Production `.env` values, Entra ID SSO setup, verification, troubleshooting |
 | `docs/deployment/deployment-guide.md` | Copy-paste production deployment guide |
 | `docs/deployment/docker-and-auth-contract.md` | Docker deployment guide, proxy/SSO contract, pool sizing, load tests |
-| `docs/archive/newplan.md`, `docs/archive/planchanges4.md` | Design plan (rev 3.x) and execution plan with PR register and OWASP matrix |
 | `docs/technical/frontend/contracts/*.md` | Dashboard aggregation and entity-stats API contracts |
-| `docs/technical/frontend/interaction-audit.md`, `docs/technical/frontend/theme-audit.md` | UI interaction and theme audits |
+| `docs/technical/frontend/theme-audit.md` | Light/dark theme parity inventory |
 | `docs/deployment/runbook.md` | Production runbook (routing rationale, edge cases) |
-| `docs/archive/` | Historical plans (`rag-hardening-plan.md`, `newplan.md`, `planchanges4.md`); code comments cite their section ids |
 
 ## Conventions used in these docs
 

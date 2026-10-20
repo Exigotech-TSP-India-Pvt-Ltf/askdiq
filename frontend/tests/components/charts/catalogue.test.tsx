@@ -20,7 +20,7 @@ import {
 } from "@/components/charts";
 
 /**
- * planchanges4 F0.4.2: every catalogue chart renders with fixture data, an
+ * Every catalogue chart renders with fixture data, an
  * empty array and a single point, and `onSelect(datum)` fires on click and on
  * Enter. Colours come from `chartTheme` and follow the theme class.
  */

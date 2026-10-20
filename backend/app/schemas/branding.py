@@ -1,4 +1,4 @@
-"""Schemas for the white-label branding API (newplan section 14)."""
+"""Schemas for the white-label branding API."""
 
 from __future__ import annotations
 

@@ -172,7 +172,7 @@ export interface TraceDrawerProps {
   onNext?: () => void;
 }
 
-/** Trace inspector (newplan §4.2): waterfall, sources with scores, flags, conversation link. */
+/** Trace inspector: waterfall, sources with scores, flags, conversation link. */
 export function TraceDrawer({ requestId, audience, token, onClose, onPrev, onNext }: TraceDrawerProps) {
   const query = useApiQuery<GovernanceTraceDetail>(
     requestId ? governanceKeys.trace(requestId, audience) : null,

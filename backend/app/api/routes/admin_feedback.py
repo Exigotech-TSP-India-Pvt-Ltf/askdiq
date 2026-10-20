@@ -1,4 +1,4 @@
-"""Feedback / RLHF loop admin API (planchanges4 B5, newplan §5.4).
+"""Feedback / RLHF loop admin API.
 
 - GET    /admin/feedback                          enriched review queue (F1, F9)
 - GET    /admin/feedback/analytics                trend, distribution, funnel, gaps (F2, F3, F8)

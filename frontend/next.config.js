@@ -1,5 +1,5 @@
 /**
- * Security response headers (newplan §12.2; OWASP A02/A05). The nonce-based
+ * Security response headers (OWASP A02/A05). The nonce-based
  * Content-Security-Policy is set per request in middleware.ts (PR-18), because
  * a static header cannot carry a fresh nonce.
  *
@@ -36,7 +36,7 @@ const nextConfig = {
     // cached payload is never stale data.
     staleTimes: { dynamic: 300, static: 600 },
   },
-  // The retired Evaluation page (newplan 2.3). A config redirect answers with a
+  // The retired Evaluation page. A config redirect answers with a
   // real 307 + Location before the (app) layout starts streaming; the page-level
   // redirect() stays as a fallback.
   async redirects() {

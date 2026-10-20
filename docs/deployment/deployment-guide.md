@@ -144,8 +144,11 @@ a different webroot), issue this one the same way; keep
 
 Check that the `ssl_certificate` paths match what the nginx container sees
 (the `/etc/letsencrypt` mount from 1a) and copy any shared SSL `include` from
-the existing askdiq block. The `proxy_redirect` line and the SSE location are
-required (section 6). Do **not** add a CSP or the API conf's
+the existing askdiq block. The `proxy_redirect` line and both SSE locations
+(`location = /api/proxy/admin/governance/stream` and
+`location = /api/proxy/admin/live`, the app-wide console live stream; same
+settings: `proxy_buffering off`, `proxy_cache off`, `proxy_read_timeout 1h`)
+are required (section 6). Do **not** add a CSP or the API conf's
 `proxy_hide_header` lines: Next.js sets its own security headers.
 
 ```bash
@@ -592,6 +595,8 @@ In a browser (private window):
    open and events arrive. It closes after `SSE_MAX_STREAM_SECONDS` (120 s)
    and the browser reconnects automatically; that is normal. Events arriving
    in one burst at the end means nginx is buffering (section 6).
+   The console-wide stream `/api/proxy/admin/live` (open on every page)
+   behaves the same way.
 6. **A write:** change any harmless admin setting and save: no 403.
 7. **Logout:** returns to `/login`; `/admin` then redirects to `/login`.
 
@@ -703,7 +708,7 @@ sudo cp -a "$CONF.bak.<TS of section 1>" "$CONF" && docker exec et-platform-ngin
 | **Port clash** (`bind: address already in use`) | A `ports:` line was added; 3001-3600, 5000-5600 and 5501 are taken | Remove `ports:` from `askdiq-web` (none needed). Debug only: `127.0.0.1:5500:3000`, after `ss -ltnp | grep 5500` shows nothing. |
 | **CORS errors** | Not needed: the browser only calls its own origin (`/api/proxy/*`, `/auth/*`); the Next server calls `askdiq-api:8000` server-to-server, where CORS does not apply. The dashboard CSP (`connect-src 'self'`) blocks direct browser calls anyway | Do not add the dashboard to `CORS_ALLOWED_ORIGINS`. A CORS error means browser code is calling `https://askdiq.ethub.co` directly, which is a bug. |
 | **Swagger "Try it out" returns "couldn't find relevant information" / `no_sources`** | Swagger pre-fills `"filters": {"additionalProp1": {}}` | Delete `filters` from the request body. The backend ignores unknown filter keys (`retrieval_filters_ignored` in logs). |
-| **Live feed never updates, or arrives in bursts** | SSE location missing in nginx, so nginx buffers | Add the `location = /api/proxy/admin/governance/stream` block (1c), reload. |
+| **Live feed never updates, or arrives in bursts** | SSE location missing in nginx, so nginx buffers | Add the `location = /api/proxy/admin/governance/stream` and `location = /api/proxy/admin/live` blocks (1c), reload. |
 | **Client IP is `172.x` everywhere** | `TRUST_PROXY_HEADERS` not `true`, or nginx not setting `X-Forwarded-For` | Set it in the backend `.env`; recreate `askdiq-api`. |
 
 ---

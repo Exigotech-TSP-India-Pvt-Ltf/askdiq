@@ -28,7 +28,7 @@ interface BrandLogoProps {
 }
 
 /**
- * The single logo component (newplan §1.7 to §1.10, §14). Renders the light and
+ * The single logo component. Renders the light and
  * dark artwork as a `dark:hidden` / `hidden dark:block` pair, so the swap is
  * pure CSS and follows the theme instantly with no flash or re-render.
  */

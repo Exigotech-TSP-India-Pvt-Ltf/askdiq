@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owner preflight for real Entra ID SSO (planchanges4 B2.2.4).
+"""Owner preflight for real Entra ID SSO.
 
 Run after filling in ``backend/.env``; it loads settings the normal way and
 prints one PASS/FAIL line per check. It never prints a configured value

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The one chart container (planchanges4 F0.4.1, newplan §15.2). Replaces the
+ * The one chart container. Replaces the
  * local copies that lived in the Dashboard (`AuroraChartCard`), Monitoring,
  * Evaluation and Evaluation (Live) pages.
  *

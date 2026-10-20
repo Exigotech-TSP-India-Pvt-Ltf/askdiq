@@ -27,11 +27,11 @@
       "error",
       {
         "selector": "Literal[value=/(^|[^&\\w])#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(?![\\w-])/]",
-        "message": "Theme guard (newplan 15.2a): no hex colours outside lib/theme-tokens.ts. Use a token class (bg-surface-card, text-fg, bg-brand-600...) or useChartTheme()."
+        "message": "Theme guard: no hex colours outside lib/theme-tokens.ts. Use a token class (bg-surface-card, text-fg, bg-brand-600...) or useChartTheme()."
       },
       {
         "selector": "TemplateElement[value.raw=/(^|[^&\\w])#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(?![\\w-])/]",
-        "message": "Theme guard (newplan 15.2a): no hex colours outside lib/theme-tokens.ts. Use a token class (bg-surface-card, text-fg, bg-brand-600...) or useChartTheme()."
+        "message": "Theme guard: no hex colours outside lib/theme-tokens.ts. Use a token class (bg-surface-card, text-fg, bg-brand-600...) or useChartTheme()."
       },
       {
         "selector": "Literal[value=/^(?!.*dark:(?:[\\w-]+:)*bg-)(?:.*\\s)?bg-white(?:\\s.*)?$/]",

@@ -1,5 +1,5 @@
 /**
- * Phase F0 integration journey (planchanges4 F0.7): brand, theme, palette,
+ * Phase F0 integration journey: brand, theme, palette,
  * toast with undo and deep links working together, with `fetch` mocked and an
  * in-memory router history.
  */

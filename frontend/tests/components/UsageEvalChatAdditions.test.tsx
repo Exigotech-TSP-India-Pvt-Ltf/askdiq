@@ -1,5 +1,5 @@
 /**
- * planchanges4 F3.5: Usage & Cost chart additions, Evaluation (Live) quality
+ * Usage & Cost chart additions, Evaluation (Live) quality
  * radar and pass-rate trend, and the Chat brand header, user chip and
  * admin-only "View trace" link.
  */

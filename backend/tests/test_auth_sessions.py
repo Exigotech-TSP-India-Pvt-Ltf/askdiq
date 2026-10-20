@@ -1,4 +1,4 @@
-"""Session lifecycle (B2.3.1) and the auth migration (B2.1.1); Postgres, runs in CI."""
+"""Session lifecycle and the auth migration; Postgres, runs in CI."""
 
 from __future__ import annotations
 
@@ -199,7 +199,7 @@ async def test_auth_migration_upgrade_downgrade_upgrade() -> None:
     try:
         heads = await asyncio.to_thread(_alembic, "heads")
         assert heads.count("(head)") == 1
-        # Later migrations stack on top (planchanges4 8.3): the auth revision
+        # Later migrations stack on top: the auth revision
         # must be on the single linear chain to head, not necessarily head.
         chain = await asyncio.to_thread(_alembic, "history", "-r", "a9b0c1d2e3f4:head")
         assert "a9b0c1d2e3f4" in chain

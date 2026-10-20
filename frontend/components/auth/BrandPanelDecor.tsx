@@ -79,7 +79,7 @@ interface BrandPanelDecorProps {
 }
 
 /**
- * Login brand-panel decoration (newplan §7.7): translucent hexagons and rings
+ * Login brand-panel decoration: translucent hexagons and rings
  * that drift and rotate very slowly (20 to 40 s, transform only) and follow
  * the pointer with a subtle parallax. Completely static under reduced motion.
  */

@@ -24,7 +24,7 @@ function isTab(id: string): id is AnalyticsTabId {
 
 /**
  * Analytics page body: filter bar and KPI strip over the tabbed charts
- * (native port of the Chatbot Insights HTML, newplan §6.4). While the
+ * (native port of the Chatbot Insights HTML). While the
  * classifier backlog drains, a banner shows progress and the charts keep
  * rendering the labelled turns; they refresh as more turns are labelled.
  */

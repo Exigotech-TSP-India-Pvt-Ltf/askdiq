@@ -1,5 +1,5 @@
 /**
- * Review-queue filters for the Feedback page (newplan §5.4 "Clickable
+ * Review-queue filters for the Feedback page ("clickable
  * analytics"). Every chart mark sets one of these; they live in the URL so a
  * filtered queue can be shared and survives back / forward.
  *

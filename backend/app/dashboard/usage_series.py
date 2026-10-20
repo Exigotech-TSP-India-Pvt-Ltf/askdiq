@@ -1,8 +1,11 @@
-"""Usage & Cost chart additions (B7.4): cost by stage over time, the month-end
+"""Usage & Cost chart additions: cost by stage over time, the month-end
 forecast and prompt-cache statistics for ``GET /admin/usage/summary``.
 
 Stage costs use the same token sums and per-million rates as the summary's
 ``financial.stage_costs``, per bucket, so the series adds up to the totals.
+Both read the hourly rollup (``app.dashboard.usage_rollup``); the raw-row
+aggregations below (``stage_token_rows``, ``ingestion_cost_rows``) are the
+reference the rollup is checked against.
 """
 
 from __future__ import annotations
@@ -15,11 +18,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.dashboard import usage_rollup
 from app.dashboard.queries import (
     ASST,
     USER_TURN,
     cached_tokens_sql,
-    daily_cost,
     pairs,
     scope_pairs,
     trunc,
@@ -183,15 +186,14 @@ async def cost_by_stage_series(
     end = to_naive_utc(end) if end is not None else None
     stop = end or now
     bucket = series_bucket(start, stop)
-    tokens = await stage_token_rows(db, audience, bucket, start, end)
-    ingestion = await ingestion_cost_rows(db, audience, bucket, start, end)
+    rows = await usage_rollup.stage_buckets(db, audience, bucket, start, end)
     starts = zero_fill_starts(
-        bucket, start, stop, [*tokens, *ingestion], cfg.usage_max_range_days
+        bucket, start, stop, [*rows.tokens, *rows.ingestion], cfg.usage_max_range_days
     )
     return {
         "bucket": bucket,
         "points": series_points(
-            bucket, starts, tokens, ingestion, current_model_settings()
+            bucket, starts, rows.tokens, rows.ingestion, current_model_settings()
         ),
     }
 
@@ -201,7 +203,7 @@ async def month_cost_forecast(
 ) -> dict[str, Any]:
     """Current UTC month: MTD exchange cost and the linear month-end projection."""
     month_start, month_end = month_bounds(now.date())
-    daily = await daily_cost(db, audience, month_start, month_end)
+    daily = await usage_rollup.daily_cost(db, audience, month_start, month_end)
     forecast = month_forecast(daily, now.date(), cfg.monthly_cost_budget_usd)
     return {
         "currency": "USD",

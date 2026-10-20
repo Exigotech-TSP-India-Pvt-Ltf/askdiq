@@ -1,5 +1,5 @@
 /**
- * F3.4: Documents list (citation charts, permission-gated upload / delete with
+ * Documents list (citation charts, permission-gated upload / delete with
  * ConfirmDialog) and Document detail (debounced chunk search, sort by hits,
  * hit heatmap, low-rated citations, `?chunk=`).
  */

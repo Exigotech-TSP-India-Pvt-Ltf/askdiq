@@ -1,6 +1,6 @@
 /**
  * Deep links for every entity in the Visitor -> Session -> Conversation ->
- * Turn -> Trace / Feedback / Document chain (newplan §1). Every id rendered in
+ * Turn -> Trace / Feedback / Document chain. Every id rendered in
  * a table, chart or drawer goes through `entityHref`, so a number can always
  * be traced to its rows and shared as a URL.
  */

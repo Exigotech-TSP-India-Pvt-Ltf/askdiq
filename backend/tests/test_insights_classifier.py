@@ -1,4 +1,4 @@
-"""Insights classifier (planchanges4 B6.1, B6.2): rules, LLM batch stage, jobs.
+"""Insights classifier: rules, LLM batch stage, jobs.
 
 The LLM is always a fake: no test reaches Azure.
 """
@@ -116,7 +116,7 @@ class FakeLLM:
 
 
 # ---------------------------------------------------------------------------
-# B6.2.1 rule stage: outcome mapping table (newplan 6.2), every row
+# Rule stage: outcome mapping table, every row
 # ---------------------------------------------------------------------------
 
 
@@ -323,7 +323,7 @@ def test_migration_seed_matches_code_defaults():
 
 
 # ---------------------------------------------------------------------------
-# B6.2.2 LLM batch stage
+# LLM batch stage
 # ---------------------------------------------------------------------------
 
 

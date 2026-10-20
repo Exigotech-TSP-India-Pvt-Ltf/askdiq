@@ -1,4 +1,4 @@
-"""Authorization dependencies and the proxy contract (B2.3.3, B2.3.5, B2.5).
+"""Authorization dependencies and the proxy contract.
 
 Proxy contract: the Next.js proxy is the only intended caller. On every
 request it must send:
@@ -224,7 +224,7 @@ async def current_user(
 
 @_guard
 async def require_role_or_chat(user: AuthUser = Depends(current_user)) -> AuthUser:
-    """Chat is open to every signed-in user who is not suspended (newplan §7.2)."""
+    """Chat is open to every signed-in user who is not suspended."""
     if user.status not in CHAT_STATUSES:
         raise _deny(status.HTTP_403_FORBIDDEN, DETAIL_SUSPENDED)
     return user

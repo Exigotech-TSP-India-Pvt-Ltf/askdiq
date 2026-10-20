@@ -32,7 +32,7 @@ import {
 
 type TabId = UsageTabId;
 
-// Live Telemetry Studio is the Overview tab (newplan §3); the old Overview tab is gone.
+// Live Telemetry Studio is the Overview tab; the old Overview tab is gone.
 const USAGE_CONSOLE_TABS: TabItem<TabId>[] = [
   { id: "overview", label: "Overview", icon: Sparkles, badgeCount: "Live" },
   { id: "users", label: "All Users", icon: Users },

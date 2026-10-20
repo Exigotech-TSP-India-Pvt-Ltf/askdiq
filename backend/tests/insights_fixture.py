@@ -1,4 +1,4 @@
-"""Parity fixture loader (planchanges4 B6.4.1).
+"""Parity fixture loader.
 
 Loads ``tests/fixtures/insights_reference.json`` (the reference HTML's 49
 conversations and 117 exchanges, extracted by
@@ -7,7 +7,7 @@ conversations and 117 exchanges, extracted by
 
 - One HTML conversation = one ``chat_sessions`` row; one HTML exchange = a user
   row plus its assistant row (same ``turn_index``); labels sit on the
-  assistant row (newplan 6.4).
+  assistant row.
 - Ids are deterministic (uuid5), and every insert is ``ON CONFLICT DO
   NOTHING``, so loading twice is a no-op.
 - HTML timestamps are wall-clock times in ``FIXTURE_TIMEZONE``; they are stored
@@ -19,7 +19,7 @@ conversations and 117 exchanges, extracted by
 PR-13 tests use the ``insights_reference_db`` fixture (import it from here).
 Inside its rolled-back transaction it first removes every other chat session
 and rollup row, so the dashboard endpoints see exactly the reference data.
-The HTML's "Great" rating comes from user feedback in our model (newplan 6.4),
+The HTML's "Great" rating comes from user feedback in our model,
 so a 5-star rating is seeded on those conversations.
 """
 

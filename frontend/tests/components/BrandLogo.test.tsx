@@ -39,7 +39,7 @@ function paintColours(svg: string): string[] {
   return [...colours];
 }
 
-describe("logo assets (F0.3.4, newplan §1.7)", () => {
+describe("logo assets", () => {
   // Owner decision (2026-10-16): keep the "ARTIFICIAL INTELLIGENCE" tagline line (artwork y 886.98–1001.82),
   // cropped tightly around wordmark + tagline (aspect ≈ 2.70).
   it("full logo viewBox is tight around wordmark + tagline in light and dark variants", () => {

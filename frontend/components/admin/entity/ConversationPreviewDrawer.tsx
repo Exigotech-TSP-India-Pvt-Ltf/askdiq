@@ -29,7 +29,7 @@ interface ConversationPreviewDrawerProps {
 }
 
 /**
- * Turn timeline for one conversation over the list (F3.3). The list page
+ * Turn timeline for one conversation over the list. The list page
  * stays mounted underneath, so its page, sort and filters are unchanged when
  * the drawer closes; "Open full view" goes to the detail page.
  */

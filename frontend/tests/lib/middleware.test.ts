@@ -44,7 +44,7 @@ describe("middleware: signed-out redirect (F1.1.3, UX only)", () => {
   });
 });
 
-describe("middleware: nonce CSP (F0.1.2)", () => {
+describe("middleware: nonce CSP", () => {
   const nonceOf = (csp: string | null) => /'nonce-([^']+)'/.exec(csp ?? "")?.[1];
 
   it("issues a fresh nonce per request and passes it to the app via x-nonce", () => {

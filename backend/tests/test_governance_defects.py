@@ -1,4 +1,4 @@
-"""Regression tests for the Governance defects in newplan §4.1 (one per G-id).
+"""Regression tests for the Governance defects G1-G9 (one test per defect id).
 
 Pure-function tests run anywhere; endpoint tests need the CI Postgres
 (``client`` / ``db_session`` fixtures) and seed their own rows inside the

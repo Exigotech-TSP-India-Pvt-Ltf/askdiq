@@ -1,5 +1,5 @@
 /**
- * Analytics journeys (planchanges4 F6.1, F6.3, F6.5): filter -> topic click ->
+ * Analytics journeys: filter -> topic click ->
  * Conversations filtered through the URL -> row link; the trend's setDay()
  * toggle; per-turn expand by keyboard; the pending-classification state.
  */

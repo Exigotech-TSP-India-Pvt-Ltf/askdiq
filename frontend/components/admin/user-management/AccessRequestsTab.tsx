@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Access Requests tab (planchanges4 F1.4.3): the pending queue with approve
+ * Access Requests tab: the pending queue with approve
  * (role select) and reject (note), multi-select bulk approve, keyboard `a` /
  * `x` on a focused row, and the decision history. Approved and rejected rows
  * leave optimistically and animate out (`AnimatePresence`); a failure brings

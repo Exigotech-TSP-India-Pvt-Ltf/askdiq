@@ -4,7 +4,7 @@
 
 ## Plan task ids
 
-<!-- e.g. B0.2, B0.4 (docs/archive/planchanges4.md). PR-xx. -->
+<!-- e.g. B0.2, B0.4. PR-xx. -->
 
 ## Type
 
@@ -36,7 +36,7 @@
 
 ## Performance (budgets measured)
 
-<!-- Budgets from newplan section 13.4 and measured numbers, or "n/a". -->
+<!-- Latency budgets (see backend/scripts/run_admin_load_test.py) and measured numbers, or "n/a". -->
 
 ## Assumptions
 

@@ -59,7 +59,7 @@ async function openDrawer() {
   return { trigger, dialog };
 }
 
-describe("DrawerShell (F0.6.1)", () => {
+describe("DrawerShell", () => {
   it("is a labelled modal dialog with description, footer and an Open full view link", async () => {
     render(<Harness />);
     const { dialog } = await openDrawer();

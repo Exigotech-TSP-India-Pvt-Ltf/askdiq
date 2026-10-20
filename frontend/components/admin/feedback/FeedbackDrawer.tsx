@@ -121,7 +121,7 @@ function TextEditor({
 }
 
 /**
- * Feedback detail drawer (newplan §5.4): full exchange, sources with scores,
+ * Feedback detail drawer: full exchange, sources with scores,
  * flags, labels, the user's rating and reasons, reviewer actions and the
  * "Write the correct answer" field (the `chosen` side of a preference pair).
  */

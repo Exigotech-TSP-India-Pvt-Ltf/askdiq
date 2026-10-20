@@ -4,8 +4,7 @@ Scope: how AskDIQ authenticates callers and users, authorizes them (RBAC), defen
 injection and abuse, handles errors, PII, audit, client IPs and secrets, and how its controls map
 to the OWASP Top 10:2025. It documents two code lines that differ sharply: `main` plus
 `hotfix/query-filters-ip-ingest` (what production runs) and `preview/view` (9115c45, the documented
-base with SSO and RBAC). Code is the source of truth; plan intent (`docs/archive/newplan.md` section 12,
-`docs/archive/planchanges4.md` section 2.1) is noted where it differs.
+base with SSO and RBAC). Code is the source of truth; planned controls that are not in the code are marked as such.
 
 ## Contents
 
@@ -380,7 +379,7 @@ prod `ENV` is not `production` (which would also leave HSTS off and allow body I
 
 ## OWASP Top 10:2025 mapping
 
-Rows from `docs/archive/newplan.md` section 12.1 and `docs/archive/planchanges4.md` section 2.1, verified against `preview/view`
+Rows verified against `preview/view`
 code. "Planned/not found" = in the plan but not found in code at 9115c45. `backend/tests/test_owasp_compliance.py`
 still uses 2021-style names (`a03_sql_injection`, `a04_rate_limiting`, `a08_csv_formula`); the planned
 per-row test classes (Task V.4) are not written yet.

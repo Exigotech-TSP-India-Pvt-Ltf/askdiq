@@ -1,5 +1,5 @@
 /**
- * Dashboard journey (planchanges4 F3.1): the interactive dashboard against
+ * Dashboard journey: the interactive dashboard against
  * mocked responses that follow docs/technical/frontend/contracts/dashboard-aggregations.md, and
  * against today's backend shape (new fields absent).
  */
@@ -89,8 +89,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("Dashboard: KPI cards (F3.1.1)", () => {
-  it("deep-links every card to the page that owns the number, pre-filtered (newplan §1)", async () => {
+describe("Dashboard: KPI cards", () => {
+  it("deep-links every card to the page that owns the number, pre-filtered", async () => {
     renderDashboard();
     const expected: Record<string, string> = {
       users: "/admin/visitors",
@@ -153,7 +153,7 @@ describe("Dashboard: KPI cards (F3.1.1)", () => {
   });
 });
 
-describe("Dashboard: charts (F3.1.2)", () => {
+describe("Dashboard: charts", () => {
   it("navigates with the filter when a stacked-area day is clicked", async () => {
     renderDashboard();
     const chart = await screen.findByRole("group", { name: "Queries by outcome" });

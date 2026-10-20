@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Shared building blocks for the chart kit (newplan §15.2, §15.4).
+ * Shared building blocks for the chart kit.
  *
  * Catalogue charts are hand-drawn SVG (no extra dependency, nothing to
  * lazy-load, testable in jsdom). Every mark goes through `useChartMarks`, so

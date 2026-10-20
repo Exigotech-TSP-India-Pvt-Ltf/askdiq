@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { queryErrorMessage, useUsageList } from "@/lib/use-usage-data";
+import { queryErrorMessage, useUsageList, usePrefetchNextUsagePage } from "@/lib/use-usage-data";
 import type { PageEnvelope, UsageSessionRow } from "@/lib/types";
 import { useTableState } from "@/lib/use-table-state";
 import { DataTable, type ColumnDef } from "../DataTable";
@@ -84,7 +84,7 @@ export function SessionsTab({
   // Cached per parameter set (app-wide query cache): tab switches, paging
   // back and revisits render at once; the previous page stays on screen
   // while a new one loads.
-  const query = useUsageList<PageEnvelope<UsageSessionRow>>("sessions", token, {
+  const listParams = {
       audience,
       q: search || undefined,
       ip: ipFilter || undefined,
@@ -93,7 +93,9 @@ export function SessionsTab({
       sort,
       limit: pageSize,
       offset,
-    });
+    };
+  const query = useUsageList<PageEnvelope<UsageSessionRow>>("sessions", token, listParams);
+  usePrefetchNextUsagePage("sessions", token, listParams, query.data?.total);
   const data = query.data ?? null;
   const isLoading = query.isLoading;
   const error = queryErrorMessage(query.error, "Failed to load session analytics.");

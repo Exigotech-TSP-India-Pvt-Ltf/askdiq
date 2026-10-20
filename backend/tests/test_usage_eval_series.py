@@ -1,4 +1,4 @@
-"""Usage & Cost and Evaluation (Live) chart additions (planchanges4 B7.4).
+"""Usage & Cost and Evaluation (Live) chart additions.
 
 Cost by stage over time, month-end forecast, cache-hit ratio, evaluation
 quality dimensions (current vs previous run) and the pass-rate trend. Pure

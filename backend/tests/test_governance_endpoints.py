@@ -1,4 +1,4 @@
-"""Governance endpoints (planchanges4 B4.2.1-B4.2.5, newplan §4.5).
+"""Governance endpoints.
 
 Pure tests (cursor, thresholds, buckets, stream hub, validation) run anywhere;
 tests using ``client`` / ``db_session`` need the CI Postgres and seed their

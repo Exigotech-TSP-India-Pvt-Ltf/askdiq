@@ -1,4 +1,4 @@
-"""SQL for the insights dashboard (newplan 6.4, the reference HTML's formulas).
+"""SQL for the insights dashboard (the reference HTML's formulas).
 
 One CTE chain reproduces the renderer's data model from our tables:
 
@@ -43,12 +43,12 @@ from app.schemas.insights import (
 )
 
 # A conversation's user type is the intent group holding at least this share
-# of its substantive turns, otherwise "Mixed" (newplan 6.4).
+# of its substantive turns, otherwise "Mixed".
 USER_TYPE_DOMINANCE_PCT = 60
 PERIOD_DAYS = {Period.LAST_7_DAYS: 7, Period.LAST_30_DAYS: 30}
 PERSON_SALT_CONTEXT = b"askdiq-insights-person:"
 
-# A probable person (newplan 6.4), the dashboard's visitor identity rule
+# A probable person, the dashboard's visitor identity rule
 # (app.dashboard.active_visitors.identity_sql) at session level: the signed-in
 # e-mail (trimmed, case-insensitive) unless empty or the default / anonymous
 # actor, else the session's creating IP, else the session itself. The key is

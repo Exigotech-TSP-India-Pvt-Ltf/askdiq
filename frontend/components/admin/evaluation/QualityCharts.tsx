@@ -26,7 +26,7 @@ interface Props {
   loading: boolean;
 }
 
-/** Quality dimensions, current vs previous run (planchanges4 F3.5). */
+/** Quality dimensions, current vs previous run. */
 export function QualityRadarCard({ report, loading }: Props) {
   const ct = useChartTheme();
   const { rows, hasPrevious } = useMemo(() => qualityRadarRows(report), [report]);
@@ -54,7 +54,7 @@ export function QualityRadarCard({ report, loading }: Props) {
   );
 }
 
-/** Pass rate per run; a marker opens that run (newplan §15.4 "Marker to run"). */
+/** Pass rate per run; a marker opens that run. */
 export function PassRateTrendCard({ report, loading }: Props) {
   const router = useRouter();
   const trend = report?.pass_rate_trend;

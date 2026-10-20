@@ -1,4 +1,4 @@
-"""Parity fixture: extractor and loader (planchanges4 B6.4.1)."""
+"""Parity fixture: extractor and loader."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def test_extractor_rejects_malformed_or_executable_input(embed):
 
 
 # ---------------------------------------------------------------------------
-# Committed fixture values (match the HTML renderer's numbers, newplan 6.4)
+# Committed fixture values (match the HTML renderer's numbers)
 # ---------------------------------------------------------------------------
 
 

@@ -1,4 +1,4 @@
-"""Taxonomy administration for F7 (newplan 6.3): list, create, edit, archive,
+"""Taxonomy administration for F7: list, create, edit, archive,
 unarchive.
 
 Codes are stable identifiers stored on ``turn_insights``: they are immutable

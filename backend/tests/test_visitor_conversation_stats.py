@@ -1,4 +1,4 @@
-"""Visitor and conversation entity stats (planchanges4 B7.2).
+"""Visitor and conversation entity stats.
 
 Pure helpers run without a database; endpoint tests seed far-past days with
 unique IPs / title markers (real Postgres, run in CI) and assert exact numbers.

@@ -1,6 +1,6 @@
 /**
- * Roles, statuses and permissions, mirroring backend `app/auth/permissions.py`
- * (newplan §7.3). The UI only hides what the API would reject; the API stays
+ * Roles, statuses and permissions, mirroring backend `app/auth/permissions.py`.
+ * The UI only hides what the API would reject; the API stays
  * the boundary. Pure module (no React), safe in tests and on the server.
  */
 

@@ -1,4 +1,4 @@
-// Public passthrough for content-addressed brand images (newplan §14).
+// Public passthrough for content-addressed brand images.
 //
 // `GET /branding` returns relative asset URLs (`/branding/assets/{sha}`), and
 // the browser resolves them against this Next origin, so this route serves

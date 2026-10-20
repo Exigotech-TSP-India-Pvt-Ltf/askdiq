@@ -1,4 +1,4 @@
-"""White-label branding routes (newplan section 14, planchanges4 B3.3).
+"""White-label branding routes.
 
 Public (no auth, cache-friendly):
 - ``GET /branding``: resolved values, derived palette and asset URLs.

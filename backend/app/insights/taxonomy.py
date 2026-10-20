@@ -133,7 +133,7 @@ def _issue(code: str, label: str) -> TaxonomyEntry:
 
 
 DEFAULT_ENTRIES: tuple[TaxonomyEntry, ...] = (
-    # DeployIQ intents (newplan 6.3, confirmed by the owner).
+    # DeployIQ intents (confirmed by the owner).
     _intent("SVC", "Platform and services", _CUSTOMER),
     _intent("SEC", "Security and compliance", _CUSTOMER),
     _intent("RAI", "Responsible AI and trust", _CUSTOMER),

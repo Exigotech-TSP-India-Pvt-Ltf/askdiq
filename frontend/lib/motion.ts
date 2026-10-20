@@ -1,5 +1,5 @@
 /**
- * Motion presets (newplan §8, §15.3). Pages and components import these and
+ * Motion presets. Pages and components import these and
  * never hard-code timings; `tests/lib/motion.test.tsx` greps for violations.
  * Everything stays under 300 ms except `slow` (320 ms, drawers / count-up).
  * `MotionConfig reducedMotion="user"` (components/providers/MotionProvider)
@@ -71,7 +71,7 @@ export const pop: Variants = {
   exit: { opacity: 0, scale: 0.9, transition: tween(duration.fast) },
 };
 
-/** Card hover: lift 2 px over 150 ms (newplan §15.2). */
+/** Card hover: lift 2 px over 150 ms. */
 export const cardHover: Variants = {
   rest: { y: 0, transition: tween(duration.hover) },
   hover: { y: -2, transition: tween(duration.hover) },
@@ -112,7 +112,7 @@ export function staggerFor(count: number): Variants {
 }
 
 /**
- * Ambient decoration loops (login brand panel, newplan §7.7): very slow,
+ * Ambient decoration loops (login brand panel): very slow,
  * transform-only drift between 20 and 40 s. Not UI feedback, so the 300 ms
  * cap does not apply; callers render them static under reduced motion.
  */

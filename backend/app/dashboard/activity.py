@@ -1,4 +1,4 @@
-"""Live activity feed for the dashboard (B7.1): the newest audit events.
+"""Live activity feed for the dashboard: the newest audit events.
 
 One statement reads the newest ``audit_log`` rows of an allow-listed set of
 actions (auth events are never shown), joined to ``latency_metrics`` for the

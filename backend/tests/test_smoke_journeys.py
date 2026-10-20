@@ -1,4 +1,4 @@
-"""The sign-in smoke journeys (B2.8.1) against a fake frontend (no network).
+"""The sign-in smoke journeys against a fake frontend (no network).
 
 The real run happens in the full-stack smoke job; this proves the script
 walks every hop of the proxy contract and fails when a hop is wrong.

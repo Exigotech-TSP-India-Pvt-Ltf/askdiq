@@ -25,7 +25,7 @@ from sqlalchemy import (
     text,
     true,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.config import get_settings
@@ -35,7 +35,7 @@ settings = get_settings()
 
 
 class User(Base):
-    """A person who signs in through Entra ID SSO (newplan §7.5).
+    """A person who signs in through Entra ID SSO.
 
     Rows are keyed on the Entra object id (`entra_oid`); `email` is the
     `actor` identity threaded through audit logging and chat ownership.
@@ -300,7 +300,7 @@ class MessageFeedback(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
-    # --- RLHF triage loop (PR-11, newplan §5.4) ---
+    # --- RLHF triage loop (PR-11) ---
     reason_tags: Mapped[list] = mapped_column(
         JSONB, default=list, server_default=text("'[]'::jsonb")
     )
@@ -508,7 +508,7 @@ class AuthSession(Base):
     __table_args__ = (Index("ix_auth_sessions_user_revoked", "user_id", "revoked_at"),)
 
 
-# --- Insights (PR-12, planchanges4 B6.1) ---
+# --- Insights (PR-12) ---
 
 
 class InsightTaxonomy(Base):
@@ -522,7 +522,7 @@ class InsightTaxonomy(Base):
     label: Mapped[str] = mapped_column(String(128))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    # Intent group used to derive a conversation's user_type (newplan 6.4).
+    # Intent group used to derive a conversation's user_type.
     group: Mapped[str | None] = mapped_column(String(64), nullable=True)
     substantive: Mapped[bool] = mapped_column(Boolean, server_default=true())
     handled: Mapped[bool] = mapped_column(Boolean, server_default=false())
@@ -641,7 +641,7 @@ def _asset_fk() -> Mapped[str | None]:
 
 
 class BrandSettings(Base):
-    """The single white-label row (``id = 1``); newplan section 14."""
+    """The single white-label row (``id = 1``)."""
 
     __tablename__ = "brand_settings"
 
@@ -919,6 +919,61 @@ class CitationSyncState(Base):
 
     origin: Mapped[str] = mapped_column(String(16), primary_key=True)
     synced_until: Mapped[datetime] = mapped_column(DateTime)
+
+
+class UsageHourlyRollup(Base):
+    """Usage & Cost sums per UTC hour (``app.dashboard.usage_rollup``).
+
+    One row per (hour of the user turn, UTC day of the assistant row, client
+    IP) for exchanges, per (hour, IP) for latency samples and ingestion audit
+    rows. The audience is applied when reading (by ``ip``), so test-IP changes
+    need no rebuild. Hours before ``usage_rollup_state.synced_until`` are
+    final; reads add a live aggregation of the newer rows.
+    """
+
+    __tablename__ = "usage_hourly_rollup"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    hour: Mapped[datetime] = mapped_column(DateTime)
+    asst_day: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    turns: Mapped[int] = mapped_column(BigInteger, default=0)
+    prompt_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    completion_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    total_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    reasoning_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    embedding_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    guardrail_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    cached_tokens: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_turns: Mapped[int] = mapped_column(BigInteger, default=0)
+    answered: Mapped[int] = mapped_column(BigInteger, default=0)
+    ungrounded: Mapped[int] = mapped_column(BigInteger, default=0)
+    blocked: Mapped[int] = mapped_column(BigInteger, default=0)
+    conversational: Mapped[int] = mapped_column(BigInteger, default=0)
+    llm_failed: Mapped[int] = mapped_column(BigInteger, default=0)
+    clarify: Mapped[int] = mapped_column(BigInteger, default=0)
+    latency_ms: Mapped[list[float] | None] = mapped_column(ARRAY(Float), nullable=True)
+    ingest_rows: Mapped[int] = mapped_column(BigInteger, default=0)
+    ingest_tokens: Mapped[float] = mapped_column(Float, default=0.0)
+    ingest_cost: Mapped[float] = mapped_column(Float, default=0.0)
+
+    __table_args__ = (Index("ix_usage_hourly_rollup_hour", "hour"),)
+
+
+class UsageRollupState(Base):
+    """How far ``usage_hourly_rollup`` is final (one row, ``id = 1``).
+
+    ``version`` changes whenever a late change to older rows moves
+    ``synced_until`` back (database triggers), so a concurrent roll of the
+    same hours does not commit over it.
+    """
+
+    __tablename__ = "usage_rollup_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    synced_until: Mapped[datetime] = mapped_column(DateTime)
+    version: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class ResourceSample(Base):
