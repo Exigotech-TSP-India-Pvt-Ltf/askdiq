@@ -91,6 +91,7 @@ EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/models": Permission.MODELS_WRITE,
     "/admin/governance/logs/export.csv": Permission.USAGE_EXPORT,
     "/admin/feedback/export": Permission.FEEDBACK_EXPORT,
+    "/admin/feedback/pairs": Permission.FEEDBACK_EXPORT,
     "/auth/me": SIGNED_IN,
     "/auth/access-request": CHAT,
     "/admin/users-accounts": MANAGE,

@@ -3,6 +3,7 @@
 - GET    /admin/feedback                          enriched review queue (F1, F9)
 - GET    /admin/feedback/analytics                trend, distribution, funnel, gaps (F2, F3, F8)
 - GET    /admin/feedback/export?format=jsonl      preference pairs, streamed
+- GET    /admin/feedback/pairs                    first preference pairs (preview)
 - GET    /admin/feedback/golden                   promoted golden cases
 - POST   /admin/feedback/golden/{case_id}/run     queue an eval run (deduped)
 - POST   /admin/feedback/bulk                     bulk triage, all-or-nothing
@@ -68,6 +69,8 @@ from app.schemas.feedback import (
     GoldenCase,
     GoldenCasePage,
     GoldenRunResponse,
+    PreferencePair,
+    PreferencePairPreview,
     PromoteRequest,
     PromoteResponse,
     TriageStatus,
@@ -305,6 +308,35 @@ def _golden(r: EvalPromotedCase) -> GoldenCase:
 # ---------------------------------------------------------------------------
 # Export (feedback:export)
 # ---------------------------------------------------------------------------
+
+MAX_PREVIEW_PAIRS = 100
+
+
+@router.get(
+    "/pairs",
+    response_model=PreferencePairPreview,
+    summary="Preview the first preference pairs of the export",
+    responses=_READ_ERRORS,
+)
+async def preview_feedback_pairs(
+    limit: int = Query(50, ge=1, le=MAX_PREVIEW_PAIRS),
+    complete_only: bool = False,
+    days: DayRange | None = Depends(optional_day_range),
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_permission(Permission.FEEDBACK_EXPORT)),
+) -> PreferencePairPreview:
+    """The first ``limit`` pairs of ``GET /export`` with the same defaults
+    (oldest first, dismissed excluded, PII-masked), as one bounded JSON
+    page. Optional ``from`` / ``to`` (inclusive UTC days)."""
+    pairs, truncated = await service.preview_pairs(
+        db,
+        complete_only=complete_only,
+        limit=limit,
+        window=(days.start, days.end) if days else None,
+    )
+    return PreferencePairPreview(
+        pairs=[PreferencePair(**p) for p in pairs], truncated=truncated
+    )
 
 
 @router.get(

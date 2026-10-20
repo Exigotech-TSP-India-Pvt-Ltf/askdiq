@@ -32,6 +32,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.core.database import release_connection
 from app.governance.usage_queries import escape_ilike_pattern
 from app.models.db_models import (
     ChatMessageRecord,
@@ -208,9 +209,22 @@ def decode_cursor(sort: FeedbackSort, cursor: str) -> list[Any]:
         raise InvalidCursorError("malformed cursor") from exc
 
 
-def _keyset_condition(sort: FeedbackSort, values: Sequence[Any]) -> ColumnElement:
-    """Rows strictly after ``values`` in ``sort`` order (mixed directions ok)."""
+def _sort_columns(
+    sort: FeedbackSort, columns: Sequence[Any] | None
+) -> list[tuple[Any, bool]]:
+    """(column, descending) of ``sort``; ``columns`` replaces the table columns
+    (same order), e.g. with a subquery's."""
     keys = _SORT_KEYS[sort]
+    if columns is None:
+        return list(keys)
+    return [(c, desc) for c, (_col, desc) in zip(columns, keys, strict=True)]
+
+
+def _keyset_condition(
+    sort: FeedbackSort, values: Sequence[Any], columns: Sequence[Any] | None = None
+) -> ColumnElement:
+    """Rows strictly after ``values`` in ``sort`` order (mixed directions ok)."""
+    keys = _sort_columns(sort, columns)
     branches = []
     for i, (col, desc) in enumerate(keys):
         prefix = [keys[j][0] == values[j] for j in range(i)]
@@ -219,8 +233,10 @@ def _keyset_condition(sort: FeedbackSort, values: Sequence[Any]) -> ColumnElemen
     return or_(*branches)
 
 
-def _order_by(sort: FeedbackSort) -> list[Any]:
-    return [col.desc() if desc else col.asc() for col, desc in _SORT_KEYS[sort]]
+def _order_by(sort: FeedbackSort, columns: Sequence[Any] | None = None) -> list[Any]:
+    return [
+        col.desc() if desc else col.asc() for col, desc in _sort_columns(sort, columns)
+    ]
 
 
 def _item_columns(ev: Any) -> list[Any]:
@@ -261,6 +277,25 @@ def _item_columns(ev: Any) -> list[Any]:
     ]
 
 
+def _needs_exchange(f: FeedbackFilters) -> bool:
+    """True when a filter reads the joined exchange (audience IP, outcome,
+    grounding or the question text); otherwise feedback columns suffice."""
+    return (
+        f.audience_cond is not None
+        or f.outcome is not None
+        or f.grounded is not None
+        or bool(f.q and f.q.strip())
+    )
+
+
+def _filtered(stmt: Select, f: FeedbackFilters) -> Select:
+    """``stmt`` over ``message_feedback`` with the filters; the exchange joins
+    (all to-one) are added only when a filter needs them."""
+    stmt = join_exchange(stmt) if _needs_exchange(f) else stmt
+    conds = _conditions(f)
+    return stmt.where(*conds) if conds else stmt
+
+
 async def list_feedback(
     db: AsyncSession,
     filters: FeedbackFilters,
@@ -270,27 +305,53 @@ async def list_feedback(
     offset: int = 0,
     cursor_values: Sequence[Any] | None = None,
 ) -> tuple[list[Any], int, bool]:
-    """(rows, filtered total, has_more) in exactly two statements."""
-    ev = latest_eval()
-    conds = _conditions(filters)
-    stmt = join_exchange(
-        select(*_item_columns(ev)).select_from(MessageFeedback)
-    ).outerjoin(ev, true())
-    count_stmt = join_exchange(
-        select(func.count(MessageFeedback.id)).select_from(MessageFeedback)
-    )
-    if conds:
-        stmt = stmt.where(*conds)
-        count_stmt = count_stmt.where(*conds)
-    if cursor_values is not None:
-        stmt = stmt.where(_keyset_condition(sort, cursor_values))
-    else:
-        stmt = stmt.offset(offset)
-    stmt = stmt.order_by(*_order_by(sort)).limit(limit + 1)
+    """(rows, filtered total, has_more), usually in one statement.
 
-    total = int((await db.scalar(count_stmt)) or 0)
+    The matching rows' sort keys are collected once (a CTE): the count and
+    the page both read it, the page is cut on the keys alone (no per-row
+    lateral), and only its rows are enriched. The exchange joins are added
+    to the match only when a filter needs them. A second statement (the
+    count) runs only for an empty page after the first.
+    """
+    keys = [col for col, _desc in _SORT_KEYS[sort]]
+    matched = _filtered(select(*keys).select_from(MessageFeedback), filters).cte(
+        "matched"
+    )
+    key_cols = [matched.c[col.key] for col in keys]
+    page_stmt = select(*key_cols)
+    if cursor_values is not None:
+        page_stmt = page_stmt.where(_keyset_condition(sort, cursor_values, key_cols))
+    else:
+        page_stmt = page_stmt.offset(offset)
+    page = (
+        page_stmt.order_by(*_order_by(sort, key_cols)).limit(limit + 1).subquery("page")
+    )
+    total_col = (
+        select(func.count()).select_from(matched).scalar_subquery().label("total_count")
+    )
+    ev = latest_eval()
+    stmt = (
+        join_exchange(
+            select(*_item_columns(ev), total_col)
+            .select_from(page)
+            .join(MessageFeedback, MessageFeedback.id == page.c.id)
+        )
+        .outerjoin(ev, true())
+        .order_by(*_order_by(sort))
+    )
+
     rows = list((await db.execute(stmt)).all())
     has_more = len(rows) > limit
+    if rows:
+        total = int(rows[0].total_count)
+    elif cursor_values is None and offset == 0:
+        total = 0
+    else:
+        count_stmt = _filtered(
+            select(func.count(MessageFeedback.id)).select_from(MessageFeedback),
+            filters,
+        )
+        total = int((await db.scalar(count_stmt)) or 0)
     return rows[:limit], total, has_more
 
 
@@ -497,14 +558,13 @@ async def list_promoted_cases(
 # ---------------------------------------------------------------------------
 
 
-async def stream_pair_rows(
-    db: AsyncSession,
+def _pairs_stmt(
     *,
     triage_status: TriageStatus | None,
     include_dismissed: bool,
-    batch_size: int,
-    window: tuple[datetime, datetime] | None = None,
-) -> AsyncIterator[Any]:
+    window: tuple[datetime, datetime] | None,
+    corrected_only: bool,
+) -> Select:
     ev = latest_eval()
     stmt = (
         join_exchange(
@@ -523,7 +583,6 @@ async def stream_pair_rows(
         )
         .outerjoin(ev, true())
         .order_by(MessageFeedback.created_at, MessageFeedback.id)
-        .execution_options(yield_per=batch_size)
     )
     if triage_status is not None:
         stmt = stmt.where(MessageFeedback.triage_status == triage_status.value)
@@ -534,6 +593,53 @@ async def stream_pair_rows(
             MessageFeedback.created_at >= window[0],
             MessageFeedback.created_at < window[1],
         )
-    result = await db.stream(stmt)
-    async for row in result:
-        yield row
+    if corrected_only:
+        # A complete pair needs a reviewer answer (chosen) and the bot's (rejected).
+        stmt = stmt.where(
+            MessageFeedback.corrected_answer.is_not(None),
+            MessageFeedback.corrected_answer != "",
+        )
+    return stmt
+
+
+async def iter_pair_batches(
+    db: AsyncSession,
+    *,
+    triage_status: TriageStatus | None,
+    include_dismissed: bool,
+    batch_size: int,
+    window: tuple[datetime, datetime] | None = None,
+    corrected_only: bool = False,
+) -> AsyncIterator[list[Any]]:
+    """Pair rows oldest first, in keyset pages of ``batch_size``.
+
+    The read transaction ends after every page, so no pooled connection is
+    held while the caller waits (a slow or vanished download client cannot
+    pin one).
+    """
+    stmt = _pairs_stmt(
+        triage_status=triage_status,
+        include_dismissed=include_dismissed,
+        window=window,
+        corrected_only=corrected_only,
+    )
+    after: tuple[datetime, uuid.UUID] | None = None
+    while True:
+        page = stmt
+        if after is not None:
+            page = page.where(
+                or_(
+                    MessageFeedback.created_at > after[0],
+                    and_(
+                        MessageFeedback.created_at == after[0],
+                        MessageFeedback.id > after[1],
+                    ),
+                )
+            )
+        rows = list((await db.execute(page.limit(batch_size))).all())
+        await release_connection(db)
+        if rows:
+            yield rows
+        if len(rows) < batch_size:
+            return
+        after = (rows[-1].created_at, rows[-1].id)
