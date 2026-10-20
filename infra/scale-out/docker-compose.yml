@@ -8,7 +8,7 @@
 # production instance, reached via DATABASE_URL in backend/.env — no postgres
 # service defined here.
 #
-# Topology (docs/archive/planchanges4.md B1.6, docs/archive/newplan.md section 13.2):
+# Topology:
 #   api-1, api-2  two API replicas, WEB_CONCURRENCY uvicorn workers each,
 #                 load balanced by nginx (infra/scale-out/askdiq-api.conf, upstream askdiq_api)
 #   worker        the Postgres job queue worker (python -m app.jobs.worker);
