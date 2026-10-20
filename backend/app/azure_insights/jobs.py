@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from app.azure_insights import (
     advisor,  # noqa: F401 - azure.advisor (Phase 4)
+    billed,  # noqa: F401 - azure.costs billed-vs-estimated snapshots (Phase 3)
     capacity,  # noqa: F401 - azure.capacity (Phase 4)
+    costs,  # noqa: F401 - azure.costs (Phase 3)
     health,  # noqa: F401 - azure.health (Phase 4)
     metrics,  # noqa: F401 - azure.metrics (Phase 2)
     reconciliation,  # noqa: F401 - azure.reconciliation snapshots (Phase 2)

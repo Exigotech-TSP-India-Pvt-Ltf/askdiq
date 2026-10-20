@@ -12,7 +12,8 @@ const PROXY_BASE = "/api/proxy/admin";
 /** Days of per-day reconciliation the console shows (the backend default). */
 export const AZURE_SUMMARY_DAYS = 7;
 
-export type AzureSourceState = "ok" | "error" | "throttled" | "budget_exhausted" | "never_run" | "not_configured";
+export type AzureSourceState =
+  "ok" | "error" | "throttled" | "budget_exhausted" | "unsupported" | "never_run" | "not_configured";
 export type DeploymentRole = "llm" | "embedding" | "other";
 export type MetricsRange = "1h" | "6h" | "24h" | "7d" | "30d" | "90d";
 export type MetricsGrain = "PT1M" | "PT1H";

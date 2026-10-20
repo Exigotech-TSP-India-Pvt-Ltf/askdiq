@@ -531,6 +531,24 @@ class Settings(BaseSettings):
     # Advisor recommendations (AZURE_ADVISOR_ENABLED): daily by default.
     azure_advisor_interval_seconds: int = Field(default=86_400, ge=21_600)
 
+    # Cost Management (billed cost): polled once per AZURE_COSTS_INTERVAL_SECONDS
+    # at this local time (INSIGHTS_TIMEZONE); Azure itself lags 8-72 h.
+    azure_costs_run_at: str = Field(
+        default="03:00", pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
+    )
+    azure_costs_api_version: str = Field(
+        default="2026-06-01", pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}(-preview)?$"
+    )
+    # Billed-cost history kept (days).
+    azure_costs_retention_days: int = Field(default=400, ge=400)
+    # Monthly Azure budget in the BILLING currency (for a non-USD bill; a USD
+    # bill falls back to MONTHLY_COST_BUDGET_USD). Unset = no billed budget.
+    azure_monthly_budget: float | None = Field(default=None, ge=0)
+    # Estimate drift alert: a closed day where |billed - estimated| / billed
+    # exceeds this %, and billed is at least ALERT_AZURE_DRIFT_MIN.
+    alert_azure_drift_pct: float = Field(default=15.0, gt=0)
+    alert_azure_drift_min: float = Field(default=1.0, ge=0)
+
     # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
     # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).
     # Each also accepts the generic OIDC_* names other Exigo apps use, so one .env works for both.

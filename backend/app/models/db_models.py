@@ -1222,3 +1222,23 @@ class AzureAdvisorRec(Base):
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AzureBilledCost(Base):
+    """Azure Cost Management billed cost per UTC usage day, meter and resource
+    (``app.azure_insights.costs``). Re-read days are upserted (rerating);
+    ``is_final`` once the month closed + 3 days. Kept AZURE_COSTS_RETENTION_DAYS."""
+
+    __tablename__ = "azure_billed_costs"
+
+    usage_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    meter: Mapped[str] = mapped_column(String(200), primary_key=True)
+    resource_id: Mapped[str] = mapped_column(String(512), primary_key=True)
+    cost: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    currency: Mapped[str] = mapped_column(String(3))
+    is_final: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )

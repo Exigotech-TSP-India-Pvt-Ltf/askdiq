@@ -97,6 +97,7 @@ Then:
 |---|---|
 | `AzureThrottledError(retry_after)` (429, QPU header, low remaining reads) | status `throttled`; the same job is deferred to `now + retry_after` (no attempt spent) |
 | `AzureBudgetExhaustedError` (monthly cap) | status `budget_exhausted`; waits for the next slot |
+| `AzureUnsupportedError` (API not offered for the subscription type, e.g. Cost Management on classic CSP) | status `unsupported`, no failure streak; waits for the next slot |
 | `AzureApiError` 4xx, `AzureAuthError`, `AzureNotConfiguredError` | status `error` (sanitised code/message), `consecutive_failures + 1`; next slot |
 | `AzureApiError` 5xx / connection, unexpected exception | recorded, then re-raised: the queue retries with backoff |
 
@@ -109,14 +110,57 @@ headers, tokens or bodies; raise the package errors (they sanitise).
 
 `ensure_azure_scheduled()` runs at startup (`PlatformServices.start`) and
 every 5 minutes from the jobs worker. It queues each active source for its
-next epoch-aligned slot (`dedupe_key = azure.<name>:<slot>`); a source that
-has not run within its interval runs at once. Each run re-arms the next slot.
+next slot (`scheduler.source_slot`; `dedupe_key = azure.<name>:<slot>`); a
+source that has not run within its interval runs at once. Each run re-arms
+the next slot. Slots are epoch-aligned unless the source sets `anchor`
+(`(IANA zone, local time)`, DST-aware via `zoneinfo`; the `tzdata` package
+supplies the zones): costs run daily at `AZURE_COSTS_RUN_AT` (03:00)
+`INSIGHTS_TIMEZONE`.
 `AZURE_INSIGHTS_ENABLED=false`: nothing is queued and queued jobs no-op;
 the status card shows "Not connected". On-demand runs of public sources
 (retail) still work.
+
+## Sources
+
+All imported once in `jobs.py`. Job type `azure.<name>`, status row `<name>`.
+
+| Source | Phase | Module | Interval | Enabled | Snapshot kinds |
+|---|---|---|---|---|---|
+| `retail` | 1 | `retail.py` | `AZURE_RETAIL_INTERVAL_SECONDS` (weekly) | always (public API) | `azure.retail` |
+| `metrics` | 2 | `metrics.py` (+ `reconciliation.py`) | `AZURE_METRICS_INTERVAL_SECONDS` (15 min) | always | `azure.metrics.summary`, `azure.metrics.series` |
+| `costs` | 3 | `costs.py` (+ `billed.py`) | `AZURE_COSTS_INTERVAL_SECONDS`, anchored at `AZURE_COSTS_RUN_AT` | always | `azure.costs.billed` |
+| `capacity` | 4 | `capacity.py` | `AZURE_CAPACITY_INTERVAL_SECONDS` (6 h) | always | `azure.capacity` |
+| `health` | 4 | `health.py` | `AZURE_HEALTH_INTERVAL_SECONDS` (10 min) | always | `azure.health` |
+| `service_health` | 4 | `health.py` | `AZURE_SERVICE_HEALTH_INTERVAL_SECONDS` (30 min) | `AZURE_SERVICE_HEALTH_ENABLED` | `azure.health` |
+| `advisor` | 4 | `advisor.py` | `AZURE_ADVISOR_INTERVAL_SECONDS` (daily) | `AZURE_ADVISOR_ENABLED` | `azure.advisor` |
+
+`azure.status` (core, `scheduler.STATUS_KIND`) is recomputed after every run.
+
+Routes (`/admin/azure/*`, `DASHBOARD_READ`): `status`, `metrics/summary`,
+`metrics/series`, `costs`, `capacity`, `health`, `advisor`; retail prices are
+served from `/admin/models/prices/official` and `/admin/models/prices/sync`.
 
 ## Tables
 
 - `azure_sync_status` (core): per source state, last run / success / error,
   failures, next run, monthly call counter (`status.consume_call`), `detail`.
-- `azure_retail_prices` (Phase 1).
+- `azure_retail_prices` (Phase 1): one row per meter, currency and effective
+  date (history kept); `role` / `model_key` / `deployment_type` from the
+  explicit meter map (`prices.py`). Also re-prices the estimate for a
+  non-USD bill (Phase 3, `billed.retail_card`).
+- `azure_metric_points` (Phase 2): Azure Monitor points per deployment,
+  metric, status code (requests only), grain (`PT1M` kept 7 d, `PT1H` 93 d)
+  and bucket. The `azure_quota_near_limit` alert prefers its PT1M
+  `TokenTransaction` / `AzureOpenAIRequests` peaks over `chat_messages`.
+- `azure_billed_costs` (Phase 3): Cost Management cost per UTC usage day,
+  meter and resource, billing currency, `is_final`; kept
+  `AZURE_COSTS_RETENTION_DAYS` (400).
+- `azure_deployments`, `azure_quota_usage` (Phase 4): deployment SKU /
+  capacity / Azure TPM and RPM, and regional quota, one row per poll.
+- `azure_health_status`, `azure_service_events`, `azure_advisor_recs`
+  (Phase 4): Resource Health status changes, Service Health events by
+  tracking id, Advisor recommendations (`resolved_at` once gone).
+
+Migrations (one linear chain on main): `ca723897761c` (sync status) ->
+`39e042e6bb64` (retail) -> `a788c15bf749` (metrics) -> `6e0a31f87ff3`
+(capacity / health) -> `144fe4240293` (billed costs).

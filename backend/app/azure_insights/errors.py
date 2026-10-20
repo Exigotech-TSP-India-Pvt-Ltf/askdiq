@@ -86,3 +86,10 @@ class AzureBudgetExhaustedError(AzureInsightsError):
         )
         self.source = source
         self.cap = cap
+
+
+class AzureUnsupportedError(AzureApiError):
+    """Azure answered that this subscription / billing setup does not offer
+    the API (e.g. Cost Management on classic CSP or sponsorship offers).
+    Recorded as state ``unsupported`` (not a failure streak): only the
+    affected panel says so, the other sources keep working."""

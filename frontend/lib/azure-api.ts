@@ -11,7 +11,8 @@ import type { PriceField } from "@/lib/settings-api";
 
 const API_BASE_URL = "/api/proxy";
 
-export type AzureSourceState = "ok" | "error" | "throttled" | "budget_exhausted" | "never_run" | "not_configured";
+export type AzureSourceState =
+  "ok" | "error" | "throttled" | "budget_exhausted" | "unsupported" | "never_run" | "not_configured";
 
 export interface AzureSourceStatus {
   source: string;

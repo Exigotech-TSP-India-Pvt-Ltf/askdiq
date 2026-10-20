@@ -13,6 +13,7 @@ const TONE: Record<AzureSourceState, string> = {
   error: "border-status-danger/40 bg-status-danger-bg text-status-danger-fg",
   budget_exhausted: "border-status-danger/40 bg-status-danger-bg text-status-danger-fg",
   throttled: "border-status-warn/40 bg-status-warn-bg text-status-warn-fg",
+  unsupported: "border-line bg-surface-muted text-fg-muted",
   never_run: "border-line bg-surface-muted text-fg-muted",
   not_configured: "border-line bg-surface-muted text-fg-muted",
 };
@@ -21,6 +22,7 @@ const STATE_LABEL: Record<AzureSourceState, string> = {
   error: "Error",
   budget_exhausted: "Call cap reached",
   throttled: "Throttled",
+  unsupported: "Not offered for this subscription",
   never_run: "Not run yet",
   not_configured: "Not connected",
 };
