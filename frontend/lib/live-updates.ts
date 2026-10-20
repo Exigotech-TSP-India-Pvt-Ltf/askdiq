@@ -44,6 +44,7 @@ const SCOPE_PREFIXES: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["usage.", ["admin/usage", "admin/dashboard"]],
   ["admin.dashboard", ["admin/dashboard"]],
   ["admin.conversations", ["conversations"]],
+  ["conversations.", ["conversations", "conversation"]],
   ["visitors.", ["visitors", "visitor"]],
   ["documents.", ["documents"]],
   ["feedback.", ["admin/feedback"]],
