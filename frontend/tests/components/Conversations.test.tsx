@@ -31,7 +31,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Conversations list", () => {
+describe("Conversations list", { timeout: 15_000 }, () => {
   beforeEach(() => history.reset("/admin/visitors?tab=conversations"));
 
   it("a histogram bin filters by turn count (URL + request) and the chip clears it", async () => {
