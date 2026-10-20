@@ -88,6 +88,7 @@ ONLINE_EVAL_VIOLATIONS = "online_eval_violations"
 LLM_CIRCUIT_OPEN = "llm_circuit_open"
 AZURE_QUOTA = "azure_quota"
 AZURE_THROTTLING = "azure_throttling"
+AZURE_MONITOR_429_SPIKE = "azure_monitor_429_spike"
 EVENT_BUS_DOWN = "event_bus_disconnected"
 DATABASE_UNAVAILABLE = "database_unavailable"
 CPU_SUSTAINED = "cpu_sustained"
@@ -244,6 +245,21 @@ RULES: tuple[AlertRule, ...] = (
         "warning at ALERT_AZURE_429_THRESHOLD, critical at 5x that",
         _MONITORING,
         "The deployment is over its quota: raise TPM/RPM in Azure or reduce load.",
+    ),
+    AlertRule(
+        AZURE_MONITOR_429_SPIKE,
+        "Azure-side 429 spike",
+        "Azure OpenAI",
+        "database",
+        "HTTP 429 responses counted by Azure Monitor (AzureOpenAIRequests by "
+        "StatusCode, every caller of the resource) in the newest "
+        "ALERT_AZURE_MONITOR_429_WINDOW_MINUTES of stored minute points. Needs "
+        "Azure Insights connected; complements the header-based azure_throttling.",
+        "warning at ALERT_AZURE_MONITOR_429_THRESHOLD, critical at 5x that",
+        _MONITORING,
+        "Open Governance > Monitoring > Azure vs AskDIQ: if AskDIQ saw few of "
+        "these 429s, another caller (playground, other apps) shares the "
+        "deployment's quota. Raise TPM/RPM in Azure or separate the callers.",
     ),
     AlertRule(
         EVENT_BUS_DOWN,

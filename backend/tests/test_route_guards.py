@@ -112,6 +112,8 @@ EXPECTED_B7_READS: dict[str, str] = {
 # exactly dashboard:read.
 EXPECTED_AZURE_READS: dict[str, str] = {
     "/admin/azure/status": Permission.DASHBOARD_READ,
+    "/admin/azure/metrics/summary": Permission.DASHBOARD_READ,
+    "/admin/azure/metrics/series": Permission.DASHBOARD_READ,
 }
 # Open to every signed-in user, whatever their status.
 SIGNED_IN_ROUTES = frozenset({("GET", "/auth/me"), ("POST", "/auth/logout")})

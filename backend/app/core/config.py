@@ -442,6 +442,10 @@ class Settings(BaseSettings):
     alert_llm_failure_window_minutes: int = Field(default=15, ge=1)
     alert_llm_failures_threshold: int = Field(default=5, ge=1)
     alert_azure_429_threshold: int = Field(default=3, ge=1)
+    # Azure-side 429s (Azure Monitor metrics, every caller of the resource) in
+    # the last window of stored PT1M points (azure_monitor_429_spike).
+    alert_azure_monitor_429_threshold: int = Field(default=10, ge=1)
+    alert_azure_monitor_429_window_minutes: int = Field(default=15, ge=5, le=120)
     alert_budget_warning_pct: float = Field(default=80.0, gt=0)
     alert_budget_critical_pct: float = Field(default=100.0, gt=0)
     alert_feedback_window_minutes: int = Field(default=60, ge=5)
@@ -513,6 +517,9 @@ class Settings(BaseSettings):
     azure_http_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     # Interactive "Sync official prices" calls per admin per minute.
     azure_retail_sync_rate_limit_per_minute: int = Field(default=5, ge=1)
+    # Governance > Monitoring "Azure vs AskDIQ": rows whose drift (|Azure -
+    # AskDIQ| / Azure) is at or above this percentage are highlighted.
+    azure_reconciliation_drift_pct: float = Field(default=10.0, gt=0, le=1000)
 
     # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
     # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).

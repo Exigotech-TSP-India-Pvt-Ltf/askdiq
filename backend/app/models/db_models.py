@@ -974,3 +974,35 @@ class AzureSyncStatus(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default=func.now()
     )
+
+
+class AzureMetricPoint(Base):
+    """One Azure Monitor platform-metric data point of the Foundry / Azure
+    OpenAI account (Phase 2): per deployment, metric, HTTP status (requests
+    only; '' otherwise), grain (PT1M | PT1H) and bucket start. Upserted on
+    this natural key, so re-reading an overlapping window is harmless.
+    PT1M rows are kept 7 days, PT1H rows 93 days (``app.azure_insights.metrics``)."""
+
+    __tablename__ = "azure_metric_points"
+
+    deployment: Mapped[str] = mapped_column(String(128), primary_key=True)
+    metric: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status_code: Mapped[str] = mapped_column(
+        String(16), primary_key=True, default="", server_default=""
+    )
+    grain: Mapped[str] = mapped_column(String(8), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    total: Mapped[float | None] = mapped_column(Float)
+    average: Mapped[float | None] = mapped_column(Float)
+    maximum: Mapped[float | None] = mapped_column(Float)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "grain IN ('PT1M', 'PT1H')", name="ck_azure_metric_points_grain"
+        ),
+        Index("ix_azure_metric_points_grain_ts", "grain", "ts"),
+        Index("ix_azure_metric_points_metric_grain_ts", "metric", "grain", "ts"),
+    )
