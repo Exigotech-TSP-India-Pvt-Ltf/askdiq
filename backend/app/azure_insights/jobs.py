@@ -6,6 +6,7 @@ from __future__ import annotations
 
 # pylint: disable=unused-import
 from app.azure_insights import (  # noqa: F401
+    billed,
     costs,
     service,
 )
