@@ -21,6 +21,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { PageShellSkeleton } from "@/components/ui/PageShellSkeleton";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { secondaryButton } from "@/components/ui/styles";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import {
   SectionCard,
   ToneChip,
@@ -270,18 +271,19 @@ function VisitorDetailContent() {
         actions={
           ip ? (
             <>
-              <Link href={carry(entityHref({ kind: "visitor", id: ip }))} className={secondaryButton} title="Sessions in Usage & Cost">
-                <ListTree {...ICON} />
-                <span className="hidden lg:inline">Usage sessions</span>
-              </Link>
-              <Link href={carry(conversationsHref({ ip }))} className={secondaryButton} title="This visitor's conversations">
-                <MessagesSquare {...ICON} />
-                <span className="hidden lg:inline">Conversations</span>
-              </Link>
-              <Link href={entityHref({ kind: "analytics", visitor: id })} className={secondaryButton}>
-                <ChartPie {...ICON} />
-                Analytics
-              </Link>
+              <HeaderIconButton
+                href={carry(entityHref({ kind: "visitor", id: ip }))}
+                icon={ListTree}
+                label="Usage sessions"
+                tooltip="Sessions in Usage & Cost"
+              />
+              <HeaderIconButton
+                href={carry(conversationsHref({ ip }))}
+                icon={MessagesSquare}
+                label="Conversations"
+                tooltip="This visitor's conversations"
+              />
+              <HeaderIconButton href={entityHref({ kind: "analytics", visitor: id })} icon={ChartPie} label="Analytics" />
             </>
           ) : undefined
         }

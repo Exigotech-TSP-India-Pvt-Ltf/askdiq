@@ -2,10 +2,11 @@
 
 import React, { useEffect, useId, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { CalendarRange, Check, ChevronDown } from "lucide-react";
+import { CalendarRange, Check } from "lucide-react";
 import { pop, useMotionVariants } from "@/lib/motion";
 import { usePopover } from "@/lib/use-popover";
-import { PRESET_LABEL, RANGE_PRESETS, toIsoDay, useRange } from "@/lib/range-context";
+import { DEFAULT_PRESET, PRESET_LABEL, RANGE_PRESETS, toIsoDay, useRange } from "@/lib/range-context";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import { focusRing, menuItem, popoverPanel, primaryButton } from "@/components/ui/styles";
 
 function parseInputDay(value: string): Date | null {
@@ -16,7 +17,9 @@ function parseInputDay(value: string): Date | null {
 }
 
 /**
- * Global date-range control for `DashboardHeader`: presets
+ * Global date-range control for `DashboardHeader`, an icon button in the
+ * header's right-corner cluster (the active range is its accessible name and
+ * tooltip; a dot marks a non-default range): presets
  * 24h / 7d / 30d / 90d plus a custom range, all synced to the URL by
  * `RangeProvider`. Renders nothing outside a RangeProvider.
  */
@@ -52,20 +55,17 @@ export function DateRangePicker({ className = "" }: { className?: string }) {
 
   return (
     <div className={`relative ${className}`}>
-      <button
+      <HeaderIconButton
         ref={triggerRef}
-        type="button"
+        icon={CalendarRange}
+        label={`Date range: ${range.label}`}
+        indicator={range.kind !== DEFAULT_PRESET}
+        hideTooltip={open}
         onClick={toggle}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        aria-label={`Date range: ${range.label}`}
-        className={`inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface-card px-2.5 text-xs font-medium text-fg-muted shadow-sm transition-colors hover:border-brand-300 hover:text-fg dark:hover:border-brand-700/60 ${focusRing}`}
-      >
-        <CalendarRange className="h-4 w-4 text-brand-600 dark:text-brand-400" strokeWidth={1.75} aria-hidden="true" />
-        <span className="max-w-[11rem] truncate tabular-nums">{range.label}</span>
-        <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-      </button>
+      />
 
       <AnimatePresence>
         {open ? (

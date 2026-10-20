@@ -22,6 +22,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { PageShellSkeleton } from "@/components/ui/PageShellSkeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import {
   ToneChip,
   errorMessage,
@@ -208,10 +209,12 @@ function ConversationDetailContent() {
         breadcrumb={[{ label: AUDIENCE_PAGE_LABEL, href: carry(conversationsHref()) }, { label: title }]}
         actions={
           conversation.created_ip ? (
-            <Link href={carry(visitorDetailHref(`client-${conversation.created_ip}`))} className={secondaryButton} title="Open this conversation's visitor">
-              <User {...ICON} />
-              <span className="hidden lg:inline">View visitor</span>
-            </Link>
+            <HeaderIconButton
+              href={carry(visitorDetailHref(`client-${conversation.created_ip}`))}
+              icon={User}
+              label="View visitor"
+              tooltip="Open this conversation's visitor"
+            />
           ) : undefined
         }
       />

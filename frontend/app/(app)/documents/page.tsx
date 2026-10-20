@@ -31,6 +31,7 @@ import { RadialGauge } from "@/components/charts/RadialGauge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { CountUp } from "@/components/ui/CountUp";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, iconButton } from "@/components/ui/styles";
@@ -402,15 +403,14 @@ function DocumentsContent() {
         showDateRange
         actions={
           canWrite ? (
-            <button
-              type="button"
+            <HeaderIconButton
+              icon={Upload}
+              label="Upload Document"
+              variant="primary"
               data-tour="documents-upload"
+              aria-haspopup="dialog"
               onClick={() => setUploadOpen(true)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-gradient px-3.5 py-1.5 text-xs font-semibold text-white shadow-brand-glow transition hover:opacity-90 ${focusRing}`}
-            >
-              <Upload className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-              <span>Upload Document</span>
-            </button>
+            />
           ) : undefined
         }
       />
