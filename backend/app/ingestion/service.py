@@ -13,6 +13,7 @@ from datetime import datetime
 
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import undefer
 
 from app.chunking.factory import get_strategy
 from app.core.config import get_settings
@@ -35,6 +36,64 @@ settings = get_settings()
 
 # Converter recorded per source format (provenance shown on the Documents page).
 CONVERTERS: dict[str, str] = {"docx": "mammoth+gfm", "md": "markdown-normalizer"}
+
+# Why a re-ingest of an existing document changed its hash or chunks.
+REASON_CONTENT = "content_changed"
+REASON_SOURCE_FORMAT = "source_format_changed"
+REASON_HASH_SCHEME = "hash_scheme_changed"
+REASON_CHUNKING = "chunking_changed"
+REASON_FORCED = "forced"
+REASON_CHUNKS_MISSING = "chunks_missing"
+
+
+def change_reasons(
+    existing: Document,
+    *,
+    status: str,
+    normalized_content: str,
+    new_doc_hash: str,
+    converted_from: str,
+    strategy_requested: str,
+    chunks_differ: bool,
+) -> list[str]:
+    """Reason codes for re-ingesting ``existing`` (empty when nothing changed).
+
+    Text is compared with the stored canonical Markdown when it is kept. A
+    legacy row (no stored text, hash from an older scheme) cannot prove a
+    text change, so differing chunk hashes are the evidence. Identical text
+    with different chunks means chunking changed, not the content.
+    """
+    if status == "forced":
+        return [REASON_FORCED]
+    if status == "repaired":
+        return [REASON_CHUNKS_MISSING]
+    meta = existing.doc_metadata or {}
+    reasons: list[str] = []
+    # Rows from before .docx support carry no format and were always text.
+    stored_format = meta.get("original_format") or meta.get("converted_from") or "md"
+    if stored_format != converted_from:
+        reasons.append(REASON_SOURCE_FORMAT)
+    scheme_changed = existing.content_hash != new_doc_hash and (
+        meta.get("doc_hash_version") != DOC_HASH_VERSION
+        or meta.get("pipeline_version") != PIPELINE_VERSION
+    )
+    if scheme_changed:
+        reasons.append(REASON_HASH_SCHEME)
+    text_changed: bool | None
+    if existing.canonical_markdown is not None:
+        text_changed = existing.canonical_markdown != normalized_content
+    elif not scheme_changed:
+        text_changed = existing.content_hash != new_doc_hash
+    else:
+        text_changed = None
+    if text_changed or (text_changed is None and chunks_differ):
+        reasons.append(REASON_CONTENT)
+    stored_strategy = meta.get("chunking_strategy_requested")
+    if (stored_strategy and stored_strategy != strategy_requested) or (
+        text_changed is False and chunks_differ
+    ):
+        reasons.append(REASON_CHUNKING)
+    return reasons
 
 
 def provenance_extras(
@@ -142,10 +201,11 @@ async def ingest_text(
     # -------------------------------------------------------------------------
     # PHASE A: Short Read Transaction
     # -------------------------------------------------------------------------
+    # Stored canonical text is compared to explain why a re-ingest changed.
     existing = await db.scalar(
-        select(Document).where(
-            func.lower(Document.source_name) == func.lower(canonical_name)
-        )
+        select(Document)
+        .options(undefer(Document.canonical_markdown))
+        .where(func.lower(Document.source_name) == func.lower(canonical_name))
     )
 
     existing_chunk_rows = []
@@ -226,6 +286,7 @@ async def ingest_text(
             "converted_from": converted_from,
             "content_hash": new_doc_hash,
             "previous_content_hash": existing.content_hash,
+            "change_reasons": [],
             "chunk_count": len(existing_chunk_rows),
             "chunks_added": 0,
             "chunks_kept": len(existing_chunk_rows),
@@ -290,6 +351,22 @@ async def ingest_text(
             else:
                 stale_chunk_ids.extend(ids[1:])  # deduplicate if extra copies exist
 
+    # Read before Phase C: ``existing`` is the same ORM row it updates.
+    previous_hash = existing.content_hash if existing else None
+    reasons = (
+        change_reasons(
+            existing,
+            status=status,
+            normalized_content=normalized_content,
+            new_doc_hash=new_doc_hash,
+            converted_from=converted_from,
+            strategy_requested=chunking_strategy,
+            chunks_differ=set(new_chunks) != set(existing_chunks_by_hash),
+        )
+        if existing is not None
+        else []
+    )
+
     # Compute estimated tokens
     est_embed_tokens = sum(
         len(getattr(new_chunks[h], "content", "").split()) for h in to_add_hashes
@@ -307,7 +384,8 @@ async def ingest_text(
             "original_filename": original_filename or canonical_name,
             "converted_from": converted_from,
             "content_hash": new_doc_hash,
-            "previous_content_hash": existing.content_hash if existing else None,
+            "previous_content_hash": previous_hash,
+            "change_reasons": reasons,
             "chunk_count": len(chunk_results),
             "chunks_added": len(to_add_hashes),
             "chunks_kept": len(kept_hashes),
@@ -364,7 +442,7 @@ async def ingest_text(
         "original_format": converted_from,
         "original_sha256": original_sha256 or "",
         "converter_version": "v1",
-        "previous_content_hash": existing.content_hash if existing else None,
+        "previous_content_hash": previous_hash,
         "ingest_count": (
             (
                 current_doc.doc_metadata.get("ingest_count", 0)
@@ -450,11 +528,8 @@ async def ingest_text(
             "original_filename": original_filename or canonical_name,
             "converted_from": converted_from,
             "status": status,
-            "previous_content_hash": (
-                existing.content_hash[:12]
-                if existing and existing.content_hash
-                else None
-            ),
+            "previous_content_hash": previous_hash[:12] if previous_hash else None,
+            "change_reasons": reasons,
             "content_hash": new_doc_hash[:12],
             "chunks_added": len(to_add_hashes),
             "chunks_kept": len(kept_hashes),
@@ -495,7 +570,8 @@ async def ingest_text(
         "original_filename": original_filename or canonical_name,
         "converted_from": converted_from,
         "content_hash": new_doc_hash,
-        "previous_content_hash": existing.content_hash if existing else None,
+        "previous_content_hash": previous_hash,
+        "change_reasons": reasons,
         "chunk_count": len(chunk_results),
         "chunks_added": len(to_add_hashes),
         "chunks_kept": len(kept_hashes),

@@ -20,6 +20,7 @@ import { FormatBadge } from "@/components/documents/FormatBadge";
 import {
   MAX_UPLOAD_BYTES,
   UPLOAD_ACCEPT,
+  changeReasonText,
   fileExtension,
   formatBytes,
   strategyLabel,
@@ -53,7 +54,9 @@ function previewSummary(p: UploadResult): string {
     return "Content is identical to the stored version: nothing is re-embedded. Re-checking stores the canonical Markdown if it is missing.";
   }
   if (p.status === "new") return `New document: ${p.chunk_count} chunk${p.chunk_count === 1 ? "" : "s"} will be embedded.`;
-  return `Existing document changed: ${p.chunks_added} new, ${p.chunks_kept} unchanged and ${p.chunks_removed} removed chunks.`;
+  const why = changeReasonText(p.change_reasons);
+  if (!p.chunks_added && !p.chunks_removed) return `${why}. No chunk changed: nothing is re-embedded.`;
+  return `${why}: ${p.chunks_added} new, ${p.chunks_kept} unchanged and ${p.chunks_removed} removed chunks.`;
 }
 
 export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogProps) {
@@ -306,6 +309,12 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
                 <dd className="text-fg">
                   +{result.chunks_added} new · {result.chunks_kept} kept · −{result.chunks_removed} removed
                 </dd>
+                {result.change_reasons?.length ? (
+                  <>
+                    <dt>Reason</dt>
+                    <dd className="text-fg">{changeReasonText(result.change_reasons)}</dd>
+                  </>
+                ) : null}
                 {result.strategy_used ? (
                   <>
                     <dt>Chunking</dt>

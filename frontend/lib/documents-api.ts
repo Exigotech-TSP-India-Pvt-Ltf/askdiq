@@ -347,6 +347,22 @@ export function filterInventory(
   return out.sort(compare[sort]);
 }
 
+const CHANGE_REASONS: Record<string, string> = {
+  content_changed: "the text differs from the stored version",
+  source_format_changed: "the source format differs from the stored one (e.g. Markdown vs Word)",
+  hash_scheme_changed: "the stored version was hashed by an older pipeline",
+  chunking_changed: "chunker settings changed (same text, different chunks)",
+  forced: "a full re-index was forced",
+  chunks_missing: "its chunks were missing",
+};
+
+/** Why an existing document was re-chunked, as one sentence fragment. */
+export function changeReasonText(reasons: readonly string[] | null | undefined): string {
+  if (!reasons?.length) return "Existing document changed";
+  const parts = reasons.map((r) => CHANGE_REASONS[r] ?? r.replace(/_/g, " "));
+  return `Re-chunked because ${parts.join("; ")}`;
+}
+
 /** Human label for a chunking strategy id (`structure_aware` -> "Structure aware"). */
 export function strategyLabel(strategy: string | null | undefined): string {
   if (!strategy) return "—";

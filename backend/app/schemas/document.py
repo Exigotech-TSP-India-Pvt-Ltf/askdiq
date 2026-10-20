@@ -34,6 +34,14 @@ class IngestResponse(BaseModel):
     status: str = "new"  # new, updated, unchanged, repaired, forced
     content_hash: str = ""
     previous_content_hash: str | None = None
+    change_reasons: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Why an existing document was re-chunked: content_changed, "
+            "source_format_changed, hash_scheme_changed, chunking_changed, "
+            "forced or chunks_missing. Empty for new or unchanged documents."
+        ),
+    )
     chunk_count: int = 0
     chunks_added: int = 0
     chunks_kept: int = 0

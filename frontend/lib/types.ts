@@ -156,6 +156,8 @@ export interface IngestResult {
   status: "new" | "updated" | "unchanged" | "repaired" | "forced";
   content_hash: string;
   previous_content_hash?: string | null;
+  /** Why an existing document was re-chunked (empty for new/unchanged). */
+  change_reasons?: string[];
   chunks_added: number;
   chunks_kept: number;
   chunks_removed: number;
