@@ -13,38 +13,45 @@
  * Pages open with the default range (`DEFAULT_PRESET`) and default filters;
  * those are the keys warmed here.
  */
-import { DEFAULT_STATE, toInsightsFilters } from "@/components/admin/analytics/url-state";
-import { viewerTimeZone } from "@/components/admin/analytics/use-insights";
+import { filtersForPreset } from "@/components/admin/analytics/use-analytics-preload";
+import { DEFAULT_STATE } from "@/components/admin/analytics/url-state";
+import { pageOf, prefetchBundle, viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
-import { dashboardApi, dashboardKeys, rangeParams } from "@/lib/dashboard-api";
+import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
+import { summaryFetcher } from "@/lib/use-dashboard";
 import { listDocumentInventory } from "@/lib/documents-api";
 import { getDocumentCitationStats, getVisitorStats, getVisitors } from "@/lib/entity-stats-api";
-import { evaluationLiveKey, fetchEvaluationLive } from "@/lib/evaluation-live";
+import { warmAudiencePage } from "@/lib/audience-data";
+import {
+  DEFAULT_CASE_QUERY,
+  evaluationCasesKey,
+  evaluationLiveKey,
+  evaluationSummaryKey,
+  fetchEvaluationCases,
+  fetchEvaluationLive,
+  fetchEvaluationSummary,
+} from "@/lib/evaluation-live";
 import { feedbackKeys, getFeedbackAnalytics } from "@/lib/feedback-api";
 import { governanceApi } from "@/lib/governance-api";
-import { INSIGHTS_CACHE_PREFIX, insightsApi, insightsQuery, type InsightsEndpoint } from "@/lib/insights-api";
 import { prefetch, runWhenIdle } from "@/lib/query-cache";
 import { DEFAULT_PRESET, presetRange, rangeUtcDays } from "@/lib/range-context";
 import type { Audience } from "@/lib/types";
 import { fetchUsageList, usageKeys, usageListKey, type UsageListKind } from "@/lib/use-usage-data";
-import { AUDIT_LIMIT_MAX, umKeys, userManagementApi } from "@/lib/user-management-api";
+import { BRANDING_KEY, MODELS_KEY, TAXONOMY_KEY, settingsApi } from "@/lib/settings-api";
+import {
+  AUDIT_PAGE_DEFAULT,
+  umKeys,
+  userManagementApi,
+  type UserListParams,
+} from "@/lib/user-management-api";
 
-/** Every card of the Analytics Overview tab (same keys as use-insights). */
-const ANALYTICS_ENDPOINTS: readonly InsightsEndpoint[] = [
-  "summary",
-  "trend",
-  "hourly",
-  "flow",
-  "topics",
-  "quality",
-  "dropoff",
-  "people",
-];
 /** Page defaults mirrored from the pages (keys must match exactly). */
 const TOP_CITED_LIMIT = 10;
-const VISITORS_PAGE_SIZE = 10;
 const UM_STATS_DAYS = 30;
+const UM_PAGE_SIZE = 25;
+/** The Users tab's default first page (use-um-url defaults). */
+const UM_USERS_FIRST_PAGE: UserListParams = { sort: "created_at", order: "desc", limit: UM_PAGE_SIZE, offset: 0 };
 const LIVE_FEED_LIMIT = 8;
 const USAGE_PAGE_SIZE = 10;
 const USAGE_TAB_DEFAULTS: ReadonlyArray<readonly [UsageListKind, string]> = [
@@ -82,8 +89,8 @@ function governanceOverall(token: string, audience: Audience): void {
 
 const PREFETCHERS: Record<string, Prefetcher> = {
   "/admin": (token, audience) => {
-    const params = rangeParams(presetRange(DEFAULT_PRESET), audience);
-    warm(dashboardKeys.summary(params), (signal) => dashboardApi.summary(token, params, signal));
+    const range = presetRange(DEFAULT_PRESET);
+    warm(dashboardKeys.summary(audience, range), summaryFetcher(token, range, audience));
     warm(dashboardKeys.health(audience), (signal) => governanceApi.overview(token, audience, signal));
     warm(dashboardKeys.activity(audience), (signal) => dashboardApi.activity(token, audience, signal));
   },
@@ -94,34 +101,8 @@ const PREFETCHERS: Record<string, Prefetcher> = {
       getDocumentCitationStats(token, { from: days.from, to: days.to, limit: TOP_CITED_LIMIT }, signal),
     );
   },
-  "/admin/visitors": (token, audience) => {
-    const days = defaultDays();
-    warm(["visitors", "stats", audience, days.from, days.to], (signal) =>
-      getVisitorStats(token, { audience, from: days.from, to: days.to }, signal),
-    );
-    const listKey = [
-      "visitors",
-      "list",
-      audience,
-      "",
-      "all",
-      "all",
-      "last_active_desc",
-      VISITORS_PAGE_SIZE,
-      0,
-      undefined,
-      undefined,
-      null,
-      null,
-    ];
-    warm(listKey, (signal) =>
-      getVisitors(
-        token,
-        { audience, q: undefined, status: "all", type: "all", sort: "last_active_desc", limit: VISITORS_PAGE_SIZE, offset: 0 },
-        signal,
-      ),
-    );
-  },
+  // Both tabs (Visitors | Conversations) of the page.
+  "/admin/visitors": (token, audience) => warmAudiencePage(warm, token, audience, defaultDays()),
   "/admin/usage": (token, audience) => {
     const days = defaultDays();
     warm(usageKeys.summary(audience, days), (signal) =>
@@ -150,22 +131,32 @@ const PREFETCHERS: Record<string, Prefetcher> = {
   },
   "/admin/evaluation-live": (token, audience) => {
     const days = defaultDays();
-    warm(evaluationLiveKey(audience, days), (signal) => fetchEvaluationLive(token, audience, days, signal));
+    warm(evaluationSummaryKey(audience, days), (signal) => fetchEvaluationSummary(token, audience, days, signal));
+    warm(evaluationCasesKey(audience, days, DEFAULT_CASE_QUERY), (signal) =>
+      fetchEvaluationCases(token, audience, days, DEFAULT_CASE_QUERY, signal),
+    );
   },
   "/admin/governance": governanceOverall,
   "/admin/analytics": (token, audience) => {
-    const tz = viewerTimeZone();
-    const filters = { ...toInsightsFilters(DEFAULT_STATE), audience, ...(tz ? { tz } : {}) };
-    for (const endpoint of ANALYTICS_ENDPOINTS) {
-      warm([`${INSIGHTS_CACHE_PREFIX}/${endpoint}`, insightsQuery(filters)], (signal) =>
-        insightsApi.aggregate(endpoint, token, filters, signal),
-      );
-    }
-    warm(`${INSIGHTS_CACHE_PREFIX}/pending`, (signal) => insightsApi.getPending(token, signal));
+    // The page's first view: the default range preset, one bundle request.
+    const filters = filtersForPreset({ period: "all", audience, tz: viewerTimeZone() }, DEFAULT_PRESET);
+    prefetchBundle(token, filters, pageOf(DEFAULT_STATE));
   },
   "/admin/user-management": () => {
+    // KPIs + charts, then the first page of every tab (Users, the request
+    // queue, the audit trail): each tab switch renders from cache.
     warm(umKeys.stats(UM_STATS_DAYS), (signal) => userManagementApi.stats(UM_STATS_DAYS, signal));
-    warm(umKeys.audit(AUDIT_LIMIT_MAX), (signal) => userManagementApi.authAudit(AUDIT_LIMIT_MAX, signal));
+    warm(umKeys.users(UM_USERS_FIRST_PAGE), (signal) => userManagementApi.listUsers(UM_USERS_FIRST_PAGE, signal));
+    warm(umKeys.requests("pending", UM_PAGE_SIZE, 0), (signal) =>
+      userManagementApi.listRequests("pending", UM_PAGE_SIZE, 0, signal),
+    );
+    const audit = { limit: AUDIT_PAGE_DEFAULT };
+    warm(umKeys.auditPage(audit), (signal) => userManagementApi.authAuditPage(audit, signal));
+  },
+  "/admin/settings": () => {
+    warm(BRANDING_KEY, (signal) => settingsApi.getBranding(signal));
+    warm(TAXONOMY_KEY, (signal) => settingsApi.listTaxonomy(signal));
+    warm(MODELS_KEY, (signal) => settingsApi.getModelSettings(signal));
   },
 };
 

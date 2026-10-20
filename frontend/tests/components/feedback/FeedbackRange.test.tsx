@@ -23,6 +23,7 @@ beforeEach(() => {
   calls = installFetch((call) => {
     if (call.path.startsWith("/admin/feedback/analytics")) return { json: analyticsFixture };
     if (call.path.startsWith("/admin/feedback/golden")) return { json: { items: [makeGolden()], total: 1, limit: 100, offset: 0 } };
+    if (call.path.startsWith("/admin/feedback/pairs")) return { json: { pairs: [], truncated: false } };
     if (call.path.startsWith("/admin/feedback/export")) return { text: "" };
     if (call.path.startsWith("/admin/feedback?")) return { json: page([]) };
     return undefined;

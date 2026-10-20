@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resourceGauges } from "@/lib/resource-gauges";
+import { quotaTrend, resourceGauges } from "@/lib/resource-gauges";
 
 describe("resource gauges", () => {
   it("labels scope: container limits win over the server", () => {
@@ -28,5 +28,53 @@ describe("resource gauges", () => {
     const gauges = resourceGauges(undefined);
     expect(gauges.map((g) => g.label)).toEqual(["Server CPU", "Server memory", "API workers RSS", "Event-loop lag", "DB pool"]);
     expect(gauges.every((g) => g.value === null)).toBe(true);
+  });
+
+  it("builds 15-minute trends on the gauge scale (older samples dropped)", () => {
+    const now = Date.parse("2026-10-20T12:00:00Z");
+    const at = (min: number) => new Date(now - min * 60_000).toISOString();
+    const point = (min: number, v: number) => ({
+      ts: at(min),
+      cpu_percent: v,
+      memory_percent: v / 2,
+      rss_mb: 1024,
+      loop_lag_p95_ms: 100,
+      db_pool_percent: null,
+    });
+    const gauges = resourceGauges(
+      {
+        host: { scope: "host", cpu_percent: 1, memory_percent: 1, memory_total_mb: 4096, hosts: 1 },
+        history: [point(20, 99), point(10, 40), point(5, 60)],
+      },
+      now,
+    );
+    const byKey = Object.fromEntries(gauges.map((g) => [g.key, g]));
+    expect(byKey.cpu.trend.map((p) => p.value)).toEqual([40, 60]);
+    expect(byKey.memory.trend.map((p) => p.display)).toEqual(["20%", "30%"]);
+    expect(byKey.rss.trend[0]).toMatchObject({ value: 25, display: "1024 MB" });
+    expect(byKey.loop.trend[0]).toMatchObject({ value: 10, display: "100 ms" });
+    expect(byKey.pool.trend).toEqual([]);
+  });
+
+  it("quota trend is the busiest of chat and embedding", () => {
+    const now = Date.parse("2026-10-20T12:00:00Z");
+    const ts = new Date(now - 60_000).toISOString();
+    const trend = quotaTrend(
+      [
+        {
+          ts,
+          utilization_pct: 0,
+          chat_tpm_headroom_pct: 70,
+          chat_rpm_headroom_pct: 90,
+          embedding_tpm_headroom_pct: 40,
+          embedding_rpm_headroom_pct: null,
+          azure_429_count_60s: 0,
+        },
+      ],
+      "tpm",
+      now,
+    );
+    expect(trend).toEqual([{ ts, value: 60, display: "60%" }]);
+    expect(quotaTrend(undefined, "rpm", now)).toEqual([]);
   });
 });

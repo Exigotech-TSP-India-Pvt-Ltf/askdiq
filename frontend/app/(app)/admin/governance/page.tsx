@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import { m } from "motion/react";
 import { ShieldCheck } from "lucide-react";
 import { crossfade, useMotionVariants } from "@/lib/motion";
@@ -8,6 +8,11 @@ import { useDeepLink } from "@/lib/use-deep-link";
 import { TAB_PARAMS, isGovernanceTab, type GovernanceTab } from "@/lib/governance-links";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, GOVERNANCE_TABS } from "@/components/admin/TabGroup";
+import { useAuth } from "@/lib/auth-context";
+import { useAudience } from "@/lib/audience-context";
+import { useRange } from "@/lib/range-context";
+import { runWhenIdle } from "@/lib/query-cache";
+import { prefetchGovernanceTab } from "@/lib/governance-prefetch";
 import OverallView from "./overall/OverallView";
 import MonitoringView from "./monitoring/MonitoringView";
 import TracesView from "./traces/TracesView";
@@ -36,6 +41,27 @@ function GovernanceContent() {
   const raw = get("tab");
   const activeTab: GovernanceTab = isGovernanceTab(raw) ? raw : "Overall";
   const variants = useMotionVariants(crossfade);
+  const { token } = useAuth();
+  const { audience } = useAudience();
+  const range = useRange()?.range;
+
+  // Every tab's first view is warmed once the page is idle, so a tab switch
+  // renders from cache; hovering a tab re-warms it (cheap when fresh).
+  useEffect(() => {
+    if (!token) return undefined;
+    return runWhenIdle(() => {
+      for (const tab of GOVERNANCE_TABS) prefetchGovernanceTab(tab.id, token, audience, range);
+    });
+  }, [audience, range, token]);
+  const onTabIntent = useCallback(
+    (event: React.PointerEvent | React.FocusEvent) => {
+      const el = (event.target as HTMLElement).closest?.("[role=tab]");
+      const label = el?.textContent?.trim();
+      const tab = GOVERNANCE_TABS.find((t) => t.label === label || t.id === label);
+      if (tab) prefetchGovernanceTab(tab.id, token, audience, range);
+    },
+    [audience, range, token],
+  );
 
   const onTabChange = useCallback(
     (tab: string) => {
@@ -56,7 +82,7 @@ function GovernanceContent() {
       />
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
-        <div data-tour="governance-tabs">
+        <div data-tour="governance-tabs" onPointerOver={onTabIntent} onFocus={onTabIntent}>
           <TabGroup tabs={GOVERNANCE_TABS} activeTab={activeTab} onChange={onTabChange} ariaLabel="Governance sub-tabs" />
         </div>
 

@@ -1,7 +1,7 @@
 """add usage_hourly_rollup and usage_rollup_state
 
 Revision ID: 144787ba01b1
-Revises: 4dd0ee337613
+Revises: 03485c08b57b
 Create Date: 2026-10-20 17:00:00.000000
 
 The Usage & Cost summary (KPIs, cost by stage, month-end forecast, cache-hit
@@ -26,7 +26,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "144787ba01b1"
-down_revision: str | None = "4dd0ee337613"
+down_revision: str | None = "03485c08b57b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

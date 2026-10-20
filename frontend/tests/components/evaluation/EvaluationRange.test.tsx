@@ -12,21 +12,32 @@ vi.mock("next/navigation", async () => (await import("../../helpers/router-mock"
 
 afterEach(() => vi.restoreAllMocks());
 
-const REPORT = { pass_rate: 0.9, n_cases: 0, cases: [], failed_cases: [], by_case_type: {}, operational: {} };
+const REPORT = { pass_rate: 0.9, n_cases: 0, outcomes: { passed: 0, failed: 0 }, by_case_type: {}, operational: {} };
+
+/** `[view, URLSearchParams]` of the page's summary reads. */
+function summaryCalls(spy: { mock: { calls: unknown[][] } }) {
+  return spy.mock.calls
+    .filter((c) => c[1] === "summary")
+    .map((c) => new URLSearchParams(String(c[2])));
+}
 
 describe("Evaluation date range", () => {
   it("sends a custom range as from / to days", async () => {
-    const spy = vi.spyOn(api, "evaluationReportLive").mockResolvedValue(REPORT);
+    const spy = vi.spyOn(api, "evaluationLiveView").mockResolvedValue(REPORT);
     renderPage(<EvaluationLivePage />, { url: "/admin/evaluation-live?from=2026-10-01&to=2026-10-05" });
-    await waitFor(() => expect(spy).toHaveBeenCalled());
-    expect(spy.mock.calls.at(-1)?.[4]).toEqual({ from: "2026-10-01", to: "2026-10-05" });
+    await waitFor(() => expect(summaryCalls(spy).length).toBeGreaterThan(0));
+    const qs = summaryCalls(spy).at(-1)!;
+    expect([qs.get("from"), qs.get("to")]).toEqual(["2026-10-01", "2026-10-05"]);
   });
 
   it("sends a preset range as its UTC days", async () => {
-    const spy = vi.spyOn(api, "evaluationReportLive").mockResolvedValue(REPORT);
+    const spy = vi.spyOn(api, "evaluationLiveView").mockResolvedValue(REPORT);
     renderPage(<EvaluationLivePage />, { url: "/admin/evaluation-live?range=30d" });
     const days = rangeUtcDays(presetRange("30d"));
-    await waitFor(() => expect(spy.mock.calls.at(-1)?.[4]).toEqual(days));
+    await waitFor(() => {
+      const qs = summaryCalls(spy).at(-1);
+      expect(qs && { from: qs.get("from"), to: qs.get("to") }).toEqual(days);
+    });
   });
 });
 

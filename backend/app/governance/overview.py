@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,11 +22,13 @@ from app.core.concurrency import ScopedRunner
 from app.core.config import Settings, get_settings
 from app.dashboard import active_visitors
 from app.governance import logs, timeseries
+from app.governance.live_cache import LiveCache
 from app.governance.log_summary import INCIDENT_LEVELS
 from app.governance.monitoring import LATENCY_UNIT
 from app.governance.online_eval import quality_tracker
 from app.governance.quota_series import quota_series, utilization_pct
 from app.models.db_models import AuditLog
+from app.schemas.governance import GovernanceOverview
 
 HEALTHY, DEGRADED, INCIDENT = "Healthy", "Degraded", "Incident"
 _SEVERITY = {HEALTHY: 0, DEGRADED: 1, INCIDENT: 2}
@@ -259,3 +262,22 @@ async def overview_payload(
         "incidents": incidents,
         "online_quality_kpis": quality_tracker.get_kpis(),
     }
+
+
+def _response_shape(payload: dict[str, Any]) -> dict[str, Any]:
+    """Exactly what the route returned when it validated each payload."""
+    return jsonable_encoder(GovernanceOverview.model_validate(payload))
+
+
+async def _compute_overview(audience: str, runner: ScopedRunner) -> dict[str, Any]:
+    return await overview_payload(runner, audience)
+
+
+# Memory copy per audience, refreshed by the stream producer (and on reads
+# older than one stream interval); the route serves it as-is.
+overview_cache = LiveCache(
+    "overview",
+    _compute_overview,
+    lambda: get_settings().governance_stream_interval_seconds,
+    encoder=_response_shape,
+)

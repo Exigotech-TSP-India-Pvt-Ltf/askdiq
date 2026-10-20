@@ -19,7 +19,6 @@ from app.auth.principal import AuthUser
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.http_cache import cached_response
 from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
 from app.dashboard.snapshots import (
@@ -27,6 +26,7 @@ from app.dashboard.snapshots import (
     get_snapshot,
     register,
     register_maintenance,
+    snapshot_response,
 )
 from app.documents import citations, inventory
 from app.governance.audit import record_audit_event
@@ -121,12 +121,12 @@ async def get_citation_stats(
     """A citation is one assistant turn that listed the document among its
     sources (once per turn per document)."""
     start, end = resolve_range(from_, to, citations.utc_today())
-    payload = await get_snapshot(
+    return await snapshot_response(
+        request,
         CITATION_STATS_KIND,
         {"start": start.isoformat(), "end": end.isoformat(), "limit": limit},
         runner.gather,
     )
-    return cached_response(request, payload)
 
 
 CITATION_STATS_KIND = "documents.citations"
@@ -145,15 +145,57 @@ async def _citation_stats_snapshot(gather: Gather, params: dict) -> Any:
     return payload.model_dump(mode="json", by_alias=True)
 
 
+# Inclusive UTC days of the Knowledge page's range presets (24 h spans two
+# days); 7 days is resolve_range's default.
+CITATION_PRESET_DAYS = (2, DEFAULT_RANGE_DAYS, 30, 90)
+
+
 def _citation_defaults() -> list[dict]:
-    """The Knowledge page's default range (as resolve_range picks it)."""
-    start, end = resolve_range(None, None, citations.utc_today())
+    """The Knowledge page's range presets, kept precomputed."""
+    today = citations.utc_today()
     return [
-        {"start": start.isoformat(), "end": end.isoformat(), "limit": DEFAULT_TOP_CITED}
+        {
+            "start": (today - timedelta(days=days - 1)).isoformat(),
+            "end": today.isoformat(),
+            "limit": DEFAULT_TOP_CITED,
+        }
+        for days in CITATION_PRESET_DAYS
     ]
 
 
 register(CITATION_STATS_KIND, _citation_stats_snapshot, _citation_defaults)
+
+# Chunk hits and low-rated citations of every document (one pass over the
+# citations), so each document's Chunks and Citations views are memory reads.
+DOCUMENT_STATS_KIND = "documents.chunk_stats"
+
+
+async def _document_stats_snapshot(gather: Gather, params: dict) -> Any:
+    today = date.fromisoformat(params["day"])
+
+    async def stats(session: AsyncSession) -> Any:
+        return await citations.all_document_stats(
+            session, today=today, low_rated_limit=MAX_LOW_RATED
+        )
+
+    (payload,) = await gather(stats)
+    return payload
+
+
+def _document_stats_params() -> dict[str, str]:
+    return {"day": citations.utc_today().isoformat()}
+
+
+async def document_stats(gather: Gather) -> dict[str, Any]:
+    """Today's precomputed per-document citation stats."""
+    return await get_snapshot(DOCUMENT_STATS_KIND, _document_stats_params(), gather)
+
+
+register(
+    DOCUMENT_STATS_KIND,
+    _document_stats_snapshot,
+    lambda: [_document_stats_params()],
+)
 # Expand new citation sources every refresher cycle (any range stays fast).
 register_maintenance("citation_sources", citations.sync_citation_sources)
 
@@ -267,17 +309,21 @@ async def list_document_chunks(
     ),
     sort: ChunkSort = Query(ChunkSort.INDEX),
     db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> list[DocumentChunkItem]:
     """``hits`` = citing turns in the last 8 ISO weeks, ``low_rated_hits`` = of
-    those, turns rated 2 or lower; ``weekly_hits`` omits zero weeks."""
+    those, turns rated 2 or lower; ``weekly_hits`` omits zero weeks. Hit
+    counts come from the precomputed per-document stats."""
     await _require_document(db, document_id)
+    stats = await document_stats(runner.gather)
     return await citations.list_chunks(
         db,
         document_id,
         q=(q or "").strip() or None,
         sort=sort.value,
         today=citations.utc_today(),
+        hits=citations.hits_from_stats(stats),
     )
 
 
@@ -291,11 +337,11 @@ async def list_low_rated_citations(
     document_id: uuid.UUID,
     limit: int = Query(DEFAULT_LOW_RATED, ge=1, le=MAX_LOW_RATED),
     db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> LowRatedCitations:
     """Newest first, one row per (assistant message, chunk); ``message_id``
-    opens the Feedback queue."""
+    opens the Feedback queue. Served from the precomputed per-document stats."""
     await _require_document(db, document_id)
-    return await citations.low_rated_citations(
-        db, document_id, limit=limit, today=citations.utc_today()
-    )
+    stats = await document_stats(runner.gather)
+    return citations.low_rated_from_stats(stats, document_id, limit)

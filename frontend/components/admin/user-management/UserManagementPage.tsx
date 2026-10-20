@@ -16,7 +16,7 @@ import { SkeletonCard } from "@/components/ui/Skeleton";
 import { fadeUp, useMotionVariants } from "@/lib/motion";
 import { useApiQuery } from "@/lib/query-cache";
 import type { DeepLinkUpdate } from "@/lib/use-deep-link";
-import { AUDIT_LIMIT_MAX, umKeys, userManagementApi } from "@/lib/user-management-api";
+import { umKeys, userManagementApi } from "@/lib/user-management-api";
 import { AccessRequestsTab } from "./AccessRequestsTab";
 import { AuthAuditTab } from "./AuthAuditTab";
 import { RolesMatrixTab } from "./RolesMatrixTab";
@@ -90,8 +90,6 @@ function UserManagementContent({ meId }: { meId: string | undefined }) {
   const panel = useMotionVariants(fadeUp);
 
   const stats = useApiQuery(umKeys.stats(STATS_DAYS), (signal) => userManagementApi.stats(STATS_DAYS, signal));
-  const audit = useApiQuery(umKeys.audit(AUDIT_LIMIT_MAX), (signal) => userManagementApi.authAudit(AUDIT_LIMIT_MAX, signal));
-  const auditEntries = audit.data ?? [];
   const openRequests = stats.data?.kpis.open_requests ?? null;
   const activeSuperadmins = stats.data?.role_mix.find((r) => r.role === "superadmin")?.count ?? 0;
 
@@ -111,7 +109,6 @@ function UserManagementContent({ meId }: { meId: string | undefined }) {
         statsLoading={stats.isLoading}
         statsError={stats.data ? null : errorMessage(stats.error)}
         onRetry={() => void stats.refetch()}
-        audit={auditEntries}
         onDrill={drill}
       />
 
@@ -127,20 +124,13 @@ function UserManagementContent({ meId }: { meId: string | undefined }) {
       <AnimatePresence mode="wait" initial={false}>
         <m.div key={url.tab} role="tabpanel" aria-label={tabs.find((t) => t.id === url.tab)?.label} variants={panel} initial="hidden" animate="visible" exit="exit">
           {url.tab === "users" ? (
-            <UsersTab url={url} update={update} meId={meId} activeSuperadmins={activeSuperadmins} audit={auditEntries} />
+            <UsersTab url={url} update={update} meId={meId} activeSuperadmins={activeSuperadmins} />
           ) : url.tab === "requests" ? (
             <AccessRequestsTab view={url.view} update={update} />
           ) : url.tab === "roles" ? (
             <RolesMatrixTab me={me} />
           ) : (
-            <AuthAuditTab
-              entries={auditEntries}
-              loading={audit.isLoading}
-              error={audit.data ? null : errorMessage(audit.error)}
-              onRetry={() => void audit.refetch()}
-              action={url.action}
-              update={update}
-            />
+            <AuthAuditTab action={url.action} update={update} />
           )}
         </m.div>
       </AnimatePresence>

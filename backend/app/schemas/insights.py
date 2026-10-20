@@ -410,6 +410,41 @@ class PendingClassification(BaseModel):
     progress_pct: float | None
 
 
+class BundlePart(StrEnum):
+    """The widgets ``GET /admin/insights/bundle`` can return."""
+
+    SUMMARY = "summary"
+    TREND = "trend"
+    HOURLY = "hourly"
+    FLOW = "flow"
+    TOPICS = "topics"
+    QUALITY = "quality"
+    DROPOFF = "dropoff"
+    PEOPLE = "people"
+    CONVERSATIONS = "conversations"
+    PENDING = "pending"
+
+
+class InsightsBundle(BaseModel):
+    """Every Analytics widget for one filter set; parts not asked for are null.
+
+    Each part has the shape (and the numbers) of its own endpoint; ``source``
+    is always ``live``.
+    """
+
+    as_of: datetime = Field(description="When the data was read.")
+    summary: InsightsSummary | None = None
+    trend: InsightsTrend | None = None
+    hourly: InsightsHourly | None = None
+    flow: InsightsFlow | None = None
+    topics: InsightsTopics | None = None
+    quality: InsightsQuality | None = None
+    dropoff: InsightsDropoff | None = None
+    people: InsightsPeople | None = None
+    conversations: ConversationList | None = None
+    pending: PendingClassification | None = None
+
+
 # ---------------------------------------------------------------------------
 # Taxonomy (F7)
 # ---------------------------------------------------------------------------

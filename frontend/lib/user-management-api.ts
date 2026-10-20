@@ -103,6 +103,9 @@ export const NAME_MAX_LENGTH = 256;
 export const EMAIL_MAX_LENGTH = 320;
 export const STATS_DAYS_MAX = 90;
 export const AUDIT_LIMIT_MAX = 500;
+/** Auth audit page size bounds (`GET /admin/auth-audit`). */
+export const AUDIT_PAGE_MAX = 100;
+export const AUDIT_PAGE_DEFAULT = 25;
 
 export const USER_SORT_KEYS = ["created_at", "last_login_at", "email", "name"] as const;
 export type UserSortKey = (typeof USER_SORT_KEYS)[number];
@@ -117,6 +120,8 @@ export function isSafeText(value: string): boolean {
 
 /** Pragmatic email check (the API validates with `EmailStr`). */
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.trunc(n)));
 
 // ---------------------------------------------------------------------------
 // Response models
@@ -155,6 +160,10 @@ export interface AuthSession {
 
 export interface UserAccountDetail extends UserAccount {
   active_sessions: AuthSession[];
+  /** Newest auth events by this user (empty without `audit:auth:read`). */
+  recent_activity?: AuditLogEntry[];
+  /** Newest auth events about this user. */
+  recent_audit?: AuditLogEntry[];
 }
 
 export interface AccessRequest {
@@ -204,6 +213,9 @@ export interface UserStats {
   /** Active users per role. */
   role_mix: { role: Role; count: number }[];
   time_to_approve: { bucket: string; count: number }[];
+  /** Daily counts (UTC days, oldest first) of the sparkline events, keyed by event. */
+  events_per_day?: Partial<Record<AuthEvent, { date: string; count: number }[]>>;
+  events_days?: number;
 }
 
 export interface Me {
@@ -225,6 +237,33 @@ export interface AuditLogEntry {
   ip_address: string | null;
 }
 
+/** `GET /admin/auth-audit`: one keyset page, newest first. */
+export interface AuthAuditPage {
+  items: AuditLogEntry[];
+  next_cursor: string | null;
+  has_more: boolean;
+  total: number;
+  total_is_estimate: boolean;
+}
+
+export interface AuthAuditParams {
+  limit: number;
+  cursor?: string | null;
+  action?: AuthEvent | null;
+  search?: string;
+}
+
+/** Query string for `GET /admin/auth-audit`, bounded and allow-listed. */
+export function authAuditQuery(params: AuthAuditParams): string {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(clamp(params.limit, 1, AUDIT_PAGE_MAX)));
+  if (params.action && isAuthEvent(params.action)) qs.set("action", params.action);
+  const search = params.search?.trim().slice(0, SEARCH_MAX_LENGTH);
+  if (search && isSafeText(search)) qs.set("search", search);
+  if (params.cursor) qs.set("cursor", params.cursor);
+  return qs.toString();
+}
+
 /** Bucket order of `APPROVAL_BUCKETS` (the API omits empty buckets). */
 export const APPROVAL_BUCKETS = ["<1h", "1-4h", "4-24h", "1-3d", ">3d"] as const;
 
@@ -241,8 +280,6 @@ export interface UserListParams {
   limit: number;
   offset: number;
 }
-
-const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.trunc(n)));
 
 /** Query string for `GET /admin/users-accounts`, bounded and allow-listed. */
 export function usersQuery(params: UserListParams): string {
@@ -360,6 +397,10 @@ export const userManagementApi = {
    * ingest rows cannot crowd them out of `limit`); the client-side filter
    * stays as a guard for older servers that ignore `category`.
    */
+  /** One keyset page of auth events (server-side filter and search). */
+  authAuditPage: (params: AuthAuditParams, signal?: AbortSignal) =>
+    send<AuthAuditPage>(`/admin/auth-audit?${authAuditQuery(params)}`, { signal }),
+
   authAudit: async (limit: number, signal?: AbortSignal): Promise<AuditLogEntry[]> => {
     const rows = await send<AuditLogEntry[]>(
       `/governance/audit-log?category=auth&limit=${clamp(limit, 1, AUDIT_LIMIT_MAX)}`,
@@ -385,6 +426,7 @@ export const umKeys = {
     `um/requests?status=${view}&limit=${limit}&offset=${offset}`,
   requestsPrefix: "um/requests",
   audit: (limit: number) => `um/audit?limit=${limit}`,
+  auditPage: (params: AuthAuditParams) => `um/audit/page?${authAuditQuery(params)}`,
   auditPrefix: "um/audit",
   statsPrefix: "um/stats",
 } as const;

@@ -60,8 +60,9 @@ describe("Feedback Overview", () => {
     const card = screen.getByText("Total feedback").closest("div")!.parentElement!.parentElement!;
     expect(card).toHaveTextContent("42");
     expect(screen.getByRole("alert")).toHaveTextContent(/negative feedback spike/i);
-    // KPIs come from /analytics; the list endpoint is not even called on Overview.
-    expect(calls.some((c) => c.path.startsWith("/admin/feedback?"))).toBe(false);
+    // KPIs come from /analytics (asked first); the list is only warmed for the
+    // Review Queue tab once the page is idle.
+    expect(calls[0].path).toMatch(/^\/admin\/feedback\/analytics/);
   });
 
   it.each(CASES)("a click on a $chart sets the $chip chip and opens the queue", async ({ mark, param, chip }) => {

@@ -86,7 +86,7 @@ describe("Document detail", () => {
     expect(screen.getByText("42 hits")).toBeInTheDocument();
   });
 
-  it("chunk search is debounced before it reaches the URL and the server", async () => {
+  it("chunk search filters at once in the browser and is debounced into the URL", async () => {
     const calls = mockFetch([docsRoute, chunksRoute, lowRatedRoute]);
     renderPage(<DocumentDetailPage />, { url: `/documents/${DOC_ID}` });
     await screen.findByText("42 hits");
@@ -96,21 +96,22 @@ describe("Document detail", () => {
     fireEvent.change(box, { target: { value: "annual" } });
     expect(currentParams().get("q")).toBeNull();
     expect(callsTo(calls, /\/chunks$/).some((u) => u.searchParams.has("q"))).toBe(false);
+    // Filtered in the browser before the URL even changes.
+    expect(screen.queryByText("Introduction to the policy.")).not.toBeInTheDocument();
     await waitFor(() => expect(currentParams().get("q")).toBe("annual"), { timeout: CHUNK_SEARCH_DEBOUNCE_MS * 5 });
-    await waitFor(() => expect(callsTo(calls, /\/chunks$/).filter((u) => u.searchParams.has("q"))).toHaveLength(1));
-    expect(callsTo(calls, /\/chunks$/).at(-1)?.searchParams.get("q")).toBe("annual");
-    // Client-side filter applies too (older backends ignore q).
-    await waitFor(() => expect(screen.queryByText("Introduction to the policy.")).not.toBeInTheDocument());
+    // Typing never asks the server again.
+    expect(callsTo(calls, /\/chunks$/).some((u) => u.searchParams.has("q"))).toBe(false);
   });
 
-  it("sort by hits asks the server and orders the chunks", async () => {
+  it("sort by hits orders the chunks without a request", async () => {
     const calls = mockFetch([docsRoute, chunksRoute, lowRatedRoute]);
     renderPage(<DocumentDetailPage />, { url: `/documents/${DOC_ID}` });
     await screen.findByText("42 hits");
+    const before = callsTo(calls, /\/chunks$/).length;
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "hits" } });
-    await waitFor(() => expect(callsTo(calls, /\/chunks$/).at(-1)?.searchParams.get("sort")).toBe("hits"));
     const articles = await screen.findAllByRole("article");
-    expect(articles[0]).toHaveAttribute("aria-label", "Chunk 4");
+    await waitFor(() => expect(articles[0]).toHaveAttribute("aria-label", "Chunk 4"));
+    expect(callsTo(calls, /\/chunks$/)).toHaveLength(before);
   });
 
   it("`?chunk=` scrolls to and highlights the chunk; heatmap and low-rated items set it", async () => {

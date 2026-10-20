@@ -7,10 +7,12 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.admin_entities import memory_snapshot
 from app.api.routes.admin_entities import router as entities_router
 from app.api.routes.admin_feedback import router as feedback_router
 from app.api.routes.admin_governance import router as governance_router
@@ -31,7 +33,7 @@ from app.dashboard import active_visitors
 from app.dashboard import activity as dashboard_activity
 from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
-from app.dashboard.range_params import optional_day_range
+from app.dashboard.range_params import optional_day_range, preset_day_ranges
 from app.dashboard.snapshots import (
     Gather,
     GatherRunner,
@@ -134,6 +136,7 @@ def visitor_status_label(last_active: datetime | None, now: datetime) -> str:
 
 @router.get("/users")
 async def list_users(
+    request: Request,
     audience: str = Query("overview"),
     include_test: bool | None = None,
     q: str | None = None,
@@ -172,11 +175,13 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
-):
+) -> Response:
     """Return users grouped by client IP with activity statistics (Task 2.3.1).
 
     `weekday` + `hour` (both or neither) keep visitors with a session started
     in that UTC slot within `from`..`to` (days, default the last 7 days).
+    Served from the precomputed per-IP aggregates, with an ETag (304 when
+    unchanged).
     """
     if (weekday is None) != (hour is None):
         raise HTTPException(
@@ -207,7 +212,7 @@ async def list_users(
     # Three whole-table aggregates per IP: cached stale-while-revalidate and
     # shared by every filter / sort / page of the list.
     aggregates = await get_snapshot(VISITOR_AGGREGATES_KIND, {}, runner.gather)
-    ip_rows = [_VisitorRow.from_json(r) for r in aggregates["ips"]]
+    ip_rows = _visitor_rows(aggregates["ips"])
     queries_by_ip: dict[str, int] = aggregates["queries"]
     feedback_counts: dict[str, int] = aggregates["feedback"]
 
@@ -259,12 +264,15 @@ async def list_users(
     total = len(all_users)
     paged = all_users[offset : offset + limit]
 
-    return {
-        "items": paged,
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    }
+    return cached_response(
+        request,
+        {
+            "items": paged,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        },
+    )
 
 
 def _naive_utc_iso(value: str) -> datetime:
@@ -291,6 +299,20 @@ class _VisitorRow:
             return datetime.fromisoformat(value) if value else None
 
         return cls(raw[0], when(raw[1]), when(raw[2]), int(raw[3]))
+
+
+# Parsed rows of the aggregates payload in memory (parsed once per payload).
+_parsed_rows: tuple[Any, list[_VisitorRow]] | None = None
+
+
+def _visitor_rows(raw_rows: list[list[Any]]) -> list[_VisitorRow]:
+    global _parsed_rows  # noqa: PLW0603 - process-local memo of one payload
+    hit = _parsed_rows
+    if hit is not None and hit[0] is raw_rows:
+        return hit[1]
+    rows = [_VisitorRow.from_json(r) for r in raw_rows]
+    _parsed_rows = (raw_rows, rows)
+    return rows
 
 
 async def _visitor_aggregates_snapshot(gather: Any, _params: dict) -> dict[str, Any]:
@@ -594,8 +616,16 @@ async def list_conversations(
         days.end.isoformat() if days is not None else None,
     )
     # Full grouped scan of sessions x messages (counted, then paged): cached
-    # stale-while-revalidate per parameter set, on its own session.
-    return await get_snapshot(CONVERSATIONS_KIND, asdict(args), runner.gather)
+    # stale-while-revalidate per parameter set, on its own session; a text
+    # search in memory only (each typed term must not become a stored row).
+    params = jsonable_encoder(asdict(args))
+    if args.q:
+        return await memory_snapshot(
+            CONVERSATIONS_KIND,
+            params,
+            lambda: _conversations_snapshot(runner.gather, params),
+        )
+    return await get_snapshot(CONVERSATIONS_KIND, params, runner.gather)
 
 
 CONVERSATIONS_KIND = "admin.conversations"
@@ -714,19 +744,48 @@ async def _conversations_page(db: AsyncSession, args: ConversationListArgs) -> d
 
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(
+    request: Request,
     conversation_id: str,
     turn: int | None = Query(
         None, ge=0, description="`turn_index` to focus; echoed as `focus_turn`."
     ),
     db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
-):
+) -> Response:
     """Return one conversation, all of its messages and per-turn detail.
 
     `turns` (one per `turn_index`) adds stage timings, tokens, cost, sources,
-    feedback, insight labels and the promoted golden case id.
+    feedback, insight labels and the promoted golden case id. Precomputed
+    once viewed (``dashboard_snapshots``, refreshed within seconds of new
+    activity while watched); ``X-Data-As-Of`` is its age.
     """
+    return await snapshot_response(
+        request,
+        CONVERSATION_DETAIL_KIND,
+        {"id": conversation_id, "turn": turn},
+        runner.gather,
+        lambda _gather: _conversation_detail(db, conversation_id, turn),
+    )
 
+
+CONVERSATION_DETAIL_KIND = conversation_stats.DETAIL_SNAPSHOT_KIND
+
+
+async def _conversation_detail_snapshot(gather: Gather, params: dict) -> Any:
+    (payload,) = await gather(
+        lambda db: _conversation_detail(db, params["id"], params["turn"])
+    )
+    return payload
+
+
+register(CONVERSATION_DETAIL_KIND, _conversation_detail_snapshot)
+
+
+async def _conversation_detail(
+    db: AsyncSession, conversation_id: str, turn: int | None
+) -> dict[str, Any]:
+    """One conversation with its messages and turns (404 when unknown)."""
     # -----------------------------------------------------------------------
     # Find conversation
     # -----------------------------------------------------------------------
@@ -2039,18 +2098,34 @@ _DEFAULT_SPAN_DAYS = 7
 
 register(VISITOR_AGGREGATES_KIND, _visitor_aggregates_snapshot, [{}])
 register(USAGE_LLM_KIND, _usage_llm_snapshot, [{"scope": _usage_card_key("llm")}])
-register(
-    CONVERSATIONS_KIND,
-    _conversations_snapshot,
-    [
+
+
+def _conversation_list_defaults() -> list[dict]:
+    """First page of the Conversations tab for every audience, unbounded and
+    for every range preset (a preset or audience switch reads a stored row)."""
+    return [
         asdict(
             ConversationListArgs(
-                aud, None, None, "last_activity_desc", 10, 0, None, None, None, None
+                aud,
+                None,
+                None,
+                "last_activity_desc",
+                10,
+                0,
+                None,
+                None,
+                None,
+                None,
+                days.start.isoformat() if days is not None else None,
+                days.end.isoformat() if days is not None else None,
             )
         )
+        for days in preset_day_ranges()
         for aud in ("overview", "users", "testing")
-    ],
-)
+    ]
+
+
+register(CONVERSATIONS_KIND, _conversations_snapshot, _conversation_list_defaults)
 register(
     DASHBOARD_KIND,
     _dashboard_snapshot,

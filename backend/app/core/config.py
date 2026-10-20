@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Last-resort wait for a free pooled connection (seconds); generous so a
     # burst queues and succeeds instead of failing.
     db_pool_timeout_seconds: float = Field(default=120.0, gt=0)
+    # Postgres ends a session left "idle in transaction" this long (ms; 0 =
+    # off): a safety net so a lost request can never pin locks or a slot.
+    db_idle_in_transaction_timeout_ms: int = Field(default=60_000, ge=0)
     # SQL statement logging (incl. 1536-float vector params) — off by default.
     db_echo: bool = False
 

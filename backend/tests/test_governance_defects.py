@@ -14,6 +14,7 @@ from sqlalchemy import delete
 from app.api.routes.admin import _log_level_for
 from app.core.middleware import METRICS
 from app.governance.audience import invalidate_audience_cache
+from app.governance.live_cache import clear_live_caches
 from app.governance.log_summary import SUMMARIZERS, service_for, summarize
 from app.governance.monitoring import derive_trace_status, stage_latency_summary
 from app.models import db_models
@@ -234,6 +235,7 @@ async def test_g6_error_rate_is_persisted_not_in_memory(
         )
     )
     await db_session.flush()
+    clear_live_caches()  # the memory copy follows within one interval
 
     # Simulate an app restart: in-memory counters are back to zero.
     monkeypatch.setitem(METRICS, "errors", 0)

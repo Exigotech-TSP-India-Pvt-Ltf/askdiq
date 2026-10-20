@@ -35,6 +35,7 @@ from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, get_session_factory
 from app.governance.auth import sanitize_client_id
+from app.governance.live_cache import clear_live_caches
 from main import app
 from tests.insights_fixture import (  # noqa: F401 - shared pytest fixtures
     insights_client,
@@ -145,8 +146,10 @@ def _fresh_dashboard_cache(monkeypatch: pytest.MonkeyPatch):
     many tests share one transactional session across concurrent requests."""
     monkeypatch.setattr(get_settings(), "dashboard_snapshots_persist", False)
     dashboard_cache.clear()
+    clear_live_caches()
     yield
     dashboard_cache.clear()
+    clear_live_caches()
     # Connections the process-wide engine pooled during this test belong to
     # its event loop: drop them (without closing) so a later test never pings
     # a connection of a closed loop ("Event loop is closed").

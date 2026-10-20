@@ -81,7 +81,9 @@ const PAIRS = [
 describe("Preference Data tab", () => {
   it("previews pairs, flags the incomplete ones and downloads the JSONL", async () => {
     const calls = installFetch((call) =>
-      call.path.startsWith("/admin/feedback/export")
+      call.path.startsWith("/admin/feedback/pairs")
+        ? { json: { pairs: PAIRS, truncated: false } }
+        : call.path.startsWith("/admin/feedback/export")
         ? {
             text: PAIRS.map((p) => JSON.stringify(p)).join("\n") + "\n",
             headers: { "Content-Disposition": 'attachment; filename="feedback_pairs_20261015.jsonl"' },
@@ -112,7 +114,8 @@ describe("Preference Data tab", () => {
     expect(complete.querySelector("time")).toHaveAttribute("datetime", "2026-10-14T09:30:00.000Z");
     expect(within(incomplete[0]).getByText("—")).toBeInTheDocument();
     expect(screen.getByLabelText("Preview counts")).toHaveTextContent("1 complete · 1 incomplete");
-    expect(calls[0].path).toContain("format=jsonl");
+    expect(calls[0].path).toMatch(/^\/admin\/feedback\/pairs\?limit=50/);
+    expect(calls[0].path).not.toContain("export");
 
     fireEvent.click(screen.getByRole("button", { name: /download jsonl/i }));
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1));

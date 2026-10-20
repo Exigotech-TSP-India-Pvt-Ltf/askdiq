@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.live import mark_auth_changed
 from app.core.exceptions import get_request_id
 from app.core.request_meta import get_client_ip
 from app.governance.audit import record_audit_event
@@ -100,3 +101,5 @@ async def record_auth_event(
         ip_address=ctx.ip_address,
         commit=False,
     )
+    # Open consoles refresh users, requests, audit and stats once it commits.
+    mark_auth_changed(db)

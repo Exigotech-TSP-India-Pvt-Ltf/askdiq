@@ -293,7 +293,7 @@ describe("permission gating", () => {
 
   it("fails closed when /auth/me fails", async () => {
     server = setupUserManagement();
-    server.on("GET /auth/me", () => ({ status: 401, body: { detail: "Not signed in." } }));
+    server.on("GET /auth/me", () => ({ status: 500, body: { detail: "Backend unavailable." } }));
     renderWithProviders(<UserManagementPage />);
     expect(await screen.findByText("Could not check your access")).toBeInTheDocument();
     // The header bell may poll /admin/alerts (dashboard:read); nothing else.

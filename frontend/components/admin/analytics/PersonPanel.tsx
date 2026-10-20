@@ -13,11 +13,11 @@ import { ArrowUpRight, UserRound, X } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { visitorDetailHref } from "@/lib/entity-routes";
-import { INSIGHTS_CACHE_PREFIX, insightsApi, type InsightsFilters, type PersonDetail } from "@/lib/insights-api";
+import { insightsApi, type InsightsFilters, type PersonDetail } from "@/lib/insights-api";
 import { useApiQuery } from "@/lib/query-cache";
 import type { LabelKind } from "./AnalyticsCards";
 import { dayLabel, fmtInt } from "./format";
-import { errorText } from "./use-insights";
+import { errorText, personKey } from "./use-insights";
 import type { AnalyticsState } from "./url-state";
 
 const BOX = "flex flex-col gap-2 rounded-2xl border border-line bg-surface-card p-4 text-xs shadow-sm";
@@ -77,7 +77,7 @@ export function PersonPanel({ state, filters, update, learnLabel }: PersonPanelP
   const { token } = useAuth();
   const personId = state.person;
   const { data, error, isLoading } = useApiQuery(
-    personId ? [`${INSIGHTS_CACHE_PREFIX}/person`, personId, filters.audience, filters.tz] : null,
+    personId ? personKey(personId, filters) : null,
     (signal) => insightsApi.getPerson(token, personId, { audience: filters.audience, tz: filters.tz }, signal),
   );
   const label = data?.person ?? null;

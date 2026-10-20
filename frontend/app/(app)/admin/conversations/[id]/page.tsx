@@ -33,6 +33,7 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { useCan } from "@/lib/use-can";
 import { useApiMutation, useApiQuery } from "@/lib/query-cache";
+import { conversationQuery } from "@/lib/audience-data";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { usePrefersReducedMotion } from "@/lib/motion";
 import { AUDIENCE_PAGE_LABEL, conversationsHref, useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
@@ -43,7 +44,6 @@ import {
   OUTCOME_LABELS,
   STAGES,
   STAGE_LABELS,
-  getConversation,
   intParam,
   isAbsent,
   promoteTurnToTest,
@@ -74,8 +74,9 @@ function ConversationDetailContent() {
   const focusTurn = intParam(get("turn"));
   const inspect = get("inspect");
 
-  const detailKey = useMemo(() => ["conversation", id, "detail"], [id]);
-  const detail = useApiQuery(token && id ? detailKey : null, (signal) => getConversation(token ?? "", id, focusTurn, signal), {
+  const detailQ = conversationQuery(token ?? "", id, focusTurn);
+  const detailKey = detailQ.key;
+  const detail = useApiQuery(token && id ? detailKey : null, detailQ.fetch, {
     revalidateOnFocus: false,
   });
   const turns = useMemo(() => buildTurns(detail.data), [detail.data]);

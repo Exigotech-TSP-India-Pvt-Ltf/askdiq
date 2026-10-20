@@ -10,7 +10,15 @@ import { TableCard } from "@/components/admin/TableCard";
 import type { ConversationOutcome, ConversationRow, ConversationSort, InsightsFilters, TurnDetail } from "@/lib/insights-api";
 import { duration, ease, usePrefersReducedMotion } from "@/lib/motion";
 import { clock, fmtInt, isoDay, shortId } from "./format";
-import { errorText, useInsightsConversation, useInsightsConversations } from "./use-insights";
+import { useAuth } from "@/lib/auth-context";
+import {
+  errorText,
+  prefetchConversation,
+  prefetchConversations,
+  prefetchPerson,
+  useInsightsConversation,
+  useInsightsConversations,
+} from "./use-insights";
 import type { AnalyticsState } from "./url-state";
 
 export interface ConversationColumn {
@@ -116,6 +124,7 @@ export interface ConversationsTableProps {
 /** Conversations tab: server-sorted, offset-paginated table with per-turn expand. */
 export function ConversationsTable({ state, filters, update }: ConversationsTableProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const { token } = useAuth();
   const offset = (state.page - 1) * state.limit;
   const page = { sort: state.sort, dir: state.dir, limit: state.limit, offset };
   const { data, error, isLoading, refetch } = useInsightsConversations(filters, page);
@@ -169,6 +178,8 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
               aria-controls={`turns-${row.conv_id}`}
               aria-label={`${open ? "Hide" : "View"} questions for ${shortId(row.conv_id)}`}
               onClick={() => setExpanded((e) => ({ ...e, [row.conv_id]: !open }))}
+              onMouseEnter={() => prefetchConversation(token, row.conv_id, filters)}
+              onFocus={() => prefetchConversation(token, row.conv_id, filters)}
               className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[11.5px] font-medium text-brand-700 transition-colors duration-150 hover:border-brand-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300 dark:hover:border-brand-700/60"
             >
               <ChevronDown {...ICON} className={`h-3.5 w-3.5 transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
@@ -193,6 +204,7 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
               <button
                 type="button"
                 onClick={() => update({ person: state.person === row.person_id ? "" : row.person_id })}
+                onMouseEnter={() => prefetchPerson(token, row.person_id, filters, page)}
                 aria-pressed={state.person === row.person_id}
                 aria-label={`Filter to person ${row.person}`}
                 className="rounded font-medium text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
@@ -256,6 +268,10 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
                   <button
                     type="button"
                     onClick={() => sortBy(c.key)}
+                    onMouseEnter={() => {
+                      const dir = state.sort === c.key ? (state.dir === "asc" ? "desc" : "asc") : c.key === "exchanges" ? "desc" : "asc";
+                      prefetchConversations(token, filters, { ...page, sort: c.key, dir, offset: 0 });
+                    }}
                     className="inline-flex items-center gap-1 rounded hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
                     {c.label}

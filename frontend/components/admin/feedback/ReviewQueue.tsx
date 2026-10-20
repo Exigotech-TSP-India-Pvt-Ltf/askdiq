@@ -50,6 +50,15 @@ const HTTP_CONFLICT_STATUS = 409;
 
 export const QUEUE_PAGE_SIZE = 25;
 
+/** First-page list params of the queue (also used to warm it before the tab opens). */
+export function queueBaseParams(
+  audience: Audience,
+  filters: FeedbackFilters,
+  days?: { from?: string; to?: string },
+): FeedbackListParams {
+  return { audience, ...toListParams(filters, { from: days?.from, to: days?.to }), limit: QUEUE_PAGE_SIZE };
+}
+
 export interface ReviewQueueProps {
   token: string;
   audience: Audience;
@@ -86,7 +95,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
 
   // ---- data -------------------------------------------------------------
   const baseParams = useMemo<FeedbackListParams>(
-    () => ({ audience, ...toListParams(filters, { from: days?.from, to: days?.to }), limit: QUEUE_PAGE_SIZE }),
+    () => queueBaseParams(audience, filters, { from: days?.from, to: days?.to }),
     [audience, filters, days?.from, days?.to],
   );
   const baseSignature = feedbackListPath(baseParams);
@@ -98,7 +107,10 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
   const params = useMemo(() => ({ ...baseParams, cursor }), [baseParams, cursor]);
   const listKey = feedbackKeys.list(feedbackListPath(params));
   const fetchPage = useCallback((signal: AbortSignal) => listFeedback(token, params, signal), [token, params]);
-  const { data, error, isLoading, isValidating, refetch } = useApiQuery<FeedbackPage>(listKey, fetchPage);
+  const { data, error, isLoading, isValidating, refetch } = useApiQuery<FeedbackPage>(listKey, fetchPage, {
+    // Paging, sorting and filtering swap the rows in place (no skeleton flash).
+    keepPreviousData: true,
+  });
 
   const nextCursor = data?.next_cursor ?? null;
   const nextParams = useMemo(() => ({ ...baseParams, cursor: nextCursor }), [baseParams, nextCursor]);
@@ -220,7 +232,18 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
     onError: reportError,
   });
 
-  const busy = triage.isPending || promote.isPending || bulk.isPending;
+  // Rows act independently: only a row with a request in flight (or a bulk
+  // action) waits, so r / d / p can be pressed row after row without pausing.
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const pendingRef = useRef<ReadonlySet<string>>(pendingIds);
+  const setPending = useCallback((id: string, on: boolean) => {
+    const next = new Set(pendingRef.current);
+    if (on) next.add(id);
+    else next.delete(id);
+    pendingRef.current = next;
+    setPendingIds(next);
+  }, []);
+  const busy = bulk.isPending;
 
   const restore = useCallback(
     async (item: FeedbackItem, version: number) => {
@@ -230,9 +253,8 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
     [toast, triage],
   );
 
-  const runAction = useCallback(
+  const runOne = useCallback(
     async (item: FeedbackItem, action: TriageAction) => {
-      if (!canTriage || busy || !canTransition(item.triage_status, action)) return;
       if (action === "promoted") {
         const res = await promote.mutate(item);
         if (res) {
@@ -253,7 +275,20 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
         onUndo: action === "dismissed" ? () => void restore(res, res.version) : undefined,
       });
     },
-    [busy, canTriage, promote, restore, toast, triage],
+    [promote, restore, toast, triage],
+  );
+
+  const runAction = useCallback(
+    async (item: FeedbackItem, action: TriageAction) => {
+      if (!canTriage || busy || pendingRef.current.has(item.id) || !canTransition(item.triage_status, action)) return;
+      setPending(item.id, true);
+      try {
+        await runOne(item, action);
+      } finally {
+        setPending(item.id, false);
+      }
+    },
+    [busy, canTriage, runOne, setPending],
   );
 
   const runBulk = useCallback(
@@ -572,7 +607,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
                             <button
                               key={action}
                               type="button"
-                              disabled={busy || !canTransition(item.triage_status, action)}
+                              disabled={busy || pendingIds.has(item.id) || !canTransition(item.triage_status, action)}
                               onClick={() => void runAction(item, action)}
                               aria-label={`${ACTION_LABELS[action].verb} (${ACTION_LABELS[action].key})`}
                               title={`${ACTION_LABELS[action].verb} (${ACTION_LABELS[action].key})`}
@@ -627,7 +662,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
         onPrev={drawerIndex > 0 ? () => moveFocus(-1) : undefined}
         onNext={drawerIndex >= 0 && drawerIndex < rows.length - 1 ? () => moveFocus(1) : undefined}
         canTriage={canTriage}
-        busy={busy}
+        busy={busy || (drawerItem ? pendingIds.has(drawerItem.id) : false)}
         onAction={(item, action) => void runAction(item, action)}
         onRestore={(item) => void restore(item, item.version)}
         onSaveNote={saveNote}
