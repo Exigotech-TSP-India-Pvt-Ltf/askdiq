@@ -41,7 +41,7 @@ function UsageHarness() {
   );
 }
 
-describe("QueryInspectorDrawer copies share DrawerShell (F0.6.1)", () => {
+describe("QueryInspectorDrawer copies share DrawerShell", () => {
   it("evaluation inspector: dialog, sub-tabs, trace deep link, Esc closes and focus returns", async () => {
     render(<EvaluationHarness />);
     const trigger = screen.getByRole("button", { name: "Inspect" });

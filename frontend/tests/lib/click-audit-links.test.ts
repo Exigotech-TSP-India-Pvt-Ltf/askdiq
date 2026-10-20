@@ -1,5 +1,5 @@
 /**
- * Link contracts from the click audit (docs/technical/frontend/interaction-audit.md):
+ * Link contracts from the click audit:
  * every href a click produces is parsed back by its target into the same state.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";

@@ -1,5 +1,5 @@
 /**
- * Keyboard shortcuts (newplan §15.1). Single-key shortcuts never fire while
+ * Keyboard shortcuts. Single-key shortcuts never fire while
  * the user is typing; modifier shortcuts (Ctrl/Cmd+K) work everywhere.
  */
 export interface ShortcutDef {

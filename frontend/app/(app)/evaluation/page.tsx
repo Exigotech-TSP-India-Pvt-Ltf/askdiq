@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 // without a Location header, so non-browser clients could not follow it.
 export const dynamic = "force-dynamic";
 
-// The old Evaluation page is retired (newplan 2.3): bookmarks land on Live.
+// The old Evaluation page is retired: bookmarks land on Live.
 export default function EvaluationRedirectPage(): never {
   redirect("/admin/evaluation-live");
 }

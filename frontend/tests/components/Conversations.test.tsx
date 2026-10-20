@@ -1,5 +1,5 @@
 /**
- * F3.3: Conversations list (charts, filters, preview drawer) and
+ * Conversations list (charts, filters, preview drawer) and
  * Conversation detail (per-turn charts, inspector, promote, `?turn=`).
  */
 import React from "react";

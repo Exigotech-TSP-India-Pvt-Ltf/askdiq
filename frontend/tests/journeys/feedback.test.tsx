@@ -1,5 +1,5 @@
 /**
- * Phase F5 integration journey (planchanges4 F5.5): a thumbs-down with reason
+ * Phase F5 integration journey: a thumbs-down with reason
  * chips sends the right payload, then keyboard triage in the Review Queue
  * (j, k, p) calls the right endpoints, the promoted row leaves the queue and
  * shows up in Golden Cases. `fetch` is mocked; the real data flow is covered

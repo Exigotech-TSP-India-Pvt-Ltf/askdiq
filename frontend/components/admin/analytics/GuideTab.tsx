@@ -46,7 +46,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
 ];
 
-/** Metric definitions (newplan §6.4), in plain words. */
+/** Metric definitions, in plain words. */
 export const METRIC_DEFINITIONS: readonly { term: string; definition: string }[] = [
   { term: "Conversation", definition: "One chat session. A session ends after 60 minutes without activity." },
   { term: "Exchange", definition: "One user message and the assistant's reply to it." },

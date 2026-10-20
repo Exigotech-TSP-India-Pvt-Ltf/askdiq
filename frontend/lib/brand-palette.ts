@@ -1,6 +1,6 @@
 /**
  * Client-side mirror of the backend palette derivation and WCAG check
- * (backend/app/branding/palette.py, newplan §14). Used for the LIVE preview
+ * (backend/app/branding/palette.py). Used for the LIVE preview
  * and contrast badge in Settings → Branding; the server stays the authority
  * (`PUT /admin/branding` answers 422 with the reason when a colour fails).
  *

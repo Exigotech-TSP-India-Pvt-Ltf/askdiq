@@ -8,7 +8,7 @@ interface BrandedStatusPageProps {
   children?: React.ReactNode;
 }
 
-/** Shared layout for the branded 404 / error pages (newplan §15.1). */
+/** Shared layout for the branded 404 / error pages. */
 export function BrandedStatusPage({ code, title, message, children }: BrandedStatusPageProps) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-surface-page px-4 py-12 text-fg">

@@ -35,7 +35,7 @@ export interface DrawerShellProps {
 }
 
 /**
- * The one drawer used by every inspector (newplan §1.4, §8): portal, Motion
+ * The one drawer used by every inspector: portal, Motion
  * slide-in with a fading backdrop, focus trap with focus returned to the
  * trigger, Esc / backdrop click to close, previous / next navigation and an
  * "Open full view" link.

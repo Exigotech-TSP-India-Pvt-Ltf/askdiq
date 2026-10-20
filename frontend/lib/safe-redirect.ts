@@ -1,5 +1,5 @@
 /**
- * Open-redirect protection for the `next` parameter (planchanges4 F1.1.1).
+ * Open-redirect protection for the `next` parameter.
  * Edge-safe (no Node APIs): used by middleware.ts, the auth route handlers
  * and the login page.
  */

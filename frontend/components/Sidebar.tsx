@@ -47,7 +47,7 @@ export interface NavItem {
   /** False pre-registers a page that is not built yet: it is not rendered. */
   enabled?: boolean;
   /**
-   * Permission the signed-in role needs to see the item (newplan Â§7.3). Items
+   * Permission the signed-in role needs to see the item. Items
    * without one (AskDIQ) are open to every signed-in, non-suspended user.
    */
   permission?: Permission;
@@ -82,7 +82,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: "/admin/governance", label: "Governance", icon: ShieldCheck, permission: DASHBOARD },
 ];
 
-/** Pages from newplan Â§6, Â§7.8 and Â§14; all built and enabled in this preview. */
+/** Analytics, User Management and Branding pages; all built and enabled in this preview. */
 const PLANNED_ITEMS: NavItem[] = [
   { href: "/admin/analytics", label: "Analytics", icon: ChartColumnBig, permission: DASHBOARD },
   {
@@ -297,7 +297,7 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
   );
 }
 
-/** Off-canvas sidebar below `md` (newplan Â§15.1), opened by the header hamburger. */
+/** Off-canvas sidebar below `md`, opened by the header hamburger. */
 function MobileSidebar({
   pathname,
   items,

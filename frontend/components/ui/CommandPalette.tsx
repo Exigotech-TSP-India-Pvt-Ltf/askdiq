@@ -26,7 +26,7 @@ export interface PaletteItem {
  */
 export type PaletteSearchProvider = (query: string, signal: AbortSignal) => Promise<PaletteItem[]>;
 
-/** Debounce before calling the search provider (newplan F0.6.4). */
+/** Debounce before calling the search provider. */
 export const SEARCH_DEBOUNCE_MS = 200;
 const MIN_SEARCH_LENGTH = 2;
 
@@ -52,7 +52,7 @@ function matches(item: PaletteItem, query: string): boolean {
 }
 
 /**
- * Ctrl/Cmd+K command palette (newplan §15.1): jump to a page now, entity
+ * Ctrl/Cmd+K command palette: jump to a page now, entity
  * search once `/admin/search` exists (pass `searchProvider`). Arrow keys move,
  * Enter opens, Esc closes; results are filtered by permission.
  */

@@ -8,8 +8,8 @@ import { ActionTooltip } from "@/components/ui/ActionTooltip";
 import { focusRing } from "@/components/ui/styles";
 
 /**
- * Admin-only "View trace" icon action in an answer's action row (newplan §1
- * Chat row). Shown to console roles only (`dashboard:read`, the same guard as
+ * Admin-only "View trace" icon action in an answer's action row.
+ * Shown to console roles only (`dashboard:read`, the same guard as
  * the Governance trace API); chat-only users and users without a role never
  * see it. Icon only: the name shows on hover / focus and is the aria-label.
  */

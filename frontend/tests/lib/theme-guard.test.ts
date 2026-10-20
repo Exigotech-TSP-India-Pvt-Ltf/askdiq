@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 
 /**
- * Theme guard (newplan §15.2a). Mirrors the ESLint `no-restricted-syntax`
+ * Theme guard. Mirrors the ESLint `no-restricted-syntax`
  * rules in .eslintrc.json (which run in CI via `npm run lint`) as a
  * line-based grep over app/, components/ and lib/, so a violation fails both
  * `npm run lint` and `npm test`.

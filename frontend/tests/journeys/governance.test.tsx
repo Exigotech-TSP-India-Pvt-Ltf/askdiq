@@ -1,5 +1,5 @@
 /**
- * Phase F4 integration journey (planchanges4 F4.5): the Governance page with
+ * Phase F4 integration journey: the Governance page with
  * `fetch` and `EventSource` mocked and an in-memory router history.
  *
  * - An overview incident marker deep-links into Logs, which then queries the
@@ -347,7 +347,7 @@ afterEach(() => {
   document.documentElement.classList.remove("dark");
 });
 
-describe("Governance journey (F4.5)", () => {
+describe("Governance journey", () => {
   it("overview incident marker links into Logs, which queries with those filters", async () => {
     renderPage("/admin/governance");
     const banner = await screen.findByRole("status", { name: "System health: Incident" });

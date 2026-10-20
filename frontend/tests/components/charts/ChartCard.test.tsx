@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ChartCard, SankeyChart, TreemapChart, toChartTable } from "@/components/charts";
 
-/** planchanges4 F0.4.1: one ChartCard with states and an accessible table toggle. */
+/** One ChartCard with states and an accessible table toggle. */
 
 const rows = [
   { stage: "Embedding", seconds: 0.12 },

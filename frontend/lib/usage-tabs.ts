@@ -1,4 +1,4 @@
-// Usage & Cost console tab ids and the `?tab=` URL parser (newplan §3).
+// Usage & Cost console tab ids and the `?tab=` URL parser.
 //
 // Live Telemetry Studio is now the "Overview" tab. Old bookmarks keep working:
 // `?tab=live_telemetry` (the former Live Telemetry id) and `?tab=overall`

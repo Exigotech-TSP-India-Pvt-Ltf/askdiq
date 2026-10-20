@@ -12,7 +12,7 @@ interface EmptyStateProps {
   compact?: boolean;
 }
 
-/** Standard "nothing here yet" state for cards, charts, tables and lists (newplan §15.1). */
+/** Standard "nothing here yet" state for cards, charts, tables and lists. */
 export function EmptyState({ title, description, icon: Icon = Inbox, action, className = "", compact = false }: EmptyStateProps) {
   return (
     <div

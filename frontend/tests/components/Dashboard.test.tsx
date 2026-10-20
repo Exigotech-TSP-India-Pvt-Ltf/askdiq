@@ -1,5 +1,5 @@
 /**
- * Dashboard building blocks (planchanges4 F3.1): contract helpers, KPI
+ * Dashboard building blocks: contract helpers, KPI
  * mapping, activity links, health pill and the generic LineTrend chart.
  */
 import React from "react";

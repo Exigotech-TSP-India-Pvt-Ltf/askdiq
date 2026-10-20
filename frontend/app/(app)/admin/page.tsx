@@ -18,7 +18,7 @@ import { HealthPill } from "@/components/admin/dashboard/HealthPill";
 import { useDashboardParams, useDashboardSummary } from "@/lib/use-dashboard";
 
 /**
- * Interactive dashboard (planchanges4 F3.1, newplan §1 and §15.4). The global
+ * Interactive dashboard. The global
  * DateRangePicker and audience drive every widget; the summary, the activity
  * feed and the health pill are independent requests, each with its own
  * skeleton, so one slow source never blocks the others. Every KPI and chart

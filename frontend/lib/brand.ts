@@ -1,5 +1,5 @@
 /**
- * White-label brand model (newplan §14). Server-safe (no React, no "use client"):
+ * White-label brand model. Server-safe (no React, no "use client"):
  * used by the root layout (server fetch + generateMetadata) and BrandProvider.
  *
  * `GET /branding` today returns { brand_name, brand_assistant_name,

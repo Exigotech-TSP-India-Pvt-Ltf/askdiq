@@ -1,5 +1,5 @@
 /**
- * Typed client for `/admin/governance/*` (newplan §4.5, planchanges4 F4).
+ * Typed client for `/admin/governance/*`.
  *
  * Shapes mirror `backend/app/schemas/governance.py` and
  * `backend/app/api/routes/admin_governance.py` exactly. Every latency is in

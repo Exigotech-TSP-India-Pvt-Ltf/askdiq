@@ -1,5 +1,5 @@
 /**
- * Shared class strings for the global UX primitives (newplan §15.2), so every
+ * Shared class strings for the global UX primitives, so every
  * overlay, icon button and card uses the same tokens in light and dark.
  */
 export const focusRing =

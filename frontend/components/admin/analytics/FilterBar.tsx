@@ -34,8 +34,8 @@ export interface FilterBarProps {
 }
 
 /**
- * User type, outcome, rating and search, all synced to the URL (planchanges4
- * F6.1). The date range comes from the global picker in the page header.
+ * User type, outcome, rating and search, all synced to the URL.
+ * The date range comes from the global picker in the page header.
  */
 export function FilterBar({ state, update, clearFilters, userTypes = [], chipLabels = {} }: FilterBarProps) {
   const id = useId();

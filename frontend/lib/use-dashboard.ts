@@ -13,7 +13,7 @@ import {
   type DashboardParams,
 } from "@/lib/dashboard-api";
 
-/** Live feed refresh while the tab is visible (newplan §13.3: paused when hidden). */
+/** Live feed refresh while the tab is visible (paused when hidden). */
 export const ACTIVITY_REFRESH_MS = 15_000;
 const SUMMARY_STALE_MS = 30_000;
 

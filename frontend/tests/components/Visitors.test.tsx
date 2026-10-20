@@ -1,5 +1,5 @@
 /**
- * F3.2: Visitors list and Visitor detail. Mocked fetch per
+ * Visitors list and Visitor detail. Mocked fetch per
  * docs/technical/frontend/contracts/entity-stats.md; in-memory router for URL round-trips.
  */
 import React from "react";

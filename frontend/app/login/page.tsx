@@ -9,7 +9,7 @@ type SearchParams = Record<string, string | string[] | undefined>;
 const first = (value: string | string[] | undefined): string | null =>
   (Array.isArray(value) ? value[0] : value) ?? null;
 
-/** `/login` (newplan §7.7). `?error=` maps to allow-listed messages only; `?next=` must be same-origin. */
+/** `/login`. `?error=` maps to allow-listed messages only; `?next=` must be same-origin. */
 export default function LoginPage({ searchParams }: { searchParams: SearchParams }) {
   return (
     <LoginView

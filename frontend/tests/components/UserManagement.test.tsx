@@ -1,5 +1,5 @@
 /**
- * User Management page (planchanges4 F1.4.1, F1.4.2): KPI strip, chart
+ * User Management page: KPI strip, chart
  * drill-downs into the Users filters, the Users table and drawer with its
  * safeguards, optimistic updates with rollback and the 409 toast.
  */
@@ -40,7 +40,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("KPI strip and charts (F1.4.1)", () => {
+describe("KPI strip and charts", () => {
   beforeEach(() => {
     renderPage();
   });
@@ -110,7 +110,7 @@ describe("KPI strip and charts (F1.4.1)", () => {
   });
 });
 
-describe("Users tab (F1.4.2)", () => {
+describe("Users tab", () => {
   it("lists users with role, status, last login and approver; search goes to the URL and API", async () => {
     renderPage();
     await waitFor(() => expect(within(usersTable()).getByText("Alice Admin")).toBeInTheDocument());

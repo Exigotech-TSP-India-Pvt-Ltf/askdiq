@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The two User Management charts the kit has no component for (newplan §15.4):
+ * The two User Management charts the kit has no component for:
  * a daily bar and a donut. Both use the kit primitives (`ChartFrame`,
  * `useChartMarks`), so they share the tooltip, roving focus, Enter / click
  * `onSelect` and theme colours of every other chart.

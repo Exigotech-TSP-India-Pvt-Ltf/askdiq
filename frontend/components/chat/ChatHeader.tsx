@@ -10,7 +10,7 @@ function initials(name: string): string {
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 }
 
-/** Signed-in identity chip (newplan §7.7): initials, name and email. */
+/** Signed-in identity chip: initials, name and email. */
 export function UserChip() {
   const { user } = useAuth();
   if (!user) return null;
@@ -35,7 +35,7 @@ export function UserChip() {
   );
 }
 
-/** Branded chat header (planchanges4 F3.5, newplan §1 Chat row). */
+/** Branded chat header. */
 export function ChatHeader() {
   const brand = useBrand();
   return (

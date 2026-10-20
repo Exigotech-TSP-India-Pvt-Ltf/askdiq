@@ -33,7 +33,7 @@ function Cell({ text, missing }: { text: string | null; missing: boolean }) {
   return <p className="line-clamp-3 text-fg">{text}</p>;
 }
 
-/** Preference Data tab (planchanges4 F5.4): preview, incomplete pairs flagged, JSONL download. */
+/** Preference Data tab: preview, incomplete pairs flagged, JSONL download. */
 export function PreferenceDataTab({ token, canExport, days }: PreferenceDataTabProps) {
   const toast = useToast();
   const [completeOnly, setCompleteOnly] = useState(false);

@@ -1,5 +1,5 @@
 /**
- * planchanges4 F5.4: Golden Cases "Run now" job chip polls until done;
+ * Golden Cases "Run now" job chip polls until done;
  * Preference Data flags incomplete pairs and the JSONL download triggers;
  * Knowledge Gaps link into Documents; operators get no action controls.
  */

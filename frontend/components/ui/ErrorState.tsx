@@ -15,7 +15,7 @@ interface ErrorStateProps {
   compact?: boolean;
 }
 
-/** Standard error state with retry and the request id (newplan §15.1). */
+/** Standard error state with retry and the request id. */
 export function ErrorState({
   title = "Something went wrong",
   message,

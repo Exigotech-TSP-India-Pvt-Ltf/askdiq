@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Audit Trail tab (planchanges4 F1.4.3): the auth events from
+ * Audit Trail tab: the auth events from
  * `/governance/audit-log` (sign-ins, denials, approvals, role changes,
  * suspensions, revocations), filtered by event and searchable by actor or
  * target. Only `audit:auth:read` callers receive these rows from the API.

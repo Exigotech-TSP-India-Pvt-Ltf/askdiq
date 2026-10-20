@@ -1,5 +1,5 @@
 /**
- * Typed client for User Management (newplan §7.8; planchanges4 F1.4).
+ * Typed client for User Management.
  *
  * Contract: `feat/auth-user-management-api` —
  * `backend/app/api/routes/user_management.py`, `schemas/user_management.py`,

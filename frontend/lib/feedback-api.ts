@@ -1,5 +1,5 @@
 /**
- * Typed client for the feedback / RLHF loop (newplan §5.4, planchanges4 B5 + F5).
+ * Typed client for the feedback / RLHF loop.
  *
  * Contract: backend `app/api/routes/admin_feedback.py`, `app/schemas/feedback.py`
  * and `app/schemas/session.py` (chat-side `POST /sessions/{sid}/messages/{mid}/feedback`).
@@ -150,7 +150,7 @@ export interface KnowledgeGap {
 }
 
 export interface FeedbackAnalytics {
-  /** Unfiltered total for the audience (F3): the KPI uses this, never the list total. */
+  /** Unfiltered total for the audience: the KPI uses this, never the list total. */
   total: number;
   total_feedback: number;
   positive_count: number;
@@ -162,7 +162,7 @@ export interface FeedbackAnalytics {
   feedback_by_outcome: Record<string, OutcomeBucket>;
   daily_trend: TrendPoint[];
   rating_distribution: Record<string, number>;
-  /** Present only once turn insights exist (B6). */
+  /** Present only once turn insights exist. */
   by_intent?: CountItem[];
   top_reasons: CountItem[];
   triage_funnel: Record<string, number>;
@@ -326,7 +326,7 @@ function query(params: Record<string, string | number | boolean | null | undefin
 // Chat side
 // ---------------------------------------------------------------------------
 
-/** Thumbs-down detail sent with a rating (newplan §5.4 chat UI). */
+/** Thumbs-down detail sent with a rating. */
 export interface FeedbackDetails {
   reason_tags?: ReasonTag[];
   corrected_answer?: string | null;

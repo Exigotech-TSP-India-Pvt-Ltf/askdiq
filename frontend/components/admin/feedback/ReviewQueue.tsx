@@ -75,7 +75,7 @@ const SHORTCUT_HINTS: readonly [string, string][] = [
 ];
 
 /**
- * Review Queue (planchanges4 F5.3): a keyboard-first triage workspace with
+ * Review Queue: a keyboard-first triage workspace with
  * multi-select bulk actions, a detail drawer, optimistic updates with undo
  * and idle prefetch of the next page. Operators (no `feedback:triage`) see a
  * read-only queue.

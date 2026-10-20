@@ -1,5 +1,5 @@
 /**
- * Route gate decision (newplan §7.7, planchanges4 F1.2.3). Pure, so every
+ * Route gate decision. Pure, so every
  * status x route pair is covered by a table-driven test.
  *
  * - no session            -> "login"     (redirect to /login?next=)

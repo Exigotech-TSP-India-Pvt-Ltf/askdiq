@@ -1,6 +1,6 @@
 /**
- * Typed client and contract for the Dashboard aggregations (planchanges4
- * B7.1 / F3.1, newplan §1 and §15.4). The written contract is
+ * Typed client and contract for the Dashboard aggregations.
+ * The written contract is
  * `docs/technical/frontend/contracts/dashboard-aggregations.md`; keep the two in sync.
  *
  * Backward compatible by design: every field the backend returns today is
@@ -43,7 +43,7 @@ export interface LatencyStage {
 }
 
 // ---------------------------------------------------------------------------
-// Additive fields (B7.1). All optional: absent = not implemented yet.
+// Additive fields. All optional: absent = not implemented yet.
 // ---------------------------------------------------------------------------
 
 export const DASHBOARD_KPI_KEYS = [

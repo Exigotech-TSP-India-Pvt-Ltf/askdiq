@@ -27,7 +27,7 @@ export interface RouteGate {
 }
 
 /**
- * Route gate for every `(app)` page (planchanges4 F1.2.3). No session -> /login
+ * Route gate for every `(app)` page. No session -> /login
  * (with `next`); suspended -> suspended page; pending / rejected -> Chat only,
  * Access Required elsewhere; active -> the full shell. UX only: every API call
  * is authorised by the backend.

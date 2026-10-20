@@ -2,7 +2,7 @@
 
 /**
  * Heavy Recharts charts (Treemap, Sankey) are code-split with `next/dynamic`
- * (newplan §13.3) so pages that do not show them never download them.
+ * so pages that do not show them never download them.
  */
 import dynamic from "next/dynamic";
 import { ChartSkeleton } from "./ChartCard";

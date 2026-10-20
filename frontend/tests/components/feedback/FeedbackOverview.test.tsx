@@ -1,5 +1,5 @@
 /**
- * planchanges4 F5.2: KPIs use the unfiltered analytics total, the spike alert
+ * KPIs use the unfiltered analytics total, the spike alert
  * shows, and a click on each chart type sets the right filter chip (synced to
  * the URL) and opens the Review Queue. Chart colours follow light / dark.
  */

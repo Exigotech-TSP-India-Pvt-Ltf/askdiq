@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Live Governance updates over SSE (planchanges4 F4.2, G13).
+ * Live Governance updates over SSE.
  *
  * - One `EventSource` on `/admin/governance/stream` per mounted view; it
  *   replaces the old 10 s polling.

@@ -1,5 +1,5 @@
 /**
- * Phase F1 auth journey (planchanges4 F1.5): `/auth/me` is mocked through each
+ * Phase F1 auth journey: `/auth/me` is mocked through each
  * state. A new user signs in, uses Chat, meets Access Required on a dashboard
  * route, requests access, is approved (the 15 s poll picks it up) and lands on
  * the dashboard without signing in again. A suspended user sees the suspended
@@ -100,7 +100,7 @@ afterEach(() => {
 
 const meCalls = () => fetchMock.mock.calls.filter(([url]) => url === "/api/proxy/auth/me").length;
 
-describe("Auth journey (F1.5)", () => {
+describe("Auth journey", () => {
   it("new user: Chat works, dashboards show Access Required, request, approval, dashboard", async () => {
 
     // 1. Pending user on /chat: the page renders, the sidebar offers Chat only.

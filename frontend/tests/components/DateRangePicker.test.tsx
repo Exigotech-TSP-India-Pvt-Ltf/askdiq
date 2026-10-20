@@ -71,7 +71,7 @@ function renderPicker() {
 
 const NOW = new Date(2026, 9, 15, 12, 0, 0);
 
-describe("range parsing and clamping (F0.6.3)", () => {
+describe("range parsing and clamping", () => {
   it("defaults to the last 7 days and reads presets", () => {
     expect(rangeFromParams(new URLSearchParams(""), NOW).kind).toBe("7d");
     expect(rangeFromParams(new URLSearchParams("range=90d"), NOW).label).toBe("Last 90 days");

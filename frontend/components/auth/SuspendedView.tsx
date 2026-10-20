@@ -13,7 +13,7 @@ interface SuspendedViewProps {
   onSignOut?: () => void;
 }
 
-/** Account-suspended page (planchanges4 F1.2.2): no shell, only the contact route. */
+/** Account-suspended page: no shell, only the contact route. */
 export function SuspendedView({ contactEmail, onSignOut }: SuspendedViewProps) {
   const brand = useBrand();
   return (

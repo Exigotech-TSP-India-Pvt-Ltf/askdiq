@@ -59,7 +59,7 @@ export interface SemanticTokens {
   "surface-elevated": string;
   "surface-inverse": string;
   /**
-   * Studio surface (Usage "Live Telemetry" cards, newplan §15.2): the brand-tinted
+   * Studio surface (Usage "Live Telemetry" cards): the brand-tinted
    * top of every card gradient, table header rows and inset tiles.
    */
   "surface-studio": string;
@@ -176,7 +176,7 @@ export interface ChartTheme {
   tooltip: { background: string; border: string; text: string };
   /** Opacity applied to non-hovered series. */
   dimOpacity: number;
-  /** Analytics (Chatbot Insights port, newplan 6.4): the reference HTML's colours, lifted for dark. */
+  /** Analytics (Chatbot Insights port): the reference HTML's colours, lifted for dark. */
   insights: InsightsChartColors;
 }
 

@@ -99,7 +99,7 @@ export interface GoldenCasesTabProps {
   days?: { from?: string; to?: string };
 }
 
-/** Golden Cases tab (planchanges4 F5.4): last evaluation result and "Run now" with a job chip. */
+/** Golden Cases tab: last evaluation result and "Run now" with a job chip. */
 export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS, days }: GoldenCasesTabProps) {
   const toast = useToast();
   const from = days?.from;

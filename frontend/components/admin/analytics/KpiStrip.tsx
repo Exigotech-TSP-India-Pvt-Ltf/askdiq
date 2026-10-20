@@ -19,7 +19,7 @@ export interface KpiDef {
   targetLabel: string;
 }
 
-/** The six KPIs of the HTML's `metrics()` / `kpiCards()` (newplan §6.4). */
+/** The six KPIs of the HTML's `metrics()` / `kpiCards()`. */
 export const KPIS: readonly KpiDef[] = [
   {
     key: "conversations",
