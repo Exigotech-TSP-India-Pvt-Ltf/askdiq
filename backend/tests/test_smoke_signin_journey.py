@@ -1,4 +1,4 @@
-"""`smoke_e2e.py --journey signin` (PR-18, planchanges4 F1.5) against a fake stack.
+"""`smoke_e2e.py --journey signin` (PR-18) against a fake stack.
 
 The real journey needs the PR-07 `/auth` routes and both servers in mock mode,
 so CI does not run it yet. These tests drive every step through an

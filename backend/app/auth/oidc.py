@@ -1,4 +1,4 @@
-"""Entra ID OIDC client: authorization code flow with PKCE (planchanges4 B2.2).
+"""Entra ID OIDC client: authorization code flow with PKCE.
 
 One code path serves real Entra and the local mock IdP; only the authority
 base differs (``Settings.oidc_authority``). Endpoints come from the discovery

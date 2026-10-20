@@ -1,4 +1,4 @@
-"""Feedback / RLHF loop: unit and API tests (planchanges4 B5.1, B5.2)."""
+"""Feedback / RLHF loop: unit and API tests."""
 
 from __future__ import annotations
 
@@ -243,7 +243,7 @@ async def test_feedback_routes_reject_bad_input_with_422():
 
 
 # ---------------------------------------------------------------------------
-# B5.1 migration data step and dataset_extra
+# Migration data step and dataset_extra
 # ---------------------------------------------------------------------------
 
 
@@ -340,7 +340,7 @@ async def test_dataset_extra_reads_db_with_json_fallback(db_session, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# B5.2.2 chat-side upsert
+# Chat-side upsert
 # ---------------------------------------------------------------------------
 
 
@@ -397,7 +397,7 @@ async def test_chat_feedback_upserts_masks_pii_and_rejects_unknown_tags(
 
 
 # ---------------------------------------------------------------------------
-# B5.2.3 enriched list
+# Enriched list
 # ---------------------------------------------------------------------------
 
 
@@ -559,7 +559,7 @@ async def test_keyset_pagination_walks_every_row_once(client, db_session):
 
 
 # ---------------------------------------------------------------------------
-# B5.2.1 triage state machine
+# Triage state machine
 # ---------------------------------------------------------------------------
 
 
@@ -692,7 +692,7 @@ async def test_concurrent_triage_one_wins_one_conflicts():
 
 
 # ---------------------------------------------------------------------------
-# B5.2.5 bulk, promotion, export, golden run
+# Bulk, promotion, export, golden run
 # ---------------------------------------------------------------------------
 
 
@@ -994,7 +994,7 @@ async def test_golden_run_handler_stores_result(db_session, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# B5.2.4 analytics
+# Analytics
 # ---------------------------------------------------------------------------
 
 
@@ -1094,7 +1094,7 @@ async def test_analytics_exact_counts_and_unfiltered_total(client, db_session):
     intents_after = {r["key"]: r["count"] for r in after["by_intent"]}
     assert intents_after == intents_before
 
-    # F3: the analytics total ignores list filters entirely.
+    # The analytics total ignores list filters entirely.
     filtered = await client.get(f"/admin/feedback?q={mk}&rating=1")
     assert filtered.json()["total"] == 2
     assert (await _analytics(client))["total"] == after["total"]

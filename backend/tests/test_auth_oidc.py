@@ -1,4 +1,4 @@
-"""OIDC client against the Entra-faithful mock IdP (planchanges4 B2.2).
+"""OIDC client against the Entra-faithful mock IdP.
 
 No test calls Microsoft: the mock is served in-process through
 ``ASGITransport`` and the recorded discovery document through
@@ -111,7 +111,7 @@ def valid_claims(settings: Settings, nonce: str = "n-1", **overrides: Any) -> di
 
 
 # ---------------------------------------------------------------------------
-# B2.2.1 authorize URL, PKCE, state
+# Authorize URL, PKCE, state
 # ---------------------------------------------------------------------------
 
 
@@ -190,7 +190,7 @@ def test_pkce_challenge_matches_rfc7636_example() -> None:
 
 
 # ---------------------------------------------------------------------------
-# B2.2.3 mock behaves like Entra; the real validator accepts its tokens
+# Mock behaves like Entra; the real validator accepts its tokens
 # ---------------------------------------------------------------------------
 
 
@@ -391,7 +391,7 @@ async def test_token_exchange_errors_fail_closed(
 
 
 # ---------------------------------------------------------------------------
-# B2.2.2 negative ID token validation (all fail closed)
+# Negative ID token validation (all fail closed)
 # ---------------------------------------------------------------------------
 
 

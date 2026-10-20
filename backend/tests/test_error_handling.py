@@ -1,4 +1,4 @@
-"""Exceptional conditions (planchanges4 B1.2, OWASP A10).
+"""Exceptional conditions (OWASP A10).
 
 problem+json error bodies, supervised background tasks and lifespan drain.
 No database is needed: ``get_db`` is overridden with a stub.

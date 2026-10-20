@@ -1,4 +1,4 @@
-"""Phase B2 end-to-end journey through the mock IdP (planchanges4 B2.6).
+"""Phase B2 end-to-end journey through the mock IdP.
 
 A new user signs in (pending), uses Chat, gets 403 on the dashboard,
 requests access; a superadmin (bootstrapped from SUPERADMIN_EMAILS) approves;

@@ -1,4 +1,4 @@
-"""Live Governance stream: one shared producer per worker (B4.2.5, §13.6).
+"""Live Governance stream: one shared producer per worker.
 
 ``GovernanceStreamHub`` runs at most one producer task per audience in each
 process, no matter how many SSE clients are connected. Every

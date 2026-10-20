@@ -1,4 +1,4 @@
-"""Usage & Cost chart additions (B7.4): cost by stage over time, the month-end
+"""Usage & Cost chart additions: cost by stage over time, the month-end
 forecast and prompt-cache statistics for ``GET /admin/usage/summary``.
 
 Stage costs use the same token sums and per-million rates as the summary's

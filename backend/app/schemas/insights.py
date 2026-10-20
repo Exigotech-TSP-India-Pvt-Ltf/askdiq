@@ -1,4 +1,4 @@
-"""Request and response models for ``/admin/insights/*`` (newplan 6.3, 6.4).
+"""Request and response models for ``/admin/insights/*``.
 
 ``InsightsFilters`` is the one shared filter model; every value is validated
 against an allow-list (enums, code patterns, bounded text) before it reaches

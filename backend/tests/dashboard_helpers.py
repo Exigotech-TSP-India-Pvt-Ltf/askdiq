@@ -1,4 +1,4 @@
-"""Seeders shared by the B7 chart-aggregation tests (dashboard, entities, usage).
+"""Seeders shared by the chart-aggregation tests (dashboard, entities, usage).
 
 Rows are written inside the caller's rolled-back ``db_session`` and timed in a
 random far-past window (``unique_day``) so window filters isolate them from

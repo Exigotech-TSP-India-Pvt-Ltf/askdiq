@@ -1,4 +1,4 @@
-"""Response models for the Visitors and Conversations entity pages (B7.2).
+"""Response models for the Visitors and Conversations entity pages.
 
 Mirrors ``frontend/lib/entity-stats-api.ts`` (contract:
 ``docs/technical/frontend/contracts/entity-stats.md``). Timestamps are ISO 8601 UTC with

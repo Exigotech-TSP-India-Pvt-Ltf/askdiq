@@ -775,7 +775,7 @@ async def _live_evaluation_payload(
             "deltas": deltas,
             "dual_radar": dual_radar,
         }
-        # B7.4: benchmark runs are the evaluation report files.
+        # Benchmark runs are the evaluation report files.
         runs = await eval_series.report_runs(_eval_report_dirs())
         res_data.update(
             eval_series.insight_fields(eval_series.runs_in_window(runs, window))
@@ -787,7 +787,7 @@ async def _live_evaluation_payload(
         "deltas": deltas,
         "dual_radar": dual_radar,
     }
-    # B7.4: live "runs" are UTC days of online evaluation records.
+    # Live "runs" are UTC days of online evaluation records.
     live = await eval_series.live_runs(db, run_limit, window)
     live_data.update(eval_series.insight_fields(live))
     return _with_window(live_data, days)

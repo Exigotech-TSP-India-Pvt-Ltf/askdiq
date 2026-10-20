@@ -24,7 +24,7 @@ router = APIRouter()
     "/governance/audit-log",
     response_model=list[AuditLogEntry],
     description=(
-        "Newest first. Auth events (newplan §7.5) are only included for "
+        "Newest first. Auth events are only included for "
         "callers with `audit:auth:read` (superadmin)."
     ),
 )

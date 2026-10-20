@@ -1,4 +1,4 @@
-"""Roles, statuses and the single permission table (newplan §7.3).
+"""Roles, statuses and the single permission table.
 
 The API enforces these through `app.auth.deps.require_permission`; the
 frontend reads the same list from `GET /auth/me`, so hiding a control in the
@@ -73,7 +73,7 @@ ROLE_PERMISSIONS: MappingProxyType[Role, frozenset[Permission]] = MappingProxyTy
     }
 )
 
-# Statuses that may use Chat (signed in, not suspended); newplan §7.2.
+# Statuses that may use Chat (signed in, not suspended).
 CHAT_STATUSES = frozenset({UserStatus.ACTIVE, UserStatus.PENDING, UserStatus.REJECTED})
 
 

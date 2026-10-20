@@ -1,4 +1,4 @@
-"""Branding integration tests against Postgres (planchanges4 B3.1, B3.3, B3.4).
+"""Branding integration tests against Postgres.
 
 Upload a logo, update the palette, see ``GET /branding`` change with a new
 ETag, and check that assets are served with safe headers. Also covers the

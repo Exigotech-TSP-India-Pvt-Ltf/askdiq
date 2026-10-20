@@ -1,6 +1,6 @@
-"""LLM batch stage of the insights classifier (planchanges4 B6.2.2).
+"""LLM batch stage of the insights classifier.
 
-Security controls (OWASP LLM01/LLM02/LLM06/LLM10, newplan 12.1 A05):
+Security controls (OWASP LLM01/LLM02/LLM06/LLM10):
 - user and assistant text is PII-masked and truncated before it leaves the
   process, and sent only inside a delimited ``<turns_data>`` block that the
   system prompt declares to be data, never instructions. ``<`` and ``>`` are

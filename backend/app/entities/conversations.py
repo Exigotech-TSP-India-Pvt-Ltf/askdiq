@@ -1,4 +1,4 @@
-"""Conversation stats, list filters and per-turn detail (B7.2).
+"""Conversation stats, list filters and per-turn detail.
 
 A turn is one ``chat_messages.turn_index`` (user message + assistant answer).
 Outcomes use the canonical names; legacy values are mapped and a NULL

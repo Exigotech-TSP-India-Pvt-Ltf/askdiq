@@ -1,4 +1,4 @@
-"""Deterministic rule stage of the insights classifier (planchanges4 B6.2.1).
+"""Deterministic rule stage of the insights classifier.
 
 Pure functions only: no I/O. Turns these rules can label never reach the LLM
 (greetings and closings, prompt injection, spam, blocked turns and model
@@ -54,7 +54,7 @@ def normalize_outcome(outcome: str | None) -> str | None:
 def map_outcome(
     outcome: str | None, grounded: bool | None, flags: frozenset[str]
 ) -> QualityMapping:
-    """Deterministic outcome -> (bot_quality, handled) table (newplan 6.2).
+    """Deterministic outcome -> (bot_quality, handled) table.
 
     | outcome                          | bot_quality          | handled |
     | answered and grounded            | OK                   | yes     |

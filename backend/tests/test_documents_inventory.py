@@ -1,4 +1,4 @@
-"""Documents inventory, canonical Markdown, chunk hits and citation stats (B7.3).
+"""Documents inventory, canonical Markdown, chunk hits and citation stats.
 
 Pure tests run anywhere; tests using ``client`` / ``db_session`` need Postgres
 (they run in CI).

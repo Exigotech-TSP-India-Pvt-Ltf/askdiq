@@ -1,8 +1,8 @@
-"""Feedback analytics (F2, F3, F8): SQL aggregates run in parallel.
+"""Feedback analytics: SQL aggregates run in parallel.
 
 Each section is one aggregate statement executed by ``gather_scoped`` on its
 own session. None of them take the list filters, so ``total`` is the
-unfiltered audience total the KPI cards need (F3).
+unfiltered audience total the KPI cards need.
 """
 
 from __future__ import annotations
@@ -314,7 +314,7 @@ def _knowledge_gaps(
 
 
 def _by_intent(aud: ColumnElement[bool] | None) -> Factory:
-    """Only once the B6 ``turn_insights`` table exists; otherwise None."""
+    """Only once the ``turn_insights`` table exists; otherwise None."""
 
     async def run(db: AsyncSession) -> list[dict[str, Any]] | None:
         exists = await db.scalar(text("SELECT to_regclass('public.turn_insights')"))

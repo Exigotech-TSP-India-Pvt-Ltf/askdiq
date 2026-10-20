@@ -1,4 +1,4 @@
-"""User Management: users, roles, access requests (newplan §7.6, §7.8; B2.4.2).
+"""User Management: users, roles, access requests.
 
 Safeguards (all answer 409):
 
@@ -14,7 +14,7 @@ Safeguards (all answer 409):
 
 Lock order is always: superadmin rows -> access requests -> target users (by
 id), which keeps concurrent decisions deadlock-free. Every action writes its
-audit event (newplan §7.5) in the same transaction.
+audit event in the same transaction.
 """
 
 from __future__ import annotations

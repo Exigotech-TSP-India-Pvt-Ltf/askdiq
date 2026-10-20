@@ -1,6 +1,6 @@
-"""Sign-in, self-service access requests and logout (newplan §7.2, B2.4.1).
+"""Sign-in, self-service access requests and logout.
 
-Status rules applied on every SSO sign-in (newplan §7.2):
+Status rules applied on every SSO sign-in:
 
 - The user is upserted on the Entra object id (``oid``). A pre-provisioned
   (invited) row with the same email and no ``oid`` yet is linked instead.

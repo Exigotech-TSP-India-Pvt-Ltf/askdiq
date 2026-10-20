@@ -1,4 +1,4 @@
-"""Parity with the reference HTML's renderer (planchanges4 B6.4.2, newplan 6.4).
+"""Parity with the reference HTML's renderer.
 
 ``Reference`` below is a line-by-line Python port of the HTML's ``passConv()``,
 ``scope()``, ``metrics()``, ``trend()``, ``radial()``, ``flow()``,
@@ -8,7 +8,7 @@ own embedded data. Every endpoint must return the same numbers on the
 
 One documented rule difference: the HTML labels C10 "Staff / people lookup"
 although its top intent group holds only 3 of 6 substantive turns; our
-``user_type`` rule (newplan 6.4) needs 60 %, so C10 is "Mixed" here.
+``user_type`` rule needs 60 %, so C10 is "Mixed" here.
 """
 
 from __future__ import annotations
@@ -249,7 +249,7 @@ def _close(actual: float | None, expected: float | None) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Headline numbers (newplan 6.4)
+# Headline numbers
 # ---------------------------------------------------------------------------
 
 

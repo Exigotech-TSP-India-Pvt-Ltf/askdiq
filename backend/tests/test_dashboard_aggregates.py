@@ -1,4 +1,4 @@
-"""Dashboard aggregations (planchanges4 B7.1): window, sparklines, deltas,
+"""Dashboard aggregations: window, sparklines, deltas,
 outcome / latency series, month cost, satisfaction, top intents, activity feed.
 
 Pure logic runs without a database; the endpoint tests seed a random far-past

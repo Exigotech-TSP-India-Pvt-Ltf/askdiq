@@ -1,4 +1,4 @@
-"""Request/response models for the `/auth/*` routes (newplan §7.6)."""
+"""Request/response models for the `/auth/*` routes."""
 
 from __future__ import annotations
 

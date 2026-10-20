@@ -1,4 +1,4 @@
-"""Governance Overall tab in one call (newplan §4.2, B4.2.4).
+"""Governance Overall tab in one call.
 
 Health status (Healthy / Degraded / Incident) from configured thresholds on
 error rate, p95 latency and Azure quota utilisation; KPI cards with 24 hourly

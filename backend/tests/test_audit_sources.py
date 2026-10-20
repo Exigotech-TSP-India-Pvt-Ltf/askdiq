@@ -1,4 +1,4 @@
-"""Missing log sources (newplan §4.3, OWASP A09): every new trigger writes
+"""Missing log sources (OWASP A09): every new trigger writes
 exactly one insert-only, PII-masked audit row without blocking the caller."""
 
 import gc
@@ -55,7 +55,7 @@ def _actions(rows: list[dict]) -> list[str]:
 
 
 # --------------------------------------------------------------------------
-# B4.3.1 request-level events
+# Request-level events
 # --------------------------------------------------------------------------
 
 
@@ -243,7 +243,7 @@ async def test_writer_failure_never_reaches_the_caller(monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# B4.3.2 lifecycle and admin events
+# Lifecycle and admin events
 # --------------------------------------------------------------------------
 
 

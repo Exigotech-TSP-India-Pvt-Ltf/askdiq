@@ -1,7 +1,7 @@
 """Extract the Chatbot Insights reference dataset into a JSON test fixture.
 
 Reads ``window.__EMBED__={conversations:[...],exchanges:[...]}`` from the
-standalone insights HTML (planchanges4 B6.4.1 / newplan section 6.4) and
+standalone insights HTML and
 writes ``backend/tests/fixtures/insights_reference.json``.
 
 The HTML is untrusted input: nothing is evaluated. Each array is decoded with

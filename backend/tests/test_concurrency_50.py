@@ -1,4 +1,4 @@
-"""50+ concurrency CI gate (plan B1.7.3, newplan section 13.5).
+"""50+ concurrency CI gate.
 
 60 simultaneous requests hit the ASGI app through ``asyncio.gather``: 30
 ``/query`` (fake LLM with a 1 s delay, fake embeddings, fake retrieval), 20

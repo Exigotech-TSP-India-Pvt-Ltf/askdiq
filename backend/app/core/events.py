@@ -1,4 +1,4 @@
-"""Cross-worker event bus over Postgres LISTEN/NOTIFY (newplan section 13.6).
+"""Cross-worker event bus over Postgres LISTEN/NOTIFY.
 
 Each process keeps one dedicated asyncpg connection that LISTENs on
 ``EVENTS_CHANNEL``; it reconnects with exponential backoff when the

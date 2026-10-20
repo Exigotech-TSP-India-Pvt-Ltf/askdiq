@@ -1,4 +1,4 @@
-"""Outbound timeouts and the LLM circuit breaker (planchanges4 B1.2.3).
+"""Outbound timeouts and the LLM circuit breaker.
 
 The Azure client is mocked; no network or database is used.
 """

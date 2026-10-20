@@ -1,4 +1,4 @@
-"""Feedback / RLHF loop request and response models (newplan §5.4)."""
+"""Feedback / RLHF loop request and response models."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ class FeedbackSource(BaseModel):
 
 
 class FeedbackItem(BaseModel):
-    """One feedback row with the full exchange context (F1, F9)."""
+    """One feedback row with the full exchange context."""
 
     id: str
     rating: int
@@ -265,7 +265,7 @@ class KnowledgeGap(BaseModel):
 
 
 class FeedbackAnalytics(BaseModel):
-    total: int = Field(description="Unfiltered total for the audience (F3).")
+    total: int = Field(description="Unfiltered total for the audience.")
     total_feedback: int
     positive_count: int
     negative_count: int
@@ -277,7 +277,7 @@ class FeedbackAnalytics(BaseModel):
     daily_trend: list[TrendPoint]
     rating_distribution: dict[str, int]
     by_intent: list[CountItem] | None = Field(
-        default=None, description="Present only once turn insights exist (B6)."
+        default=None, description="Present only once turn insights exist."
     )
     top_reasons: list[CountItem]
     triage_funnel: dict[str, int]

@@ -1,4 +1,4 @@
-"""SSO / session settings validation (planchanges4 B2.1.2, B2.2.3 startup guard)."""
+"""SSO / session settings validation (startup guard)."""
 
 from __future__ import annotations
 

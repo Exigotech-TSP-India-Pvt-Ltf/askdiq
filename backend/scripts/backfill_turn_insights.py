@@ -1,4 +1,4 @@
-"""Queue insights classification for unlabelled chat history (planchanges4 B6.2.4).
+"""Queue insights classification for unlabelled chat history.
 
 Enqueues ``insights.backfill`` jobs (chunks of message ids); the job worker
 labels them under the daily token budget. Nothing calls the LLM inline.

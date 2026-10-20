@@ -1,4 +1,4 @@
-"""Branding unit tests (planchanges4 B3.2, OWASP A05). No database needed.
+"""Branding unit tests (OWASP A05). No database needed.
 
 Covers palette derivation and the WCAG check, asset sniffing / SVG
 sanitizing, URL validation and the API's pre-database rejections (413, 415,

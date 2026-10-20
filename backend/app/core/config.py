@@ -194,7 +194,7 @@ class Settings(BaseSettings):
     brand_name: str = "DeployIQ"
     brand_assistant_name: str = "AskDIQ"
     brand_support_email: str = "support@deployiq.com"
-    # Runtime branding (newplan section 14). The DB row overrides these.
+    # Runtime branding. The DB row overrides these.
     brand_company_name: str = "Exigo Tech"
     # Public GET /branding: in-process cache TTL and browser max-age.
     branding_cache_ttl_seconds: int = Field(default=60, ge=1)
@@ -279,7 +279,7 @@ class Settings(BaseSettings):
     # /docs, /redoc and /openapi.json are disabled when ENV=production unless
     # this is explicitly turned on.
     enable_api_docs: bool = False
-    # Response security headers (newplan section 12.2). HSTS is only sent when
+    # Response security headers. HSTS is only sent when
     # ENV=production, since TLS terminates at nginx there.
     security_csp: str = "default-src 'none'; frame-ancestors 'none'"
     security_hsts: str = "max-age=63072000; includeSubDomains"
@@ -345,7 +345,7 @@ class Settings(BaseSettings):
     # so open streams can never block a server reload or graceful shutdown.
     sse_max_stream_seconds: float = 120.0
 
-    # --- Governance endpoints & live stream (PR-10, newplan §4.5) ---
+    # --- Governance endpoints & live stream (PR-10) ---
     # Above this many matching rows, list totals switch to a planner estimate.
     governance_exact_count_cap: int = Field(default=100_000, ge=1)
     governance_export_max_rows: int = Field(default=100_000, ge=1)

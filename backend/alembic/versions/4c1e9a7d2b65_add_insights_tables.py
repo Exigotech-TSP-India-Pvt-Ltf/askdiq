@@ -4,7 +4,7 @@ Revision ID: 4c1e9a7d2b65
 Revises: a9b0c1d2e3f4
 Create Date: 2026-10-15 12:00:00.000000
 
-Seeds ``insight_taxonomy`` with the DeployIQ intent list (newplan section 6.3),
+Seeds ``insight_taxonomy`` with the DeployIQ intent list,
 the HTML renderer's bot-quality codes and the generic issue list. The seed is a
 frozen snapshot: later edits happen through the taxonomy API (F7), never by
 changing this file.
