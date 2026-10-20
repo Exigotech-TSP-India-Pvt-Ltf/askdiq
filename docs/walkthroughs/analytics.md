@@ -15,7 +15,7 @@ Who uses it:
 
 - **Analysts and product owners** use topics, flow and drop-off to decide what content to add.
 - **Support** uses the **Conversations** tab to read failing conversations question by question.
-- **New team members** should start with the **Guide** tab, which has a short tour and definitions of every number.
+- **New team members** can take the page tour from the command palette (**Tour this page**).
 
 Every number here comes from **turn labels** (`turn_insights`) written by a background classifier (see [How turns are classified](#how-turns-are-classified)). A conversation with no labelled turn yet does not appear at all, and a banner reports the backlog.
 
@@ -60,7 +60,7 @@ This page has its **own** period filter. The global date range picker is not sho
 | [chart] Analytics                 [Overview | Users | Testing]            |
 | What people ask, how it was answered and where conversations drop         |
 +---------------------------------------------------------------------------+
-| [Guide][Overview][Trend][Flow][Topics][Drop-off][Conversations]           |
+| [Overview][Trend][Flow][Topics][Drop-off][Conversations]                  |
 | PERIOD      USER TYPE  OUTCOME  RATING   SEARCH                           |
 | [Full per.v][All v]    [All v]  [All v]  [Question, issue or person ]     |
 |                                                       [Clear filters]     |
@@ -126,7 +126,7 @@ This page has its **own** period filter. The global date range picker is not sho
 
 ### Tabs
 
-**Guide**, **Overview**, **Trend**, **Flow**, **Topics**, **Drop-off**, **Conversations** (ARIA label "Analytics sections"). What each tab shows:
+**Overview**, **Trend**, **Flow**, **Topics**, **Drop-off**, **Conversations** (ARIA label "Analytics sections"). What each tab shows:
 
 - **Overview** (default): KPI strip, **Daily volume**, then **Questions by hour of day** + **User type → outcome**, then **Question topics** + **How questions were answered**, then **Where conversations dropped** + **Conversations per person**, then the **Conversations** table.
 - **Trend**: **Daily volume**, **Questions by hour of day**, **How questions were answered**.
@@ -134,9 +134,9 @@ This page has its **own** period filter. The global date range picker is not sho
 - **Topics**: **Question topics**, **How questions were answered**.
 - **Drop-off**: **Where conversations dropped**, **Conversations per person**.
 - **Conversations**: the table only.
-- **Guide**: the tour and the definitions. The filter bar and KPI strip are hidden on this tab.
+The filter bar, the pending banner and the KPI strip sit above every tab. Every tab reads the same bundle (one request per filter set), so switching tabs renders from memory with no request; `?tab=guide` (the removed Guide tab) opens **Overview**.
 
-The filter bar, the pending banner and the KPI strip sit above every tab except **Guide**.
+While you are on any tab, the page warms in idle time the bundles of the other date-range presets and audiences, and the records behind every KPI card's **View records**, so those open instantly too.
 
 ### Filter bar
 
@@ -270,8 +270,8 @@ Six cards, all from `GET /admin/insights/summary` (`analytics_service.summary` +
 
 ### Conversations table
 
-- Title **Conversations**, badge **{n} conversations**. Description: **Sort any column; View lists every question and how it was handled. The id opens the full log.**
-- Columns (each header is a sort button):
+- The console's standard table: title **Conversations** with **{n} conversations**, a search box (**Search id, person, issue or question…**), **Filters** (**Type**, **Outcome**, **Rating**, **Issue**), **Columns** and **Compact**. Search and filters are the page's own URL filters, shared with the filter bar and every tab; search runs on the server (conversation id, user type, issue, failing question and question text).
+- Columns (click a header to sort):
   - **Conv**: the first block of the session UUID, linking to `/admin/conversations/<id>`.
   - **Person**: P-number.
   - **Started**: the start date in your timezone.
@@ -282,11 +282,11 @@ Six cards, all from `GET /admin/insights/summary` (`analytics_service.summary` +
   - **Qs**: all labelled exchanges, greetings included.
 - Sorting:
   - The default is **Started**, newest first.
-  - A new column starts ascending, except **Qs**, which starts descending.
+  - A new column starts descending; clicking again toggles.
   - Ties are broken by session ID.
   - Sorting is server-side.
-- Paging: offset-based, page size 25 by default, up to 100 via the page-size control. The next page is prefetched.
-- **View** / **Hide** expands the row to list every question with `time · topic · Handled | Not handled | greeting/closing · answer type · issue · friction: …`. Unlabelled turns show **Pending classification**. The list comes from `GET /admin/insights/conversations/{id}`, which applies only `audience` and `tz`. It shows **Loading questions…** while loading, or **No questions recorded.** when there are none.
+- Paging: offset-based, **10** rows by default (10 / 25 / 50 / 100), with **Showing x–y of N entries**. The next page (with its questions) is prefetched while idle, and the previous page and each sort toggle too.
+- **View** / **Hide** expands the row to list every question with `time · topic · Handled | Not handled | greeting/closing · answer type · issue · friction: …`. Each row of the bundle's page carries its labelled questions (`questions`: text masked and cut to 160 characters), so expanding never waits for a request. Rows without them (an older stored snapshot) fall back to `GET /admin/insights/conversations/{id}` (only `audience` and `tz` apply), which also lists unlabelled turns as **Pending classification** and shows **Loading questions…** while loading. **No questions recorded.** when there are none.
 - **Experience rating** (`conv` CTE in `analytics_repository.py`), first match wins:
   1. Any rating of 1-2 stars in the session's feedback → **Dropped**.
   2. **Served** and some rating of 5 → **Great**.
@@ -297,12 +297,7 @@ Six cards, all from `GET /admin/insights/summary` (`analytics_service.summary` +
   7. Otherwise **No question asked**.
 
   Feedback is taken from **all** ratings on the session, whatever the date filter.
-- States: **Loading conversations…**, an error line with **Retry**, and **No conversations match these filters.**
-
-### Guide tab
-
-- A dismissible six-step tour, **Step n of 6**: **Welcome to Analytics**, **Key figures**, **Filters**, **Charts are clickable**, **Flow and topics**, **Conversation drill-down**. Buttons are **Skip**, **Show me** (jumps to the tab the step describes), **Back**, **Next** / **Finish**, and the close button "Dismiss tour". Escape dismisses it too. Dismissal is stored in `localStorage` key `deployiq.analytics.tourDismissed`, and **Restart tour** brings the tour back.
-- **How each number is calculated**: plain-language definitions for **Conversation**, **Exchange**, **Substantive question**, **Handled**, **Questions handled**, **Outcome**, **Conversations served**, **User type**, **Rating**, **Issue**, **Probable person**, **Hours and days**, **Pending classification**. These match the formulas above.
+- States: skeleton rows while loading, an error with **Try Again**, and an empty state (**No conversations match this search or these filters** / **No conversations in this range**).
 
 ### How turns are classified
 

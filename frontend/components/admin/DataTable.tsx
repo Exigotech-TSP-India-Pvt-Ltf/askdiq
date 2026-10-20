@@ -42,6 +42,13 @@ export interface DataTableProps<T> {
   density?: TableDensity;
   /** Rows fade up as they mount (page changes, new data); off by default. */
   animateRows?: boolean;
+  /**
+   * Detail under a row (an expanded row): rendered as a full-width row right
+   * after it whenever it returns something other than null.
+   */
+  renderExpanded?: (row: T) => React.ReactNode;
+  /** `data-testid` of each data row. */
+  rowTestId?: string;
   className?: string;
 }
 
@@ -61,6 +68,8 @@ export function DataTable<T extends Record<string, any>>({
   nested = true,
   density = "comfortable",
   animateRows = false,
+  renderExpanded,
+  rowTestId,
   className = "",
 }: DataTableProps<T>) {
   const rowVariants = useMotionVariants(fadeUp);
@@ -215,11 +224,13 @@ export function DataTable<T extends Record<string, any>>({
               data.map((row, idx) => {
                 const rowKey = getRowKey(row, idx);
                 const isClickable = Boolean(onRowClick);
+                const expanded = renderExpanded ? renderExpanded(row) : null;
 
                 return (
+                  <React.Fragment key={rowKey}>
                   <Row
                     {...rowMotion}
-                    key={rowKey}
+                    data-testid={rowTestId}
                     onClick={() => isClickable && onRowClick?.(row)}
                     onMouseEnter={onRowIntent ? () => onRowIntent(row) : undefined}
                     className={`${tableRow} ${isClickable ? "cursor-pointer" : ""}`}
@@ -248,6 +259,14 @@ export function DataTable<T extends Record<string, any>>({
                       );
                     })}
                   </Row>
+                  {expanded !== null && expanded !== undefined ? (
+                    <tr data-expanded-for={rowKey}>
+                      <td colSpan={columns.length} className="p-0">
+                        {expanded}
+                      </td>
+                    </tr>
+                  ) : null}
+                  </React.Fragment>
                 );
               })
             )}
