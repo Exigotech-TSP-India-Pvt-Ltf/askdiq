@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -13,8 +14,19 @@ import { api, ApiError } from "./api";
 import { useAuth } from "./auth-context";
 import { useBrand } from "./brand-context";
 import { submitMessageFeedback, type FeedbackDetails } from "./feedback-api";
+import { queryCache, useApiQuery } from "./query-cache";
 import { parseServerDate } from "./time";
-import type { ChatMessage, ChatMessageOut, ChatSessionSummary, ClarificationAnswer } from "./types";
+import type { ChatMessage, ChatMessageOut, ChatSessionDetail, ChatSessionSummary, ClarificationAnswer } from "./types";
+
+/**
+ * Query-cache keys (memory only: "chat/" is never persisted to storage). The
+ * list is refreshed by the console live stream (new chats are `data`).
+ */
+export const CHAT_SESSIONS_KEY = "chat/sessions";
+export const chatSessionKey = (sessionId: string) => `chat/session/${sessionId}`;
+const SESSIONS_STALE_MS = 30_000;
+const SESSION_STALE_MS = 60_000;
+const NO_SESSIONS: ChatSessionSummary[] = [];
 
 function newId() {
   return Math.random().toString(36).slice(2);
@@ -50,6 +62,8 @@ interface ChatContextValue {
   /** Re-sends the question behind a failed answer (the failed pair is dropped first). */
   retryExchange: (assistantMessageId: string) => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
+  /** Warms a past conversation (hover / focus on its row) so opening it is instant. */
+  prefetchSession: (sessionId: string) => void;
   startNewSession: () => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   removeSession: (sessionId: string) => Promise<void>;
@@ -71,61 +85,103 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
   const { assistantName } = useBrand();
 
-  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  // Session list: cached (instant on every visit), revalidated in the
+  // background and pushed by the live stream.
+  const listQuery = useApiQuery<ChatSessionSummary[]>(
+    token ? CHAT_SESSIONS_KEY : null,
+    () => (token ? api.listSessions(token) : Promise.resolve([])),
+    { staleTime: SESSIONS_STALE_MS },
+  );
+  const sessions = token ? listQuery.data ?? NO_SESSIONS : NO_SESSIONS;
+  const setSessions = listQuery.setData;
+  // What each conversation last showed here (opening it again is instant).
+  const shown = useRef(new Map<string, ChatMessage[]>());
+  const activeRef = useRef<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
+  useEffect(() => {
+    activeRef.current = activeSessionId;
+  }, [activeSessionId]);
+  // Remember what the open conversation shows (for an instant return to it).
+  useEffect(() => {
+    if (activeSessionId && !messages.some((m) => m.pending)) shown.current.set(activeSessionId, messages);
+  }, [activeSessionId, messages]);
+
+  const prefetchSession = useCallback(
+    (sessionId: string) => {
+      if (!token || shown.current.has(sessionId)) return;
+      void queryCache.prefetch<ChatSessionDetail>(
+        chatSessionKey(sessionId),
+        () => api.getSession(token, sessionId),
+        SESSION_STALE_MS,
+      );
+    },
+    [token]
+  );
+
   const loadSession = useCallback(
     async (sessionId: string) => {
       if (!token) return;
-      setLoadingMessages(true);
+      // Cached conversation: shown at once, then revalidated in place.
+      const cachedDetail = queryCache.getData<ChatSessionDetail>(chatSessionKey(sessionId));
+      const cached =
+        shown.current.get(sessionId) ?? cachedDetail?.messages.map((m) => toChatMessage(m, sessionId));
+      activeRef.current = sessionId;
+      if (cached) {
+        setActiveSessionId(sessionId);
+        setMessages(cached);
+      } else {
+        setLoadingMessages(true);
+      }
       try {
         const detail = await api.getSession(token, sessionId);
+        queryCache.setData(chatSessionKey(sessionId), detail);
+        if (activeRef.current !== sessionId) return;
         setActiveSessionId(detail.id);
-        setMessages(detail.messages.map((m) => toChatMessage(m, detail.id)));
+        setMessages((prev) =>
+          prev.some((m) => m.pending) ? prev : detail.messages.map((m) => toChatMessage(m, detail.id))
+        );
       } catch {
+        if (activeRef.current !== sessionId) return;
         // Session may have been deleted elsewhere — fall back to a blank slate.
+        shown.current.delete(sessionId);
         setActiveSessionId(null);
         setMessages([]);
       } finally {
-        setLoadingMessages(false);
+        if (activeRef.current === sessionId) setLoadingMessages(false);
       }
     },
     [token]
   );
 
-  // Initial load: fetch the session list and resume the most recent one.
+  // Signed out: forget everything shown.
+  useEffect(() => {
+    if (token) return;
+    shown.current.clear();
+    setActiveSessionId(null);
+    setMessages([]);
+  }, [token]);
+
+  // First list for this sign-in: resume the most recent conversation.
+  const resumed = useRef(false);
   useEffect(() => {
     if (!token) {
-      setSessions([]);
-      setActiveSessionId(null);
-      setMessages([]);
+      resumed.current = false;
       return;
     }
-
-    api
-      .listSessions(token)
-      .then((list) => {
-        setSessions(list);
-        if (list.length > 0) {
-          void loadSession(list[0].id);
-        }
-      })
-      .catch(() => {
-        // No sessions yet, or a transient error — either way, start blank;
-        // the first sendQuery will create a session automatically.
-        setSessions([]);
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+    if (resumed.current || listQuery.data === undefined) return;
+    resumed.current = true;
+    if (listQuery.data.length > 0 && activeRef.current === null) void loadSession(listQuery.data[0].id);
+  }, [token, listQuery.data, loadSession]);
 
   async function refreshSessions() {
     if (!token) return;
     try {
-      setSessions(await api.listSessions(token));
+      await listQuery.refetch();
     } catch {
       // Non-fatal — the sidebar just won't refresh this time.
     }
@@ -191,8 +247,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       // The session may have just been created, or an expired one silently
       // rotated to a new one — either way, sync the pointer + sidebar list.
       if (response.session_id && response.session_id !== activeSessionId) {
+        activeRef.current = response.session_id;
         setActiveSessionId(response.session_id);
       }
+      if (response.session_id) queryCache.invalidate(chatSessionKey(response.session_id));
       await refreshSessions();
     } catch (err) {
       setMessages((prev) =>
@@ -260,7 +318,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   async function startNewSession() {
     if (!token) return;
     const created = await api.createSession(token);
-    setSessions((prev) => [created, ...prev]);
+    setSessions((prev) => [created, ...(prev ?? [])]);
+    activeRef.current = created.id;
     setActiveSessionId(created.id);
     setMessages([]);
   }
@@ -268,21 +327,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   async function renameSession(sessionId: string, title: string) {
     if (!token || !title.trim()) return;
     const updated = await api.renameSession(token, sessionId, title.trim());
-    setSessions((prev) =>
-      prev.map((s) => (s.id === sessionId ? updated : s))
-    );
+    setSessions((prev) => (prev ?? []).map((s) => (s.id === sessionId ? updated : s)));
   }
 
   async function removeSession(sessionId: string) {
     if (!token) return;
     await api.deleteSession(token, sessionId);
-    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    setSessions((prev) => (prev ?? []).filter((s) => s.id !== sessionId));
+    shown.current.delete(sessionId);
+    queryCache.setData(chatSessionKey(sessionId), undefined);
 
     if (sessionId === activeSessionId) {
       const remaining = sessions.filter((s) => s.id !== sessionId);
       if (remaining.length > 0) {
         await loadSession(remaining[0].id);
       } else {
+        activeRef.current = null;
         setActiveSessionId(null);
         setMessages([]);
       }
@@ -329,12 +389,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       deleteExchange,
       retryExchange,
       selectSession,
+      prefetchSession,
       startNewSession,
       renameSession,
       removeSession,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessions, activeSessionId, messages, input, sending, loadingMessages, token, submitFeedback]
+    [sessions, activeSessionId, messages, input, sending, loadingMessages, token, submitFeedback, prefetchSession]
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

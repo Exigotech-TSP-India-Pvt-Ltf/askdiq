@@ -156,6 +156,7 @@ export function AskDiqDrawer({ id, open, onClose }: AskDiqDrawerProps) {
                   onNew={() => void newChat()}
                   onRename={reported("Couldn't rename the chat", chat.renameSession)}
                   onDelete={reported("Couldn't delete the chat", chat.removeSession)}
+                  onIntent={chat.prefetchSession}
                   className="min-h-0 flex-1"
                 />
               ) : (

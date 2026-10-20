@@ -34,6 +34,8 @@ export const LIVE_DATA_PREFIXES = [
   "conversation",
   "documents",
   "um/",
+  // The signed-in user's chat list (a chat from another tab or device).
+  "chat/sessions",
 ] as const;
 
 /** Scope (backend kind prefix) -> query-key prefixes it refreshes. */
