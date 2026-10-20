@@ -525,6 +525,161 @@ export function usePrefetchNextPage<T>(
 }
 
 // ---------------------------------------------------------------------------
+// Row details: batched / bounded prefetch of what a click on a row opens
+// ---------------------------------------------------------------------------
+
+/** Most ids sent in one batch (the backend's `BATCH_MAX_IDS`). */
+export const BATCH_PREFETCH_MAX = 25;
+/** Most per-row detail requests in flight at once (`prefetchEach`). */
+export const PREFETCH_CONCURRENCY = 2;
+
+/** Response of the backend `GET …/batch?ids=` routes. */
+export interface BatchDetails<T> {
+  /** id -> exactly what the single-item route returns. */
+  items: Record<string, T>;
+  /** Unknown ids (or outside the caller's scope). */
+  missing: string[];
+}
+
+export interface PrefetchBatchOptions {
+  staleTime?: number;
+  /** Ids sent at most (the rest are left to hover / click). */
+  max?: number;
+  cache?: QueryCache;
+}
+
+/** Keys a running batch is filling (no second batch asks for them meanwhile). */
+const batchPending = new Set<string>();
+
+/** The ids whose key is stale, not loading and not in a running batch. */
+function idsToWarm(
+  ids: readonly string[],
+  keyOf: (id: string) => QueryKey,
+  staleTime: number,
+  cache: QueryCache,
+): string[] {
+  return Array.from(new Set(ids)).filter((id) => {
+    if (!id) return false;
+    const key = keyOf(id);
+    const k = serializeKey(key);
+    return !batchPending.has(k) && !cache.getState(key).isFetching && cache.isStale(key, staleTime);
+  });
+}
+
+/**
+ * Warms the detail of every id with ONE request: ids whose key is fresh or
+ * loading are skipped, the rest (at most `max`) go to `fetchBatch`, and each
+ * returned item is written under its own key, so the drawer / detail page
+ * (`useApiQuery(keyOf(id))`) renders from cache and revalidates as usual.
+ * Failures are swallowed (a click still loads the item itself).
+ */
+export async function prefetchBatch<T>(
+  ids: readonly string[],
+  keyOf: (id: string) => QueryKey,
+  fetchBatch: (ids: string[], signal: AbortSignal) => Promise<BatchDetails<T>>,
+  { staleTime = DEFAULT_STALE_TIME_MS, max = BATCH_PREFETCH_MAX, cache = queryCache }: PrefetchBatchOptions = {},
+): Promise<void> {
+  const want = idsToWarm(ids, keyOf, staleTime, cache).slice(0, max);
+  if (want.length === 0) return;
+  const keys = want.map((id) => serializeKey(keyOf(id)));
+  keys.forEach((k) => batchPending.add(k));
+  try {
+    const res = await fetchBatch(want, new AbortController().signal);
+    for (const id of want) {
+      const item = res?.items?.[id];
+      // A key that started its own request meanwhile keeps that answer.
+      if (item !== undefined && !cache.getState(keyOf(id)).isFetching) cache.setData(keyOf(id), item);
+    }
+  } catch {
+    // Best effort: hover and click still fetch the item.
+  } finally {
+    keys.forEach((k) => batchPending.delete(k));
+  }
+}
+
+/**
+ * Warms one request per id, at most `concurrency` at a time (endpoints
+ * without a batch route). Ids beyond `max` are left to hover / click.
+ */
+export async function prefetchEach<T>(
+  ids: readonly string[],
+  keyOf: (id: string) => QueryKey,
+  fetchOne: (id: string) => Fetcher<T>,
+  {
+    staleTime = DEFAULT_STALE_TIME_MS,
+    max = BATCH_PREFETCH_MAX,
+    concurrency = PREFETCH_CONCURRENCY,
+    cache = queryCache,
+  }: PrefetchBatchOptions & { concurrency?: number } = {},
+): Promise<void> {
+  const queue = idsToWarm(ids, keyOf, staleTime, cache).slice(0, max);
+  const worker = async () => {
+    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      await cache.prefetch(keyOf(id), fetchOne(id), staleTime);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
+}
+
+/**
+ * Hook form: once the browser is idle, warms the details of the rows on
+ * screen (`ids`). Runs again when the rows change or `version` does (pass the
+ * list's `updatedAt`: a live update refetches the list, then the details
+ * it marked stale in one more batch). `ids = null` (or `enabled = false`,
+ * e.g. without the permission) does nothing.
+ */
+export function usePrefetchRows<T>(
+  ids: readonly string[] | null,
+  keyOf: (id: string) => QueryKey,
+  warm: { batch: (ids: string[], signal: AbortSignal) => Promise<BatchDetails<T>> } | { one: (id: string) => Fetcher<T> },
+  { version = 0, enabled = true, ...options }: PrefetchBatchOptions & { version?: number; enabled?: boolean; concurrency?: number } = {},
+): void {
+  const ref = useRef({ keyOf, warm, options });
+  ref.current = { keyOf, warm, options };
+  const signature = ids && enabled ? ids.join("\u0000") : "";
+  useEffect(() => {
+    if (!signature) return undefined;
+    const list = signature.split("\u0000");
+    return runWhenIdle(() => {
+      const { keyOf: k, warm: w, options: o } = ref.current;
+      if ("batch" in w) void prefetchBatch(list, k, w.batch, o);
+      else void prefetchEach(list, k, w.one, o);
+    });
+  }, [signature, version]);
+}
+
+/**
+ * Row hover / focus intent for tables: after `delay` ms on a row (pointer
+ * or keyboard focus inside it) `onIntent(row)` fires; leaving earlier
+ * cancels. Spread `handlers(row)` on the row element.
+ */
+export function useRowIntentHandlers<T>(onIntent: ((row: T) => void) | undefined, delay = INTENT_DELAY_MS) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cbRef = useRef(onIntent);
+  cbRef.current = onIntent;
+  const cancel = useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+  useEffect(() => cancel, [cancel]);
+  return useCallback(
+    (row: T) => {
+      if (!onIntent) return {};
+      const start = () => {
+        cancel();
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          cbRef.current?.(row);
+        }, delay);
+      };
+      return { onPointerEnter: start, onFocus: start, onPointerLeave: cancel, onBlur: cancel };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only presence of the callback matters
+    [Boolean(onIntent), cancel, delay],
+  );
+}
+
+// ---------------------------------------------------------------------------
 // useApiMutation
 // ---------------------------------------------------------------------------
 

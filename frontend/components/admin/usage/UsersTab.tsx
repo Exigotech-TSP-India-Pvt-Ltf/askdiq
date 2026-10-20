@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { queryErrorMessage, useUsageList, usePrefetchNextUsagePage } from "@/lib/use-usage-data";
+import { useSearchParams } from "next/navigation";
+import {
+  drillDownParams,
+  prefetchUsageList,
+  queryErrorMessage,
+  useUsageList,
+  usePrefetchNextUsagePage,
+} from "@/lib/use-usage-data";
 import type { PageEnvelope, UsageUserRow } from "@/lib/types";
 import { useTableState } from "@/lib/use-table-state";
 import { DataTable, type ColumnDef } from "../DataTable";
@@ -89,6 +96,14 @@ export function UsersTab({ token, onSelectUserIp, fromDay = "", toDay = "" }: Us
   const isLoading = query.isLoading;
   const error = queryErrorMessage(query.error, "Failed to load user analytics.");
   const fetchData = query.refetch;
+  // Hover / focus a row: warm the Sessions tab of its IP (what a click opens).
+  const url = useSearchParams();
+  const warmSessions = (r: UsageUserRow) =>
+    prefetchUsageList(
+      "sessions",
+      token,
+      drillDownParams("sessions", url ?? new URLSearchParams(), audience, { ip: r.ip_address }, { from: fromDay, to: toDay }),
+    );
 
   const stats = data?.stats || {};
   const topUsers = (stats.top_users || []) as Array<{
@@ -298,6 +313,7 @@ export function UsersTab({ token, onSelectUserIp, fromDay = "", toDay = "" }: Us
             onRetry={fetchData}
             currentSort={sort}
             onSortChange={setSort}
+            onRowIntent={warmSessions}
             onRowClick={(r) => {
               setSearchInput(r.ip_address);
               onSelectUserIp?.(r.ip_address);

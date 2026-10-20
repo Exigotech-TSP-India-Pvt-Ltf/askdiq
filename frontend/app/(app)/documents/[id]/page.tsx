@@ -29,7 +29,7 @@ import { EntityLink } from "@/components/ui/EntityLink";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { MascotLoader } from "@/components/ui/MascotLoader";
-import { SkeletonCard } from "@/components/ui/Skeleton";
+import { SkeletonCard, SkeletonText } from "@/components/ui/Skeleton";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
 import { SectionCard, ToneChip, errorMessage, formatDay, ratingTone } from "@/components/admin/entity/shared";
 import { prefetch, runWhenIdle, useApiQuery } from "@/lib/query-cache";
@@ -257,13 +257,39 @@ function downloadMarkdown(name: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
+/** Chunks shown while the full Markdown loads (they are cut from it, in order). */
+const PREVIEW_CHUNKS = 2;
+
+/**
+ * While the canonical Markdown loads: the document's opening text from the
+ * cached chunks at once, a skeleton only for the rest (never a blank tab).
+ */
+function CanonicalPreview({ id }: { id: string }) {
+  const chunks = useApiQuery<DocumentChunk[]>(documentKeys.chunks(id), () => Promise.resolve([]), { enabled: false });
+  const opening = (chunks.data ?? [])
+    .slice()
+    .sort((a, b) => a.chunk_index - b.chunk_index)
+    .slice(0, PREVIEW_CHUNKS);
+  if (opening.length === 0) return <SkeletonCard label="Loading canonical Markdown" />;
+  return (
+    <SectionCard title="Canonical Markdown" description="Opening text from the indexed chunks · loading the full document">
+      <div aria-busy="true" data-testid="canonical-preview">
+        {opening.map((c) => (
+          <MarkdownView key={c.id} source={c.content} />
+        ))}
+        <SkeletonText lines={4} label="Loading the rest of the canonical Markdown" />
+      </div>
+    </SectionCard>
+  );
+}
+
 function CanonicalTab({ token, id, sourceName }: { token: string; id: string; sourceName: string }) {
   const [view, setView] = useState<"rendered" | "source">("rendered");
   const variants = useMotionVariants(crossfade);
   const canonical = useApiQuery(documentKeys.canonical(id), documentFetchers.canonical(token, id));
   const data = canonical.data;
 
-  if (canonical.isLoading) return <SkeletonCard label="Loading canonical Markdown" />;
+  if (canonical.isLoading) return <CanonicalPreview id={id} />;
   if (canonical.error) {
     return (
       <ErrorState message={errorMessage(canonical.error, "Couldn't load the canonical Markdown.")} onRetry={() => void canonical.refetch()} />
