@@ -1,8 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { evaluationLiveKey, fetchEvaluationLive } from "@/lib/evaluation-live";
-import { useApiQuery } from "@/lib/query-cache";
+import { useEffect, useMemo, useState } from "react";
+import {
+  evaluationCaseKey,
+  evaluationCasesKey,
+  evaluationSummaryKey,
+  fetchEvaluationCase,
+  fetchEvaluationCases,
+  fetchEvaluationSummary,
+} from "@/lib/evaluation-live";
+import { prefetch, runWhenIdle, useApiQuery } from "@/lib/query-cache";
 import dynamic from "next/dynamic";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -23,9 +30,6 @@ import {
   ClipboardCheck,
   Sparkles,
   GitCompare,
-  Search,
-  SlidersHorizontal,
-  ChevronRight,
   ShieldAlert,
   Zap,
   Layers,
@@ -34,15 +38,18 @@ import {
 } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, EVALUATION_LIVE_TABS } from "@/components/admin/TabGroup";
-import { TableCard } from "@/components/admin/TableCard";
-import { TableToolbar } from "@/components/admin/TableToolbar";
-import { Pagination, type PageSize } from "@/components/admin/Pagination";
 import { EvaluationRecordDrawer } from "@/components/admin/EvaluationRecordDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
 import { StatCard } from "@/components/admin/insights/StatCard";
 import { JudgeDisabledState, hasJudgedSamples } from "@/components/admin/evaluation/JudgeDisabledState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
+import {
+  DEFAULT_EXPLORER_STATE,
+  EvaluationExplorer,
+  explorerQuery,
+  type ExplorerState,
+} from "@/components/admin/evaluation/EvaluationExplorer";
 import {
   Bar,
   BarChart,
@@ -154,11 +161,13 @@ export default function EvaluationLivePage() {
   const { audience } = useAudience();
   // Global date range (header picker): live records and the pass-rate trend.
   const { from: rangeFrom, to: rangeTo } = useRangeParams();
-  // Cached per audience and range (app-wide query cache, sidebar prefetch,
-  // live updates); the previous report stays on screen while another loads.
+  const range = useMemo(() => ({ from: rangeFrom, to: rangeTo }), [rangeFrom, rangeTo]);
+  // The report without its case lists (a few KB): cached per audience and
+  // range (persisted query cache, sidebar prefetch, live updates); the
+  // previous report stays on screen while another loads.
   const report = useApiQuery<Record<string, any>>(
-    token ? evaluationLiveKey(audience, { from: rangeFrom, to: rangeTo }) : null,
-    (signal) => fetchEvaluationLive(token ?? "", audience, { from: rangeFrom, to: rangeTo }, signal),
+    token ? evaluationSummaryKey(audience, range) : null,
+    (signal) => fetchEvaluationSummary(token ?? "", audience, range, signal),
     { keepPreviousData: true },
   );
   const r: any = report.data ?? null;
@@ -176,47 +185,34 @@ export default function EvaluationLivePage() {
   const setActiveTab = (tab: string) => set({ tab: tab === "overview" ? null : tab });
   const selectedRun = get("run");
   const [compareMode, setCompareMode] = useState(false);
-  const [search, setSearch] = useState("");
-  const [filterOutcome, setFilterOutcome] = useState<string>("all");
-  const [filterGrounded, setFilterGrounded] = useState<string>("all");
-  const [casePage, setCasePage] = useState(1);
-  const [casePageSize, setCasePageSize] = useState<PageSize>(25);
+  const [explorer, setExplorer] = useState<ExplorerState>(DEFAULT_EXPLORER_STATE);
+  const patchExplorer = (patch: Partial<ExplorerState>) => setExplorer((prev) => ({ ...prev, ...patch }));
 
   // Selected query for inspector drawer
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
 
-  const allCases = useMemo(() => r?.cases ?? [], [r?.cases]);
+  // Scored cases passed / failed (known issues excluded), from the server.
+  const passBreakdown = useMemo(
+    () =>
+      [
+        { name: "Passed", value: Number(r?.outcomes?.passed ?? 0) },
+        { name: "Failed", value: Number(r?.outcomes?.failed ?? 0) },
+      ].filter((d) => d.value > 0),
+    [r?.outcomes?.passed, r?.outcomes?.failed],
+  );
 
-  // Filtered cases for Explorer Table
-  const filteredCases = useMemo(() => {
-    return allCases.filter((c: any) => {
-      if (filterOutcome === "passed" && !c.passed) return false;
-      if (filterOutcome === "failed" && c.passed) return false;
-      if (filterGrounded === "grounded" && !c.grounded) return false;
-      if (filterGrounded === "ungrounded" && c.grounded) return false;
-
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const matchQuery = (c.query || "").toLowerCase().includes(q);
-        const matchAnswer = (c.answer || "").toLowerCase().includes(q);
-        const matchId = (c.id || "").toLowerCase().includes(q);
-        const matchType = (c.type || "").toLowerCase().includes(q);
-        if (!matchQuery && !matchAnswer && !matchId && !matchType) return false;
-      }
-      return true;
+  // The explorer's first page is warmed while idle, so its tab opens filled.
+  useEffect(() => {
+    if (!token) return undefined;
+    const first = explorerQuery(DEFAULT_EXPLORER_STATE);
+    return runWhenIdle(() => {
+      prefetch(evaluationCasesKey(audience, range, first), (signal) =>
+        fetchEvaluationCases(token, audience, range, first, signal),
+      ).catch(() => undefined);
     });
-  }, [allCases, search, filterOutcome, filterGrounded]);
-
-  const passBreakdown = useMemo(() => {
-    const passed = allCases.filter((c: any) => c.passed && !c.known_issue).length;
-    const failed = allCases.filter((c: any) => !c.passed && !c.known_issue).length;
-    return [
-      { name: "Passed", value: passed },
-      { name: "Failed", value: failed },
-    ].filter((d) => d.value > 0);
-  }, [allCases]);
+  }, [token, audience, range]);
 
   const caseTypeBars = useMemo(
     () =>
@@ -620,137 +616,14 @@ export default function EvaluationLivePage() {
         {/* Domain Tab 4: Query & Case Explorer */}
         {activeTab === "explorer" && (
           <div data-tour="evaluation-explorer">
-          <TableCard
-            toolbar={
-              <TableToolbar
-                title={`Evaluated Queries & Test Cases (${filteredCases.length})`}
-                search={search}
-                onSearchChange={(v) => {
-                  setSearch(v);
-                  setCasePage(1);
-                }}
-                searchPlaceholder="Search queries, answers, IDs..."
-                filters={[
-                  {
-                    id: "outcome",
-                    label: "Evaluation Status",
-                    value: filterOutcome,
-                    options: [
-                      { label: "All Cases", value: "all" },
-                      { label: "Passed Only", value: "passed" },
-                      { label: "Failed Only", value: "failed" },
-                    ],
-                    onChange: (v) => {
-                      setFilterOutcome(v);
-                      setCasePage(1);
-                    },
-                  },
-                  {
-                    id: "grounded",
-                    label: "Grounding",
-                    value: filterGrounded,
-                    options: [
-                      { label: "All Grounding", value: "all" },
-                      { label: "Grounded Only", value: "grounded" },
-                      { label: "Ungrounded Fallback", value: "ungrounded" },
-                    ],
-                    onChange: (v) => {
-                      setFilterGrounded(v);
-                      setCasePage(1);
-                    },
-                  },
-                ]}
-              />
-            }
-            pagination={
-              <Pagination
-                page={Math.min(casePage, Math.max(1, Math.ceil(filteredCases.length / casePageSize)))}
-                pageCount={Math.ceil(filteredCases.length / casePageSize)}
-                totalItems={filteredCases.length}
-                pageSize={casePageSize}
-                onPageChange={setCasePage}
-                onPageSizeChange={(size) => {
-                  setCasePageSize(size);
-                  setCasePage(1);
-                }}
-              />
-            }
-          >
-            <div data-tour="evaluation-explorer-table" className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-surface-studio text-fg-muted dark:text-brand-200 border-b border-line-brand/70 dark:border-brand-500/20 font-bold">
-                  <tr>
-                    <th className="px-3.5 py-2.5">Status</th>
-                    <th className="px-3.5 py-2.5">Outcome Type</th>
-                    <th className="px-3.5 py-2.5">Query</th>
-                    <th className="px-3.5 py-2.5 text-right">Conf.</th>
-                    <th className="px-3.5 py-2.5 text-right">Recall</th>
-                    <th className="px-3.5 py-2.5 text-right">Cit. Prec.</th>
-                    <th className="px-3.5 py-2.5 text-right">Faithfulness</th>
-                    <th className="px-3.5 py-2.5 text-right">Latency</th>
-                    <th className="px-3.5 py-2.5 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCases
-                    .slice(
-                      (Math.min(casePage, Math.max(1, Math.ceil(filteredCases.length / casePageSize))) - 1) * casePageSize,
-                      Math.min(casePage, Math.max(1, Math.ceil(filteredCases.length / casePageSize))) * casePageSize,
-                    )
-                    .map((c: any) => (
-                    <tr
-                      key={c.id}
-                      onClick={() => handleRowClick(c)}
-                      className="border-b border-teal-100/50 dark:border-teal-500/10 align-top even:bg-surface-muted/30 dark:even:bg-white/[0.015] hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07] cursor-pointer transition-colors group"
-                    >
-                      <td className="px-3.5 py-2.5 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                            c.passed
-                              ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80"
-                              : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800/80"
-                          }`}
-                        >
-                          {c.passed ? "✅ Pass" : "❌ Fail"}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-2.5 font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        <span className="px-2 py-0.5 rounded bg-teal-50 dark:bg-white/10 border border-teal-200/60 dark:border-teal-500/20 text-[10px] font-mono text-teal-800 dark:text-teal-300">
-                          {c.type}
-                        </span>
-                      </td>
-                      <td className="max-w-md px-3.5 py-2.5 text-slate-800 dark:text-slate-100 font-medium truncate">
-                        {c.query}
-                      </td>
-                      <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        {num(c.confidence)}
-                      </td>
-                      <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        {pct(c.recall)}
-                      </td>
-                      <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        {pct(c.citation_precision)}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
-                        <span className="font-bold text-teal-700 dark:text-teal-300 font-mono tabular-nums">
-                          {c.faithfulness !== undefined ? `${Number(c.faithfulness).toFixed(1)} / 5` : "—"}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                        {ms(c.latency_ms)}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
-                        <button className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 dark:text-teal-400 group-hover:text-teal-700 dark:group-hover:text-teal-300">
-                          <span>Inspect</span>
-                          <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </TableCard>
+          <EvaluationExplorer
+            token={token}
+            audience={audience}
+            range={range}
+            state={explorer}
+            onStateChange={patchExplorer}
+            onOpen={handleRowClick}
+          />
           </div>
         )}
       </div>
@@ -759,9 +632,13 @@ export default function EvaluationLivePage() {
       <EvaluationRecordDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        recordId={selectedRecord?.id}
+        recordId={selectedRecord?.id ?? null}
         initialData={selectedRecord}
         token={token}
+        detailKey={selectedRecord?.id ? evaluationCaseKey(audience, range, String(selectedRecord.id)) : null}
+        fetchDetail={(signal) =>
+          fetchEvaluationCase(token ?? "", audience, range, String(selectedRecord?.id ?? ""), signal)
+        }
       />
     </div>
   );

@@ -21,9 +21,17 @@ import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
 import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
 import { summaryFetcher } from "@/lib/use-dashboard";
 import { listDocumentInventory } from "@/lib/documents-api";
-import { getDocumentCitationStats } from "@/lib/entity-stats-api";
+import { getDocumentCitationStats, getVisitorStats, getVisitors } from "@/lib/entity-stats-api";
 import { warmAudiencePage } from "@/lib/audience-data";
-import { evaluationLiveKey, fetchEvaluationLive } from "@/lib/evaluation-live";
+import {
+  DEFAULT_CASE_QUERY,
+  evaluationCasesKey,
+  evaluationLiveKey,
+  evaluationSummaryKey,
+  fetchEvaluationCases,
+  fetchEvaluationLive,
+  fetchEvaluationSummary,
+} from "@/lib/evaluation-live";
 import { feedbackKeys, getFeedbackAnalytics } from "@/lib/feedback-api";
 import { governanceApi } from "@/lib/governance-api";
 import { prefetch, runWhenIdle } from "@/lib/query-cache";
@@ -123,7 +131,10 @@ const PREFETCHERS: Record<string, Prefetcher> = {
   },
   "/admin/evaluation-live": (token, audience) => {
     const days = defaultDays();
-    warm(evaluationLiveKey(audience, days), (signal) => fetchEvaluationLive(token, audience, days, signal));
+    warm(evaluationSummaryKey(audience, days), (signal) => fetchEvaluationSummary(token, audience, days, signal));
+    warm(evaluationCasesKey(audience, days, DEFAULT_CASE_QUERY), (signal) =>
+      fetchEvaluationCases(token, audience, days, DEFAULT_CASE_QUERY, signal),
+    );
   },
   "/admin/governance": governanceOverall,
   "/admin/analytics": (token, audience) => {
