@@ -64,6 +64,7 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("PUT", "/admin/branding"): Permission.BRANDING_WRITE,
     ("POST", "/admin/branding/assets"): Permission.BRANDING_WRITE,
     ("PUT", "/admin/models"): Permission.MODELS_WRITE,
+    ("POST", "/admin/models/prices/sync"): Permission.MODELS_WRITE,
     ("POST", "/admin/feedback/bulk"): Permission.FEEDBACK_TRIAGE,
     ("PATCH", "/admin/feedback/{feedback_id}"): Permission.FEEDBACK_TRIAGE,
     ("POST", "/admin/feedback/golden/{case_id}/run"): Permission.FEEDBACK_TRIAGE,
@@ -89,6 +90,7 @@ EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/usage/export": Permission.USAGE_EXPORT,
     "/admin/branding/defaults": Permission.BRANDING_WRITE,
     "/admin/models": Permission.MODELS_WRITE,
+    "/admin/models/prices/official": Permission.MODELS_WRITE,
     "/admin/governance/logs/export.csv": Permission.USAGE_EXPORT,
     "/admin/feedback/export": Permission.FEEDBACK_EXPORT,
     "/admin/feedback/pairs": Permission.FEEDBACK_EXPORT,
@@ -115,6 +117,17 @@ EXPECTED_BATCH_READS: dict[str, str] = {
     "/admin/usage/queries/batch": Permission.DASHBOARD_READ,
     "/admin/governance/traces/batch": Permission.DASHBOARD_READ,
     "/metrics/evaluation/live/cases/batch": Permission.DASHBOARD_READ,
+}
+# Azure Insights reads (served from snapshots): each must exist and need
+# exactly dashboard:read.
+EXPECTED_AZURE_READS: dict[str, str] = {
+    "/admin/azure/status": Permission.DASHBOARD_READ,
+    "/admin/azure/metrics/summary": Permission.DASHBOARD_READ,
+    "/admin/azure/metrics/series": Permission.DASHBOARD_READ,
+    "/admin/azure/capacity": Permission.DASHBOARD_READ,
+    "/admin/azure/health": Permission.DASHBOARD_READ,
+    "/admin/azure/advisor": Permission.DASHBOARD_READ,
+    "/admin/azure/costs": Permission.DASHBOARD_READ,
 }
 # Open to every signed-in user, whatever their status.
 SIGNED_IN_ROUTES = frozenset({("GET", "/auth/me"), ("POST", "/auth/logout")})
@@ -255,6 +268,12 @@ def test_batch_detail_routes_need_their_item_permission() -> None:
         siblings = [p for p in reads if p.startswith(item + "/{")]
         assert siblings, path
         assert all(reads[p] == reads[path] for p in siblings), path
+
+
+def test_azure_insights_routes_need_dashboard_read() -> None:
+    reads = {p: req for m, p, req in guarded_endpoints() if m == "GET"}
+    for path, permission in EXPECTED_AZURE_READS.items():
+        assert reads.get(path) == str(permission), path
 
 
 # ---------------------------------------------------------------------------

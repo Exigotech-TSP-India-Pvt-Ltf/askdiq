@@ -10,17 +10,22 @@ import asyncio
 import contextlib
 
 from app.alerts.sampler import AlertSampler
+from app.azure_insights.capacity import on_console_changed as on_azure_capacity
+from app.azure_insights.capacity import refresh_quota_limits
+from app.azure_insights.scheduler import bootstrap_azure_insights
 from app.branding.service import BRANDING_CACHE_ID, invalidate_branding_cache
 from app.core.cache import aggregation_cache, dashboard_cache
 from app.core.config import Settings, get_settings
 from app.core.events import (
     TOPIC_CACHE_INVALIDATE,
+    TOPIC_CONSOLE_CHANGED,
     TOPIC_SNAPSHOT_UPDATED,
     Event,
     EventBus,
     get_event_bus,
 )
 from app.core.logging_config import get_logger
+from app.core.tasks import spawn
 from app.dashboard.snapshots import SnapshotRefresher, on_snapshot_updated
 from app.governance.audience import invalidate_audience_cache
 from app.governance.metrics_sampler import MetricsSampler
@@ -97,8 +102,12 @@ class PlatformServices:
             TOPIC_SNAPSHOT_UPDATED,
             lambda event: on_snapshot_updated(event, bus.instance_id),
         )
+        # A capacity poll (any replica) stored new Azure TPM/RPM limits: this
+        # process's quota gauges switch to them.
+        bus.on(TOPIC_CONSOLE_CHANGED, on_azure_capacity)
         await bus.start()
         cfg = get_settings()
+        spawn(refresh_quota_limits(), name="azure-quota-limits")
         if cfg.jobs_worker_enabled:
             self._worker_task = asyncio.create_task(
                 JobWorker().run(self._stop), name="jobs-worker"
@@ -109,6 +118,8 @@ class PlatformServices:
                 self._snapshot_task = asyncio.create_task(
                     SnapshotRefresher().run(self._stop), name="dashboard-snapshots"
                 )
+            # Azure Insights: queues the sources only when enabled + configured.
+            spawn(bootstrap_azure_insights(), name="azure-insights-bootstrap")
         log_alert_delivery_status(cfg)
         if cfg.alerts_enabled:
             self._sampler_task = asyncio.create_task(

@@ -281,6 +281,18 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
   if (path === "/governance/overview") return respond(OVERVIEW);
   if (path === "/governance/monitoring") return respond(MONITORING);
   if (path === "/usage/llm") return respond(LLM_USAGE);
+  if (path === "/azure/status") {
+    return respond({
+      connected: false,
+      reason: "not_configured",
+      region: null,
+      deployment_type: "Global",
+      metrics_calls_this_month: 0,
+      metrics_call_cap: 100000,
+      sources: [],
+      generated_at: "2026-10-20T00:00:00Z",
+    });
+  }
   if (path === "/governance/logs") {
     const limit = Number(url.searchParams.get("limit"));
     return respond(limit === 1 ? { ...logsPage(null), items: [] } : logsPage(url.searchParams.get("cursor"), limit));

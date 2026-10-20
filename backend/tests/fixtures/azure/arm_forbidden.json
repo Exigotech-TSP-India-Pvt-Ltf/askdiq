@@ -1,0 +1,1 @@
+{"error": {"code": "AuthorizationFailed", "message": "The client '00000000-0000-0000-0000-000000000000' with object id '00000000-0000-0000-0000-000000000000' does not have authorization to perform action 'Microsoft.Insights/metrics/read' over scope '/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example-rg' or the scope is invalid."}}

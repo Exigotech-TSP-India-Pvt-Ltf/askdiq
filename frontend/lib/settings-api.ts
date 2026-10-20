@@ -240,10 +240,21 @@ export interface ModelSettingsRead extends ModelConfigValues {
   version: number;
   updated_at: string | null;
   updated_by: string | null;
+  /** Where the saved prices came from (null: .env values / never saved). */
+  price_source?: PriceSource | null;
+  prices_synced_at?: string | null;
+  prices_effective_date?: string | null;
 }
 
-/** `PUT /admin/models` body: partial; `null` clears an override (back to .env). */
-export type ModelSettingsUpdate = { version: number } & Partial<Record<ModelField, string | null>> &
+export type PriceSource = "manual" | "azure_retail";
+
+/**
+ * `PUT /admin/models` body: partial; `null` clears an override (back to .env).
+ * `price_source: "azure_retail"` confirms the official Azure retail prices.
+ */
+export type ModelSettingsUpdate = { version: number; price_source?: PriceSource } & Partial<
+  Record<ModelField, string | null>
+> &
   Partial<Record<PriceField, number | null>>;
 
 export const settingsApi = {

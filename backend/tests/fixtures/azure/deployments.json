@@ -1,0 +1,85 @@
+{
+ "value": [
+  {
+   "id": "/subscriptions/33333333-3333-4333-8333-333333333333/resourceGroups/rg-askdiq/providers/Microsoft.CognitiveServices/accounts/askdiq-foundry/deployments/gpt-5-mini",
+   "type": "Microsoft.CognitiveServices/accounts/deployments",
+   "name": "gpt-5-mini",
+   "sku": {
+    "name": "GlobalStandard",
+    "capacity": 250
+   },
+   "properties": {
+    "model": {
+     "format": "OpenAI",
+     "name": "gpt-5-mini",
+     "version": "2025-08-07"
+    },
+    "versionUpgradeOption": "OnceNewDefaultVersionAvailable",
+    "currentCapacity": 250,
+    "capabilities": {
+     "chatCompletion": "true"
+    },
+    "provisioningState": "Succeeded",
+    "rateLimits": [
+     {
+      "key": "request",
+      "renewalPeriod": 60,
+      "count": 250
+     },
+     {
+      "key": "token",
+      "renewalPeriod": 60,
+      "count": 250000
+     }
+    ]
+   }
+  },
+  {
+   "id": "/subscriptions/33333333-3333-4333-8333-333333333333/resourceGroups/rg-askdiq/providers/Microsoft.CognitiveServices/accounts/askdiq-foundry/deployments/embeddings",
+   "type": "Microsoft.CognitiveServices/accounts/deployments",
+   "name": "embeddings",
+   "sku": {
+    "name": "Standard",
+    "capacity": 120
+   },
+   "properties": {
+    "model": {
+     "format": "OpenAI",
+     "name": "text-embedding-3-small",
+     "version": "1"
+    },
+    "currentCapacity": 120,
+    "provisioningState": "Succeeded",
+    "rateLimits": [
+     {
+      "key": "request",
+      "renewalPeriod": 10,
+      "count": 120
+     },
+     {
+      "key": "token",
+      "renewalPeriod": 60,
+      "count": 120000
+     }
+    ]
+   }
+  },
+  {
+   "id": "/subscriptions/33333333-3333-4333-8333-333333333333/resourceGroups/rg-askdiq/providers/Microsoft.CognitiveServices/accounts/askdiq-foundry/deployments/gpt-4o-legacy",
+   "type": "Microsoft.CognitiveServices/accounts/deployments",
+   "name": "gpt-4o-legacy",
+   "sku": {
+    "name": "Standard",
+    "capacity": 10
+   },
+   "properties": {
+    "model": {
+     "format": "OpenAI",
+     "name": "gpt-4o",
+     "version": "2024-08-06"
+    },
+    "provisioningState": "Succeeded"
+   }
+  }
+ ]
+}

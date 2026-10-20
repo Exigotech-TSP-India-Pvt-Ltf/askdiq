@@ -42,6 +42,7 @@ _feedback_user_log: dict[str, deque[float]] = defaultdict(deque)
 _feedback_ip_log: dict[str, deque[float]] = defaultdict(deque)
 _admin_user_log: dict[str, deque[float]] = defaultdict(deque)
 _admin_ip_log: dict[str, deque[float]] = defaultdict(deque)
+_retail_sync_log: dict[str, deque[float]] = defaultdict(deque)
 _calls_since_sweep = 0
 
 
@@ -206,6 +207,11 @@ async def aenforce_admin_heavy_rate_limit(
     await _enforce(_admin_user_log, actor, limit, "admin analytics per user")
     if ip:
         await _enforce(_admin_ip_log, ip, limit, "admin analytics per IP")
+
+
+async def aenforce_retail_sync_rate_limit(actor: str, limit: int) -> None:
+    """Interactive Azure retail price syncs per admin per minute."""
+    await _enforce(_retail_sync_log, actor, limit, "retail price sync per user")
 
 
 async def rate_limited_admin_analytics(

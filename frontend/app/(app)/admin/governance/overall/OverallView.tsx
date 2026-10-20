@@ -42,6 +42,7 @@ import { HealthBanner } from "@/components/admin/governance/HealthBanner";
 import { StatusTimeline } from "@/components/admin/governance/StatusTimeline";
 import { IncidentList } from "@/components/admin/governance/IncidentList";
 import { LiveIndicator } from "@/components/admin/governance/badges";
+import { AzureConnectionCard } from "@/components/admin/governance/AzureConnectionCard";
 
 /** How long a row pushed over SSE stays highlighted. */
 export const FRESH_HIGHLIGHT_MS = 4_000;
@@ -296,6 +297,10 @@ export default function OverallView() {
           </ul>
         </m.section>
       </div>
+
+      <m.div variants={item} data-tour="governance-azure">
+        <AzureConnectionCard />
+      </m.div>
     </m.div>
   );
 }

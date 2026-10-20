@@ -88,6 +88,7 @@ ONLINE_EVAL_VIOLATIONS = "online_eval_violations"
 LLM_CIRCUIT_OPEN = "llm_circuit_open"
 AZURE_QUOTA = "azure_quota"
 AZURE_THROTTLING = "azure_throttling"
+AZURE_MONITOR_429_SPIKE = "azure_monitor_429_spike"
 EVENT_BUS_DOWN = "event_bus_disconnected"
 DATABASE_UNAVAILABLE = "database_unavailable"
 CPU_SUSTAINED = "cpu_sustained"
@@ -95,6 +96,13 @@ MEMORY_HIGH = "memory_high"
 RSS_GROWTH = "worker_rss_growth"
 EVENT_LOOP_LAG = "event_loop_lag"
 DB_POOL_SATURATION = "db_pool_saturation"
+AZURE_QUOTA_NEAR_LIMIT = "azure_quota_near_limit"
+AZURE_RESOURCE_UNHEALTHY = "azure_resource_unhealthy"
+AZURE_SYNC_FAILING = "azure_insights_sync_failing"
+AZURE_BILLED_BUDGET = "azure_billed_budget"
+AZURE_ESTIMATE_DRIFT = "azure_estimate_drift"
+# Evaluated together (app.alerts.azure_cost_rules).
+AZURE_COST_RULES = frozenset({AZURE_BILLED_BUDGET, AZURE_ESTIMATE_DRIFT})
 RESOURCE_RULES = frozenset(
     {CPU_SUSTAINED, MEMORY_HIGH, RSS_GROWTH, EVENT_LOOP_LAG, DB_POOL_SATURATION}
 )
@@ -246,6 +254,21 @@ RULES: tuple[AlertRule, ...] = (
         "The deployment is over its quota: raise TPM/RPM in Azure or reduce load.",
     ),
     AlertRule(
+        AZURE_MONITOR_429_SPIKE,
+        "Azure-side 429 spike",
+        "Azure OpenAI",
+        "database",
+        "HTTP 429 responses counted by Azure Monitor (AzureOpenAIRequests by "
+        "StatusCode, every caller of the resource) in the newest "
+        "ALERT_AZURE_MONITOR_429_WINDOW_MINUTES of stored minute points. Needs "
+        "Azure Insights connected; complements the header-based azure_throttling.",
+        "warning at ALERT_AZURE_MONITOR_429_THRESHOLD, critical at 5x that",
+        _MONITORING,
+        "Open Governance > Monitoring > Azure vs AskDIQ: if AskDIQ saw few of "
+        "these 429s, another caller (playground, other apps) shares the "
+        "deployment's quota. Raise TPM/RPM in Azure or separate the callers.",
+    ),
+    AlertRule(
         EVENT_BUS_DOWN,
         "Event bus disconnected",
         "Event bus",
@@ -330,6 +353,77 @@ RULES: tuple[AlertRule, ...] = (
         _MONITORING,
         "Look for slow queries or connections held across slow calls; raise "
         "DB_POOL_SIZE only if Postgres max_connections allows it.",
+    ),
+    AlertRule(
+        AZURE_QUOTA_NEAR_LIMIT,
+        "Azure quota near limit",
+        "Azure OpenAI",
+        "database",
+        "Peak 1-minute tokens or requests of the chat deployment over "
+        "ALERT_AZURE_QUOTA_WINDOW_MINUTES against its Azure-reported TPM / RPM "
+        "(rateLimits), or regional quota currentValue / limit (Azure Insights "
+        "capacity poll; only while AZURE_INSIGHTS_ENABLED).",
+        "warning at ALERT_AZURE_QUOTA_PCT, critical at 100%",
+        _MONITORING,
+        "Raise the deployment's capacity in Microsoft Foundry (regional quota "
+        "permitting) or lower traffic; a full regional quota needs a quota "
+        "increase request or another region.",
+    ),
+    AlertRule(
+        AZURE_RESOURCE_UNHEALTHY,
+        "Azure resource unhealthy",
+        "Azure OpenAI",
+        "database",
+        "Resource Health of the Azure OpenAI account is Degraded or Unavailable, "
+        "or Service Health has an active ServiceIssue for OpenAI / Foundry / "
+        "Cognitive Services in our region or global.",
+        "warning (Degraded / incident), critical (Unavailable / Error-level incident)",
+        _MONITORING,
+        "Open the event in the Azure portal (Service Health, tracking id below) "
+        "for Microsoft's updates; consider failing over to another deployment "
+        "or region if it lasts.",
+    ),
+    AlertRule(
+        AZURE_SYNC_FAILING,
+        "Azure Insights sync failing",
+        "Azure Insights",
+        "database",
+        "A scheduled Azure Insights source (prices, metrics, costs, capacity, "
+        "health) failed ALERT_AZURE_SYNC_FAILURES consecutive runs "
+        "(azure_sync_status), e.g. an expired client secret or lost RBAC role.",
+        "warning at ALERT_AZURE_SYNC_FAILURES, critical at 2x that",
+        _GOVERNANCE,
+        "Read the sanitised error on the Azure connection card; rotate "
+        "AZURE_CLIENT_SECRET (new secret, update .env, restart) or restore the "
+        "role assignment, then wait for the next poll.",
+    ),
+    AlertRule(
+        AZURE_BILLED_BUDGET,
+        "Azure billed budget",
+        "Cost",
+        "database",
+        "Month-to-date Azure billed cost (Cost Management, UTC month, billing "
+        "currency) against AZURE_MONTHLY_BUDGET, or MONTHLY_COST_BUDGET_USD "
+        "when the bill is in USD.",
+        "warning at ALERT_BUDGET_WARNING_PCT, critical at ALERT_BUDGET_CRITICAL_PCT",
+        "/admin/usage",
+        "Compare billed and estimated cost in Usage & Cost > Overview; billed "
+        "cost lags 8-72 h, so the month will end higher. Raise the budget or "
+        "the rate limits if the growth is expected.",
+    ),
+    AlertRule(
+        AZURE_ESTIMATE_DRIFT,
+        "Azure estimate drift",
+        "Cost",
+        "database",
+        "A closed day (72 h+, billed) where |billed - estimated| / billed "
+        "exceeds ALERT_AZURE_DRIFT_PCT and billed is at least "
+        "ALERT_AZURE_DRIFT_MIN (one alert per day).",
+        "warning",
+        "/admin/usage",
+        "Check Settings > Models prices against the official retail prices; "
+        "other callers of the Azure resource (playground, other apps) or "
+        "unrecorded ingestion also raise the bill above the estimate.",
     ),
 )
 
