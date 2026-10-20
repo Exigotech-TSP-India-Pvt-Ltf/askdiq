@@ -1,0 +1,42 @@
+{
+ "value": [
+  {
+   "id": "/subscriptions/33333333-3333-4333-8333-333333333333/resourceGroups/rg-askdiq/providers/Microsoft.CognitiveServices/accounts/askdiq-foundry/providers/Microsoft.Advisor/recommendations/aaaaaaaa-0000-4000-8000-000000000001",
+   "name": "aaaaaaaa-0000-4000-8000-000000000001",
+   "type": "Microsoft.Advisor/recommendations",
+   "properties": {
+    "category": "HighAvailability",
+    "impact": "High",
+    "impactedField": "Microsoft.CognitiveServices/accounts",
+    "impactedValue": "askdiq-foundry",
+    "lastUpdated": "2026-10-19T00:00:00Z",
+    "learnMoreLink": "https://learn.microsoft.com/azure/ai-foundry/openai/concepts/model-retirements",
+    "shortDescription": {
+     "problem": "Model deployment gpt-4o (2024-08-06) is scheduled for retirement",
+     "solution": "Upgrade the deployment to a newer model version"
+    },
+    "extendedProperties": {
+     "modelName": "gpt-4o",
+     "modelVersion": "2024-08-06",
+     "retirementDate": "2027-03-31"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/33333333-3333-4333-8333-333333333333/resourceGroups/rg-askdiq/providers/Microsoft.CognitiveServices/accounts/askdiq-foundry/providers/Microsoft.Advisor/recommendations/aaaaaaaa-0000-4000-8000-000000000002",
+   "name": "aaaaaaaa-0000-4000-8000-000000000002",
+   "type": "Microsoft.Advisor/recommendations",
+   "properties": {
+    "category": "Cost",
+    "impact": "Low",
+    "impactedField": "Microsoft.CognitiveServices/accounts",
+    "impactedValue": "askdiq-foundry",
+    "lastUpdated": "2026-10-18T00:00:00Z",
+    "shortDescription": {
+     "problem": "Unused deployment detected",
+     "solution": "Delete deployments with no traffic"
+    }
+   }
+  }
+ ]
+}

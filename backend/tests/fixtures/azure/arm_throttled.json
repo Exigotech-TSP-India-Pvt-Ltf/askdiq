@@ -1,0 +1,1 @@
+{"error": {"code": "TooManyRequests", "message": "The request is being throttled as the limit has been reached for operation type - Read_ObservationWindow_00:05:00. For more information, see - https://aka.ms/srpthrottlinglimits"}}

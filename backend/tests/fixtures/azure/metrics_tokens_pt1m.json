@@ -1,0 +1,242 @@
+{
+ "cost": 0,
+ "timespan": "2031-03-10T08:08:00Z/2031-03-10T10:08:00Z",
+ "interval": "PT1M",
+ "value": [
+  {
+   "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.CognitiveServices/accounts/example-foundry/providers/Microsoft.Insights/metrics/ProcessedPromptTokens",
+   "type": "Microsoft.Insights/metrics",
+   "name": {
+    "value": "ProcessedPromptTokens",
+    "localizedValue": "Processed Inference Tokens"
+   },
+   "displayDescription": "Processed Inference Tokens",
+   "unit": "Count",
+   "timeseries": [
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "gpt-5-mini"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z",
+       "total": 1000
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "total": 1500
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z",
+       "total": 500
+      }
+     ]
+    },
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "text-embedding-3-small"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z",
+       "total": 200
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "total": 0
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z",
+       "total": 100
+      }
+     ]
+    },
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "playground-gpt-4o"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z"
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "total": 400
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z"
+      }
+     ]
+    }
+   ],
+   "errorCode": "Success"
+  },
+  {
+   "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.CognitiveServices/accounts/example-foundry/providers/Microsoft.Insights/metrics/GeneratedTokens",
+   "type": "Microsoft.Insights/metrics",
+   "name": {
+    "value": "GeneratedTokens",
+    "localizedValue": "Generated Completion Tokens"
+   },
+   "displayDescription": "Generated Completion Tokens",
+   "unit": "Count",
+   "timeseries": [
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "gpt-5-mini"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z",
+       "total": 300
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "total": 450
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z",
+       "total": 250
+      }
+     ]
+    },
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "playground-gpt-4o"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z"
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "total": 100
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z"
+      }
+     ]
+    }
+   ],
+   "errorCode": "Success"
+  },
+  {
+   "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.CognitiveServices/accounts/example-foundry/providers/Microsoft.Insights/metrics/TokenTransaction",
+   "type": "Microsoft.Insights/metrics",
+   "name": {
+    "value": "TokenTransaction",
+    "localizedValue": "Processed Inference Tokens"
+   },
+   "displayDescription": "Processed Inference Tokens",
+   "unit": "Count",
+   "timeseries": [
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "gpt-5-mini"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z",
+       "total": 1300
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "total": 1950
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z",
+       "total": 750
+      }
+     ]
+    },
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "text-embedding-3-small"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z",
+       "total": 200
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "total": 0
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z",
+       "total": 100
+      }
+     ]
+    },
+    {
+     "metadatavalues": [
+      {
+       "name": {
+        "value": "modeldeploymentname",
+        "localizedValue": "modeldeploymentname"
+       },
+       "value": "playground-gpt-4o"
+      }
+     ],
+     "data": [
+      {
+       "timeStamp": "2031-03-10T10:00:00Z"
+      },
+      {
+       "timeStamp": "2031-03-10T10:01:00Z",
+       "total": 500
+      },
+      {
+       "timeStamp": "2031-03-10T10:02:00Z"
+      }
+     ]
+    }
+   ],
+   "errorCode": "Success"
+  }
+ ],
+ "namespace": "Microsoft.CognitiveServices/accounts",
+ "resourceregion": "australiaeast"
+}

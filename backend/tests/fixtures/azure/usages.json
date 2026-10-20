@@ -1,0 +1,54 @@
+{
+ "value": [
+  {
+   "name": {
+    "value": "OpenAI.GlobalStandard.gpt-5-mini",
+    "localizedValue": "Tokens Per Minute (thousands) - gpt-5-mini - GlobalStandard"
+   },
+   "currentValue": 250,
+   "limit": 1000,
+   "unit": "Count",
+   "status": "Included"
+  },
+  {
+   "name": {
+    "value": "OpenAI.Standard.text-embedding-3-small",
+    "localizedValue": "Tokens Per Minute (thousands) - text-embedding-3-small"
+   },
+   "currentValue": 120,
+   "limit": 1000,
+   "unit": "Count",
+   "status": "Included"
+  },
+  {
+   "name": {
+    "value": "OpenAI.Standard.gpt-4o",
+    "localizedValue": "Tokens Per Minute (thousands) - gpt-4o"
+   },
+   "currentValue": 0,
+   "limit": 450,
+   "unit": "Count",
+   "status": "Included"
+  },
+  {
+   "name": {
+    "value": "OpenAI.GlobalStandard.o3-pro",
+    "localizedValue": "Tokens Per Minute (thousands) - o3-pro - GlobalStandard"
+   },
+   "currentValue": 0,
+   "limit": 1000,
+   "unit": "Count",
+   "status": "Included"
+  },
+  {
+   "name": {
+    "value": "AccountCount",
+    "localizedValue": "Cognitive Services total account limit"
+   },
+   "currentValue": 3,
+   "limit": 200,
+   "unit": "Count",
+   "status": "Included"
+  }
+ ]
+}

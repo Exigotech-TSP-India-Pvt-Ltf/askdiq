@@ -17,7 +17,10 @@ import { filtersForPreset } from "@/components/admin/analytics/use-analytics-pre
 import { DEFAULT_STATE } from "@/components/admin/analytics/url-state";
 import { bundleKey, fetchBundle, pageOf, viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
+import { azureApi, azureKeys } from "@/lib/azure-api";
+import { azureApi as azureMetricsApi, azureKeys as azureMetricsKeys, TOKENS_SERIES } from "@/lib/azure-metrics-api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
+import { azureApi as azureCapacityApi, azureKeys as azureCapacityKeys } from "@/lib/azure-capacity-api";
 import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
 import { summaryFetcher } from "@/lib/use-dashboard";
 import { listDocumentInventory } from "@/lib/documents-api";
@@ -32,6 +35,7 @@ import {
   fetchEvaluationLive,
   fetchEvaluationSummary,
 } from "@/lib/evaluation-live";
+import { azureCostsKeys, fetchAzureCosts } from "@/lib/azure-costs-api";
 import { feedbackKeys, getFeedbackAnalytics } from "@/lib/feedback-api";
 import { governanceApi } from "@/lib/governance-api";
 import { prefetch, runWhenIdle } from "@/lib/query-cache";
@@ -77,14 +81,27 @@ function defaultDays(): { from: string; to: string } {
   return rangeUtcDays(presetRange(DEFAULT_PRESET));
 }
 
+/** Azure Insights reads shown on Usage & Cost and Governance > Monitoring. */
+function azureViews(token: string, withSeries: boolean): void {
+  warm(azureMetricsKeys.summary(), (signal) => azureMetricsApi.summary(token, undefined, signal));
+  if (withSeries) warm(azureMetricsKeys.series(TOKENS_SERIES), (signal) => azureMetricsApi.series(token, TOKENS_SERIES, signal));
+}
+
 function governanceOverall(token: string, audience: Audience): void {
   warm(dashboardKeys.health(audience), (signal) => governanceApi.overview(token, audience, signal));
+  // Monitoring's Azure capacity / health / Advisor panels (snapshots).
+  warm(azureCapacityKeys.capacity(), (signal) => azureCapacityApi.capacity(token, signal));
+  warm(azureCapacityKeys.health(), (signal) => azureCapacityApi.health(token, signal));
+  warm(azureCapacityKeys.advisor(), (signal) => azureCapacityApi.advisor(token, signal));
   warm(["admin/governance/traces-total", audience], (signal) =>
     governanceApi.traces(token, { audience, limit: 1 }, signal),
   );
   warm(["admin/governance/logs-total", audience], (signal) =>
     governanceApi.logs(token, { audience, limit: 1 }, signal),
   );
+  // Monitoring tab: the Azure connection card and Azure vs AskDIQ.
+  warm(azureKeys.status, (signal) => azureApi.status(signal));
+  azureViews(token, false);
 }
 
 const PREFETCHERS: Record<string, Prefetcher> = {
@@ -117,11 +134,14 @@ const PREFETCHERS: Record<string, Prefetcher> = {
       limit: LIVE_FEED_LIMIT,
     };
     warm(usageListKey("queries", feed), (signal) => fetchUsageList("queries", token, feed, signal));
+    // Overview "Billed vs estimated" (Azure Insights snapshot; never calls Azure).
+    warm(azureCostsKeys.costs(days), (signal) => fetchAzureCosts(token, days, signal));
     // First page of each tab (All Users / All Sessions / All Queries defaults).
     for (const [kind, sort] of USAGE_TAB_DEFAULTS) {
       const page = { audience, from_date: days.from, to_date: days.to, sort, limit: USAGE_PAGE_SIZE, offset: 0 };
       warm(usageListKey(kind, page), (signal) => fetchUsageList(kind, token, page, signal));
     }
+    azureViews(token, true);
   },
   "/admin/feedback": (token, audience) => {
     const days = defaultDays();
@@ -159,6 +179,7 @@ const PREFETCHERS: Record<string, Prefetcher> = {
     warm(BRANDING_KEY, (signal) => settingsApi.getBranding(signal));
     warm(TAXONOMY_KEY, (signal) => settingsApi.listTaxonomy(signal));
     warm(MODELS_KEY, (signal) => settingsApi.getModelSettings(signal));
+    warm(azureKeys.officialPrices, (signal) => azureApi.officialPrices(signal));
   },
 };
 
@@ -168,10 +189,11 @@ export function prefetchRouteData(href: string, token: string | null, audience: 
   PREFETCHERS[href]?.(token, audience);
 }
 
-/** Shell data every page shows (header audience counts). */
-export function prefetchShellData(token: string | null): void {
+/** Shell data every page shows (header audience counts, Azure health banner). */
+export function prefetchShellData(token: string | null, canReadDashboard = false): void {
   if (!token) return;
   warm(AUDIENCE_COUNTS_KEY, (signal) => api.getAudienceCounts(token, signal));
+  if (canReadDashboard) warm(azureCapacityKeys.health(), (signal) => azureCapacityApi.health(token, signal));
 }
 
 /** Sidebar pages warmed right after sign-in, after the landing page. */

@@ -57,6 +57,9 @@ const SCOPE_PREFIXES: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["evaluation.", ["metrics/evaluation"]],
   ["governance.", ["admin/governance"]],
   ["insights.", ["admin/insights"]],
+  // Azure Insights (app/azure_insights): every azure.* kind is re-read from
+  // its snapshot after each background poll.
+  ["azure.", ["admin/azure"]],
 ];
 
 /** Query-key prefixes to refresh for the scopes of one `changed` frame. */
