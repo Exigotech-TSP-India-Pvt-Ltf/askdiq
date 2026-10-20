@@ -95,6 +95,10 @@ MEMORY_HIGH = "memory_high"
 RSS_GROWTH = "worker_rss_growth"
 EVENT_LOOP_LAG = "event_loop_lag"
 DB_POOL_SATURATION = "db_pool_saturation"
+AZURE_BILLED_BUDGET = "azure_billed_budget"
+AZURE_ESTIMATE_DRIFT = "azure_estimate_drift"
+# Evaluated together (app.alerts.azure_cost_rules).
+AZURE_COST_RULES = frozenset({AZURE_BILLED_BUDGET, AZURE_ESTIMATE_DRIFT})
 RESOURCE_RULES = frozenset(
     {CPU_SUSTAINED, MEMORY_HIGH, RSS_GROWTH, EVENT_LOOP_LAG, DB_POOL_SATURATION}
 )
@@ -330,6 +334,34 @@ RULES: tuple[AlertRule, ...] = (
         _MONITORING,
         "Look for slow queries or connections held across slow calls; raise "
         "DB_POOL_SIZE only if Postgres max_connections allows it.",
+    ),
+    AlertRule(
+        AZURE_BILLED_BUDGET,
+        "Azure billed budget",
+        "Cost",
+        "database",
+        "Month-to-date Azure billed cost (Cost Management, UTC month, billing "
+        "currency) against AZURE_MONTHLY_BUDGET, or MONTHLY_COST_BUDGET_USD "
+        "when the bill is in USD.",
+        "warning at ALERT_BUDGET_WARNING_PCT, critical at ALERT_BUDGET_CRITICAL_PCT",
+        "/admin/usage",
+        "Compare billed and estimated cost in Usage & Cost > Overview; billed "
+        "cost lags 8-72 h, so the month will end higher. Raise the budget or "
+        "the rate limits if the growth is expected.",
+    ),
+    AlertRule(
+        AZURE_ESTIMATE_DRIFT,
+        "Azure estimate drift",
+        "Cost",
+        "database",
+        "A closed day (72 h+, billed) where |billed - estimated| / billed "
+        "exceeds ALERT_AZURE_DRIFT_PCT and billed is at least "
+        "ALERT_AZURE_DRIFT_MIN (one alert per day).",
+        "warning",
+        "/admin/usage",
+        "Check Settings > Models prices against the official retail prices; "
+        "other callers of the Azure resource (playground, other apps) or "
+        "unrecorded ingestion also raise the bill above the estimate.",
     ),
 )
 

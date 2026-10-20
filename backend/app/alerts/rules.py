@@ -17,6 +17,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts import catalogue as c
+from app.alerts.azure_cost_rules import azure_cost_rule
 from app.alerts.catalogue import Severity
 from app.alerts.resource_rules import resource_rule
 from app.alerts.service import NOTIFY_JOB, Finding
@@ -34,6 +35,7 @@ from app.models.db_models import (
 
 Rule = Callable[[AsyncSession, datetime, Settings], Awaitable[list[Finding]]]
 RESOURCES_GROUP = "resources"
+AZURE_COSTS_GROUP = "azure_costs"
 
 _SAMPLE_IDS = 5
 _MAX_ACCESS_REQUEST_ALERTS = 20
@@ -543,11 +545,16 @@ DATABASE_RULE_FUNCS: dict[str, Rule] = {
     c.ONLINE_EVAL_VIOLATIONS: online_eval_rule,
     # One pass over resource_samples raises all five resource rules.
     RESOURCES_GROUP: resource_rule,
+    # Billed budget + estimate drift from azure_billed_costs.
+    AZURE_COSTS_GROUP: azure_cost_rule,
 }
 
 # Registry key -> catalogue rule ids it evaluates (a key not listed covers
 # itself). Only rules whose function ran cleanly may auto-resolve.
-RULE_GROUPS: dict[str, frozenset[str]] = {RESOURCES_GROUP: c.RESOURCE_RULES}
+RULE_GROUPS: dict[str, frozenset[str]] = {
+    RESOURCES_GROUP: c.RESOURCE_RULES,
+    AZURE_COSTS_GROUP: c.AZURE_COST_RULES,
+}
 
 
 def rules_covered(key: str) -> frozenset[str]:
