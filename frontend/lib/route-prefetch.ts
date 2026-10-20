@@ -17,7 +17,8 @@ import { DEFAULT_STATE, toInsightsFilters } from "@/components/admin/analytics/u
 import { viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
-import { dashboardApi, dashboardKeys, rangeParams } from "@/lib/dashboard-api";
+import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
+import { summaryFetcher } from "@/lib/use-dashboard";
 import { listDocumentInventory } from "@/lib/documents-api";
 import { getDocumentCitationStats } from "@/lib/entity-stats-api";
 import { warmAudiencePage } from "@/lib/audience-data";
@@ -82,8 +83,8 @@ function governanceOverall(token: string, audience: Audience): void {
 
 const PREFETCHERS: Record<string, Prefetcher> = {
   "/admin": (token, audience) => {
-    const params = rangeParams(presetRange(DEFAULT_PRESET), audience);
-    warm(dashboardKeys.summary(params), (signal) => dashboardApi.summary(token, params, signal));
+    const range = presetRange(DEFAULT_PRESET);
+    warm(dashboardKeys.summary(audience, range), summaryFetcher(token, range, audience));
     warm(dashboardKeys.health(audience), (signal) => governanceApi.overview(token, audience, signal));
     warm(dashboardKeys.activity(audience), (signal) => dashboardApi.activity(token, audience, signal));
   },
