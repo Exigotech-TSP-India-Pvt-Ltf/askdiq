@@ -15,7 +15,7 @@
  */
 import { filtersForPreset } from "@/components/admin/analytics/use-analytics-preload";
 import { DEFAULT_STATE } from "@/components/admin/analytics/url-state";
-import { pageOf, prefetchBundle, viewerTimeZone } from "@/components/admin/analytics/use-insights";
+import { bundleKey, fetchBundle, pageOf, viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
 import { azureApi, azureKeys } from "@/lib/azure-api";
 import { azureApi as azureMetricsApi, azureKeys as azureMetricsKeys, TOKENS_SERIES } from "@/lib/azure-metrics-api";
@@ -158,9 +158,11 @@ const PREFETCHERS: Record<string, Prefetcher> = {
   },
   "/admin/governance": governanceOverall,
   "/admin/analytics": (token, audience) => {
-    // The page's first view: the default range preset, one bundle request.
+    // The page's first view: the default range preset, one bundle request
+    // (every tab, the KPIs and the table's first page with its questions).
     const filters = filtersForPreset({ period: "all", audience, tz: viewerTimeZone() }, DEFAULT_PRESET);
-    prefetchBundle(token, filters, pageOf(DEFAULT_STATE));
+    const page = pageOf(DEFAULT_STATE);
+    warm(bundleKey(filters), (signal) => fetchBundle(token, filters, page, signal));
   },
   "/admin/user-management": () => {
     // KPIs + charts, then the first page of every tab (Users, the request
@@ -192,6 +194,25 @@ export function prefetchShellData(token: string | null, canReadDashboard = false
   if (!token) return;
   warm(AUDIENCE_COUNTS_KEY, (signal) => api.getAudienceCounts(token, signal));
   if (canReadDashboard) warm(azureCapacityKeys.health(), (signal) => azureCapacityApi.health(token, signal));
+}
+
+/** Sidebar pages warmed right after sign-in, after the landing page. */
+export const PRIORITY_SIDEBAR_PAGES = 2;
+
+/**
+ * The pages to warm first once the user is known: the landing page (when the
+ * user may open it), then the first permitted sidebar pages with a
+ * prefetcher. `permitted` must already be permission-filtered
+ * (`visibleNavItems(permissions)`), so nothing the user cannot open is fetched.
+ */
+export function priorityHrefs(
+  landing: string | null,
+  permitted: readonly string[],
+  count: number = PRIORITY_SIDEBAR_PAGES,
+): string[] {
+  const warmable = permitted.filter((href) => href in PREFETCHERS);
+  const first = landing && warmable.includes(landing) ? [landing] : [];
+  return [...first, ...warmable.filter((href) => href !== landing).slice(0, count)];
 }
 
 /** Starts `href`'s prefetches and returns their promises. */

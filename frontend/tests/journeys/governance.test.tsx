@@ -472,20 +472,23 @@ describe("Governance journey", () => {
     await waitFor(() => expect(screen.getByTestId("cursor-page")).toHaveTextContent("Page 1 of 60"));
 
     const older = () => screen.getByRole("button", { name: /older/i });
+    const withCursor = (cursor: string) =>
+      callsTo("logs").filter((u) => u.searchParams.get("cursor") === cursor && u.searchParams.get("limit") === "100");
     await waitFor(() => expect(older()).toBeEnabled());
+    // The next page is warmed while idle, so "Older" renders from cache.
+    await waitFor(() => expect(withCursor("c1")).toHaveLength(1));
     fireEvent.click(older());
-    await screen.findByText("Event p1-0");
-    expect(callsTo("logs").at(-1)?.searchParams.get("cursor")).toBe("c1");
+    expect(screen.getByText("Event p1-0")).toBeInTheDocument();
+    expect(withCursor("c1")).toHaveLength(1);
 
     // 21 pages x 100 rows = 2,100 rows, past the old 2,000-row ceiling (G12).
     for (let page = 2; page <= 21; page += 1) {
       fireEvent.click(older());
-      await waitFor(() => expect(callsTo("logs").at(-1)?.searchParams.get("cursor")).toBe(`c${page}`));
+      await waitFor(() => expect(withCursor(`c${page}`).length).toBeGreaterThan(0));
       await waitFor(() => expect(older()).toBeEnabled());
     }
     expect(await screen.findByText("Event p21-0")).toBeInTheDocument();
-    expect(callsTo("logs").at(-1)?.searchParams.get("cursor")).toBe("c21");
-    expect(callsTo("logs").at(-1)?.searchParams.get("limit")).toBe("100");
+    expect(withCursor("c21").at(-1)?.searchParams.get("limit")).toBe("100");
     expect(screen.getByTestId("cursor-page")).toHaveTextContent("Page 22 of 60");
 
     fireEvent.click(screen.getByRole("button", { name: /newer/i }));

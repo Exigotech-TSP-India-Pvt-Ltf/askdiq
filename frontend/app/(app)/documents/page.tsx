@@ -31,6 +31,7 @@ import { RadialGauge } from "@/components/charts/RadialGauge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { CountUp } from "@/components/ui/CountUp";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, iconButton } from "@/components/ui/styles";
@@ -40,7 +41,7 @@ import { useCan } from "@/lib/use-can";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
-import { invalidate, runWhenIdle, useApiQuery } from "@/lib/query-cache";
+import { invalidate, runWhenIdle, useApiQuery, usePrefetchRows } from "@/lib/query-cache";
 import {
   documentFetchers,
   documentKeys,
@@ -74,6 +75,8 @@ const COVERAGE_BANDS = { warn: 80, danger: 60 } as const;
 const DEFAULT_PAGE_SIZE: PageSize = 10;
 const TABLE_ID = "documents-inventory";
 const DOCS_KEY = "documents";
+/** Rows whose chunks warm while idle (a document's chunks can be large). */
+const CHUNK_PREFETCH_ROWS = 5;
 
 const STATUS_TONE: Record<DocumentStatus, "ok" | "warn" | "danger" | "neutral"> = {
   active: "ok",
@@ -177,15 +180,21 @@ function DocumentsContent() {
   const safePage = Math.min(page, pageCount);
   const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
-  // Idle time warms what one click away shows: each visible document's page
-  // and the citation charts of every range preset.
+  // Idle time warms what one click away shows, bounded (two requests at a
+  // time): every visible document's header and citations, the chunks of the
+  // first rows (larger; the others warm on hover), and the citation charts
+  // of every range preset.
   const pagedIds = paged.map((d) => d.document_id).join(",");
+  const visibleIds = useMemo(() => (pagedIds ? pagedIds.split(",") : null), [pagedIds]);
+  const warmToken = token ?? "";
+  usePrefetchRows(token ? visibleIds : null, documentKeys.detail, { one: (id) => documentFetchers.detail(warmToken, id) });
+  usePrefetchRows(token ? visibleIds : null, documentKeys.lowRated, { one: (id) => documentFetchers.lowRated(warmToken, id) });
+  usePrefetchRows(token ? visibleIds : null, documentKeys.chunks, { one: (id) => documentFetchers.chunks(warmToken, id) }, {
+    max: CHUNK_PREFETCH_ROWS,
+  });
   useEffect(() => {
     if (!token || !pagedIds) return undefined;
-    return runWhenIdle(() => {
-      prefetchCitationPresets(token);
-      for (const docId of pagedIds.split(",")) prefetchDocument(token, docId);
-    });
+    return runWhenIdle(() => prefetchCitationPresets(token));
   }, [token, pagedIds]);
 
   const totals = useMemo(() => {
@@ -402,15 +411,14 @@ function DocumentsContent() {
         showDateRange
         actions={
           canWrite ? (
-            <button
-              type="button"
+            <HeaderIconButton
+              icon={Upload}
+              label="Upload Document"
+              variant="primary"
               data-tour="documents-upload"
+              aria-haspopup="dialog"
               onClick={() => setUploadOpen(true)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-gradient px-3.5 py-1.5 text-xs font-semibold text-white shadow-brand-glow transition hover:opacity-90 ${focusRing}`}
-            >
-              <Upload className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-              <span>Upload Document</span>
-            </button>
+            />
           ) : undefined
         }
       />

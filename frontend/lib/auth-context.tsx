@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { UserOut } from "./types";
 import { fetchMe, logoutRequest, type AuthMe } from "./auth-api";
 import { queryCache } from "./query-cache";
-import { clearPersistedQueryCache } from "./query-persist";
+import { cacheScope, clearPersistedQueryCache, discardCachedData } from "./query-persist";
 import { hasPermission, type Permission, type Role, type UserStatus } from "./permissions";
 import { redirectTo } from "./navigation";
 
@@ -101,6 +101,8 @@ export function AuthProvider({ children, initialMe }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(initialMe === undefined);
   const [error, setError] = useState<unknown>(undefined);
   const inflight = useRef<Promise<AuthMe | null> | null>(null);
+  /** Access the cached console data was read with (`cacheScope`). */
+  const scope = useRef(cacheScope(initialMe ?? null));
 
   const refresh = useCallback(async (): Promise<AuthMe | null> => {
     // Concurrent callers (gate + polling) share one request.
@@ -108,6 +110,12 @@ export function AuthProvider({ children, initialMe }: AuthProviderProps) {
     const run = (async () => {
       try {
         const next = await fetchMe();
+        // Role, status or permissions changed (or the session ended): nothing
+        // cached under the old access may keep rendering. Dropped before the
+        // new access renders; the console runtime re-warms what is allowed.
+        const nextScope = cacheScope(next);
+        if (scope.current && nextScope !== scope.current) discardCachedData();
+        scope.current = nextScope;
         setMe(next);
         setError(undefined);
         return next;

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.batch import BATCH_RESPONSES, batch_ids, batch_response, collect
 from app.api.routes.admin_entities import memory_snapshot
 from app.api.routes.admin_entities import router as entities_router
 from app.api.routes.admin_feedback import router as feedback_router
@@ -740,6 +741,31 @@ async def _conversations_page(db: AsyncSession, args: ConversationListArgs) -> d
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.get(
+    "/conversations/batch",
+    summary="Conversation details of several conversations",
+    responses=BATCH_RESPONSES,
+)
+async def get_conversations_batch(
+    request: Request,
+    ids: list[str] = Depends(batch_ids),
+    runner: ScopedRunner = Depends(get_scoped_runner),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
+) -> Response:
+    """`items[id]` is exactly `GET /admin/conversations/{id}` (no `turn`) for
+    each known id; unknown ids are listed in `missing`. The list page warms
+    the previews of its visible rows with this one request."""
+
+    async def load(conversation_id: str) -> Any:
+        return await get_snapshot(
+            CONVERSATION_DETAIL_KIND,
+            {"id": conversation_id, "turn": None},
+            runner.gather,
+        )
+
+    return batch_response(request, await collect(ids, load))
 
 
 @router.get("/conversations/{conversation_id}")

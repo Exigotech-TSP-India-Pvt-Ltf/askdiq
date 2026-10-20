@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Timer } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
-import { useApiQuery } from "@/lib/query-cache";
+import { useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { useRange } from "@/lib/range-context";
 import { useCursorStack } from "@/lib/use-cursor-stack";
@@ -21,7 +21,7 @@ import {
 import { formatCount, formatMs, formatUsd, humanize } from "@/lib/governance-format";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { parseOne, rangeBounds } from "@/lib/governance-links";
-import { prefetchTrace, prefetchTraceNeighbours } from "@/lib/governance-prefetch";
+import { prefetchTrace, prefetchTraceNeighbours, usePrefetchTraceRows } from "@/lib/governance-prefetch";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
@@ -157,26 +157,27 @@ export default function TracesView() {
   const filterKey = governanceKeys.tracesFilter({ audience, status, outcome, latencyBucket, q, from, to, pageSize });
   const pager = useCursorStack(filterKey);
 
-  const query = useApiQuery<GovernanceTracePage>(
-    governanceKeys.traces(filterKey, pager.cursor),
-    (signal) =>
-      governanceApi.traces(
-        token,
-        {
-          audience,
-          limit: pageSize,
-          cursor: pager.cursor,
-          status: status ? [status] : undefined,
-          outcome: outcome ? [outcome] : undefined,
-          latency_bucket: latencyBucket ? [latencyBucket] : undefined,
-          q: q || undefined,
-          from,
-          to,
-        },
-        signal,
-      ),
-    { enabled: Boolean(token) },
-  );
+  const fetchPage = (cursor: string | null | undefined) => (signal: AbortSignal) =>
+    governanceApi.traces(
+      token,
+      {
+        audience,
+        limit: pageSize,
+        cursor,
+        status: status ? [status] : undefined,
+        outcome: outcome ? [outcome] : undefined,
+        latency_bucket: latencyBucket ? [latencyBucket] : undefined,
+        q: q || undefined,
+        from,
+        to,
+      },
+      signal,
+    );
+  // Paging and filter changes keep the current rows until the new ones arrive.
+  const query = useApiQuery<GovernanceTracePage>(governanceKeys.traces(filterKey, pager.cursor), fetchPage(pager.cursor), {
+    enabled: Boolean(token),
+    keepPreviousData: true,
+  });
   const page = query.data;
   const items = useMemo(() => page?.items ?? [], [page]);
   const { refetch } = query;
@@ -191,6 +192,10 @@ export default function TracesView() {
     if (idx >= 0) prefetchTraceNeighbours(token, items, idx, audience);
   }, [audience, idx, items, token]);
   const onRowIntent = useCallback((row: GovernanceTraceItem) => prefetchTrace(token, row.request_id, audience), [audience, token]);
+  // While idle: the next page, and the drawer of every row on screen (one request).
+  const nextCursor = page && !query.isPlaceholderData && page.has_more ? page.next_cursor : null;
+  usePrefetchNextPage(token && nextCursor ? governanceKeys.traces(filterKey, nextCursor) : null, fetchPage(nextCursor));
+  usePrefetchTraceRows(token, query.isPlaceholderData ? null : items, audience, query.updatedAt);
 
   const columns = useMemo(() => traceColumns((id) => openTrace(id)), [openTrace]);
   const total = page ? `${page.total_is_estimate ? "≈ " : ""}${formatCount(page.total)} traces` : undefined;

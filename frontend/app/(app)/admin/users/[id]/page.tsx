@@ -21,6 +21,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { PageShellSkeleton } from "@/components/ui/PageShellSkeleton";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { secondaryButton } from "@/components/ui/styles";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import {
   SectionCard,
   ToneChip,
@@ -33,8 +34,11 @@ import {
   useRangeParams,
 } from "@/components/admin/entity/shared";
 import { useAuth } from "@/lib/auth-context";
-import { useApiQuery } from "@/lib/query-cache";
+import { useApiQuery, usePrefetchRows } from "@/lib/query-cache";
+import { prefetchQueryDetail, usePrefetchQueryDetails, usePreloadQueryInspector } from "@/lib/use-usage-data";
 import {
+  conversationKey,
+  conversationsBatch,
   isOtherRange,
   prefetchConversation,
   presetDayRanges,
@@ -130,6 +134,14 @@ function VisitorDetailContent() {
   const querySearch = useCallback((q: TimelineQuery) => `${q.query} ${q.request_id}`, []);
   const outcomeFilter = useCallback((q: TimelineQuery) => outcome === "all" || q.outcome === outcome, [outcome]);
   const queriesTable = useClientTable(queries, { searchText: querySearch, filter: outcomeFilter });
+
+  // While idle: the conversations and query inspectors of the rows on screen
+  // (one request each) and the inspector's code, so a row click is instant.
+  const sessionIds = useMemo(() => sessionsTable.paged.map((c) => c.id), [sessionsTable.paged]);
+  usePrefetchRows(token ? sessionIds : null, conversationKey, { batch: conversationsBatch(token ?? "") }, { version: visitor.updatedAt });
+  const queryIds = useMemo(() => queriesTable.paged.map((q) => q.request_id), [queriesTable.paged]);
+  usePrefetchQueryDetails(token, timeline.isPlaceholderData ? null : queryIds, timeline.updatedAt);
+  usePreloadQueryInspector();
 
   // Sessions as bars on a time axis: B7.2 timeline when deployed, else the
   // sessions the existing detail endpoint already returns. Chronological.
@@ -270,18 +282,19 @@ function VisitorDetailContent() {
         actions={
           ip ? (
             <>
-              <Link href={carry(entityHref({ kind: "visitor", id: ip }))} className={secondaryButton} title="Sessions in Usage & Cost">
-                <ListTree {...ICON} />
-                <span className="hidden lg:inline">Usage sessions</span>
-              </Link>
-              <Link href={carry(conversationsHref({ ip }))} className={secondaryButton} title="This visitor's conversations">
-                <MessagesSquare {...ICON} />
-                <span className="hidden lg:inline">Conversations</span>
-              </Link>
-              <Link href={entityHref({ kind: "analytics", visitor: id })} className={secondaryButton}>
-                <ChartPie {...ICON} />
-                Analytics
-              </Link>
+              <HeaderIconButton
+                href={carry(entityHref({ kind: "visitor", id: ip }))}
+                icon={ListTree}
+                label="Usage sessions"
+                tooltip="Sessions in Usage & Cost"
+              />
+              <HeaderIconButton
+                href={carry(conversationsHref({ ip }))}
+                icon={MessagesSquare}
+                label="Conversations"
+                tooltip="This visitor's conversations"
+              />
+              <HeaderIconButton href={entityHref({ kind: "analytics", visitor: id })} icon={ChartPie} label="Analytics" />
             </>
           ) : undefined
         }
@@ -484,6 +497,7 @@ function VisitorDetailContent() {
                 data={queriesTable.paged}
                 keyField="request_id"
                 onRowClick={(q) => setInspect(q.request_id)}
+                onRowIntent={(q) => prefetchQueryDetail(token, q.request_id)}
                 emptyMessage={queries.length === 0 ? "No queries in this range." : "No queries match the search or outcome filter."}
               />
             )}

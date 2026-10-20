@@ -22,6 +22,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { PageShellSkeleton } from "@/components/ui/PageShellSkeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import {
   ToneChip,
   errorMessage,
@@ -33,6 +34,7 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { useCan } from "@/lib/use-can";
 import { useApiMutation, useApiQuery } from "@/lib/query-cache";
+import { usePrefetchQueryDetails, usePreloadQueryInspector } from "@/lib/use-usage-data";
 import { conversationQuery } from "@/lib/audience-data";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { usePrefersReducedMotion } from "@/lib/motion";
@@ -87,6 +89,14 @@ function ConversationDetailContent() {
   const outcomeFilter = useCallback((t: TurnView) => outcome === "all" || t.detail?.outcome === outcome, [outcome]);
   const turnsTable = useClientTable(turns, { searchText: turnText, filter: outcomeFilter });
   const { filtered: filteredTurns, pageSize: turnsPageSize, setPage: setTurnsPage } = turnsTable;
+  // While idle: the query inspector of every turn on screen (one request) and
+  // the inspector's code, so opening a turn's inspector is instant.
+  const turnRequestIds = useMemo(
+    () => turnsTable.paged.map((t) => t.requestId).filter((r): r is string => Boolean(r)),
+    [turnsTable.paged],
+  );
+  usePrefetchQueryDetails(token, turnRequestIds, detail.updatedAt);
+  usePreloadQueryInspector();
 
   // `?turn=` opens the page that holds the turn (then the effect below scrolls to it).
   useEffect(() => {
@@ -208,10 +218,12 @@ function ConversationDetailContent() {
         breadcrumb={[{ label: AUDIENCE_PAGE_LABEL, href: carry(conversationsHref()) }, { label: title }]}
         actions={
           conversation.created_ip ? (
-            <Link href={carry(visitorDetailHref(`client-${conversation.created_ip}`))} className={secondaryButton} title="Open this conversation's visitor">
-              <User {...ICON} />
-              <span className="hidden lg:inline">View visitor</span>
-            </Link>
+            <HeaderIconButton
+              href={carry(visitorDetailHref(`client-${conversation.created_ip}`))}
+              icon={User}
+              label="View visitor"
+              tooltip="Open this conversation's visitor"
+            />
           ) : undefined
         }
       />

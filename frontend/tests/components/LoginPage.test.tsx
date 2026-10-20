@@ -12,6 +12,8 @@ import LoginPage from "@/app/login/page";
 
 const redirectTo = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/navigation", () => ({ redirectTo }));
+// The idle code preload (covered in SignInPreload.test) would load the whole console here.
+vi.mock("@/lib/post-login-chunks", () => ({ POST_LOGIN_CHUNKS: [] }));
 
 function mockReducedMotion(reduce: boolean) {
   vi.stubGlobal(

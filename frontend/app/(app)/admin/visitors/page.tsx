@@ -1,20 +1,18 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
-import { MessagesSquare, Settings as SettingsIcon, Users as UsersIcon } from "lucide-react";
+import { MessagesSquare, Network, Users as UsersIcon } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { VisitorsPanel } from "@/components/admin/audience/VisitorsPanel";
 import { ConversationsPanel } from "@/components/admin/audience/ConversationsPanel";
-import { secondaryButton } from "@/components/ui/styles";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import { AUDIENCE_PAGE_LABEL, parseAudienceTab, type AudienceTab } from "@/lib/entity-routes";
 import { useAuth } from "@/lib/auth-context";
 import { useCan } from "@/lib/use-can";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { invalidate } from "@/lib/query-cache";
-
-const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
 
 const TABS: TabItem<AudienceTab>[] = [
   { id: "visitors", label: "Visitors", icon: UsersIcon, description: "Who uses the assistant: visitors by client IP" },
@@ -59,17 +57,14 @@ function AudienceContent() {
           showDateRange
           actions={
             canWriteTestIp ? (
-              <button
-                type="button"
-                onClick={() => setConfigOpen(true)}
-                className={secondaryButton}
+              <HeaderIconButton
+                icon={Network}
+                label="Manage test IPs"
+                tooltip="Manage test IPs (excluded from Users)"
                 data-tour="visitors-manage-test-ips"
-                title="Manage test IPs (excluded from the Users audience)"
-                aria-label="Manage test IPs"
-              >
-                <SettingsIcon {...ICON} />
-                <span className="hidden whitespace-nowrap xl:inline">Manage test IPs</span>
-              </button>
+                aria-haspopup="dialog"
+                onClick={() => setConfigOpen(true)}
+              />
             ) : undefined
           }
         />

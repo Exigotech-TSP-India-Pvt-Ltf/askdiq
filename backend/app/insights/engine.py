@@ -32,6 +32,7 @@ import contextlib
 import hashlib
 import itertools
 import json
+import re
 import time
 import uuid
 from collections import Counter, OrderedDict, defaultdict
@@ -117,6 +118,13 @@ PARTS = (
     "pending",
 )
 
+# Question summaries embedded in the conversations page (instant expand):
+# text kept per exchange (enough that masking never splits a PII token at
+# the cut) and the length shown.
+QUESTION_RAW_CHARS = 512
+QUESTION_CHARS = 160
+ELLIPSIS = "…"
+
 # ---------------------------------------------------------------------------
 # SQL (the repository's fragments, unfiltered)
 # ---------------------------------------------------------------------------
@@ -131,7 +139,9 @@ exj AS (
            json_agg(json_build_array(
                to_char(ts, 'YYYY-MM-DD'),
                CAST(extract(hour FROM ts) AS integer),
-               intent, quality, handled, is_sub
+               intent, quality, handled, is_sub,
+               turn_index, to_char(ts, 'HH24:MI'),
+               left(user_message, {QUESTION_RAW_CHARS}), issue, friction
            ) ORDER BY turn_index, ts) AS ex
     FROM ex GROUP BY session_id
 )
@@ -181,6 +191,7 @@ def _fill(template: str) -> str:
         .replace("{CONV}", conv)
         .replace("{PERSON_KEY}", sql._PERSON_KEY)  # noqa: SLF001
         .replace("{IDENTITY}", sql._PERSON_IDENTITY)  # noqa: SLF001
+        .replace("{QUESTION_RAW_CHARS}", str(QUESTION_RAW_CHARS))
     )
 
 
@@ -211,6 +222,20 @@ class ExFact:
 
 
 @dataclass(frozen=True, slots=True)
+class QuestionFact:
+    """One labelled exchange as the expanded table row shows it."""
+
+    turn: int
+    clock: str
+    text: str
+    intent: str | None
+    quality: str | None
+    handled: bool | None
+    issue: str | None
+    friction: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ConvFact:
     """One labelled conversation (the ``conv`` CTE row) and its exchanges,
     with the per-conversation totals every widget sums."""
@@ -234,6 +259,7 @@ class ConvFact:
     search: str
     ranks: dict[ConversationSort, int]
     ex: tuple[ExFact, ...]
+    questions: tuple[QuestionFact, ...]
     # Exchange totals (``is_substantive`` of the intent, as the cube is read).
     handled_n: int
     sub_n: int
@@ -385,12 +411,27 @@ def _sql_params(tz: str) -> dict[str, Any]:
 
 def _parse_conv(idx: int, row: Any, days: dict[str, date]) -> ConvFact:
     exchanges = []
-    for day_text, hour, intent, quality, handled, is_sub in json.loads(row.ex):
+    questions = []
+    for item in json.loads(row.ex):
+        day_text, hour, intent, quality, handled, is_sub = item[:6]
+        turn, clock, message, issue, friction = item[6:]
         day = days.get(day_text)
         if day is None:
             day = days[day_text] = date.fromisoformat(day_text)
         exchanges.append(
             ExFact(day, int(hour), intent, quality, handled is True, is_sub is True)
+        )
+        questions.append(
+            QuestionFact(
+                int(turn),
+                clock,
+                message or "",
+                intent,
+                quality,
+                handled,
+                issue,
+                friction,
+            )
         )
     subs = [e for e in exchanges if is_substantive(e.intent)]
     ex_days = {e.day for e in exchanges}
@@ -420,6 +461,7 @@ def _parse_conv(idx: int, row: Any, days: dict[str, date]) -> ConvFact:
             ConversationSort.ISSUE: int(row.r_issue),
         },
         ex=tuple(exchanges),
+        questions=tuple(questions),
         handled_n=sum(1 for e in exchanges if e.handled),
         sub_n=len(subs),
         sub_handled_n=sum(1 for e in subs if e.handled),
@@ -661,8 +703,25 @@ def _turn_matches(e: ExFact, f: InsightsFilters) -> bool:
     return not (f.quality and e.quality != f.quality)
 
 
+# A search for a person label (``P07``, ``p7``) also finds that person.
+_PERSON_SEARCH = re.compile(r"p0*([1-9]\d*)")
+
+
+def _search_person(view: AudienceView, needle: str | None) -> str | None:
+    """The person key whose P-number label ``needle`` is, if any."""
+    match = _PERSON_SEARCH.fullmatch(needle.strip()) if needle else None
+    if match is None:
+        return None
+    number = int(match.group(1))
+    return next((k for k, (n, _) in view.numbers.items() if n == number), None)
+
+
 def _conv_passes(
-    c: ConvFact, q: Query, visitor_ip: str | None, needle: str | None
+    c: ConvFact,
+    q: Query,
+    visitor_ip: str | None,
+    needle: str | None,
+    person: str | None = None,
 ) -> bool:
     """``passConv()``: the conversation-level filters of ``_select``."""
     f = q.filters
@@ -678,7 +737,7 @@ def _conv_passes(
         return False
     if f.person is not None and c.person_key != f.person:
         return False
-    if needle is not None and needle not in c.search:
+    if needle is not None and needle not in c.search and c.person_key != person:
         return False
     if f.visitor is not None:
         if visitor_ip is not None:
@@ -751,7 +810,10 @@ def scope(view: AudienceView, q: Query) -> Scope:
     needle = f.q.lower() if f.q else None
     candidates, check = _candidates(view, q, visitor_ip)
     if check:
-        convs = [c for c in candidates if _conv_passes(c, q, visitor_ip, needle)]
+        person = _search_person(view, needle)
+        convs = [
+            c for c in candidates if _conv_passes(c, q, visitor_ip, needle, person)
+        ]
     else:
         convs = list(candidates)
     if q.narrow:
@@ -1058,12 +1120,54 @@ def page_rows(s: Scope, view: AudienceView, page: ConversationPage) -> list[Conv
     )
 
 
+def _short(message: str) -> str:
+    """Masked question, cut to ``QUESTION_CHARS`` (masked before the cut)."""
+    masked = mask(message) or ""
+    if len(masked) <= QUESTION_CHARS:
+        return masked
+    return masked[: QUESTION_CHARS - 1].rstrip() + ELLIPSIS
+
+
+def question_summaries(c: ConvFact, facts: Facts) -> list[dict[str, Any]]:
+    """The conversation's labelled questions (the table's expanded row)."""
+
+    def label(kind: TaxonomyKind, code: str | None) -> str | None:
+        entry = facts.label(kind, code)
+        return entry.label if entry is not None else code
+
+    return [
+        {
+            "turn": q.turn,
+            "time": q.clock,
+            "text": _short(q.text),
+            "intent": q.intent,
+            "intent_label": label(TaxonomyKind.INTENT, q.intent),
+            "substantive": is_substantive(q.intent),
+            "handled": q.handled,
+            "quality": q.quality,
+            "quality_label": label(TaxonomyKind.BOT_QUALITY, q.quality),
+            "issue": q.issue,
+            "issue_label": label(TaxonomyKind.ISSUE, q.issue),
+            "friction": q.friction,
+        }
+        for q in c.questions
+    ]
+
+
 def conversations(
-    s: Scope, view: AudienceView, page: ConversationPage
+    s: Scope, view: AudienceView, page: ConversationPage, facts: Facts
 ) -> dict[str, Any]:
+    """One table page; each row carries its question summaries, so expanding
+    a row never waits for a request."""
     window = page_rows(s, view, page)
     return {
-        "items": [conversation_row(c, view.numbers[c.person_key][0]) for c in window],
+        "items": [
+            {
+                **conversation_row(c, view.numbers[c.person_key][0]),
+                "questions": question_summaries(c, facts),
+            }
+            for c in window
+        ],
         "total": len(s.convs),
         "limit": page.limit,
         "offset": page.offset,
@@ -1121,7 +1225,7 @@ def bundle(
         "quality": lambda: quality(s, facts),
         "dropoff": lambda: dropoff(s),
         "people": lambda: people(s, view),
-        "conversations": lambda: conversations(s, view, page),
+        "conversations": lambda: conversations(s, view, page, facts),
         "pending": lambda: pending(facts),
     }
     out: dict[str, Any] = {"as_of": facts.loaded_at.isoformat()}
