@@ -1,7 +1,7 @@
 """add azure_metric_points (Azure Monitor platform metrics, Phase 2)
 
 Revision ID: a788c15bf749
-Revises: ca723897761c
+Revises: 39e042e6bb64
 Create Date: 2026-10-20 23:00:00.000000
 
 One row per (deployment, metric, status_code, grain, bucket start) of the
@@ -18,7 +18,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a788c15bf749"
-down_revision: str | None = "ca723897761c"
+down_revision: str | None = "39e042e6bb64"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

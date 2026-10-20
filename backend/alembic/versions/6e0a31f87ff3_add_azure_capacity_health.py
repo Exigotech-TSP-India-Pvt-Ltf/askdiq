@@ -1,7 +1,7 @@
 """add Azure capacity, quota and health tables (Azure Insights Phase 4)
 
 Revision ID: 6e0a31f87ff3
-Revises: ca723897761c
+Revises: a788c15bf749
 Create Date: 2026-10-20 23:00:00.000000
 
 History is kept: deployments and regional quota per poll (``fetched_at``),
@@ -18,7 +18,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "6e0a31f87ff3"
-down_revision: str | None = "ca723897761c"
+down_revision: str | None = "a788c15bf749"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

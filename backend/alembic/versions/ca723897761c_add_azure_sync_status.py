@@ -1,7 +1,7 @@
 """add azure_sync_status (Azure Insights per-source status and call budget)
 
 Revision ID: ca723897761c
-Revises: 03485c08b57b
+Revises: 144787ba01b1
 Create Date: 2026-10-20 20:00:00.000000
 
 One row per Azure Insights source (retail, metrics, costs, capacity, health,
@@ -18,7 +18,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ca723897761c"
-down_revision: str | None = "03485c08b57b"
+down_revision: str | None = "144787ba01b1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
