@@ -68,6 +68,7 @@ class LiveCache:
         self._entries: dict[str, Entry] = {}
         self._tasks: set[asyncio.Task[Any]] = set()
         self.computes = 0
+        self._read_at: dict[str, float] = {}
         _REGISTRY.append(self)
 
     # -- writes -----------------------------------------------------------
@@ -96,6 +97,7 @@ class LiveCache:
 
     def clear(self) -> None:
         self._entries.clear()
+        self._read_at.clear()
 
     def mark_stale(self, audience: str | None = None) -> None:
         """Next read serves the copy and recomputes it in the background."""
@@ -108,11 +110,17 @@ class LiveCache:
 
     # -- reads ------------------------------------------------------------
 
+    def recently_read(self, audience: str, seconds: float) -> bool:
+        """True when a client read ``audience`` within ``seconds`` (on screen)."""
+        read_at = self._read_at.get(audience)
+        return read_at is not None and time.monotonic() - read_at <= seconds
+
     def peek(self, audience: str) -> Entry | None:
         return self._entries.get(audience)
 
     async def get(self, audience: str, runner: ScopedRunner | None = None) -> Entry:
         """The copy (computed with ``runner`` when there is none yet)."""
+        self._read_at[audience] = time.monotonic()
         entry = self._entries.get(audience)
         if entry is None:
             return await self.refresh(audience, runner)

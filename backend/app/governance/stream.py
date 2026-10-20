@@ -40,12 +40,19 @@ logger = get_logger(__name__)
 SnapshotFn = Callable[[str], Awaitable[dict[str, Any]]]
 ResourcesFn = Callable[[], Awaitable[dict[str, Any]]]
 _QUEUE_SIZE = 100
+# A Monitoring copy read this recently is refreshed on every stream tick.
+MONITORING_WATCH_SECONDS = 120.0
 
 
 async def _default_snapshot(audience: str) -> dict[str, Any]:
     # Computed into the shared memory copy, so GET /governance/overview
     # serves exactly what the stream just pushed.
-    return (await overview_cache.refresh(audience)).payload
+    payload = (await overview_cache.refresh(audience)).payload
+    # Monitoring on screen follows the same tick, before the events go out
+    # (its view refetches on them and must get the new copy).
+    if monitoring_cache.recently_read(audience, MONITORING_WATCH_SECONDS):
+        await monitoring_cache.refresh(audience)
+    return payload
 
 
 async def _default_resources() -> dict[str, Any]:
