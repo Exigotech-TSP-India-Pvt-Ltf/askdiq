@@ -333,12 +333,13 @@ def test_daily_slot_follows_sydney_dst() -> None:
     assert october[0] == datetime(2026, 10, 19, 16, tzinfo=UTC)  # AEDT
     june = anchored_slot(datetime(2026, 6, 10, 17, 30, tzinfo=UTC), 86_400, SYDNEY, at)
     assert june[0] == datetime(2026, 6, 10, 17, tzinfo=UTC)  # AEST
-    # DST starts 2026-10-04: the slot after 03:00 AEST is 03:00 AEDT (23 h).
+    # DST starts 02:00 on 2026-10-04: the slot from 03:00 AEST on the 3rd
+    # (17:00 UTC on the 2nd) ends at 03:00 AEDT on the 4th (16:00 UTC): 23 h.
     start, nxt = anchored_slot(
-        datetime(2026, 10, 3, 18, tzinfo=UTC), 86_400, SYDNEY, at
+        datetime(2026, 10, 3, 10, tzinfo=UTC), 86_400, SYDNEY, at
     )
-    assert start == datetime(2026, 10, 3, 17, tzinfo=UTC)
-    assert nxt == datetime(2026, 10, 4, 16, tzinfo=UTC)
+    assert start == datetime(2026, 10, 2, 17, tzinfo=UTC)
+    assert nxt == datetime(2026, 10, 3, 16, tzinfo=UTC)
 
 
 def test_unknown_zone_falls_back_to_utc() -> None:
