@@ -18,6 +18,7 @@ from app.azure_insights.errors import (
     AzureBudgetExhaustedError,
     AzureInsightsError,
     AzureThrottledError,
+    AzureUnsupportedError,
     sanitize,
     sanitize_code,
 )
@@ -30,6 +31,10 @@ STATE_OK = "ok"
 STATE_ERROR = "error"
 STATE_THROTTLED = "throttled"
 STATE_BUDGET_EXHAUSTED = "budget_exhausted"
+# The API is not offered for this subscription type (e.g. Cost Management
+# on classic CSP); waits for the next slot like an error, without a streak.
+STATE_UNSUPPORTED = "unsupported"
+_NO_STREAK = frozenset({STATE_THROTTLED, STATE_UNSUPPORTED})
 
 
 async def _upsert(session: AsyncSession, source: str, values: dict[str, Any]) -> None:
@@ -66,6 +71,8 @@ def error_state(error: BaseException) -> str:
         return STATE_BUDGET_EXHAUSTED
     if isinstance(error, AzureThrottledError):
         return STATE_THROTTLED
+    if isinstance(error, AzureUnsupportedError):
+        return STATE_UNSUPPORTED
     return STATE_ERROR
 
 
@@ -79,7 +86,8 @@ def error_parts(error: BaseException) -> tuple[str, str]:
 async def record_failure(
     session: AsyncSession, source: str, error: BaseException, *, now: datetime
 ) -> None:
-    """A failed (or throttled / capped) run; throttling is not a failure streak."""
+    """A failed (or throttled / capped / unsupported) run; throttling and
+    "unsupported" are not a failure streak."""
     code, message = error_parts(error)
     state = error_state(error)
     values: dict[str, Any] = {
@@ -88,13 +96,13 @@ async def record_failure(
         "last_error_code": code,
         "last_error_message": sanitize(message),
     }
-    if state != STATE_THROTTLED:
+    if state not in _NO_STREAK:
         values["consecutive_failures"] = AzureSyncStatus.consecutive_failures + 1
     stmt = insert(AzureSyncStatus).values(
         source=source,
         **{
             **values,
-            "consecutive_failures": 0 if state == STATE_THROTTLED else 1,
+            "consecutive_failures": 0 if state in _NO_STREAK else 1,
             "updated_at": now,
         },
     )

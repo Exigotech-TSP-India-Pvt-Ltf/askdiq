@@ -8,7 +8,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 SourceState = Literal[
-    "ok", "error", "throttled", "budget_exhausted", "never_run", "not_configured"
+    "ok",
+    "error",
+    "throttled",
+    "budget_exhausted",
+    "unsupported",
+    "never_run",
+    "not_configured",
 ]
 
 

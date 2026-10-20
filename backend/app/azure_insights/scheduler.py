@@ -29,8 +29,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.azure_insights import status as sync_status
 from app.azure_insights.auth import get_token_provider
@@ -132,6 +133,8 @@ class AzureSource:  # pylint: disable=too-many-instance-attributes
     announce. ``needs_credentials=False`` for public APIs (still scheduled
     only when Azure Insights is enabled; on-demand runs always work).
     ``call_cap(settings)``: monthly cap for ``ctx.arm_client(budgeted=True)``.
+    ``anchor(settings)``: optional ``(IANA zone, local time)`` the slots are
+    aligned to (e.g. daily at 03:00 Australia/Sydney); default epoch-aligned.
     """
 
     name: str
@@ -144,6 +147,7 @@ class AzureSource:  # pylint: disable=too-many-instance-attributes
     live_scopes: tuple[str, ...] = ()
     call_cap: Callable[[Settings], int] | None = None
     order: int = 100
+    anchor: Callable[[Settings], tuple[str, time]] | None = None
 
     @property
     def job_type(self) -> str:
@@ -212,6 +216,60 @@ def next_slot(now: datetime, interval: int) -> datetime:
     return slot_start(now, interval) + timedelta(seconds=max(1, interval))
 
 
+_DAY_SECONDS = 86_400
+
+
+def _zone(name: str | tzinfo) -> tzinfo:
+    if isinstance(name, tzinfo):
+        return name
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        # No IANA database on this host (e.g. Windows without tzdata).
+        logger.warning("azure_schedule_zone_missing", zone=name)
+        return UTC
+
+
+def anchored_slot(
+    now: datetime, interval: int, zone: str | tzinfo, at: time
+) -> tuple[datetime, datetime]:
+    """(start, next) of the slot containing ``now`` when slots are aligned to
+    the local time ``at`` in ``zone`` (DST-aware): daily or longer intervals
+    run at ``at`` every ``interval // 1 day`` days, shorter ones every
+    ``interval`` from ``at`` (restarting at ``at`` each day). UTC results;
+    an unknown zone falls back to UTC."""
+    tz = _zone(zone)
+    now = now.astimezone(UTC)
+
+    def at_day(day: date) -> datetime:
+        return datetime.combine(day, at, tzinfo=tz).astimezone(UTC)
+
+    local_day = now.astimezone(tz).date()
+    if interval >= _DAY_SECONDS:
+        days = interval // _DAY_SECONDS
+        first = date.fromordinal(local_day.toordinal() - local_day.toordinal() % days)
+        if at_day(first) > now:
+            first -= timedelta(days=days)
+        return at_day(first), at_day(first + timedelta(days=days))
+    if at_day(local_day) > now:
+        local_day -= timedelta(days=1)
+    base, next_base = at_day(local_day), at_day(local_day + timedelta(days=1))
+    step = timedelta(seconds=max(1, interval))
+    start = base + step * ((now - base) // step)
+    return start, min(start + step, next_base)
+
+
+def source_slot(
+    source: AzureSource, settings: Settings, now: datetime
+) -> tuple[datetime, datetime]:
+    """(start, next) of the source's slot containing ``now``."""
+    interval = source.interval(settings)
+    if source.anchor is not None:
+        zone, at = source.anchor(settings)
+        return anchored_slot(now, interval, zone, at)
+    return slot_start(now, interval), next_slot(now, interval)
+
+
 def dedupe_key(source: AzureSource, slot: datetime) -> str:
     return f"{source.job_type}:{slot:%Y%m%dT%H%M%S}"
 
@@ -255,11 +313,12 @@ async def ensure_azure_scheduled(  # pylint: disable=too-many-locals
         interval = source.interval(settings)
         row = rows.get(source.name)
         last = row.last_run_at if row is not None else None
+        current, upcoming = source_slot(source, settings, now)
         if last is None or last + timedelta(seconds=interval) <= now:
             # Never run, or missed its slot (downtime): catch up now.
-            slot, run_after = slot_start(now, interval), now
+            slot, run_after = current, now
         else:
-            slot = next_slot(now, interval)
+            slot = upcoming
             run_after = slot
         await _enqueue_slot(source, slot, run_after, engine)
         planned[source.name] = run_after
@@ -357,7 +416,7 @@ async def _rearm(
     source: AzureSource, settings: Settings, factory: SessionFactory
 ) -> None:
     try:
-        slot = next_slot(utcnow(), source.interval(settings))
+        _, slot = source_slot(source, settings, utcnow())
         await _enqueue_slot(source, slot, slot, None)
         async with factory() as session:
             await sync_status.set_next_run(session, source.name, slot)
