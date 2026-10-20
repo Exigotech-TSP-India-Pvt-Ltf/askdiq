@@ -8,6 +8,8 @@ import { MicrosoftSignInButton } from "@/components/auth/MicrosoftSignInButton";
 import { useBrand } from "@/lib/brand-context";
 import { LOGIN_LOGO_SRC, type Brand } from "@/lib/brand";
 import { loginErrorMessage } from "@/lib/login-errors";
+import { useCodePreload } from "@/lib/login-preload";
+import { POST_LOGIN_CHUNKS } from "@/lib/post-login-chunks";
 import { fadeUp, pop, stagger, useMotionVariants, usePrefersReducedMotion } from "@/lib/motion";
 import { focusRing } from "@/components/ui/styles";
 
@@ -70,6 +72,8 @@ function LoginLogo({ alt, className }: { alt: string; className: string }) {
  * comes from the brand.
  */
 export function LoginView({ errorCode, next, contactEmail, year }: LoginViewProps) {
+  // While idle, load the post-login routes' code (never data) for an instant first screen.
+  useCodePreload(POST_LOGIN_CHUNKS);
   const brand = useBrand();
   const copy = loginCopy(brand);
   const reduced = usePrefersReducedMotion();

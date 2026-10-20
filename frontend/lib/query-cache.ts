@@ -85,12 +85,30 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-const getServerSnapshot = (): QueryState<never> => EMPTY_STATE;
+const HTTP_UNAUTHORIZED = 401;
+const HTTP_FORBIDDEN = 403;
+
+/** A 401 / 403: the server refuses this user the resource. */
+export function isAccessDenied(error: unknown): boolean {
+  const status = errorStatus(error);
+  return status === HTTP_UNAUTHORIZED || status === HTTP_FORBIDDEN;
+}
+
+const getServerSnapshot =(): QueryState<never> => EMPTY_STATE;
 
 export class QueryCache {
   private readonly entries = new Map<string, Entry>();
   private readonly changeListeners = new Set<(key: string) => void>();
   private focusListenerInstalled = false;
+  private gen = 0;
+
+  /**
+   * Bumped by `reset` / `clear`: hooks drop data they kept from before
+   * (`keepPreviousData`), so nothing cached under the old access renders.
+   */
+  get generation(): number {
+    return this.gen;
+  }
 
   private entry(key: string): Entry {
     let e = this.entries.get(key);
@@ -199,7 +217,13 @@ export class QueryCache {
             e.failures += 1;
             e.retryAt =
               Date.now() + Math.min(ERROR_BACKOFF_BASE_MS * 2 ** (e.failures - 1), ERROR_BACKOFF_MAX_MS);
-            this.setState(k, { error, isFetching: false });
+            // Refused (signed out, or access withdrawn): the cached data must
+            // not keep rendering, so drop it with the error.
+            const refused = isAccessDenied(error);
+            this.setState(
+              k,
+              refused ? { data: undefined, updatedAt: 0, error, isFetching: false } : { error, isFetching: false },
+            );
           }
         }
         throw error;
@@ -295,8 +319,32 @@ export class QueryCache {
 
   /** Drops every entry and aborts in-flight requests (tests, sign-out). */
   clear(): void {
+    this.gen += 1;
     this.entries.forEach((e) => e.controller?.abort());
     this.entries.clear();
+  }
+
+  /**
+   * Drops all data, errors and in-flight requests while keeping mounted
+   * subscribers attached (unlike `clear`), notifies them, then refetches the
+   * observed keys under the current access (a key now refused is evicted).
+   * Used when the signed-in user's role or permissions change.
+   */
+  reset(): void {
+    this.gen += 1;
+    this.entries.forEach((e, k) => {
+      const controller = e.controller;
+      e.controller = undefined;
+      e.promise = undefined;
+      controller?.abort();
+      e.failures = 0;
+      e.retryAt = 0;
+      this.setState(k, { data: undefined, error: undefined, updatedAt: 0, isFetching: false });
+    });
+    this.entries.forEach((e, k) => {
+      if (e.observers.size === 0 && e.listeners.size === 0) this.entries.delete(k);
+      else this.revalidate(k, e);
+    });
   }
 }
 
@@ -410,6 +458,11 @@ export function useApiQuery<T>(
 
   // Last data this hook rendered (any key), for `keepPreviousData`.
   const shown = useRef<T | undefined>(undefined);
+  const shownGeneration = useRef(cache.generation);
+  if (shownGeneration.current !== cache.generation) {
+    shown.current = undefined;
+    shownGeneration.current = cache.generation;
+  }
   if (state.data !== undefined) shown.current = state.data;
   const placeholder =
     keepPreviousData && active && state.data === undefined && !state.error ? shown.current : undefined;
