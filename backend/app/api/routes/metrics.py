@@ -30,6 +30,7 @@ from app.dashboard.range_params import (
 )
 from app.dashboard.snapshots import (
     Gather,
+    compute_and_store,
     get_snapshot,
     register,
     snapshot_as_of,
@@ -690,6 +691,16 @@ async def _live_eval_view(
     payload, with its ETag and ``as_of``."""
     payload = await get_snapshot(LIVE_EVAL_KIND, params, runner.gather)
     as_of = snapshot_as_of(LIVE_EVAL_KIND, params)
+    if eval_views.payload_may_be_behind(params, as_of):
+        newest = await eval_views.newest_evaluation(runner.gather)
+        if newest is not None and eval_views.is_after(newest, as_of):
+            snap = snapshot_key(LIVE_EVAL_KIND, params)
+            eval_views.rebuild_in_background(
+                snap,
+                lambda: compute_and_store(
+                    LIVE_EVAL_KIND, params, ScopedRunner().gather, snap
+                ),
+            )
     stamp = as_of.isoformat() if as_of is not None else None
     key = (snapshot_key(LIVE_EVAL_KIND, params), *view)
     body, etag = eval_views.view_cache.get(

@@ -17,12 +17,24 @@ matching ``If-None-Match`` is a 304 without any work.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import func, select
+
+from app.core.concurrency import single_flight
 from app.core.http_cache import weak_etag
+from app.core.logging_config import get_logger
+from app.dashboard.snapshots import Gather
+from app.dashboard.window import utcnow
+from app.models.db_models import EvaluationRecord
+
+logger = get_logger(__name__)
 
 CASE_LISTS = ("cases", "failed_cases")
 
@@ -91,7 +103,7 @@ def _matches(case: dict[str, Any], outcome: str, grounded: str, needle: str) -> 
     return True
 
 
-def cases_view(
+def cases_view(  # pylint: disable=too-many-arguments
     payload: dict[str, Any],
     *,
     outcome: str = "all",
@@ -162,3 +174,57 @@ class ViewCache:
 
 
 view_cache = ViewCache()
+
+
+# ---------------------------------------------------------------------------
+# Real time
+# ---------------------------------------------------------------------------
+# The console refetches the page's views as soon as new data is seen (``data``
+# scope, every DASHBOARD_WATCH_SECONDS). A view whose payload predates the
+# newest evaluation then recomputes it in the background at once (one build,
+# ~100 ms) instead of waiting for the refresher's next cycle; the recompute
+# announces itself, so the page refetches the new numbers. The newest
+# evaluation time is read at most once per EVAL_STAMP_TTL per process.
+
+EVAL_STAMP_TTL = 1.0
+_newest: dict[str, Any] = {"value": None, "checked": float("-inf")}
+_rebuilds: set[asyncio.Task[Any]] = set()
+
+
+def payload_may_be_behind(params: dict[str, Any], as_of: datetime | None) -> bool:
+    """A computed payload whose window reaches today."""
+    if as_of is None:
+        return False
+    last = params.get("to")
+    return not last or last >= utcnow().date().isoformat()
+
+
+async def newest_evaluation(gather: Gather) -> datetime | None:
+    now = time.monotonic()
+    if now - _newest["checked"] >= EVAL_STAMP_TTL:
+        _newest["checked"] = now
+        (value,) = await gather(
+            lambda db: db.scalar(select(func.max(EvaluationRecord.created_at)))
+        )
+        _newest["value"] = value
+    return _newest["value"]
+
+
+def is_after(created_at: datetime, as_of: datetime) -> bool:
+    """``created_at`` (naive UTC in the table) is later than ``as_of``."""
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    return created_at > as_of
+
+
+def rebuild_in_background(key: str, build: Callable[[], Awaitable[Any]]) -> None:
+    """One background rebuild per snapshot key at a time."""
+    task = asyncio.create_task(single_flight.run(f"snapshot-build:{key}", build))
+    _rebuilds.add(task)
+    task.add_done_callback(_rebuild_done)
+
+
+def _rebuild_done(task: asyncio.Task[Any]) -> None:
+    _rebuilds.discard(task)
+    if not task.cancelled() and task.exception() is not None:
+        logger.warning("live_eval_rebuild_failed", error=str(task.exception()))

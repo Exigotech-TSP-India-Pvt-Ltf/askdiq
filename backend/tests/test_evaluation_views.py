@@ -8,14 +8,16 @@ snapshot as ``GET /metrics/evaluation/live`` (parity).
 
 from __future__ import annotations
 
+import asyncio
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dashboard import evaluation_views as views
+from app.dashboard.window import utcnow
 from app.models.db_models import EvaluationRecord
 
 DAY = "2020-02-11"
@@ -227,3 +229,33 @@ async def test_views_answer_from_the_same_report(
         "/metrics/evaluation/live/cases", params={**rng, "outcome": "maybe"}
     )
     assert bad.status_code == 422
+
+
+def test_only_payloads_reaching_today_follow_new_evaluations() -> None:
+    as_of = datetime(2020, 2, 11, 9, 0, tzinfo=UTC)
+    assert views.payload_may_be_behind({"from": None, "to": None}, as_of)
+    today = utcnow().date().isoformat()
+    assert views.payload_may_be_behind({"from": DAY, "to": today}, as_of)
+    assert not views.payload_may_be_behind({"from": DAY, "to": DAY}, as_of)
+    assert not views.payload_may_be_behind({"to": None}, None)
+    # Table times are naive UTC.
+    assert views.is_after(datetime(2020, 2, 11, 9, 1), as_of)
+    assert not views.is_after(datetime(2020, 2, 11, 9, 0), as_of)
+
+
+@pytest.mark.asyncio
+async def test_rebuild_in_background_runs_once_per_key() -> None:
+    calls: list[int] = []
+    gate = asyncio.Event()
+
+    async def build() -> None:
+        calls.append(1)
+        await gate.wait()
+
+    views.rebuild_in_background("k-test", build)
+    views.rebuild_in_background("k-test", build)
+    await asyncio.sleep(0)
+    gate.set()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert calls == [1]
