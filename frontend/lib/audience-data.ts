@@ -12,10 +12,20 @@
  * - `useRowIntent`: hovering a table row warms its detail page / preview.
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { INTENT_DELAY_MS, prefetch, runWhenIdle, serializeKey, type Fetcher, type QueryKey } from "@/lib/query-cache";
+import {
+  INTENT_DELAY_MS,
+  prefetch,
+  prefetchBatch,
+  runWhenIdle,
+  serializeKey,
+  type BatchDetails,
+  type Fetcher,
+  type QueryKey,
+} from "@/lib/query-cache";
 import { RANGE_PRESETS, presetRange, rangeUtcDays } from "@/lib/range-context";
 import {
   getConversation,
+  getConversationsBatch,
   getConversationStats,
   getConversations,
   getVisitor,
@@ -353,3 +363,20 @@ export function prefetchConversation(token: string, id: string): void {
   const q = conversationQuery(token, id);
   void prefetch(q.key, q.fetch);
 }
+
+/** Cache key of a conversation's preview / detail (the batch writes under it). */
+export const conversationKey = (id: string): QueryKey => conversationQuery("", id).key;
+
+/** One request for the previews of the conversations on screen (row clicks open from cache). */
+export function conversationsBatch(token: string) {
+  return (ids: string[], signal: AbortSignal): Promise<BatchDetails<ConversationDetail>> =>
+    getConversationsBatch(token, ids, signal);
+}
+
+/** Warms the previews of `ids` in one request (fresh ones are skipped). */
+export function prefetchConversations(token: string, ids: readonly string[]): Promise<void> {
+  return prefetchBatch(ids, conversationKey, conversationsBatch(token));
+}
+
+/** Cache key of a visitor's profile (detail page header, KPIs and sessions). */
+export const visitorKey = (id: string): QueryKey => visitorQuery("", id).key;

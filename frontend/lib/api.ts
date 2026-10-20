@@ -372,6 +372,13 @@ export const api = {
   getQueryDetail: (token: string, requestId: string, signal?: AbortSignal) =>
     request<any>(`/admin/usage/queries/${requestId}`, { token, signal }),
 
+  /** `GET /admin/usage/queries/batch`: the inspector of a page of rows in one request. */
+  getQueryDetailsBatch: (token: string, requestIds: readonly string[], signal?: AbortSignal) =>
+    request<{ items: Record<string, any>; missing: string[] }>(
+      `/admin/usage/queries/batch?${requestIds.map((id) => `ids=${encodeURIComponent(id)}`).join("&")}`,
+      { token, signal },
+    ),
+
   getTestIps: (token: string) =>
     request<{
       default_ips: string[];

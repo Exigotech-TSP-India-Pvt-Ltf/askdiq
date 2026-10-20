@@ -22,7 +22,7 @@ import { useDeepLink } from "@/lib/use-deep-link";
 import { NO_IP_HINT } from "@/lib/audience-routes";
 import { turnsFilterLabel, useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
 import { useAuth } from "@/lib/auth-context";
-import { useApiQuery } from "@/lib/query-cache";
+import { useApiQuery, usePrefetchRows } from "@/lib/query-cache";
 import {
   OUTCOMES,
   OUTCOME_LABELS,
@@ -42,6 +42,8 @@ import {
   isOtherRange,
   nextSort,
   prefetchConversation,
+  conversationKey,
+  conversationsBatch,
   presetDayRanges,
   useIdlePrefetch,
   useRowIntent,
@@ -146,6 +148,13 @@ export function ConversationsPanel() {
     const row = items[index];
     if (token && row) prefetchConversation(token, row.id);
   });
+  // The previews of every row on screen, in one request once idle: a click
+  // opens from cache (refreshed after a live update refetches the list).
+  const rowIds = useMemo(
+    () => (list.data && !list.isPlaceholderData ? list.data.items.map((c) => c.id) : null),
+    [list.data, list.isPlaceholderData],
+  );
+  usePrefetchRows(token ? rowIds : null, conversationKey, { batch: conversationsBatch(token ?? "") }, { version: list.updatedAt });
   const statsData = stats.data ?? null;
   const statsAbsent = !stats.isLoading && !stats.error && statsData === null;
   const statsError = errorMessage(stats.error, "Couldn't load conversation stats.");
