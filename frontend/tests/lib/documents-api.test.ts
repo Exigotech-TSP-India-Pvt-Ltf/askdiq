@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_UPLOAD_BYTES,
+  changeReasonText,
   documentStatus,
   filterInventory,
   formatBytes,
@@ -100,5 +101,18 @@ describe("inventory helpers", () => {
     expect(shortHash(undefined)).toBeNull();
     expect(strategyLabel("structure_aware")).toBe("Structure aware");
     expect(strategyLabel(null)).toBe("—");
+  });
+
+  it("states why an existing document was re-chunked", () => {
+    expect(changeReasonText([])).toBe("Existing document changed");
+    expect(changeReasonText(undefined)).toBe("Existing document changed");
+    expect(changeReasonText(["chunking_changed"])).toBe(
+      "Re-chunked because chunker settings changed (same text, different chunks)",
+    );
+    const owner = changeReasonText(["source_format_changed", "hash_scheme_changed", "content_changed"]);
+    expect(owner).toContain("source format differs");
+    expect(owner).toContain("older pipeline");
+    expect(owner).toContain("text differs");
+    expect(changeReasonText(["new_reason"])).toBe("Re-chunked because new reason");
   });
 });
