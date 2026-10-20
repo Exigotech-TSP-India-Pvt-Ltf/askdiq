@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { prefetchQueryDetail, queryErrorMessage, useUsageList, usePrefetchNextUsagePage } from "@/lib/use-usage-data";
+import {
+  prefetchQueryDetail,
+  queryErrorMessage,
+  useUsageList,
+  usePrefetchNextUsagePage,
+  usePrefetchQueryDetails,
+  usePreloadQueryInspector,
+} from "@/lib/use-usage-data";
 import type { PageEnvelope, UsageQueryRow } from "@/lib/types";
 import { useTableState } from "@/lib/use-table-state";
 import { DataTable, type ColumnDef } from "../DataTable";
@@ -140,6 +147,13 @@ export function QueriesTab({
     };
   const query = useUsageList<PageEnvelope<UsageQueryRow>>("queries", token, listParams);
   usePrefetchNextUsagePage("queries", token, listParams, query.data?.total);
+  // Every visible row's inspector (one request) and the drawer's code, while idle.
+  usePrefetchQueryDetails(
+    token,
+    query.data && !query.isPlaceholderData ? query.data.items.map((r) => r.request_id) : null,
+    query.updatedAt,
+  );
+  usePreloadQueryInspector();
   const data = query.data ?? null;
   const isLoading = query.isLoading;
   const error = queryErrorMessage(query.error, "Failed to load queries analytics.");

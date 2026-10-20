@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { queryErrorMessage, useUsageList, usePrefetchNextUsagePage } from "@/lib/use-usage-data";
+import { useSearchParams } from "next/navigation";
+import {
+  drillDownParams,
+  prefetchUsageList,
+  queryErrorMessage,
+  useUsageList,
+  usePrefetchNextUsagePage,
+} from "@/lib/use-usage-data";
 import type { PageEnvelope, UsageSessionRow } from "@/lib/types";
 import { useTableState } from "@/lib/use-table-state";
 import { DataTable, type ColumnDef } from "../DataTable";
@@ -98,6 +105,14 @@ export function SessionsTab({
   usePrefetchNextUsagePage("sessions", token, listParams, query.data?.total);
   const data = query.data ?? null;
   const isLoading = query.isLoading;
+  // Hover / focus a row: warm the Queries tab of its session (what a click opens).
+  const url = useSearchParams();
+  const warmQueries = (r: UsageSessionRow) =>
+    prefetchUsageList(
+      "queries",
+      token,
+      drillDownParams("queries", url ?? new URLSearchParams(), audience, { session_id: r.id }, { from: fromDay, to: toDay }),
+    );
   const error = queryErrorMessage(query.error, "Failed to load session analytics.");
   const fetchData = query.refetch;
 
@@ -341,6 +356,7 @@ export function SessionsTab({
             onRetry={fetchData}
             currentSort={sort}
             onSortChange={setSort}
+            onRowIntent={warmQueries}
             onRowClick={(r) => onSelectSession?.(r.id)}
           />
         </TableCard>

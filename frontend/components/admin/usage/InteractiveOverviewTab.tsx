@@ -1,8 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { overviewFeedParams, queryErrorMessage, useUsageList } from "@/lib/use-usage-data";
+import {
+  overviewFeedParams,
+  prefetchQueryDetail,
+  queryErrorMessage,
+  useUsageList,
+  usePrefetchQueryDetails,
+  usePreloadQueryInspector,
+} from "@/lib/use-usage-data";
 import type { UsageSummary, UsageQueryRow, Audience, PageEnvelope } from "@/lib/types";
+import { useRowIntentHandlers } from "@/lib/query-cache";
 import dynamic from "next/dynamic";
 import {
   DollarSign,
@@ -107,6 +115,14 @@ export function InteractiveOverviewTab({
     overviewFeedParams(audience as Audience, { from: fromDay, to: toDay }, selectedOutcome),
   );
   const realQueries = feed.data?.items ?? [];
+  // The feed's inspectors (one request) and the drawer's code, while idle.
+  usePrefetchQueryDetails(
+    token,
+    feed.data && !feed.isPlaceholderData ? realQueries.map((q) => q.request_id) : null,
+    feed.updatedAt,
+  );
+  usePreloadQueryInspector();
+  const feedRowIntent = useRowIntentHandlers((q: UsageQueryRow) => prefetchQueryDetail(token, q.request_id));
   const loadingQueries = feed.isLoading;
   const queriesError = queryErrorMessage(feed.error, "Failed to load real chatbot query feed.");
 
@@ -941,6 +957,7 @@ export function InteractiveOverviewTab({
                     key={q.request_id}
                     className="hover:bg-teal-50/40 dark:hover:bg-white/[0.04] transition cursor-pointer"
                     onClick={() => setInspectRequestId(q.request_id)}
+                    {...feedRowIntent(q)}
                   >
                     {/* Prompt & Answer */}
                     <td className="px-4 py-3 max-w-sm sm:max-w-md">

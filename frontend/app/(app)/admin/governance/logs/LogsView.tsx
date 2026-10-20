@@ -5,7 +5,7 @@ import { Clock, Download, RefreshCw, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useCan } from "@/lib/use-can";
 import { useAudience } from "@/lib/audience-context";
-import { useApiQuery } from "@/lib/query-cache";
+import { useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { useRange } from "@/lib/range-context";
 import { useCursorStack } from "@/lib/use-cursor-stack";
@@ -154,12 +154,17 @@ export default function LogsView() {
   const filterKey = governanceKeys.logsFilter({ audience, levels: filters.level, service, q, from, to, pageSize });
   const pager = useCursorStack(filterKey);
 
-  const query = useApiQuery<GovernanceLogPage>(
-    governanceKeys.logs(filterKey, pager.cursor),
-    (signal) => governanceApi.logs(token, { ...filters, audience, limit: pageSize, cursor: pager.cursor }, signal),
-    { enabled: Boolean(token) },
-  );
+  const fetchPage = (cursor: string | null | undefined) => (signal: AbortSignal) =>
+    governanceApi.logs(token, { ...filters, audience, limit: pageSize, cursor }, signal);
+  // Paging and filter changes keep the current rows until the new ones arrive.
+  const query = useApiQuery<GovernanceLogPage>(governanceKeys.logs(filterKey, pager.cursor), fetchPage(pager.cursor), {
+    enabled: Boolean(token),
+    keepPreviousData: true,
+  });
   const page = query.data;
+  // While idle, the next page ("Older" renders from cache).
+  const nextCursor = page && !query.isPlaceholderData && page.has_more ? page.next_cursor : null;
+  usePrefetchNextPage(token && nextCursor ? governanceKeys.logs(filterKey, nextCursor) : null, fetchPage(nextCursor));
   const items = page?.items ?? [];
   const { refetch } = query;
   // G13: auto-refresh only re-reads the newest page, and pauses while hidden.

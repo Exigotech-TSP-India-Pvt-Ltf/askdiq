@@ -33,6 +33,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.api.batch import BATCH_RESPONSES, BatchDetails, batch_ids, batch_response
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
@@ -1057,6 +1058,28 @@ def _round_or_none(value: Any) -> float | None:
     return None if value is None else round(float(value), 1)
 
 
+@router.get(
+    "/queries/batch",
+    summary="Query inspector details of several turns",
+    responses=BATCH_RESPONSES,
+)
+async def get_query_details_batch(
+    request: Request,
+    ids: list[str] = Depends(batch_ids),
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
+) -> Response:
+    """`items[request_id]` is exactly `GET /admin/usage/queries/{request_id}`
+    for each known request id (one query); unknown ids are in `missing`. The
+    query lists warm the inspector of their visible rows with this request."""
+    found = await _query_details(db, ids)
+    details = BatchDetails(
+        items={i: found[i] for i in ids if i in found},
+        missing=[i for i in ids if i not in found],
+    )
+    return batch_response(request, details)
+
+
 @router.get("/queries/{request_id}")
 async def get_query_detail(
     request_id: str,
@@ -1064,10 +1087,20 @@ async def get_query_detail(
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Single-turn inspector detail exposing rates and cached prompt details (Task 3.5.3)."""
+    detail = (await _query_details(db, [request_id])).get(request_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Query record not found.")
+    return detail
+
+
+async def _query_details(
+    db: AsyncSession, request_ids: list[str]
+) -> dict[str, dict[str, Any]]:
+    """Inspector detail per known request id (one query for all of them)."""
     user_msg = aliased(ChatMessageRecord, name="user_turn")
     asst_msg = aliased(ChatMessageRecord, name="asst_turn")
 
-    row = (
+    rows = (
         await db.execute(
             select(
                 asst_msg,
@@ -1091,13 +1124,18 @@ async def get_query_detail(
             )
             .join(ChatSession, asst_msg.session_id == ChatSession.id)
             .outerjoin(LatencyRecord, asst_msg.request_id == LatencyRecord.request_id)
-            .where(asst_msg.request_id == request_id)
+            .where(asst_msg.request_id.in_(request_ids))
         )
-    ).first()
+    ).all()
+    details: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        payload = _query_detail_payload(row)
+        details.setdefault(payload["request_id"], payload)
+    return details
 
-    if not row:
-        raise HTTPException(status_code=404, detail="Query record not found.")
 
+def _query_detail_payload(row: Any) -> dict[str, Any]:
+    """The inspector JSON of one (assistant turn, query, latency) row."""
     (
         asst,
         query_text,

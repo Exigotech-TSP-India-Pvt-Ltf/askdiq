@@ -19,7 +19,15 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { dangerButton, focusRing, primaryButton, secondaryButton } from "@/components/ui/styles";
 import { fadeUp, useMotionVariants } from "@/lib/motion";
-import { useApiQuery, useApiMutation, errorStatus, HTTP_CONFLICT } from "@/lib/query-cache";
+import {
+  useApiQuery,
+  useApiMutation,
+  errorStatus,
+  HTTP_CONFLICT,
+  prefetch,
+  runWhenIdle,
+  usePrefetchNextPage,
+} from "@/lib/query-cache";
 import type { PageSize } from "@/lib/use-table-state";
 import type { DeepLinkUpdate } from "@/lib/use-deep-link";
 import {
@@ -100,8 +108,27 @@ export function AccessRequestsTab({ view, update }: AccessRequestsTabProps) {
 
   const offset = (page - 1) * pageSize;
   const key = umKeys.requests(view, pageSize, offset);
-  const query = useApiQuery(key, (signal) => userManagementApi.listRequests(view, pageSize, offset, signal));
+  // A view or page switch keeps the current rows until the new ones arrive.
+  const query = useApiQuery(key, (signal) => userManagementApi.listRequests(view, pageSize, offset, signal), {
+    keepPreviousData: true,
+  });
   const total = query.data?.total ?? 0;
+  // While idle: the next page, then the first page of every other view.
+  const hasNext = query.data !== undefined && !query.isPlaceholderData && offset + pageSize < total;
+  usePrefetchNextPage(hasNext ? umKeys.requests(view, pageSize, offset + pageSize) : null, (signal) =>
+    userManagementApi.listRequests(view, pageSize, offset + pageSize, signal),
+  );
+  useEffect(
+    () =>
+      runWhenIdle(() => {
+        for (const other of VIEWS.filter((v) => v.id !== view)) {
+          void prefetch(umKeys.requests(other.id, pageSize, 0), (signal) =>
+            userManagementApi.listRequests(other.id, pageSize, 0, signal),
+          );
+        }
+      }),
+    [view, pageSize],
+  );
 
   return (
     <div data-tour="user-management-requests-table">

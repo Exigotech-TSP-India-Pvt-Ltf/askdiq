@@ -4,6 +4,7 @@ import React from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, AlertCircle, Inbox } from "lucide-react";
 import { m } from "motion/react";
 import { fadeUp, useMotionVariants } from "@/lib/motion";
+import { useRowIntentHandlers } from "@/lib/query-cache";
 import type { TableDensity } from "@/lib/use-table-preferences";
 import { secondaryButton, studioSurface, tableBody, tableHead, tableRow } from "@/components/ui/styles";
 
@@ -35,7 +36,7 @@ export interface DataTableProps<T> {
   currentSort?: string;
   onSortChange?: (sortKey: string) => void;
   onRowClick?: (row: T) => void;
-  /** Hover / focus on a row (warm what a click on it opens). */
+  /** Hover / focus (120 ms dwell) on a row: warm what a click on it opens. */
   onRowIntent?: (row: T) => void;
   nested?: boolean;
   /** Row density from `useTablePreferences` / the TableToolbar toggle. */
@@ -73,6 +74,8 @@ export function DataTable<T extends Record<string, any>>({
   className = "",
 }: DataTableProps<T>) {
   const rowVariants = useMotionVariants(fadeUp);
+  // Hover / focus a row for 120 ms: warm what a click on it opens.
+  const intentHandlers = useRowIntentHandlers(onRowIntent);
   const Row = animateRows ? m.tr : "tr";
   const rowMotion = animateRows ? { variants: rowVariants, initial: "hidden", animate: "visible" } : {};
   const getRowKey = (row: T, idx: number): string => {
@@ -232,7 +235,16 @@ export function DataTable<T extends Record<string, any>>({
                     {...rowMotion}
                     data-testid={rowTestId}
                     onClick={() => isClickable && onRowClick?.(row)}
-                    onMouseEnter={onRowIntent ? () => onRowIntent(row) : undefined}
+                    // Keyboard: a clickable row is focusable (focus warms it) and Enter opens it.
+                    tabIndex={isClickable ? 0 : undefined}
+                    onKeyDown={
+                      isClickable
+                        ? (e: React.KeyboardEvent) => {
+                            if (e.key === "Enter" && e.target === e.currentTarget) onRowClick?.(row);
+                          }
+                        : undefined
+                    }
+                    {...intentHandlers(row)}
                     className={`${tableRow} ${isClickable ? "cursor-pointer" : ""}`}
                   >
                     {columns.map((col) => {

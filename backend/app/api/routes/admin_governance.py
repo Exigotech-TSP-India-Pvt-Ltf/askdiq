@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -20,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Res
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.batch import BATCH_RESPONSES, batch_ids, batch_response, collect
 from app.auth.audit import AUTH_AUDIT_ACTIONS
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
@@ -63,6 +65,7 @@ DEFAULT_PAGE = 50
 MAX_Q = 200
 LEGACY_TRACES_MAX = 500
 REQUEST_ID_PATTERN = r"^[A-Za-z0-9._:\-]{1,64}$"
+_REQUEST_ID_RE = re.compile(REQUEST_ID_PATTERN)
 CURSOR_DOC = "Opaque cursor from the previous page's `next_cursor`."
 
 _ERRORS: dict[int | str, dict[str, Any]] = {
@@ -359,6 +362,34 @@ async def _governance_traces_page(
         "next_cursor": next_cursor.encode() if next_cursor else None,
         "has_more": next_cursor is not None,
     }
+
+
+@router.get(
+    "/governance/traces/batch",
+    summary="Trace details of several requests",
+    description=(
+        "`items[request_id]` is exactly `GET /admin/governance/traces/{request_id}` "
+        "for each id inside the requested audience; unknown ids and ids outside "
+        "the audience are listed in `missing` (object-level scope). The Traces "
+        "table warms the drawer of its visible rows with this one request."
+    ),
+    responses=BATCH_RESPONSES,
+)
+async def governance_traces_batch(
+    request: Request,
+    ids: list[str] = Depends(batch_ids),
+    audience: Audience = Depends(audience_scope),
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(read_guard),
+) -> Response:
+    valid = [i for i in ids if _REQUEST_ID_RE.fullmatch(i)]
+
+    async def load(request_id: str) -> dict[str, Any] | None:
+        if request_id not in valid:
+            return None
+        return await traces.fetch_detail(db, request_id, audience)
+
+    return batch_response(request, await collect(ids, load))
 
 
 @router.get(

@@ -12,7 +12,7 @@ import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { focusRing, primaryButton } from "@/components/ui/styles";
-import { prefetch, useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
+import { prefetch, useApiQuery, usePrefetchNextPage, usePrefetchRows } from "@/lib/query-cache";
 import type { PageSize } from "@/lib/use-table-state";
 import {
   ROLES,
@@ -56,7 +56,8 @@ export function UsersTab({ url, update, meId, activeSuperadmins }: UsersTabProps
     offset: (url.page - 1) * pageSize,
   };
   const listKey = umKeys.users(params);
-  const query = useApiQuery(listKey, (signal) => userManagementApi.listUsers(params, signal));
+  // Paging, sorting and filtering keep the current rows until the new ones arrive.
+  const query = useApiQuery(listKey, (signal) => userManagementApi.listUsers(params, signal), { keepPreviousData: true });
   const items = useMemo(() => query.data?.items ?? [], [query.data]);
   const total = query.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -72,6 +73,13 @@ export function UsersTab({ url, update, meId, activeSuperadmins }: UsersTabProps
   // Hover / focus warms the drawer (detail, sessions and recent auth events).
   const warmUser = (u: UserAccount) =>
     void prefetch(umKeys.user(u.id), (signal) => userManagementApi.getUser(u.id, signal));
+  // While idle, the drawer of every row on screen (two requests at a time).
+  usePrefetchRows(
+    query.isPlaceholderData ? null : items.map((u) => u.id),
+    umKeys.user,
+    { one: (id) => (signal) => userManagementApi.getUser(id, signal) },
+    { version: query.updatedAt },
+  );
 
   const columns: ColumnDef<UserAccount>[] = [
     {

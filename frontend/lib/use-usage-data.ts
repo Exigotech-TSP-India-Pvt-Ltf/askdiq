@@ -1,6 +1,7 @@
+import { useEffect } from "react";
 import type { Audience, UsageSummary } from "@/lib/types";
 import { api } from "@/lib/api";
-import { prefetch, runWhenIdle, useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
+import { prefetch, runWhenIdle, useApiQuery, usePrefetchNextPage, usePrefetchRows } from "@/lib/query-cache";
 import { RANGE_PRESETS, presetRange, rangeUtcDays } from "@/lib/range-context";
 
 /** Matches the backend's USAGE_SUMMARY_CACHE_TTL_SECONDS (15 s). */
@@ -174,6 +175,47 @@ export function queryErrorMessage(error: unknown, fallback: string): string | nu
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+/** Default sort of the tab a row click drills into (mirrors the tabs' `useTableState`). */
+const DRILL_DEFAULT_SORT: Record<"sessions" | "queries", string> = {
+  sessions: "cost_desc",
+  queries: "created_at_desc",
+};
+const DRILL_DEFAULT_LIMIT = 10;
+
+/**
+ * The params the `kind` tab reads first after a row click drills into it
+ * (Users -> Sessions of an IP, Sessions -> Queries of a session): its own
+ * page size, sort, search and page from the URL (`<kind>_limit` ...) plus
+ * the drill-down filter and the global range.
+ */
+export function drillDownParams(
+  kind: "sessions" | "queries",
+  url: Pick<URLSearchParams, "get">,
+  audience: Audience,
+  filter: { ip?: string; session_id?: string },
+  days: UsageDays,
+): UsageListParams {
+  const limit = Number(url.get(`${kind}_limit`)) || DRILL_DEFAULT_LIMIT;
+  const page = Math.max(1, Number(url.get(`${kind}_page`)) || 1);
+  return {
+    audience,
+    q: url.get(`${kind}_q`) || undefined,
+    ...(kind === "queries" ? { session_id: filter.session_id || undefined } : {}),
+    ip: kind === "queries" ? url.get("ip") || undefined : filter.ip || undefined,
+    from_date: days.from || undefined,
+    to_date: days.to || undefined,
+    sort: url.get(`${kind}_sort`) || DRILL_DEFAULT_SORT[kind],
+    limit,
+    offset: (page - 1) * limit,
+  };
+}
+
+/** Warms the list a row click drills into (row hover / focus). */
+export function prefetchUsageList(kind: UsageListKind, token: string | null, params: UsageListParams): void {
+  if (!token) return;
+  void prefetch(usageListKey(kind, params), (signal) => fetchUsageList(kind, token, params, signal), USAGE_SUMMARY_STALE_MS);
+}
+
 /** A finished turn does not change; the inspector revalidates rarely. */
 export const QUERY_DETAIL_STALE_MS = 5 * 60_000;
 
@@ -183,6 +225,28 @@ export const queryDetailKey = (requestId: string) => ["admin/usage/query", reque
 export function prefetchQueryDetail(token: string | null, requestId: string): void {
   if (!token || !requestId) return;
   void prefetch(queryDetailKey(requestId), (signal) => api.getQueryDetail(token, requestId, signal), QUERY_DETAIL_STALE_MS);
+}
+
+/**
+ * Warms the inspector of every query row on screen with ONE request once the
+ * browser is idle (a row click opens the drawer from cache). `version` = the
+ * list's `updatedAt`: a live update refreshes the details it marked stale.
+ */
+export function usePrefetchQueryDetails(token: string | null, requestIds: readonly string[] | null, version = 0): void {
+  usePrefetchRows(
+    token ? requestIds : null,
+    queryDetailKey,
+    { batch: (ids, signal) => api.getQueryDetailsBatch(token ?? "", ids, signal) },
+    { staleTime: QUERY_DETAIL_STALE_MS, version },
+  );
+}
+
+/** Loads the inspector drawer's code (it is split out of the list pages). */
+export const loadQueryInspector = () => import("@/components/admin/usage/QueryInspectorDrawer");
+
+/** Fetches the drawer's code once the browser is idle: the first open never waits on it. */
+export function usePreloadQueryInspector(): void {
+  useEffect(() => runWhenIdle(() => void loadQueryInspector().catch(() => undefined)), []);
 }
 
 /**

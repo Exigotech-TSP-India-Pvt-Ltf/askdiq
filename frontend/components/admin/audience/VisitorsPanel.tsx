@@ -25,7 +25,7 @@ import { conversationsHref, heatFilterLabel, useCarryHref, visitorDetailHref } f
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useCan } from "@/lib/use-can";
-import { invalidate, useApiMutation, useApiQuery } from "@/lib/query-cache";
+import { invalidate, useApiMutation, useApiQuery, usePrefetchRows } from "@/lib/query-cache";
 import type { PageEnvelope } from "@/lib/types";
 import { HOURS_PER_DAY, VISITOR_SORTS, WEEKDAYS, intParam, type VisitorRow } from "@/lib/entity-stats-api";
 import {
@@ -36,6 +36,8 @@ import {
   isOtherRange,
   nextSort,
   prefetchVisitor,
+  visitorKey,
+  visitorQuery,
   presetDayRanges,
   useIdlePrefetch,
   useRowIntent,
@@ -186,6 +188,14 @@ export function VisitorsPanel() {
     const row = items[index];
     if (token && row) prefetchVisitor(token, row.id, range);
   });
+  // While idle, the profile of every row on screen (two at a time; the
+  // larger timeline waits for hover): a click opens the page with its header,
+  // KPIs and sessions at once.
+  const rowIds = useMemo(
+    () => (list.data && !list.isPlaceholderData ? list.data.items.map((v) => v.id) : null),
+    [list.data, list.isPlaceholderData],
+  );
+  usePrefetchRows(token ? rowIds : null, visitorKey, { one: (id) => visitorQuery(token ?? "", id).fetch }, { version: list.updatedAt });
   const statsData = stats.data ?? null;
   const statsAbsent = !stats.isLoading && !stats.error && statsData === null;
   const statsError = errorMessage(stats.error, "Couldn't load visitor stats.");

@@ -12,6 +12,7 @@
  */
 import type { ActiveVisitors } from "./active-visitors";
 import { ApiError } from "./api";
+import type { BatchDetails } from "./query-cache";
 import type { Audience, PageEnvelope } from "./types";
 
 const API_BASE_URL = "/api/proxy";
@@ -609,6 +610,19 @@ export function getConversationStats(
 
 export function getConversation(token: string, id: string, turn: number | null, signal?: AbortSignal) {
   return json<ConversationDetail>(`/admin/conversations/${seg(id)}${query({ turn })}`, { token, signal });
+}
+
+/** `?ids=a&ids=b` of the batch routes. */
+export function idsQuery(ids: readonly string[], params: Record<string, string | undefined> = {}): string {
+  const qs = new URLSearchParams();
+  ids.forEach((id) => qs.append("ids", id));
+  for (const [key, value] of Object.entries(params)) if (value) qs.set(key, value);
+  return `?${qs.toString()}`;
+}
+
+/** `GET /admin/conversations/batch`: the previews of a page of rows in one request. */
+export function getConversationsBatch(token: string, ids: readonly string[], signal?: AbortSignal) {
+  return json<BatchDetails<ConversationDetail>>(`/admin/conversations/batch${idsQuery(ids)}`, { token, signal });
 }
 
 /** Existing endpoint: `POST /admin/feedback/{assistant_message_id}/promote-to-test` (feedback:triage). */

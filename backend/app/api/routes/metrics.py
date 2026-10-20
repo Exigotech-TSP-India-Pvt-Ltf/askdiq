@@ -4,13 +4,14 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.api.batch import BATCH_RESPONSES, batch_ids, batch_response, collect
 from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
@@ -763,6 +764,43 @@ async def live_evaluation_cases(
     )
 
 
+@router.get(
+    "/metrics/evaluation/live/cases/batch",
+    summary="Full cases of the live evaluation report",
+    responses=BATCH_RESPONSES,
+)
+async def live_evaluation_cases_batch(
+    request: Request,
+    ids: list[str] = Depends(batch_ids),
+    audience: str = Query("users"),
+    days: DayRange | None = Depends(optional_day_range),
+    user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
+    runner: ScopedRunner = Depends(get_scoped_runner),
+) -> Response:
+    """`items[case_id]` is exactly `GET /metrics/evaluation/live/cases/{case_id}`
+    for each case of the report; ids the report lacks are in `missing`. The
+    case explorer warms the drawer of its visible rows with this request."""
+    params = {"audience": audience, **day_params(days)}
+    payload = await get_snapshot(LIVE_EVAL_KIND, params, runner.gather)
+
+    async def load(case_id: str) -> Any:
+        return await _full_case(runner, payload, case_id)
+
+    return batch_response(request, await collect(ids, load))
+
+
+async def _full_case(runner: ScopedRunner, payload: Any, case_id: str) -> Any:
+    """One case of the report, with its record detail when it has no chunks."""
+    case = eval_views.find_case(payload, case_id)
+    if case is None:
+        return None
+    if not case.get("retrieved_chunks") and _is_uuid(case_id):
+        (detail,) = await runner.gather(lambda db: _record_detail(db, case_id))
+        if detail is not None:
+            return detail
+    return case
+
+
 @router.get("/metrics/evaluation/live/cases/{case_id}")
 async def live_evaluation_case(
     case_id: str,
@@ -778,13 +816,9 @@ async def live_evaluation_case(
     for it before. 404 when the report lacks the case."""
     params = {"audience": audience, **day_params(days)}
     payload = await get_snapshot(LIVE_EVAL_KIND, params, runner.gather)
-    case = eval_views.find_case(payload, case_id)
+    case = await _full_case(runner, payload, case_id)
     if case is None:
         raise HTTPException(status_code=404, detail="Evaluation case not found")
-    if not case.get("retrieved_chunks") and _is_uuid(case_id):
-        (detail,) = await runner.gather(lambda db: _record_detail(db, case_id))
-        if detail is not None:
-            return cached_response(request, detail, max_age=0)
     return cached_response(request, case, max_age=0)
 
 
