@@ -32,6 +32,7 @@ import {
   fetchEvaluationLive,
   fetchEvaluationSummary,
 } from "@/lib/evaluation-live";
+import { azureCostsKeys, fetchAzureCosts } from "@/lib/azure-costs-api";
 import { feedbackKeys, getFeedbackAnalytics } from "@/lib/feedback-api";
 import { governanceApi } from "@/lib/governance-api";
 import { prefetch, runWhenIdle } from "@/lib/query-cache";
@@ -117,6 +118,8 @@ const PREFETCHERS: Record<string, Prefetcher> = {
       limit: LIVE_FEED_LIMIT,
     };
     warm(usageListKey("queries", feed), (signal) => fetchUsageList("queries", token, feed, signal));
+    // Overview "Billed vs estimated" (Azure Insights snapshot; never calls Azure).
+    warm(azureCostsKeys.costs(days), (signal) => fetchAzureCosts(token, days, signal));
     // First page of each tab (All Users / All Sessions / All Queries defaults).
     for (const [kind, sort] of USAGE_TAB_DEFAULTS) {
       const page = { audience, from_date: days.from, to_date: days.to, sort, limit: USAGE_PAGE_SIZE, offset: 0 };
