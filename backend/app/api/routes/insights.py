@@ -33,6 +33,11 @@ from app.core.http_cache import cached_response
 from app.core.request_meta import get_client_ip
 from app.dashboard.snapshots import Gather, register, snapshot_response
 from app.insights.analytics_service import InsightsAnalyticsService, ParallelRunner
+from app.insights.bundle_service import (
+    BundleRequest,
+    InsightsBundleService,
+    normalise_parts,
+)
 from app.insights.taxonomy import TaxonomyKind
 from app.insights.taxonomy_service import AuditContext, TaxonomyError, TaxonomyService
 from app.schemas.insights import (
@@ -43,12 +48,14 @@ from app.schemas.insights import (
     MAX_SEARCH_CHARS,
     PERSON_PATTERN,
     Audience,
+    BundlePart,
     ConversationDetail,
     ConversationList,
     ConversationOutcome,
     ConversationPage,
     ConversationSort,
     ExperienceRating,
+    InsightsBundle,
     InsightsDropoff,
     InsightsFilters,
     InsightsFlow,
@@ -176,9 +183,48 @@ def get_service(
     return InsightsAnalyticsService(db, runner)
 
 
+def get_bundle_service(
+    db: AsyncSession = Depends(read_only_session),
+    runner: ParallelRunner = Depends(get_parallel_runner),
+) -> InsightsBundleService:
+    return InsightsBundleService(db, runner)
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/bundle",
+    response_model=InsightsBundle,
+    summary="Every Analytics widget in one response",
+    responses={
+        **READ_ERRORS,
+        304: {"description": "Not modified (``If-None-Match``)."},
+    },
+)
+async def get_bundle(
+    request: Request,
+    user: AuthUser = Depends(read_guard),
+    filters: InsightsFilters = Depends(insights_filters),
+    sort: ConversationSort = Query(ConversationSort.START),
+    direction: SortDirection = Query(SortDirection.DESC, alias="dir"),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0, le=MAX_OFFSET),
+    parts: list[BundlePart] | None = Query(
+        None, description="Widgets to return (default: all); others are null."
+    ),
+    service: InsightsBundleService = Depends(get_bundle_service),
+) -> Response:
+    """KPIs, trend, hours, flow, topics, quality, drop-off, people, the
+    conversations page (``sort``/``dir``/``limit``/``offset``) and the
+    classification backlog for one filter set, each equal to its own
+    endpoint. Answered from in-memory facts kept current with the data (a
+    change shows within seconds); ``ETag`` / 304 and ``X-Data-As-Of``."""
+    page = ConversationPage(sort=sort, direction=direction, limit=limit, offset=offset)
+    req = BundleRequest(filters, page, normalise_parts(parts))
+    return await service.bundle(request, req)
 
 
 @router.get(
@@ -309,18 +355,19 @@ async def get_people(
     },
 )
 async def get_person(
+    request: Request,
     person_id: str = Path(pattern=PERSON_PATTERN, description="person_id."),
     user: AuthUser = Depends(read_guard),
     filters: InsightsFilters = Depends(insights_filters),
-    service: InsightsAnalyticsService = Depends(get_service),
-) -> PersonDetail:
+    service: InsightsBundleService = Depends(get_bundle_service),
+) -> Response:
     """How the person is grouped (account e-mail, network or session; the
     value itself is never returned) and the Visitors-page ids of the IPs
     their sessions came from. Only the ``audience`` and ``tz`` filters apply."""
-    detail = await service.person(person_id, filters)
-    if detail is None:
+    response = await service.person(request, person_id, filters)
+    if response is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person not found.")
-    return detail
+    return response
 
 
 @router.get(
