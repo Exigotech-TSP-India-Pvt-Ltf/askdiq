@@ -19,6 +19,7 @@ from sqlalchemy import select
 from app.core import sessions
 from app.dashboard import active_visitors
 from app.governance.audience import invalidate_audience_cache
+from app.governance.live_cache import clear_live_caches
 from app.ingestion.service import ingest_text
 from app.models.db_models import (
     AuditLog,
@@ -198,6 +199,7 @@ async def test_governance_active_users_counts_session_ips(client, db_session) ->
     before = await active()
     tag = uuid.uuid4().hex
     await _user_turn(db_session, f"2001:db8::{tag[:4]}:{tag[4:8]}:{tag[8:12]}")
+    clear_live_caches()  # the memory copy follows within one stream interval
     assert await active() == before + 1
 
 

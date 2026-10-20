@@ -23,8 +23,6 @@ from app.models.db_models import (
 )
 from tests import usage_legacy as legacy
 
-pytestmark = pytest.mark.anyio
-
 _PAIRS_SQL = text(
     """
     SELECT a.id, u.id, u.created_at, u.ip_address, s.created_ip, a.request_id,
@@ -59,9 +57,21 @@ def _tag() -> str:
     return uuid.uuid4().hex[:8]
 
 
+async def _isolate(db: AsyncSession) -> None:
+    """Hide rows other tests committed (the suite shares one database): the
+    comparisons below cover whole tables, so they see only this test's rows.
+    Runs inside the test transaction, so the rows return on rollback."""
+    await db.execute(text("SET LOCAL lock_timeout = '10s'"))
+    await db.execute(delete(LatencyRecord))
+    await db.execute(delete(ChatMessageRecord))
+    await db.execute(delete(ChatSession))
+
+
 async def _seed(db: AsyncSession, tag: str) -> list[ChatSession]:
     """Three sessions on two IPs (one turn without an IP), costs and
-    latencies distinct, turns one hour apart over the last few days."""
+    latencies distinct, turns one hour apart over the last few days.
+    Only these rows exist for the test (:func:`_isolate`)."""
+    await _isolate(db)
     base = datetime.utcnow() - timedelta(days=3)
     sessions = []
     n = 0

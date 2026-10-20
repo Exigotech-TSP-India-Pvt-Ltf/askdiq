@@ -213,6 +213,16 @@ async def test_overview_monitoring_and_export(client, db_session, seeded):
     assert all(json.loads(row[-1])["path"] == "/query" for row in rows[1:])
 
 
+async def _next_event(gen, kind: str):
+    """The subscriber's next ``kind`` event; the resource gauges producer
+    runs alongside and may push ``resources`` events first."""
+    async with asyncio.timeout(10):
+        while True:
+            event = await anext(gen)
+            if event.event == kind:
+                return event
+
+
 async def test_stream_delivers_new_incident_to_every_subscriber(db_session, seeded):
     bus = EventBus(dsn="postgresql://unused")
     runner = shared_session_runner(db_session)
@@ -223,8 +233,8 @@ async def test_stream_delivers_new_incident_to_every_subscriber(db_session, seed
     )
     gens = [hub.subscribe("overview") for _ in range(5)]
     try:
-        first = [await asyncio.wait_for(anext(g), 10) for g in gens]
-        assert all(e.event == "snapshot" for e in first)
+        for gen in gens:
+            assert (await _next_event(gen, "snapshot")).event == "snapshot"
         ticks = hub.ticks["overview"]
 
         incident = AuditLog(
@@ -239,16 +249,14 @@ async def test_stream_delivers_new_incident_to_every_subscriber(db_session, seed
         bus.dispatch(Event(TOPIC_GOVERNANCE_INCIDENT, str(incident.id), "replica-2"))
 
         for gen in gens:
-            async with asyncio.timeout(10):
-                while True:
-                    event = await anext(gen)
-                    if event.event == "incident":
-                        break
+            event = await _next_event(gen, "incident")
             assert event.id == str(incident.id)
             assert event.data["level"] == "CRITICAL"
         # One snapshot for five subscribers.
         assert hub.ticks["overview"] == ticks + 1
     finally:
+        # Stop (and await) the producers first: one may be mid-query on the
+        # test's shared connection, which the fixture teardown then rolls back.
+        await hub.aclose()
         for gen in gens:
             await gen.aclose()
-        await hub.aclose()
