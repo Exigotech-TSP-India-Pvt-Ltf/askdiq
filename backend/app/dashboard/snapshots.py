@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from fastapi import Request, Response
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select, text
@@ -42,6 +43,13 @@ from app.core import database
 from app.core.cache import dashboard_cache
 from app.core.concurrency import ScopedRunner, single_flight
 from app.core.config import get_settings
+from app.core.events import (
+    TOPIC_CONSOLE_CHANGED,
+    TOPIC_SNAPSHOT_UPDATED,
+    Event,
+    publish_event,
+)
+from app.core.http_cache import encoded_response, weak_etag
 from app.core.logging_config import get_logger
 from app.models.db_models import DashboardSnapshot
 
@@ -78,6 +86,19 @@ _DATA_STAMP_SQL = text(
         (SELECT count(*) FROM test_ip_configs))
     """
 )
+# Alerts raised, re-seen, acknowledged or resolved (the notification bell).
+_ALERTS_STAMP_SQL = text(
+    """
+    SELECT concat_ws('|', count(*), max(last_seen_at), max(acknowledged_at),
+                     max(resolved_at))
+    FROM alerts
+    """
+)
+# Scopes of TOPIC_CONSOLE_CHANGED besides snapshot kinds.
+SCOPE_DATA = "data"
+SCOPE_ALERTS = "alerts"
+# Encoded bodies kept per snapshot key (``snapshot_response``).
+_ENCODED_MAX = 512
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +124,17 @@ def register(
 ) -> None:
     """Register ``kind``; ``defaults`` are precomputed on the refresher's first run."""
     _KINDS[kind] = Kind(builder, defaults if callable(defaults) else tuple(defaults))
+
+
+# Incremental upkeep run at the start of every refresher cycle, under its
+# lock (e.g. expanding new citation sources): ``fn(session)``.
+_MAINTENANCE: dict[str, Callable[[AsyncSession], Awaitable[Any]]] = {}
+
+
+def register_maintenance(
+    name: str, fn: Callable[[AsyncSession], Awaitable[Any]]
+) -> None:
+    _MAINTENANCE[name] = fn
 
 
 def registered_kinds() -> dict[str, Kind]:
@@ -193,7 +225,15 @@ async def compute_and_store(
     }
     await gather(lambda s: _write_row(s, values))
     dashboard_cache.put(CACHE_PREFIX + key, payload)
+    _as_of[key] = _now()
+    # Every process reloads its memory copy; the console refetches the kind.
+    _spawn(_announce(kind, key), "announce")
     return payload
+
+
+async def _announce(kind: str, key: str) -> None:
+    await publish_event(TOPIC_SNAPSHOT_UPDATED, f"{kind}|{key}")
+    await publish_event(TOPIC_CONSOLE_CHANGED, kind)
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +241,10 @@ async def compute_and_store(
 # ---------------------------------------------------------------------------
 
 _background: set[asyncio.Task[Any]] = set()
+# As-of time of the payload in memory, per key (the ``X-Data-As-Of`` header).
+_as_of: dict[str, datetime] = {}
+# key -> (payload object, encoded body, ETag): encoded once per payload.
+_encoded: dict[str, tuple[Any, bytes, str]] = {}
 
 
 def _spawn(coro: Awaitable[Any], what: str) -> None:
@@ -226,6 +270,7 @@ async def _load(
             lambda: compute_and_store(kind, params, gather, key, build),
         )
     payload = row.payload
+    _as_of[key] = row.computed_at
     now = _now()
     cfg = get_settings()
     # Registered kinds are kept fresh by the refresher; ad-hoc ones (and any
@@ -272,7 +317,9 @@ async def get_snapshot(
     if not cfg.dashboard_snapshots_persist:
         # In-process cache only (no table reads / writes).
         async def compute() -> Any:
-            return _encode(await build(gather))
+            payload = _encode(await build(gather))
+            _as_of[key] = _now()
+            return payload
 
         return await dashboard_cache.get_or_compute(
             CACHE_PREFIX + key,
@@ -286,6 +333,57 @@ async def get_snapshot(
         fresh_seconds=cfg.dashboard_cache_fresh_seconds,
         stale_seconds=cfg.dashboard_cache_stale_seconds,
     )
+
+
+def _encoded_body(key: str, payload: Any) -> tuple[bytes, str]:
+    hit = _encoded.get(key)
+    if hit is not None and hit[0] is payload:
+        return hit[1], hit[2]
+    body = json.dumps(
+        payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+    ).encode("utf-8")
+    etag = weak_etag(body)
+    if key not in _encoded and len(_encoded) >= _ENCODED_MAX:
+        _encoded.pop(next(iter(_encoded)))
+    _encoded[key] = (payload, body, etag)
+    return body, etag
+
+
+async def snapshot_response(
+    request: Request,
+    kind: str,
+    params: dict[str, Any],
+    gather: Gather,
+    build: Build | None = None,
+) -> Response:
+    """``get_snapshot`` as a JSON response with an ETag, encoded once per
+    payload (a matching revalidation is a 304 without any encoding) and
+    ``X-Data-As-Of`` = when the payload was computed."""
+    params = jsonable_encoder(params)
+    payload = await get_snapshot(kind, params, gather, build)
+    key = snapshot_key(kind, params)
+    body, etag = _encoded_body(key, payload)
+    as_of = _as_of.get(key)
+    extra = {"X-Data-As-Of": as_of.isoformat()} if as_of is not None else None
+    return encoded_response(request, body, etag, extra)
+
+
+async def _reload(key: str) -> None:
+    async with database.AsyncSessionLocal() as session:
+        row = await _read_row(session, key)
+    if row is not None:
+        dashboard_cache.put(CACHE_PREFIX + key, row.payload)
+        _as_of[key] = row.computed_at
+
+
+def on_snapshot_updated(event: Event, own_instance: str | None = None) -> None:
+    """Event-bus callback: another process stored a newer payload; reload it
+    into this process's memory (only keys this process has served)."""
+    if own_instance is not None and event.origin == own_instance:
+        return
+    _, _, key = event.id.partition("|")
+    if key and dashboard_cache.has(CACHE_PREFIX + key):
+        _spawn(_reload(key), "snapshot_reload")
 
 
 async def delete_snapshots(session: AsyncSession, kinds_prefix: str) -> None:
@@ -302,6 +400,8 @@ async def drop_snapshots(kinds_prefix: str = "") -> None:
     They are rebuilt on their next read and by the refresher's backfill.
     """
     dashboard_cache.invalidate_prefix(CACHE_PREFIX)
+    if not get_settings().dashboard_snapshots_persist:
+        return
     async with database.AsyncSessionLocal() as session:
         await session.execute(
             delete(DashboardSnapshot).where(
@@ -332,17 +432,63 @@ class SnapshotRefresher:
     def __init__(self, gather: Gather | None = None) -> None:
         self.gather = gather or ScopedRunner().gather
         self._last_stamp: str | None = None
+        self._watched: dict[str, str] = {}
         self.cycles = 0
 
     async def run(self, stop: asyncio.Event) -> None:
-        interval = get_settings().dashboard_snapshot_refresh_seconds
+        """Refresh every REFRESH s; between cycles check the data stamp every
+        WATCH s and, on a change, announce it and refresh the watched
+        snapshots (at most once per MIN_CHANGE_REFRESH s)."""
+        cfg = get_settings()
+        interval = cfg.dashboard_snapshot_refresh_seconds
+        watch = cfg.dashboard_watch_seconds
+        min_gap = cfg.dashboard_min_change_refresh_seconds
+        loop = asyncio.get_running_loop()
+        next_cycle = loop.time()
+        last_change_cycle = -min_gap
+        pending_change = False
         while not stop.is_set():
-            try:
-                await self.refresh_once()
-            except Exception:  # pylint: disable=broad-exception-caught
-                logger.warning("snapshot_refresh_failed", exc_info=True)
+            if watch > 0:
+                try:
+                    pending_change = await self.watch_once() or pending_change
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.warning("snapshot_watch_failed", exc_info=True)
+            now = loop.time()
+            if pending_change and now - last_change_cycle >= min_gap:
+                next_cycle = now
+            if now >= next_cycle:
+                if pending_change:
+                    last_change_cycle = now
+                    pending_change = False
+                try:
+                    await self.refresh_once()
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.warning("snapshot_refresh_failed", exc_info=True)
+                next_cycle = loop.time() + interval
+            tick = min(watch, interval) if watch > 0 else interval
+            timeout = max(0.05, min(tick, next_cycle - loop.time()))
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(stop.wait(), timeout=interval)
+                await asyncio.wait_for(stop.wait(), timeout=timeout)
+
+    async def watch_once(self) -> bool:
+        """Compare the data / alerts stamps with the last check and announce a
+        change on the console live stream. True when the data changed (the
+        first check only records the stamps)."""
+
+        async def stamps(session: AsyncSession) -> dict[str, str]:
+            return {
+                SCOPE_DATA: str(await session.scalar(_DATA_STAMP_SQL)),
+                SCOPE_ALERTS: str(await session.scalar(_ALERTS_STAMP_SQL)),
+            }
+
+        (current,) = await self.gather(stamps)
+        previous, self._watched = self._watched, current
+        if not previous:
+            return False
+        for scope, stamp in current.items():
+            if previous.get(scope) != stamp:
+                await publish_event(TOPIC_CONSOLE_CHANGED, scope)
+        return previous.get(SCOPE_DATA) != current[SCOPE_DATA]
 
     async def refresh_once(self) -> int:
         """One cycle under the advisory lock; returns the snapshots recomputed."""
@@ -362,13 +508,27 @@ class SnapshotRefresher:
                     text("SELECT pg_advisory_unlock(:key)"), {"key": REFRESH_LOCK_KEY}
                 )
 
+    async def _maintain(self) -> None:
+        for name, fn in _MAINTENANCE.items():
+            try:
+                await self.gather(fn)
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.warning("snapshot_maintenance_failed", task=name, exc_info=True)
+
     async def _cycle(self) -> int:
         cfg = get_settings()
+        await self._maintain()
         built = await self._backfill_defaults()
         (stamp,) = await self.gather(lambda s: s.scalar(_DATA_STAMP_SQL))
         changed = stamp != self._last_stamp
         now = _now()
-        active_cut = now - timedelta(seconds=cfg.dashboard_snapshot_refresh_seconds)
+        # After a data change, watched views computed before it follow at once
+        # (real time); otherwise at most every REFRESH s.
+        active_cut = now - timedelta(
+            seconds=cfg.dashboard_min_change_refresh_seconds
+            if changed
+            else cfg.dashboard_snapshot_refresh_seconds
+        )
         idle_cut = now - timedelta(seconds=cfg.dashboard_snapshot_idle_refresh_seconds)
 
         defaults = self._default_keys()
@@ -386,10 +546,12 @@ class SnapshotRefresher:
                 (snap.requested_at > now - IDLE_WINDOW) | snap.key.in_(defaults)
             )
             condition = (watched_and_changed | idle) if changed else idle
+            # Most recently viewed first: what is on screen updates first.
+            order = snap.requested_at.desc() if changed else snap.computed_at
             rows = await session.execute(
                 select(snap.key, snap.kind, snap.params)
                 .where(condition)
-                .order_by(snap.computed_at)
+                .order_by(order)
                 .limit(MAX_REFRESH_PER_CYCLE)
             )
             return [(r.key, r.kind, r.params) for r in rows]

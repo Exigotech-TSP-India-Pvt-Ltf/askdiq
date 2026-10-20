@@ -833,6 +833,60 @@ class DashboardSnapshot(Base):
     __table_args__ = (Index("ix_dashboard_snapshots_requested_at", "requested_at"),)
 
 
+class CitationSource(Base):
+    """One cited source of a query-audit row or an evaluation record, expanded
+    from its JSON once (``app.documents.citations``), so citation stats for any
+    date range are an indexed aggregation instead of a JSON scan.
+
+    Insert-only, kept in step by the jobs worker; rows of a deleted parent go
+    with it (FK cascade). Reads combine these rows with a live expansion of the
+    rows newer than the sync point, so results equal the direct computation.
+    """
+
+    __tablename__ = "citation_sources"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    audit_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("audit_log.id", ondelete="CASCADE")
+    )
+    eval_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("evaluation_records.id", ondelete="CASCADE")
+    )
+    ordinal: Mapped[int] = mapped_column(Integer)
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    cited_at: Mapped[datetime] = mapped_column(DateTime)
+    chunk_ref: Mapped[str | None] = mapped_column(Text)
+    doc_ref: Mapped[str | None] = mapped_column(Text)
+    name_ref: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_citation_sources_cited_at", "cited_at"),
+        Index(
+            "uq_citation_sources_audit",
+            "audit_id",
+            "ordinal",
+            unique=True,
+            postgresql_where=text("audit_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_citation_sources_eval",
+            "eval_id",
+            "ordinal",
+            unique=True,
+            postgresql_where=text("eval_id IS NOT NULL"),
+        ),
+    )
+
+
+class CitationSyncState(Base):
+    """How far each source table is expanded into ``citation_sources``."""
+
+    __tablename__ = "citation_sync_state"
+
+    origin: Mapped[str] = mapped_column(String(16), primary_key=True)
+    synced_until: Mapped[datetime] = mapped_column(DateTime)
+
+
 class ResourceSample(Base):
     """One worker's resource sample (``app.governance.resources``).
 

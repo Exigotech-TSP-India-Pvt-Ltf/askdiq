@@ -238,6 +238,14 @@ class Settings(BaseSettings):
     dashboard_snapshot_idle_refresh_seconds: float = Field(default=900.0, ge=1)
     dashboard_snapshot_max_age_seconds: float = Field(default=1800.0, ge=1)
     dashboard_snapshot_keep_hours: float = Field(default=168.0, gt=0)
+    # Real-time: the jobs worker checks the data stamp (new chats, feedback,
+    # evaluations, alerts) every WATCH s (0 = off); on a change it NOTIFYs the
+    # console live stream at once and refreshes the watched snapshots, at most
+    # once per MIN_CHANGE_REFRESH s.
+    dashboard_watch_seconds: float = Field(default=2.0, ge=0)
+    dashboard_min_change_refresh_seconds: float = Field(default=3.0, ge=0)
+    # Console live stream: events within this window are sent as one frame.
+    console_stream_coalesce_seconds: float = Field(default=0.5, ge=0)
     usage_page_max_limit: int = 200
     usage_max_offset: int = 10_000
     usage_export_max_rows: int = 10_000
@@ -328,7 +336,9 @@ class Settings(BaseSettings):
     events_reconnect_max_seconds: float = 30.0
     # HTTP efficiency.
     gzip_minimum_size: int = 1024
-    http_cache_max_age_seconds: int = 15
+    # 0 = browsers revalidate every read (ETag -> 304): the console keeps its own
+    # cache, and a refetch after a live update must never get an old copy.
+    http_cache_max_age_seconds: int = 0
     sse_heartbeat_seconds: float = 15.0
     sse_retry_ms: int = 3000
     # Each SSE response ends after this long and the browser reconnects (retry),

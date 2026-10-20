@@ -21,7 +21,13 @@ from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
-from app.dashboard.snapshots import Gather, GatherRunner, get_snapshot, register
+from app.dashboard.snapshots import (
+    Gather,
+    GatherRunner,
+    get_snapshot,
+    register,
+    snapshot_response,
+)
 from app.dashboard.window import DayRange, resolve_days, utcnow
 from app.entities import conversations, visitors
 from app.governance.audience import Audience, audience_scope
@@ -123,6 +129,7 @@ register(VISITOR_STATS_KIND, _visitor_stats_snapshot, _visitor_stats_defaults)
     responses={404: {"description": "Unknown visitor."}, **_ERRORS},
 )
 async def visitor_timeline(
+    request: Request,
     visitor_id: str = Path(
         min_length=1,
         max_length=VISITOR_ID_MAX,
@@ -130,12 +137,49 @@ async def visitor_timeline(
     ),
     days: DayRange = Depends(day_range),
     db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(read_guard),
+) -> Response:
+    """Precomputed per visitor and range once viewed (``dashboard_snapshots``,
+    refreshed within seconds of new activity while watched)."""
+    params = {
+        "id": visitor_id,
+        "from": days.first.isoformat(),
+        "to": days.last.isoformat(),
+    }
+    return await snapshot_response(
+        request,
+        VISITOR_TIMELINE_KIND,
+        params,
+        runner.gather,
+        lambda _gather: _visitor_timeline(db, visitor_id, days),
+    )
+
+
+VISITOR_TIMELINE_KIND = "visitors.timeline"
+
+
+async def _visitor_timeline(
+    db: AsyncSession, visitor_id: str, days: DayRange
 ) -> dict[str, Any]:
     visitor = await visitors.resolve_visitor(db, visitor_id)
     if visitor is None:
         raise HTTPException(status_code=404, detail="Visitor not found")
-    return await visitors.visitor_timeline(db, visitor, days)
+    payload = await visitors.visitor_timeline(db, visitor, days)
+    return VisitorTimeline.model_validate(payload).model_dump(
+        mode="json", by_alias=True
+    )
+
+
+async def _visitor_timeline_snapshot(gather: Gather, params: dict) -> dict:
+    days = DayRange(
+        date.fromisoformat(params["from"]), date.fromisoformat(params["to"])
+    )
+    (payload,) = await gather(lambda db: _visitor_timeline(db, params["id"], days))
+    return payload
+
+
+register(VISITOR_TIMELINE_KIND, _visitor_timeline_snapshot)
 
 
 @router.get(

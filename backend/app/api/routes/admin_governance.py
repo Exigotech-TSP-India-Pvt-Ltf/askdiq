@@ -102,6 +102,44 @@ def _date_range(
     return start, end
 
 
+# A ``from`` this close to a whole number of hours before now (and no ``to``)
+# is a rolling preset ("Last 7 days"): one snapshot per span.
+_ROLLING_SLACK = timedelta(minutes=5)
+_HOUR = timedelta(hours=1)
+
+
+def _window_params(
+    start: datetime | None, end: datetime | None
+) -> dict[str, Any] | None:
+    """Snapshot parameters of a first-page date window, or ``None`` when the
+    window is not one (an open-ended ``from`` that is not a rolling preset).
+    Rolling presets are keyed by their span (recomputed for "now" by the
+    refresher); custom ranges by their bounds."""
+    if start is None and end is None:
+        return {}
+    if start is not None and end is None:
+        span = timeseries.utcnow().replace(tzinfo=None) - start
+        hours = round(span / _HOUR)
+        if hours >= 1 and abs(span - hours * _HOUR) <= _ROLLING_SLACK:
+            return {"span_hours": hours}
+        return None
+    if start is not None and end is not None:
+        return {"from": start.isoformat(), "to": end.isoformat()}
+    return None
+
+
+def _window_bounds(params: dict) -> tuple[datetime | None, datetime | None]:
+    """Inverse of :func:`_window_params` (rolling spans end now)."""
+    if params.get("span_hours"):
+        now = timeseries.utcnow().replace(tzinfo=None)
+        return now - params["span_hours"] * _HOUR, None
+    if params.get("from"):
+        return datetime.fromisoformat(params["from"]), datetime.fromisoformat(
+            params["to"]
+        )
+    return None, None
+
+
 def _clean_q(q: str | None) -> str | None:
     return q.strip() or None if q else None
 
@@ -326,6 +364,57 @@ async def governance_traces_page(
         date_from=start,
         date_to=end,
     )
+    window = _window_params(start, end)
+    if position is None and filters.q is None and window is not None:
+        # First pages (the Overall tab's total, the Traces tab's default and
+        # range presets): precomputed, refreshed within seconds of new traces.
+        return await get_snapshot(
+            GOVERNANCE_TRACES_KIND,
+            {**_traces_params(filters, limit), **window},
+            runner.gather,
+        )
+    return await _governance_traces_page(runner, filters, position, limit)
+
+
+GOVERNANCE_TRACES_KIND = "governance.traces"
+
+
+def _traces_params(filters: traces.TraceFilters, limit: int) -> dict[str, Any]:
+    return {
+        "audience": filters.audience,
+        "statuses": list(filters.statuses),
+        "outcomes": list(filters.outcomes),
+        "latency_buckets": list(filters.latency_buckets),
+        "q": filters.q,
+        "limit": limit,
+    }
+
+
+async def _governance_traces_snapshot(gather: Any, params: dict) -> dict[str, Any]:
+    start, end = _window_bounds(params)
+    filters = traces.TraceFilters(
+        audience=params["audience"],
+        statuses=tuple(params["statuses"]),
+        outcomes=tuple(params["outcomes"]),
+        latency_buckets=tuple(params["latency_buckets"]),
+        q=params["q"],
+        date_from=start,
+        date_to=end,
+    )
+    return await _governance_traces_page(
+        GatherRunner(gather),  # type: ignore[arg-type]
+        filters,
+        None,
+        params["limit"],
+    )
+
+
+async def _governance_traces_page(
+    runner: ScopedRunner,
+    filters: traces.TraceFilters,
+    position: Cursor | None,
+    limit: int,
+) -> dict[str, Any]:
     cap = get_settings().governance_exact_count_cap
     (items, next_cursor), total = await runner.gather(
         lambda s: traces.fetch_page(s, filters, position, limit),
@@ -437,11 +526,14 @@ async def governance_logs(
     cap = get_settings().governance_exact_count_cap
     # The filters carry the caller's hidden actions (permission scope), so
     # the key never shares a page across permission levels.
-    if position is None and filters.date_from is None and filters.date_to is None:
-        # First pages without a date range (the Overall tab's totals, the Logs
-        # tab's default): precomputed and refreshed in the background.
+    window = _window_params(filters.date_from, filters.date_to)
+    if position is None and window is not None:
+        # First pages (the Overall tab's totals, the Logs tab's default and
+        # range presets): precomputed and refreshed in the background.
         return await get_snapshot(
-            GOVERNANCE_LOGS_KIND, _logs_params(filters, limit), runner.gather
+            GOVERNANCE_LOGS_KIND,
+            {**_logs_params(filters, limit), **window},
+            runner.gather,
         )
     scope = replace(filters, hidden_actions=frozenset())
     hidden = ",".join(sorted(filters.hidden_actions))
@@ -466,11 +558,14 @@ def _logs_params(filters: logs.LogFilters, limit: int) -> dict[str, Any]:
 
 
 async def _governance_logs_snapshot(gather: Any, params: dict) -> dict[str, Any]:
+    start, end = _window_bounds(params)
     filters = logs.LogFilters(
         audience=params["audience"],
         levels=tuple(params["levels"]),
         services=tuple(params["services"]),
         q=params["q"],
+        date_from=start,
+        date_to=end,
         hidden_actions=frozenset(params["hidden"]),
     )
     cap = get_settings().governance_exact_count_cap
@@ -483,13 +578,37 @@ async def _governance_logs_snapshot(gather: Any, params: dict) -> dict[str, Any]
     )
 
 
+# The Overall tab's totals (limit 1) and the Logs / Traces tabs' first page.
+_FIRST_PAGE_LIMITS = (1, 10)
+
+# No range (Overall totals) plus the range picker's presets (24 h .. 90 d).
+_FIRST_PAGE_WINDOWS: tuple[dict[str, Any], ...] = (
+    {},
+    *({"span_hours": hours} for hours in (24, 7 * 24, 30 * 24, 90 * 24)),
+)
+
 register(
     GOVERNANCE_LOGS_KIND,
     _governance_logs_snapshot,
     [
-        _logs_params(logs.LogFilters(audience=aud, hidden_actions=hidden), 1)
+        {
+            **_logs_params(logs.LogFilters(audience=aud, hidden_actions=hidden), limit),
+            **window,
+        }
         for aud in ("overview", "users", "testing")
         for hidden in (frozenset(), AUTH_AUDIT_ACTIONS)
+        for limit in _FIRST_PAGE_LIMITS
+        for window in (_FIRST_PAGE_WINDOWS if limit != 1 else ({},))
+    ],
+)
+register(
+    GOVERNANCE_TRACES_KIND,
+    _governance_traces_snapshot,
+    [
+        {**_traces_params(traces.TraceFilters(audience=aud), limit), **window}
+        for aud in ("overview", "users", "testing")
+        for limit in _FIRST_PAGE_LIMITS
+        for window in (_FIRST_PAGE_WINDOWS if limit != 1 else ({},))
     ],
 )
 

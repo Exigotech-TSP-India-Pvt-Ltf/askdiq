@@ -143,8 +143,8 @@ function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: N
   const badgeVariants = useMotionVariants(pop);
   const { token } = useAuth();
   const { audience } = useAudience();
-  // Navigation intent: <Link> already prefetches the route in production;
-  // also warm the page's first queries so the click paints from cache.
+  // Navigation intent: <Link> prefetches the route in production; also warm
+  // the page's first queries (ConsoleRuntime preloads them all once idle).
   const warm = (href: string) => prefetchRouteData(href, token, audience);
   return (
     <>
@@ -156,6 +156,9 @@ function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: N
           <Link
             key={item.href}
             href={item.href}
+            // Full prefetch: the route payload is cached (next.config
+            // staleTimes), so the click renders without a server round trip.
+            prefetch
             title={collapsed ? item.label : undefined}
             aria-current={active ? "page" : undefined}
             onClick={onNavigate}

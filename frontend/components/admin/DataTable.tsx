@@ -35,6 +35,8 @@ export interface DataTableProps<T> {
   currentSort?: string;
   onSortChange?: (sortKey: string) => void;
   onRowClick?: (row: T) => void;
+  /** Hover / focus on a row (warm what a click on it opens). */
+  onRowIntent?: (row: T) => void;
   nested?: boolean;
   /** Row density from `useTablePreferences` / the TableToolbar toggle. */
   density?: TableDensity;
@@ -55,6 +57,7 @@ export function DataTable<T extends Record<string, any>>({
   currentSort,
   onSortChange,
   onRowClick,
+  onRowIntent,
   nested = true,
   density = "comfortable",
   animateRows = false,
@@ -218,6 +221,7 @@ export function DataTable<T extends Record<string, any>>({
                     {...rowMotion}
                     key={rowKey}
                     onClick={() => isClickable && onRowClick?.(row)}
+                    onMouseEnter={onRowIntent ? () => onRowIntent(row) : undefined}
                     className={`${tableRow} ${isClickable ? "cursor-pointer" : ""}`}
                   >
                     {columns.map((col) => {

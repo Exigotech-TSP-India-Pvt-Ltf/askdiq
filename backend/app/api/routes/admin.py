@@ -33,10 +33,12 @@ from app.dashboard import service as dashboard_service
 from app.dashboard import window as dashboard_window
 from app.dashboard.range_params import optional_day_range
 from app.dashboard.snapshots import (
+    Gather,
     GatherRunner,
     get_snapshot,
     register,
     snapshot_query,
+    snapshot_response,
 )
 from app.entities import conversations as conversation_stats
 from app.entities import visitors
@@ -356,11 +358,37 @@ async def _feedback_count(db: AsyncSession, ip: str | None) -> int:
 
 @router.get("/users/{user_id}")
 async def get_user(
+    request: Request,
     user_id: str,
     db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
-):
-    """Return detailed information about one user."""
+) -> Response:
+    """Return detailed information about one user. Precomputed per visitor
+    once viewed (``dashboard_snapshots``, refreshed within seconds of new
+    activity while watched); ``X-Data-As-Of`` is its age."""
+    return await snapshot_response(
+        request,
+        VISITOR_DETAIL_KIND,
+        {"id": user_id},
+        runner.gather,
+        lambda _gather: _user_detail(db, user_id),
+    )
+
+
+VISITOR_DETAIL_KIND = "visitors.detail"
+
+
+async def _visitor_detail_snapshot(gather: Gather, params: dict) -> Any:
+    (payload,) = await gather(lambda db: _user_detail(db, params["id"]))
+    return payload
+
+
+register(VISITOR_DETAIL_KIND, _visitor_detail_snapshot)
+
+
+async def _user_detail(db: AsyncSession, user_id: str) -> dict[str, Any]:
+    """One visitor's profile (404 when unknown)."""
     if user_id.startswith("client-"):
         ip = user_id.removeprefix("client-")
         sessions_res = (

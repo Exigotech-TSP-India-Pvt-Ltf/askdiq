@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { evaluationLiveKey, fetchEvaluationLive } from "@/lib/evaluation-live";
+import { useApiQuery } from "@/lib/query-cache";
 import dynamic from "next/dynamic";
-import { api, ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import {
   RECHARTS_AXIS_TITLE_SPACE,
@@ -152,9 +154,21 @@ export default function EvaluationLivePage() {
   const { audience } = useAudience();
   // Global date range (header picker): live records and the pass-rate trend.
   const { from: rangeFrom, to: rangeTo } = useRangeParams();
-  const [r, setR] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Cached per audience and range (app-wide query cache, sidebar prefetch,
+  // live updates); the previous report stays on screen while another loads.
+  const report = useApiQuery<Record<string, any>>(
+    token ? evaluationLiveKey(audience, { from: rangeFrom, to: rangeTo }) : null,
+    (signal) => fetchEvaluationLive(token ?? "", audience, { from: rangeFrom, to: rangeTo }, signal),
+    { keepPreviousData: true },
+  );
+  const r: any = report.data ?? null;
+  const loading = !token || report.isLoading;
+  const error =
+    report.error && !r
+      ? report.error instanceof ApiError
+        ? report.error.message
+        : "Couldn't load live evaluation telemetry."
+      : null;
   // Tab and the selected run (pass-rate trend marker) live in the URL.
   const { get, set } = useDeepLink();
   const rawTab = get("tab");
@@ -172,23 +186,6 @@ export default function EvaluationLivePage() {
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  useEffect(() => {
-    if (!token) return;
-    setLoading(true);
-    api
-      .evaluationReportLive(token, audience, compareMode, undefined, { from: rangeFrom, to: rangeTo })
-      .then((data) => {
-        setR(data);
-        setError(null);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(
-          err instanceof ApiError ? err.message : "Couldn't load live evaluation telemetry."
-        );
-        setLoading(false);
-      });
-  }, [token, audience, compareMode, rangeFrom, rangeTo]);
 
   const allCases = useMemo(() => r?.cases ?? [], [r?.cases]);
 

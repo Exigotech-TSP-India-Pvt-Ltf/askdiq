@@ -645,21 +645,57 @@ async def get_usage_users(
     from_date: str | None = Query(None, description=_FROM_DOC),
     to_date: str | None = Query(None, description=_TO_DOC),
     db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
-    """Per-IP usage rows; ``from_date`` / ``to_date`` keep the turns in that window."""
+    """Per-IP usage rows; ``from_date`` / ``to_date`` keep the turns in that window.
+
+    Precomputed per parameter set once viewed (``dashboard_snapshots``,
+    refreshed within seconds of new turns while watched)."""
     lo, hi = usage_date_range(from_date, to_date)
-    return await _usage_users_page(
-        db,
-        audience=audience,
-        q=q,
-        user_type=user_type,
-        sort=sort,
-        limit=limit,
-        offset=offset,
-        from_dt=lo,
-        to_dt=hi,
+    params = {
+        "audience": audience,
+        "q": q,
+        "user_type": user_type,
+        "sort": sort,
+        "limit": limit,
+        "offset": offset,
+        "from_dt": lo,
+        "to_dt": hi,
+    }
+    if sort not in _ALLOWED_USER_SORTS:
+        # Never stored: the page call raises the 422.
+        return await _usage_users_page(db, **params)
+    return await get_snapshot(
+        USAGE_USERS_KIND,
+        params,
+        runner.gather,
+        lambda _gather: _usage_users_page(db, **params),
     )
+
+
+USAGE_USERS_KIND = "usage.users"
+USAGE_SESSIONS_KIND = "usage.sessions"
+
+
+def _list_kwargs(params: dict) -> dict:
+    values = dict(params)
+    for name in ("from_dt", "to_dt"):
+        if isinstance(values.get(name), str):
+            values[name] = datetime.fromisoformat(values[name])
+    return values
+
+
+async def _usage_users_snapshot(gather: Gather, params: dict) -> dict:
+    (payload,) = await gather(lambda db: _usage_users_page(db, **_list_kwargs(params)))
+    return payload
+
+
+async def _usage_sessions_snapshot(gather: Gather, params: dict) -> dict:
+    (payload,) = await gather(
+        lambda db: _usage_sessions_page(db, **_list_kwargs(params))
+    )
+    return payload
 
 
 async def _usage_users_page(
@@ -847,6 +883,7 @@ async def get_usage_sessions(
     from_date: str | None = Query(None, description=_FROM_DOC),
     to_date: str | None = Query(None, description=_TO_DOC),
     db: AsyncSession = Depends(get_db),
+    runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ):
     """Paginated chat sessions list with turn counts, stage tokens, and stats (Task 3.3.2).
@@ -858,16 +895,24 @@ async def get_usage_sessions(
     if limit > settings.usage_page_max_limit or offset > settings.usage_max_offset:
         raise HTTPException(status_code=422, detail="Pagination limits exceeded.")
     lo, hi = usage_date_range(from_date, to_date)
-    return await _usage_sessions_page(
-        db,
-        audience=audience,
-        q=q,
-        ip=ip,
-        sort=sort,
-        limit=limit,
-        offset=offset,
-        from_dt=lo,
-        to_dt=hi,
+    params = {
+        "audience": audience,
+        "q": q,
+        "ip": ip,
+        "sort": sort,
+        "limit": limit,
+        "offset": offset,
+        "from_dt": lo,
+        "to_dt": hi,
+    }
+    if sort not in _ALLOWED_SESSION_SORTS:
+        return await _usage_sessions_page(db, **params)
+    # Precomputed per parameter set once viewed (refreshed while watched).
+    return await get_snapshot(
+        USAGE_SESSIONS_KIND,
+        params,
+        runner.gather,
+        lambda _gather: _usage_sessions_page(db, **params),
     )
 
 
@@ -1680,6 +1725,8 @@ _PRESET_DAYS = (7, 30, 90)
 _DAY_SECONDS = 86_400
 
 register(AUDIENCE_COUNTS_KIND, _audience_counts_snapshot, [{}])
+register(USAGE_USERS_KIND, _usage_users_snapshot)
+register(USAGE_SESSIONS_KIND, _usage_sessions_snapshot)
 register(
     USAGE_SUMMARY_KIND,
     _usage_summary_snapshot,

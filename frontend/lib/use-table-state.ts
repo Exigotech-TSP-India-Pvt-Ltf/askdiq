@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { writeUrl } from "@/lib/url-write";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAudience } from "./audience-context";
 
@@ -113,7 +114,7 @@ export function useTableState<TFilter extends Record<string, any> = Record<strin
     const queryString = current.toString();
     if (queryString === searchParams.toString()) return;
     // Page, size, sort and search are shareable and survive back / forward.
-    router.replace(`${pathname}${queryString ? `?${queryString}` : ""}`, { scroll: false });
+    writeUrl(router, `${pathname}${queryString ? `?${queryString}` : ""}`);
   }, [page, pageSize, sort, debouncedSearch, syncWithUrl, defaultSort, paramKey, pathname, router, searchParams]);
 
   // Setters with validation

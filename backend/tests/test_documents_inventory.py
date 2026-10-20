@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 from app.api.routes.documents import resolve_range
 from app.core.config import get_settings
@@ -24,7 +24,13 @@ from app.documents.inventory import (
     ingest_event,
 )
 from app.ingestion.service import backfill_provenance, provenance_extras
-from app.models.db_models import AuditLog, Chunk, Document
+from app.models.db_models import (
+    AuditLog,
+    Chunk,
+    CitationSource,
+    CitationSyncState,
+    Document,
+)
 from app.schemas.document import DocumentChunkItem
 from tests.feedback_helpers import make_exchange, make_feedback, make_session, marker
 from tests.test_docx_converter import _create_minimal_docx
@@ -536,3 +542,96 @@ async def test_dry_run_flag_never_persists(client, db_session, fake_embed, via) 
     )
     assert stored is None
     assert fake_embed["calls"] == []
+
+
+async def _sync_until(db_session, now: datetime) -> None:
+    """Run the incremental sync until every source table is expanded to now."""
+    for _ in range(200):
+        await cit.sync_citation_sources(db_session, now=now)
+        states = (await db_session.execute(select(CitationSyncState))).scalars().all()
+        if len(states) == 2 and all(s.synced_until >= now for s in states):
+            return
+    raise AssertionError("citation sources did not catch up")
+
+
+async def test_citation_sources_keep_stats_identical(
+    client, db_session, fake_embed
+) -> None:
+    """Parity: stats from the expanded ``citation_sources`` rows (+ the live
+    tail) equal the direct JSON expansion, before and after an incremental
+    sync, and a repeated sync adds nothing."""
+    mk = marker()
+    payload = await _upload_docx(client, f"{mk}.docx", f"Synced {mk}")
+    doc_id = uuid.UUID(payload["document_id"])
+    chunk = (
+        await db_session.execute(
+            select(Chunk).where(Chunk.document_id == doc_id).limit(1)
+        )
+    ).scalar_one()
+    session = await make_session(db_session, f"{mk}@example.com")
+
+    async def cited_turn(turn: int) -> None:
+        _u, asst = await make_exchange(
+            db_session,
+            session,
+            turn=turn,
+            question=f"{mk} q{turn}",
+            sources=[{"chunk_id": str(chunk.id), "source_name": f"{mk}.md"}],
+        )
+        db_session.add(
+            AuditLog(
+                request_id=asst.request_id,
+                actor=f"{mk}@example.com",
+                action="query",
+                detail={
+                    "sources": [{"chunk_id": str(chunk.id), "document_id": str(doc_id)}]
+                },
+            )
+        )
+        await db_session.commit()
+
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=30)
+
+    async def snapshot() -> tuple[dict, dict]:
+        stats = await cit.citation_stats(db_session, start=start, end=today, limit=50)
+        hits = await cit.chunk_hits(db_session, doc_id, today)
+        return stats.model_dump(), {k: (v.hits, v.low_rated) for k, v in hits.items()}
+
+    try:
+        await cited_turn(1)
+        await cited_turn(2)
+        live = await snapshot()
+        # Synced past the overlap: these rows are read from citation_sources.
+        later = datetime.now(UTC).replace(tzinfo=None) + cit.SYNC_OVERLAP * 2
+        await _sync_until(db_session, later)
+        stored = (
+            (
+                await db_session.execute(
+                    select(CitationSource).where(
+                        CitationSource.chunk_ref == str(chunk.id)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(stored) >= 4  # 2 audit + 2 evaluation sources
+        assert await snapshot() == live
+        # Idempotent: the overlap is re-read, nothing is duplicated.
+        assert await cit.sync_citation_sources(db_session, now=later) == 0
+        assert await snapshot() == live
+    finally:
+        await db_session.execute(delete(CitationSyncState))
+        await db_session.execute(delete(CitationSource))
+        await db_session.commit()
+    # Unsynced again: everything is expanded live; the new turn counts.
+    await cited_turn(3)
+    after = await snapshot()
+
+    def cites(snap: tuple[dict, dict]) -> int:
+        top = {str(d["document_id"]): d for d in snap[0]["top_cited"]}
+        return top[str(doc_id)]["citations"]
+
+    assert cites(live) == 2
+    assert cites(after) == 3

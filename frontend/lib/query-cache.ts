@@ -85,8 +85,11 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
+const getServerSnapshot = (): QueryState<never> => EMPTY_STATE;
+
 export class QueryCache {
   private readonly entries = new Map<string, Entry>();
+  private readonly changeListeners = new Set<(key: string) => void>();
   private focusListenerInstalled = false;
 
   private entry(key: string): Entry {
@@ -102,6 +105,36 @@ export class QueryCache {
     const e = this.entry(key);
     e.state = { ...e.state, ...patch };
     for (const listener of Array.from(e.listeners)) listener();
+    for (const listener of Array.from(this.changeListeners)) listener(key);
+  }
+
+  /** Called with the key after any state change (persistence). */
+  onAnyChange(listener: (key: string) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  /**
+   * Seeds `key` with data fetched earlier (persisted cache) unless it already
+   * has data. `updatedAt` is kept, so stale data shows at once and
+   * revalidates as usual.
+   */
+  hydrate(key: string, data: unknown, updatedAt: number): void {
+    const e = this.entry(key);
+    if (e.state.data !== undefined) return;
+    e.state = { ...e.state, data, updatedAt };
+    for (const listener of Array.from(e.listeners)) listener();
+  }
+
+  /** `[key, data, updatedAt]` of every entry holding data without an error. */
+  persistable(): Array<[string, unknown, number]> {
+    const out: Array<[string, unknown, number]> = [];
+    this.entries.forEach((e, k) => {
+      if (e.state.data !== undefined && !e.state.error && e.state.updatedAt > 0) {
+        out.push([k, e.state.data, e.state.updatedAt]);
+      }
+    });
+    return out;
   }
 
   getState<T>(key: QueryKey): QueryState<T> {
@@ -342,7 +375,9 @@ export function useApiQuery<T>(
     () => (k === null ? (EMPTY_STATE as QueryState<T>) : cache.getState<T>(k)),
     [cache, k],
   );
-  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  // The server never has cached data: hydration renders the server snapshot,
+  // then React re-renders at once with the (persisted) client cache.
+  const state = useSyncExternalStore<QueryState<T>>(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
     if (!active || k === null) return undefined;

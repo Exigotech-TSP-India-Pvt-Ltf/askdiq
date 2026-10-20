@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { prefetchQueryDetail, queryErrorMessage, useUsageList } from "@/lib/use-usage-data";
 import type { PageEnvelope, UsageQueryRow } from "@/lib/types";
-import { api } from "@/lib/api";
 import { useTableState } from "@/lib/use-table-state";
 import { DataTable, type ColumnDef } from "../DataTable";
 import { TableToolbar } from "../TableToolbar";
@@ -86,7 +86,6 @@ export function QueriesTab({
     setSort,
     setSearchInput,
     setFilter,
-    getSignal,
   } = useTableState({
     tableKey: "queries",
     defaultSort: "created_at_desc",
@@ -106,9 +105,6 @@ export function QueriesTab({
     },
   });
 
-  const [data, setData] = useState<PageEnvelope<UsageQueryRow> | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [inspectRequestId, setInspectRequestId] = useState<string | null>(null);
 
   // A new IP / session / day filter starts from the first page.
@@ -121,59 +117,31 @@ export function QueriesTab({
     setPage(1);
   }, [sessionFilter, ipFilter, fromDay, toDay, setPage]);
 
-  const fetchData = React.useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await api.getUsageQueries(
-        token,
-        {
-          audience,
-          q: search || undefined,
-          session_id: sessionFilter || undefined,
-          ip: ipFilter || undefined,
-          from_date: fromDay || undefined,
-          to_date: toDay || undefined,
-          outcome: filters.outcome !== "all" ? filters.outcome : undefined,
-          grounded:
-            filters.grounded === "true"
-              ? true
-              : filters.grounded === "false"
-              ? false
-              : undefined,
-          sort,
-          limit: pageSize,
-          offset,
-        },
-        getSignal()
-      );
-      setData(res);
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        setError(err.message || "Failed to load queries analytics.");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [
-    token,
-    audience,
-    search,
-    sessionFilter,
-    ipFilter,
-    fromDay,
-    toDay,
-    filters.outcome,
-    filters.grounded,
-    sort,
-    pageSize,
-    offset,
-    getSignal,
-  ]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // Cached per parameter set (app-wide query cache): tab switches, paging
+  // back and revisits render at once; the previous page stays on screen
+  // while a new one loads.
+  const query = useUsageList<PageEnvelope<UsageQueryRow>>("queries", token, {
+      audience,
+      q: search || undefined,
+      session_id: sessionFilter || undefined,
+      ip: ipFilter || undefined,
+      from_date: fromDay || undefined,
+      to_date: toDay || undefined,
+      outcome: filters.outcome !== "all" ? filters.outcome : undefined,
+      grounded:
+        filters.grounded === "true"
+          ? true
+          : filters.grounded === "false"
+          ? false
+          : undefined,
+      sort,
+      limit: pageSize,
+      offset,
+    });
+  const data = query.data ?? null;
+  const isLoading = query.isLoading;
+  const error = queryErrorMessage(query.error, "Failed to load queries analytics.");
+  const fetchData = query.refetch;
 
   const stats = data?.stats || {};
   const outcomesCount = (stats.outcomes || {}) as Record<string, number>;
@@ -518,6 +486,7 @@ export function QueriesTab({
             currentSort={sort}
             onSortChange={setSort}
             onRowClick={(r) => setInspectRequestId(r.request_id)}
+            onRowIntent={(r) => prefetchQueryDetail(token, r.request_id)}
           />
         </TableCard>
       </section>

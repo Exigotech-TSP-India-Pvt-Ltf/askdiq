@@ -12,6 +12,7 @@ from app.api.routes import (
     alerts,
     auth,
     branding,
+    console,
     documents,
     governance,
     health,
@@ -150,6 +151,7 @@ app.include_router(model_settings.router)
 app.include_router(auth.router)
 app.include_router(user_management.router)
 app.include_router(alerts.router)
+app.include_router(console.router)
 # Local mock Entra IdP, only with AUTH_DEV_MOCK=true (settings refuse it
 # outside ENV=development).
 mount_mock_idp(app, settings)

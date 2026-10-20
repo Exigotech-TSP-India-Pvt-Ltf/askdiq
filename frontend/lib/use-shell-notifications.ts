@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { fetchActiveAlerts, type ActiveAlert, type AlertSeverity } from "@/lib/alerts-api";
 import { fetchPendingAccessCount } from "@/lib/auth-api";
+import { useLiveConnected } from "@/lib/live-updates";
 import { hasPermission } from "@/lib/permissions";
 import { useApiQuery } from "@/lib/query-cache";
 import { formatRelativeTime } from "@/lib/time";
@@ -14,7 +15,7 @@ export const PENDING_ACCESS_QUERY_KEY = "admin/access-requests/pending-count";
 export const ACTIVE_ALERTS_QUERY_KEY = "admin/alerts/active";
 /** Badge refresh (paused when the tab is hidden); focus also revalidates. */
 export const PENDING_ACCESS_POLL_MS = 60_000;
-/** Active alerts refresh: new alerts reach the bell within 30 s. */
+/** Fallback alerts refresh while the live stream is disconnected. */
 export const ACTIVE_ALERTS_POLL_MS = 30_000;
 const STALE_MS = 30_000;
 export const USER_MANAGEMENT_REQUESTS_HREF = "/admin/user-management?tab=requests";
@@ -48,7 +49,10 @@ export function useActiveAlerts(): ActiveAlert[] {
   const query = useApiQuery<ActiveAlert[]>(allowed ? ACTIVE_ALERTS_QUERY_KEY : null, (signal) => fetchActiveAlerts(signal), {
     staleTime: ACTIVE_ALERTS_POLL_MS / 2,
   });
-  useVisibilityPolling(() => void query.refetch(), ACTIVE_ALERTS_POLL_MS, allowed);
+  // Pushed by the console live stream ("alerts" scope); polling is only the
+  // fallback while the stream is down.
+  const live = useLiveConnected();
+  useVisibilityPolling(() => void query.refetch(), ACTIVE_ALERTS_POLL_MS, allowed && !live);
   return allowed ? query.data ?? [] : [];
 }
 
