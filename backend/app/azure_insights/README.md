@@ -31,46 +31,31 @@ built from Postgres. A page view never calls Azure.
 
 ```python
 # app/azure_insights/metrics.py
-from app.azure_insights.scheduler import (
-    AzureSource,
-    SourceContext,
-    SourceResult,
-    register_source,
-)
+from app.azure_insights.scheduler import AzureSource, SourceContext, SourceResult, register_source
 
 METRICS_KIND = "azure.reconciliation"
 
-
 async def run_metrics(ctx: SourceContext) -> SourceResult:
     account = ctx.settings.azure_account_resource_id
-    async with ctx.arm_client(budgeted=True) as api:  # counts against the monthly cap
-        body = await api.get_json(
-            f"{account}/providers/Microsoft.Insights/metrics", params
-        )
+    async with ctx.arm_client(budgeted=True) as api:   # counts against the monthly cap
+        body = await api.get_json(f"{account}/providers/Microsoft.Insights/metrics", params)
         # or: async for item in api.paged(url, params): ...
     async with ctx.session_factory() as session:
-        n = await upsert_points(session, normalise(body))  # ON CONFLICT DO UPDATE
+        n = await upsert_points(session, normalise(body))   # ON CONFLICT DO UPDATE
         await session.commit()
-    return SourceResult(
-        rows=n, detail={"window": "PT2H"}
-    )  # detail: small JSON on the status row
+    return SourceResult(rows=n, detail={"window": "PT2H"})   # detail: small JSON on the status row
 
-
-register_source(
-    AzureSource(
-        name="metrics",  # job type azure.metrics, status row "metrics"
-        label="Monitor metrics",
-        interval=lambda s: s.azure_metrics_interval_seconds,
-        run=run_metrics,
-        snapshot_kinds=(METRICS_KIND,),  # recomputed + announced after each run
-        call_cap=lambda s: s.azure_metrics_monthly_call_cap,
-        enabled=lambda s: (
-            True
-        ),  # optional extra flag (e.g. AZURE_SERVICE_HEALTH_ENABLED)
-        needs_credentials=True,  # False for public APIs (retail)
-        order=20,  # position on the status card
-    )
-)
+register_source(AzureSource(
+    name="metrics",                      # job type azure.metrics, status row "metrics"
+    label="Monitor metrics",
+    interval=lambda s: s.azure_metrics_interval_seconds,
+    run=run_metrics,
+    snapshot_kinds=(METRICS_KIND,),      # recomputed + announced after each run
+    call_cap=lambda s: s.azure_metrics_monthly_call_cap,
+    enabled=lambda s: True,              # optional extra flag (e.g. AZURE_SERVICE_HEALTH_ENABLED)
+    needs_credentials=True,              # False for public APIs (retail)
+    order=20,                            # position on the status card
+))
 ```
 
 Then:
@@ -117,7 +102,3 @@ the status card shows "Not connected". On-demand runs of public sources
 - `azure_sync_status` (core): per source state, last run / success / error,
   failures, next run, monthly call counter (`status.consume_call`), `detail`.
 - `azure_retail_prices` (Phase 1).
-- `azure_metric_points` (Phase 2): Monitor metrics per deployment, metric,
-  status code, grain (PT1M kept 7 d, PT1H 93 d) and bucket; source `metrics`
-  (`metrics.py`), reconciliation + series snapshots `azure.metrics.*`
-  (`reconciliation.py`).
