@@ -7,12 +7,21 @@ import {
   INSIGHTS_CACHE_PREFIX,
   insightsApi,
   insightsQuery,
+  type ConversationList,
   type ConversationPageParams,
+  type InsightsBundle,
   type InsightsEndpoint,
   type InsightsFilters,
   type InsightsResponses,
 } from "@/lib/insights-api";
-import { useApiQuery, usePrefetchNextPage, type UseApiQueryResult } from "@/lib/query-cache";
+import {
+  prefetch,
+  queryCache,
+  serializeKey,
+  useApiQuery,
+  usePrefetchNextPage,
+  type UseApiQueryResult,
+} from "@/lib/query-cache";
 import { toInsightsFilters, type AnalyticsState } from "./url-state";
 
 /**
@@ -37,38 +46,122 @@ export function useInsightsFilters(state: AnalyticsState): InsightsFilters {
   }, [state, audience]);
 }
 
-export function useInsightsAggregate<E extends InsightsEndpoint>(
-  endpoint: E,
-  filters: InsightsFilters,
-  enabled = true,
-): UseApiQueryResult<InsightsResponses[E]> {
-  const { token } = useAuth();
-  return useApiQuery<InsightsResponses[E]>(
-    [`${INSIGHTS_CACHE_PREFIX}/${endpoint}`, insightsQuery(filters)],
-    (signal) => insightsApi.aggregate(endpoint, token, filters, signal),
-    // A filter / period / audience change swaps the chart in place.
-    { enabled, keepPreviousData: true },
-  );
+/** The Conversations table page of the URL state. */
+export function pageOf(state: Pick<AnalyticsState, "sort" | "dir" | "limit" | "page">): ConversationPageParams {
+  return { sort: state.sort, dir: state.dir, limit: state.limit, offset: (state.page - 1) * state.limit };
 }
+
+/** Cache key of the bundle (every widget) for one filter set. */
+export const bundleKey = (filters: InsightsFilters) => [`${INSIGHTS_CACHE_PREFIX}/bundle`, insightsQuery(filters)] as const;
 
 const conversationsKey = (filters: InsightsFilters, page: ConversationPageParams) =>
   [`${INSIGHTS_CACHE_PREFIX}/conversations`, insightsQuery(filters), page.sort, page.dir, page.limit, page.offset] as const;
+
+/** Bundle requests in flight (the table joins them instead of asking again). */
+const inflight = new Map<string, Promise<InsightsBundle>>();
+
+/**
+ * Fetches the bundle for `filters` (one request for every card, the KPIs,
+ * the backlog and the table page) and seeds the table's cache with its page.
+ */
+export function fetchBundle(
+  token: string | null,
+  filters: InsightsFilters,
+  page: ConversationPageParams,
+  signal?: AbortSignal,
+): Promise<InsightsBundle> {
+  const key = serializeKey(bundleKey(filters));
+  const request = insightsApi.getBundle(token, filters, page, undefined, signal).then((bundle) => {
+    if (bundle.conversations) queryCache.setData(conversationsKey(filters, page), bundle.conversations);
+    return bundle;
+  });
+  inflight.set(key, request);
+  const clear = () => {
+    if (inflight.get(key) === request) inflight.delete(key);
+  };
+  request.then(clear, clear);
+  return request;
+}
+
+/** Warms the bundle of `filters` (hover, idle, route preload). */
+export function prefetchBundle(token: string | null, filters: InsightsFilters, page: ConversationPageParams): void {
+  void prefetch(bundleKey(filters), (signal) => fetchBundle(token, filters, page, signal));
+}
+
+/** Every widget for `filters`; switching filters keeps the previous data on screen. */
+export function useInsightsBundle(
+  filters: InsightsFilters,
+  page: ConversationPageParams,
+  enabled = true,
+): UseApiQueryResult<InsightsBundle> {
+  const { token } = useAuth();
+  return useApiQuery<InsightsBundle>(bundleKey(filters), (signal) => fetchBundle(token, filters, page, signal), {
+    enabled,
+    keepPreviousData: true,
+  });
+}
+
+/** One widget of the bundle (the cards share one request). */
+export function useInsightsAggregate<E extends InsightsEndpoint>(
+  endpoint: E,
+  filters: InsightsFilters,
+  page: ConversationPageParams,
+  enabled = true,
+): UseApiQueryResult<InsightsResponses[E]> {
+  const bundle = useInsightsBundle(filters, page, enabled);
+  const part = (bundle.data?.[endpoint] ?? undefined) as InsightsResponses[E] | undefined;
+  return {
+    ...bundle,
+    data: part,
+    refetch: async () => (await bundle.refetch())?.[endpoint] as InsightsResponses[E] | undefined,
+    setData: () => undefined,
+  };
+}
+
+async function fetchConversations(
+  token: string | null,
+  filters: InsightsFilters,
+  page: ConversationPageParams,
+  signal: AbortSignal,
+): Promise<ConversationList> {
+  // Parent effects (the bundle) start in the same commit: join that request.
+  await Promise.resolve();
+  const pending = inflight.get(serializeKey(bundleKey(filters)));
+  if (pending) {
+    try {
+      const c = (await pending).conversations;
+      if (c && c.sort === page.sort && c.direction === page.dir && c.limit === page.limit && c.offset === page.offset) {
+        return c;
+      }
+    } catch {
+      // fall through to a request of its own
+    }
+  }
+  const bundle = await insightsApi.getBundle(token, filters, page, ["conversations"], signal);
+  if (!bundle.conversations) throw new Error("Could not load the conversations.");
+  return bundle.conversations;
+}
 
 /** One page of the Conversations table; the next page is warmed while idle. */
 export function useInsightsConversations(filters: InsightsFilters, page: ConversationPageParams) {
   const { token } = useAuth();
   const result = useApiQuery(
     conversationsKey(filters, page),
-    (signal) => insightsApi.getConversations(token, filters, page, signal),
+    (signal) => fetchConversations(token, filters, page, signal),
     { keepPreviousData: true },
   );
   const next = { ...page, offset: page.offset + page.limit };
   const hasNext = result.data !== undefined && next.offset < result.data.total;
   usePrefetchNextPage(
     hasNext ? conversationsKey(filters, next) : null,
-    (signal) => insightsApi.getConversations(token, filters, next, signal),
+    (signal) => fetchConversations(token, filters, next, signal),
   );
   return result;
+}
+
+/** Warms a table page (sort header hover). */
+export function prefetchConversations(token: string | null, filters: InsightsFilters, page: ConversationPageParams): void {
+  void prefetch(conversationsKey(filters, page), (signal) => fetchConversations(token, filters, page, signal));
 }
 
 export function useInsightsConversation(convId: string, filters: InsightsFilters, enabled: boolean) {
@@ -80,9 +173,29 @@ export function useInsightsConversation(convId: string, filters: InsightsFilters
   );
 }
 
-export function useInsightsPending() {
-  const { token } = useAuth();
-  return useApiQuery(`${INSIGHTS_CACHE_PREFIX}/pending`, (signal) => insightsApi.getPending(token, signal));
+/** Warms one conversation's questions (row hover). */
+export function prefetchConversation(token: string | null, convId: string, filters: InsightsFilters): void {
+  const scope = { audience: filters.audience, tz: filters.tz };
+  void prefetch([`${INSIGHTS_CACHE_PREFIX}/conversation`, convId, scope.audience, scope.tz], (signal) =>
+    insightsApi.getConversation(token, convId, scope, signal),
+  );
+}
+
+/** Cache key of one person's detail (only audience and zone apply). */
+export const personKey = (personId: string, filters: InsightsFilters) =>
+  [`${INSIGHTS_CACHE_PREFIX}/person`, personId, filters.audience, filters.tz] as const;
+
+/** Warms what a person click shows: the detail panel and the filtered bundle. */
+export function prefetchPerson(
+  token: string | null,
+  personId: string,
+  filters: InsightsFilters,
+  page: ConversationPageParams,
+): void {
+  void prefetch(personKey(personId, filters), (signal) =>
+    insightsApi.getPerson(token, personId, { audience: filters.audience, tz: filters.tz }, signal),
+  );
+  if (filters.person !== personId) prefetchBundle(token, { ...filters, person: personId }, { ...page, offset: 0 });
 }
 
 /** Readable message for a failed query. */

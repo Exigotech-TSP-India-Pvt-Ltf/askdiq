@@ -13,8 +13,9 @@
  * Pages open with the default range (`DEFAULT_PRESET`) and default filters;
  * those are the keys warmed here.
  */
-import { DEFAULT_STATE, toInsightsFilters } from "@/components/admin/analytics/url-state";
-import { viewerTimeZone } from "@/components/admin/analytics/use-insights";
+import { filtersForPreset } from "@/components/admin/analytics/use-analytics-preload";
+import { DEFAULT_STATE } from "@/components/admin/analytics/url-state";
+import { pageOf, prefetchBundle, viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
 import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
@@ -25,24 +26,12 @@ import { warmAudiencePage } from "@/lib/audience-data";
 import { evaluationLiveKey, fetchEvaluationLive } from "@/lib/evaluation-live";
 import { feedbackKeys, getFeedbackAnalytics } from "@/lib/feedback-api";
 import { governanceApi } from "@/lib/governance-api";
-import { INSIGHTS_CACHE_PREFIX, insightsApi, insightsQuery, type InsightsEndpoint } from "@/lib/insights-api";
 import { prefetch, runWhenIdle } from "@/lib/query-cache";
 import { DEFAULT_PRESET, presetRange, rangeUtcDays } from "@/lib/range-context";
 import type { Audience } from "@/lib/types";
 import { fetchUsageList, usageKeys, usageListKey, type UsageListKind } from "@/lib/use-usage-data";
 import { AUDIT_LIMIT_MAX, umKeys, userManagementApi } from "@/lib/user-management-api";
 
-/** Every card of the Analytics Overview tab (same keys as use-insights). */
-const ANALYTICS_ENDPOINTS: readonly InsightsEndpoint[] = [
-  "summary",
-  "trend",
-  "hourly",
-  "flow",
-  "topics",
-  "quality",
-  "dropoff",
-  "people",
-];
 /** Page defaults mirrored from the pages (keys must match exactly). */
 const TOP_CITED_LIMIT = 10;
 const UM_STATS_DAYS = 30;
@@ -129,14 +118,9 @@ const PREFETCHERS: Record<string, Prefetcher> = {
   },
   "/admin/governance": governanceOverall,
   "/admin/analytics": (token, audience) => {
-    const tz = viewerTimeZone();
-    const filters = { ...toInsightsFilters(DEFAULT_STATE), audience, ...(tz ? { tz } : {}) };
-    for (const endpoint of ANALYTICS_ENDPOINTS) {
-      warm([`${INSIGHTS_CACHE_PREFIX}/${endpoint}`, insightsQuery(filters)], (signal) =>
-        insightsApi.aggregate(endpoint, token, filters, signal),
-      );
-    }
-    warm(`${INSIGHTS_CACHE_PREFIX}/pending`, (signal) => insightsApi.getPending(token, signal));
+    // The page's first view: the default range preset, one bundle request.
+    const filters = filtersForPreset({ period: "all", audience, tz: viewerTimeZone() }, DEFAULT_PRESET);
+    prefetchBundle(token, filters, pageOf(DEFAULT_STATE));
   },
   "/admin/user-management": () => {
     warm(umKeys.stats(UM_STATS_DAYS), (signal) => userManagementApi.stats(UM_STATS_DAYS, signal));
