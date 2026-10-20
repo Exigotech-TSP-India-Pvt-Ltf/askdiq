@@ -28,7 +28,13 @@ import { prefetch, runWhenIdle } from "@/lib/query-cache";
 import { DEFAULT_PRESET, presetRange, rangeUtcDays } from "@/lib/range-context";
 import type { Audience } from "@/lib/types";
 import { fetchUsageList, usageKeys, usageListKey, type UsageListKind } from "@/lib/use-usage-data";
-import { AUDIT_LIMIT_MAX, umKeys, userManagementApi } from "@/lib/user-management-api";
+import { BRANDING_KEY, MODELS_KEY, TAXONOMY_KEY, settingsApi } from "@/lib/settings-api";
+import {
+  AUDIT_PAGE_DEFAULT,
+  umKeys,
+  userManagementApi,
+  type UserListParams,
+} from "@/lib/user-management-api";
 
 /** Every card of the Analytics Overview tab (same keys as use-insights). */
 const ANALYTICS_ENDPOINTS: readonly InsightsEndpoint[] = [
@@ -45,6 +51,9 @@ const ANALYTICS_ENDPOINTS: readonly InsightsEndpoint[] = [
 const TOP_CITED_LIMIT = 10;
 const VISITORS_PAGE_SIZE = 10;
 const UM_STATS_DAYS = 30;
+const UM_PAGE_SIZE = 25;
+/** The Users tab's default first page (use-um-url defaults). */
+const UM_USERS_FIRST_PAGE: UserListParams = { sort: "created_at", order: "desc", limit: UM_PAGE_SIZE, offset: 0 };
 const LIVE_FEED_LIMIT = 8;
 const USAGE_PAGE_SIZE = 10;
 const USAGE_TAB_DEFAULTS: ReadonlyArray<readonly [UsageListKind, string]> = [
@@ -164,8 +173,20 @@ const PREFETCHERS: Record<string, Prefetcher> = {
     warm(`${INSIGHTS_CACHE_PREFIX}/pending`, (signal) => insightsApi.getPending(token, signal));
   },
   "/admin/user-management": () => {
+    // KPIs + charts, then the first page of every tab (Users, the request
+    // queue, the audit trail): each tab switch renders from cache.
     warm(umKeys.stats(UM_STATS_DAYS), (signal) => userManagementApi.stats(UM_STATS_DAYS, signal));
-    warm(umKeys.audit(AUDIT_LIMIT_MAX), (signal) => userManagementApi.authAudit(AUDIT_LIMIT_MAX, signal));
+    warm(umKeys.users(UM_USERS_FIRST_PAGE), (signal) => userManagementApi.listUsers(UM_USERS_FIRST_PAGE, signal));
+    warm(umKeys.requests("pending", UM_PAGE_SIZE, 0), (signal) =>
+      userManagementApi.listRequests("pending", UM_PAGE_SIZE, 0, signal),
+    );
+    const audit = { limit: AUDIT_PAGE_DEFAULT };
+    warm(umKeys.auditPage(audit), (signal) => userManagementApi.authAuditPage(audit, signal));
+  },
+  "/admin/settings": () => {
+    warm(BRANDING_KEY, (signal) => settingsApi.getBranding(signal));
+    warm(TAXONOMY_KEY, (signal) => settingsApi.listTaxonomy(signal));
+    warm(MODELS_KEY, (signal) => settingsApi.getModelSettings(signal));
   },
 };
 

@@ -10,6 +10,7 @@ import { vi } from "vitest";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { queryCache } from "@/lib/query-cache";
+import { AUTH_EVENTS } from "@/lib/user-management-api";
 import type {
   AccessRequest,
   AuditLogEntry,
@@ -20,6 +21,7 @@ import type {
 import { memoryRouter } from "./memory-router";
 
 export const NOW = "2026-10-15T09:00:00Z";
+const AUTH_ACTIONS: ReadonlySet<string> = new Set(AUTH_EVENTS);
 
 export function user(partial: Partial<UserAccount> & Pick<UserAccount, "id" | "email" | "name">): UserAccount {
   return {
@@ -197,6 +199,24 @@ export function createServer(data = fixtures()) {
     if (method === "GET" && path === "/auth/me") return { status: 200, body: data.me };
     if (method === "GET" && path === "/admin/users-accounts/stats") return { status: 200, body: data.stats };
     if (method === "GET" && path === "/governance/audit-log") return { status: 200, body: data.audit };
+    if (method === "GET" && path === "/admin/auth-audit") {
+      const action = query.get("action");
+      const search = query.get("search")?.toLowerCase();
+      const limit = Number(query.get("limit") ?? 25);
+      const start = Number(query.get("cursor") ?? 0);
+      const rows = data.audit.filter((e) => {
+        if (!AUTH_ACTIONS.has(e.action)) return false;
+        if (action && e.action !== action) return false;
+        const target = typeof e.detail.target_email === "string" ? e.detail.target_email : "";
+        return !search || e.actor.toLowerCase().includes(search) || target.toLowerCase().includes(search);
+      });
+      const items = rows.slice(start, start + limit);
+      const more = start + limit < rows.length;
+      return {
+        status: 200,
+        body: { items, next_cursor: more ? String(start + limit) : null, has_more: more, total: rows.length, total_is_estimate: false },
+      };
+    }
     if (method === "GET" && path === "/admin/users-accounts") {
       const role = query.get("role");
       const status = query.get("status");
@@ -215,10 +235,13 @@ export function createServer(data = fixtures()) {
     if (userMatch && method === "GET") {
       const u = data.users.find((x) => x.id === decodeURIComponent(userMatch[1]));
       if (!u) return { status: 404, body: { detail: "User not found." } };
+      const auth = data.audit.filter((e) => AUTH_ACTIONS.has(e.action));
       return {
         status: 200,
         body: {
           ...u,
+          recent_activity: auth.filter((e) => e.actor === u.email),
+          recent_audit: auth.filter((e) => e.detail.target_user_id === u.id),
           active_sessions: [
             {
               id: "s-1",

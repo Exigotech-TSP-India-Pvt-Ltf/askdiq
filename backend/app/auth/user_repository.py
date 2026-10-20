@@ -14,11 +14,12 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal
 
-from sqlalchemy import Date, Select, case, cast, func, select
+from sqlalchemy import ColumnElement, Date, Select, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.auth.permissions import AccessRequestStatus, Role, UserStatus
+from app.governance.pagination import Cursor, Total, bounded_total, keyset_after
 from app.models.db_models import AccessRequest, AuditLog, User
 
 SortOrder = Literal["asc", "desc"]
@@ -345,3 +346,97 @@ class AuthStatsRepository:
             .group_by(day)
         )
         return {d: int(count) for d, count in rows.all()}
+
+    async def events_per_day_by_action(
+        self, actions: Sequence[str], since_naive_utc: datetime
+    ) -> dict[str, dict[date, int]]:
+        """Daily counts of each of ``actions`` since ``since_naive_utc``."""
+        day = cast(AuditLog.created_at, Date)
+        rows = await self._db.execute(
+            select(AuditLog.action, day, func.count())
+            .where(
+                AuditLog.action.in_(list(actions)),
+                AuditLog.created_at >= since_naive_utc,
+            )
+            .group_by(AuditLog.action, day)
+        )
+        out: dict[str, dict[date, int]] = {a: {} for a in actions}
+        for action, d, count in rows.all():
+            out[str(action)][d] = int(count)
+        return out
+
+
+@dataclass(frozen=True, slots=True)
+class AuthAuditFilters:
+    """Auth audit page: ``actions`` to include, newest first, keyset after ``cursor``."""
+
+    actions: Sequence[str]
+    limit: int
+    cursor: Cursor | None = None
+    search: str | None = None
+
+
+class AuthAuditRepository:
+    """Auth events from ``audit_log`` (keyset on ``(created_at, id)``)."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self._db = db
+
+    @staticmethod
+    def _where(filters: AuthAuditFilters) -> list[ColumnElement[bool]]:
+        conditions: list[ColumnElement[bool]] = [
+            AuditLog.action.in_(list(filters.actions))
+        ]
+        if filters.search:
+            pattern = f"%{escape_like(filters.search)}%"
+            conditions.append(
+                or_(
+                    AuditLog.actor.ilike(pattern, escape=LIKE_ESCAPE),
+                    AuditLog.detail["target_email"]
+                    .as_string()
+                    .ilike(pattern, escape=LIKE_ESCAPE),
+                )
+            )
+        return conditions
+
+    async def page(self, filters: AuthAuditFilters) -> tuple[list[AuditLog], bool]:
+        """Up to ``limit`` rows after the cursor, and whether more follow."""
+        conditions = self._where(filters)
+        after = keyset_after(AuditLog.created_at, AuditLog.id, filters.cursor)
+        if after is not None:
+            conditions.append(after)
+        rows = (
+            await self._db.execute(
+                select(AuditLog)
+                .where(*conditions)
+                .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+                .limit(filters.limit + 1)
+            )
+        ).scalars()
+        items = list(rows)
+        return items[: filters.limit], len(items) > filters.limit
+
+    async def total(self, filters: AuthAuditFilters, cap: int) -> Total:
+        rows = select(AuditLog.id).where(*self._where(filters))
+        return await bounded_total(self._db, rows, cap)
+
+    async def recent(
+        self,
+        actions: Sequence[str],
+        limit: int,
+        *,
+        actor: str | None = None,
+        target_user_id: uuid.UUID | None = None,
+    ) -> list[AuditLog]:
+        """Newest events by ``actor`` or about ``target_user_id``."""
+        stmt = select(AuditLog).where(AuditLog.action.in_(list(actions)))
+        if actor is not None:
+            stmt = stmt.where(AuditLog.actor == actor)
+        if target_user_id is not None:
+            stmt = stmt.where(
+                AuditLog.detail["target_user_id"].as_string() == str(target_user_id)
+            )
+        rows = await self._db.execute(
+            stmt.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(limit)
+        )
+        return list(rows.scalars())
