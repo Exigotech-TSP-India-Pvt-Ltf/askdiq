@@ -15,7 +15,8 @@ export default function ChatPage() {
   // in-flight query and its eventual answer survive switching to another
   // page and back (or to the AskDIQ drawer), instead of being dropped when
   // this page component unmounts.
-  const { sessions, activeSessionId, selectSession, startNewSession, renameSession, removeSession } = useChat();
+  const { sessions, activeSessionId, selectSession, prefetchSession, startNewSession, renameSession, removeSession } =
+    useChat();
   const reported = useReportedAction();
   // Phones: the session list is a drawer over the conversation, closed by
   // default, so the 256 px column no longer takes most of the width.
@@ -44,6 +45,7 @@ export default function ChatPage() {
         onNew={closeAfter(reported("Couldn't start a new chat", startNewSession))}
         onRename={reported("Couldn't rename the chat", renameSession)}
         onDelete={reported("Couldn't delete the chat", removeSession)}
+        onIntent={prefetchSession}
         className={`${historyOpen ? "" : "hidden"} absolute inset-y-0 left-0 z-20 w-72 max-w-[85vw] bg-surface-page shadow-xl md:static md:z-auto md:flex md:w-64 md:max-w-none md:shrink-0 md:shadow-none ${LIST_SURFACE}`}
       />
 

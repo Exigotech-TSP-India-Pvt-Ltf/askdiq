@@ -11,23 +11,35 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.admin_service import UserAdminService, UserChange
-from app.auth.audit import AuditContext
+from app.auth.admin_service import (
+    AUTH_EVENTS,
+    UserAdminService,
+    UserChange,
+    UserStats,
+)
+from app.auth.audit import AuditContext, AuthEvent
 from app.auth.deps import require_permission
+from app.auth.live import STATS_DEFAULTS, USERS_STATS_KIND, remember_stats_days
 from app.auth.permissions import AccessRequestStatus, Permission, Role, UserStatus
 from app.auth.principal import AuthUser
 from app.auth.sessions import utcnow
 from app.auth.user_repository import (
     AccessRequestRow,
+    AuthAuditFilters,
     SortOrder,
     UserFilters,
     UserListRow,
     UserSortKey,
 )
+from app.core.concurrency import ScopedRunner, get_scoped_runner
+from app.core.config import get_settings
 from app.core.database import get_db
+from app.dashboard.snapshots import Gather, register, snapshot_response
+from app.governance.pagination import Cursor
+from app.models.db_models import AuditLog
 from app.schemas.auth import SAFE_TEXT_PATTERN
 from app.schemas.user_management import (
     AccessRequestAdminRead,
@@ -35,6 +47,8 @@ from app.schemas.user_management import (
     AccessRequestBulkApprove,
     AccessRequestPage,
     AccessRequestReject,
+    AuthAuditEntry,
+    AuthAuditPage,
     AuthSessionRead,
     BulkApproveRead,
     DailyCount,
@@ -53,11 +67,15 @@ from app.schemas.user_management import (
 
 router = APIRouter(prefix="/admin", tags=["User Management"])
 manage_users = require_permission(Permission.USERS_MANAGE)
+read_auth_audit = require_permission(Permission.AUDIT_AUTH_READ)
 
 PAGE_MAX = 200
 OFFSET_MAX = 10_000
 SEARCH_MAX_LENGTH = 100
 STATS_DAYS_MAX = 90
+AUDIT_PAGE_MAX = 100
+AUDIT_PAGE_DEFAULT = 25
+CURSOR_MAX_LENGTH = 200
 FUNNEL_ORDER: tuple[Literal["signed_in", "requested", "approved", "active"], ...] = (
     "signed_in",
     "requested",
@@ -88,6 +106,57 @@ def user_read(row: UserListRow) -> UserAccountRead:
         approved_at=user.approved_at,
         version=user.version,
     )
+
+
+def audit_read(row: AuditLog) -> AuthAuditEntry:
+    return AuthAuditEntry(
+        id=str(row.id),
+        request_id=row.request_id,
+        actor=row.actor,
+        action=row.action,
+        detail=row.detail,
+        created_at=row.created_at,
+        ip_address=row.ip_address,
+    )
+
+
+def stats_read(stats: UserStats) -> UserStatsRead:
+    counts = stats.status_counts
+    return UserStatsRead(
+        days=stats.days,
+        kpis=UserKpis(
+            total=sum(counts.values()),
+            active=counts.get(UserStatus.ACTIVE.value, 0),
+            pending=counts.get(UserStatus.PENDING.value, 0),
+            rejected=counts.get(UserStatus.REJECTED.value, 0),
+            suspended=counts.get(UserStatus.SUSPENDED.value, 0),
+            open_requests=stats.open_requests,
+            logins_24h=stats.logins_24h,
+        ),
+        logins_per_day=[DailyCount(date=d, count=c) for d, c in stats.logins_per_day],
+        funnel=[FunnelStage(stage=s, count=stats.funnel[s]) for s in FUNNEL_ORDER],
+        role_mix=[
+            RoleCount(role=r, count=stats.role_mix.get(r.value, 0)) for r in Role
+        ],
+        time_to_approve=[
+            HistogramBucket(bucket=b, count=c) for b, c in stats.time_to_approve.items()
+        ],
+        events_per_day={
+            action: [DailyCount(date=d, count=c) for d, c in series]
+            for action, series in stats.events_per_day.items()
+        },
+        events_days=stats.events_days,
+    )
+
+
+async def _users_stats_snapshot(gather: Gather, params: dict) -> UserStatsRead:
+    days = int(params["days"])
+    (stats,) = await gather(lambda s: UserAdminService(s).stats(days))
+    return stats_read(stats)
+
+
+# Precomputed; recomputed whenever an auth change commits (app.auth.live).
+register(USERS_STATS_KIND, _users_stats_snapshot, STATS_DEFAULTS)
 
 
 def request_read(row: AccessRequestRow) -> AccessRequestAdminRead:
@@ -156,37 +225,65 @@ async def list_user_accounts(
     response_model=UserStatsRead,
     summary="User Management KPIs and chart data",
     description=(
-        "KPIs, sign-ins per day, request funnel, active role mix and the "
-        "time-to-approve histogram for the last `days` days."
+        "KPIs, sign-ins per day, request funnel, active role mix, the "
+        "time-to-approve histogram for the last `days` days and the daily "
+        "auth-event series behind the KPI sparklines. Precomputed "
+        "(`dashboard_snapshots`) and recomputed whenever a sign-in, request, "
+        "decision or user change commits; `X-Data-As-Of` is its age."
+    ),
+    responses={**_GUARD_ERRORS, 304: {"description": "ETag matched"}, 422: _ERR_422},
+)
+async def user_account_stats(
+    request: Request,
+    days: int = Query(default=30, ge=1, le=STATS_DAYS_MAX),
+    runner: ScopedRunner = Depends(get_scoped_runner),
+    user: AuthUser = Depends(manage_users),
+) -> Response:
+    remember_stats_days(days)
+    return await snapshot_response(
+        request, USERS_STATS_KIND, {"days": days}, runner.gather
+    )
+
+
+@router.get(
+    "/auth-audit",
+    response_model=AuthAuditPage,
+    summary="Auth audit trail (keyset pages)",
+    description=(
+        "Sign-ins, denials, access decisions, role changes, suspensions and "
+        "revocations, newest first, `limit` per page; pass `next_cursor` back "
+        "as `cursor` for older events. `action` filters one event; `search` "
+        "matches the actor or the (masked) target email, case-insensitive. "
+        "Needs `audit:auth:read`."
     ),
     responses={**_GUARD_ERRORS, 422: _ERR_422},
 )
-async def user_account_stats(
-    days: int = Query(default=30, ge=1, le=STATS_DAYS_MAX),
+async def list_auth_audit(
+    limit: int = Query(default=AUDIT_PAGE_DEFAULT, ge=1, le=AUDIT_PAGE_MAX),
+    cursor: str | None = Query(default=None, max_length=CURSOR_MAX_LENGTH),
+    action: AuthEvent | None = Query(default=None),
+    search: str | None = Query(
+        default=None, max_length=SEARCH_MAX_LENGTH, pattern=SAFE_TEXT_PATTERN
+    ),
     db: AsyncSession = Depends(get_db),
-    user: AuthUser = Depends(manage_users),
-) -> UserStatsRead:
-    stats = await UserAdminService(db).stats(days)
-    counts = stats.status_counts
-    return UserStatsRead(
-        days=stats.days,
-        kpis=UserKpis(
-            total=sum(counts.values()),
-            active=counts.get(UserStatus.ACTIVE.value, 0),
-            pending=counts.get(UserStatus.PENDING.value, 0),
-            rejected=counts.get(UserStatus.REJECTED.value, 0),
-            suspended=counts.get(UserStatus.SUSPENDED.value, 0),
-            open_requests=stats.open_requests,
-            logins_24h=stats.logins_24h,
-        ),
-        logins_per_day=[DailyCount(date=d, count=c) for d, c in stats.logins_per_day],
-        funnel=[FunnelStage(stage=s, count=stats.funnel[s]) for s in FUNNEL_ORDER],
-        role_mix=[
-            RoleCount(role=r, count=stats.role_mix.get(r.value, 0)) for r in Role
-        ],
-        time_to_approve=[
-            HistogramBucket(bucket=b, count=c) for b, c in stats.time_to_approve.items()
-        ],
+    user: AuthUser = Depends(read_auth_audit),
+) -> AuthAuditPage:
+    filters = AuthAuditFilters(
+        actions=(action.value,) if action else AUTH_EVENTS,
+        limit=limit,
+        cursor=Cursor.decode(cursor),
+        search=(search or "").strip() or None,
+    )
+    rows, has_more, total = await UserAdminService(db).auth_audit(
+        filters, get_settings().governance_exact_count_cap
+    )
+    last = rows[-1] if has_more and rows else None
+    return AuthAuditPage(
+        items=[audit_read(r) for r in rows],
+        next_cursor=Cursor(last.created_at, last.id).encode() if last else None,
+        has_more=has_more,
+        total=total.value,
+        total_is_estimate=total.is_estimate,
     )
 
 
@@ -220,7 +317,7 @@ async def invite_user(
 @router.get(
     "/users-accounts/{user_id}",
     response_model=UserAccountDetail,
-    summary="User account detail with active sessions",
+    summary="User account detail with active sessions and recent auth events",
     responses={**_GUARD_ERRORS, 404: _ERR_404, 422: _ERR_422},
 )
 async def get_user_account(
@@ -228,7 +325,9 @@ async def get_user_account(
     db: AsyncSession = Depends(get_db),
     user: AuthUser = Depends(manage_users),
 ) -> UserAccountDetail:
-    detail = await UserAdminService(db).get_user(user_id)
+    detail = await UserAdminService(db).get_user(
+        user_id, with_audit=user.has(Permission.AUDIT_AUTH_READ)
+    )
     return UserAccountDetail(
         **user_read(detail.row).model_dump(),
         active_sessions=[
@@ -242,6 +341,8 @@ async def get_user_account(
             )
             for s in detail.sessions
         ],
+        recent_activity=[audit_read(r) for r in detail.recent_activity],
+        recent_audit=[audit_read(r) for r in detail.recent_audit],
     )
 
 

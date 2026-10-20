@@ -98,6 +98,7 @@ EXPECTED_SPECIAL_READS: dict[str, str] = {
     "/admin/users-accounts/stats": MANAGE,
     "/admin/users-accounts/{user_id}": MANAGE,
     "/admin/access-requests": MANAGE,
+    "/admin/auth-audit": Permission.AUDIT_AUTH_READ,
 }
 # Chart-aggregation reads added by PR-14 (planchanges4 B7.1, B7.2): each must
 # exist and need exactly dashboard:read.

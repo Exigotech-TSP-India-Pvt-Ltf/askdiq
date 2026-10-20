@@ -13,7 +13,7 @@ import type { NotificationItem } from "@/components/shell/NotificationBell";
 
 export const PENDING_ACCESS_QUERY_KEY = "admin/access-requests/pending-count";
 export const ACTIVE_ALERTS_QUERY_KEY = "admin/alerts/active";
-/** Badge refresh (paused when the tab is hidden); focus also revalidates. */
+/** Fallback badge refresh while the live stream is down (paused when hidden). */
 export const PENDING_ACCESS_POLL_MS = 60_000;
 /** Fallback alerts refresh while the live stream is disconnected. */
 export const ACTIVE_ALERTS_POLL_MS = 30_000;
@@ -38,7 +38,10 @@ export function usePendingAccessCount(): number {
   const query = useApiQuery<number>(allowed ? PENDING_ACCESS_QUERY_KEY : null, (signal) => fetchPendingAccessCount(signal), {
     staleTime: STALE_MS,
   });
-  useVisibilityPolling(() => void query.refetch(), PENDING_ACCESS_POLL_MS, allowed);
+  // Pushed by the console live stream ("users" scope: a request was made or
+  // decided); polling is only the fallback while the stream is down.
+  const live = useLiveConnected();
+  useVisibilityPolling(() => void query.refetch(), PENDING_ACCESS_POLL_MS, allowed && !live);
   return allowed ? query.data ?? 0 : 0;
 }
 

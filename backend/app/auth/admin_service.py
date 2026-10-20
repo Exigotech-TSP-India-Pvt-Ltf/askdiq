@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
@@ -41,13 +41,16 @@ from app.auth.sessions import SessionService, utcnow
 from app.auth.user_repository import (
     AccessRequestRepository,
     AccessRequestRow,
+    AuthAuditFilters,
+    AuthAuditRepository,
     AuthStatsRepository,
     UserFilters,
     UserListRow,
     UserRepository,
 )
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models.db_models import AccessRequest, AuthSession, User
+from app.governance.pagination import Total
+from app.models.db_models import AccessRequest, AuditLog, AuthSession, User
 
 DETAIL_USER_NOT_FOUND = "User not found."
 DETAIL_REQUEST_NOT_FOUND = "Access request not found."
@@ -60,6 +63,18 @@ DETAIL_TARGET_SUSPENDED = "This user is suspended. Reactivate them first."
 DETAIL_EMAIL_EXISTS = "A user with this email already exists."
 LIVE_SESSIONS_LIMIT = 50
 LOGIN_EVENT = AuthEvent.LOGIN_SUCCESS.value
+# Events behind the KPI sparklines (stats ``events_per_day``) and their span.
+SPARK_EVENTS: tuple[str, ...] = (
+    AuthEvent.ACCESS_REQUESTED.value,
+    AuthEvent.USER_INVITED.value,
+    AuthEvent.ACCESS_APPROVED.value,
+    AuthEvent.USER_REACTIVATED.value,
+    AuthEvent.USER_SUSPENDED.value,
+)
+SPARK_DAYS = 14
+# Auth events shown per user in the drawer (activity / about them).
+RECENT_AUDIT_LIMIT = 8
+AUTH_EVENTS: tuple[str, ...] = tuple(e.value for e in AuthEvent)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +88,8 @@ class UserChange:
 class UserDetail:
     row: UserListRow
     sessions: list[AuthSession]
+    recent_activity: list[AuditLog] = field(default_factory=list)
+    recent_audit: list[AuditLog] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +102,19 @@ class UserStats:
     funnel: dict[str, int]
     role_mix: dict[str, int]
     time_to_approve: dict[str, int]
+    events_per_day: dict[str, list[tuple[date, int]]] = field(default_factory=dict)
+    events_days: int = 0
+
+
+def _daily_series(
+    counts: dict[date, int], now: datetime, days: int
+) -> list[tuple[date, int]]:
+    """``days`` UTC days ending today, zero-filled, oldest first."""
+    first_day = (now - timedelta(days=days - 1)).date()
+    return [
+        (first_day + timedelta(days=i), counts.get(first_day + timedelta(days=i), 0))
+        for i in range(days)
+    ]
 
 
 def _naive_utc(moment: datetime) -> datetime:
@@ -101,6 +131,7 @@ class UserAdminService:
         self._users = UserRepository(db)
         self._requests = AccessRequestRepository(db)
         self._stats = AuthStatsRepository(db)
+        self._audit = AuthAuditRepository(db)
         self._sessions = SessionService(db, clock=clock)
 
     # ------------------------------------------------------------------ reads
@@ -108,14 +139,37 @@ class UserAdminService:
     async def list_users(self, filters: UserFilters) -> tuple[list[UserListRow], int]:
         return await self._users.list(filters)
 
-    async def get_user(self, user_id: uuid.UUID) -> UserDetail:
+    async def get_user(
+        self, user_id: uuid.UUID, *, with_audit: bool = False
+    ) -> UserDetail:
+        """The user and live sessions; ``with_audit`` adds their newest auth
+        events (by them and about them)."""
         user = await self._users.get(user_id)
         if user is None:
             raise NotFoundError(DETAIL_USER_NOT_FOUND)
-        return UserDetail(
+        detail = UserDetail(
             row=UserListRow(user, await self._users.approver_email(user)),
             sessions=await self._sessions.live_sessions(user_id, LIVE_SESSIONS_LIMIT),
         )
+        if with_audit:
+            detail.recent_activity.extend(
+                await self._audit.recent(
+                    AUTH_EVENTS, RECENT_AUDIT_LIMIT, actor=user.email
+                )
+            )
+            detail.recent_audit.extend(
+                await self._audit.recent(
+                    AUTH_EVENTS, RECENT_AUDIT_LIMIT, target_user_id=user.id
+                )
+            )
+        return detail
+
+    async def auth_audit(
+        self, filters: AuthAuditFilters, count_cap: int
+    ) -> tuple[list[AuditLog], bool, Total]:
+        """One keyset page of auth events, whether more follow, and the total."""
+        rows, has_more = await self._audit.page(filters)
+        return rows, has_more, await self._audit.total(filters, count_cap)
 
     async def list_requests(
         self, status: AccessRequestStatus | None, limit: int, offset: int
@@ -128,11 +182,13 @@ class UserAdminService:
         per_day = await self._stats.events_per_day(
             LOGIN_EVENT, _naive_utc(since.replace(hour=0, minute=0, second=0))
         )
-        first_day = (now - timedelta(days=days - 1)).date()
-        series = []
-        for offset in range(days):
-            day = first_day + timedelta(days=offset)
-            series.append((day, per_day.get(day, 0)))
+        series = _daily_series(per_day, now, days)
+        spark_start = (now - timedelta(days=SPARK_DAYS - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        spark = await self._stats.events_per_day_by_action(
+            SPARK_EVENTS, _naive_utc(spark_start)
+        )
         status_counts = await self._users.count_by_status()
         return UserStats(
             days=days,
@@ -152,6 +208,11 @@ class UserAdminService:
             },
             role_mix=await self._users.active_role_mix(),
             time_to_approve=await self._requests.approval_histogram(since),
+            events_per_day={
+                action: _daily_series(counts, now, SPARK_DAYS)
+                for action, counts in spark.items()
+            },
+            events_days=SPARK_DAYS,
         )
 
     # ------------------------------------------------------------ user changes
