@@ -1,7 +1,7 @@
 # Light / dark theme parity audit
 
 Owner report: after switching themes, parts of the dashboard stayed in the old theme.
-This file is the inventory required by planchanges4 F0.3.5 (newplan §15.2a). Every PR that
+This file is the theme parity inventory. Every PR that
 adds or touches a page or shared component adds or updates its row here.
 
 ## How each row was checked
@@ -21,7 +21,7 @@ adds or touches a page or shared component adds or updates its row here.
 
 Legend: **Pass** = verified in code and tests; **Fixed** = was broken, fixed in PR-15 (cause in brackets).
 
-## Root causes found (newplan §15.2a)
+## Root causes found
 
 | # | Cause | Fix in PR-15 |
 |---|---|---|
@@ -184,7 +184,7 @@ motion from `lib/motion.ts` presets only, reduced to opacity (or instant) under 
 
 - Coloured status chips (`bg-emerald-50 text-emerald-700` and similar) render as light chips in
   dark mode. They stay readable (AA) but should move to the `status-*-bg` / `status-*-fg` tokens
-  when their components are next touched (F3 to F6).
+  when their components are next touched.
 - Decorative glows still use `rgba(...)` drop-shadows on the dark hero panels; they are
   theme-neutral.
 - The pre-paint theme script carries the per-request CSP nonce from `middleware.ts` (PR-18).

@@ -67,7 +67,7 @@ askdiq/
 │   ├── Dockerfile, .dockerignore, .env.local.example, .eslintrc.json, .npmrc
 │   ├── next.config.js, tailwind.config.ts, postcss.config.js, tsconfig.json, vitest.config.ts
 │   └── package.json, package-lock.json
-├── docs/                         all documentation (plan.md, deployment/, technical/, walkthroughs/, archive/)
+├── docs/                         all documentation (plan.md, deployment/, technical/, walkthroughs/, architecture/)
 ├── infra/                        deploy kit, server scripts, compose files, nginx confs, prod env templates
 │   ├── docker-compose.yml        local full stack (postgres:5433, backend:8000, frontend:3000)
 │   ├── docker-compose.prod.example.yml  reference for the server-owned prod compose
@@ -84,9 +84,6 @@ askdiq/
 | `README.md` | System overview, architecture, features, local development, testing/CI and links to all docs. |
 | `docs/deployment/docker-and-auth-contract.md` | Docker deployment guide and the frontend/backend SSO "frontend contract" (steps referenced by the auth route handlers). |
 | `docs/plan.md` | The single current plan: status of every work item, open items, risks. |
-| `docs/archive/rag-hardening-plan.md` | Original RAG backend hardening and evaluation plan (phases 0-11). Historical. |
-| `docs/archive/newplan.md` | Admin console revamp analysis and plan (rev 3.x): OWASP controls (s12), concurrency/performance (s13), white-labelling (s14), UI/UX audit (s15), CI/PR workflow (s16). Plans describe intent; code is the truth. |
-| `docs/archive/planchanges4.md` | Phased execution checklist for `docs/archive/newplan.md` (backend B0-B7, frontend F0-F8), PR register and OWASP matrix. |
 | `infra/scale-out/askdiq-api.conf` | Reference nginx config for a two-replica API behind `et-platform-nginx-1` (askdiq.ethub.co). Not the live conf. See [Deployment](08-deployment-operations.md). |
 | `infra/docker-compose.yml` | Local stack (`docker compose -f infra/docker-compose.yml up --build`): `pgvector/pgvector:pg18` on host port 5433 (db `ragdb`), backend on 8000 (`backend/.env`, `DATABASE_URL` overridden to the compose network), frontend on 3000 (`frontend/.env.local`, `API_BASE_URL=http://backend:8000`). |
 | `infra/scale-out/docker-compose.yml` | Optional scale-out compose (api-1, api-2, worker) with a placeholder network name. Never ship it in a deploy package (cause of the 2026-10-16 incident); see [Deployment](08-deployment-operations.md). |
@@ -115,8 +112,8 @@ Full route list: [API reference](04-api-reference.md).
 | Module | Purpose |
 |---|---|
 | `admin.py` | Admin endpoints: users, conversations, dashboard (`GET /admin/dashboard`); includes the entity, feedback, governance and usage sub-routers. |
-| `admin_entities.py` | Visitors and conversations entity-page stats under `/admin` (B7.2). |
-| `admin_feedback.py` | Feedback / RLHF loop admin API (B5). |
+| `admin_entities.py` | Visitors and conversations entity-page stats under `/admin`. |
+| `admin_feedback.py` | Feedback / RLHF loop admin API. |
 | `admin_governance.py` | Governance endpoints under `/admin/governance` (overview, monitoring, logs, traces, stream). |
 | `admin_usage.py` | SQL usage and cost aggregation API. |
 | `auth.py` | `/auth/*`: SSO sign-in (`/auth/sso/login`, callback exchange), current user, logout, access requests. |
@@ -240,7 +237,7 @@ Full route list: [API reference](04-api-reference.md).
 | `insights/jobs.py`, `triggers.py` | Insights job handlers; lightweight write-path enqueue trigger. |
 | `insights/llm.py`, `rules.py` | LLM batch stage; deterministic rule stage. |
 | `insights/repository.py`, `service.py` | Insights data access; classification and rollup service. |
-| `insights/taxonomy.py`, `taxonomy_service.py` | Taxonomy codes; taxonomy administration (F7). |
+| `insights/taxonomy.py`, `taxonomy_service.py` | Taxonomy codes; taxonomy administration. |
 | `insights/types.py` | Value objects between classifier stages. |
 | `jobs/handlers.py` | Built-in job handlers. |
 | `jobs/queue.py` | Postgres job queue: enqueue, claim (`FOR UPDATE SKIP LOCKED`), retry. |
@@ -422,7 +419,7 @@ and `perf` (timing gates; CI runs them in a separate step without coverage). `co
 | `tests/helpers/`, `tests/fixtures/` | Router mocks, auth and entity harnesses, a fake User Management server; dashboard and insights fixtures. |
 | `scripts/audit-gate.mjs` | `npm audit --omit=dev` gate: fails on high/critical advisories not in `.github/audit/npm-audit-allowlist.json` or on expired entries. |
 | `docs/technical/frontend/contracts/dashboard-aggregations.md`, `entity-stats.md` | API contracts for the dashboard and entity pages. |
-| `docs/technical/frontend/interaction-audit.md`, `theme-audit.md` | Click/interaction audit table; theme audit. |
+| `docs/technical/frontend/theme-audit.md` | Light/dark theme parity inventory. |
 
 ## Repository tooling
 

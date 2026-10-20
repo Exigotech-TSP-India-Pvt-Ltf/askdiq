@@ -80,7 +80,7 @@ work across the console.
 backend/     FastAPI app (app/), Alembic migrations, scripts/, tests/, knowledge base (data/real_docs/)
 frontend/    Next.js 14 app (app/, components/, lib/), tests/ (vitest + Testing Library)
 infra/       deploy kit builder, server deploy/rollback scripts, compose files, nginx confs, prod env templates
-docs/        plan.md, deployment/, technical/, walkthroughs/ (one per console page), archive/ (old plans)
+docs/        plan.md, deployment/, technical/, walkthroughs/ (one per console page), architecture/ (system diagram)
 .github/     CI workflow, Dependabot, PR template, audit allow-lists
 ```
 
@@ -186,4 +186,3 @@ and [docs/deployment/environment-and-sso.md](docs/deployment/environment-and-sso
 | [docs/technical/](docs/technical/README.md) | Architecture, repository guide, API, database, configuration, security, operations, development, website integration, frontend contracts and audits |
 | [docs/walkthroughs/](docs/walkthroughs/) | One walkthrough per console page |
 | [docs/architecture/index.html](docs/architecture/index.html) | Interactive architecture diagram |
-| [docs/archive/](docs/archive/) | Original phase plans (kept for the section ids cited in code comments) |
