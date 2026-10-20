@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import delete
 
 from app.api.routes import metrics
 from app.core.config import get_settings
@@ -314,6 +315,9 @@ async def test_usage_summary_hourly_series_for_short_range(client, db_session) -
 async def test_live_evaluation_runs_are_utc_days(client, db_session) -> None:
     day1 = datetime(2099, 3, 1) + timedelta(days=uuid.uuid4().int % 200)
     day2 = day1 + timedelta(days=1)
+    # The live view reads the latest 300 records: rows other tests committed
+    # (with measured stage latencies) must not count. Rolled back afterwards.
+    await db_session.execute(delete(EvaluationRecord))
     for created, passed, grounded, faith in (
         (day1 + timedelta(hours=1), True, True, 5.0),
         (day1 + timedelta(hours=2), False, False, 3.0),
