@@ -237,7 +237,7 @@ def clarify_eligible(
     return len(decompose_query(query)) <= 1
 
 
-def _humanize(name: str) -> str:
+def humanize_source_name(name: str) -> str:
     stem = PurePosixPath(name.replace("\\", "/")).name
     stem = re.sub(r"\.(md|markdown|txt|pdf|docx?|html?)$", "", stem, flags=re.I)
     text = re.sub(r"[_\-]+", " ", stem).strip()
@@ -251,7 +251,7 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-def _metadata_text(metadata: dict, *keys: str) -> str | None:
+def metadata_text(metadata: dict, *keys: str) -> str | None:
     for key in keys:
         value = metadata.get(key)
         if isinstance(value, str) and value.strip():
@@ -274,13 +274,13 @@ def select_candidates(sources: list[SourceChunk]) -> list[ClarifyCandidate]:
         if source.score < floor or len(picked) >= limit:
             break
         metadata = source.metadata or {}
-        source_name = _metadata_text(metadata, "source_name", "file_name", "title")
-        section = _metadata_text(metadata, "section_heading", "heading")
+        source_name = metadata_text(metadata, "source_name", "file_name", "title")
+        section = metadata_text(metadata, "section_heading", "heading")
         topic = (source.document_id, (section or "").lower())
         if topic in seen_topics:
             continue
         seen_topics.add(topic)
-        doc_label = _humanize(source_name) if source_name else None
+        doc_label = humanize_source_name(source_name) if source_name else None
         label = " / ".join(p for p in (doc_label, section) if p)
         if not label:
             continue

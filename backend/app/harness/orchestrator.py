@@ -6,7 +6,10 @@ build prompt -> call LLM (with retry) ->
 validate output -> post-guardrails -> structured response.
 
 A short, ambiguous question may get a clarifying question with 2-4 options
-instead of an answer (outcome ``clarify``, see app.harness.clarify).
+instead of an answer (outcome ``clarify``, see app.harness.clarify). A
+question with a referent that points at nothing, or an underspecified
+compliance request, is asked back before the low-confidence fallback
+(app.harness.ambiguity).
 """
 
 import time
@@ -19,6 +22,7 @@ from app.governance.audit import emit_audit_event
 from app.guardrails.conversational import detect_conversational_intent
 from app.guardrails.post_checks import run_post_checks
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
+from app.harness.ambiguity import assess, rule_clarification, service_clarification
 from app.harness.clarify import (
     ANSWER_OR_CLARIFY,
     CLARIFY_OUTCOME,
@@ -184,11 +188,14 @@ async def run_query(
     stage_timings: dict,
     history: list[ChatTurn] | None = None,
     boost_document_ids: list[str] | None = None,
+    clarification_reply: bool = False,
 ) -> QueryResponse:
     """Run the complete RAG query pipeline.
 
     ``boost_document_ids``: documents of the clarification options the user
     picked; their chunks are put first in the answer context.
+    ``clarification_reply``: the query already carries the answers to a
+    clarification, so it is never asked back again.
 
     Flow:
 
@@ -291,7 +298,11 @@ async def run_query(
 
     # A short question that may need clarifying is retrieved wider (more
     # documents), so any options cover the knowledge base's real intents.
-    wide = clarify_eligible(query, history, follow_up=follow_up_detected)
+    ambiguity = assess(query, history, clarification_reply=clarification_reply)
+    gated = not clarification_reply and clarify_eligible(
+        query, history, follow_up=follow_up_detected
+    )
+    wide = gated or ambiguity.detected
     sources: list[SourceChunk] = await retrieve(
         vector_store,
         effective_query,
@@ -329,6 +340,46 @@ async def run_query(
 
     max_retrieval_score = max(source.score for source in sources)
     stage_timings["retrieval_relevance_score"] = max_retrieval_score
+
+    decision_usage: dict[str, int] | None = None
+    # Rule-detected ambiguity asks BEFORE the low-confidence fallback: a vague
+    # question's evidence is spread thin over several documents by nature.
+    if ambiguity.detected:
+        t_clarify = time.perf_counter()
+        ruled = await rule_clarification(ambiguity, query, sources)
+        decision_usage = ruled.usage
+        stage_timings["clarify_decision"] = (time.perf_counter() - t_clarify) * 1000
+        logger.info(
+            "clarify_rules",
+            kind=ambiguity.kind.value,
+            missing_slots=list(ambiguity.missing_slots),
+            decision=ruled.decision,
+            asked=ruled.clarification is not None,
+        )
+        if ruled.clarification is not None:
+            usage = ruled.usage or {}
+            prompt_tok = usage.get("prompt_tokens")
+            completion_tok = usage.get("completion_tokens")
+            return _clarification_response(
+                ruled.clarification,
+                request_id=request_id,
+                latency_ms=(time.perf_counter() - start) * 1000,
+                sources=sources,
+                confidence=max_retrieval_score,
+                follow_up_detected=follow_up_detected,
+                history_turns_sent=history_turns_sent,
+                prompt_tokens=prompt_tok,
+                completion_tokens=completion_tok,
+                total_tokens=(prompt_tok or 0) + (completion_tok or 0)
+                if ruled.usage
+                else None,
+                reasoning_tokens=None,
+                token_details=(
+                    {"clarify_decision": ruled.usage, "cached_tokens": 0}
+                    if ruled.usage
+                    else {}
+                ),
+            )
 
     if max_retrieval_score < settings.min_retrieval_score:
         latency_ms = (time.perf_counter() - start) * 1000
@@ -377,8 +428,10 @@ async def run_query(
 
     # Short question + evidence spread over several similar-scoring topics:
     # the model may ask which one is meant instead of answering (same call).
-    clarify_candidates = plan_clarification(
-        query, sources, history, follow_up=follow_up_detected
+    clarify_candidates = (
+        plan_clarification(query, sources, history, follow_up=follow_up_detected)
+        if gated
+        else []
     )
     llm_kwargs: dict[str, object] = (
         {
@@ -407,8 +460,9 @@ async def run_query(
     post_flags: list[str] = []
     guardrail_post_ms = 0.0
     attempts_usage: list[dict] = []
-    tot_prompt = 0
-    tot_completion = 0
+    # The decision call (if any) is billed with the answer it led to.
+    tot_prompt = (decision_usage or {}).get("prompt_tokens", 0)
+    tot_completion = (decision_usage or {}).get("completion_tokens", 0)
     tot_reasoning = 0
     tot_cached = 0
 
@@ -515,7 +569,7 @@ async def run_query(
     stage_timings["guardrail_post"] = guardrail_post_ms
 
     tot_total = tot_prompt + tot_completion
-    has_llm_usage = len(attempts_usage) > 0
+    has_llm_usage = len(attempts_usage) > 0 or decision_usage is not None
     prompt_tokens = tot_prompt if has_llm_usage else None
     completion_tokens = tot_completion if has_llm_usage else None
     total_tokens = tot_total if has_llm_usage else None
@@ -526,6 +580,7 @@ async def run_query(
             "llm_attempts": len(attempts_usage),
             "attempts": attempts_usage,
             "cached_tokens": tot_cached,
+            **({"clarify_decision": decision_usage} if decision_usage else {}),
         }
         if has_llm_usage
         else {}
@@ -588,6 +643,26 @@ async def run_query(
     # ---------------------------------------------------------
 
     total_ms = (time.perf_counter() - start) * 1000
+
+    if not grounded and gated:
+        # A vague short question whose best guess is unsupported: ask which
+        # service is meant rather than "couldn't find enough support".
+        clarification = service_clarification(query, sources)
+        if clarification is not None:
+            return _clarification_response(
+                clarification,
+                request_id=request_id,
+                latency_ms=total_ms,
+                sources=sources,
+                confidence=max_retrieval_score,
+                follow_up_detected=follow_up_detected,
+                history_turns_sent=history_turns_sent,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                reasoning_tokens=reasoning_tokens,
+                token_details=token_details,
+            )
 
     if not grounded:
         outcome = "ungrounded"

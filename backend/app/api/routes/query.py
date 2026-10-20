@@ -62,6 +62,7 @@ async def query(
     response = await run_query(
         query=resolved.query if resolved else body.query,
         boost_document_ids=resolved.document_ids if resolved else None,
+        clarification_reply=resolved is not None,
         top_k=settings.default_top_k,
         filters=body.filters,
         vector_store=vector_store,

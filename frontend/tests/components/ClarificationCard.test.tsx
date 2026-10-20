@@ -35,6 +35,44 @@ const two: Clarification = {
 
 const one: Clarification = { ...two, preamble: "", questions: [two.questions[0]] };
 
+// The series the backend asks for an underspecified audit request.
+const series: Clarification = {
+  preamble: "Happy to help you get ready. A few quick details will let me give you a specific plan and timeline.",
+  original_query: "We have an audit coming up. What should we do and how long will it take?",
+  questions: [
+    {
+      id: "Q1",
+      header: "Framework",
+      question: "Which framework is the audit against?",
+      options: [
+        { id: "O1", label: "Essential Eight", description: "ACSC Essential Eight", sources: ["e8-service-page.md"] },
+        { id: "O2", label: "CIS Benchmark", description: "CIS Microsoft 365" },
+        { id: "O3", label: "ISO 27001", description: "ISO/IEC 27001 controls" },
+      ],
+    },
+    {
+      id: "Q2",
+      header: "Maturity",
+      question: "Where are your controls today?",
+      options: [
+        { id: "O1", label: "Not assessed yet" },
+        { id: "O2", label: "Partly implemented" },
+        { id: "O3", label: "Mostly in place" },
+      ],
+    },
+    {
+      id: "Q3",
+      header: "Environment",
+      question: "Which environment is in scope?",
+      multi_select: true,
+      options: [
+        { id: "O1", label: "Microsoft 365" },
+        { id: "O2", label: "Entra ID and Intune" },
+      ],
+    },
+  ],
+};
+
 function key(el: Element, k: string) {
   fireEvent.keyDown(el, { key: k });
 }
@@ -100,6 +138,46 @@ describe("ClarificationCard", () => {
       "Topic: Become a partner · Region: Australia, New Zealand",
     );
     expect(screen.queryByRole("button", { name: "Send answers" })).not.toBeInTheDocument();
+  });
+
+  it("renders a 3-question series and sends every answer from the keyboard", () => {
+    const onSubmit = vi.fn();
+    render(<ClarificationCard clarification={series} onSubmit={onSubmit} autoFocus />);
+    const card = screen.getByRole("region", { name: "Clarifying questions" });
+    expect(within(card).getByText(series.preamble!)).toBeInTheDocument();
+    expect(within(card).getAllByRole("tab").map((t) => t.textContent)).toEqual([
+      "1Framework",
+      "2Maturity",
+      "3Environment",
+      "Review",
+    ]);
+    expect(screen.getByText("Question 1 of 3")).toBeInTheDocument();
+    const first = screen.getAllByRole("radio");
+    expect(first[0]).toHaveFocus();
+    key(first[0], "1");
+    key(first[0], "Enter");
+    expect(screen.getByText("Question 2 of 3")).toBeInTheDocument();
+    const second = screen.getAllByRole("radio");
+    expect(second[0]).toHaveFocus();
+    key(second[0], "2");
+    key(second[1], "Enter");
+    expect(screen.getByText("Question 3 of 3")).toBeInTheDocument();
+    const boxes = screen.getAllByRole("checkbox");
+    expect(boxes[0]).toHaveFocus();
+    key(boxes[0], " ");
+    key(boxes[0], "ArrowDown");
+    key(boxes[1], " ");
+    key(boxes[1], "Enter");
+    expect(screen.getByText("Review your answers")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      [
+        { question_id: "Q1", option_ids: ["O1"] },
+        { question_id: "Q2", option_ids: ["O2"] },
+        { question_id: "Q3", option_ids: ["O1", "O2"] },
+      ],
+      "Framework: Essential Eight · Maturity: Partly implemented · Environment: Microsoft 365, Entra ID and Intune",
+    );
   });
 
   it("switches questions with the arrow keys and the Back button", () => {
