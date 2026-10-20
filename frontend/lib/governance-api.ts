@@ -492,6 +492,14 @@ export const governanceApi = {
       signal,
     ),
 
+  /** `GET /governance/traces/batch`: the drawers of a page of rows in one request. */
+  tracesBatch: (token: string | null, requestIds: readonly string[], audience: Audience, signal?: AbortSignal) =>
+    getJson<{ items: Record<string, GovernanceTraceDetail>; missing: string[] }>(
+      `/governance/traces/batch${buildQuery({ ids: requestIds, audience: audienceParam(audience) })}`,
+      token,
+      signal,
+    ),
+
   logs: (
     token: string | null,
     params: LogFilters & { audience: Audience; cursor?: string | null; limit?: number },
