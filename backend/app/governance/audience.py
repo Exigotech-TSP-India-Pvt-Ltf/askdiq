@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import dashboard_cache
 from app.core.config import get_settings
 from app.dashboard.snapshots import schedule_drop_snapshots
+from app.governance.live_cache import clear_live_caches
 from app.governance.test_ips import get_effective_test_ips, is_test_ip
 from app.models.db_models import AuditLog, ChatMessageRecord, ChatSession
 
@@ -61,6 +62,7 @@ def invalidate_audience_cache() -> None:
     invalidate_test_ips_cache()
     # Every audience-scoped dashboard aggregate depends on the classification.
     dashboard_cache.clear()
+    clear_live_caches()
     schedule_drop_snapshots()
     try:
         from app.api.routes.admin_usage import clear_usage_caches  # noqa: PLC0415 - governance must not import routes at load time

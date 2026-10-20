@@ -18,7 +18,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.audit import AUTH_AUDIT_ACTIONS
@@ -28,32 +27,21 @@ from app.auth.principal import AuthUser
 from app.core.cache import dashboard_cached
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
-from app.core.database import get_db, release_connection
-from app.core.http_cache import cached_response
+from app.core.database import get_db
+from app.core.http_cache import encoded_response, weak_etag
 from app.core.logging_config import get_logger
-from app.core.middleware import METRICS
 from app.core.serialization import sanitize_csv_cell
 from app.core.sse import event_stream
-from app.dashboard import active_visitors
 from app.dashboard.snapshots import GatherRunner, get_snapshot, register
 from app.governance import logs, timeseries, traces
 from app.governance.audience import Audience, audience_scope
 from app.governance.audit import record_audit_event
-from app.governance.monitoring import (
-    LATENCY_UNIT,
-    count_traces,
-    labelled,
-    persisted_error_counts,
-    scoped_latency_query,
-    stage_latency_summary,
-)
-from app.governance.online_eval import quality_tracker
-from app.governance.overview import overview_payload
+from app.governance.live_cache import encode
+from app.governance.monitoring import count_traces
+from app.governance.monitoring_snapshot import monitoring_cache, with_live_values
+from app.governance.overview import overview_cache
 from app.governance.pagination import Cursor
-from app.governance.quota_series import quota_series
-from app.governance.resource_store import resources_snapshot
 from app.governance.stream import GovernanceStreamHub, get_governance_hub
-from app.models.db_models import LatencyRecord
 from app.schemas.governance import (
     GovernanceLogPage,
     GovernanceOverview,
@@ -181,109 +169,27 @@ _MONITORING_DESCRIPTION = (
 )
 
 
-async def _resources(session: AsyncSession) -> dict[str, Any]:
-    """Aggregated resource snapshot of all live workers (never fails the page)."""
-    try:
-        return await resources_snapshot(session)
-    except Exception:
-        logger.warning("resources_snapshot_failed", exc_info=True)
-        return {}
-
-
 @router.get(
     "/governance/monitoring",
     summary="Governance monitoring snapshot",
     description=_MONITORING_DESCRIPTION,
-    responses=_ERRORS,
+    responses={**_ERRORS, 304: {"description": "Not modified (ETag match)."}},
 )
 async def governance_monitoring(
+    request: Request,
     audience: Audience = Depends(audience_scope),
-    db: AsyncSession = Depends(get_db),
+    hub: GovernanceStreamHub = Depends(get_governance_hub),
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(read_guard),
-) -> dict[str, Any]:
-    window_hours = timeseries.HOURS
-    window = f"{window_hours}h"
-    now = timeseries.utcnow()
-    since = now - timedelta(hours=window_hours)
-    q_records = await scoped_latency_query(
-        db, audience, select(LatencyRecord).where(LatencyRecord.created_at >= since)
+) -> Response:
+    # Database part from memory (refreshed in the background every sample
+    # interval); live process values and the streamed gauges overlaid.
+    entry = await monitoring_cache.get(audience, runner)
+    payload = with_live_values(entry.payload, audience, hub.latest_resources)
+    body = encode(payload)
+    return encoded_response(
+        request, body, weak_etag(body), {"X-Data-As-Of": entry.as_of.isoformat()}
     )
-    records = (await db.execute(q_records)).scalars().all()
-    totals = [r.total_ms for r in records]
-    stages = stage_latency_summary(records)
-    avg_total_ms = sum(totals) / len(totals) if totals else None
-
-    active_users = await active_visitors.count_active(db, audience, since, now)
-    errors = await persisted_error_counts(db, audience, since)
-    traces_total = await count_traces(db, audience)
-    await release_connection(db)  # never hold a pool slot while waiting for more
-
-    starts = timeseries.hour_starts(now)
-    start = starts[0]
-    percentiles, lat, turns, errs, flags, mix, resources = await runner.gather(
-        lambda s: timeseries.stage_percentiles(s, audience, since),
-        lambda s: timeseries.latency_rollup(s, audience, start, now),
-        lambda s: timeseries.turns_rollup(s, audience, start, now, now),
-        lambda s: timeseries.server_error_rollup(s, audience, start, now),
-        lambda s: timeseries.guardrail_flag_breakdown(s, audience, since),
-        lambda s: timeseries.outcome_mix(s, audience, since),
-        _resources,
-    )
-    effective = resources.get("effective") or {}
-
-    process_counter = audience == "overview"
-    requests_total = METRICS["requests"] if process_counter else len(records)
-    quota_data = quota_series.sample()
-    error_source = "chat_messages.outcome+audit_log.server_error"
-
-    return {
-        "window_hours": window_hours,
-        "latency_unit": LATENCY_UNIT,
-        "api_requests": requests_total,
-        "queries_24h": len(records),
-        "active_users": active_users,
-        "active_queries": METRICS["active_queries"],
-        "avg_latency_ms": avg_total_ms,
-        "total_latency_ms": avg_total_ms,
-        "p95_latency_ms": percentiles["total"]["p95_ms"],
-        "error_rate": errors["error_rate"],
-        "error_counts": {**errors, "window": window, "source": error_source},
-        "traces_total": traces_total,
-        "embedding_latency_ms": stages["embedding"]["avg_ms"],
-        "retrieval_latency_ms": stages["retrieval"]["avg_ms"],
-        "llm_latency_ms": stages["llm"]["avg_ms"],
-        "reranker_latency_ms": stages["reranker"]["avg_ms"],
-        "stage_latency": stages,
-        "stage_percentiles": percentiles,
-        "hourly": timeseries.hourly_series(starts, lat, turns, errs),
-        "guardrail_flag_breakdown": flags,
-        "outcome_mix": mix,
-        "counts": {
-            "api_requests": labelled(
-                requests_total,
-                "since_process_start" if process_counter else window,
-                "in_memory_counter" if process_counter else "latency_metrics",
-            ),
-            "queries_24h": labelled(len(records), window, "latency_metrics"),
-            "active_users": labelled(active_users, window, active_visitors.SOURCE),
-            "active_queries": labelled(
-                METRICS["active_queries"], "now", "in_memory_counter"
-            ),
-            "errors": labelled(errors["errors"], window, error_source),
-            "traces_total": labelled(traces_total, "all_time", "latency_metrics"),
-        },
-        # Legacy keys, now from the shared aggregate of every live worker:
-        # CPU / memory % of the container when it is limited, else the host;
-        # RAM MB = summed RSS of all API workers.
-        "process_cpu_percent": effective.get("cpu_percent"),
-        "process_ram_mb": (resources.get("process") or {}).get("rss_mb"),
-        "process_ram_percent": effective.get("memory_percent"),
-        "resources": resources,
-        "azure_quota_telemetry": quota_data,
-        "azure_quota_series": quota_series.points(),
-        "online_quality_kpis": quality_tracker.get_kpis(),
-    }
 
 
 # ============================================================================
@@ -746,10 +652,12 @@ async def governance_overview(
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(read_guard),
 ) -> Response:
-    payload = GovernanceOverview.model_validate(
-        await overview_payload(runner, audience)
+    # Served from the memory copy the stream producer keeps fresh: encoded
+    # once per change, so a request (or a 304) costs a lookup.
+    entry = await overview_cache.get(audience, runner)
+    return encoded_response(
+        request, entry.body, entry.etag, {"X-Data-As-Of": entry.as_of.isoformat()}
     )
-    return cached_response(request, payload)
 
 
 @router.get(
