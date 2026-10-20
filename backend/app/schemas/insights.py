@@ -29,7 +29,7 @@ TZ_PATTERN = r"^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$"
 COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}$"
 MAX_CUSTOM_RANGE_DAYS = 731
 MAX_SEARCH_CHARS = 200
-DEFAULT_PAGE_SIZE = 25
+DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 100
 MAX_OFFSET = 10_000
 
@@ -341,6 +341,34 @@ class ConversationList(BaseModel):
     direction: SortDirection
 
 
+class QuestionSummary(BaseModel):
+    """One labelled question of a conversation, compact (the table's expanded
+    row); the text is masked and cut to 160 characters."""
+
+    turn: int
+    time: str = Field(description="Wall-clock `HH:MM` in `tz`.")
+    text: str
+    intent: str | None
+    intent_label: str | None
+    substantive: bool
+    handled: bool | None
+    quality: str | None
+    quality_label: str | None
+    issue: str | None
+    issue_label: str | None
+    friction: str | None
+
+
+class BundleConversationRow(ConversationRow):
+    questions: list[QuestionSummary] = Field(
+        description="Labelled questions in turn order (expanding is instant)."
+    )
+
+
+class BundleConversationList(ConversationList):
+    items: list[BundleConversationRow]  # type: ignore[assignment]
+
+
 class PersonIdentity(StrEnum):
     """What a probable person is grouped on (never returned itself)."""
 
@@ -441,7 +469,7 @@ class InsightsBundle(BaseModel):
     quality: InsightsQuality | None = None
     dropoff: InsightsDropoff | None = None
     people: InsightsPeople | None = None
-    conversations: ConversationList | None = None
+    conversations: BundleConversationList | None = None
     pending: PendingClassification | None = None
 
 

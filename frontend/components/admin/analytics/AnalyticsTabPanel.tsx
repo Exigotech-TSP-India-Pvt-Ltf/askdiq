@@ -14,7 +14,6 @@ import {
   type CardProps,
 } from "./AnalyticsCards";
 import { ConversationsTable } from "./ConversationsTable";
-import { GuideTab } from "./GuideTab";
 import { SectionBoundary } from "./SectionBoundary";
 import type { AnalyticsTabId } from "./url-state";
 
@@ -29,9 +28,6 @@ export function AnalyticsTabPanel({ tab, ...card }: CardProps & { tab: Analytics
   const variants = useMotionVariants(fadeUp);
   let content: React.ReactNode;
   switch (tab) {
-    case "guide":
-      content = <GuideTab onShow={(t) => card.update({ tab: t })} />;
-      break;
     case "trend":
       content = (
         <>

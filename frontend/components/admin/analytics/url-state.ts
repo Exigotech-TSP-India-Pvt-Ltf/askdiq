@@ -44,8 +44,9 @@ import {
   type InsightsPeriod,
   type SortDirection,
 } from "@/lib/insights-api";
+import { writeUrl } from "@/lib/url-write";
 
-export const ANALYTICS_TAB_IDS = ["guide", "overview", "trend", "flow", "topics", "dropoff", "conversations"] as const;
+export const ANALYTICS_TAB_IDS = ["overview", "trend", "flow", "topics", "dropoff", "conversations"] as const;
 export type AnalyticsTabId = (typeof ANALYTICS_TAB_IDS)[number];
 export const DEFAULT_TAB: AnalyticsTabId = "overview";
 
@@ -373,7 +374,9 @@ export function useAnalyticsUrlState(): AnalyticsUrlState {
   const writeRouter = useCallback((qs: string) => {
     const { search: base, pathname: path, router: r } = latest.current;
     pending.current = { base, next: qs };
-    r.replace(`${path ?? ""}${qs ? `?${qs}` : ""}`, { scroll: false });
+    // Same-frame write (no server round trip): a tab or filter switch paints
+    // from the cache at once.
+    writeUrl(r, `${path ?? ""}${qs ? `?${qs}` : ""}`);
   }, []);
 
   useEffect(() => {

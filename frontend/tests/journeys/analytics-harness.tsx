@@ -47,6 +47,23 @@ const PREFIX = "/api/proxy/admin/insights/";
 const BUNDLE_PARTS = ["summary", "trend", "hourly", "flow", "topics", "quality", "dropoff", "people", "conversations", "pending"];
 
 /**
+ * The recorded table page as the server pages it: `limit` / `offset` slice
+ * the recorded rows (the first 25 of 49) and the page echoes its params.
+ */
+export function pagedConversations(params: URLSearchParams, base: ConversationList = RECORDED.conversations): ConversationList {
+  const limit = Number(params.get("limit") ?? 10);
+  const offset = Number(params.get("offset") ?? 0);
+  return {
+    ...base,
+    items: base.items.slice(offset, offset + limit),
+    limit,
+    offset,
+    sort: (params.get("sort") ?? "start") as ConversationList["sort"],
+    direction: (params.get("dir") ?? "desc") as ConversationList["direction"],
+  };
+}
+
+/**
  * Installs `global.fetch`; `overrides` replace a recorded response per endpoint
  * (a function receives the request's query; `undefined` answers 404).
  */
@@ -58,7 +75,9 @@ export function mockInsightsFetch(overrides: Partial<Record<string, unknown>> = 
       ? typeof override === "function"
         ? (override as (params: URLSearchParams) => unknown)(params)
         : override
-      : (RECORDED as unknown as Record<string, unknown>)[endpoint];
+      : endpoint === "conversations"
+        ? pagedConversations(params)
+        : (RECORDED as unknown as Record<string, unknown>)[endpoint];
   };
   const json = (body: unknown) =>
     body === undefined

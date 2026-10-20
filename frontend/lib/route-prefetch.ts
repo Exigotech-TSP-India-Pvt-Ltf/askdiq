@@ -15,7 +15,7 @@
  */
 import { filtersForPreset } from "@/components/admin/analytics/use-analytics-preload";
 import { DEFAULT_STATE } from "@/components/admin/analytics/url-state";
-import { pageOf, prefetchBundle, viewerTimeZone } from "@/components/admin/analytics/use-insights";
+import { bundleKey, fetchBundle, pageOf, viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
 import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
@@ -138,9 +138,11 @@ const PREFETCHERS: Record<string, Prefetcher> = {
   },
   "/admin/governance": governanceOverall,
   "/admin/analytics": (token, audience) => {
-    // The page's first view: the default range preset, one bundle request.
+    // The page's first view: the default range preset, one bundle request
+    // (every tab, the KPIs and the table's first page with its questions).
     const filters = filtersForPreset({ period: "all", audience, tz: viewerTimeZone() }, DEFAULT_PRESET);
-    prefetchBundle(token, filters, pageOf(DEFAULT_STATE));
+    const page = pageOf(DEFAULT_STATE);
+    warm(bundleKey(filters), (signal) => fetchBundle(token, filters, page, signal));
   },
   "/admin/user-management": () => {
     // KPIs + charts, then the first page of every tab (Users, the request

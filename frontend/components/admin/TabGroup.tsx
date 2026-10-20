@@ -35,7 +35,6 @@ import {
   Gauge,
   Timer,
   ScrollText,
-  BookOpen,
   LayoutDashboard,
   TrendingUp,
   Workflow,
@@ -193,7 +192,6 @@ export const DOCUMENTS_TABS: TabItem[] = [
 
 /** Analytics (Chatbot Insights port). Ids match the `?tab=` values. */
 export const ANALYTICS_TABS: TabItem[] = [
-  { id: "guide", label: "Guide", icon: BookOpen },
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "trend", label: "Trend", icon: TrendingUp },
   { id: "flow", label: "Flow", icon: Workflow },

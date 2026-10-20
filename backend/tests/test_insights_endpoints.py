@@ -309,10 +309,12 @@ async def test_flow_topics_quality_dropoff_people(insights_client):
 
 
 async def test_conversations_paging_and_sorting(insights_client):
-    first = await _get(insights_client, "conversations")
+    default = await _get(insights_client, "conversations")
+    assert len(default["items"]) == 10  # the table's default page size
+    first = await _get(insights_client, "conversations", limit="25")
     assert first["total"] == 49
     assert len(first["items"]) == 25
-    second = await _get(insights_client, "conversations", offset="25")
+    second = await _get(insights_client, "conversations", limit="25", offset="25")
     assert len(second["items"]) == 24
     ids = {r["conv_id"] for r in first["items"]} | {
         r["conv_id"] for r in second["items"]

@@ -60,6 +60,13 @@ def _without_source(body: dict) -> dict:
     return {k: v for k, v in body.items() if k != "source"}
 
 
+def _without_questions(page: dict) -> dict:
+    """The table page without the embedded question summaries (the SQL
+    ``/conversations`` endpoint does not carry them)."""
+    items = [{k: v for k, v in r.items() if k != "questions"} for r in page["items"]]
+    return {**page, "items": items}
+
+
 @pytest.mark.parametrize(
     "case", FILTER_CASES + EXTRA_CASES, ids=lambda c: str(c) or "all"
 )
@@ -70,7 +77,7 @@ async def test_every_part_equals_its_endpoint(insights_client, case):
         expected = await _get(insights_client, widget, _params(case))
         assert _without_source(bundle[widget]) == _without_source(expected), widget
     table = await _get(insights_client, "conversations", _params(case))
-    assert bundle["conversations"] == table
+    assert _without_questions(bundle["conversations"]) == table
     assert bundle["pending"] == await _get(insights_client, "pending", {})
 
 
@@ -98,7 +105,10 @@ async def test_conversation_pages_equal_the_sql_order(insights_client, sort, dir
             expected = await _get(
                 insights_client, "conversations", _params(case, **page)
             )
-            assert bundle["conversations"] == expected, (case, page)
+            assert _without_questions(bundle["conversations"]) == expected, (
+                case,
+                page,
+            )
             assert bundle["summary"] is None
 
 
@@ -122,6 +132,64 @@ async def test_person_detail_equals_the_sql_service(
                 continue
             assert response.status_code == 200, response.text
             assert response.json() == expected.model_dump(mode="json")
+
+
+async def test_rows_embed_their_labelled_questions(insights_client):
+    """Each row's questions equal the detail route's labelled turns (masked,
+    cut to ``QUESTION_CHARS``): expanding a row needs no request."""
+    page = {"limit": "100", "sort": "exchanges", "dir": "desc"}
+    body = await _get(
+        insights_client, "bundle", _params({}, parts="conversations", **page)
+    )
+    rows = body["conversations"]["items"]
+    assert rows
+    for row in rows[:12]:
+        detail = await _get(
+            insights_client, f"conversations/{row['conv_id']}", _params({})
+        )
+        labelled = [t for t in detail["turns"] if not t["pending"]]
+        assert len(row["questions"]) == len(labelled) == row["exchanges"]
+        for q, t in zip(row["questions"], labelled, strict=True):
+            assert q["turn"] == t["turn"]
+            assert q["time"] == t["timestamp"][11:16]
+            assert len(q["text"]) <= engine.QUESTION_CHARS
+            if len(t["user_message"]) <= engine.QUESTION_CHARS:
+                assert q["text"] == t["user_message"]
+            else:
+                assert q["text"].endswith(engine.ELLIPSIS)
+            for key in (
+                "intent",
+                "intent_label",
+                "substantive",
+                "handled",
+                "quality",
+                "quality_label",
+                "issue",
+                "issue_label",
+                "friction",
+            ):
+                assert q[key] == t[key], key
+
+
+async def test_search_finds_a_person_label(insights_client):
+    """Searching ``P01`` / ``p1`` also finds that person's conversations."""
+    page = {"parts": "conversations", "limit": "100"}
+    pid = person_id("P01")
+    own = await _get(insights_client, "bundle", _params({"person": pid}, **page))
+    for needle in ("P01", "p1"):
+        body = await _get(insights_client, "bundle", _params({"q": needle}, **page))
+        found = [r for r in body["conversations"]["items"] if r["person_id"] == pid]
+        assert len(found) == own["conversations"]["total"] > 0, needle
+
+
+def test_long_questions_are_masked_then_cut(monkeypatch):
+    monkeypatch.setattr(engine, "mask", lambda v: v.replace("secret", "[X]"))
+    short = engine._short("a secret")  # noqa: SLF001
+    assert short == "a [X]"
+    cut = engine._short("secret " + "y" * 400)  # noqa: SLF001
+    assert cut.startswith("[X] y")
+    assert len(cut) == engine.QUESTION_CHARS
+    assert cut.endswith(engine.ELLIPSIS)
 
 
 async def test_unknown_person_is_404(insights_client):

@@ -88,9 +88,11 @@ export interface KpiStripProps {
   loading?: boolean;
   /** Opens the records behind a KPI (its `target`). */
   onOpen?: (target: Partial<AnalyticsState>) => void;
+  /** Hover / focus on "View records": warm what it opens. */
+  onIntent?: (target: Partial<AnalyticsState>) => void;
 }
 
-export function KpiStrip({ summary, loading = false, onOpen }: KpiStripProps) {
+export function KpiStrip({ summary, loading = false, onOpen, onIntent }: KpiStripProps) {
   return (
     <section aria-label="Key figures" data-tour="analytics-kpis" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
       {KPIS.map((k) => {
@@ -118,6 +120,8 @@ export function KpiStrip({ summary, loading = false, onOpen }: KpiStripProps) {
               <button
                 type="button"
                 onClick={() => onOpen(k.target)}
+                onMouseEnter={onIntent ? () => onIntent(k.target) : undefined}
+                onFocus={onIntent ? () => onIntent(k.target) : undefined}
                 aria-label={`${k.label}: open ${k.targetLabel}`}
                 className="mt-auto inline-flex items-center gap-1 self-start rounded text-[11px] font-semibold text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
               >
