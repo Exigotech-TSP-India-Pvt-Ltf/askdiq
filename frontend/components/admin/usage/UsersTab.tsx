@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { queryErrorMessage, useUsageList } from "@/lib/use-usage-data";
+import { queryErrorMessage, useUsageList, usePrefetchNextUsagePage } from "@/lib/use-usage-data";
 import type { PageEnvelope, UsageUserRow } from "@/lib/types";
 import { useTableState } from "@/lib/use-table-state";
 import { DataTable, type ColumnDef } from "../DataTable";
@@ -73,7 +73,7 @@ export function UsersTab({ token, onSelectUserIp, fromDay = "", toDay = "" }: Us
   // Cached per parameter set (app-wide query cache): tab switches, paging
   // back and revisits render at once; the previous page stays on screen
   // while a new one loads.
-  const query = useUsageList<PageEnvelope<UsageUserRow>>("users", token, {
+  const listParams = {
       audience,
       q: search || undefined,
       type: filters.type !== "all" ? filters.type : undefined,
@@ -82,7 +82,9 @@ export function UsersTab({ token, onSelectUserIp, fromDay = "", toDay = "" }: Us
       sort,
       limit: pageSize,
       offset,
-    });
+    };
+  const query = useUsageList<PageEnvelope<UsageUserRow>>("users", token, listParams);
+  usePrefetchNextUsagePage("users", token, listParams, query.data?.total);
   const data = query.data ?? null;
   const isLoading = query.isLoading;
   const error = queryErrorMessage(query.error, "Failed to load user analytics.");

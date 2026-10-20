@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { prefetchQueryDetail, queryErrorMessage, useUsageList } from "@/lib/use-usage-data";
+import { prefetchQueryDetail, queryErrorMessage, useUsageList, usePrefetchNextUsagePage } from "@/lib/use-usage-data";
 import type { PageEnvelope, UsageQueryRow } from "@/lib/types";
 import { useTableState } from "@/lib/use-table-state";
 import { DataTable, type ColumnDef } from "../DataTable";
@@ -120,7 +120,7 @@ export function QueriesTab({
   // Cached per parameter set (app-wide query cache): tab switches, paging
   // back and revisits render at once; the previous page stays on screen
   // while a new one loads.
-  const query = useUsageList<PageEnvelope<UsageQueryRow>>("queries", token, {
+  const listParams = {
       audience,
       q: search || undefined,
       session_id: sessionFilter || undefined,
@@ -137,7 +137,9 @@ export function QueriesTab({
       sort,
       limit: pageSize,
       offset,
-    });
+    };
+  const query = useUsageList<PageEnvelope<UsageQueryRow>>("queries", token, listParams);
+  usePrefetchNextUsagePage("queries", token, listParams, query.data?.total);
   const data = query.data ?? null;
   const isLoading = query.isLoading;
   const error = queryErrorMessage(query.error, "Failed to load queries analytics.");
