@@ -17,7 +17,6 @@ import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
 import {
   APPROVAL_BUCKETS,
   ROLE_LABEL,
-  type AuditLogEntry,
   type AuthEvent,
   type FunnelStageId,
   type Role,
@@ -38,19 +37,22 @@ function formatDay(isoDate: string): string {
   return Number.isNaN(d.getTime()) ? isoDate : dayLabel.format(d);
 }
 
-/** Daily counts of `actions` over the last `days` UTC days (zero-filled). */
+/**
+ * Daily counts of `actions` summed over the last `days` UTC days
+ * (zero-filled), from the per-event series precomputed with the stats.
+ */
 export function dailyEventSeries(
-  entries: readonly AuditLogEntry[],
+  perDay: UserStats["events_per_day"],
   actions: readonly AuthEvent[],
   days: number,
   now: Date = new Date(),
 ): SparkPoint[] {
-  const wanted = new Set<string>(actions);
   const counts = new Map<string, number>();
-  for (const e of entries) {
-    if (!wanted.has(e.action)) continue;
-    const key = e.created_at.slice(0, 10);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+  for (const action of actions) {
+    for (const point of perDay?.[action] ?? []) {
+      const key = point.date.slice(0, 10);
+      counts.set(key, (counts.get(key) ?? 0) + point.count);
+    }
   }
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return Array.from({ length: days }, (_, i) => {
@@ -79,12 +81,11 @@ interface UserOverviewProps {
   statsLoading: boolean;
   statsError: string | null;
   onRetry: () => void;
-  audit: readonly AuditLogEntry[];
   /** Applies a drill-down (switches to the Users tab with filters). */
   onDrill: (update: DeepLinkUpdate) => void;
 }
 
-export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, onDrill }: UserOverviewProps) {
+export function UserOverview({ stats, statsLoading, statsError, onRetry, onDrill }: UserOverviewProps) {
   const container = useMotionVariants(stagger);
   const item = useMotionVariants(fadeUp);
   const kpis = stats?.kpis;
@@ -93,15 +94,15 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, audit, 
     () => (stats?.logins_per_day ?? []).slice(-SPARK_DAYS).map((d) => ({ label: formatDay(d.date), value: d.count })),
     [stats],
   );
-  const series = useMemo(
-    () => ({
-      total: dailyEventSeries(audit, ["access_requested", "user_invited"], SPARK_DAYS),
-      active: dailyEventSeries(audit, ["access_approved", "user_reactivated", "user_invited"], SPARK_DAYS),
-      pending: dailyEventSeries(audit, ["access_requested"], SPARK_DAYS),
-      suspended: dailyEventSeries(audit, ["user_suspended"], SPARK_DAYS),
-    }),
-    [audit],
-  );
+  const series = useMemo(() => {
+    const perDay = stats?.events_per_day;
+    return {
+      total: dailyEventSeries(perDay, ["access_requested", "user_invited"], SPARK_DAYS),
+      active: dailyEventSeries(perDay, ["access_approved", "user_reactivated", "user_invited"], SPARK_DAYS),
+      pending: dailyEventSeries(perDay, ["access_requested"], SPARK_DAYS),
+      suspended: dailyEventSeries(perDay, ["user_suspended"], SPARK_DAYS),
+    };
+  }, [stats]);
 
   const funnel = useMemo<(FunnelStage & { id: FunnelStageId })[]>(
     () => (stats?.funnel ?? []).map((s) => ({ id: s.stage, label: FUNNEL_LABEL[s.stage], value: s.count })),

@@ -46,8 +46,28 @@ class AuthSessionRead(BaseModel):
     user_agent: str | None
 
 
+class AuthAuditEntry(BaseModel):
+    """One auth audit row (the `/governance/audit-log` entry shape)."""
+
+    id: str
+    request_id: str
+    actor: str
+    action: str
+    detail: dict
+    created_at: datetime
+    ip_address: str | None = None
+
+
 class UserAccountDetail(UserAccountRead):
     active_sessions: list[AuthSessionRead]
+    recent_activity: list[AuthAuditEntry] = Field(
+        default_factory=list,
+        description="Newest auth events this user performed (needs `audit:auth:read`).",
+    )
+    recent_audit: list[AuthAuditEntry] = Field(
+        default_factory=list,
+        description="Newest auth events about this user (needs `audit:auth:read`).",
+    )
 
 
 class UserAccountUpdate(BaseModel):
@@ -176,3 +196,24 @@ class UserStatsRead(BaseModel):
     funnel: list[FunnelStage]
     role_mix: list[RoleCount]
     time_to_approve: list[HistogramBucket]
+    events_per_day: dict[str, list[DailyCount]] = Field(
+        default_factory=dict,
+        description=(
+            "Daily counts (UTC days, zero-filled, oldest first) of the auth "
+            "events behind the KPI sparklines over the last "
+            "`events_days` days, keyed by event."
+        ),
+    )
+    events_days: int = 0
+
+
+class AuthAuditPage(BaseModel):
+    """Keyset page of auth events, newest first."""
+
+    items: list[AuthAuditEntry]
+    next_cursor: str | None = Field(
+        default=None, description="Pass back as `cursor` for the next (older) page."
+    )
+    has_more: bool
+    total: int = Field(description="Matching events (exact up to the count cap).")
+    total_is_estimate: bool = False

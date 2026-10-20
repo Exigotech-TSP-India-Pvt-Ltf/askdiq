@@ -15,7 +15,11 @@ interface UseTableStateOptions<TFilter extends Record<string, any> = Record<stri
   allowedSorts?: string[];
   defaultFilters?: TFilter;
   syncWithUrl?: boolean;
+  /** Delay before a typed search applies (ms). */
+  searchDebounceMs?: number;
 }
+
+const DEFAULT_SEARCH_DEBOUNCE_MS = 300;
 
 export function useTableState<TFilter extends Record<string, any> = Record<string, any>>({
   tableKey = "tbl",
@@ -24,6 +28,7 @@ export function useTableState<TFilter extends Record<string, any> = Record<strin
   allowedSorts = [],
   defaultFilters = {} as TFilter,
   syncWithUrl = true,
+  searchDebounceMs = DEFAULT_SEARCH_DEBOUNCE_MS,
 }: UseTableStateOptions<TFilter> = {}) {
   const router = useRouter();
   const pathname = usePathname();
@@ -68,13 +73,13 @@ export function useTableState<TFilter extends Record<string, any> = Record<strin
   const [debouncedSearch, setDebouncedSearch] = useState<string>(initialSearch);
   const [filters, setFiltersState] = useState<TFilter>(defaultFilters);
 
-  // Debounce search input by 300ms
+  // Debounce search input (300 ms by default)
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchInput.trim());
-    }, 300);
+    }, searchDebounceMs);
     return () => clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, searchDebounceMs]);
 
   // Reset page to 1 whenever search, filters, or audience changes
   const prevAudienceRef = useRef(audience);

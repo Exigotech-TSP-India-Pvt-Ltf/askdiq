@@ -56,6 +56,8 @@ TURN_BINS: tuple[tuple[int, int | None], ...] = (
     (7, 9),
     (10, None),
 )
+# Snapshot kind of ``GET /admin/conversations/{id}`` (dropped when a turn is promoted).
+DETAIL_SNAPSHOT_KIND = "conversations.detail"
 STAGE_KEYS: tuple[str, ...] = (
     "guardrail_pre",
     "embedding",

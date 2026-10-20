@@ -24,8 +24,18 @@ _CLOSE_RETRY_ATTEMPTS = 20
 _CLOSE_RETRY_FIRST_SECONDS = 0.01
 _CLOSE_RETRY_MAX_SECONDS = 0.5
 
+
+def _connect_args() -> dict:
+    """asyncpg server settings: end sessions idle in a transaction (safety net)."""
+    timeout = settings.db_idle_in_transaction_timeout_ms
+    if timeout <= 0 or "+asyncpg" not in settings.database_url:
+        return {}
+    return {"server_settings": {"idle_in_transaction_session_timeout": str(timeout)}}
+
+
 engine = create_async_engine(
     settings.database_url,
+    connect_args=_connect_args(),
     echo=settings.db_echo,
     pool_size=settings.db_pool_size,
     max_overflow=settings.db_max_overflow,

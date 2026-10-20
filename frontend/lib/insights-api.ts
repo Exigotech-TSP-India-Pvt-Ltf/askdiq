@@ -399,7 +399,40 @@ export interface InsightsResponses {
   people: InsightsPeople;
 }
 
+/** Widgets `GET /admin/insights/bundle` can return (default: all). */
+export type BundlePart = InsightsEndpoint | "conversations" | "pending";
+
+/** Every Analytics widget for one filter set; parts not asked for are null. */
+export interface InsightsBundle {
+  as_of: string;
+  summary: InsightsSummary | null;
+  trend: InsightsTrend | null;
+  hourly: InsightsHourly | null;
+  flow: InsightsFlow | null;
+  topics: InsightsTopics | null;
+  quality: InsightsQuality | null;
+  dropoff: InsightsDropoff | null;
+  people: InsightsPeople | null;
+  conversations: ConversationList | null;
+  pending: PendingClassification | null;
+}
+
 export const insightsApi = {
+  /** Every widget (or `parts`) in one response; `page` is the conversations page. */
+  getBundle: (
+    token: string | null,
+    filters: InsightsFilters,
+    page: ConversationPageParams,
+    parts?: readonly BundlePart[],
+    signal?: AbortSignal,
+  ): Promise<InsightsBundle> => {
+    const qs = new URLSearchParams(
+      insightsQuery(filters, { sort: page.sort, dir: page.dir, limit: page.limit, offset: page.offset }),
+    );
+    for (const part of parts ?? []) qs.append("parts", part);
+    return get<InsightsBundle>(withQuery("/bundle", qs.toString()), token, signal);
+  },
+
   /** Any dashboard aggregate (`summary`, `trend`, ... `people`). */
   aggregate: <E extends InsightsEndpoint>(
     endpoint: E,

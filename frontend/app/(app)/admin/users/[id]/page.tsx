@@ -34,6 +34,15 @@ import {
 } from "@/components/admin/entity/shared";
 import { useAuth } from "@/lib/auth-context";
 import { useApiQuery } from "@/lib/query-cache";
+import {
+  isOtherRange,
+  prefetchConversation,
+  presetDayRanges,
+  useIdlePrefetch,
+  useRowIntent,
+  visitorQuery,
+  visitorTimelineQuery,
+} from "@/lib/audience-data";
 import { useDeepLinkParam } from "@/lib/use-deep-link";
 import { useClientTable } from "@/lib/use-client-table";
 import { activitySparks } from "@/lib/visitor-activity";
@@ -42,8 +51,6 @@ import { AUDIENCE_PAGE, AUDIENCE_PAGE_LABEL, conversationsHref, useCarryHref } f
 import {
   OUTCOMES,
   OUTCOME_LABELS,
-  getVisitor,
-  getVisitorTimeline,
   isAbsent,
   type TimelineQuery,
   type VisitorConversation,
@@ -90,9 +97,18 @@ function VisitorDetailContent() {
   const [timelineCount, setTimelineCount] = useState(TIMELINE_PAGE);
   const [outcome, setOutcome] = useState("all");
 
-  const visitor = useApiQuery(token && id ? ["visitor", id] : null, (signal) => getVisitor(token ?? "", id, signal));
-  const timeline = useApiQuery(token && id ? ["visitor", id, "timeline", range.from, range.to] : null, (signal) =>
-    getVisitorTimeline(token ?? "", id, { from: range.from, to: range.to }, signal),
+  const visitorQ = visitorQuery(token ?? "", id);
+  const visitor = useApiQuery(token && id ? visitorQ.key : null, visitorQ.fetch);
+  const timelineQ = visitorTimelineQuery(token ?? "", id, range);
+  // A range switch keeps the previous timeline on screen until the new one arrives.
+  const timeline = useApiQuery(token && id ? timelineQ.key : null, timelineQ.fetch, { keepPreviousData: true });
+  // While idle, warm the timeline for the other range presets.
+  useIdlePrefetch(
+    token && id && timeline.data !== undefined && !timeline.isPlaceholderData
+      ? presetDayRanges()
+          .filter((r) => isOtherRange(r, range))
+          .map((r) => visitorTimelineQuery(token, id, r))
+      : null,
   );
 
   const user = visitor.data;
@@ -104,6 +120,11 @@ function VisitorDetailContent() {
   const conversations = useMemo(() => user?.conversations_data ?? [], [user]);
   const sessionSearch = useCallback((c: VisitorConversation) => `${c.title ?? ""} ${c.id}`, []);
   const sessionsTable = useClientTable(conversations, { searchText: sessionSearch });
+  // Hovering a session row warms its conversation page.
+  const sessionIntent = useRowIntent((index) => {
+    const row = sessionsTable.paged[index];
+    if (token && row) prefetchConversation(token, row.id);
+  });
 
   const queries = useMemo(() => tl?.queries ?? [], [tl]);
   const querySearch = useCallback((q: TimelineQuery) => `${q.query} ${q.request_id}`, []);
@@ -393,13 +414,15 @@ function VisitorDetailContent() {
             />
           }
         >
-          <DataTable
-            columns={convColumns}
-            data={sessionsTable.paged}
-            keyField="id"
-            onRowClick={(c) => router.push(carry(entityHref({ kind: "conversation", id: c.id })))}
-            emptyMessage={conversations.length === 0 ? "No sessions found for this visitor." : "No sessions match this search."}
-          />
+          <div {...sessionIntent}>
+            <DataTable
+              columns={convColumns}
+              data={sessionsTable.paged}
+              keyField="id"
+              onRowClick={(c) => router.push(carry(entityHref({ kind: "conversation", id: c.id })))}
+              emptyMessage={conversations.length === 0 ? "No sessions found for this visitor." : "No sessions match this search."}
+            />
+          </div>
         </TableCard>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">

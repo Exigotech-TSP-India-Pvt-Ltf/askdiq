@@ -497,38 +497,19 @@ export function parsePairs(text: string): PreferencePair[] {
 }
 
 /**
- * Reads the first `limit` pairs of the export stream, then cancels it so a
- * large export is never fully downloaded just for the preview.
+ * The first `limit` pairs of the default export as one bounded JSON page
+ * (`GET /admin/feedback/pairs`): no export stream is opened and cancelled.
  */
-export async function previewPairs(
+export function previewPairs(
   token: string,
-  params: ExportParams,
+  params: Pick<ExportParams, "complete_only" | "from" | "to">,
   limit: number,
   signal?: AbortSignal,
 ): Promise<{ pairs: PreferencePair[]; truncated: boolean }> {
-  const res = await send(exportPath(params), { token, signal });
-  const reader = res.body?.getReader?.();
-  if (!reader) {
-    const all = parsePairs(await res.text());
-    return { pairs: all.slice(0, limit), truncated: all.length > limit };
-  }
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let lines = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    buffer += chunk;
-    lines += (chunk.match(/\n/g) ?? []).length;
-    if (lines > limit) {
-      await reader.cancel().catch(() => undefined);
-      const pairs = parsePairs(buffer.split("\n").slice(0, limit).join("\n"));
-      return { pairs, truncated: true };
-    }
-  }
-  buffer += decoder.decode();
-  return { pairs: parsePairs(buffer).slice(0, limit), truncated: false };
+  return json<{ pairs: PreferencePair[]; truncated: boolean }>(
+    `/admin/feedback/pairs${query({ limit, complete_only: params.complete_only, from: params.from, to: params.to })}`,
+    { token, signal },
+  );
 }
 
 function filenameFrom(res: Response): string {

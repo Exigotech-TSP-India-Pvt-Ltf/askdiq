@@ -546,7 +546,10 @@ async def list_chunks(
     q: str | None,
     sort: str,
     today: date,
+    hits: dict[uuid.UUID, ChunkHits] | None = None,
 ) -> list[DocumentChunkItem]:
+    """``hits`` (precomputed, :func:`hits_from_stats`) skips the per-document
+    citation queries."""
     stmt = select(Chunk).where(Chunk.document_id == document_id)
     if q:
         pattern = f"%{escape_ilike_pattern(q)}%"
@@ -559,7 +562,10 @@ async def list_chunks(
             )
         )
     chunks = (await db.execute(stmt.order_by(Chunk.chunk_index))).scalars().all()
-    stats = await chunk_hits(db, document_id, today) if chunks else {}
+    if hits is not None:
+        stats = hits
+    else:
+        stats = await chunk_hits(db, document_id, today) if chunks else {}
     return sort_chunks([chunk_item(c, stats.get(c.id)) for c in chunks], sort)
 
 
@@ -587,21 +593,177 @@ async def low_rated_citations(
             },
         )
     ).all()
-    items = [
-        LowRatedCitation(
-            message_id=str(r.message_id),
-            session_id=str(r.session_id),
-            turn_index=r.turn_index,
-            request_id=r.request_id,
-            chunk_id=str(r.chunk_id) if r.chunk_id else None,
-            chunk_index=r.chunk_index,
-            query=_redacted(r.query),
-            rating=r.rating,
-            reason_tags=[str(t) for t in (r.reason_tags or [])],
-            comment=r.comment,
-            created_at=as_utc(r.created_at) or r.created_at,
-        )
-        for r in rows
-    ]
+    items = [_low_rated_item(r) for r in rows]
     total = int(rows[0].total) if rows else 0
     return LowRatedCitations(document_id=str(document_id), total=total, items=items)
+
+
+# --- every document at once (precomputed snapshot) -------------------------------
+#
+# The per-document queries above resolve every citation in the lookback just
+# to keep one document's rows. These variants do that pass once for all
+# documents; the snapshot built from them answers each document's Chunks and
+# Citations views from memory, with the same numbers (a resolved chunk's
+# document is its own, so grouping by chunk is grouping within documents).
+
+_ALL_CHUNK_HITS = _with_sources(
+    """
+, hits AS (
+    SELECT chunk_id, request_id, cited_at
+    FROM resolved
+    WHERE chunk_id IS NOT NULL
+),
+low AS (
+    SELECT DISTINCT m.request_id
+    FROM chat_messages m
+    JOIN message_feedback f ON f.message_id = m.id AND f.rating <= :low_max
+    WHERE m.role = 'assistant'
+      AND m.request_id IN (SELECT request_id FROM hits)
+)
+SELECT h.chunk_id,
+       COUNT(DISTINCT h.request_id) FILTER (WHERE h.cited_at >= :window_start),
+       COUNT(DISTINCT h.request_id)
+           FILTER (WHERE h.cited_at >= :window_start AND l.request_id IS NOT NULL),
+       MAX(h.cited_at)
+FROM hits h
+LEFT JOIN low l ON l.request_id = h.request_id
+GROUP BY h.chunk_id
+"""
+)
+
+_ALL_CHUNK_WEEKS = _with_sources(
+    """
+SELECT chunk_id,
+       CAST(date_trunc('week', cited_at) AS date) AS week_start,
+       COUNT(DISTINCT request_id)
+FROM resolved
+WHERE chunk_id IS NOT NULL AND cited_at >= :window_start
+GROUP BY chunk_id, week_start
+"""
+)
+
+_ALL_LOW_RATED = _with_sources(
+    """
+, rows AS (
+    SELECT DISTINCT ON (r.document_id, m.id, r.chunk_id)
+           r.document_id,
+           m.id AS message_id,
+           m.session_id,
+           m.turn_index,
+           m.request_id,
+           r.chunk_id,
+           r.chunk_index,
+           f.rating,
+           f.reason_tags,
+           f.comment,
+           f.created_at,
+           u.content AS query
+    FROM resolved r
+    JOIN chat_messages m ON m.request_id = r.request_id AND m.role = 'assistant'
+    JOIN message_feedback f ON f.message_id = m.id AND f.rating <= :low_max
+    LEFT JOIN chat_messages u
+           ON u.session_id = m.session_id
+          AND u.turn_index = m.turn_index
+          AND u.role = 'user'
+    WHERE r.document_id IS NOT NULL
+    ORDER BY r.document_id, m.id, r.chunk_id, f.created_at DESC
+),
+ranked AS (
+    SELECT rows.*,
+           COUNT(*) OVER (PARTITION BY document_id) AS total,
+           ROW_NUMBER() OVER (
+               PARTITION BY document_id ORDER BY created_at DESC, message_id
+           ) AS rn
+    FROM rows
+)
+SELECT document_id, message_id, session_id, turn_index, request_id, chunk_id,
+       chunk_index, rating, reason_tags, comment, created_at, query, total
+FROM ranked
+WHERE rn <= :limit
+ORDER BY document_id, rn
+"""
+)
+
+
+def _low_rated_item(r: Any) -> LowRatedCitation:
+    return LowRatedCitation(
+        message_id=str(r.message_id),
+        session_id=str(r.session_id),
+        turn_index=r.turn_index,
+        request_id=r.request_id,
+        chunk_id=str(r.chunk_id) if r.chunk_id else None,
+        chunk_index=r.chunk_index,
+        query=_redacted(r.query),
+        rating=r.rating,
+        reason_tags=[str(t) for t in (r.reason_tags or [])],
+        comment=r.comment,
+        created_at=as_utc(r.created_at) or r.created_at,
+    )
+
+
+async def all_document_stats(
+    db: AsyncSession, *, today: date, low_rated_limit: int
+) -> dict[str, Any]:
+    """Chunk hits and low-rated citations of every document (JSON form):
+    ``{"chunks": {chunk_id: {hits, low, last, weekly: [[week, n]]}},
+    "low_rated": {document_id: {total, items}}}``."""
+    lo, hi = day_bounds(lookback_start(today), today)
+    window_lo, _ = day_bounds(hit_window_start(today), today)
+    params = {
+        "start": lo,
+        "end": hi,
+        "window_start": window_lo,
+        "low_max": LOW_RATING_MAX,
+        "limit": low_rated_limit,
+        **await source_cuts(db),
+    }
+    chunks: dict[str, dict[str, Any]] = {}
+    for chunk_id, hits, low, last in (await db.execute(_ALL_CHUNK_HITS, params)).all():
+        chunks[str(chunk_id)] = {
+            "hits": int(hits),
+            "low": int(low),
+            "last": last.isoformat() if last is not None else None,
+            "weekly": [],
+        }
+    for chunk_id, week, n in (await db.execute(_ALL_CHUNK_WEEKS, params)).all():
+        entry = chunks.setdefault(
+            str(chunk_id), {"hits": 0, "low": 0, "last": None, "weekly": []}
+        )
+        entry["weekly"].append([week.isoformat(), int(n)])
+    low_rated: dict[str, dict[str, Any]] = {}
+    for r in (await db.execute(_ALL_LOW_RATED, params)).all():
+        doc = low_rated.setdefault(
+            str(r.document_id), {"total": int(r.total), "items": []}
+        )
+        doc["items"].append(_low_rated_item(r).model_dump(mode="json"))
+    return {"chunks": chunks, "low_rated": low_rated}
+
+
+def hits_from_stats(stats: dict[str, Any]) -> dict[uuid.UUID, ChunkHits]:
+    """The ``chunks`` part of :func:`all_document_stats` as ``ChunkHits``."""
+    out: dict[uuid.UUID, ChunkHits] = {}
+    for chunk_id, s in stats.get("chunks", {}).items():
+        out[uuid.UUID(chunk_id)] = ChunkHits(
+            hits=s["hits"],
+            low_rated=s["low"],
+            last_hit_at=datetime.fromisoformat(s["last"]) if s["last"] else None,
+            weekly=[
+                WeeklyHits(week_start=date.fromisoformat(w), hits=n)
+                for w, n in s["weekly"]
+            ],
+        )
+    return out
+
+
+def low_rated_from_stats(
+    stats: dict[str, Any], document_id: uuid.UUID, limit: int
+) -> LowRatedCitations:
+    """One document's newest ``limit`` low-rated citations from the snapshot."""
+    doc = stats.get("low_rated", {}).get(str(document_id))
+    if not doc:
+        return LowRatedCitations(document_id=str(document_id), total=0, items=[])
+    return LowRatedCitations(
+        document_id=str(document_id),
+        total=doc["total"],
+        items=[LowRatedCitation.model_validate(i) for i in doc["items"][:limit]],
+    )

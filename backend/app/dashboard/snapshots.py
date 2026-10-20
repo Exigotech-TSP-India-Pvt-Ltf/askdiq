@@ -83,7 +83,8 @@ _DATA_STAMP_SQL = text(
         (SELECT max(created_at) FROM latency_metrics),
         (SELECT max(created_at) FROM evaluation_records),
         (SELECT max(updated_at) FROM insight_taxonomy),
-        (SELECT count(*) FROM test_ip_configs))
+        (SELECT count(*) FROM test_ip_configs),
+        (SELECT concat(count(*), '@', max(updated_at)) FROM documents))
     """
 )
 # Alerts raised, re-seen, acknowledged or resolved (the notification bell).
@@ -209,8 +210,13 @@ async def compute_and_store(
     gather: Gather,
     key: str | None = None,
     build: Build | None = None,
+    *,
+    announce: bool = True,
 ) -> Any:
-    """Build the payload, store it, and update this process's memory cache."""
+    """Build the payload, store it, and update this process's memory cache.
+
+    ``announce=False`` (a parameter set computed for the reader waiting on
+    it): nobody holds an older copy, so the console is not told to refetch."""
     key = key or snapshot_key(kind, params)
     build = build or _registered_build(kind, params)
     started = time.perf_counter()
@@ -227,7 +233,8 @@ async def compute_and_store(
     dashboard_cache.put(CACHE_PREFIX + key, payload)
     _as_of[key] = _now()
     # Every process reloads its memory copy; the console refetches the kind.
-    _spawn(_announce(kind, key), "announce")
+    if announce:
+        _spawn(_announce(kind, key), "announce")
     return payload
 
 
@@ -267,7 +274,7 @@ async def _load(
         # Never seen: the only case where a caller waits on the aggregation.
         return await single_flight.run(
             f"snapshot-build:{key}",
-            lambda: compute_and_store(kind, params, gather, key, build),
+            lambda: compute_and_store(kind, params, gather, key, build, announce=False),
         )
     payload = row.payload
     _as_of[key] = row.computed_at
@@ -366,6 +373,11 @@ async def snapshot_response(
     as_of = _as_of.get(key)
     extra = {"X-Data-As-Of": as_of.isoformat()} if as_of is not None else None
     return encoded_response(request, body, etag, extra)
+
+
+def snapshot_as_of(kind: str, params: dict[str, Any]) -> datetime | None:
+    """When the in-memory payload of ``kind`` / ``params`` was computed."""
+    return _as_of.get(snapshot_key(kind, params))
 
 
 async def _reload(key: str) -> None:

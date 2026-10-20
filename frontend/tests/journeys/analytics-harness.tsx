@@ -44,6 +44,7 @@ export interface RecordedCall {
 }
 
 const PREFIX = "/api/proxy/admin/insights/";
+const BUNDLE_PARTS = ["summary", "trend", "hourly", "flow", "topics", "quality", "dropoff", "people", "conversations", "pending"];
 
 /**
  * Installs `global.fetch`; `overrides` replace a recorded response per endpoint
@@ -51,20 +52,38 @@ const PREFIX = "/api/proxy/admin/insights/";
  */
 export function mockInsightsFetch(overrides: Partial<Record<string, unknown>> = {}) {
   const calls: RecordedCall[] = [];
+  const answer = (endpoint: string, params: URLSearchParams): unknown => {
+    const override = overrides[endpoint];
+    return endpoint in overrides
+      ? typeof override === "function"
+        ? (override as (params: URLSearchParams) => unknown)(params)
+        : override
+      : (RECORDED as unknown as Record<string, unknown>)[endpoint];
+  };
+  const json = (body: unknown) =>
+    body === undefined
+      ? new Response(JSON.stringify({ detail: "Not found" }), { status: 404 })
+      : new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), "http://localhost");
     const path = url.pathname.startsWith(PREFIX) ? url.pathname.slice(PREFIX.length) : url.pathname;
+    if (path === "bundle") {
+      // The page's one request: answered (and recorded) per widget.
+      const asked = url.searchParams.getAll("parts");
+      const parts = asked.length ? asked : BUNDLE_PARTS;
+      const bundle: Record<string, unknown> = { as_of: "2026-06-30T00:00:00+00:00" };
+      for (const part of BUNDLE_PARTS) bundle[part] = null;
+      for (const part of parts) {
+        calls.push({ endpoint: part, params: url.searchParams });
+        const body = answer(part, url.searchParams);
+        if (body === undefined) return json(undefined);
+        bundle[part] = body;
+      }
+      return json(bundle);
+    }
     const endpoint = path.startsWith("conversations/") ? "conversation_detail" : path;
     calls.push({ endpoint, params: url.searchParams });
-    const override = overrides[endpoint];
-    const body =
-      endpoint in overrides
-        ? typeof override === "function"
-          ? (override as (params: URLSearchParams) => unknown)(url.searchParams)
-          : override
-        : (RECORDED as unknown as Record<string, unknown>)[endpoint];
-    if (body === undefined) return new Response(JSON.stringify({ detail: "Not found" }), { status: 404 });
-    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    return json(answer(endpoint, url.searchParams));
   });
   vi.stubGlobal("fetch", fetchMock);
   return {

@@ -10,7 +10,7 @@ import { SkeletonText } from "@/components/ui/Skeleton";
 import { ToneChip, errorMessage, outcomeTone } from "@/components/admin/entity/shared";
 import { entityHref } from "@/lib/entity-links";
 import { useApiQuery } from "@/lib/query-cache";
-import { getConversation } from "@/lib/entity-stats-api";
+import { conversationQuery } from "@/lib/audience-data";
 import { buildTurns } from "@/components/admin/entity/turns";
 
 const EXCERPT_CHARS = 280;
@@ -34,9 +34,8 @@ interface ConversationPreviewDrawerProps {
  * the drawer closes; "Open full view" goes to the detail page.
  */
 export function ConversationPreviewDrawer({ token, conversationId, onClose, onPrev, onNext }: ConversationPreviewDrawerProps) {
-  const detail = useApiQuery(conversationId ? ["conversation", conversationId, "detail"] : null, (signal) =>
-    getConversation(token, conversationId ?? "", null, signal),
-  );
+  const q = conversationQuery(token, conversationId ?? "");
+  const detail = useApiQuery(conversationId ? q.key : null, q.fetch);
   const turns = useMemo(() => buildTurns(detail.data), [detail.data]);
 
   const header = detail.data?.conversation;

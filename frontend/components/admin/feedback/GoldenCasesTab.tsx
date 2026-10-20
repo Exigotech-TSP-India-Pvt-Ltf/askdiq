@@ -26,7 +26,7 @@ import {
 export const GOLDEN_POLL_MS = 3000;
 /** Give up polling after this many tries (~2 min) and say it is still running. */
 export const GOLDEN_MAX_POLLS = 40;
-const GOLDEN_PAGE_SIZE = 100;
+export const GOLDEN_PAGE_SIZE = 100;
 
 type JobPhase = "queued" | "running" | "passed" | "failed" | "slow" | "error";
 
@@ -108,7 +108,9 @@ export function GoldenCasesTab({ token, canRun, pollMs = GOLDEN_POLL_MS, days }:
     (signal: AbortSignal) => listGoldenCases(token, { limit: GOLDEN_PAGE_SIZE, from, to }, signal),
     [token, from, to],
   );
-  const { data, error, isLoading, refetch } = useApiQuery<GoldenCasePage>(feedbackKeys.goldenFor({ from, to }), fetcher);
+  const { data, error, isLoading, refetch } = useApiQuery<GoldenCasePage>(feedbackKeys.goldenFor({ from, to }), fetcher, {
+    keepPreviousData: true,
+  });
   const [jobs, setJobs] = useState<Record<string, Job>>({});
   const jobsRef = useRef(jobs);
   jobsRef.current = jobs;

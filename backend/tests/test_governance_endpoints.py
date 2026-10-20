@@ -26,6 +26,7 @@ from app.core.events import TOPIC_GOVERNANCE_INCIDENT, Event, EventBus
 from app.core.sse import SSEEvent
 from app.governance import overview as overview_mod
 from app.governance.audience import invalidate_audience_cache
+from app.governance.live_cache import clear_live_caches
 from app.governance.log_summary import level_for, service_for
 from app.governance.monitoring import derive_trace_status
 from app.governance.overview import (
@@ -856,6 +857,7 @@ async def _overview(client, **params) -> httpx.Response:
 
 async def test_overview_shape_and_bounded_query_count(client, db_session):
     await _overview(client)  # warm the audience classification cache
+    clear_live_caches()  # measure a computation, not the memory copy
     with QueryCounter(test_engine) as empty:
         await _overview(client)
     session = await chat_session(db_session)
@@ -870,10 +872,14 @@ async def test_overview_shape_and_bounded_query_count(client, db_session):
         )
         db_session.add_all(rows)
     await db_session.flush()
+    clear_live_caches()  # the memory copy follows within one interval
     with QueryCounter(test_engine) as seeded:
         data = (await _overview(client)).json()
 
     assert seeded.count == empty.count
+    with QueryCounter(test_engine) as cached:
+        await _overview(client)
+    assert cached.count == 0  # served from memory
     assert seeded.count <= OVERVIEW_MAX_QUERIES, seeded.statements
     assert data["health"]["status"] in {HEALTHY, DEGRADED, INCIDENT}
     assert len(data["hours"]) == 24

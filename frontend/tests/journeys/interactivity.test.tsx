@@ -218,12 +218,13 @@ describe("Documents and Document detail (row: usage signal, chunks)", () => {
     expect(callsTo(calls, `/documents/${DOC_ID}/chunks`)).not.toHaveLength(0);
   });
 
-  it("?q=&sort=hits round-trips into the search box, the sort and the request", async () => {
+  it("?q=&sort=hits round-trips into the search box and the sort (filtered in the browser)", async () => {
     renderPage(<DocumentDetailPage />, { url: `/documents/${DOC_ID}?q=annual&sort=hits` });
     expect(await screen.findByRole("searchbox", { name: "Search chunks" })).toHaveValue("annual");
     expect(screen.getByRole("combobox")).toHaveValue("hits");
-    await waitFor(() => expect(lastCall(`/documents/${DOC_ID}/chunks`)?.searchParams.get("q")).toBe("annual"));
-    expect(lastCall(`/documents/${DOC_ID}/chunks`)?.searchParams.get("sort")).toBe("hits");
+    // Every chunk is fetched once; search and sort apply client side.
+    await waitFor(() => expect(lastCall(`/documents/${DOC_ID}/chunks`)).toBeTruthy());
+    expect(lastCall(`/documents/${DOC_ID}/chunks`)?.searchParams.get("q")).toBeNull();
   });
 
   it("low-rated citation -> Feedback and back to the chunk", async () => {

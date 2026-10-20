@@ -499,6 +499,25 @@ async def test_citations_hits_and_low_rated(client, db_session, fake_embed) -> N
     assert item["turn_index"] == 1
     assert mk in item["query"]
 
+    # Parity: the all-documents pass (the snapshot) equals the per-document
+    # queries.
+    doc = uuid.UUID(doc_id)
+    today = cit.utc_today()
+    stats = await cit.all_document_stats(db_session, today=today, low_rated_limit=100)
+    direct = await cit.chunk_hits(db_session, doc, today)
+    pre = cit.hits_from_stats(stats)
+
+    def norm(h: cit.ChunkHits) -> tuple:
+        weeks = sorted((w.week_start, w.hits) for w in h.weekly)
+        return (h.hits, h.low_rated, h.last_hit_at, weeks)
+
+    assert direct
+    assert {k: norm(pre[k]) for k in direct} == {k: norm(v) for k, v in direct.items()}
+    for limit in (1, 20):
+        assert cit.low_rated_from_stats(stats, doc, limit) == (
+            await cit.low_rated_citations(db_session, doc, limit=limit, today=today)
+        )
+
 
 async def test_unknown_document_is_404(client) -> None:
     missing = uuid.uuid4()

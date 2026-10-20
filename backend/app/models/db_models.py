@@ -878,6 +878,40 @@ class CitationSource(Base):
     )
 
 
+class UsageTurn(Base):
+    """One user turn paired with its assistant answer (same session and
+    ``turn_index``): the usage fields the Usage & Cost lists aggregate.
+
+    Kept in step by database triggers inside the writing transaction (chat
+    messages, latency rows, a session's ``created_ip``; migration
+    ``03485c08b57b``), so it always equals the pairing join it replaces.
+    ``created_at`` / ``user_ip`` are the user turn's; ``session_ip`` is the
+    session's ``created_ip``; the rest is the assistant turn's, plus the
+    request's total latency. Never written by the application.
+    """
+
+    __tablename__ = "usage_turns"
+
+    asst_msg_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_msg_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    turn_index: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime)
+    user_ip: Mapped[str | None] = mapped_column(String(64))
+    session_ip: Mapped[str | None] = mapped_column(String(64))
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    outcome: Mapped[str | None] = mapped_column(String(24))
+    grounded: Mapped[bool | None] = mapped_column(Boolean)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    reasoning_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    embedding_tokens: Mapped[int | None] = mapped_column(Integer)
+    guardrail_tokens: Mapped[int | None] = mapped_column(Integer)
+    cost_usd: Mapped[float | None] = mapped_column(Float)
+    latency_ms: Mapped[float | None] = mapped_column(Float)
+
+
 class CitationSyncState(Base):
     """How far each source table is expanded into ``citation_sources``."""
 

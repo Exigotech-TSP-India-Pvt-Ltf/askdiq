@@ -12,7 +12,7 @@ import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { focusRing, primaryButton } from "@/components/ui/styles";
-import { useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
+import { prefetch, useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
 import type { PageSize } from "@/lib/use-table-state";
 import {
   ROLES,
@@ -22,7 +22,6 @@ import {
   USER_SORT_KEYS,
   umKeys,
   userManagementApi,
-  type AuditLogEntry,
   type UserAccount,
   type UserListParams,
   type UserSortKey,
@@ -41,10 +40,9 @@ interface UsersTabProps {
   update: (patch: DeepLinkUpdate) => void;
   meId: string | undefined;
   activeSuperadmins: number;
-  audit: readonly AuditLogEntry[];
 }
 
-export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersTabProps) {
+export function UsersTab({ url, update, meId, activeSuperadmins }: UsersTabProps) {
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   const [inviting, setInviting] = useState(false);
 
@@ -71,6 +69,9 @@ export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersT
   const openIndex = url.user ? items.findIndex((u) => u.id === url.user) : -1;
   const openRow = openIndex >= 0 ? items[openIndex] : undefined;
   const openUser = (u: UserAccount) => update({ user: u.id });
+  // Hover / focus warms the drawer (detail, sessions and recent auth events).
+  const warmUser = (u: UserAccount) =>
+    void prefetch(umKeys.user(u.id), (signal) => userManagementApi.getUser(u.id, signal));
 
   const columns: ColumnDef<UserAccount>[] = [
     {
@@ -190,6 +191,7 @@ export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersT
           currentSort={`${url.sort}_${url.order}`}
           onSortChange={onSortChange}
           onRowClick={openUser}
+          onRowIntent={warmUser}
           emptyMessage="No users match these filters"
           emptySubMessage="Clear the search or filters, or invite someone."
         />
@@ -202,7 +204,6 @@ export function UsersTab({ url, update, meId, activeSuperadmins, audit }: UsersT
         listKey={openRow ? listKey : null}
         meId={meId}
         activeSuperadmins={activeSuperadmins}
-        audit={audit}
         onClose={() => update({ user: null })}
         onPrev={openIndex > 0 ? () => openUser(items[openIndex - 1]) : undefined}
         onNext={openIndex >= 0 && openIndex < items.length - 1 ? () => openUser(items[openIndex + 1]) : undefined}

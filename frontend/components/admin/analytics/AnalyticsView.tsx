@@ -1,16 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { ANALYTICS_TABS, TabGroup } from "@/components/admin/TabGroup";
-import { INSIGHTS_CACHE_PREFIX } from "@/lib/insights-api";
-import { invalidate } from "@/lib/query-cache";
+import { useLiveConnected } from "@/lib/live-updates";
 import { useVisibilityPolling } from "@/lib/use-visibility-polling";
 import { AnalyticsTabPanel } from "./AnalyticsTabPanel";
 import type { LabelKind } from "./AnalyticsCards";
 import { FilterBar, type ChipLabels } from "./FilterBar";
 import { KpiStrip } from "./KpiStrip";
 import { PendingState } from "./PendingState";
-import { errorText, useInsightsAggregate, useInsightsFilters, useInsightsPending } from "./use-insights";
+import { useAnalyticsPreload } from "./use-analytics-preload";
+import { errorText, pageOf, useInsightsBundle, useInsightsFilters } from "./use-insights";
 import { ANALYTICS_TAB_IDS, DEFAULT_STATE, FILTER_FIELDS, useAnalyticsUrlState, type AnalyticsTabId } from "./url-state";
 import { PersonPanel, VisitorBanner } from "./PersonPanel";
 import { SectionBoundary } from "./SectionBoundary";
@@ -31,25 +31,19 @@ function isTab(id: string): id is AnalyticsTabId {
 export function AnalyticsView() {
   const { state, update, clearFilters } = useAnalyticsUrlState();
   const filters = useInsightsFilters(state);
-  const summary = useInsightsAggregate("summary", filters);
-  const flow = useInsightsAggregate("flow", filters);
-  const pending = useInsightsPending();
+  // One request answers every card, the KPIs, the backlog and the table page.
+  const bundle = useInsightsBundle(filters, pageOf(state));
+  const summary = { ...bundle, data: bundle.data?.summary ?? undefined };
+  const flowData = bundle.data?.flow ?? undefined;
+  const pendingData = bundle.data?.pending ?? undefined;
   const [labels, setLabels] = useState<ChipLabels>({});
   const learnLabel = useCallback((kind: LabelKind, label: string) => setLabels((l) => ({ ...l, [kind]: label })), []);
+  useAnalyticsPreload(state, filters);
 
-  const backlog = pending.data?.pending ?? 0;
-  const labelled = pending.data?.labelled;
-  useVisibilityPolling(() => void pending.refetch(), PENDING_POLL_MS, backlog > 0);
-
-  // Newly labelled turns change every aggregate: refresh the charts.
-  const seenLabelled = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (labelled === undefined) return;
-    if (seenLabelled.current !== undefined && labelled > seenLabelled.current) {
-      invalidate(INSIGHTS_CACHE_PREFIX);
-    }
-    seenLabelled.current = labelled;
-  }, [labelled]);
+  const backlog = pendingData?.pending ?? 0;
+  // The live stream pushes newly labelled turns; poll only without it.
+  const live = useLiveConnected();
+  useVisibilityPolling(() => void bundle.refetch(), PENDING_POLL_MS, backlog > 0 && !live);
 
   const nothingLabelled = summary.data !== undefined && summary.data.conversations === 0 && backlog > 0;
   const onGuide = state.tab === "guide";
@@ -76,11 +70,11 @@ export function AnalyticsView() {
             state={state}
             update={update}
             clearFilters={clearFilters}
-            userTypes={flow.data?.user_types.map((t) => t.name)}
+            userTypes={flowData?.user_types.map((t) => t.name)}
             chipLabels={labels}
           />
           </div>
-          {backlog > 0 && pending.data && <PendingState pending={pending.data} nothingLabelled={nothingLabelled} />}
+          {backlog > 0 && pendingData && <PendingState pending={pendingData} nothingLabelled={nothingLabelled} />}
           <SectionBoundary label="The selected person" resetKey={`${state.person}|${state.visitor}`}>
             <PersonPanel state={state} filters={filters} update={update} learnLabel={learnLabel} />
             <VisitorBanner state={state} update={update} />

@@ -34,16 +34,23 @@ export const LIVE_DATA_PREFIXES = [
   "conversation",
   "documents",
   "um/",
+  // The signed-in user's chat list (a chat from another tab or device).
+  "chat/sessions",
 ] as const;
 
 /** Scope (backend kind prefix) -> query-key prefixes it refreshes. */
 const SCOPE_PREFIXES: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["alerts", ["admin/alerts"]],
+  // Sign-ins, access requests, decisions and user changes (app.auth.live);
+  // `users.stats` once the precomputed User Management stats are stored.
+  ["users", ["um/", "admin/access-requests"]],
+  ["users.", ["um/stats"]],
   ["data", LIVE_DATA_PREFIXES],
   ["usage.audience_counts", ["admin/usage/audience-counts"]],
   ["usage.", ["admin/usage", "admin/dashboard"]],
   ["admin.dashboard", ["admin/dashboard"]],
   ["admin.conversations", ["conversations"]],
+  ["conversations.", ["conversations", "conversation"]],
   ["visitors.", ["visitors", "visitor"]],
   ["documents.", ["documents"]],
   ["feedback.", ["admin/feedback"]],
@@ -138,7 +145,7 @@ export function useConsoleLive(enabled: boolean): void {
         setConnected(true);
         if (wasHidden) {
           wasHidden = false;
-          invalidator.invalidate([...LIVE_DATA_PREFIXES, "admin/alerts"]);
+          invalidator.invalidate([...LIVE_DATA_PREFIXES, "admin/alerts", "admin/access-requests"]);
         }
       });
       es.addEventListener("changed", (event) => {

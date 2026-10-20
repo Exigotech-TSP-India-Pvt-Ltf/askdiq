@@ -15,7 +15,7 @@ import {
 } from "@/components/admin/dashboard/DashboardCharts";
 import { ActivityFeed } from "@/components/admin/dashboard/ActivityFeed";
 import { HealthPill } from "@/components/admin/dashboard/HealthPill";
-import { useDashboardParams, useDashboardSummary } from "@/lib/use-dashboard";
+import { useDashboardParams, useDashboardPreload, useDashboardSummary } from "@/lib/use-dashboard";
 
 /**
  * Interactive dashboard. The global
@@ -25,8 +25,9 @@ import { useDashboardParams, useDashboardSummary } from "@/lib/use-dashboard";
  * mark deep-links to the page that owns the number, pre-filtered.
  */
 export default function AdminDashboard() {
-  const { range, params } = useDashboardParams();
-  const summary = useDashboardSummary(params);
+  const { range } = useDashboardParams();
+  const summary = useDashboardSummary(range);
+  useDashboardPreload(range, summary.data !== undefined);
   const widget: WidgetProps = {
     data: summary.data,
     loading: summary.isLoading,

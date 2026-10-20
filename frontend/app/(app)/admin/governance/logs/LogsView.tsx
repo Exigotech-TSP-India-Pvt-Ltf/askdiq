@@ -14,6 +14,7 @@ import {
   LOG_LEVELS,
   LOG_SERVICES,
   governanceApi,
+  governanceKeys,
   logsExportUrl,
   type GovernanceLogItem,
   type GovernanceLogPage,
@@ -150,11 +151,11 @@ export default function LogsView() {
     [levels.join(","), service, q, from, to],
   );
   const [pageSize, setPageSize] = useState<number>(LOGS_PAGE_SIZE);
-  const filterKey = [audience, filters.level.join(","), service, q, from, to, pageSize].join("|");
+  const filterKey = governanceKeys.logsFilter({ audience, levels: filters.level, service, q, from, to, pageSize });
   const pager = useCursorStack(filterKey);
 
   const query = useApiQuery<GovernanceLogPage>(
-    ["admin/governance/logs", filterKey, pager.cursor],
+    governanceKeys.logs(filterKey, pager.cursor),
     (signal) => governanceApi.logs(token, { ...filters, audience, limit: pageSize, cursor: pager.cursor }, signal),
     { enabled: Boolean(token) },
   );

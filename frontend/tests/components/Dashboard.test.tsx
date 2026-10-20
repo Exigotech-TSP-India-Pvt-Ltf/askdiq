@@ -9,7 +9,14 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { queryCache } from "@/lib/query-cache";
 import { ApiError } from "@/lib/api";
 import { clampCustomRange, presetRange } from "@/lib/range-context";
-import { bucketLabel, isNotImplemented, rangeParams } from "@/lib/dashboard-api";
+import {
+  bucketLabel,
+  currentRangeParams,
+  dashboardKeys,
+  isNotImplemented,
+  rangeKey,
+  rangeParams,
+} from "@/lib/dashboard-api";
 import { DASHBOARD_KPIS, kpiTrend, kpiValue } from "@/components/admin/dashboard/DashboardKpis";
 import { activityHref } from "@/components/admin/dashboard/ActivityFeed";
 import { queriesHrefFor } from "@/components/admin/dashboard/DashboardCharts";
@@ -36,6 +43,19 @@ describe("dashboard contract helpers", () => {
     expect(p).toEqual({ audience: "overview", from: "2026-10-09T13:00:00.000Z", to: "2026-10-16T13:00:00.000Z" });
     const custom = rangeParams(clampCustomRange(new Date(2026, 9, 1), new Date(2026, 9, 3), now), "users");
     expect(new Date(custom.to).getTime() - new Date(custom.from).getTime()).toBe(3 * 24 * 3600 * 1000);
+  });
+
+  it("keys presets by name (stable as the clock moves) and custom ranges by window", () => {
+    const a = presetRange("7d", new Date("2026-10-16T13:00:30Z"));
+    const b = presetRange("7d", new Date("2026-10-16T15:42:10Z"));
+    expect(dashboardKeys.summary("users", a)).toEqual(dashboardKeys.summary("users", b));
+    expect(dashboardKeys.summary("users", a)).not.toEqual(dashboardKeys.summary("users", presetRange("30d")));
+    const custom = clampCustomRange(new Date(2026, 9, 1), new Date(2026, 9, 3), new Date(2026, 9, 16));
+    const p = rangeParams(custom, "users");
+    expect(rangeKey(custom)).toBe(`${p.from}/${p.to}`);
+    // A preset's request window is computed when fetched (ends now).
+    const now = currentRangeParams(a, "users");
+    expect(Math.abs(new Date(now.to).getTime() - Date.now())).toBeLessThan(61_000);
   });
 
   it("labels day and hour buckets in UTC and treats 404/405 as not implemented", () => {

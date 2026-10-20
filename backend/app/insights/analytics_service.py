@@ -632,23 +632,7 @@ def _snapshot_builder(name: str) -> Callable[..., Awaitable[Any]]:
     return build
 
 
-def _default_snapshot_params(name: str) -> list[dict[str, Any]]:
-    """The Analytics page's first view (in its zone), each period."""
-    tz = ANALYTICS_PAGE_TZ
-    out: list[dict[str, Any]] = []
-    for period in (Period.ALL, Period.LAST_7_DAYS, Period.LAST_30_DAYS):
-        params: dict[str, Any] = {
-            "filters": InsightsFilters(period=period, tz=tz).model_dump(mode="json")
-        }
-        if name == "conversations":
-            params["page"] = ConversationPage().model_dump(mode="json")
-        out.append(params)
-    return out
-
-
+# Registered without defaults: the Analytics page reads the bundle
+# (``app.insights.bundle_service``); these stay available on demand.
 for _name in _SNAPSHOT_ENDPOINTS:
-    register(
-        f"{INSIGHTS_KIND_PREFIX}{_name}",
-        _snapshot_builder(_name),
-        _default_snapshot_params(_name),
-    )
+    register(f"{INSIGHTS_KIND_PREFIX}{_name}", _snapshot_builder(_name))

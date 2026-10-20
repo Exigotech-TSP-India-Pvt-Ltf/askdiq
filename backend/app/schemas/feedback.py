@@ -209,6 +209,30 @@ class GoldenCasePage(BaseModel):
     offset: int
 
 
+class PreferencePair(BaseModel):
+    """One preference pair (the shape of a JSONL export line)."""
+
+    feedback_id: str
+    message_id: str
+    prompt: str | None
+    chosen: str | None
+    rejected: str | None
+    rating: int
+    reason_tags: list[str]
+    source_ids: list[str]
+    triage_status: str
+    created_at: str | None
+    complete: bool
+    missing: list[str]
+
+
+class PreferencePairPreview(BaseModel):
+    """The first pairs of the default export; ``truncated`` = more exist."""
+
+    pairs: list[PreferencePair]
+    truncated: bool
+
+
 class GoldenRunResponse(BaseModel):
     case_id: str
     status: Literal["queued", "already_queued"]

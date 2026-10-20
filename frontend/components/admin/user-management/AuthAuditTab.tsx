@@ -1,29 +1,37 @@
 "use client";
 
 /**
- * Audit Trail tab: the auth events from
- * `/governance/audit-log` (sign-ins, denials, approvals, role changes,
- * suspensions, revocations), filtered by event and searchable by actor or
- * target. Only `audit:auth:read` callers receive these rows from the API.
+ * Audit Trail tab (planchanges4 F1.4.3): the auth events (sign-ins, denials,
+ * approvals, role changes, suspensions, revocations) from
+ * `GET /admin/auth-audit`, one keyset page at a time: the event filter and
+ * the actor / target search run on the server, the next page is prefetched,
+ * and the previous page stays on screen while a new one loads. Only
+ * `audit:auth:read` callers receive these rows from the API.
  */
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
-import { Pagination } from "@/components/admin/Pagination";
 import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
+import { useApiQuery, usePrefetchNextPage } from "@/lib/query-cache";
+import { useCursorStack } from "@/lib/use-cursor-stack";
 import type { PageSize } from "@/lib/use-table-state";
 import type { DeepLinkUpdate } from "@/lib/use-deep-link";
 import {
+  AUDIT_PAGE_DEFAULT,
   AUTH_EVENTS,
   AUTH_EVENT_LABEL,
   isAuthEvent,
+  umKeys,
+  userManagementApi,
   type AuditLogEntry,
+  type AuthAuditParams,
   type AuthEvent,
 } from "@/lib/user-management-api";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { auditSummary } from "./UserDrawer";
 
-const DEFAULT_PAGE_SIZE: PageSize = 25;
+const DEFAULT_PAGE_SIZE: PageSize = AUDIT_PAGE_DEFAULT;
+const SEARCH_DEBOUNCE_MS = 250;
 
 const DANGER: ReadonlySet<string> = new Set<AuthEvent>(["login_denied", "user_suspended", "access_rejected", "session_revoked"]);
 const OK: ReadonlySet<string> = new Set<AuthEvent>(["access_approved", "user_reactivated", "user_invited", "login_success"]);
@@ -42,32 +50,31 @@ function EventBadge({ action }: { action: string }) {
 }
 
 interface AuthAuditTabProps {
-  entries: readonly AuditLogEntry[];
-  loading: boolean;
-  error: string | null;
-  onRetry: () => void;
   action: AuthEvent | null;
   update: (patch: DeepLinkUpdate) => void;
 }
 
-export function AuthAuditTab({ entries, loading, error, onRetry, action, update }: AuthAuditTabProps) {
+function pageParams(pageSize: number, action: AuthEvent | null, search: string, cursor: string | null): AuthAuditParams {
+  const q = search.trim();
+  return { limit: pageSize, ...(action ? { action } : {}), ...(q ? { search: q } : {}), ...(cursor ? { cursor } : {}) };
+}
+
+export function AuthAuditTab({ action, update }: AuthAuditTabProps) {
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
+  const pager = useCursorStack(`${action ?? ""}|${search.trim()}|${pageSize}`);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return entries.filter((e) => {
-      if (action && e.action !== action) return false;
-      if (!q) return true;
-      const target = typeof e.detail.target_email === "string" ? e.detail.target_email : "";
-      return e.actor.toLowerCase().includes(q) || target.toLowerCase().includes(q);
-    });
-  }, [entries, action, search]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const current = Math.min(page, pageCount);
-  const rows = filtered.slice((current - 1) * pageSize, current * pageSize);
+  const params = pageParams(pageSize, action, search, pager.cursor);
+  const query = useApiQuery(umKeys.auditPage(params), (signal) => userManagementApi.authAuditPage(params, signal), {
+    keepPreviousData: true,
+  });
+  const rows = query.data?.items ?? [];
+  const nextCursor = query.isPlaceholderData ? null : query.data?.next_cursor ?? null;
+  const nextParams = pageParams(pageSize, action, search, nextCursor);
+  usePrefetchNextPage(nextCursor ? umKeys.auditPage(nextParams) : null, (signal) =>
+    userManagementApi.authAuditPage(nextParams, signal),
+  );
+  const error = query.error && !query.data ? (query.error as Error).message || "Failed to load." : null;
 
   const columns: ColumnDef<AuditLogEntry>[] = [
     {
@@ -94,10 +101,8 @@ export function AuthAuditTab({ entries, loading, error, onRetry, action, update 
       toolbar={
         <TableToolbar
           search={search}
-          onSearchChange={(v) => {
-            setSearch(v);
-            setPage(1);
-          }}
+          onSearchChange={setSearch}
+          debounceMs={SEARCH_DEBOUNCE_MS}
           searchPlaceholder="Search actor or target…"
           filters={[
             {
@@ -105,35 +110,33 @@ export function AuthAuditTab({ entries, loading, error, onRetry, action, update 
               label: "Event",
               value: action ?? "all",
               options: [{ label: "All events", value: "all" }, ...AUTH_EVENTS.map((a) => ({ label: AUTH_EVENT_LABEL[a], value: a }))],
-              onChange: (v) => {
-                update({ action: v === "all" ? null : v });
-                setPage(1);
-              },
+              onChange: (v) => update({ action: v === "all" ? null : v }),
             },
           ]}
         />
       }
-      pagination={
-        <Pagination
-          page={current}
-          pageCount={pageCount}
-          totalItems={filtered.length}
-          pageSize={pageSize}
-          onPageChange={setPage}
-          onPageSizeChange={(size) => {
-            setPageSize(size);
-            setPage(1);
-          }}
-        />
-      }
+      cursor={{
+        hasPrev: pager.hasPrev,
+        hasNext: Boolean(nextCursor),
+        onPrev: pager.prev,
+        onNext: () => pager.next(nextCursor),
+        onFirst: pager.reset,
+        page: pager.page,
+        totalItems: query.data?.total,
+        pageSize,
+        onPageSizeChange: (size) => setPageSize(size as PageSize),
+        pageItemCount: rows.length,
+        itemLabel: "events",
+        isLoading: query.isValidating,
+      }}
     >
       <DataTable
         columns={columns}
         data={rows}
         keyField="id"
-        isLoading={loading}
+        isLoading={query.isLoading}
         error={error}
-        onRetry={onRetry}
+        onRetry={() => void query.refetch()}
         emptyMessage="No auth events match"
         emptySubMessage="Sign-ins, approvals and role changes appear here."
       />

@@ -47,7 +47,6 @@ interface UserDrawerProps {
   listKey: string | null;
   meId: string | undefined;
   activeSuperadmins: number;
-  audit: readonly AuditLogEntry[];
   onClose: () => void;
   onPrev?: () => void;
   onNext?: () => void;
@@ -106,7 +105,6 @@ export function UserDrawer({
   listKey,
   meId,
   activeSuperadmins,
-  audit,
   onClose,
   onPrev,
   onNext,
@@ -137,8 +135,9 @@ export function UserDrawer({
   const roleReason = isSelf ? SELF_CHANGE_REASON : isLastSuperadmin && roleChoice !== "superadmin" ? LAST_SUPERADMIN_REASON : null;
   const reactivateReason = isSelf ? SELF_CHANGE_REASON : user && !user.role ? ROLE_REQUIRED_REASON : null;
 
-  const activity = audit.filter((e) => user && e.actor === user.email).slice(0, RECENT_LIMIT);
-  const entries = audit.filter((e) => user && e.detail.target_user_id === user.id).slice(0, RECENT_LIMIT);
+  // Precomputed per user by the detail endpoint (newest first).
+  const activity = (detail?.id === user?.id ? detail?.recent_activity ?? [] : []).slice(0, RECENT_LIMIT);
+  const entries = (detail?.id === user?.id ? detail?.recent_audit ?? [] : []).slice(0, RECENT_LIMIT);
 
   async function confirm() {
     if (!user || !pending) return;

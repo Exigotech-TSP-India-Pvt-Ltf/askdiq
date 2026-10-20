@@ -422,7 +422,31 @@ async function getJson<T>(path: string, token: string | null, signal?: AbortSign
 
 /** Shared query-cache keys (the page and the dashboard's intent prefetch use the same entry). */
 export const governanceKeys = {
+  overview: (audience: Audience) => ["admin/governance/overview", audience] as const,
   monitoring: (audience: Audience) => ["admin/governance/monitoring", audience] as const,
+  trace: (requestId: string, audience: Audience) => ["admin/governance/trace", requestId, audience] as const,
+  /** Identity of a Traces table view (filters + page size); the cursor stack resets when it changes. */
+  tracesFilter: (p: {
+    audience: Audience;
+    status?: string;
+    outcome?: string;
+    latencyBucket?: string;
+    q: string;
+    from?: string;
+    to?: string;
+    pageSize: number;
+  }) => [p.audience, p.status, p.outcome, p.latencyBucket, p.q, p.from, p.to, p.pageSize].join("|"),
+  traces: (filterKey: string, cursor: string | null) => ["admin/governance/traces", filterKey, cursor] as const,
+  logsFilter: (p: {
+    audience: Audience;
+    levels: readonly string[];
+    service?: string;
+    q: string;
+    from?: string;
+    to?: string;
+    pageSize: number;
+  }) => [p.audience, p.levels.join(","), p.service, p.q, p.from, p.to, p.pageSize].join("|"),
+  logs: (filterKey: string, cursor: string | null) => ["admin/governance/logs", filterKey, cursor] as const,
 };
 
 export const governanceApi = {

@@ -27,16 +27,32 @@ import {
   OUTCOMES,
   OUTCOME_LABELS,
   dayParam,
-  getConversationStats,
-  getConversations,
   intParam,
   isOutcome,
   turnsOf,
   type ConversationRow,
   type OutcomeDay,
 } from "@/lib/entity-stats-api";
+import {
+  AUDIENCES,
+  CONVERSATION_DEFAULT_SORT,
+  CONVERSATION_SORT_COLUMNS,
+  conversationListQuery,
+  conversationStatsQuery,
+  isOtherRange,
+  nextSort,
+  prefetchConversation,
+  presetDayRanges,
+  useIdlePrefetch,
+  useRowIntent,
+  type ConversationListState,
+  type Query,
+} from "@/lib/audience-data";
 
 const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
+/** Search-as-you-type delay (searches are cached in memory on the server). */
+const SEARCH_DEBOUNCE_MS = 150;
+const SORTS = ["last_activity_desc", "last_activity_asc", "created_at_desc", "created_at_asc"];
 
 type OutcomeRow = { day: string } & Record<string, number | string>;
 
@@ -65,63 +81,71 @@ export function ConversationsPanel() {
 
   const { page, pageSize, offset, sort, search, audience, setPage, setPageSize, setSort, setSearchInput } = useTableState({
     tableKey: "convs",
-    defaultSort: "last_activity_desc",
-    allowedSorts: ["last_activity_desc", "last_activity_asc", "created_at_desc", "created_at_asc"],
+    defaultSort: CONVERSATION_DEFAULT_SORT,
+    allowedSorts: SORTS,
+    searchDebounceMs: SEARCH_DEBOUNCE_MS,
   });
 
-  const list = useApiQuery(
-    token
-      ? [
-          "conversations",
-          "list",
-          audience,
-          search,
-          ip,
-          minTurns,
-          maxTurns,
-          outcome,
-          day,
-          range.from,
-          range.to,
-          sort,
-          pageSize,
-          offset,
-        ]
-      : null,
-    (signal) =>
-      getConversations(
-        token ?? "",
-        {
-          audience,
-          q: search || undefined,
-          ip: ip ?? undefined,
-          min_turns: minTurns,
-          max_turns: maxTurns,
-          outcome,
-          day,
-          // The list matches the stats: conversations started in the range.
-          from: range.from,
-          to: range.to,
-          sort,
-          limit: pageSize,
-          offset,
-        },
-        signal,
-      ),
+  const listState = useMemo<ConversationListState>(
+    () => ({
+      audience,
+      search,
+      ip,
+      minTurns,
+      maxTurns,
+      outcome,
+      day,
+      range: { from: range.from, to: range.to },
+      sort,
+      pageSize,
+      offset,
+    }),
+    [audience, search, ip, minTurns, maxTurns, outcome, day, range.from, range.to, sort, pageSize, offset],
   );
+  const listQuery = conversationListQuery(token ?? "", listState);
+  // Switching page, sort, filter, audience or range swaps the rows in place
+  // (the previous ones stay until the new ones arrive): never a blank table.
+  const list = useApiQuery(token ? listQuery.key : null, listQuery.fetch, { keepPreviousData: true });
 
-  const stats = useApiQuery(
-    token ? ["conversations", "stats", audience, ip, search, range.from, range.to] : null,
-    (signal) =>
-      getConversationStats(
-        token ?? "",
-        { audience, ip: ip ?? undefined, q: search || undefined, from: range.from, to: range.to },
-        signal,
-      ),
-  );
+  const statsQuery = conversationStatsQuery(token ?? "", { audience, ip, search, range });
+  const stats = useApiQuery(token ? statsQuery.key : null, statsQuery.fetch, { keepPreviousData: true });
 
   const items = list.data?.items ?? [];
   const total = list.data?.total ?? 0;
+
+  // While idle, warm what the next click most likely reads: the neighbour
+  // pages, each sort toggle, the other audiences and the range presets.
+  const idleQueries = useMemo<Query<unknown>[] | null>(() => {
+    if (!token || !list.data || list.isPlaceholderData) return null;
+    const out: Query<unknown>[] = [];
+    if (offset + pageSize < total) out.push(conversationListQuery(token, { ...listState, offset: offset + pageSize }));
+    if (offset > 0) out.push(conversationListQuery(token, { ...listState, offset: Math.max(0, offset - pageSize) }));
+    for (const column of CONVERSATION_SORT_COLUMNS) {
+      out.push(conversationListQuery(token, { ...listState, sort: nextSort(sort, column), offset: 0 }));
+    }
+    // Other audiences / presets of the unfiltered view are precomputed on the
+    // server; filtered variants would each be a fresh aggregation.
+    const unfiltered = !search && !ip && minTurns === null && maxTurns === null && !outcome;
+    if (unfiltered) {
+      const statsState = { audience, ip, search, range: listState.range };
+      for (const other of AUDIENCES.filter((a) => a !== audience)) {
+        out.push(conversationStatsQuery(token, { ...statsState, audience: other }));
+        out.push(conversationListQuery(token, { ...listState, audience: other, offset: 0 }));
+      }
+      for (const preset of presetDayRanges().filter((r) => isOtherRange(r, listState.range))) {
+        out.push(conversationStatsQuery(token, { ...statsState, range: preset }));
+        out.push(conversationListQuery(token, { ...listState, range: preset, offset: 0 }));
+      }
+    }
+    return out;
+  }, [token, list.data, list.isPlaceholderData, listState, offset, pageSize, total, sort, audience, ip, search, minTurns, maxTurns, outcome]);
+  useIdlePrefetch(idleQueries);
+
+  // Hovering a row warms its preview / detail; an open preview warms its neighbours.
+  const rowIntent = useRowIntent((index) => {
+    const row = items[index];
+    if (token && row) prefetchConversation(token, row.id);
+  });
   const statsData = stats.data ?? null;
   const statsAbsent = !stats.isLoading && !stats.error && statsData === null;
   const statsError = errorMessage(stats.error, "Couldn't load conversation stats.");
@@ -166,6 +190,13 @@ export function ConversationsPanel() {
   );
 
   const previewIndex = preview ? items.findIndex((c) => c.id === preview) : -1;
+  const prevId = previewIndex > 0 ? items[previewIndex - 1].id : null;
+  const nextId = previewIndex >= 0 && previewIndex < items.length - 1 ? items[previewIndex + 1].id : null;
+  useEffect(() => {
+    if (!token) return;
+    if (nextId) prefetchConversation(token, nextId);
+    if (prevId) prefetchConversation(token, prevId);
+  }, [token, prevId, nextId]);
   const openPreview = useCallback((id: string | null) => set({ preview: id }, { history: id ? "push" : "replace" }), [set]);
 
   const uniqueIps = Array.from(new Set(items.map((c) => c.created_ip).filter((v): v is string => Boolean(v))));
@@ -334,7 +365,7 @@ export function ConversationsPanel() {
           </ChartCard>
         </div>
 
-        <div data-tour="conversations-table">
+        <div data-tour="conversations-table" {...rowIntent}>
         <TableCard
           toolbar={
             <div className="space-y-2" data-tour="conversations-filters">
@@ -378,7 +409,7 @@ export function ConversationsPanel() {
             columns={columns}
             data={items}
             keyField="id"
-            isLoading={list.isLoading}
+            isLoading={list.isLoading || list.isPlaceholderData}
             error={errorMessage(list.error, "Failed to load conversations.")}
             onRetry={() => void list.refetch()}
             currentSort={sort}
@@ -394,8 +425,8 @@ export function ConversationsPanel() {
           token={token}
           conversationId={preview}
           onClose={() => openPreview(null)}
-          onPrev={previewIndex > 0 ? () => set({ preview: items[previewIndex - 1].id }) : undefined}
-          onNext={previewIndex >= 0 && previewIndex < items.length - 1 ? () => set({ preview: items[previewIndex + 1].id }) : undefined}
+          onPrev={prevId ? () => set({ preview: prevId }) : undefined}
+          onNext={nextId ? () => set({ preview: nextId }) : undefined}
         />
       ) : null}
     </div>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
@@ -93,3 +94,23 @@ def test_keys_are_canonical() -> None:
     assert snapshots.snapshot_key(KIND, {"a": 1}) != snapshots.snapshot_key(
         "other", {"a": 1}
     )
+
+
+async def test_first_read_is_not_announced_but_refreshes_are(
+    db_session, calls, monkeypatch: pytest.MonkeyPatch
+):
+    """A parameter set computed for its waiting reader has no older copy on
+    any console: only recomputations tell the console to refetch."""
+    announced: list[str] = []
+
+    async def announce(kind: str, key: str) -> None:
+        announced.append(kind)
+
+    monkeypatch.setattr(snapshots, "_announce", announce)
+    runner = shared_session_runner(db_session)
+    await snapshots.get_snapshot(KIND, {"fresh": 1}, runner.gather)
+    await asyncio.sleep(0)
+    assert announced == []
+    await snapshots.compute_and_store(KIND, {"fresh": 1}, runner.gather)
+    await asyncio.sleep(0)
+    assert announced == [KIND]

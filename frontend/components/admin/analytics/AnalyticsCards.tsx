@@ -12,7 +12,7 @@ import { PeopleBubble } from "./PeopleBubble";
 import { QualityDonut, orderQuality } from "./QualityDonut";
 import { TopicsTreemap } from "./TopicsTreemap";
 import { TrendChart } from "./TrendChart";
-import { errorText, useInsightsAggregate } from "./use-insights";
+import { errorText, pageOf, useInsightsAggregate } from "./use-insights";
 import { toggleDay, toggleValue, type AnalyticsState } from "./url-state";
 
 export type LabelKind = "intent" | "quality" | "issue" | "person";
@@ -48,7 +48,7 @@ export function selectedDay(state: AnalyticsState): string | null {
 }
 
 export function TrendCard({ state, filters, update }: CardProps) {
-  const { data, error, isLoading, refetch } = useInsightsAggregate("trend", filters);
+  const { data, error, isLoading, refetch } = useInsightsAggregate("trend", filters, pageOf(state));
   const days = data?.days ?? [];
   const range = days.length ? `${dayLabel(days[0].day)} – ${dayLabel(days[days.length - 1].day)}` : "";
   return (
@@ -75,7 +75,7 @@ export function TrendCard({ state, filters, update }: CardProps) {
 }
 
 export function HourCard({ state, filters, update }: CardProps) {
-  const { data, error, isLoading, refetch } = useInsightsAggregate("hourly", filters);
+  const { data, error, isLoading, refetch } = useInsightsAggregate("hourly", filters, pageOf(state));
   const hours = data?.hours ?? [];
   return (
     <ChartCard
@@ -102,7 +102,7 @@ export function HourCard({ state, filters, update }: CardProps) {
 }
 
 export function FlowCard({ state, filters, update }: CardProps) {
-  const { data, error, isLoading, refetch } = useInsightsAggregate("flow", filters);
+  const { data, error, isLoading, refetch } = useInsightsAggregate("flow", filters, pageOf(state));
   return (
     <ChartCard
       title="User type → outcome"
@@ -131,7 +131,7 @@ export function FlowCard({ state, filters, update }: CardProps) {
 }
 
 export function TopicsCard({ state, filters, update, learnLabel }: CardProps) {
-  const { data, error, isLoading, refetch } = useInsightsAggregate("topics", filters);
+  const { data, error, isLoading, refetch } = useInsightsAggregate("topics", filters, pageOf(state));
   const items = data?.items ?? [];
   return (
     <ChartCard
@@ -165,7 +165,7 @@ export function TopicsCard({ state, filters, update, learnLabel }: CardProps) {
 }
 
 export function QualityCard({ state, filters, update, learnLabel }: CardProps) {
-  const { data, error, isLoading, refetch } = useInsightsAggregate("quality", filters);
+  const { data, error, isLoading, refetch } = useInsightsAggregate("quality", filters, pageOf(state));
   const items = orderQuality(data?.items ?? []);
   return (
     <ChartCard
@@ -196,7 +196,7 @@ export function QualityCard({ state, filters, update, learnLabel }: CardProps) {
 }
 
 export function DropoffCard({ state, filters, update, learnLabel }: CardProps) {
-  const { data, error, isLoading, refetch } = useInsightsAggregate("dropoff", filters);
+  const { data, error, isLoading, refetch } = useInsightsAggregate("dropoff", filters, pageOf(state));
   const items = data?.items ?? [];
   return (
     <ChartCard
@@ -228,7 +228,7 @@ export function DropoffCard({ state, filters, update, learnLabel }: CardProps) {
 }
 
 export function PeopleCard({ state, filters, update, learnLabel }: CardProps) {
-  const { data, error, isLoading, refetch } = useInsightsAggregate("people", filters);
+  const { data, error, isLoading, refetch } = useInsightsAggregate("people", filters, pageOf(state));
   const items = data?.items ?? [];
   return (
     <ChartCard
