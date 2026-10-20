@@ -7,15 +7,21 @@
  * `updatedAt`, so anything older than its stale time refetches in the
  * background).
  *
- * - Scoped to the signed-in user (`owner`): another user's data is never
- *   restored, and sign-out removes it (`clearPersistedQueryCache`).
+ * - Scoped to the signed-in user's access (`owner` = `cacheScope(me)`: user
+ *   id, role, status and a hash of the permission list): data cached under
+ *   another user, or the same user with other access, is never restored.
+ *   Sign-out removes it (`clearPersistedQueryCache`); an access change seen
+ *   while signed in drops it with the memory cache (`discardCachedData`).
+ * - A 401 / 403 evicts that key from memory (QueryCache) and at once from
+ *   storage.
  * - sessionStorage only (one tab, gone when it closes), never localStorage.
  * - Bounded: entries above `MAX_ENTRY_CHARS` are skipped and the newest
  *   entries are kept up to `MAX_TOTAL_CHARS`. Writes are debounced and run
  *   when the browser is idle; every storage call is guarded (private mode,
  *   quota, disabled storage).
  */
-import { queryCache, runWhenIdle, type QueryCache } from "@/lib/query-cache";
+import type { AuthMe } from "@/lib/auth-api";
+import { isAccessDenied, queryCache, runWhenIdle, type QueryCache } from "@/lib/query-cache";
 
 export const PERSIST_STORAGE_KEY = "askdiq.query-cache.v1";
 export const MAX_ENTRY_CHARS = 300_000;
@@ -30,6 +36,28 @@ interface Persisted {
   v: 1;
   owner: string;
   entries: Array<[string, unknown, number]>;
+}
+
+/** 32-bit FNV-1a, hex: a short stable fingerprint (not a secret). */
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+/**
+ * Persistence scope of the signed-in user: id, role, status and a stable hash
+ * of the sorted permission list. Any change of access gives a new scope, so
+ * cached data is only ever restored for exactly the access it was read with.
+ * "" when signed out.
+ */
+export function cacheScope(me: Pick<AuthMe, "user" | "role" | "status" | "permissions"> | null): string {
+  if (!me?.user.id) return "";
+  const permissions = Array.from(new Set(me.permissions ?? [])).sort().join(",");
+  return [me.user.id, me.role ?? "-", me.status, fnv1a(permissions)].join("|");
 }
 
 function storage(): Storage | null {
@@ -134,7 +162,12 @@ export function startQueryPersistence(owner: string, cache: QueryCache = queryCa
   let timer: ReturnType<typeof setTimeout> | null = null;
   let cancelIdle: (() => void) | null = null;
   const flush = () => write(owner, cache);
-  const schedule = () => {
+  const schedule = (key: string) => {
+    // A refused key leaves storage now, not after the debounce.
+    if (isAccessDenied(cache.getState(key).error)) {
+      flush();
+      return;
+    }
     if (timer !== null) return;
     timer = setTimeout(() => {
       timer = null;
@@ -143,12 +176,32 @@ export function startQueryPersistence(owner: string, cache: QueryCache = queryCa
   };
   const stopListening = cache.onAnyChange(schedule);
   window.addEventListener("pagehide", flush);
-  return () => {
+  const stop = () => {
+    active.delete(stop);
     stopListening();
     window.removeEventListener("pagehide", flush);
     if (timer !== null) clearTimeout(timer);
+    timer = null;
     cancelIdle?.();
+    cancelIdle = null;
   };
+  active.add(stop);
+  return stop;
+}
+
+/** Stop functions of the running persistences (all stopped on an access change). */
+const active = new Set<() => void>();
+
+/**
+ * The signed-in user's access changed (role, status or permissions): stops
+ * persisting under the old scope, removes the stored copy and drops every
+ * cached entry (mounted views refetch under the new access; refused keys are
+ * evicted). The console runtime then persists and preloads under the new scope.
+ */
+export function discardCachedData(cache: QueryCache = queryCache): void {
+  for (const stop of Array.from(active)) stop();
+  clearPersistedQueryCache();
+  cache.reset();
 }
 
 export function clearPersistedQueryCache(): void {

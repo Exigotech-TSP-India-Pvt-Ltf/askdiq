@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { visibleNavItems } from "@/components/Sidebar";
 import { useAudience } from "@/lib/audience-context";
 import { useAuth } from "@/lib/auth-context";
 import { useConsoleLive } from "@/lib/live-updates";
 import { hasPermission } from "@/lib/permissions";
 import { queryCache, runWhenIdle } from "@/lib/query-cache";
-import { restoreQueryCache, startQueryPersistence } from "@/lib/query-persist";
-import { preloadConsole, prefetchShellData } from "@/lib/route-prefetch";
+import { cacheScope, restoreQueryCache, startQueryPersistence } from "@/lib/query-persist";
+import { preloadConsole, prefetchShellData, priorityHrefs } from "@/lib/route-prefetch";
 
 /**
  * Code split out of the pages (heavy charts, drawers): loaded once idle, so
@@ -25,16 +26,21 @@ export const PRELOAD_DELAY_MS = 1_200;
 /**
  * Console-wide data runtime (renders nothing), mounted once in the app layout:
  *
- * 1. restores this tab's persisted query cache for the signed-in user before
- *    the first page renders, and keeps it persisted;
- * 2. opens the live stream (pushed refreshes instead of polling);
- * 3. once idle, preloads every destination the user can open, so the first
- *    click on any page renders from cache.
+ * 1. restores this tab's persisted query cache for the signed-in user's
+ *    access (`cacheScope`) before the first page renders, and keeps it
+ *    persisted under that scope;
+ * 2. opens the live stream (pushed refreshes instead of polling; user / access
+ *    changes re-read `/auth/me`);
+ * 3. as soon as the user is known, warms the landing page and the first
+ *    permitted sidebar pages, alongside the shell's first render;
+ * 4. once idle, preloads every other destination the user can open, so the
+ *    first click on any page renders from cache.
  */
 export function ConsoleRuntime() {
-  const { me, token, permissions } = useAuth();
+  const { me, token, permissions, refresh } = useAuth();
   const { audience } = useAudience();
-  const owner = me?.user.id ?? "";
+  const pathname = usePathname();
+  const owner = cacheScope(me);
 
   // Restored synchronously in the first render, before the page below reads
   // the cache (this component renders ahead of the page; nothing subscribes
@@ -45,7 +51,20 @@ export function ConsoleRuntime() {
   useEffect(() => (owner ? startQueryPersistence(owner, queryCache) : undefined), [owner]);
 
   const canRead = hasPermission(permissions, "dashboard:read");
-  useConsoleLive(Boolean(token) && canRead);
+  const recheckAccess = useCallback(() => void refresh().catch(() => undefined), [refresh]);
+  useConsoleLive(Boolean(token) && canRead, recheckAccess);
+
+  // Priority preload: once per access scope (sign-in, or a role change that
+  // dropped the cache), immediately rather than after the idle delay.
+  const latest = useRef({ permissions, audience, landing: pathname });
+  latest.current = { permissions, audience, landing: latest.current.landing };
+  useEffect(() => {
+    if (!token || !owner) return undefined;
+    const { permissions: allowed, audience: current, landing } = latest.current;
+    prefetchShellData(token);
+    const permitted = visibleNavItems(allowed).map((item) => item.href);
+    return preloadConsole(priorityHrefs(landing, permitted), token, current, 0);
+  }, [token, owner]);
 
   useEffect(() => {
     if (!token) return undefined;

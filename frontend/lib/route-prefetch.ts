@@ -174,6 +174,25 @@ export function prefetchShellData(token: string | null): void {
   warm(AUDIENCE_COUNTS_KEY, (signal) => api.getAudienceCounts(token, signal));
 }
 
+/** Sidebar pages warmed right after sign-in, after the landing page. */
+export const PRIORITY_SIDEBAR_PAGES = 2;
+
+/**
+ * The pages to warm first once the user is known: the landing page (when the
+ * user may open it), then the first permitted sidebar pages with a
+ * prefetcher. `permitted` must already be permission-filtered
+ * (`visibleNavItems(permissions)`), so nothing the user cannot open is fetched.
+ */
+export function priorityHrefs(
+  landing: string | null,
+  permitted: readonly string[],
+  count: number = PRIORITY_SIDEBAR_PAGES,
+): string[] {
+  const warmable = permitted.filter((href) => href in PREFETCHERS);
+  const first = landing && warmable.includes(landing) ? [landing] : [];
+  return [...first, ...warmable.filter((href) => href !== landing).slice(0, count)];
+}
+
 /** Starts `href`'s prefetches and returns their promises. */
 function warmRoute(href: string, token: string, audience: Audience): Array<Promise<unknown>> {
   started = [];
