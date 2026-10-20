@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -708,6 +710,13 @@ class ModelSettings(Base):
         DateTime(timezone=True), default=_utcnow, server_default=func.now()
     )
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # Where the current prices came from: 'manual' or 'azure_retail' (the
+    # admin confirmed the official Azure retail prices), with their dates.
+    price_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    prices_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    prices_effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     __table_args__ = (
         CheckConstraint("id = 1", name="ck_model_settings_singleton"),
@@ -996,4 +1005,76 @@ class ResourceSample(Base):
     __table_args__ = (
         Index("ix_resource_samples_sampled_at", "sampled_at"),
         Index("ix_resource_samples_worker_sampled", "worker_id", "sampled_at"),
+    )
+
+
+# --- Azure Insights (app/azure_insights) ---
+
+
+class AzureSyncStatus(Base):
+    """Per Azure source: what the console's "Azure connection" card shows,
+    plus the monthly call counter behind the hard cap (metrics)."""
+
+    __tablename__ = "azure_sync_status"
+
+    source: Mapped[str] = mapped_column(String(32), primary_key=True)
+    state: Mapped[str] = mapped_column(
+        String(24), default="never_run", server_default="never_run"
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(80))
+    last_error_message: Mapped[str | None] = mapped_column(Text)
+    consecutive_failures: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    calls_month: Mapped[date | None] = mapped_column(Date)
+    calls_this_month: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detail: Mapped[dict | None] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+
+class AzureRetailPrice(Base):
+    """One Azure Retail Prices API row (public list price) per meter, currency
+    and effective date; history is kept (a new effective date is a new row).
+    ``role`` / ``model_key`` come from the explicit meter mapping
+    (``app.azure_insights.prices``); unmapped meters keep them null."""
+
+    __tablename__ = "azure_retail_prices"
+
+    meter_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    currency: Mapped[str] = mapped_column(String(3), primary_key=True)
+    effective_start_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    meter_name: Mapped[str] = mapped_column(String(200))
+    product_name: Mapped[str | None] = mapped_column(String(200))
+    sku_name: Mapped[str | None] = mapped_column(String(200))
+    service_name: Mapped[str | None] = mapped_column(String(100))
+    arm_region_name: Mapped[str] = mapped_column(String(40))
+    unit_of_measure: Mapped[str] = mapped_column(String(20))
+    retail_price: Mapped[Decimal] = mapped_column(Numeric(18, 10))
+    price_per_million: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    role: Mapped[str | None] = mapped_column(String(16))
+    model_key: Mapped[str | None] = mapped_column(String(64))
+    deployment_type: Mapped[str | None] = mapped_column(String(16))
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_azure_retail_prices_lookup",
+            "arm_region_name",
+            "meter_name",
+            "currency",
+            "effective_start_date",
+        ),
     )

@@ -17,6 +17,7 @@ import { filtersForPreset } from "@/components/admin/analytics/use-analytics-pre
 import { DEFAULT_STATE } from "@/components/admin/analytics/url-state";
 import { pageOf, prefetchBundle, viewerTimeZone } from "@/components/admin/analytics/use-insights";
 import { api } from "@/lib/api";
+import { azureApi, azureKeys } from "@/lib/azure-api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
 import { dashboardApi, dashboardKeys } from "@/lib/dashboard-api";
 import { summaryFetcher } from "@/lib/use-dashboard";
@@ -85,6 +86,7 @@ function governanceOverall(token: string, audience: Audience): void {
   warm(["admin/governance/logs-total", audience], (signal) =>
     governanceApi.logs(token, { audience, limit: 1 }, signal),
   );
+  warm(azureKeys.status, (signal) => azureApi.status(signal));
 }
 
 const PREFETCHERS: Record<string, Prefetcher> = {
@@ -157,6 +159,7 @@ const PREFETCHERS: Record<string, Prefetcher> = {
     warm(BRANDING_KEY, (signal) => settingsApi.getBranding(signal));
     warm(TAXONOMY_KEY, (signal) => settingsApi.listTaxonomy(signal));
     warm(MODELS_KEY, (signal) => settingsApi.getModelSettings(signal));
+    warm(azureKeys.officialPrices, (signal) => azureApi.officialPrices(signal));
   },
 };
 

@@ -18,6 +18,7 @@ import {
   type PriceField,
 } from "@/lib/settings-api";
 import { Field, SettingsCard, inputClass } from "./fields";
+import { OfficialPricesPanel } from "./OfficialPrices";
 import { diffModelsForm, formFromModelSettings, validateModelsForm, type ModelsForm } from "./models-form";
 
 const HTTP_UNPROCESSABLE = 422;
@@ -202,17 +203,20 @@ export function ModelsTab() {
           description="USD per 1M tokens. New rates apply to questions asked from now on; past costs keep the rates they were billed at."
           icon={CircleDollarSign}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
-            {(Object.keys(PRICE_LABELS) as PriceField[]).map((field) => (
-              <React.Fragment key={field}>
-                {overrideField(field, PRICE_LABELS[field].label, {
-                  hint: PRICE_LABELS[field].hint,
-                  defaultValue: usd(server.defaults[field]),
-                  type: "number",
-                  prefix: "$",
-                })}
-              </React.Fragment>
-            ))}
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              {(Object.keys(PRICE_LABELS) as PriceField[]).map((field) => (
+                <React.Fragment key={field}>
+                  {overrideField(field, PRICE_LABELS[field].label, {
+                    hint: PRICE_LABELS[field].hint,
+                    defaultValue: usd(server.defaults[field]),
+                    type: "number",
+                    prefix: "$",
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+            <OfficialPricesPanel server={server} saving={save.isPending} onConfirm={(body) => save.mutate(body)} />
           </div>
         </SettingsCard>
       </div>

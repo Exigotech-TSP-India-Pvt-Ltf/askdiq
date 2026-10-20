@@ -6,6 +6,7 @@ from typing import Any
 
 # Feature job modules register their handlers on import.
 from app.alerts import jobs as alerts_jobs  # noqa: F401 - alerts.evaluate / notify
+from app.azure_insights import jobs as azure_jobs  # noqa: F401 - azure.* sources
 from app.core.logging_config import get_logger
 from app.core.state import PostgresState
 from app.feedback import jobs as feedback_jobs  # noqa: F401 - registers eval.golden_run

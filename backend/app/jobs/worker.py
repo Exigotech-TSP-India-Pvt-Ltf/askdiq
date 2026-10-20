@@ -22,6 +22,7 @@ import uuid
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, TypeVar
 
+from app.azure_insights.scheduler import SCHEDULE_CHECK_SECONDS, ensure_azure_scheduled
 from app.core.config import configure_logging, get_settings
 from app.core.events import get_event_bus
 from app.core.logging_config import get_logger
@@ -108,6 +109,7 @@ class JobWorker:
         next_reclaim = 0.0
         next_schedule = 0.0
         next_alerts = 0.0
+        next_azure = 0.0
         error_delay = self.poll_interval
         while not stop.is_set():
             claimed = 0
@@ -123,6 +125,10 @@ class JobWorker:
                     # Polled at a quarter of the interval; put_once spaces runs.
                     await self._schedule_alerts()
                     next_alerts = now + self.alerts_poll_interval
+                if self._schedule_periodic and now >= next_azure:
+                    # Self-heal: a lost azure.* job is re-queued (dedupe no-op).
+                    await self._schedule_azure()
+                    next_azure = now + SCHEDULE_CHECK_SECONDS
                 free = self.concurrency - len(self._inflight)
                 if free > 0:
                     jobs = await queue.claim(
@@ -173,6 +179,10 @@ class JobWorker:
                 dedupe_key=ALERTS_EVALUATE_JOB,
                 engine=self._engine,
             )
+
+    async def _schedule_azure(self) -> None:
+        if get_settings().azure_insights_configured:
+            await ensure_azure_scheduled(engine=self._engine)
 
     async def _execute(self, job: queue.Job) -> None:
         handler = get_handler(job.type)
