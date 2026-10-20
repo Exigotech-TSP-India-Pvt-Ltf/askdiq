@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -45,3 +45,34 @@ class AzureStatusRead(BaseModel):
     metrics_call_cap: int
     sources: list[AzureSourceStatus]
     generated_at: datetime
+
+
+class OfficialPriceRead(BaseModel):
+    role: Literal["prompt", "cached", "output", "embed"]
+    field: str = Field(description="The model_settings price field it fills.")
+    model_key: str
+    meter_name: str | None = Field(
+        default=None, description="Mapped retail meter; null = no mapping."
+    )
+    found: bool = Field(description="An official price is stored for the meter.")
+    usd_per_million: float | None = None
+    local_per_million: float | None = Field(
+        default=None, description="In `local_currency` (for reference only)."
+    )
+    effective_date: date | None = None
+
+
+class OfficialPricesRead(BaseModel):
+    """Latest stored Azure retail prices for the configured models."""
+
+    source: Literal["azure_retail"] = "azure_retail"
+    region: str
+    deployment_type: str
+    local_currency: str
+    synced_at: datetime | None = Field(
+        default=None, description="When the prices were last fetched from Azure."
+    )
+    effective_date: date | None = Field(
+        default=None, description="Newest effective date among the prices."
+    )
+    prices: list[OfficialPriceRead]

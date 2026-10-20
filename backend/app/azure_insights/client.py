@@ -112,7 +112,8 @@ def error_from_response(response: httpx.Response) -> tuple[str, str]:
         body = None
     code, message = f"http_{response.status_code}", ""
     if isinstance(body, dict):
-        err = body.get("error") if isinstance(body.get("error"), dict) else body
+        nested = body.get("error") or body.get("Error")
+        err = nested if isinstance(nested, dict) else body
         code = str(err.get("code") or err.get("Code") or code)
         message = str(err.get("message") or err.get("Message") or "")
     return code, message

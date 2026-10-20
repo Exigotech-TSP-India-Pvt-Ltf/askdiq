@@ -31,31 +31,49 @@ built from Postgres. A page view never calls Azure.
 
 ```python
 # app/azure_insights/metrics.py
-from app.azure_insights.scheduler import AzureSource, SourceContext, SourceResult, register_source
+from app.azure_insights.scheduler import (
+    AzureSource,
+    SourceContext,
+    SourceResult,
+    register_source,
+)
 
 METRICS_KIND = "azure.reconciliation"
 
+
 async def run_metrics(ctx: SourceContext) -> SourceResult:
     account = ctx.settings.azure_account_resource_id
-    async with ctx.arm_client(budgeted=True) as api:   # counts against the monthly cap
-        body = await api.get_json(f"{account}/providers/Microsoft.Insights/metrics", params)
+    # budgeted=True: every call counts against the monthly cap.
+    async with ctx.arm_client(budgeted=True) as api:
+        url = f"{account}/providers/Microsoft.Insights/metrics"
+        body = await api.get_json(url, params)
         # or: async for item in api.paged(url, params): ...
     async with ctx.session_factory() as session:
-        n = await upsert_points(session, normalise(body))   # ON CONFLICT DO UPDATE
+        # INSERT ... ON CONFLICT (natural key) DO UPDATE
+        n = await upsert_points(session, normalise(body))
         await session.commit()
-    return SourceResult(rows=n, detail={"window": "PT2H"})   # detail: small JSON on the status row
+    # detail: small JSON kept on the status row.
+    return SourceResult(rows=n, detail={"window": "PT2H"})
 
-register_source(AzureSource(
-    name="metrics",                      # job type azure.metrics, status row "metrics"
-    label="Monitor metrics",
-    interval=lambda s: s.azure_metrics_interval_seconds,
-    run=run_metrics,
-    snapshot_kinds=(METRICS_KIND,),      # recomputed + announced after each run
-    call_cap=lambda s: s.azure_metrics_monthly_call_cap,
-    enabled=lambda s: True,              # optional extra flag (e.g. AZURE_SERVICE_HEALTH_ENABLED)
-    needs_credentials=True,              # False for public APIs (retail)
-    order=20,                            # position on the status card
-))
+
+register_source(
+    AzureSource(
+        # Job type azure.metrics, status row "metrics".
+        name="metrics",
+        label="Monitor metrics",
+        interval=lambda s: s.azure_metrics_interval_seconds,
+        run=run_metrics,
+        # Recomputed + announced on /admin/live after every run.
+        snapshot_kinds=(METRICS_KIND,),
+        call_cap=lambda s: s.azure_metrics_monthly_call_cap,
+        # Optional extra flag, e.g. lambda s: s.azure_service_health_enabled.
+        enabled=lambda s: True,
+        # False for public APIs (retail).
+        needs_credentials=True,
+        # Position on the status card.
+        order=20,
+    )
+)
 ```
 
 Then:
