@@ -233,6 +233,14 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     expect(screen.queryByRole("tab", { name: /live telemetry studio/i })).not.toBeInTheDocument();
   });
 
+  it("Configure Test IPs is an icon-only header action that keeps its accessible name", async () => {
+    render(<UsageCostPage />);
+    const button = await screen.findByRole("button", { name: /configure test ips/i });
+    expect(button).not.toHaveTextContent(/\S/);
+    expect(button.closest("[data-header-actions]")).not.toBeNull();
+    expect(button.parentElement?.querySelector("[data-tooltip]")).toHaveTextContent("Configure Test IPs");
+  });
+
   it.each([
     ["live_telemetry", OVERVIEW_TAB_NAME],
     ["overall", OVERVIEW_TAB_NAME],

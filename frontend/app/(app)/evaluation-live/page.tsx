@@ -37,6 +37,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import { TabGroup, EVALUATION_LIVE_TABS } from "@/components/admin/TabGroup";
 import { EvaluationRecordDrawer } from "@/components/admin/EvaluationRecordDrawer";
 import { EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
@@ -250,21 +251,15 @@ export default function EvaluationLivePage() {
         icon={Sparkles}
         showDateRange
       >
-        <button
+        <HeaderIconButton
+          icon={GitCompare}
+          label="Compare with benchmark"
+          tooltip={compareMode ? "Exit comparison" : "Compare with benchmark"}
+          pressed={compareMode}
+          indicator={compareMode}
           data-tour="evaluation-compare"
           onClick={() => setCompareMode(!compareMode)}
-          className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm ${
-            compareMode
-              ? "bg-teal-600 text-white shadow-teal-500/25 border border-teal-500"
-              : "bg-white/90 dark:bg-dark-surface text-slate-700 dark:text-slate-200 border border-teal-300/80 dark:border-teal-500/25 hover:bg-teal-50/50 dark:hover:bg-white/5"
-          }`}
-        >
-          <GitCompare className="w-4 h-4" />
-          <span className="whitespace-nowrap">{compareMode ? "Exit comparison" : "Compare with benchmark"}</span>
-          {compareMode && (
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          )}
-        </button>
+        />
       </DashboardHeader>
       </div>
 

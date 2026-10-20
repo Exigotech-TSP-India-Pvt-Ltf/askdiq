@@ -2,7 +2,7 @@
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import EvaluationLivePage from "@/app/(app)/evaluation-live/page";
 import { api } from "@/lib/api";
 import { presetRange, rangeUtcDays } from "@/lib/range-context";
@@ -20,6 +20,22 @@ function summaryCalls(spy: { mock: { calls: unknown[][] } }) {
     .filter((c) => c[1] === "summary")
     .map((c) => new URLSearchParams(String(c[2])));
 }
+
+describe("Evaluation header actions", () => {
+  it("Compare with benchmark is an icon-only toggle in the action cluster beside the date range", async () => {
+    vi.spyOn(api, "evaluationLiveView").mockResolvedValue(REPORT);
+    renderPage(<EvaluationLivePage />, { url: "/admin/evaluation-live" });
+    const compare = await screen.findByRole("button", { name: /compare with benchmark/i });
+    expect(compare).not.toHaveTextContent(/\S/);
+    expect(compare).toHaveAttribute("aria-pressed", "false");
+    const cluster = compare.closest("[data-header-actions]");
+    expect(cluster).toContainElement(screen.getByRole("button", { name: /date range: last 7 days/i }));
+
+    fireEvent.click(compare);
+    expect(compare).toHaveAttribute("aria-pressed", "true");
+    expect(compare.parentElement?.querySelector("[data-tooltip]")).toHaveTextContent("Exit comparison");
+  });
+});
 
 describe("Evaluation date range", () => {
   it("sends a custom range as from / to days", async () => {

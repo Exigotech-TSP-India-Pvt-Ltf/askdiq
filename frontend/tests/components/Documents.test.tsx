@@ -45,11 +45,21 @@ describe("Documents list", () => {
     expect(await screen.findAllByText("Citation stats are not available yet")).toHaveLength(3);
   });
 
+  it("Upload Document is an icon-only primary header action with an accessible name", async () => {
+    mockFetch([docsRoute, statsRoute]);
+    renderPage(<DocumentsPage />);
+    const upload = await screen.findByRole("button", { name: /upload document/i });
+    expect(upload).not.toHaveTextContent(/\S/);
+    expect(upload.className).toContain("bg-brand-gradient");
+    expect(upload.closest("[data-header-actions]")).not.toBeNull();
+    expect(upload.parentElement?.querySelector("[data-tooltip]")).toHaveTextContent("Upload Document");
+  });
+
   it("an operator sees no upload or delete controls", async () => {
     mockFetch([docsRoute, statsRoute]);
     renderPage(<DocumentsPage />, { role: "operator" });
     await screen.findAllByText("Leave policy.md");
-    expect(screen.queryByText("Upload Document")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /upload document/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Delete / })).not.toBeInTheDocument();
   });
 

@@ -8,6 +8,10 @@ export interface ActionTooltipProps {
   children: ReactNode;
   /** Bubble anchor: centred on the control, or its right edge (for controls near the right edge). */
   align?: "center" | "end";
+  /** Bubble side: above the control (default) or below it (page-header controls). */
+  side?: "top" | "bottom";
+  /** Suppress the bubble (e.g. while the control's own popover is open). */
+  hidden?: boolean;
   className?: string;
 }
 
@@ -17,19 +21,28 @@ export interface ActionTooltipProps {
  * visual only (`aria-hidden`): screen readers already get the control's
  * aria-label, so announcing the bubble would read the name twice.
  */
-export function ActionTooltip({ label, children, align = "center", className = "" }: ActionTooltipProps) {
+export function ActionTooltip({
+  label,
+  children,
+  align = "center",
+  side = "top",
+  hidden = false,
+  className = "",
+}: ActionTooltipProps) {
   return (
     <span className={`group/tip relative inline-flex ${className}`}>
       {children}
+      {hidden ? null : (
       <span
         aria-hidden="true"
         data-tooltip
-        className={`pointer-events-none absolute bottom-full z-30 mb-1.5 whitespace-nowrap rounded-md bg-surface-inverse px-2 py-0.5 text-[11px] font-medium text-fg-inverse opacity-0 shadow-md transition-opacity duration-100 group-focus-within/tip:opacity-100 group-hover/tip:opacity-100 motion-reduce:transition-none ${
+        className={`pointer-events-none absolute z-30 whitespace-nowrap ${side === "bottom" ? "top-full mt-1.5" : "bottom-full mb-1.5"} rounded-md bg-surface-inverse px-2 py-0.5 text-[11px] font-medium text-fg-inverse opacity-0 shadow-md transition-opacity duration-100 group-focus-within/tip:opacity-100 group-hover/tip:opacity-100 motion-reduce:transition-none ${
           align === "end" ? "right-0" : "left-1/2 -translate-x-1/2"
         }`}
       >
         {label}
       </span>
+      )}
     </span>
   );
 }

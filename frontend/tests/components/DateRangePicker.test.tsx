@@ -127,7 +127,25 @@ describe("DateRangePicker + RangeProvider", () => {
     expect(router.replace).toHaveBeenLastCalledWith(`/admin?audience=users&from=2026-01-05&to=${today}`, {
       scroll: false,
     });
-    expect(screen.getByRole("button", { name: /date range/i })).toHaveTextContent("5 Jan 2026");
+    expect(screen.getByRole("button", { name: /date range:.*5 jan 2026/i })).toBeInTheDocument();
+  });
+
+  it("is icon-only: the current range is its accessible name and tooltip, with a dot when not the default", () => {
+    renderPicker();
+    const trigger = screen.getByRole("button", { name: "Date range: Last 7 days" });
+    expect(trigger).not.toHaveTextContent(/\S/);
+    const tip = trigger.parentElement?.querySelector("[data-tooltip]");
+    expect(tip).toHaveTextContent("Date range: Last 7 days");
+    expect(trigger.querySelector("[data-indicator]")).toBeNull();
+
+    fireEvent.click(trigger);
+    // The bubble hides while the menu is open so it never covers the panel.
+    expect(trigger.parentElement?.querySelector("[data-tooltip]")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Last 30 days" }));
+
+    const changed = screen.getByRole("button", { name: "Date range: Last 30 days" });
+    expect(changed.parentElement?.querySelector("[data-tooltip]")).toHaveTextContent("Date range: Last 30 days");
+    expect(changed.querySelector("[data-indicator]")).not.toBeNull();
   });
 
   it("restores a shared custom URL and closes on Esc", () => {
@@ -144,21 +162,30 @@ describe("DateRangePicker + RangeProvider", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("sits beside the audience tabs in DashboardHeader when enabled, and hides outside a provider", () => {
+  it("leads the right-corner action cluster in DashboardHeader (not beside the audience tabs), and hides outside a provider", () => {
     const { unmount } = render(
       <RangeProvider>
-        <DashboardHeader title="Dashboard" icon={LayoutDashboard} showDateRange />
+        <DashboardHeader
+          title="Dashboard"
+          icon={LayoutDashboard}
+          showDateRange
+          actions={<button type="button" aria-label="Page action" />}
+        />
       </RangeProvider>,
     );
     const tabs = screen.getByRole("tablist", { name: "Audience Scope" });
     const picker = screen.getByRole("button", { name: /date range/i });
-    // Each control sits in its guided-tour anchor; the two anchors are siblings
-    // in the header's centre column.
     const audienceAnchor = tabs.closest('[data-tour="shell-audience"]');
     const rangeAnchor = picker.closest('[data-tour="shell-date-range"]');
     expect(audienceAnchor).not.toBeNull();
     expect(rangeAnchor).not.toBeNull();
-    expect(audienceAnchor?.parentElement).toBe(rangeAnchor?.parentElement);
+    // The audience switcher keeps the centre column to itself, so adding the
+    // date range cannot shift it; the picker comes first in the action cluster.
+    const cluster = picker.closest("[data-header-actions]");
+    expect(cluster).not.toBeNull();
+    expect(cluster?.contains(audienceAnchor ?? null)).toBe(false);
+    expect(cluster?.firstElementChild).toBe(rangeAnchor);
+    expect(cluster).toContainElement(screen.getByRole("button", { name: "Page action" }));
     unmount();
 
     render(<DashboardHeader title="Dashboard" icon={LayoutDashboard} showDateRange />);
