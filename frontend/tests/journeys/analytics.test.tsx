@@ -112,12 +112,13 @@ describe("filter -> topic -> conversations journey", () => {
     fireEvent.click(screen.getByRole("button", { name: /View conversations/ }));
     expect(currentParams().get("tab")).toBe("conversations");
     await waitFor(() => {
-      const call = api.last("conversations");
+      // The page itself (the next one is warmed too, at offset 10).
+      const call = [...api.calls].reverse().find((c) => c.endpoint === "conversations" && c.params.get("offset") === "0");
       expect(call?.params.get("intent")).toBe("SVC");
       expect(call?.params.get("outcome")).toBe("Not served");
       expect(call?.params.get("sort")).toBe("start");
       expect(call?.params.get("dir")).toBe("desc");
-      expect(call?.params.get("limit")).toBe("25");
+      expect(call?.params.get("limit")).toBe("10");
       expect(call?.params.get("offset")).toBe("0");
     });
 
@@ -141,7 +142,7 @@ describe("filter -> topic -> conversations journey", () => {
 
   it("sorting uses the allow-listed column and resets to page 1", async () => {
     renderPage("?tab=conversations&page=2");
-    fireEvent.click(await screen.findByRole("button", { name: "Qs" }));
+    fireEvent.click(await screen.findByRole("columnheader", { name: /Qs/ }));
     expect(currentParams().get("sort")).toBe("exchanges");
     expect(currentParams().get("dir")).toBeNull(); // desc is the default
     expect(currentParams().get("page")).toBeNull();
@@ -192,7 +193,7 @@ describe("trend setDay() toggle", () => {
 });
 
 describe("Conversations per-turn expand", () => {
-  it("expands and collapses by keyboard and lists every turn", async () => {
+  it("rows without embedded questions fetch the detail; keyboard expand and collapse", async () => {
     const user = userEvent.setup();
     renderPage("?tab=conversations");
     const rows = await screen.findAllByTestId("conversation-row");
@@ -239,25 +240,14 @@ describe("pending classification", () => {
   });
 });
 
-describe("Guide tab", () => {
-  it("steps through the tour and dismisses it (remembered)", async () => {
+describe("Guide tab removed", () => {
+  it("has no Guide tab and ?tab=guide falls back to Overview", async () => {
     renderPage("?tab=guide");
-    expect(await screen.findByText("Step 1 of 6")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByText("Step 2 of 6")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Show me" }));
-    expect(currentParams().get("tab")).toBeNull(); // overview is the default tab
-    fireEvent.click(screen.getByRole("tab", { name: /Guide/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Dismiss tour" }));
-    expect(screen.getByRole("button", { name: "Restart tour" })).toBeInTheDocument();
-    expect(window.localStorage.getItem("deployiq.analytics.tourDismissed")).toBe("1");
-    expect(screen.getByRole("heading", { name: "How each number is calculated" })).toBeInTheDocument();
-  });
-
-  it("Escape dismisses the tour", async () => {
-    renderPage("?tab=guide");
-    const next = await screen.findByRole("button", { name: "Next" });
-    fireEvent.keyDown(next, { key: "Escape" });
-    expect(screen.getByRole("button", { name: "Restart tour" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Daily volume" })).toBeInTheDocument();
+    const bar = screen.getByRole("tablist", { name: "Analytics sections" });
+    const tabs = within(bar).getAllByRole("tab").map((t) => t.textContent?.trim());
+    expect(tabs).toEqual(["Overview", "Trend", "Flow", "Topics", "Drop-off", "Conversations"]);
+    expect(within(bar).getByRole("tab", { name: /Overview/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByText(/Step 1 of/)).not.toBeInTheDocument();
   });
 });
