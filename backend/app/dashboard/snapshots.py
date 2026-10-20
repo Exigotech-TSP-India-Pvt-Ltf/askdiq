@@ -368,6 +368,11 @@ async def snapshot_response(
     return encoded_response(request, body, etag, extra)
 
 
+def snapshot_as_of(kind: str, params: dict[str, Any]) -> datetime | None:
+    """When the in-memory payload of ``kind`` / ``params`` was computed."""
+    return _as_of.get(snapshot_key(kind, params))
+
+
 async def _reload(key: str) -> None:
     async with database.AsyncSessionLocal() as session:
         row = await _read_row(session, key)

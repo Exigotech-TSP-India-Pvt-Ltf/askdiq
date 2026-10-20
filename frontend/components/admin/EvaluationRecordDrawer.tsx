@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   CheckCircle2,
   AlertTriangle,
@@ -16,10 +16,13 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useApiQuery, type Fetcher, type QueryKey } from "@/lib/query-cache";
 import { formatLatencyMs } from "@/lib/format";
 import { entityHref } from "@/lib/entity-links";
 import { DrawerShell } from "@/components/ui/DrawerShell";
 import { CopyButton } from "@/components/ui/CopyButton";
+
+const DETAIL_STALE_MS = 60_000;
 
 type GuardrailTone = "ok" | "bad" | "unknown";
 
@@ -61,6 +64,13 @@ interface EvaluationRecordDrawerProps {
   recordId: string | null;
   initialData?: any;
   token: string | null;
+  /**
+   * Cached detail read (query-cache key + fetcher), e.g. the full case from
+   * the precomputed report; prefetched on row hover, so it opens filled.
+   * Without it, the record detail is fetched when the row has no sources.
+   */
+  detailKey?: QueryKey | null;
+  fetchDetail?: Fetcher<any>;
 }
 
 export function EvaluationRecordDrawer({
@@ -69,34 +79,35 @@ export function EvaluationRecordDrawer({
   recordId,
   initialData,
   token,
+  detailKey,
+  fetchDetail,
 }: EvaluationRecordDrawerProps) {
-  const [data, setData] = useState<any>(initialData || null);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "judge" | "sources" | "latency">("overview");
 
-  useEffect(() => {
-    if (initialData) {
-      setData(initialData);
-    }
-    if (!isOpen || !recordId || !token) return;
-
-    if (!initialData || !initialData.retrieved_chunks?.length) {
-      setLoading(true);
-      setLoadError(null);
-      api
-        .evaluationRecordDetail(token, recordId)
-        .then((res) => {
-          setData(res);
-          setLoading(false);
-        })
-        .catch((err: unknown) => {
-          setLoadError(err instanceof Error && err.message ? err.message : "Couldn't load this record.");
-          setLoading(false);
-        });
-    }
-  }, [isOpen, recordId, initialData, token]);
+  const custom = Boolean(detailKey && fetchDetail);
+  const needsDetail = custom || !initialData || !initialData.retrieved_chunks?.length;
+  const key: QueryKey | null =
+    isOpen && recordId && token && needsDetail
+      ? custom
+        ? (detailKey as QueryKey)
+        : ["metrics/evaluation/record", recordId]
+      : null;
+  const detail = useApiQuery<any>(
+    key,
+    (signal) =>
+      fetchDetail ? fetchDetail(signal) : api.evaluationRecordDetail(token ?? "", recordId ?? "", signal),
+    { staleTime: DETAIL_STALE_MS, revalidateOnFocus: false },
+  );
+  // The list row renders at once; the detail fills in when it arrives.
+  const data: any = detail.data ?? initialData ?? null;
+  const loading = key !== null && detail.isLoading && !initialData;
+  const loadError =
+    key !== null && detail.error && !detail.data
+      ? detail.error instanceof Error && detail.error.message
+        ? detail.error.message
+        : "Couldn't load this record."
+      : null;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -213,6 +224,12 @@ export function EvaluationRecordDrawer({
           <Sparkles className="w-5 h-5 animate-spin mr-2 text-teal-500" />
           Loading deep inspection telemetry...
         </div>
+      )}
+
+      {!loading && key !== null && detail.data === undefined && !loadError && (
+        <p role="status" className="mx-6 mt-2 text-[11px] text-fg-subtle">
+          Loading the full record…
+        </p>
       )}
 
       {!loading && loadError && (
