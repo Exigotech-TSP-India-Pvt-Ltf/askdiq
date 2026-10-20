@@ -19,7 +19,8 @@ import { api } from "@/lib/api";
 import { AUDIENCE_COUNTS_KEY } from "@/lib/audience-context";
 import { dashboardApi, dashboardKeys, rangeParams } from "@/lib/dashboard-api";
 import { listDocumentInventory } from "@/lib/documents-api";
-import { getDocumentCitationStats, getVisitorStats, getVisitors } from "@/lib/entity-stats-api";
+import { getDocumentCitationStats } from "@/lib/entity-stats-api";
+import { warmAudiencePage } from "@/lib/audience-data";
 import { evaluationLiveKey, fetchEvaluationLive } from "@/lib/evaluation-live";
 import { feedbackKeys, getFeedbackAnalytics } from "@/lib/feedback-api";
 import { governanceApi } from "@/lib/governance-api";
@@ -43,7 +44,6 @@ const ANALYTICS_ENDPOINTS: readonly InsightsEndpoint[] = [
 ];
 /** Page defaults mirrored from the pages (keys must match exactly). */
 const TOP_CITED_LIMIT = 10;
-const VISITORS_PAGE_SIZE = 10;
 const UM_STATS_DAYS = 30;
 const LIVE_FEED_LIMIT = 8;
 const USAGE_PAGE_SIZE = 10;
@@ -94,34 +94,8 @@ const PREFETCHERS: Record<string, Prefetcher> = {
       getDocumentCitationStats(token, { from: days.from, to: days.to, limit: TOP_CITED_LIMIT }, signal),
     );
   },
-  "/admin/visitors": (token, audience) => {
-    const days = defaultDays();
-    warm(["visitors", "stats", audience, days.from, days.to], (signal) =>
-      getVisitorStats(token, { audience, from: days.from, to: days.to }, signal),
-    );
-    const listKey = [
-      "visitors",
-      "list",
-      audience,
-      "",
-      "all",
-      "all",
-      "last_active_desc",
-      VISITORS_PAGE_SIZE,
-      0,
-      undefined,
-      undefined,
-      null,
-      null,
-    ];
-    warm(listKey, (signal) =>
-      getVisitors(
-        token,
-        { audience, q: undefined, status: "all", type: "all", sort: "last_active_desc", limit: VISITORS_PAGE_SIZE, offset: 0 },
-        signal,
-      ),
-    );
-  },
+  // Both tabs (Visitors | Conversations) of the page.
+  "/admin/visitors": (token, audience) => warmAudiencePage(warm, token, audience, defaultDays()),
   "/admin/usage": (token, audience) => {
     const days = defaultDays();
     warm(usageKeys.summary(audience, days), (signal) =>

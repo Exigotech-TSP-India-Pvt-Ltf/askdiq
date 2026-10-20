@@ -50,6 +50,7 @@ from app.dashboard.snapshots import (
     snapshot_response,
 )
 from app.dashboard.window import DayRange
+from app.entities.conversations import DETAIL_SNAPSHOT_KIND
 from app.feedback import analytics, service
 from app.feedback import repository as repo
 from app.feedback.jobs import enqueue_golden_run
@@ -219,8 +220,10 @@ FEEDBACK_ANALYTICS_KIND = "feedback.analytics"
 
 def _feedback_changed() -> None:
     """A triage / promotion changed the counts: drop the analytics snapshots
-    (the next read recomputes them; the live stream notifies open consoles)."""
+    (the next read recomputes them; the live stream notifies open consoles).
+    Conversation details show each turn's ratings and promoted case."""
     schedule_drop_snapshots(FEEDBACK_ANALYTICS_KIND)
+    schedule_drop_snapshots(DETAIL_SNAPSHOT_KIND)
 
 
 async def _feedback_analytics_snapshot(gather: Gather, params: dict) -> dict:
