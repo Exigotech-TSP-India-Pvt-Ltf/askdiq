@@ -17,6 +17,11 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts import catalogue as c
+from app.alerts.azure_rules import (
+    azure_quota_rule,
+    azure_sync_failing_rule,
+    azure_unhealthy_rule,
+)
 from app.alerts.catalogue import Severity
 from app.alerts.resource_rules import resource_rule
 from app.alerts.service import NOTIFY_JOB, Finding
@@ -541,6 +546,9 @@ DATABASE_RULE_FUNCS: dict[str, Rule] = {
     c.JOB_FAILURES: job_failures_rule,
     c.INGESTION_FAILURES: ingestion_failures_rule,
     c.ONLINE_EVAL_VIOLATIONS: online_eval_rule,
+    c.AZURE_QUOTA_NEAR_LIMIT: azure_quota_rule,
+    c.AZURE_RESOURCE_UNHEALTHY: azure_unhealthy_rule,
+    c.AZURE_SYNC_FAILING: azure_sync_failing_rule,
     # One pass over resource_samples raises all five resource rules.
     RESOURCES_GROUP: resource_rule,
 }

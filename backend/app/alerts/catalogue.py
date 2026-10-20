@@ -95,6 +95,9 @@ MEMORY_HIGH = "memory_high"
 RSS_GROWTH = "worker_rss_growth"
 EVENT_LOOP_LAG = "event_loop_lag"
 DB_POOL_SATURATION = "db_pool_saturation"
+AZURE_QUOTA_NEAR_LIMIT = "azure_quota_near_limit"
+AZURE_RESOURCE_UNHEALTHY = "azure_resource_unhealthy"
+AZURE_SYNC_FAILING = "azure_insights_sync_failing"
 RESOURCE_RULES = frozenset(
     {CPU_SUSTAINED, MEMORY_HIGH, RSS_GROWTH, EVENT_LOOP_LAG, DB_POOL_SATURATION}
 )
@@ -330,6 +333,49 @@ RULES: tuple[AlertRule, ...] = (
         _MONITORING,
         "Look for slow queries or connections held across slow calls; raise "
         "DB_POOL_SIZE only if Postgres max_connections allows it.",
+    ),
+    AlertRule(
+        AZURE_QUOTA_NEAR_LIMIT,
+        "Azure quota near limit",
+        "Azure OpenAI",
+        "database",
+        "Peak 1-minute tokens or requests of the chat deployment over "
+        "ALERT_AZURE_QUOTA_WINDOW_MINUTES against its Azure-reported TPM / RPM "
+        "(rateLimits), or regional quota currentValue / limit (Azure Insights "
+        "capacity poll; only while AZURE_INSIGHTS_ENABLED).",
+        "warning at ALERT_AZURE_QUOTA_PCT, critical at 100%",
+        _MONITORING,
+        "Raise the deployment's capacity in Microsoft Foundry (regional quota "
+        "permitting) or lower traffic; a full regional quota needs a quota "
+        "increase request or another region.",
+    ),
+    AlertRule(
+        AZURE_RESOURCE_UNHEALTHY,
+        "Azure resource unhealthy",
+        "Azure OpenAI",
+        "database",
+        "Resource Health of the Azure OpenAI account is Degraded or Unavailable, "
+        "or Service Health has an active ServiceIssue for OpenAI / Foundry / "
+        "Cognitive Services in our region or global.",
+        "warning (Degraded / incident), critical (Unavailable / Error-level incident)",
+        _MONITORING,
+        "Open the event in the Azure portal (Service Health, tracking id below) "
+        "for Microsoft's updates; consider failing over to another deployment "
+        "or region if it lasts.",
+    ),
+    AlertRule(
+        AZURE_SYNC_FAILING,
+        "Azure Insights sync failing",
+        "Azure Insights",
+        "database",
+        "A scheduled Azure Insights source (prices, metrics, costs, capacity, "
+        "health) failed ALERT_AZURE_SYNC_FAILURES consecutive runs "
+        "(azure_sync_status), e.g. an expired client secret or lost RBAC role.",
+        "warning at ALERT_AZURE_SYNC_FAILURES, critical at 2x that",
+        _GOVERNANCE,
+        "Read the sanitised error on the Azure connection card; rotate "
+        "AZURE_CLIENT_SECRET (new secret, update .env, restart) or restore the "
+        "role assignment, then wait for the next poll.",
     ),
 )
 

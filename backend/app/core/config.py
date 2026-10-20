@@ -463,6 +463,13 @@ class Settings(BaseSettings):
     # Leak heuristic: RSS rising (almost) every sample by at least this much.
     alert_rss_growth_mb: float = Field(default=256.0, gt=0)
     alert_rss_growth_min_samples: int = Field(default=24, ge=3)
+    # Azure Insights rules (evaluated only while AZURE_INSIGHTS_ENABLED, from
+    # the stored Azure data): peak 1-min tokens / requests or regional quota
+    # at or above this % of the Azure-reported limits; a source failing this
+    # many consecutive runs.
+    alert_azure_quota_pct: float = Field(default=85.0, gt=0, le=100)
+    alert_azure_quota_window_minutes: int = Field(default=15, ge=1, le=1440)
+    alert_azure_sync_failures: int = Field(default=3, ge=1)
     # SMTP delivery: off unless SMTP_HOST, ALERT_EMAIL_FROM and ALERT_EMAIL_TO
     # are all set. SMTP_SSL = implicit TLS (465); otherwise STARTTLS (587).
     smtp_host: str = ""
@@ -513,6 +520,8 @@ class Settings(BaseSettings):
     azure_http_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     # Interactive "Sync official prices" calls per admin per minute.
     azure_retail_sync_rate_limit_per_minute: int = Field(default=5, ge=1)
+    # Advisor recommendations (AZURE_ADVISOR_ENABLED): daily by default.
+    azure_advisor_interval_seconds: int = Field(default=86_400, ge=21_600)
 
     # --- Auth: SSO (Entra OIDC), sessions and RBAC (PR-06) ---
     # Required unless AUTH_DEV_MOCK=true (see `_validate_auth`).

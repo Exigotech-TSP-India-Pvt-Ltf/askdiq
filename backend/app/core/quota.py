@@ -5,6 +5,9 @@ Tracks:
 - Headroom percentages against configured Azure limits
 - Azure rate limit response headers (x-ratelimit-remaining-tokens / requests)
 - Throttling metrics: 429 counts and retry rates in rolling 60s window
+- Limits: the Azure-reported TPM/RPM of the deployment (``rateLimits``, stored
+  by the Azure Insights capacity poll) when known, else the configured
+  AZURE_OPENAI_*_LIMIT defaults (``*_limit_source`` says which)
 - Single-worker per process model (Decision D4)
 """
 
@@ -20,9 +23,21 @@ from app.model_settings.service import current_model_settings
 _HEADER_FRESHNESS_SECONDS = 60.0
 _HIGH_UTILIZATION_RATIO = 0.8
 
+LIMIT_SOURCE_SETTINGS = "settings"
+LIMIT_SOURCE_AZURE = "azure"
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalLimit:
+    """Real per-minute limits reported by Azure for one deployment (None =
+    not reported: the configured default stays)."""
+
+    tpm: int | None = None
+    rpm: int | None = None
+
 
 @dataclass
-class DeploymentQuotaTracker:
+class DeploymentQuotaTracker:  # pylint: disable=too-many-instance-attributes
     name: str
     tpm_limit: int
     rpm_limit: int
@@ -37,7 +52,26 @@ class DeploymentQuotaTracker:
     last_header_remaining_tokens: int | None = None
     last_header_remaining_requests: int | None = None
     last_header_timestamp: float | None = None
+    tpm_limit_source: str = LIMIT_SOURCE_SETTINGS
+    rpm_limit_source: str = LIMIT_SOURCE_SETTINGS
+    # The configured defaults (restored when the Azure limit goes away).
+    default_tpm_limit: int | None = None
+    default_rpm_limit: int | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def apply_limit(self, limit: ExternalLimit | None) -> None:
+        """Use Azure-reported limits where known, else the configured defaults."""
+        with self._lock:
+            if self.default_tpm_limit is None:
+                self.default_tpm_limit = self.tpm_limit
+            if self.default_rpm_limit is None:
+                self.default_rpm_limit = self.rpm_limit
+            tpm = limit.tpm if limit is not None and limit.tpm else None
+            rpm = limit.rpm if limit is not None and limit.rpm else None
+            self.tpm_limit = tpm or self.default_tpm_limit
+            self.rpm_limit = rpm or self.default_rpm_limit
+            self.tpm_limit_source = LIMIT_SOURCE_AZURE if tpm else LIMIT_SOURCE_SETTINGS
+            self.rpm_limit_source = LIMIT_SOURCE_AZURE if rpm else LIMIT_SOURCE_SETTINGS
 
     def _prune(self, now: float) -> None:
         """Evict events older than 60 seconds."""
@@ -157,6 +191,8 @@ class DeploymentQuotaTracker:
                 "rpm_current": rpm,
                 "rpm_limit": self.rpm_limit,
                 "rpm_headroom_pct": rpm_headroom,
+                "tpm_limit_source": self.tpm_limit_source,
+                "rpm_limit_source": self.rpm_limit_source,
                 "azure_429_count_60s": throttle_429s,
                 "azure_retries_60s": retries,
                 "azure_error_rate": error_rate,
@@ -169,6 +205,20 @@ class QuotaMonitor:
     def __init__(self) -> None:
         self._trackers: dict[str, DeploymentQuotaTracker] = {}
         self._lock = threading.Lock()
+        # Lower-cased deployment (or model) name -> Azure-reported limits.
+        self._external: dict[str, ExternalLimit] = {}
+
+    def set_external_limits(self, limits: dict[str, ExternalLimit]) -> None:
+        """Replace the Azure-reported limits (empty = configured defaults)."""
+        with self._lock:
+            self._external = {k.lower(): v for k, v in limits.items()}
+            trackers = list(self._trackers.values())
+        for tracker in trackers:
+            tracker.apply_limit(self._external.get(tracker.name.lower()))
+
+    def external_limit(self, deployment: str) -> ExternalLimit | None:
+        with self._lock:
+            return self._external.get(deployment.lower())
 
     def get_tracker(self, deployment: str) -> DeploymentQuotaTracker:
         with self._lock:
@@ -180,11 +230,13 @@ class QuotaMonitor:
                 else:
                     tpm_lim = settings.azure_openai_tpm_limit
                     rpm_lim = settings.azure_openai_rpm_limit
-                self._trackers[deployment] = DeploymentQuotaTracker(
+                tracker = DeploymentQuotaTracker(
                     name=deployment,
                     tpm_limit=tpm_lim,
                     rpm_limit=rpm_lim,
                 )
+                tracker.apply_limit(self._external.get(deployment.lower()))
+                self._trackers[deployment] = tracker
             return self._trackers[deployment]
 
     def record_chat(

@@ -4,4 +4,9 @@ API routes)."""
 
 from __future__ import annotations
 
-from app.azure_insights import service  # noqa: F401  # pylint: disable=unused-import
+from app.azure_insights import (  # noqa: F401  # pylint: disable=unused-import
+    advisor,
+    capacity,
+    health,
+    service,  # noqa: F401  # pylint: disable=unused-import
+)
