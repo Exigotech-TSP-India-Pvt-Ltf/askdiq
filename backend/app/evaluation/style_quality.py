@@ -8,7 +8,11 @@ and is there no prose block longer than 2 sentences?
 ``ai_tone_score(answer)``: banned-phrase hits, em-dash rate and hedge-word
 rate per 100 words; lower is better and ``banned_hits`` must be zero.
 
-Line-based ``str`` checks only (no regex), so both are linear-time.
+Inline citation markers (``[n]``, OR-7) are stripped first: they are not
+words, so they never change a lead's length, a rate or a structure check.
+
+Line-based ``str`` checks plus the linear-time marker strip, so both are
+linear-time.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from app.harness.citations import strip_markers
 from app.harness.style import BANNED_PHRASES
 from app.harness.tone import longest_prose_run
 
@@ -189,6 +194,7 @@ _CHECKS: dict[str, Callable[[_Parsed], dict[str, bool]]] = {
 def structure_score(answer: str, shape: str) -> dict[str, object]:
     """Per-shape structure check; ``passed`` only if every check holds."""
 
+    answer = strip_markers(answer)
     checks = _CHECKS.get(str(shape), _general)(_Parsed.of(answer))
     prose = longest_prose_run(answer)
     checks["no_prose_dump"] = prose <= _MAX_PROSE_SENTENCES
@@ -208,6 +214,7 @@ def banned_phrases_in(answer: str) -> list[str]:
 def ai_tone_score(answer: str) -> dict[str, object]:
     """Stock-AI signals per 100 words; ``score`` is their sum (lower is better)."""
 
+    answer = strip_markers(answer)
     words = answer.split()
     count = max(len(words), 1)
     banned = banned_phrases_in(answer)

@@ -13,6 +13,7 @@ from app.core.config import Settings, get_settings
 from app.harness import orchestrator, prompts, style
 from app.harness.ambiguity import AmbiguityKind, Assessment
 from app.harness.answer_shape import AnswerShape, detect_shape, refine_shape
+from app.harness.citations import MARKER_RE, citation_instruction
 from app.harness.style import (
     BANNED_PHRASES,
     STYLE_PROFILES,
@@ -354,6 +355,44 @@ def test_citation_markers_survive_opener_cut() -> None:
     assert strip_stock_phrases(raw) == "We cover eight strategies [1][2].\n- MFA [3]"
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Great question! We cover eight strategies [1][2].",
+        "Certainly! [1] We pilot first.",
+        "We pilot first [1]. I hope this helps [2].",
+        "We pilot first.[1] Feel free to reach out.",
+        "We pilot first. [1] I hope this helps!",
+        "Based on the context, we pilot first [3].\n\nLet me know if you need [1].",
+        "## Plan\n- **Pilot** first [1]\n- Scale [2][3]\n\n| A | B |\n| --- | --- |\n| x [1] | y [2] |",
+        "1. Connect [1]\n2. Run [2]\n\nI hope this helps!",
+    ],
+)
+def test_tone_filter_never_removes_or_alters_markers(answer: str) -> None:
+    polished = polish_answer(answer, ResponseStyle.ADAPTIVE)
+    assert [m.group(0) for m in MARKER_RE.finditer(polished)] == [
+        m.group(0) for m in MARKER_RE.finditer(answer)
+    ]
+    # Only a whole opener or closer is cut: the rest is a verbatim slice.
+    body = polished[1:]
+    assert body in answer
+
+
+def test_prompt_composes_style_block_and_citation_instruction() -> None:
+    blocks = STYLE_PROFILES[ResponseStyle.ADAPTIVE].shape_blocks
+    for shape in AnswerShape:
+        prompt = prompts.get_system_prompt(ResponseStyle.ADAPTIVE, shape)
+        assert citation_instruction() in prompt
+        assert blocks[shape.value] in prompt
+        assert "Keep any citation marker at the end of the claim" in prompt
+        # Grounding, then markers, then the style: one instruction each.
+        assert prompt.count(citation_instruction()) == 1
+        assert prompt.index(citation_instruction()) < prompt.index("Style:")
+    current = prompts.get_system_prompt(ResponseStyle.CURRENT, "comparison")
+    assert citation_instruction() in current
+    assert "Style:" not in current
+
+
 def test_polish_only_under_adaptive() -> None:
     raw = "Great question! We pilot first."
     assert polish_answer(raw, ResponseStyle.CURRENT) == raw
@@ -427,3 +466,64 @@ async def test_run_query_uses_style_shape_and_records_them(monkeypatch) -> None:
     assert response.answer.startswith("We cover eight strategies.")
     assert response.token_details["style"] == "adaptive"
     assert response.token_details["shape"] == "definition"
+
+
+async def test_run_query_with_style_and_citations(monkeypatch) -> None:
+    checked: list[str] = []
+    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *_a, **_k: [])
+    sources = [
+        SourceChunk(
+            chunk_id=f"00000000-0000-0000-0000-00000000001{i}",
+            document_id=f"00000000-0000-0000-0000-00000000002{i}",
+            content="The Essential Eight is eight mitigation strategies.",
+            score=0.8,
+            metadata={"source_name": f"doc-{i}.md"},
+            url=f"https://docs.deployiq.com.au/doc-{i}",
+        )
+        for i in (1, 2)
+    ]
+
+    async def fake_retrieve(*_a, **_k):
+        return sources
+
+    async def fake_call_llm(_query, _chunks, _history=None, **_kw):
+        answer = (
+            "Great question! We cover eight strategies [1].\n\n"
+            "## Key controls\n- **MFA** [1][2]\n- **Backups** [2][9]\n\n"
+            "I hope this helps!"
+        )
+        return answer, {"prompt_tokens": 10, "completion_tokens": 5}
+
+    async def fake_post_checks(answer, *_a, **_k):
+        checked.append(answer)
+        return True, 0.9, []
+
+    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
+    monkeypatch.setattr(orchestrator, "call_llm", fake_call_llm)
+    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
+    _patch_settings(monkeypatch, response_style="adaptive", response_style_b_pct=0)
+
+    response = await orchestrator.run_query(
+        query="What is the Essential Eight?",
+        top_k=5,
+        filters=None,
+        vector_store=None,
+        request_id="style-citations-test",
+        stage_timings={},
+        style_key="session-1",
+    )
+
+    # Markers are stripped before the groundedness check.
+    assert "[" not in checked[0]
+    # Tone filter ran (opener and closer gone), then markers were resolved:
+    # the unknown [9] is dropped, the rest stay inside the Markdown blocks.
+    assert response.answer == (
+        "We cover eight strategies [1].\n\n"
+        "## Key controls\n- **MFA** [1][2]\n- **Backups** [2]"
+    )
+    assert [c.n for c in response.citations] == [1, 2]
+    assert response.citations[0].url == "https://docs.deployiq.com.au/doc-1"
+    details = response.token_details
+    assert details["style"] == "adaptive"
+    assert details["shape"] == "definition"
+    assert [c["n"] for c in details["citations"]] == [1, 2]

@@ -133,3 +133,15 @@ def test_metrics_are_linear_on_100kb() -> None:
     structure_score(text, "comparison")
     ai_tone_score(text)
     assert time.perf_counter() - started < 1.0
+
+
+def test_citation_markers_do_not_change_style_metrics() -> None:
+    lead = " ".join(["word"] * 24) + "."
+    plain = f"{lead}\n- One fact.\n- Two facts."
+    cited = f"{lead} [1][2]\n- One fact [1].\n- Two facts [2][3]."
+    assert structure_score(cited, "quick_fact") == structure_score(plain, "quick_fact")
+    assert structure_score(cited, "quick_fact")["passed"]
+    table = "One lead [1].\n| A | B |\n| --- | --- |\n| x [1] | y [2] |"
+    assert has_table(table)
+    assert structure_score(table, "comparison")["passed"]
+    assert ai_tone_score(cited)["words"] == ai_tone_score(plain)["words"]
