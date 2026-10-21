@@ -160,13 +160,10 @@ describe("Evaluation (Live) additions", () => {
 });
 
 describe("Chat additions", () => {
-  it("shows the brand header and the signed-in user chip", () => {
+  it("shows the brand header without a user chip (the profile lives in the sidebar)", () => {
     render(<ChatHeader />);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("AskDIQ");
-    const chip = screen.getByTestId("user-chip");
-    expect(chip).toHaveAccessibleName("Signed in as Ada Lovelace");
-    expect(within(chip).getByText("AL")).toBeInTheDocument();
-    expect(within(chip).getByText("ada@example.com")).toBeInTheDocument();
+    expect(screen.queryByTestId("user-chip")).not.toBeInTheDocument();
   });
 
   it("shows View trace to console roles, linking to the trace", () => {
