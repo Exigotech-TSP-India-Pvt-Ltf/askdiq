@@ -128,6 +128,7 @@ class QueryRequest(BaseModel):
                 {
                     "query": "What is the Trust Center?",
                     "session_id": "",
+                    "new_session": False,
                     "ip_address": "203.0.113.10",
                 }
             ]
@@ -142,10 +143,26 @@ class QueryRequest(BaseModel):
             "are applied (source_type, corpus, ingestion_source); others are ignored."
         ),
     )
-    # Which chat session this belongs to. Omit to resume the caller's most
-    # recent non-expired session (or start a new one if there isn't one) —
-    # history is loaded server-side from the database, never from the client.
-    session_id: str | None = None
+    # Which chat session this belongs to. History is loaded server-side from
+    # the database for that one session only, never from the client.
+    session_id: str | None = Field(
+        default=None,
+        description=(
+            "Chat session to continue. An id the caller owns always resumes "
+            "that session, however long it was idle, with only its own history. "
+            "An unknown or foreign id starts a fresh session. Omit (or send "
+            '"") to resume the most recent session of the caller from the same IP '
+            "if it was active within the idle window, otherwise a fresh one."
+        ),
+    )
+    new_session: bool = Field(
+        default=False,
+        description=(
+            "Start a fresh session for this question instead of resuming one "
+            '("New chat"). The session is created with this first exchange. '
+            "Must not be combined with `session_id` (422)."
+        ),
+    )
     # Optional override for testing/demo (e.g. simulating a specific user's
     # IP). Omit in normal use — the real client IP is auto-detected server-
     # side (see app.core.request_meta.get_client_ip) and used instead.
@@ -163,6 +180,12 @@ class QueryRequest(BaseModel):
             "a plain `query` naming an option is matched too."
         ),
     )
+
+    @model_validator(mode="after")
+    def _new_session_excludes_session_id(self) -> "QueryRequest":
+        if self.new_session and self.session_id:
+            raise ValueError("`new_session` cannot be combined with `session_id`")
+        return self
 
 
 class SourceChunk(BaseModel):

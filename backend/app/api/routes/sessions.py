@@ -34,7 +34,17 @@ async def list_sessions(
     return await session_service.list_sessions(db, actor)
 
 
-@router.post("", response_model=ChatSessionSummary, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ChatSessionSummary,
+    status_code=status.HTTP_201_CREATED,
+    deprecated=True,
+    description=(
+        "Deprecated: creates an empty session immediately. Send `/query` with "
+        "`new_session: true` instead; the session is created with its first "
+        'exchange, so an unused "New chat" leaves no row.'
+    ),
+)
 async def create_session(
     request: Request,
     body: CreateSessionRequest,
