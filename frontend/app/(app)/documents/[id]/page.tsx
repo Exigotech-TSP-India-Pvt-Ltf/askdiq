@@ -14,9 +14,13 @@ import {
   Hash,
   History,
   Layers,
+  Link2,
   MessageSquareWarning,
   Search,
 } from "lucide-react";
+import { DocumentLink } from "@/components/documents/DocumentLink";
+import { LinkEditPopover } from "@/components/documents/LinkEditPopover";
+import { useCan } from "@/lib/use-can";
 import { useAuth } from "@/lib/auth-context";
 import { FormatBadge } from "@/components/documents/FormatBadge";
 import { MarkdownView } from "@/components/documents/MarkdownView";
@@ -32,7 +36,7 @@ import { MascotLoader } from "@/components/ui/MascotLoader";
 import { SkeletonCard, SkeletonText } from "@/components/ui/Skeleton";
 import { focusRing, secondaryButton } from "@/components/ui/styles";
 import { SectionCard, ToneChip, errorMessage, formatDay, ratingTone } from "@/components/admin/entity/shared";
-import { prefetch, runWhenIdle, useApiQuery } from "@/lib/query-cache";
+import { invalidate, prefetch, runWhenIdle, useApiQuery } from "@/lib/query-cache";
 import { documentFetchers, documentKeys } from "@/lib/document-detail-data";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { crossfade, fadeUp, stagger, useMotionVariants, usePrefersReducedMotion } from "@/lib/motion";
@@ -55,12 +59,22 @@ import {
   originalFormat,
   shortHash,
   strategyLabel,
+  withLink,
   type DocumentDetail,
   type DocumentInventoryItem,
+  type DocumentLinkRead,
 } from "@/lib/documents-api";
 
 const PREVIEW_CHAR_LIMIT = 900;
 const HEATMAP_CHUNKS = 15;
+/** VA-4: fewer weeks than this is not a pattern; capped cells keep a sparse grid readable. */
+const MIN_HEATMAP_WEEKS = 2;
+/** Cells stretch to the card width up to this (a 1920 px screen keeps a grid, not wide bars). */
+const HEAT_CELL_MAX_W = 128;
+/** Narrower than this (phones) the grid scrolls inside its card. */
+const HEAT_CELL_MIN_W = 28;
+const HEAT_CELL_MAX_H = 22;
+const HEAT_CELL_GAP = 3;
 
 const TABS = ["chunks", "markdown", "citations", "history"] as const;
 type Tab = (typeof TABS)[number];
@@ -141,11 +155,78 @@ function ChunkCard({ chunk, highlighted }: { chunk: ChunkRow; highlighted: boole
   );
 }
 
-function Field({ label, children, mono = false }: { label: string; children: React.ReactNode; mono?: boolean }) {
+function Field({
+  label,
+  children,
+  mono = false,
+  truncate,
+}: {
+  label: string;
+  children: React.ReactNode;
+  mono?: boolean;
+  /** One line with an ellipsis; the full value goes in the tooltip (VA-3). */
+  truncate?: string;
+}) {
   return (
     <div className="min-w-0">
       <dt className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">{label}</dt>
-      <dd className={`mt-0.5 break-words text-xs text-fg ${mono ? "font-mono" : ""}`}>{children}</dd>
+      <dd
+        className={`mt-0.5 min-w-0 text-xs text-fg ${truncate ? "truncate" : "break-words"} ${mono ? "font-mono" : ""}`}
+        title={truncate}
+      >
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+/** Source URL row: read-only Open / Copy for everyone, the inline editor with `knowledge:links`. */
+function SourceLinkRow({
+  doc,
+  token,
+  canEdit,
+  onSaved,
+}: {
+  doc: DocumentInventoryItem;
+  token: string | null;
+  canEdit: boolean;
+  onSaved: (link: DocumentLinkRead) => void;
+}) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const editLabel = `Edit link for ${doc.source_name}`;
+  return (
+    <div
+      data-testid="document-source-link"
+      className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface-muted/40 px-3 py-2"
+    >
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Source URL</span>
+      <div className="min-w-0 max-w-full">
+        <DocumentLink doc={doc} />
+      </div>
+      <span className="text-[11px] text-fg-subtle">
+        Section links: <span className="font-medium text-fg-muted">{doc.section_links ? "On" : "Off"}</span>
+      </span>
+      {canEdit && token ? (
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              const target = e.currentTarget;
+              setAnchor((current) => (current ? null : target));
+            }}
+            aria-label={editLabel}
+            aria-haspopup="dialog"
+            aria-expanded={anchor !== null}
+            className={`${secondaryButton} ml-auto !px-2.5 !py-1`}
+          >
+            <Link2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+            Edit link
+          </button>
+          {anchor ? (
+            <LinkEditPopover token={token} doc={doc} anchor={anchor} onClose={() => setAnchor(null)} onSaved={onSaved} />
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -165,7 +246,19 @@ function HashValue({ value, label }: { value: string | null | undefined; label: 
 const STATUS_TONE = { active: "ok", quarantined: "danger", empty: "warn" } as const;
 const STATUS_LABEL = { active: "Active", quarantined: "Quarantined", empty: "No chunks" } as const;
 
-function MetadataCard({ doc, detail }: { doc: DocumentInventoryItem; detail: DocumentDetail | null }) {
+function MetadataCard({
+  doc,
+  detail,
+  token,
+  canEditLinks,
+  onLinkSaved,
+}: {
+  doc: DocumentInventoryItem;
+  detail: DocumentDetail | null;
+  token: string | null;
+  canEditLinks: boolean;
+  onLinkSaved: (link: DocumentLinkRead) => void;
+}) {
   const status = documentStatus(doc);
   const stats = detail?.chunk_stats;
   const labels = Object.entries(doc.labels ?? {});
@@ -184,8 +277,13 @@ function MetadataCard({ doc, detail }: { doc: DocumentInventoryItem; detail: Doc
           <EntityLink entity={{ kind: "document", id: doc.document_id }} />
         </span>
       </div>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-6">
-        <Field label="Original file">{doc.original_filename ?? doc.source_name}</Field>
+      {doc.link_status !== undefined || doc.source_url !== undefined || canEditLinks ? (
+        <SourceLinkRow doc={doc} token={token} canEdit={canEditLinks} onSaved={onLinkSaved} />
+      ) : null}
+      <dl className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-x-6 gap-y-4">
+        <Field label="Original file" truncate={doc.original_filename ?? doc.source_name}>
+          {doc.original_filename ?? doc.source_name}
+        </Field>
         <Field label="Original format">{originalFormat(doc) === "docx" ? "Word (.docx)" : "Markdown (.md)"}</Field>
         <Field label="Canonical format">Markdown (.md){isStandardized(doc) ? " · standardized" : ""}</Field>
         <Field label="Converter">
@@ -214,11 +312,13 @@ function MetadataCard({ doc, detail }: { doc: DocumentInventoryItem; detail: Doc
         </Field>
         <Field label="Pipeline">{doc.pipeline_version ?? "—"}</Field>
         <Field label="Last ingested">
-          <RelativeTime value={ingestedAt(doc)} display="absolute" />
+          <RelativeTime value={ingestedAt(doc)} display="short" />
         </Field>
-        <Field label="Ingested by">{doc.ingested_by ?? "—"}</Field>
+        <Field label="Ingested by" truncate={doc.ingested_by ?? undefined}>
+          {doc.ingested_by ?? "—"}
+        </Field>
         <Field label="First added">
-          <RelativeTime value={doc.created_at} display="absolute" />
+          <RelativeTime value={doc.created_at} display="short" />
         </Field>
         <Field label="Ingests">{(doc.ingest_count ?? 1).toLocaleString()}</Field>
         {labels.length ? (
@@ -453,6 +553,17 @@ function DocumentDetailContent() {
   const detail = detailQ.data ?? null;
   const doc: DocumentInventoryItem | null = detail ?? listMatch;
   const notFound = !doc && !detailQ.isLoading && !docs.isLoading && (docs.data !== undefined || Boolean(docs.error));
+  const canEditLinks = useCan("knowledge:links");
+  const setDetail = detailQ.setData;
+  const setDocs = docs.setData;
+  const onLinkSaved = useCallback(
+    (link: DocumentLinkRead) => {
+      setDetail((current) => (current ? withLink(current, link) : current));
+      setDocs((current) => current?.map((d) => (d.document_id === link.document_id ? withLink(d, link) : d)));
+      invalidate("documents");
+    },
+    [setDetail, setDocs],
+  );
 
   // Every chunk once; the search filters in the browser as you type (the
   // same match as the server's `q`), so it never waits for a request.
@@ -493,6 +604,7 @@ function DocumentDetailContent() {
     const sortedWeeks = [...weekSet].sort().map(formatDay);
     return { heatData: cells, weeks: sortedWeeks };
   }, [heatChunks]);
+  const heatHits = useMemo(() => heatData.reduce((sum, c) => sum + c.value, 0), [heatData]);
 
   // `?chunk=` scrolls to and highlights the chunk once it is rendered.
   useEffect(() => {
@@ -528,7 +640,7 @@ function DocumentDetailContent() {
         {notFound ? (
           <EmptyState icon={FileText} title="This document does not exist" description="It may have been deleted. Go back to Documents to see the inventory." />
         ) : doc ? (
-          <MetadataCard doc={doc} detail={detail} />
+          <MetadataCard doc={doc} detail={detail} token={token} canEditLinks={canEditLinks} onLinkSaved={onLinkSaved} />
         ) : (
           <MascotLoader variant="inline" label="Loading document metadata" />
         )}
@@ -545,9 +657,17 @@ function DocumentDetailContent() {
                 <ChartCard
                   title="Chunk hits by week"
                   subtitle="Most cited chunks over the last 8 weeks; select a cell to jump to the chunk"
+                  // The heatmap sizes itself to its rows (capped cells): no fixed body height.
+                  bodyClassName="min-h-[6rem] w-full"
                   loading={chunks.isLoading && !rawChunks}
-                  empty={heatData.length === 0}
-                  emptyMessage={hasHits ? "No chunk of this document was cited in the last 8 weeks" : "Chunk hit counts are not available yet"}
+                  empty={heatData.length === 0 || weeks.length < MIN_HEATMAP_WEEKS}
+                  emptyMessage={
+                    !hasHits
+                      ? "Chunk hit counts are not available yet"
+                      : heatData.length === 0
+                        ? "No chunk of this document was cited in the last 8 weeks"
+                        : `Only one week of hits so far (${heatHits.toLocaleString()} hit${heatHits === 1 ? "" : "s"} across ${heatChunks.length} chunk${heatChunks.length === 1 ? "" : "s"}); the heatmap needs at least ${MIN_HEATMAP_WEEKS} weeks.`
+                  }
                   table={{
                     columns: [
                       { key: "chunk", label: "Chunk" },
@@ -567,6 +687,11 @@ function DocumentDetailContent() {
                     }}
                     label="Chunk hits by week"
                     valueLabel="Hits"
+                    maxCellWidth={HEAT_CELL_MAX_W}
+                    maxCellHeight={HEAT_CELL_MAX_H}
+                    minCellWidth={HEAT_CELL_MIN_W}
+                    cellGap={HEAT_CELL_GAP}
+                    legend
                     xAxisLabel="Week starting"
                     yAxisLabel="Chunk"
                   />

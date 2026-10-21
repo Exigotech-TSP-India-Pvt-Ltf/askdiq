@@ -106,6 +106,14 @@ class Document(Base):
     canonical_markdown: Mapped[str | None] = mapped_column(
         Text, nullable=True, deferred=True
     )
+    # The public page this document comes from (https only; validated by
+    # app.knowledge.links). The single source of truth for citation links:
+    # chunks never copy it, so editing it never re-embeds.
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # Per-document opt-in: cite ``source_url#<section anchor>`` per chunk.
+    section_links: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
 
     chunks: Mapped[list["Chunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
@@ -795,6 +803,33 @@ class ModelSettings(Base):
             "AND coalesce(price_embed_per_million, 0) >= 0",
             name="ck_model_settings_prices",
         ),
+    )
+
+
+class KnowledgeSettings(Base):
+    """Knowledge link policy (Settings > Knowledge links); singleton ``id = 1``.
+
+    ``allowed_hosts`` empty = any https host. No seed row: the defaults
+    (empty list, URL not required) apply until the first save.
+    """
+
+    __tablename__ = "knowledge_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    allowed_hosts: Mapped[list] = mapped_column(
+        JSON, default=list, server_default=text("'[]'")
+    )
+    require_source_url: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    updated_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now()
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_knowledge_settings_singleton"),
     )
 
 

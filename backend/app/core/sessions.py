@@ -37,6 +37,7 @@ from app.governance.audit import (
 from app.governance.costing import compute_exchange_cost
 from app.governance.outcomes import derive_outcome
 from app.governance.pii import redact_pii
+from app.harness.citations import refresh_citations, stored_citations
 from app.insights.triggers import enqueue_classification_in_transaction
 from app.models.db_models import ChatMessageRecord, ChatSession, MessageFeedback
 from app.schemas.query import ChatTurn, Clarification
@@ -682,6 +683,11 @@ async def get_session_detail(
         ).all()
         feedback_map = dict(feedback_rows)
 
+    # Citations with today's document links (one IN query for the session).
+    citations = await refresh_citations(
+        db, [stored_citations(m.token_details) for m in messages]
+    )
+
     return ChatSessionDetail(
         **summary.model_dump(),
         messages=[
@@ -704,8 +710,9 @@ async def get_session_detail(
                 token_details=m.token_details,
                 outcome=m.outcome,
                 clarification=stored_clarification(m.token_details),
+                citations=cited,
             )
-            for m in messages
+            for m, cited in zip(messages, citations, strict=True)
         ],
     )
 

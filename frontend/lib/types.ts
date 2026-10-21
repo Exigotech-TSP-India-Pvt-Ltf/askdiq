@@ -19,6 +19,23 @@ export interface SourceChunk {
   content: string;
   score: number;
   metadata: Record<string, unknown>;
+  /** Document URL (or section URL with `section_links`); `null` without a valid link. */
+  url?: string | null;
+}
+
+/**
+ * One source cited inline in an answer (`[n]` markers in `answer`). Built by
+ * the server from the cited numbers only; `url` is `null` when the document
+ * has no link or its host is no longer allowed.
+ */
+export interface Citation {
+  n: number;
+  document_id: string;
+  title: string;
+  url: string | null;
+  /** Short source label for the pill, e.g. "deployiq", "github" or a short document name. */
+  label: string;
+  host: string | null;
 }
 
 /** One option of a clarification question, grounded in retrieved documents. */
@@ -78,6 +95,8 @@ export interface QueryResponse {
   assistant_message_id: string;
   /** Present only when outcome is "clarify". */
   clarification?: Clarification | null;
+  /** Inline citations for the `[n]` markers in `answer` (absent or empty: no markers to render). */
+  citations?: Citation[];
 }
 
 export interface ChatSessionSummary {
@@ -102,6 +121,8 @@ export interface ChatMessageOut {
   feedback_rating?: number | null;
   outcome?: string | null;
   clarification?: Clarification | null;
+  /** Refreshed from the documents table on every load, so edited links show in old messages. */
+  citations?: Citation[];
 }
 
 export interface ChatSessionDetail extends ChatSessionSummary {
@@ -122,6 +143,8 @@ export interface ChatMessage {
   requestId?: string | null;
   /** Clarifying question options (live from `response`, or restored from history). */
   clarification?: Clarification | null;
+  /** Inline citations restored from history (a live answer carries them on `response`). */
+  citations?: Citation[];
   /**
    * Session the message is stored in. A reply can land in a fresh session (the
    * open one was deleted elsewhere), so earlier messages are rated/deleted in
@@ -172,7 +195,16 @@ export interface IngestResult {
   warnings: string[];
   quarantined: boolean;
   images_dropped?: number;
+  /** Effective stored URL (or the would-be URL on a dry run). */
+  source_url?: string | null;
+  /** URL found in the file's metadata (.md `url:` front-matter, .docx `dc:identifier`); pre-fills the dialog. */
+  detected_source_url?: string | null;
+  section_links?: boolean;
+  link_status?: LinkStatus;
 }
+
+/** Server-computed link state: `not_allowed` = stored URL whose host left the allow-list. */
+export type LinkStatus = "ok" | "missing" | "not_allowed";
 
 export type Audience = "overview" | "users" | "testing";
 
@@ -341,6 +373,13 @@ export interface DocumentSummary {
   ingest_count?: number;
   warnings?: string[];
   quarantined?: boolean;
+  /** Knowledge URL of the whole document (optional: older backends omit the link fields). */
+  source_url?: string | null;
+  section_links?: boolean;
+  has_link?: boolean;
+  link_status?: LinkStatus;
+  /** Host for display (IDNA / punycode ASCII). */
+  link_host?: string | null;
 }
 
 export interface LatencyPercentiles {

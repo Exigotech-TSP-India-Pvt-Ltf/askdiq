@@ -118,36 +118,93 @@ const chunks = [
 ];
 
 let inventory: DocumentInventoryItem[];
-let uploads: { dryRun: boolean; name: string }[];
+let uploads: { dryRun: boolean; name: string; sourceUrl?: string }[];
+let linkPatches: unknown[];
+
+const KNOWLEDGE_SETTINGS = {
+  allowed_hosts: ["*.example.com"],
+  require_source_url: true,
+  version: 2,
+  updated_at: null,
+  updated_by: null,
+  max_hosts: 50,
+  max_host_length: 253,
+};
 
 function routes(): Route[] {
   return [
     ["GET", /^\/documents$/, () => ({ body: inventory })],
+    ["GET", /^\/knowledge\/settings$/, () => ({ body: KNOWLEDGE_SETTINGS })],
     [
       "POST",
       /^\/ingest\/file$/,
       (_url, init) => {
         const form = init?.body as FormData;
         const dryRun = form.get("dry_run") === "true";
-        uploads.push({ dryRun, name: (form.get("file") as File).name });
-        if (!dryRun) inventory = [uploaded, ...inventory];
+        const sourceUrl = form.get("source_url");
+        uploads.push({ dryRun, name: (form.get("file") as File).name, ...(typeof sourceUrl === "string" ? { sourceUrl } : {}) });
+        if (!dryRun) {
+          const url = typeof sourceUrl === "string" ? sourceUrl : null;
+          inventory = [
+            { ...uploaded, source_url: url, has_link: Boolean(url), link_status: url ? "ok" : "missing", link_host: url ? new URL(url).host : null },
+            ...inventory,
+          ];
+        }
         return { body: result(dryRun) };
       },
     ],
-    ["GET", new RegExp(`^/documents/${NEW_ID}$`), () => ({ body: detail })],
+    [
+      "PATCH",
+      new RegExp(`^/documents/${NEW_ID}$`),
+      (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as { source_url: string | null; section_links: boolean };
+        linkPatches.push(body);
+        const link = {
+          document_id: NEW_ID,
+          source_url: body.source_url,
+          section_links: body.section_links,
+          has_link: Boolean(body.source_url),
+          link_status: body.source_url ? ("ok" as const) : ("missing" as const),
+          link_host: body.source_url ? new URL(body.source_url).host : null,
+        };
+        inventory = inventory.map((d) => (d.document_id === NEW_ID ? { ...d, ...link } : d));
+        return { body: link };
+      },
+    ],
+    [
+      "GET",
+      new RegExp(`^/documents/${NEW_ID}$`),
+      () => {
+        const row = inventory.find((d) => d.document_id === NEW_ID);
+        return {
+          body: { ...detail, source_url: row?.source_url ?? null, section_links: false, has_link: Boolean(row?.source_url), link_status: row?.link_status ?? "missing", link_host: row?.link_host ?? null },
+        };
+      },
+    ],
     ["GET", new RegExp(`^/documents/${NEW_ID}/canonical$`), () => ({ body: { document_id: NEW_ID, source_name: "Leave-Policy.md", format: "markdown", available: true, content: CANONICAL, size_bytes: CANONICAL.length, content_sha256: "1".repeat(64) } })],
     ["GET", new RegExp(`^/documents/${NEW_ID}/chunks$`), () => ({ body: chunks })],
     ["GET", /\/low-rated-citations$/, () => ({ body: { document_id: NEW_ID, total: 0, items: [] } })],
   ];
 }
 
+const JSDOM_WIDTH = window.innerWidth;
+const setViewportWidth = (width: number) =>
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+
 beforeEach(() => {
   inventory = [existing];
   uploads = [];
+  linkPatches = [];
   history.reset("/documents");
+  window.localStorage.clear();
+  // Wide screen: every column starts visible (VA-23 hides hash + size below 1440 px).
+  setViewportWidth(1920);
   Element.prototype.scrollIntoView = vi.fn();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setViewportWidth(JSDOM_WIDTH);
+});
 
 function pick(file: File) {
   fireEvent.change(screen.getByTestId("document-file-input"), { target: { files: [file] } });
@@ -157,7 +214,7 @@ describe("Documents journey: upload -> standardize -> chunk -> inventory -> deta
   it("uploads a .docx, shows the conversion result and the new document everywhere", async () => {
     const calls = mockFetch(routes());
     renderPage(<DocumentsPage />);
-    await screen.findByRole("link", { name: /about-us\.md/ });
+    await screen.findByRole("link", { name: /^about-us.md/ });
 
     fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
     const dialog = await screen.findByRole("dialog", { name: "Upload document" });
@@ -176,25 +233,54 @@ describe("Documents journey: upload -> standardize -> chunk -> inventory -> deta
     expect(uploads).toEqual([{ dryRun: true, name: "Leave-Policy.docx" }]);
     expect(inventory).toHaveLength(1);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Ingest document" }));
+    // Source URL: required (setting on), https only, host on the allow-list.
+    const ingestButton = within(dialog).getByRole("button", { name: "Ingest document" });
+    const urlField = within(dialog).getByLabelText(/Source URL/);
+    expect(ingestButton).toBeDisabled();
+    fireEvent.change(urlField, { target: { value: "https://intranet.other.org/leave" } });
+    expect(within(dialog).getByText(/intranet\.other\.org is not on the allowed domain list/)).toBeInTheDocument();
+    expect(ingestButton).toBeDisabled();
+    fireEvent.change(urlField, { target: { value: "https://docs.example.com/hr/leave" } });
+    await waitFor(() => expect(ingestButton).toBeEnabled());
+
+    fireEvent.click(ingestButton);
     expect(await within(dialog).findByText("Converted to Markdown, 3 chunks")).toBeInTheDocument();
     expect(uploads).toEqual([
       { dryRun: true, name: "Leave-Policy.docx" },
-      { dryRun: false, name: "Leave-Policy.docx" },
+      { dryRun: false, name: "Leave-Policy.docx", sourceUrl: "https://docs.example.com/hr/leave" },
     ]);
     expect(within(dialog).getByRole("link", { name: "Open document" })).toHaveAttribute("href", `/documents/${NEW_ID}`);
 
     // The inventory refreshes with the standardized document.
-    const row = (await screen.findByRole("link", { name: /Leave-Policy\.md/ })).closest("tr") as HTMLElement;
+    const row = (await screen.findByRole("link", { name: /^Leave-Policy.md/ })).closest("tr") as HTMLElement;
     expect(within(row).getByText("Standardized to Markdown")).toBeInTheDocument();
     expect(within(row).getByText("3")).toBeInTheDocument();
     expect(within(row).getByText("uploaded as Leave-Policy.docx")).toBeInTheDocument();
+    expect(within(row).getByText("docs.example.com/hr/leave")).toHaveAttribute("title", "https://docs.example.com/hr/leave");
+
+    // A superadmin edits the link inline (PATCH, audited server side, no re-embed).
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close upload dialog" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Upload document" })).not.toBeInTheDocument());
+    fireEvent.click(within(row).getByRole("button", { name: "Edit link for Leave-Policy.md" }));
+    const editor = await screen.findByRole("dialog", { name: "Edit link for Leave-Policy.md" });
+    fireEvent.change(within(editor).getByLabelText("Source URL"), { target: { value: "https://help.example.com/leave" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit link/ })).not.toBeInTheDocument());
+    expect(linkPatches).toEqual([{ source_url: "https://help.example.com/leave", section_links: false }]);
+    expect(await within(row).findByText("help.example.com/leave")).toBeInTheDocument();
 
     // Detail page: metadata, chunks, canonical Markdown, history.
     renderPage(<DocumentDetailPage />, { url: `/documents/${NEW_ID}` });
     expect(await screen.findByRole("heading", { level: 1, name: "Leave-Policy.md" })).toBeInTheDocument();
     const meta = await screen.findByRole("region", { name: "Document metadata" });
     await waitFor(() => expect(meta).toHaveTextContent("mammoth+gfm v1"));
+    const source = within(meta).getByTestId("document-source-link");
+    expect(within(source).getByRole("link", { name: "Open link for Leave-Policy.md in a new tab" })).toHaveAttribute(
+      "href",
+      "https://help.example.com/leave",
+    );
+    expect(source).toHaveTextContent("Section links: Off");
+    expect(within(source).getByRole("button", { name: "Edit link for Leave-Policy.md" })).toBeInTheDocument();
     expect(meta).toHaveTextContent("Word (.docx)");
     expect(meta).toHaveTextContent("15 KB");
     expect(meta).toHaveTextContent("text-embedding-3-small · 1536 dims");

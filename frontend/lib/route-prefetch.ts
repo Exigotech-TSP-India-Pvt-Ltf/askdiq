@@ -42,7 +42,7 @@ import { prefetch, runWhenIdle } from "@/lib/query-cache";
 import { DEFAULT_PRESET, presetRange, rangeUtcDays } from "@/lib/range-context";
 import type { Audience } from "@/lib/types";
 import { fetchUsageList, usageKeys, usageListKey, type UsageListKind } from "@/lib/use-usage-data";
-import { BRANDING_KEY, MODELS_KEY, TAXONOMY_KEY, settingsApi } from "@/lib/settings-api";
+import { BRANDING_KEY, KNOWLEDGE_SETTINGS_KEY, MODELS_KEY, TAXONOMY_KEY, settingsApi } from "@/lib/settings-api";
 import {
   AUDIT_PAGE_DEFAULT,
   umKeys,
@@ -179,6 +179,7 @@ const PREFETCHERS: Record<string, Prefetcher> = {
     warm(BRANDING_KEY, (signal) => settingsApi.getBranding(signal));
     warm(TAXONOMY_KEY, (signal) => settingsApi.listTaxonomy(signal));
     warm(MODELS_KEY, (signal) => settingsApi.getModelSettings(signal));
+    warm(KNOWLEDGE_SETTINGS_KEY, (signal) => settingsApi.getKnowledgeSettings(signal));
     warm(azureKeys.officialPrices, (signal) => azureApi.officialPrices(signal));
   },
 };

@@ -10,6 +10,7 @@ import {
   Clock,
   FileText,
   Layers,
+  Link2,
   ShieldAlert,
   Trash2,
   Upload,
@@ -25,6 +26,10 @@ import { PageToolbar } from "@/components/admin/PageToolbar";
 import { TableCard } from "@/components/admin/TableCard";
 import { FormatBadge } from "@/components/documents/FormatBadge";
 import { UploadDialog } from "@/components/documents/UploadDialog";
+import { DocumentLink } from "@/components/documents/DocumentLink";
+import { LinkEditPopover } from "@/components/documents/LinkEditPopover";
+import { StatCard } from "@/components/admin/insights/StatCard";
+import { ActionTooltip } from "@/components/ui/ActionTooltip";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { StackedBar } from "@/components/charts/StackedBar";
 import { QuadrantScatter } from "@/components/charts/QuadrantScatter";
@@ -40,7 +45,7 @@ import { ToneChip, errorMessage, useRangeParams } from "@/components/admin/entit
 import { entityHref } from "@/lib/entity-links";
 import { useCan } from "@/lib/use-can";
 import { useDeepLink } from "@/lib/use-deep-link";
-import { useTablePreferences } from "@/lib/use-table-preferences";
+import { useTablePreferences, type AutoHideColumns } from "@/lib/use-table-preferences";
 import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
 import { invalidate, runWhenIdle, useApiQuery, usePrefetchRows } from "@/lib/query-cache";
 import {
@@ -54,6 +59,7 @@ import {
   DEFAULT_INVENTORY_SORT,
   FORMAT_FILTERS,
   INVENTORY_SORTS,
+  LINK_FILTERS,
   STATUS_FILTERS,
   WARNING_FILTERS,
   documentStatus,
@@ -62,11 +68,14 @@ import {
   ingestedAt,
   isOneOf,
   isStandardized,
+  linkNeedsAttention,
   listDocumentInventory,
   originalFormat,
   shortHash,
   strategyLabel,
+  withLink,
   type DocumentInventoryItem,
+  type DocumentLinkRead,
   type DocumentStatus,
   type InventoryFilters,
   type UploadResult,
@@ -74,7 +83,8 @@ import {
 
 const COVERAGE_BANDS = { warn: 80, danger: 60 } as const;
 const DEFAULT_PAGE_SIZE: PageSize = 10;
-const TABLE_ID = "documents-inventory";
+/** v2: drops prefs that froze the old viewport defaults (Format hidden) into storage. */
+const TABLE_ID = "documents-inventory.v2";
 const DOCS_KEY = "documents";
 /** Rows whose chunks warm while idle (a document's chunks can be large). */
 const CHUNK_PREFETCH_ROWS = 5;
@@ -87,11 +97,31 @@ const STATUS_TONE: Record<DocumentStatus, "ok" | "warn" | "danger" | "neutral"> 
 const STATUS_LABEL: Record<DocumentStatus, string> = { active: "Active", quarantined: "Quarantined", empty: "No chunks" };
 
 /** DataTable header sort key -> inventory sort base. */
-const SORT_COLUMNS: Record<string, string> = { source_name: "name", size: "size", chunk_count: "chunks", ingested: "ingested" };
+const SORT_COLUMNS: Record<string, string> = {
+  source_name: "name",
+  link: "link",
+  size: "size",
+  chunk_count: "chunks",
+  ingested: "ingested",
+};
+
+/**
+ * Priority columns (VA-23), measured with the 16 rem sidebar: each hides below
+ * the viewport width where it no longer fits (still in the Columns menu, where
+ * the user can turn it back on), so the table fits without sliding columns
+ * under the pinned Actions. 1366 / 1440: Document, Link, Format, Chunks,
+ * Ingested, Status, Actions; 1600: + Size; 1760: + Content hash; 1280: no Format.
+ */
+const AUTO_HIDE_COLUMNS: AutoHideColumns = { format: 1366, size: 1600, hash: 1760 };
 
 interface PendingDelete {
   id: string;
   name: string;
+}
+
+interface LinkEditing {
+  doc: DocumentInventoryItem;
+  anchor: HTMLElement;
 }
 
 function Kpi({
@@ -106,19 +136,10 @@ function Kpi({
   caption?: React.ReactNode;
 }) {
   const variants = useMotionVariants(fadeUp);
+  // The shared KPI tile (same as Dashboard, Governance, User Management): VA-24.
   return (
-    <m.div
-      variants={variants}
-      className="flex items-start gap-3 rounded-xl border border-line bg-surface-card p-4 shadow-sm transition duration-150 hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0 dark:hover:border-brand-700/60"
-    >
-      <div className="rounded-lg border border-brand-100 bg-brand-50 p-2.5 text-brand-600 dark:border-brand-900/40 dark:bg-brand-950/40 dark:text-brand-400">
-        <Icon className="h-5 w-5" strokeWidth={1.75} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-fg-subtle">{label}</p>
-        <div className="mt-1 text-2xl font-bold tracking-tight text-fg">{children}</div>
-        {caption ? <p className="mt-0.5 text-[11px] text-fg-subtle">{caption}</p> : null}
-      </div>
+    <m.div variants={variants} className="min-w-0">
+      <StatCard title={label} value={children} subtitle={caption} icon={Icon} className="h-full" />
     </m.div>
   );
 }
@@ -128,12 +149,14 @@ function DocumentsContent() {
   const router = useRouter();
   const toast = useToast();
   const canWrite = useCan("documents:write");
+  const canEditLinks = useCan("knowledge:links");
   const range = useRangeParams();
   const { get, set } = useDeepLink();
-  const prefs = useTablePreferences(TABLE_ID);
+  const prefs = useTablePreferences(TABLE_ID, { autoHide: AUTO_HIDE_COLUMNS });
   const gridVariants = useMotionVariants(stagger);
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [linkEditing, setLinkEditing] = useState<LinkEditing | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
 
@@ -146,11 +169,12 @@ function DocumentsContent() {
     set({ action: null });
   }, [action, canWrite, set]);
 
-  // URL state: ?q=&format=&status=&warnings=&sort=&page=
+  // URL state: ?q=&format=&status=&warnings=&link=&sort=&page=
   const q = get("q") ?? "";
   const formatRaw = get("format");
   const statusRaw = get("status");
   const warningsRaw = get("warnings");
+  const linkRaw = get("link");
   const sortRaw = get("sort");
   const filters: InventoryFilters = useMemo(
     () => ({
@@ -158,8 +182,9 @@ function DocumentsContent() {
       format: isOneOf(FORMAT_FILTERS, formatRaw) ? formatRaw : "all",
       status: isOneOf(STATUS_FILTERS, statusRaw) ? statusRaw : "all",
       warnings: isOneOf(WARNING_FILTERS, warningsRaw) ? warningsRaw : "all",
+      link: isOneOf(LINK_FILTERS, linkRaw) ? linkRaw : "all",
     }),
-    [q, formatRaw, statusRaw, warningsRaw],
+    [q, formatRaw, statusRaw, warningsRaw, linkRaw],
   );
   const sort = isOneOf(INVENTORY_SORTS, sortRaw) ? sortRaw : DEFAULT_INVENTORY_SORT;
   const page = Math.max(1, Number.parseInt(get("page") ?? "1", 10) || 1);
@@ -211,6 +236,10 @@ function DocumentsContent() {
       quarantined: list.filter((d) => documentStatus(d) === "quarantined").length,
       empty: list.filter((d) => documentStatus(d) === "empty").length,
       warnings: list.filter((d) => (d.warnings?.length ?? 0) > 0).length,
+      missingLinks: list.filter(linkNeedsAttention).length,
+      needsAttention: list.filter(
+        (d) => documentStatus(d) !== "active" || (d.warnings?.length ?? 0) > 0 || linkNeedsAttention(d),
+      ).length,
       latest,
     };
   }, [documents]);
@@ -226,6 +255,16 @@ function DocumentsContent() {
       });
     },
     [toast],
+  );
+
+  const setDocs = docs.setData;
+  const onLinkSaved = useCallback(
+    (link: DocumentLinkRead) => {
+      setDocs((current) => current?.map((d) => (d.document_id === link.document_id ? withLink(d, link) : d)));
+      invalidate(DOCS_KEY);
+      toast.show({ tone: "success", title: link.source_url ? "Link saved" : "Link removed" });
+    },
+    [setDocs, toast],
   );
 
   async function confirmDelete() {
@@ -248,13 +287,14 @@ function DocumentsContent() {
       header: "Document",
       sortable: true,
       render: (doc) => (
-        <div className="flex min-w-[220px] flex-col gap-0.5">
+        <div className="flex min-w-[8rem] max-w-[10rem] flex-col gap-0.5 min-[1440px]:max-w-[12rem] min-[1920px]:max-w-[16rem]">
           <Link
             href={entityHref({ kind: "document", id: doc.document_id })}
             onClick={(e) => e.stopPropagation()}
-            className={`group/link inline-flex items-center gap-1 rounded font-medium text-fg hover:text-brand-700 dark:hover:text-brand-300 ${focusRing}`}
+            title={doc.source_name}
+            className={`group/link inline-flex min-w-0 max-w-full items-center gap-1 rounded font-medium text-fg hover:text-brand-700 dark:hover:text-brand-300 ${focusRing}`}
           >
-            <span className="line-clamp-1">{doc.source_name}</span>
+            <span className="truncate">{doc.source_name}</span>
             <ArrowUpRight
               className="h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-150 group-hover/link:-translate-y-0.5 group-hover/link:translate-x-0.5 motion-reduce:transition-none"
               strokeWidth={1.75}
@@ -262,10 +302,12 @@ function DocumentsContent() {
             />
           </Link>
           {doc.original_filename && doc.original_filename !== doc.source_name ? (
-            <span className="text-[11px] text-fg-subtle">uploaded as {doc.original_filename}</span>
+            <span className="truncate text-[11px] text-fg-subtle" title={doc.original_filename}>
+              uploaded as {doc.original_filename}
+            </span>
           ) : null}
           {doc.labels && Object.keys(doc.labels).length ? (
-            <span className="text-[10px] text-fg-subtle">
+            <span className="truncate text-[10px] text-fg-subtle">
               {Object.entries(doc.labels)
                 .map(([k, v]) => `${k}: ${v}`)
                 .join(" · ")}
@@ -273,6 +315,12 @@ function DocumentsContent() {
           ) : null}
         </div>
       ),
+    },
+    {
+      key: "link",
+      header: "Link",
+      sortable: true,
+      render: (doc) => <DocumentLink doc={doc} compact />,
     },
     {
       key: "format",
@@ -338,7 +386,7 @@ function DocumentsContent() {
       render: (doc) => (
         <div className="flex flex-col whitespace-nowrap">
           <RelativeTime value={ingestedAt(doc)} className="text-fg-muted" />
-          <span className="max-w-[200px] truncate text-[10px] text-fg-subtle" title={doc.ingested_by ?? undefined}>
+          <span className="max-w-[7rem] truncate min-[1440px]:max-w-[8rem] min-[1920px]:max-w-[10rem] text-[10px] text-fg-subtle" title={doc.ingested_by ?? undefined}>
             {doc.ingested_by ? `by ${doc.ingested_by}` : "by —"}
             {doc.ingest_count && doc.ingest_count > 1 ? ` · ${doc.ingest_count} ingests` : ""}
           </span>
@@ -351,8 +399,9 @@ function DocumentsContent() {
       render: (doc) => {
         const status = documentStatus(doc);
         const warnings = doc.warnings?.length ?? 0;
+        // VA-22: the badges stack and never wrap inside a pill.
         return (
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex flex-col items-start gap-1 whitespace-nowrap">
             <ToneChip tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</ToneChip>
             {warnings ? (
               <span title={doc.warnings?.join("\n")}>
@@ -372,26 +421,57 @@ function DocumentsContent() {
     },
     {
       key: "actions",
-      header: "",
+      header: "Actions",
       align: "right",
-      render: (doc) => (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setPendingDelete({ id: doc.document_id, name: doc.source_name });
-          }}
-          data-tour="documents-delete"
-          className={`${iconButton} hover:text-status-danger`}
-          aria-label={`Delete ${doc.source_name}`}
-        >
-          <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-        </button>
-      ),
+      sticky: "right",
+      // OR-12: every mutating row action lives here, each gated by its own permission.
+      render: (doc) => {
+        const editLabel = `Edit link for ${doc.source_name}`;
+        const deleteLabel = `Delete ${doc.source_name}`;
+        const editing = linkEditing?.doc.document_id === doc.document_id;
+        return (
+          <div className="inline-flex items-center justify-end gap-0.5">
+            {canEditLinks ? (
+              <ActionTooltip label={editLabel} align="end" hidden={editing}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const anchor = e.currentTarget;
+                    setLinkEditing((current) => (current?.doc.document_id === doc.document_id ? null : { doc, anchor }));
+                  }}
+                  className={iconButton}
+                  aria-label={editLabel}
+                  aria-haspopup="dialog"
+                  aria-expanded={editing}
+                >
+                  <Link2 className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                </button>
+              </ActionTooltip>
+            ) : null}
+            {canWrite ? (
+              <ActionTooltip label={deleteLabel} align="end">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPendingDelete({ id: doc.document_id, name: doc.source_name });
+                  }}
+                  data-tour="documents-delete"
+                  className={`${iconButton} hover:bg-status-danger-bg hover:text-status-danger`}
+                  aria-label={deleteLabel}
+                >
+                  <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                </button>
+              </ActionTooltip>
+            ) : null}
+          </div>
+        );
+      },
     },
   ];
 
-  const allowed = canWrite ? columns : columns.filter((c) => c.key !== "actions");
+  const allowed = canWrite || canEditLinks ? columns : columns.filter((c) => c.key !== "actions");
   const visible = prefs.visibleColumns(allowed);
   const currentSort = (() => {
     const [base, dir] = [sort.slice(0, sort.lastIndexOf("_")), sort.slice(sort.lastIndexOf("_") + 1)];
@@ -451,26 +531,19 @@ function DocumentsContent() {
             label="Last Ingestion Event"
             caption={latest ? `${latest.source_name}${latest.ingested_by ? ` · ${latest.ingested_by}` : ""}` : undefined}
           >
-            <RelativeTime value={latest ? ingestedAt(latest) : null} className="text-sm font-semibold" />
+            <RelativeTime value={latest ? ingestedAt(latest) : null} />
           </Kpi>
           <Kpi
             icon={totals.quarantined ? ShieldAlert : AlertTriangle}
             label="Needs Attention"
             caption={
               documents
-                ? `${totals.quarantined} quarantined · ${totals.warnings} with warnings · ${totals.empty} without chunks`
+                ? `${totals.quarantined} quarantined · ${totals.warnings} with warnings · ${totals.empty} without chunks · ${totals.missingLinks} missing link${totals.missingLinks === 1 ? "" : "s"}`
                 : undefined
             }
           >
             {documents ? (
-              <CountUp
-                value={new Set(
-                  documents
-                    .filter((d) => documentStatus(d) !== "active" || (d.warnings?.length ?? 0) > 0)
-                    .map((d) => d.document_id),
-                ).size}
-                format={(v) => Math.round(v).toLocaleString()}
-              />
+              <CountUp value={totals.needsAttention} format={(v) => Math.round(v).toLocaleString()} />
             ) : (
               "—"
             )}
@@ -523,11 +596,23 @@ function DocumentsContent() {
                   ],
                   onChange: (v: string) => setFilter("warnings", v),
                 },
+                {
+                  id: "link",
+                  label: "Link",
+                  value: filters.link ?? "all",
+                  options: [
+                    { label: "Any link state", value: "all" },
+                    { label: "Missing or not allowed", value: "missing" },
+                  ],
+                  onChange: (v: string) => setFilter("link", v),
+                },
               ]}
-              onClearAll={() => set({ q: null, format: null, status: null, warnings: null, page: null })}
-              columnOptions={allowed
-                .filter((c) => c.key !== "actions")
-                .map((c) => ({ key: c.key, label: c.header, hideable: c.key !== "source_name" }))}
+              onClearAll={() => set({ q: null, format: null, status: null, warnings: null, link: null, page: null })}
+              columnOptions={allowed.map((c) => ({
+                key: c.key,
+                label: c.header,
+                hideable: c.key !== "source_name" && c.key !== "actions",
+              }))}
               hiddenColumns={prefs.hiddenColumns}
               onToggleColumn={prefs.toggleColumn}
               density={prefs.density}
@@ -674,6 +759,16 @@ function DocumentsContent() {
 
       {canWrite && token ? (
         <UploadDialog open={uploadOpen} token={token} onClose={() => setUploadOpen(false)} onUploaded={onUploaded} />
+      ) : null}
+
+      {linkEditing && token ? (
+        <LinkEditPopover
+          token={token}
+          doc={linkEditing.doc}
+          anchor={linkEditing.anchor}
+          onClose={() => setLinkEditing(null)}
+          onSaved={onLinkSaved}
+        />
       ) : null}
 
       <ConfirmDialog

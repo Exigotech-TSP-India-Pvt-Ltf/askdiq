@@ -38,10 +38,13 @@ function getClientId(): string {
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Machine-readable problem+json `code` (e.g. "invalid_source_url"), when the server sent one. */
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
     this.name = "ApiError";
+    if (code) this.code = code;
   }
 }
 

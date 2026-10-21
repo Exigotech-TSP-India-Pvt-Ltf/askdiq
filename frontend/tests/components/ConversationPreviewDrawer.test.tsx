@@ -111,6 +111,21 @@ describe("ConversationPreviewDrawer", () => {
     expect(within(first).queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
   });
 
+  it("shows a stored answer without raw [n] citation markers (OR-7)", async () => {
+    mockFetch([]);
+    const cited: ConversationDetail = {
+      ...conversationDetail,
+      messages: conversationDetail.messages.map((m) =>
+        m.id === ASSISTANT_MSG ? { ...m, content: "Staff accrue 10 days of sick leave [1]. Unused days roll over [2][3]." } : m,
+      ),
+    };
+    renderDrawer({ data: cited });
+    const dialog = await screen.findByRole("dialog");
+    const turn = within(dialog).getByRole("listitem", { name: "Turn 2" });
+    expect(turn.textContent).toContain("Staff accrue 10 days of sick leave. Unused days roll over.");
+    expect(turn.textContent).not.toMatch(/\[\d+\]/);
+  });
+
   it("turn footer: status, latency, tokens, cost, source pills, rating and reason, trace link", async () => {
     mockFetch([]);
     renderDrawer();

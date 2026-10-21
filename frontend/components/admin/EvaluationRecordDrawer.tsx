@@ -22,6 +22,8 @@ import { entityHref } from "@/lib/entity-links";
 import { DrawerShell } from "@/components/ui/DrawerShell";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { stripCitationMarkers } from "@/lib/citation-markers";
+import { renderCitedText } from "@/lib/format-text";
 
 const DETAIL_STALE_MS = 60_000;
 
@@ -277,7 +279,7 @@ export function EvaluationRecordDrawer({
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Generated Assistant Response</label>
               <button
                 type="button"
-                onClick={() => answer && copyToClipboard(answer)}
+                onClick={() => answer && copyToClipboard(stripCitationMarkers(answer))}
                 disabled={!answer}
                 className="inline-flex items-center gap-1 text-[11px] text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 font-medium disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -290,7 +292,7 @@ export function EvaluationRecordDrawer({
                 data-testid="inspector-response"
                 className="p-4 bg-surface-card rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-fg leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap select-text"
               >
-                {answer}
+                {renderCitedText(answer)}
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-line-brand/70 dark:border-brand-500/20">

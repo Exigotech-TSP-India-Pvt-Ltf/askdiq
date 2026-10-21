@@ -48,6 +48,8 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/ingest"): Permission.DOCUMENTS_WRITE,
     ("POST", "/ingest/file"): Permission.DOCUMENTS_WRITE,
     ("DELETE", "/documents/{document_id}"): Permission.DOCUMENTS_WRITE,
+    ("PATCH", "/documents/{document_id}"): Permission.KNOWLEDGE_LINKS,
+    ("PUT", "/knowledge/settings"): Permission.KNOWLEDGE_LINKS,
     ("POST", "/admin/usage/test-ips"): Permission.TESTIP_WRITE,
     ("DELETE", "/admin/usage/test-ips/{ip_address:path}"): Permission.TESTIP_WRITE,
     ("POST", "/admin/feedback/{message_id}/promote-to-test"): (
@@ -429,6 +431,23 @@ async def test_admin_gets_403_on_user_management_routes(
     manage = [(m, p) for m, p, req in guarded_endpoints() if req == MANAGE]
     assert len(manage) == 10
     for method, path in manage:
+        response = await _call(raw_client, method, path, _key())
+        assert response.status_code == 403, (method, path)
+        assert response.json()["detail"] == "Insufficient permissions."
+
+
+async def test_admin_gets_403_on_knowledge_link_routes(
+    raw_client: httpx.AsyncClient, admin_user: None
+) -> None:
+    """Link edits and the allow-list are superadmin-only (OR-7)."""
+    links = [
+        (m, p) for m, p, req in guarded_endpoints() if req == Permission.KNOWLEDGE_LINKS
+    ]
+    assert set(links) == {
+        ("PATCH", "/documents/{document_id}"),
+        ("PUT", "/knowledge/settings"),
+    }
+    for method, path in links:
         response = await _call(raw_client, method, path, _key())
         assert response.status_code == 403, (method, path)
         assert response.json()["detail"] == "Insufficient permissions."

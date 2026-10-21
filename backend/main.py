@@ -20,6 +20,7 @@ from app.api.routes import (
     health,
     ingest,
     insights,
+    knowledge,
     metrics,
     model_settings,
     query,
@@ -38,6 +39,7 @@ from app.core.tasks import drain as drain_background_tasks
 from app.governance.stream import get_governance_hub
 from app.harness.prompts import call_llm
 from app.jobs.runtime import start_platform_services
+from app.knowledge.settings_service import refresh_knowledge_settings
 from app.model_settings.service import refresh_model_settings
 from app.retrieval.embeddings import embed_text
 from app.retrieval.reranker import preload_reranker
@@ -83,6 +85,8 @@ async def lifespan(_app: FastAPI):
     configure_thread_pool()
     # Settings > Models overrides, before the first Azure call uses them.
     await refresh_model_settings(get_session_factory())
+    # Settings > Knowledge links (citation links on the first /query).
+    await refresh_knowledge_settings(get_session_factory())
     await _startup_azure_health_check()
     await asyncio.to_thread(preload_reranker)
     # Event bus (LISTEN/NOTIFY) and, if JOBS_WORKER_ENABLED, the job worker.
@@ -153,6 +157,7 @@ app.include_router(insights.router)
 app.include_router(branding.router)
 app.include_router(branding.admin_router)
 app.include_router(model_settings.router)
+app.include_router(knowledge.router)
 app.include_router(auth.router)
 app.include_router(user_management.router)
 app.include_router(alerts.router)
