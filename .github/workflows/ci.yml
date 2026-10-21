@@ -67,6 +67,7 @@ jobs:
           ignore_file=../.github/audit/pip-audit-ignore.txt
           today=$(date -u +%F)
           args=()
+          pkgs=()
           while IFS= read -r line || [ -n "$line" ]; do
             id=$(printf '%s' "${line%%#*}" | xargs)
             [ -z "$id" ] && continue
@@ -80,9 +81,36 @@ jobs:
               exit 1
             fi
             echo "Allow-listed: $id (expires $expires)"
-            args+=(--ignore-vuln "$id")
+            if [[ "$id" == pkg:* ]]; then
+              pkgs+=("${id#pkg:}")
+            else
+              args+=(--ignore-vuln "$id")
+            fi
           done < "$ignore_file"
-          pip-audit -r requirements.txt "${args[@]}"
+          # pkg:name==version entries waive every advisory for that exact pinned
+          # version only (a version bump re-enables the audit for it).
+          pip-audit -r requirements.txt "${args[@]}" -f json -o pip-audit.json || true
+          PKGS="${pkgs[*]:-}" python - <<'PY'
+          import json, os, sys
+          waived = set(os.environ.get("PKGS", "").split())
+          try:
+              data = json.load(open("pip-audit.json", encoding="utf-8"))
+          except (OSError, ValueError) as exc:
+              sys.exit(f"pip-audit produced no report: {exc}")
+          deps = data.get("dependencies", data if isinstance(data, list) else [])
+          bad = []
+          for dep in deps:
+              for vuln in dep.get("vulns", []):
+                  key = f"{dep.get('name', '').lower()}=={dep.get('version', '')}"
+                  if key in waived:
+                      print(f"Waived (package allow-list): {key} {vuln.get('id')}")
+                  else:
+                      bad.append(f"{key} {vuln.get('id')} fix: {vuln.get('fix_versions')}")
+          if bad:
+              print("\n".join(bad))
+              sys.exit(f"{len(bad)} known vulnerabilities not allow-listed")
+          print("No known vulnerabilities outside the reviewed allow-list")
+          PY
 
   backend-tests:
     runs-on: ubuntu-latest

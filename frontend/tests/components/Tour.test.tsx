@@ -83,7 +83,7 @@ describe("Guided tour engine", () => {
     await startTour();
     fireEvent.click(screen.getByRole("button", { name: /next/i }));
     expect(await screen.findByText("First")).toBeInTheDocument();
-    expect(screen.getByTestId("tour-spotlight")).toBeInTheDocument();
+    expect(await screen.findByTestId("tour-spotlight")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
     expect(await screen.findByText("Intro")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "ArrowRight" });
