@@ -208,6 +208,31 @@ export interface BrandAssetRead {
 
 export const BRANDING_KEY = "settings/branding";
 export const MODELS_KEY = "settings/models";
+/** Shared by Settings > Knowledge links and the upload dialog (one cached request). */
+export const KNOWLEDGE_SETTINGS_KEY = "settings/knowledge";
+
+// ---------------------------------------------------------------------------
+// Knowledge links (OR-7): allow-list of source URL hosts
+// ---------------------------------------------------------------------------
+
+/** `GET|PUT /knowledge/settings` response (`KnowledgeSettingsRead`). */
+export interface KnowledgeSettingsRead {
+  /** Exact hosts or `*.example.com`; empty = any https domain. */
+  allowed_hosts: string[];
+  require_source_url: boolean;
+  version: number;
+  updated_at: string | null;
+  updated_by: string | null;
+  max_hosts: number;
+  max_host_length: number;
+}
+
+/** `PUT /knowledge/settings` body (permission `knowledge:links`); 409 on a stale `version`. */
+export interface KnowledgeSettingsUpdate {
+  allowed_hosts: string[];
+  require_source_url: boolean;
+  version: number;
+}
 
 // ---------------------------------------------------------------------------
 // Models and pricing
@@ -275,6 +300,12 @@ export const settingsApi = {
 
   updateModelSettings: (body: ModelSettingsUpdate) =>
     request<ModelSettingsRead>("/admin/models", { method: "PUT", body: JSON.stringify(body) }),
+
+  getKnowledgeSettings: (signal?: AbortSignal) =>
+    request<KnowledgeSettingsRead>("/knowledge/settings", { signal, cache: "no-store" }),
+
+  updateKnowledgeSettings: (body: KnowledgeSettingsUpdate) =>
+    request<KnowledgeSettingsRead>("/knowledge/settings", { method: "PUT", body: JSON.stringify(body) }),
 
   listTaxonomy: (signal?: AbortSignal, { includeArchived = true }: { includeArchived?: boolean } = {}) =>
     request<TaxonomyList>(`${TAXONOMY_PATH}?include_archived=${includeArchived}`, { signal }),
