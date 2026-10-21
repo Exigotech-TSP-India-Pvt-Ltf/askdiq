@@ -23,12 +23,20 @@ import {
   changeReasonText,
   fileExtension,
   formatBytes,
+  isSourceUrlError,
   strategyLabel,
   uploadDocument,
   uploadErrorMessage,
   validateUploadFile,
   type UploadResult,
 } from "@/lib/documents-api";
+import { useApiQuery } from "@/lib/query-cache";
+import { KNOWLEDGE_SETTINGS_KEY, settingsApi, type KnowledgeSettingsRead } from "@/lib/settings-api";
+import { MAX_SOURCE_URL_CHARS, validateSourceUrl } from "@/lib/safe-url";
+
+/** Primary action that clearly reads as unavailable until a file passed the check (VA-51). */
+const PRIMARY_DISABLED =
+  "disabled:bg-surface-muted disabled:text-fg-subtle disabled:shadow-none disabled:opacity-100";
 
 type Phase = "idle" | "previewing" | "preview" | "ingesting" | "done";
 
@@ -71,7 +79,24 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [urlBlurred, setUrlBlurred] = useState(false);
+  const [urlServerError, setUrlServerError] = useState<string | null>(null);
+  const urlId = useId();
   const busy = phase === "previewing" || phase === "ingesting";
+
+  // Allow-list and the required-URL switch; loaded only while the dialog is open.
+  // A failure (or an older backend) leaves the server as the only check.
+  const knowledge = useApiQuery<KnowledgeSettingsRead>(
+    open ? KNOWLEDGE_SETTINGS_KEY : null,
+    (signal) => settingsApi.getKnowledgeSettings(signal),
+    { revalidateOnFocus: false },
+  );
+  const allowedHosts = knowledge.data?.allowed_hosts ?? null;
+  // Required only for a new document: a re-upload keeps its stored link.
+  const urlRequired = Boolean(knowledge.data?.require_source_url) && preview?.status === "new";
+  const urlCheck = validateSourceUrl(sourceUrl, { allowedHosts, required: urlRequired });
+  const urlError = urlServerError ?? (!urlCheck.ok && (sourceUrl.trim() !== "" || urlBlurred) ? urlCheck.error : null);
 
   const reset = useCallback(() => {
     setPhase("idle");
@@ -79,6 +104,9 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
     setPreview(null);
     setResult(null);
     setError(null);
+    setSourceUrl("");
+    setUrlBlurred(false);
+    setUrlServerError(null);
   }, []);
 
   useEffect(() => {
@@ -96,7 +124,11 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
     }
     setPhase("previewing");
     try {
-      setPreview(await uploadDocument(token, next, { dryRun: true }));
+      const checked = await uploadDocument(token, next, { dryRun: true });
+      setPreview(checked);
+      // Pre-fill from the file's metadata (or the stored link of a re-upload).
+      const known = checked.detected_source_url ?? checked.source_url ?? null;
+      if (known) setSourceUrl(known);
       setPhase("preview");
     } catch (err) {
       setError(uploadErrorMessage(err));
@@ -105,16 +137,18 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
   }
 
   async function ingest() {
-    if (!file) return;
+    if (!file || !urlCheck.ok) return;
     setPhase("ingesting");
     setError(null);
+    setUrlServerError(null);
     try {
-      const res = await uploadDocument(token, file);
+      const res = await uploadDocument(token, file, { sourceUrl: urlCheck.url });
       setResult(res);
       setPhase("done");
       onUploaded(res);
     } catch (err) {
-      setError(uploadErrorMessage(err));
+      if (isSourceUrlError(err)) setUrlServerError(err.message);
+      else setError(uploadErrorMessage(err));
       setPhase("preview");
     }
   }
@@ -152,9 +186,9 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
             const state = step > i + 1 || phase === "done" ? "done" : step === i + 1 || (i === 0 && file) ? "current" : "todo";
             return (
               <li key={label} className="space-y-1" aria-current={state === "current" ? "step" : undefined}>
-                <div className="h-1 overflow-hidden rounded-full bg-surface-muted">
+                <div className="h-1 overflow-hidden rounded-full bg-line-strong/50 dark:bg-line-strong">
                   <m.div
-                    className="h-full origin-left rounded-full bg-brand-600"
+                    className="h-full origin-left rounded-full bg-brand-600 dark:bg-brand-400"
                     initial={false}
                     animate={{ scaleX: state === "todo" ? 0 : state === "current" && busy && step === i + 1 ? 0.5 : 1 }}
                     transition={progressFill}
@@ -222,6 +256,43 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
               </p>
             </div>
             <FormatBadge convertedFrom={isDocx ? "docx" : "md"} showCaption={false} />
+          </div>
+        ) : null}
+
+        {preview && (phase === "preview" || phase === "ingesting") ? (
+          <div className="space-y-1">
+            <label htmlFor={urlId} className="block text-xs font-semibold text-fg">
+              Source URL{urlRequired ? <span className="font-normal text-fg-subtle"> (required)</span> : <span className="font-normal text-fg-subtle"> (optional)</span>}
+            </label>
+            <input
+              id={urlId}
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              spellCheck={false}
+              maxLength={MAX_SOURCE_URL_CHARS}
+              value={sourceUrl}
+              disabled={phase === "ingesting"}
+              placeholder="https://docs.example.com/page"
+              aria-invalid={Boolean(urlError)}
+              aria-required={urlRequired}
+              aria-describedby={`${urlId}-hint${urlError ? ` ${urlId}-error` : ""}`}
+              onChange={(e) => {
+                setSourceUrl(e.target.value);
+                setUrlServerError(null);
+              }}
+              onBlur={() => setUrlBlurred(true)}
+              className={`w-full rounded-lg border border-line bg-surface-card px-3 py-2 text-xs text-fg placeholder:text-fg-subtle aria-[invalid=true]:border-status-danger ${focusRing}`}
+            />
+            <p id={`${urlId}-hint`} className="text-[11px] text-fg-subtle">
+              The page answers link to when they cite this document (https only
+              {allowedHosts?.length ? `; allowed domains: ${allowedHosts.join(", ")}` : ""}).
+            </p>
+            {urlError ? (
+              <p id={`${urlId}-error`} role={urlServerError ? "alert" : undefined} className="text-[11px] font-medium text-status-danger-fg">
+                {urlError}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -365,8 +436,8 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
             <button
               type="button"
               onClick={() => void ingest()}
-              disabled={phase !== "preview" || !preview}
-              className={primaryButton}
+              disabled={phase !== "preview" || !preview || !urlCheck.ok}
+              className={`${primaryButton} ${PRIMARY_DISABLED}`}
             >
               {phase === "ingesting" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.75} aria-hidden="true" />

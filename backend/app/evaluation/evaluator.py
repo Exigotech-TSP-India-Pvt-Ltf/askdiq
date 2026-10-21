@@ -30,6 +30,7 @@ from app.evaluation import quality as q
 from app.evaluation.dataset import EvalCase
 from app.evaluation.judge import JudgeScores, judge_answer
 from app.evaluation.judge_extra import DeepJudgeScores, deep_judge
+from app.harness.citations import strip_markers
 from app.harness.orchestrator import run_query
 from app.harness.prompts import _TOKEN_ENCODING
 from app.retrieval.reranker import rerank_timing_sink
@@ -669,7 +670,7 @@ async def evaluate_case(
         forbidden = m.forbidden_found(response.answer, case.forbidden_keywords)
     keywords_ok = not missing and not forbidden
 
-    word_count = m.word_count(response.answer)
+    word_count = m.word_count(strip_markers(response.answer))
     length_ok = (
         word_count <= settings.answer_max_words
         if has_real_answer and response.sources
@@ -696,12 +697,16 @@ async def evaluate_case(
     ]
     citation: dict = {}
     if has_real_answer and response.sources and case.expected_docs:
+        # Inline markers name the cited sources (all sources without markers).
+        cited = q.cited_sources(source_dicts, [c.n for c in response.citations])
         citation = {
             "precision": q.citation_precision(
-                source_dicts, case.expected_docs, case.expected_headings
+                cited, case.expected_docs, case.expected_headings
             ),
             "coverage": q.citation_coverage(
-                response.answer, context, case.expected_keywords
+                strip_markers(response.answer),
+                [s["content"] for s in cited],
+                case.expected_keywords,
             ),
             "quality": q.citation_quality(
                 source_dicts,

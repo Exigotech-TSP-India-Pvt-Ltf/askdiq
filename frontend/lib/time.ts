@@ -38,6 +38,20 @@ export function formatAbsoluteTime(date: Date): string {
   return absoluteFormat.format(date);
 }
 
+const shortDateTimeFormat = new Intl.DateTimeFormat("en-AU", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/** Compact local date-time for dense grids, e.g. "19 Oct 2026, 09:53" (24 h, no timezone). */
+export function formatShortDateTime(date: Date): string {
+  return shortDateTimeFormat.format(date);
+}
+
 /** Compact relative age ("just now", "5m ago", "3h ago", "2d ago"); a calendar date past 30 days. */
 export function formatRelativeTime(date: Date, now: number = Date.now()): string {
   const diff = now - date.getTime();

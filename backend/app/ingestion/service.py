@@ -27,6 +27,13 @@ from app.ingestion.normalizer import (
     doc_content_hash,
     normalize_markdown,
 )
+from app.knowledge.ingest_links import (
+    LinkDecision,
+    SourceUrlRequiredError,
+    UploadLink,
+    decide_link,
+)
+from app.knowledge.links import link_host
 from app.model_settings.service import current_model_settings
 from app.models.db_models import Chunk, Document
 from app.retrieval.embeddings import embed_texts
@@ -44,6 +51,43 @@ REASON_HASH_SCHEME = "hash_scheme_changed"
 REASON_CHUNKING = "chunking_changed"
 REASON_FORCED = "forced"
 REASON_CHUNKS_MISSING = "chunks_missing"
+# Metadata only: the stored source link changed (no re-chunk, no re-embed).
+REASON_SOURCE_URL = "source_url_changed"
+
+
+def _link_decision(
+    existing: Document | None,
+    link: UploadLink,
+    *,
+    require_source_url: bool,
+    can_change_link: bool,
+    dry_run: bool,
+) -> LinkDecision:
+    """The source link this ingest stores (raises when a new one is required)."""
+    if existing is None:
+        if require_source_url and not link.url and not dry_run:
+            raise SourceUrlRequiredError
+        return LinkDecision(link.url, bool(link.section_links), bool(link.url))
+    return decide_link(
+        stored_url=existing.source_url,
+        stored_section_links=bool(existing.section_links),
+        requested=link,
+        can_change=can_change_link,
+    )
+
+
+def _link_fields(decision: LinkDecision, link: UploadLink) -> dict:
+    """Link keys of the ingest result (``link_warnings`` go to the response only)."""
+    return {
+        "source_url": decision.url,
+        "section_links": decision.section_links,
+        "detected_source_url": link.detected_url,
+        "link_warnings": [*link.warnings, *decision.warnings],
+    }
+
+
+def _title_meta(link: UploadLink) -> dict:
+    return {"title": link.title} if link.title else {}
 
 
 def change_reasons(
@@ -178,8 +222,17 @@ async def ingest_text(
     actor: str = "system",
     request_id: str | None = None,
     client_ip: str | None = None,
+    link: UploadLink | None = None,
+    require_source_url: bool = False,
+    can_change_link: bool = False,
 ) -> dict:
-    """Upsert document by canonical source name with 3-phase concurrency safety."""
+    """Upsert document by canonical source name with 3-phase concurrency safety.
+
+    ``link`` is the validated source link the upload asks for. Routes pass
+    ``require_source_url`` from Settings > Knowledge links; scripts (seeds)
+    leave it off. ``can_change_link`` (``knowledge:links``) lets a re-upload
+    replace an existing link; otherwise the stored one is kept with a warning.
+    """
     started = time.perf_counter()
     request_id = request_id or f"ingest-{uuid.uuid4().hex[:12]}"
     warnings_list = list(warnings or [])
@@ -218,6 +271,15 @@ async def ingest_text(
             )
         ).all()
 
+    link = link or UploadLink()
+    decision = _link_decision(
+        existing,
+        link,
+        require_source_url=require_source_url,
+        can_change_link=can_change_link,
+        dry_run=dry_run,
+    )
+
     existing_chunks_by_hash: dict[str, list[uuid.UUID]] = {}
     for cid, chash in existing_chunk_rows:
         if chash:
@@ -243,8 +305,12 @@ async def ingest_text(
                     canonical_markdown=normalized_content,
                     pii_found=pii_found,
                 ),
+                **_title_meta(link),
                 "last_checked_at": datetime.utcnow().isoformat(),
             }
+            if decision.changed:
+                existing.source_url = decision.url
+                existing.section_links = decision.section_links
             # Same hash = same canonical text: store it if it predates the column.
             await db.execute(
                 update(Document)
@@ -272,6 +338,8 @@ async def ingest_text(
                     "warnings": warnings_list,
                     "quarantined": quarantined,
                     "embedding_tokens": 0,
+                    "change_reasons": [REASON_SOURCE_URL] if decision.changed else [],
+                    "link_host": link_host(decision.url),
                 },
                 ip_address=client_ip,
                 commit=True,
@@ -286,7 +354,8 @@ async def ingest_text(
             "converted_from": converted_from,
             "content_hash": new_doc_hash,
             "previous_content_hash": existing.content_hash,
-            "change_reasons": [],
+            "change_reasons": [REASON_SOURCE_URL] if decision.changed else [],
+            **_link_fields(decision, link),
             "chunk_count": len(existing_chunk_rows),
             "chunks_added": 0,
             "chunks_kept": len(existing_chunk_rows),
@@ -366,6 +435,8 @@ async def ingest_text(
         if existing is not None
         else []
     )
+    if existing is not None and decision.changed:
+        reasons.append(REASON_SOURCE_URL)
 
     # Compute estimated tokens
     est_embed_tokens = sum(
@@ -386,6 +457,7 @@ async def ingest_text(
             "content_hash": new_doc_hash,
             "previous_content_hash": previous_hash,
             "change_reasons": reasons,
+            **_link_fields(decision, link),
             "chunk_count": len(chunk_results),
             "chunks_added": len(to_add_hashes),
             "chunks_kept": len(kept_hashes),
@@ -455,6 +527,7 @@ async def ingest_text(
         "last_ingested_by": actor,
         "warnings": warnings_list,
         "quarantined": quarantined,
+        **_title_meta(link),
         **provenance_extras(
             converted_from=converted_from,
             original_size_bytes=original_size_bytes,
@@ -472,6 +545,8 @@ async def ingest_text(
             content_hash=new_doc_hash,
             doc_metadata=provenance,
             canonical_markdown=normalized_content,
+            source_url=decision.url,
+            section_links=decision.section_links,
         )
         db.add(document)
         await db.flush()
@@ -482,6 +557,9 @@ async def ingest_text(
         document.source_type = source_type
         document.doc_metadata = provenance
         document.canonical_markdown = normalized_content
+        if decision.changed:
+            document.source_url = decision.url
+            document.section_links = decision.section_links
 
     # Delete stale chunks
     if stale_chunk_ids:
@@ -543,6 +621,7 @@ async def ingest_text(
             "cost_usd": est_cost,
             "document_id": str(document.id),
             "total_chunks": len(new_chunks),
+            "link_host": link_host(decision.url),
         },
         ip_address=client_ip,
         commit=False,
@@ -572,6 +651,7 @@ async def ingest_text(
         "content_hash": new_doc_hash,
         "previous_content_hash": previous_hash,
         "change_reasons": reasons,
+        **_link_fields(decision, link),
         "chunk_count": len(chunk_results),
         "chunks_added": len(to_add_hashes),
         "chunks_kept": len(kept_hashes),

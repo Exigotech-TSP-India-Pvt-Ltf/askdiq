@@ -14,6 +14,7 @@ import type { DocumentInventoryItem } from "@/lib/documents-api";
 vi.mock("next/navigation", async () => (await import("../helpers/router-mock")).navigationMock());
 
 const FULL_HASH = "f6e5d4c3b2a10987f6e5d4c3b2a10987f6e5d4c3b2a10987f6e5d4c3b2a10987";
+const LONG_URL = "https://docs.deployiq.com.au/security/essential-eight/maturity-model-overview";
 
 const inventory: DocumentInventoryItem[] = [
   {
@@ -37,6 +38,11 @@ const inventory: DocumentInventoryItem[] = [
     warnings: [],
     quarantined: false,
     labels: { corpus: "authoritative" },
+    source_url: LONG_URL,
+    section_links: false,
+    has_link: true,
+    link_status: "ok",
+    link_host: "docs.deployiq.com.au",
   },
   {
     document_id: "doc-2",
@@ -61,6 +67,11 @@ const inventory: DocumentInventoryItem[] = [
     warnings: ["Table formatting converted"],
     pii_redacted: ["email"],
     quarantined: false,
+    source_url: null,
+    section_links: false,
+    has_link: false,
+    link_status: "missing",
+    link_host: null,
   },
   {
     document_id: "doc-3",
@@ -72,6 +83,11 @@ const inventory: DocumentInventoryItem[] = [
     status: "quarantined",
     quarantined: true,
     warnings: [],
+    source_url: "https://old.example.org/suspicious",
+    section_links: false,
+    has_link: true,
+    link_status: "not_allowed",
+    link_host: "old.example.org",
   },
 ];
 
@@ -81,8 +97,21 @@ function rows(): HTMLElement[] {
   return within(screen.getByRole("table")).getAllByRole("row").slice(1);
 }
 
-beforeEach(() => history.reset("/documents"));
-afterEach(() => vi.unstubAllGlobals());
+const JSDOM_WIDTH = window.innerWidth;
+function setViewportWidth(width: number) {
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+}
+
+beforeEach(() => {
+  history.reset("/documents");
+  window.localStorage.clear();
+  // Wide screen: every column starts visible (narrow screens hide hash + format, VA-23).
+  setViewportWidth(1920);
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setViewportWidth(JSDOM_WIDTH);
+});
 
 describe("Documents inventory", () => {
   it("lists every document with formats, sizes, chunks, hash, provenance and status", async () => {
@@ -121,32 +150,32 @@ describe("Documents inventory", () => {
     mockFetch(routes);
     renderPage(<DocumentsPage />, { url: "/documents?format=docx" });
     await waitFor(() => expect(rows()).toHaveLength(1));
-    expect(screen.getByRole("link", { name: /security-posture\.md/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^security-posture.md/ })).toBeInTheDocument();
     expect(screen.getAllByText("1 of 3 documents").length).toBeGreaterThan(0);
 
     renderPage(<DocumentsPage />, { url: "/documents?status=quarantined" });
     await waitFor(() => expect(rows()).toHaveLength(1));
-    expect(screen.getByRole("link", { name: /suspicious\.md/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^suspicious.md/ })).toBeInTheDocument();
   });
 
   it("search matches the original file name and the hash, and writes ?q=", async () => {
     mockFetch(routes);
     renderPage(<DocumentsPage />);
-    await screen.findByRole("link", { name: /essential-eight\.md/ });
+    await screen.findByRole("link", { name: /^essential-eight.md/ });
     fireEvent.change(screen.getByPlaceholderText(/search name, original file/i), { target: { value: "Posture_Assessment.docx" } });
     await waitFor(() => expect(currentParams().get("q")).toBe("Posture_Assessment.docx"));
     await waitFor(() => expect(rows()).toHaveLength(1));
-    expect(screen.queryByRole("link", { name: /essential-eight\.md/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^essential-eight.md/ })).not.toBeInTheDocument();
 
     renderPage(<DocumentsPage />, { url: `/documents?q=${FULL_HASH.slice(20, 30)}` });
     await waitFor(() => expect(rows()).toHaveLength(1));
-    expect(screen.getByRole("link", { name: /security-posture\.md/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^security-posture.md/ })).toBeInTheDocument();
   });
 
   it("sorting by a column header updates ?sort= and the order", async () => {
     mockFetch(routes);
     renderPage(<DocumentsPage />);
-    await screen.findByRole("link", { name: /essential-eight\.md/ });
+    await screen.findByRole("link", { name: /^essential-eight.md/ });
     // Default: newest ingestion first.
     expect(within(rows()[0]).getByRole("link")).toHaveAccessibleName(/security-posture\.md/);
     fireEvent.click(screen.getByRole("columnheader", { name: /Chunks/ }));
@@ -161,7 +190,7 @@ describe("Documents inventory", () => {
   it("each row links to the document detail page", async () => {
     mockFetch(routes);
     renderPage(<DocumentsPage />);
-    expect(await screen.findByRole("link", { name: /essential-eight\.md/ })).toHaveAttribute("href", "/documents/doc-1");
+    expect(await screen.findByRole("link", { name: /^essential-eight.md/ })).toHaveAttribute("href", "/documents/doc-1");
     fireEvent.click(rows()[0]);
     expect(history.push).toHaveBeenCalledWith("/documents/doc-2");
   });
@@ -180,5 +209,183 @@ describe("Documents deep link", () => {
     renderPage(<DocumentsPage />, { url: "/documents?action=upload" });
     expect(await screen.findByRole("dialog", { name: /upload/i })).toBeInTheDocument();
     await waitFor(() => expect(currentParams().get("action")).toBeNull());
+  });
+});
+
+describe("Documents Link column (OR-7)", () => {
+  it("shows host + path truncated with the full URL as tooltip, Open (new tab) and Copy", async () => {
+    mockFetch(routes);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    renderPage(<DocumentsPage />);
+    const row = (await screen.findByRole("link", { name: /^essential-eight.md/ })).closest("tr") as HTMLElement;
+
+    const shown = within(row).getByText("docs.deployiq.com.au/security/essential-eight/maturity-model-overview");
+    expect(shown).toHaveAttribute("title", LONG_URL);
+    expect(shown).toHaveClass("truncate");
+
+    const open = within(row).getByRole("link", { name: "Open link for essential-eight.md in a new tab" });
+    expect(open).toHaveAttribute("href", LONG_URL);
+    expect(open).toHaveAttribute("target", "_blank");
+    expect(open).toHaveAttribute("rel", "noopener noreferrer");
+
+    fireEvent.click(within(row).getByRole("button", { name: "Copy link for essential-eight.md" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(LONG_URL));
+    expect(await within(row).findByRole("status")).toHaveTextContent("Copied");
+  });
+
+  it("badges missing and no-longer-allowed links (text, not colour only) and counts them as needing attention", async () => {
+    mockFetch(routes);
+    renderPage(<DocumentsPage />);
+    const missing = (await screen.findByRole("link", { name: /^security-posture.md/ })).closest("tr") as HTMLElement;
+    expect(within(missing).getByText("Missing link")).toBeInTheDocument();
+    expect(within(missing).queryByRole("link", { name: /Open link/ })).not.toBeInTheDocument();
+
+    const notAllowed = screen.getByRole("link", { name: /^suspicious.md/ }).closest("tr") as HTMLElement;
+    expect(within(notAllowed).getByText("Link not allowed")).toBeInTheDocument();
+    // A stored link whose host left the allow-list is not opened from here.
+    expect(within(notAllowed).queryByRole("link", { name: /Open link/ })).not.toBeInTheDocument();
+
+    expect(screen.getByText(/2 missing links/)).toBeInTheDocument();
+  });
+
+  it("?link=missing shows only rows with a missing or not-allowed link; the Link header sorts by has-link", async () => {
+    mockFetch(routes);
+    renderPage(<DocumentsPage />, { url: "/documents?link=missing" });
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(screen.queryByRole("link", { name: /^essential-eight.md/ })).not.toBeInTheDocument();
+
+    renderPage(<DocumentsPage />, { url: "/documents" });
+    await screen.findByRole("link", { name: /^essential-eight.md/ });
+    fireEvent.click(screen.getByRole("columnheader", { name: "Link" }));
+    await waitFor(() => expect(currentParams().get("sort")).toBe("link_desc"));
+    await waitFor(() => expect(within(rows()[2]).getByRole("link")).toHaveAccessibleName(/security-posture\.md/));
+  });
+});
+
+describe("Documents Actions column (OR-12)", () => {
+  function actionNames(row: HTMLElement): string[] {
+    const cell = within(row).getAllByRole("cell").at(-1) as HTMLElement;
+    return within(cell)
+      .queryAllByRole("button")
+      .map((b) => b.getAttribute("aria-label") ?? "");
+  }
+
+  it("superadmin: an Actions header, Edit link then Delete, names include the document and match the tooltip", async () => {
+    mockFetch(routes);
+    renderPage(<DocumentsPage />, { role: "superadmin" });
+    const row = (await screen.findByRole("link", { name: /^essential-eight.md/ })).closest("tr") as HTMLElement;
+    expect(screen.getByRole("columnheader", { name: "Actions" })).toBeInTheDocument();
+    expect(actionNames(row)).toEqual(["Edit link for essential-eight.md", "Delete essential-eight.md"]);
+    for (const name of actionNames(row)) {
+      const button = within(row).getByRole("button", { name });
+      const tip = button.parentElement?.querySelector("[data-tooltip]");
+      expect(tip).toHaveTextContent(name);
+    }
+    expect(within(row).getByRole("button", { name: "Delete essential-eight.md" })).toHaveAttribute("data-tour", "documents-delete");
+    // The column chooser lists it under its visible name (locked).
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    expect(within(screen.getByRole("group", { name: "Visible columns" })).getByLabelText("Actions")).toBeDisabled();
+  });
+
+  it("admin sees Delete only; operator sees no Actions column", async () => {
+    mockFetch(routes);
+    renderPage(<DocumentsPage />, { role: "admin" });
+    const row = (await screen.findByRole("link", { name: /^essential-eight.md/ })).closest("tr") as HTMLElement;
+    expect(actionNames(row)).toEqual(["Delete essential-eight.md"]);
+
+    renderPage(<DocumentsPage />, { role: "operator" });
+    await screen.findByRole("link", { name: /^essential-eight.md/ });
+    expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Edit link for/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Delete / })).not.toBeInTheDocument();
+  });
+});
+
+describe("Documents inline link editor (OR-7)", () => {
+  it("validates, shows the server 422 inline, saves with PATCH and updates the row", async () => {
+    const patches: unknown[] = [];
+    let current = inventory;
+    mockFetch([
+      ["GET", /^\/documents$/, () => ({ body: current })],
+      [
+        "PATCH",
+        /^\/documents\/doc-2$/,
+        (_url, init) => {
+          const body = JSON.parse(String(init?.body)) as { source_url: string; section_links: boolean };
+          patches.push(body);
+          if (body.source_url.includes("evil")) {
+            return {
+              status: 422,
+              body: { detail: "evil.example.net is not on the allowed domain list", code: "source_url_not_allowed" },
+            };
+          }
+          const link = {
+            document_id: "doc-2",
+            source_url: body.source_url,
+            section_links: body.section_links,
+            has_link: true,
+            link_status: "ok" as const,
+            link_host: "docs.deployiq.com.au",
+          };
+          current = current.map((d) => (d.document_id === "doc-2" ? { ...d, ...link } : d));
+          return { body: link };
+        },
+      ],
+    ]);
+    renderPage(<DocumentsPage />);
+    await screen.findByRole("link", { name: /^security-posture.md/ });
+    const trigger = screen.getByRole("button", { name: "Edit link for security-posture.md" });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "Edit link for security-posture.md" });
+    const input = within(dialog).getByLabelText("Source URL");
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.change(input, { target: { value: "javascript:alert(1)" } });
+    expect(within(dialog).getByText("Only https:// links are allowed.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "https://evil.example.net/x" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("evil.example.net is not on the allowed domain list");
+
+    fireEvent.change(input, { target: { value: "https://docs.deployiq.com.au/posture" } });
+    fireEvent.click(within(dialog).getByLabelText(/Section links/));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit link/ })).not.toBeInTheDocument());
+    expect(patches.at(-1)).toEqual({ source_url: "https://docs.deployiq.com.au/posture", section_links: true });
+    const row = screen.getByRole("link", { name: /^security-posture.md/ }).closest("tr") as HTMLElement;
+    expect(within(row).getByText("docs.deployiq.com.au/posture")).toBeInTheDocument();
+    expect(within(row).queryByText("Missing link")).not.toBeInTheDocument();
+  });
+
+  it("Esc cancels and returns focus to the Edit link button", async () => {
+    mockFetch(routes);
+    renderPage(<DocumentsPage />);
+    await screen.findByRole("link", { name: /^essential-eight.md/ });
+    const trigger = screen.getByRole("button", { name: "Edit link for essential-eight.md" });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "Edit link for essential-eight.md" });
+    expect(within(dialog).getByLabelText("Source URL")).toHaveValue(LONG_URL);
+    fireEvent.keyDown(within(dialog).getByLabelText("Source URL"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit link/ })).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+  });
+});
+
+describe("Documents table width (VA-23)", () => {
+  it("below 1440 px the hash, format and size columns start hidden but stay in the Columns menu", async () => {
+    setViewportWidth(1366);
+    mockFetch(routes);
+    renderPage(<DocumentsPage />);
+    await screen.findByRole("link", { name: /^essential-eight.md/ });
+    const headers = screen.getAllByRole("columnheader").map((h) => h.textContent?.trim());
+    expect(headers).toEqual(["Document", "Link", "Chunks", "Ingested", "Status", "Actions"]);
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    const menu = screen.getByRole("group", { name: "Visible columns" });
+    expect(within(menu).getByLabelText("Content hash")).not.toBeChecked();
+    expect(within(menu).getByLabelText("Format")).not.toBeChecked();
+    expect(within(menu).getByLabelText("Size")).not.toBeChecked();
   });
 });

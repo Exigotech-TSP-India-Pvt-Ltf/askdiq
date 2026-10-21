@@ -200,24 +200,34 @@ export function parseAnswer(content: string): AnswerBlock[] {
   return blocks;
 }
 
-/** Default inline renderer: `**bold**` only; everything else is text. */
-export function renderBold(text: string, key: string): ReactNode {
-  const parts = text.split("**");
-  // An unmatched trailing "**" stays literal.
-  if (parts.length % 2 === 0) {
-    const last = parts.pop() ?? "";
-    parts[parts.length - 1] = `${parts[parts.length - 1]}**${last}`;
-  }
-  return parts.map((part, idx) =>
-    idx % 2 === 1 && part ? (
-      <strong key={`${key}-${idx}`} className="font-semibold text-ink">
-        {part}
-      </strong>
-    ) : (
-      <span key={`${key}-${idx}`}>{idx % 2 === 1 ? "****" : part}</span>
-    ),
-  );
+const plainText: InlineRenderer = (text) => text;
+
+/**
+ * `**bold**` spans around an inner renderer: every run of text (inside or
+ * outside the bold) goes through `inner`, e.g. the citation-pill renderer.
+ */
+export function withBold(inner: InlineRenderer): InlineRenderer {
+  return function renderWithBold(text: string, key: string): ReactNode {
+    const parts = text.split("**");
+    // An unmatched trailing "**" stays literal.
+    if (parts.length % 2 === 0) {
+      const last = parts.pop() ?? "";
+      parts[parts.length - 1] = `${parts[parts.length - 1]}**${last}`;
+    }
+    return parts.map((part, idx) =>
+      idx % 2 === 1 && part ? (
+        <strong key={`${key}-${idx}`} className="font-semibold text-ink">
+          {inner(part, `${key}-${idx}`)}
+        </strong>
+      ) : (
+        <span key={`${key}-${idx}`}>{idx % 2 === 1 ? "****" : inner(part, `${key}-${idx}`)}</span>
+      ),
+    );
+  };
 }
+
+/** Default inline renderer: `**bold**` only; everything else is text. */
+export const renderBold: InlineRenderer = withBold(plainText);
 
 function renderList(
   ordered: boolean,

@@ -24,6 +24,12 @@ from app.guardrails.post_checks import run_post_checks
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
 from app.harness.ambiguity import assess, rule_clarification, service_clarification
 from app.harness.answer_shape import detect_shape, refine_shape
+from app.harness.citations import (
+    TOKEN_DETAILS_KEY,
+    apply_citations,
+    citation_records,
+    strip_markers,
+)
 from app.harness.clarify import (
     ANSWER_OR_CLARIFY,
     CLARIFY_OUTCOME,
@@ -560,8 +566,9 @@ async def run_query(
             continue
 
         t_post = time.perf_counter()
+        # Citation markers are not evidence: check the plain text.
         grounded, confidence, post_flags = await run_post_checks(
-            answer,
+            strip_markers(answer),
             sources,
             settings.groundedness_threshold,
             settings.min_retrieval_score,
@@ -710,6 +717,10 @@ async def run_query(
 
     outcome = "answered"
     token_details["outcome"] = outcome
+    # Markers -> citations of retrieved sources only (URLs never from the text).
+    answer, citations = apply_citations(answer, sources)
+    if citations:
+        token_details[TOKEN_DETAILS_KEY] = citation_records(citations)
     logger.info(
         "query_completed",
         outcome=outcome,
@@ -725,6 +736,7 @@ async def run_query(
     return QueryResponse(
         answer=answer,
         sources=sources,
+        citations=citations,
         grounded=grounded,
         confidence=confidence,
         request_id=request_id,

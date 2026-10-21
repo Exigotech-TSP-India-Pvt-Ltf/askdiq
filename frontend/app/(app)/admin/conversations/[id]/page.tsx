@@ -41,6 +41,8 @@ import { usePrefersReducedMotion } from "@/lib/motion";
 import { AUDIENCE_PAGE_LABEL, conversationsHref, useCarryHref, visitorDetailHref } from "@/lib/entity-routes";
 import { useClientTable } from "@/lib/use-client-table";
 import { buildTurns, type TurnView } from "@/components/admin/entity/turns";
+import { stripCitationMarkers } from "@/lib/citation-markers";
+import { renderCitedText } from "@/lib/format-text";
 import {
   OUTCOMES,
   OUTCOME_LABELS,
@@ -60,7 +62,7 @@ const QueryInspectorDrawer = dynamic(
 const ICON = { className: "h-4 w-4", strokeWidth: 1.75, "aria-hidden": true } as const;
 
 const OUTCOME_FILTER = [{ label: "All outcomes", value: "all" }, ...OUTCOMES.map((o) => ({ label: OUTCOME_LABELS[o], value: o }))];
-const turnText = (t: TurnView) => `${t.question ?? ""} ${t.answer ?? ""}`;
+const turnText = (t: TurnView) => `${t.question ?? ""} ${stripCitationMarkers(t.answer) ?? ""}`;
 
 type TokenRow = { turn: string; turnIndex: number; prompt: number; cached_prompt: number; completion: number; reasoning: number };
 
@@ -481,7 +483,7 @@ function TurnCard({ turn, conversationId, highlighted, canPromote, promoting, on
         </div>
         <div className="rounded-lg border border-line bg-surface-muted px-4 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-fg-subtle">Assistant</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-fg">{turn.answer ?? "—"}</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-fg">{turn.answer ? renderCitedText(turn.answer) : "—"}</p>
         </div>
       </div>
 

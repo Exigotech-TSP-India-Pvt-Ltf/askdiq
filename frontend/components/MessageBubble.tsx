@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
 import type { ChatMessage, ClarificationAnswer } from "@/lib/types";
 import { renderAnswerMarkdown } from "@/lib/answer-markdown";
+import { createAnswerInlineRenderer } from "@/lib/format-text";
 import { useChat } from "@/lib/chat-context";
 import type { FeedbackDetails, ReasonTag } from "@/lib/feedback-api";
 import { ClarificationCard } from "@/components/chat/ClarificationCard";
@@ -344,10 +345,12 @@ export function MessageBubble({
   }
 
   const showCard = !!clarification && !message.pending && !message.error;
+  // OR-7 inline source pills: the live response's citations, else those restored from history.
+  const citations = message.response?.citations ?? message.citations;
 
   return (
     <div className="flex justify-start">
-      <div className={`relative space-y-2 ${showCard ? "w-full max-w-xl" : "max-w-[80%]"}`}>
+      <div data-chat-message className={`relative space-y-2 ${showCard ? "w-full max-w-xl" : "max-w-[80%]"}`}>
         {showCard && clarification ? (
           <ClarificationCard
             clarification={clarification}
@@ -380,12 +383,12 @@ export function MessageBubble({
               ) : null}
             </div>
           ) : (
-            renderAnswerMarkdown(message.content)
+            renderAnswerMarkdown(message.content, { renderInline: createAnswerInlineRenderer(citations) })
           )}
         </div>
         )}
 
-        {!message.pending && !message.error && <SourceChips sources={citedSources(message.response)} />}
+        {!message.pending && !message.error && <SourceChips sources={citedSources(message.response)} citations={citations} />}
 
         {!message.pending && !message.error && (
           <div className="mt-1 flex flex-wrap items-center gap-0.5 text-[11px]" data-tour="chat-feedback">
