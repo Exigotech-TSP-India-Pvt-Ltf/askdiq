@@ -41,6 +41,14 @@ function renderPalette(props: Partial<React.ComponentProps<typeof CommandPalette
 }
 
 describe("CommandPalette", () => {
+  it("VA-49: the footer key hints carry no Mac-only ⌘ glyph", async () => {
+    renderPalette();
+    const hints = await screen.findByTestId("palette-key-hints");
+    expect(hints).toHaveTextContent("↑ ↓ to move · Enter to open · Esc to close");
+    expect(hints.parentElement?.textContent).not.toContain("⌘");
+    expect(hints.parentElement?.querySelector("svg.lucide-command")).toBeNull();
+  });
+
   it("moves with the arrow keys and opens the active result with Enter", async () => {
     const { onNavigate, onClose } = renderPalette();
     const input = await screen.findByRole("combobox", { name: /search pages and records/i });

@@ -35,7 +35,27 @@ export interface Box {
   height: number;
 }
 
-export const SPOTLIGHT_PADDING = 8;
+export const SPOTLIGHT_PADDING = 6;
+
+interface Rect {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Spotlight around a target (VA-50): the target rect with uniform padding,
+ * clamped to its column (the main scroll area, or the viewport), so a
+ * full-width header never spills over the sidebar edge or past the page.
+ */
+export function spotlightBox(target: Rect, bounds: Rect, padding: number = SPOTLIGHT_PADDING): Box {
+  const left = Math.max(target.left - padding, bounds.left);
+  const top = Math.max(target.top - padding, bounds.top);
+  const right = Math.min(target.right + padding, bounds.right);
+  const bottom = Math.min(target.bottom + padding, bounds.bottom);
+  return { top, left, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+}
 const GAP = 14;
 const MARGIN = 16;
 

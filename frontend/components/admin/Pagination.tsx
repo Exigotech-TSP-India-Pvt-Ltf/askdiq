@@ -47,17 +47,20 @@ export function Pagination({
   return (
     <nav
       aria-label="Pagination Navigation"
-      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-studio/50 dark:bg-white/[0.02] px-5 py-3 ${className}`}
+      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-studio/50 dark:bg-white/[0.02] px-4 py-3 sm:px-5 ${className}`}
     >
       <div className="flex items-center gap-4 text-xs text-fg-subtle">
-        <p>
-          Showing <span className="font-medium text-fg">{start}</span>–
+        {/* VA-35: on phones only "x–y of N" (no "Showing" / "Rows per page"). */}
+        <p className="whitespace-nowrap">
+          <span className="hidden sm:inline">Showing </span>
+          <span className="font-medium text-fg">{start}</span>–
           <span className="font-medium text-fg">{end}</span> of{" "}
-          <span className="font-medium text-fg">{totalItems.toLocaleString()}</span> entries
+          <span className="font-medium text-fg">{totalItems.toLocaleString()}</span>
+          <span className="hidden sm:inline"> entries</span>
         </p>
 
         {onPageSizeChange && (
-          <div className="flex items-center gap-1.5 pl-2 border-l border-line">
+          <div className="hidden items-center gap-1.5 border-l border-line pl-2 sm:flex">
             <label htmlFor="page-size-select" className="text-fg-subtle">
               Rows per page:
             </label>
@@ -77,7 +80,7 @@ export function Pagination({
         )}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 max-sm:mr-auto">
         {/* Jump to first */}
         <button
           onClick={() => onPageChange(1)}

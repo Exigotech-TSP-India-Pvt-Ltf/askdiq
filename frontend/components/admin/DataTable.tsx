@@ -16,6 +16,11 @@ const CELL_PADDING: Record<TableDensity, string> = {
 export interface ColumnDef<T> {
   key: string;
   header: string;
+  /**
+   * Keeps `header` as the column's accessible name but hides it visually
+   * (icon / action columns). The phone card layout then shows no label either.
+   */
+  srOnlyHeader?: boolean;
   icon?: React.ComponentType<{ className?: string }>;
   accessor?: (row: T) => any;
   sortable?: boolean;
@@ -50,8 +55,23 @@ export interface DataTableProps<T> {
   renderExpanded?: (row: T) => React.ReactNode;
   /** `data-testid` of each data row. */
   rowTestId?: string;
+  /**
+   * Below `sm` (VA-34) rows render as stacked cards: each cell on its own line
+   * with its column name, so nothing is clipped at the card edge. On by default.
+   */
+  stackOnPhone?: boolean;
   className?: string;
 }
+
+/** Phone card layout (CSS only, so the DOM and its semantics stay one table). */
+const STACK = {
+  table: "max-sm:block",
+  head: "max-sm:hidden",
+  body: "max-sm:block",
+  row: "max-sm:block max-sm:px-1 max-sm:py-2",
+  cell: "max-sm:flex max-sm:min-w-0 max-sm:items-start max-sm:justify-between max-sm:gap-3 max-sm:py-1 max-sm:text-left max-sm:break-words max-sm:before:shrink-0 max-sm:before:font-semibold max-sm:before:text-fg-subtle max-sm:before:content-[attr(data-label)]",
+  full: "max-sm:block",
+} as const;
 
 export function DataTable<T extends Record<string, any>>({
   columns,
@@ -71,8 +91,10 @@ export function DataTable<T extends Record<string, any>>({
   animateRows = false,
   renderExpanded,
   rowTestId,
+  stackOnPhone = true,
   className = "",
 }: DataTableProps<T>) {
+  const stack = (part: keyof typeof STACK) => (stackOnPhone ? STACK[part] : "");
   const rowVariants = useMotionVariants(fadeUp);
   // Hover / focus a row for 120 ms: warm what a click on it opens.
   const intentHandlers = useRowIntentHandlers(onRowIntent);
@@ -127,9 +149,9 @@ export function DataTable<T extends Record<string, any>>({
       )}
 
       <div className="overflow-x-auto min-h-[280px]">
-        <table className="w-full text-left text-xs border-collapse">
+        <table className={`w-full text-left text-xs border-collapse ${stack("table")}`}>
           {/* Header */}
-          <thead className={`sticky top-0 z-10 font-medium ${tableHead}`}>
+          <thead className={`sticky top-0 z-10 font-medium ${tableHead} ${stack("head")}`}>
             <tr>
               {columns.map((col) => {
                 const Icon = col.icon;
@@ -161,7 +183,7 @@ export function DataTable<T extends Record<string, any>>({
                       }`}
                     >
                       {Icon && <Icon className="w-3.5 h-3.5 text-fg-subtle group-hover:text-fg-muted" />}
-                      <span className="group-hover:text-fg transition">{col.header}</span>
+                      <span className={col.srOnlyHeader ? "sr-only" : "group-hover:text-fg transition"}>{col.header}</span>
                       {getSortIcon(col)}
                     </div>
                   </th>
@@ -172,7 +194,7 @@ export function DataTable<T extends Record<string, any>>({
 
           {/* Body */}
           <tbody
-            className={`${tableBody} transition-opacity duration-200 ${
+            className={`${tableBody} ${stack("body")} transition-opacity duration-200 ${
               isLoading && data.length > 0 ? "opacity-60 pointer-events-none" : ""
             }`}
           >
@@ -245,7 +267,7 @@ export function DataTable<T extends Record<string, any>>({
                         : undefined
                     }
                     {...intentHandlers(row)}
-                    className={`${tableRow} ${isClickable ? "cursor-pointer" : ""}`}
+                    className={`${tableRow} ${stack("row")} ${isClickable ? "cursor-pointer" : ""}`}
                   >
                     {columns.map((col) => {
                       const alignClass =
@@ -265,15 +287,20 @@ export function DataTable<T extends Record<string, any>>({
                       }
 
                       return (
-                        <td key={col.key} className={`${CELL_PADDING[density]} text-xs ${alignClass}`} data-density={density}>
+                        <td
+                          key={col.key}
+                          data-label={col.srOnlyHeader ? undefined : col.header || undefined}
+                          className={`${CELL_PADDING[density]} text-xs ${alignClass} ${stack("cell")}`}
+                          data-density={density}
+                        >
                           {content}
                         </td>
                       );
                     })}
                   </Row>
                   {expanded !== null && expanded !== undefined ? (
-                    <tr data-expanded-for={rowKey}>
-                      <td colSpan={columns.length} className="p-0">
+                    <tr data-expanded-for={rowKey} className={stack("full")}>
+                      <td colSpan={columns.length} className={`p-0 ${stack("full")}`}>
                         {expanded}
                       </td>
                     </tr>
