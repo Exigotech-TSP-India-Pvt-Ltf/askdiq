@@ -55,7 +55,7 @@ export function TrendCard({ state, filters, update }: CardProps) {
     <ChartCard
       title="Daily volume"
       subtitle="Substantive questions and conversations per day. Click a day to focus on it; click again to clear."
-      actions={range ? <span className={TAG}>{range}</span> : undefined}
+      meta={range ? <span className={TAG}>{range}</span> : undefined}
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}
@@ -137,7 +137,8 @@ export function TopicsCard({ state, filters, update, learnLabel }: CardProps) {
     <ChartCard
       title="Question topics"
       subtitle="Size = volume, shade = handled %. Click a topic to filter."
-      actions={state.intent ? <ViewConversations update={update} /> : <span className={TAG}>{data ? `${data.total} questions` : ""}</span>}
+      actions={state.intent ? <ViewConversations update={update} /> : undefined}
+      meta={!state.intent && data ? <span className={TAG}>{`${data.total} questions`}</span> : undefined}
       loading={isLoading}
       error={errorText(error)}
       onRetry={() => void refetch()}

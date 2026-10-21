@@ -99,7 +99,7 @@ export function BilledVsEstimatedCard({ costs, isLoading, error, onRetry }: Bill
       onRetry={onRetry}
       empty={unavailable !== null}
       emptyMessage={unavailable ?? undefined}
-      actions={costs && !unavailable ? <StatusBadge costs={costs} /> : undefined}
+      meta={costs && !unavailable ? <StatusBadge costs={costs} /> : undefined}
       resetKey={costs}
       bodyClassName="w-full"
       table={
