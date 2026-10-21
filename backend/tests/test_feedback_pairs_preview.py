@@ -224,10 +224,16 @@ async def test_export_page_probes_the_question_per_row(db_session):
         plan = await _plan(db_session, page)
         # The question is a per-row index probe, never a filter over all
         # user messages; the cursor is one row comparison (index-rangeable).
-        assert "Join Filter" not in plan, plan
-        # Index names and row-comparison formatting differ across Postgres
-        # versions/planners (CI vs local); require an index probe on
-        # chat_messages rather than one exact plan text.
+        # The stall was a Join Filter on the question join (user_msg by
+        # session/turn). Other joins may use a Join Filter under the CI
+        # planner, and plan text differs across Postgres versions, so only
+        # the question join is checked, plus an index path to chat_messages.
+        question_filters = [
+            line
+            for line in plan.splitlines()
+            if "Join Filter" in line and "turn_index" in line
+        ]
+        assert not question_filters, plan
         assert "Index" in plan and "chat_messages" in plan, plan
     await db_session.execute(text("RESET enable_hashjoin"))
     await db_session.execute(text("RESET enable_mergejoin"))

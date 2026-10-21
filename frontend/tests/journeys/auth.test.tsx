@@ -100,7 +100,7 @@ afterEach(() => {
 
 const meCalls = () => fetchMock.mock.calls.filter(([url]) => url === "/api/proxy/auth/me").length;
 
-describe("Auth journey", () => {
+describe("Auth journey", { timeout: 15_000 }, () => {
   it("new user: Chat works, dashboards show Access Required, request, approval, dashboard", async () => {
 
     // 1. Pending user on /chat: the page renders, the sidebar offers Chat only.

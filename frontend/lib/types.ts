@@ -47,6 +47,11 @@ export interface ClarificationOption {
   document_ids?: string[];
   /** Document names the option comes from (shown as a subtle "from:" hint). */
   sources?: string[];
+  /**
+   * Tagged "Recommended" (at most one per question): its retrieved evidence
+   * clearly leads. Only a tag: it is never pre-selected, and order is kept.
+   */
+  recommended?: boolean;
 }
 
 /** One question of a clarification (one tab of the question card). */
