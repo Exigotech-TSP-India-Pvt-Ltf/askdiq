@@ -112,7 +112,7 @@ export function LineTrend<T extends object>({
   if (data.length === 0) return <ChartEmpty height={height} />;
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const area = plotArea(width, h, titles);
+    const area = plotArea(width, h, titles, { labels: data.map(xLabel), placement: "point" });
     return { area, x: pointX(data.length, area), y: scaleLinear([0, max], [area.y1, area.y0]) };
   };
 

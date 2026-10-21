@@ -9,11 +9,10 @@ import {
   integerTicks,
   niceMax,
   scaleLinear,
-  textWidth,
   useChartMarks,
   type ChartSize,
 } from "@/components/charts/primitives";
-import { AXIS_TITLE_SPACE, AxisTitles, axisDescription, xTickIndices } from "@/components/charts/cartesian";
+import { AXIS_TITLE_SPACE, AxisTitles, XLabelTexts, axisDescription, layoutXLabels } from "@/components/charts/cartesian";
 import type { TrendDay } from "@/lib/insights-api";
 import { useInsightsPalette } from "./colors";
 import { dayLabel } from "./format";
@@ -28,8 +27,9 @@ export interface TrendChartProps {
 
 const MARGIN = { t: 12, r: 14, b: 26 + AXIS_TITLE_SPACE, l: 30 + AXIS_TITLE_SPACE };
 const AXIS_TITLES = { xAxisLabel: "Date", yAxisLabel: "Count per day" };
-const MAX_X_LABELS = 7;
 const Y_TICKS = 3;
+/** This chart's labels sit 4 px lower than the shared axis (19 px baseline). */
+const LABEL_OFFSET = 4;
 
 /** Monotone cubic path (d3 `curveMonotoneX`) through the points. */
 export function monotonePath(points: readonly [number, number][]): string {
@@ -78,11 +78,16 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
 
   const peak = Math.max(1, ...days.map((d) => Math.max(d.questions, d.conversations)));
   const yMax = niceMax(peak);
+  const labels = days.map((d) => dayLabel(d.day));
   const layout = ({ width, height: h }: ChartSize) => {
     const x = scaleLinear([0, Math.max(1, days.length - 1)], [MARGIN.l, width - MARGIN.r]);
-    const y = scaleLinear([0, yMax], [h - MARGIN.b, MARGIN.t]);
+    // Every day is labelled (compact or rotated, see `layoutXLabels`); rotated
+    // labels push the plot bottom up so they never run into the axis title.
+    const xl = layoutXLabels(labels, days.length > 1 ? x(1) - x(0) : width);
+    const bottom = h - MARGIN.b - xl.extraBottom;
+    const y = scaleLinear([0, yMax], [bottom, MARGIN.t]);
     const band = (width - MARGIN.l - MARGIN.r) / Math.max(1, days.length);
-    return { x, y, band, h, width };
+    return { x, y, band, h, width, xl, bottom };
   };
 
   return (
@@ -122,19 +127,10 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
       }
     >
       {(size) => {
-        const { x, y, band, h, width } = layout(size);
+        const { x, y, band, h, width, xl, bottom } = layout(size);
         const pts = days.map((d, i) => [x(i), y(d.questions)] as [number, number]);
         const line = monotonePath(pts);
-        const area = `${line}L${x(days.length - 1)},${h - MARGIN.b}L${x(0)},${h - MARGIN.b}Z`;
-        const labels = days.map((d) => dayLabel(d.day));
-        const shown = new Set(
-          xTickIndices(
-            days.length,
-            days.length > 1 ? x(1) - x(0) : width,
-            Math.max(0, ...labels.map((l) => textWidth(l))),
-            MAX_X_LABELS,
-          ),
-        );
+        const area = `${line}L${x(days.length - 1)},${bottom}L${x(0)},${bottom}Z`;
         const barW = Math.max(1, Math.min(14, band * 0.6));
         return (
           <>
@@ -152,13 +148,7 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
                 </text>
               </g>
             ))}
-            {days.map((d, i) =>
-              shown.has(i) ? (
-                <text key={d.day} x={x(i)} y={h - MARGIN.b + 19} textAnchor="middle" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
-                  {labels[i]}
-                </text>
-              ) : null,
-            )}
+            <XLabelTexts layout={xl} xAt={x} y={bottom + LABEL_OFFSET} ct={ct} />
             {days.map((d, i) =>
               d.conversations > 0 ? (
                 <rect
@@ -166,7 +156,7 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
                   x={x(i) - barW / 2}
                   y={y(d.conversations)}
                   width={barW}
-                  height={h - MARGIN.b - y(d.conversations)}
+                  height={bottom - y(d.conversations)}
                   rx={2}
                   fill={ct.sequential[1]}
                   opacity={0.7}
@@ -175,7 +165,7 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
             )}
             <AxisTitles
               {...AXIS_TITLES}
-              area={{ x0: MARGIN.l, x1: width - MARGIN.r, y0: MARGIN.t, y1: h - MARGIN.b }}
+              area={{ x0: MARGIN.l, x1: width - MARGIN.r, y0: MARGIN.t, y1: bottom }}
               height={h}
               ct={ct}
             />
@@ -192,7 +182,7 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
                   x={x(i) - band / 2}
                   y={MARGIN.t}
                   width={band}
-                  height={h - MARGIN.t - MARGIN.b}
+                  height={bottom - MARGIN.t}
                   fill={ct.categorical[0]}
                   fillOpacity={selected ? 0.14 : active === i ? 0.07 : 0}
                 />

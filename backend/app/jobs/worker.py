@@ -19,7 +19,7 @@ import os
 import signal
 import socket
 import uuid
-from collections.abc import Awaitable
+from collections.abc import AsyncIterator, Awaitable
 from typing import TYPE_CHECKING, TypeVar
 
 from app.azure_insights.scheduler import SCHEDULE_CHECK_SECONDS, ensure_azure_scheduled
@@ -33,6 +33,7 @@ from app.jobs.registry import (
     CHAT_PRUNE_EMPTY_SESSIONS_JOB,
     STATE_CLEANUP_JOB,
     get_handler,
+    get_timeout,
     registered_types,
 )
 
@@ -216,7 +217,8 @@ class JobWorker:
         try:
             if handler is None:
                 raise LookupError(f"No handler registered for '{job.type}'")
-            async with asyncio.timeout(self.lock_timeout):
+            limit = max(self.lock_timeout, get_timeout(job.type) or 0.0)
+            async with self._lock_kept_alive(job, limit), asyncio.timeout(limit):
                 await handler(job.payload)
         except asyncio.CancelledError:
             # Shutdown: the lock expires and another worker reclaims the job.
@@ -252,6 +254,31 @@ class JobWorker:
             return
         await self._safe(queue.complete(job.id, engine=self._engine))
         self.processed += 1
+
+    @contextlib.asynccontextmanager
+    async def _lock_kept_alive(
+        self, job: queue.Job, limit: float
+    ) -> AsyncIterator[None]:
+        """Heartbeat the lock of a job allowed to run past the lock timeout."""
+        if limit <= self.lock_timeout:
+            yield
+            return
+
+        async def beat() -> None:
+            interval = max(1.0, self.lock_timeout / 3)
+            while True:
+                await asyncio.sleep(interval)
+                await self._safe(
+                    queue.heartbeat(job.id, self.worker_id, engine=self._engine)
+                )
+
+        task = asyncio.create_task(beat(), name=f"job-heartbeat-{job.id}")
+        try:
+            yield
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def _safe(self, coro: Awaitable[T]) -> T | None:
         try:

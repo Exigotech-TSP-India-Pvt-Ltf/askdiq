@@ -39,6 +39,8 @@ from app.dashboard.snapshots import (
     snapshot_response,
 )
 from app.dashboard.window import DayRange
+from app.evaluation import runs as eval_runs
+from app.evaluation.runs import LIVE_EVAL_KIND
 from app.governance.audience import build_audience_filter
 from app.models.db_models import (
     ChatMessageRecord,
@@ -166,6 +168,15 @@ def _read_latest_eval_report(prefer_rich: bool = True) -> tuple[dict, str] | Non
     return json.loads(latest.read_text(encoding="utf-8")), latest.name
 
 
+async def _load_benchmark_report(db: AsyncSession) -> tuple[dict, str] | None:
+    """The newest succeeded ``eval_runs`` row (survives deploys), else the
+    newest report file written by ``scripts/run_evaluation.py``."""
+    stored = await eval_runs.latest_report(db)
+    if stored is not None:
+        return stored
+    return await asyncio.to_thread(_read_latest_eval_report, True)
+
+
 @router.get("/metrics/evaluation")
 async def evaluation_report(
     audience: str = Query("overview"),
@@ -288,11 +299,14 @@ async def evaluation_report(
         }
 
     # Testing or Overview: load baseline / offline report
-    result = await asyncio.to_thread(_read_latest_eval_report)
+    result = await _load_benchmark_report(db)
     if result is None:
         raise HTTPException(
             status_code=404,
-            detail="No evaluation report found. Run scripts/run_evaluation.py --json reports/eval_report.json",
+            detail=(
+                "No evaluation report found. Start a run from the Evaluation "
+                "page or run scripts/run_evaluation.py --json reports/eval_report.json"
+            ),
         )
     data, filename = result
     cases = data.pop("cases", [])
@@ -659,9 +673,6 @@ async def live_evaluation_report(
     return await snapshot_response(request, LIVE_EVAL_KIND, params, runner.gather)
 
 
-LIVE_EVAL_KIND = "evaluation.live"
-
-
 async def _live_eval_snapshot(gather: Gather, params: dict) -> dict:
     days = params_days(params)
     (payload,) = await gather(
@@ -842,7 +853,7 @@ async def _live_evaluation_payload(
     live_data = await _build_live_user_evaluation(db, window)
 
     # 2. Fetch baseline benchmark data
-    result = await asyncio.to_thread(_read_latest_eval_report, True)
+    result = await _load_benchmark_report(db)
     benchmark_data = result[0] if result else {}
     benchmark_file = result[1] if result else "evaluation_report.json"
 

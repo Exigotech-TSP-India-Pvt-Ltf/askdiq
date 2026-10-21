@@ -12,7 +12,7 @@ import {
 import { prefetch, runWhenIdle, useApiQuery } from "@/lib/query-cache";
 import dynamic from "next/dynamic";
 import { ApiError } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, usePermission } from "@/lib/auth-context";
 import {
   RECHARTS_AXIS_TITLE_SPACE,
   chartTooltipStyle,
@@ -46,6 +46,8 @@ import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
 import { StatCard } from "@/components/admin/insights/StatCard";
 import { JudgeDisabledState, hasJudgedSamples } from "@/components/admin/evaluation/JudgeDisabledState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
+import { RunEvaluationControl } from "@/components/admin/evaluation/RunEvaluationControl";
+import { EvaluationRunsPanel } from "@/components/admin/evaluation/EvaluationRunsPanel";
 import {
   DEFAULT_EXPLORER_STATE,
   EvaluationExplorer,
@@ -156,6 +158,7 @@ function HeroStat({
 
 export default function EvaluationLivePage() {
   const { token } = useAuth();
+  const canRunEval = usePermission("eval:run");
   const ct = useChartTheme();
   const tooltipStyle = chartTooltipStyle(ct);
   // Pass / fail / partial outcome colours.
@@ -297,6 +300,7 @@ export default function EvaluationLivePage() {
             />
           }
           actions={
+            <>
             <HeaderIconButton
               icon={GitCompare}
               label="Compare with benchmark"
@@ -307,6 +311,8 @@ export default function EvaluationLivePage() {
               data-tour="evaluation-compare"
               onClick={() => setCompareMode(!compareMode)}
             />
+            {token ? <RunEvaluationControl token={token} canRun={canRunEval} /> : null}
+            </>
           }
           dateRange
         />
@@ -612,6 +618,15 @@ export default function EvaluationLivePage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Full evaluation runs: history and one run's results */}
+        {activeTab === "runs" && token && (
+          <EvaluationRunsPanel
+            token={token}
+            selectedId={get("eval_run")}
+            onSelect={(id) => set({ eval_run: id })}
+          />
         )}
 
         {/* Domain Tab 4: Query & Case Explorer */}

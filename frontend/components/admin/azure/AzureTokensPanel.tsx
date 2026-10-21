@@ -147,7 +147,7 @@ export function AzureTokensPanel() {
         title="Azure-reported tokens"
         subtitle="Azure Monitor tokens per deployment and the share AskDIQ did not record"
         window={windowLabel}
-        actions={<AzureStatePills summary={summary} />}
+        meta={<AzureStatePills summary={summary} />}
         loading={loading}
         error={error}
         onRetry={() => void summaryQuery.refetch()}

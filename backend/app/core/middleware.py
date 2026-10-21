@@ -85,7 +85,9 @@ class LatencyMiddleware(BaseHTTPMiddleware):
             request.state.stage_timings["reranker"] = sum(rerank_sink)
         if response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
             METRICS["errors"] += 1
-            record_server_error(request_id, request.url.path, response.status_code)
+            record_server_error(
+                request_id, request.url.path, response.status_code, ip_address=client_ip
+            )
 
         total_ms = (time.perf_counter() - start) * 1000
 

@@ -8,6 +8,8 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+UNKNOWN_CLIENT_IP = "unknown"
+
 
 def get_client_ip(request: Request) -> str:
     """Best-effort client IP.
@@ -26,7 +28,24 @@ def get_client_ip(request: Request) -> str:
             if first_hop:
                 return first_hop
 
-    return request.client.host if request.client else "unknown"
+    if request.client and request.client.host:
+        return request.client.host
+    return _trusted_proxy_hop(request) or UNKNOWN_CLIENT_IP
+
+
+def _trusted_proxy_hop(request: Request) -> str | None:
+    """The nearest X-Forwarded-For hop when uvicorn cleared the peer address.
+
+    Uvicorn's proxy-headers middleware (on by default, trusting 127.0.0.1)
+    sets the client to ``(None, 0)`` when every X-Forwarded-For hop is one of
+    its trusted proxies, e.g. the local Next server forwarding its own
+    loopback address. Uvicorn has then already verified each hop is trusted,
+    so the right-most one is a trusted proxy address, not client input.
+    """
+    if request.client is None:
+        return None
+    hops = request.headers.get("x-forwarded-for", "").split(",")
+    return valid_ip(hops[-1])
 
 
 def valid_ip(value: str | None) -> str | None:

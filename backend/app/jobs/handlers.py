@@ -10,6 +10,7 @@ from app.azure_insights import jobs as azure_jobs  # noqa: F401 - azure.* source
 from app.core.logging_config import get_logger
 from app.core.sessions import prune_empty_sessions
 from app.core.state import PostgresState
+from app.evaluation import run_job as eval_run_jobs  # noqa: F401 - eval.full_run
 from app.feedback import jobs as feedback_jobs  # noqa: F401 - registers eval.golden_run
 from app.insights import jobs as insights_jobs  # noqa: F401
 from app.jobs.queue import prune_finished

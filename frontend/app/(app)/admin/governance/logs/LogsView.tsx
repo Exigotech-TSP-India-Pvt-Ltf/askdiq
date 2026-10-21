@@ -27,6 +27,7 @@ import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { EntityLink } from "@/components/ui/EntityLink";
+import { ClientIpCell } from "@/components/admin/governance/ClientIpCell";
 import { focusRing, secondaryButton, studioDivider } from "@/components/ui/styles";
 import { LEVEL_TONE, LevelBadge } from "@/components/admin/governance/badges";
 import { JsonViewer } from "@/components/admin/governance/JsonViewer";
@@ -116,7 +117,7 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "ip_address",
     header: "Client IP",
-    render: (log) => <span className="whitespace-nowrap font-mono text-[11px] text-fg-muted">{log.ip_address ?? "—"}</span>,
+    render: (log) => <ClientIpCell log={log} />,
   },
   {
     key: "request_id",

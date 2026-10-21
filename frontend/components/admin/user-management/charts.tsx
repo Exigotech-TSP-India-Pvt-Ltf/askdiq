@@ -55,7 +55,7 @@ export function DailyBars({
   if (data.length === 0) return <ChartEmpty />;
 
   const layout = ({ width, height }: ChartSize) => {
-    const area = plotArea(width, height, titles);
+    const area = plotArea(width, height, titles, { labels: data.map((d) => d.label), placement: "band" });
     const bw = (area.x1 - area.x0) / data.length;
     return { area, bw, y: scaleLinear([0, max], [area.y1, area.y0]) };
   };
@@ -79,7 +79,7 @@ export function DailyBars({
         return (
           <>
             <YGrid area={area} max={max} ct={ct} integer />
-            <XLabels labels={data.map((d) => d.label)} xAt={(i) => area.x0 + bw * i + bw / 2} area={area} ct={ct} maxLabels={7} />
+            <XLabels labels={data.map((d) => d.label)} xAt={(i) => area.x0 + bw * i + bw / 2} area={area} ct={ct} />
             <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {data.map((d, i) => (
               <g key={d.label} {...getMarkProps(i)} opacity={opacityFor(i)}>

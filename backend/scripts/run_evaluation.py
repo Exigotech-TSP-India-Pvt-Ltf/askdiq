@@ -29,9 +29,10 @@ from datetime import UTC
 
 from app.core.config import configure_logging
 from app.core.database import AsyncSessionLocal, engine
-from app.evaluation.dataset import ALL_DOCS, EVAL_CASES, EvalCase
-from app.evaluation.dataset_extra import load_promoted_cases, merge_cases
+from app.evaluation.dataset import ALL_DOCS, EvalCase
+from app.evaluation.dataset_extra import load_promoted_cases
 from app.evaluation.evaluator import STAGES, EvalResult, run_evaluation
+from app.evaluation.runs import report_payload, select_cases
 from app.retrieval.vector_store import VectorStore
 
 _REAL_DOCS_DIR = Path(__file__).resolve().parent.parent / "data" / "real_docs"
@@ -283,13 +284,14 @@ async def _run_kb(args: argparse.Namespace) -> dict:
 def _to_json(report) -> dict:
     # Top-level keys (pass_rate, retrieval_recall, groundedness_accuracy,
     # latency, ...) match the original report; new metrics sit alongside them.
-    return {**report.summary(), "cases": [r.to_dict() for r in report.results]}
+    # Shared with the "Run evaluation" job (app.evaluation.run_job).
+    return report_payload(report)
 
 
 def _select_cases(
     ids: list[str] | None, types: list[str] | None, promoted: list | None = None
 ):
-    cases = merge_cases(EVAL_CASES, promoted or [])
+    cases = select_cases(promoted or [])
     if ids:
         unknown = set(ids) - {c.id for c in cases}
         if unknown:

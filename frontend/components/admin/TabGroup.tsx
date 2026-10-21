@@ -5,6 +5,7 @@ import { ActivePill } from "@/components/ui/ActivePill";
 import { segmentTrack } from "@/components/ui/styles";
 import {
   BarChart3,
+  History,
   Users,
   Clock,
   Search,
@@ -175,6 +176,7 @@ export const EVALUATION_LIVE_TABS: TabItem[] = [
   { id: "judge", label: "Semantic Quality & Citations", icon: Sparkles },
   { id: "safety", label: "Safety & Robustness", icon: ShieldCheck },
   { id: "explorer", label: "Query & Case Explorer", icon: Search },
+  { id: "runs", label: "Runs", icon: History },
 ];
 
 
