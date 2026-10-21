@@ -125,6 +125,11 @@ class Settings(BaseSettings):
     clarify_max_options: int = 4
     # The model asks as few questions as needed, at most this many, in one turn.
     clarify_max_questions: int = 4
+    # One option per question may be tagged "Recommended" (never pre-selected):
+    # only when its best grounding score leads the runner-up by this margin.
+    # Rule-based from the retrieval scores (no LLM call, not model-controlled).
+    clarify_recommend_enabled: bool = True
+    clarify_recommend_margin: float = 0.05
     # Rule-detected ambiguity (a referent with nothing to point at, or an
     # underspecified compliance request, see app/harness/ambiguity.py) asks
     # before the low-confidence fallback, as long as the best retrieved score

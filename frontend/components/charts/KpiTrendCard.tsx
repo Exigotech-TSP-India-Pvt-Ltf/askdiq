@@ -26,7 +26,7 @@ export interface KpiTrendCardProps {
   intentHandlers?: React.HTMLAttributes<HTMLElement>;
   icon?: LucideIcon;
   tone?: SparkTone;
-  /** One-line footnote under the sparkline (truncated; strings also get a tooltip). */
+  /** Footnote under the sparkline (up to two lines; strings also get a tooltip). */
   hint?: React.ReactNode;
   /** Time window of the value, e.g. "Last 7 days" (shown under the label). */
   windowLabel?: string;
@@ -37,8 +37,24 @@ export interface KpiTrendCardProps {
 
 const percent = new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 1 });
 
-function DeltaBadge({ delta, goodDirection }: { delta: number; goodDirection: "up" | "down" }) {
-  const flat = Math.abs(delta) < 0.0005;
+/** The shared period-delta pill (KPI rows, active visitors). */
+export function DeltaBadge({
+  delta,
+  goodDirection,
+  title,
+  format = (d) => percent.format(d),
+  flatBelow = 0.0005,
+}: {
+  delta: number;
+  goodDirection: "up" | "down";
+  /** Tooltip, e.g. "vs previous 7 days". */
+  title?: string;
+  /** Magnitude text without the sign (default: a percentage of the fraction). */
+  format?: (delta: number) => string;
+  /** |delta| under this reads as "no change". */
+  flatBelow?: number;
+}) {
+  const flat = Math.abs(delta) < flatBelow;
   const good = flat ? null : (delta > 0) === (goodDirection === "up");
   const Icon = flat ? Minus : delta > 0 ? TrendingUp : TrendingDown;
   const tone =
@@ -49,11 +65,17 @@ function DeltaBadge({ delta, goodDirection }: { delta: number; goodDirection: "u
         : "bg-status-danger-bg text-status-danger-fg";
   const sign = delta > 0 ? "+" : "";
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${tone}`}>
+    <span
+      title={title}
+      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${tone}`}
+    >
       <Icon className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
       {sign}
-      {percent.format(delta)}
-      <span className="sr-only">{good === null ? "(no change)" : good ? "(improving)" : "(worsening)"}</span>
+      {format(delta)}
+      <span className="sr-only">
+        {good === null ? "(no change)" : good ? "(improving)" : "(worsening)"}
+        {title ? ` ${title}` : ""}
+      </span>
     </span>
   );
 }
@@ -83,8 +105,15 @@ export function KpiTrendCard({
   const header = (
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-fg-subtle">{label}</p>
-        {windowLabel && <p className="truncate text-[11px] text-fg-subtle">{windowLabel}</p>}
+        {/* Two lines before the ellipsis, with the full text on hover (VA-15). */}
+        <p className="line-clamp-2 break-words text-sm font-medium text-fg-subtle" title={label}>
+          {label}
+        </p>
+        {windowLabel && (
+          <p className="truncate text-[11px] text-fg-subtle" title={windowLabel}>
+            {windowLabel}
+          </p>
+        )}
       </div>
       {href ? (
         <ArrowUpRight
@@ -129,7 +158,7 @@ export function KpiTrendCard({
         formatValue={formatTrendValue}
       />
       {hint ? (
-        <p className="truncate whitespace-nowrap text-[11px] text-fg-subtle" title={typeof hint === "string" ? hint : undefined}>
+        <p className="line-clamp-2 break-words text-[11px] text-fg-subtle" title={typeof hint === "string" ? hint : undefined}>
           {hint}
         </p>
       ) : null}

@@ -26,16 +26,24 @@ import {
   type GovernanceLogItem,
   type GovernanceOverview,
   type GovernanceStreamEvent,
+  type HealthSignal,
   type Kpi,
   type KpiKey,
 } from "@/lib/governance-api";
-import { formatByUnit, formatCount, formatHour, windowSourceLabel } from "@/lib/governance-format";
+import {
+  formatByUnit,
+  formatCount,
+  formatHour,
+  windowSourceDefinition,
+  windowSourceLabel,
+} from "@/lib/governance-format";
 import { logsHref, tabHref, tracesHref } from "@/lib/governance-links";
 import { useGovernanceStream } from "@/lib/use-governance-stream";
 import { ActiveVisitorsInfo } from "@/components/admin/ActiveVisitorsPanel";
 import { KpiTrendCard } from "@/components/charts/KpiTrendCard";
 import { ACTIVE_VISITORS_LABEL } from "@/lib/active-visitors";
-import type { SparkPoint } from "@/components/charts/Sparkline";
+import type { SparkPoint, SparkTone } from "@/components/charts/Sparkline";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton, SkeletonCard } from "@/components/ui/Skeleton";
 import { HealthBanner } from "@/components/admin/governance/HealthBanner";
@@ -67,6 +75,18 @@ const KPI_DEFS: readonly KpiDef[] = [
   { key: "blocked_or_flagged", label: "Blocked or flagged", icon: ShieldAlert, goodDirection: "down", href: tracesHref({ status: "blocked" }) },
   { key: "cost_today", label: "Cost today", icon: DollarSign, goodDirection: "down", href: "/admin/usage?tab=queries" },
 ];
+
+/**
+ * Sparkline tone of the error-rate KPI from the health thresholds: brand
+ * while healthy, amber once degraded, red only at the incident threshold.
+ * A healthy 0.0 % is never drawn as an alert (VA-20).
+ */
+export function errorRateTone(value: number | null | undefined, signal: HealthSignal | undefined): SparkTone {
+  if (value === null || value === undefined || !signal) return "brand";
+  if (value >= signal.incident_at) return "danger";
+  if (value >= signal.degraded_at) return "warn";
+  return "brand";
+}
 
 function sparkPoints(kpi: Kpi, hours: readonly string[]): SparkPoint[] {
   return kpi.sparkline.flatMap((v, i) =>
@@ -211,12 +231,15 @@ export default function OverallView() {
 
   return (
     <m.div className="space-y-6" variants={container} initial="hidden" animate="visible">
-      <div className="flex justify-end" data-tour="governance-live">
-        <LiveIndicator status={stream.status} updatedAt={stream.lastEventAt || overview.updatedAt} />
-      </div>
-
       <m.div variants={item} data-tour="governance-health">
-        <HealthBanner health={data.health} />
+        <HealthBanner
+          health={data.health}
+          aside={
+            <span data-tour="governance-live">
+              <LiveIndicator status={stream.status} updatedAt={stream.lastEventAt || overview.updatedAt} />
+            </span>
+          }
+        />
       </m.div>
 
       <m.div variants={item} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="governance-kpis">
@@ -232,9 +255,15 @@ export default function OverallView() {
               goodDirection={def.goodDirection}
               icon={def.icon}
               href={def.href}
-              tone={def.goodDirection === "down" && def.key === "error_rate" ? "danger" : "brand"}
+              tone={def.key === "error_rate" ? errorRateTone(kpi.value, data.health.signals.error_rate) : "brand"}
               hint={windowSourceLabel(kpi.window, kpi.source)}
-              info={def.key === "active_users" ? <ActiveVisitorsInfo /> : undefined}
+              info={
+                def.key === "active_users" ? (
+                  <ActiveVisitorsInfo />
+                ) : (
+                  <InfoTip label={def.label}>{windowSourceDefinition(kpi.window, kpi.source)}</InfoTip>
+                )
+              }
             />
           );
         })}

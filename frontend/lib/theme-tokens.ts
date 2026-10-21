@@ -164,6 +164,13 @@ export const semanticTokens: Record<ThemeName, SemanticTokens> = {
 export interface ChartTheme {
   /** teal, dark teal, amber, slate, red, indigo */
   categorical: readonly string[];
+  /**
+   * Distinct-hue palette for multi-series stacks and legends with more than
+   * a few series (e.g. cost by stage): brand teal first, then hues that stay
+   * apart under colour-vision deficiency (adjacent-pair CVD Delta E >= 8,
+   * checked with a palette validator). Assign in order, never cycle.
+   */
+  multiSeries: readonly string[];
   /** Low to high, teal ramp. */
   sequential: readonly string[];
   /** Teal (good) through neutral to red (bad). */
@@ -232,6 +239,7 @@ const insightsDark: InsightsChartColors = {
 export const chartTheme: Record<ThemeName, ChartTheme> = {
   light: {
     categorical: ["#008080", "#00584F", "#B7791F", "#64748B", "#C0362C", "#4F46E5"],
+    multiSeries: ["#008080", "#D4561C", "#2A78D6", "#A66B00", "#C83E86", "#2E7D32", "#6250D6", "#D93636"],
     sequential: ["#CCEDEA", "#99DBD5", "#5FC3BB", "#2DA9A0", "#008080", "#00584F"],
     diverging: ["#00584F", "#2DA9A0", "#99DBD5", "#F1F5F9", "#F4B4AC", "#E0665A", "#C0362C"],
     status: {
@@ -253,6 +261,7 @@ export const chartTheme: Record<ThemeName, ChartTheme> = {
   },
   dark: {
     categorical: ["#2DA9A0", "#5FC3BB", "#F2B84B", "#94A3B8", "#F87171", "#818CF8"],
+    multiSeries: ["#2DA9A0", "#D95926", "#3987E5", "#C98500", "#D55181", "#008300", "#9085E9", "#E66767"],
     sequential: ["#00433D", "#006B68", "#13958F", "#2DA9A0", "#5FC3BB", "#99DBD5"],
     diverging: ["#5FC3BB", "#2DA9A0", "#00584F", "#1E293B", "#7A2A24", "#D4574B", "#F87171"],
     status: {

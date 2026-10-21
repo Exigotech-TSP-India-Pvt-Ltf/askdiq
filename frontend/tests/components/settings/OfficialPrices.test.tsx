@@ -99,7 +99,7 @@ describe("Settings → Sync official prices", { timeout: 15_000 }, () => {
     expect(await screen.findByText(/differ from the official Azure retail price/)).toHaveTextContent(
       "LLM cached input $0.125 vs $0.025",
     );
-    expect(screen.getByText(/Source: the .env defaults/)).toBeInTheDocument();
+    expect(screen.getByText(/Source: the server defaults/)).toBeInTheDocument();
     expect(calls.some((c) => c.method === "POST")).toBe(false);
   });
 

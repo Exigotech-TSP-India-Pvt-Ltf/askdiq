@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BrainCircuit, CircleDollarSign, Database, RotateCcw, Save } from "lucide-react";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { RelativeTime } from "@/components/ui/RelativeTime";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/ToastProvider";
 import { focusRing, primaryButton, secondaryButton } from "@/components/ui/styles";
@@ -121,7 +122,7 @@ export function ModelsTab() {
     label: string,
     opts: { hint: string; defaultValue: string; type?: "text" | "number"; prefix?: string },
   ) => (
-    <Field label={label} hint={form[field] ? opts.hint : `${opts.hint}. Using the .env value: ${opts.defaultValue}`} error={errors[field]}>
+    <Field label={label} hint={form[field] ? opts.hint : `${opts.hint}. Using the server default: ${opts.defaultValue}`} error={errors[field]}>
       {(props) => (
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -144,8 +145,8 @@ export function ModelsTab() {
             <button
               type="button"
               onClick={() => set(field, "")}
-              title="Use the .env value"
-              aria-label={`Use the .env value for ${label}`}
+              title="Use the server default"
+              aria-label={`Use the server default for ${label}`}
               className={`rounded-md p-2 text-fg-subtle transition-colors hover:bg-surface-muted hover:text-fg ${focusRing}`}
             >
               <RotateCcw className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
@@ -229,7 +230,11 @@ export function ModelsTab() {
               {server.updated_by ? ` by ${server.updated_by}` : ""}
             </>
           ) : (
-            "Using the .env values"
+            // Plain wording for admins; the .env detail is in the tip for operators (VA-40).
+            <span className="inline-flex items-center gap-1">
+              Using the server defaults
+              <InfoTip label="server defaults">Server defaults come from the backend .env file, set by an operator.</InfoTip>
+            </span>
           )}
         </p>
         <div className="flex items-center gap-2">

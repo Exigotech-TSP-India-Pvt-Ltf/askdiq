@@ -161,17 +161,20 @@ export function EvaluationExplorer({ token, audience, range, state, onStateChang
         aria-busy={page.isLoading || page.isPlaceholderData}
       >
         <table className="w-full text-left text-xs">
-          <thead className="bg-surface-studio text-fg-muted dark:text-brand-200 border-b border-line-brand/70 dark:border-brand-500/20 font-bold">
+          {/* VA-5: one-line headers; confidence, recall and citation precision
+              (also in the drawer) show from 1440 px; the action column stays
+              in view (sticky right) and the query column truncates. */}
+          <thead className="bg-surface-studio text-fg-muted dark:text-brand-200 border-b border-line-brand/70 dark:border-brand-500/20 font-bold whitespace-nowrap">
             <tr>
-              <th className="px-3.5 py-2.5">Status</th>
-              <th className="px-3.5 py-2.5">Outcome Type</th>
-              <th className="px-3.5 py-2.5">Query</th>
-              <th className="px-3.5 py-2.5 text-right">Conf.</th>
-              <th className="px-3.5 py-2.5 text-right">Recall</th>
-              <th className="px-3.5 py-2.5 text-right">Cit. Prec.</th>
-              <th className="px-3.5 py-2.5 text-right">Faithfulness</th>
-              <th className="px-3.5 py-2.5 text-right">Latency</th>
-              <th className="px-3.5 py-2.5 text-right">Action</th>
+              <th scope="col" className="px-3.5 py-2.5">Status</th>
+              <th scope="col" className="hidden px-3.5 py-2.5 sm:table-cell">Outcome type</th>
+              <th scope="col" className="w-full px-3.5 py-2.5">Query</th>
+              <th scope="col" className="hidden min-[1440px]:table-cell px-3.5 py-2.5 text-right" title="Confidence">Conf.</th>
+              <th scope="col" className="hidden min-[1440px]:table-cell px-3.5 py-2.5 text-right">Recall</th>
+              <th scope="col" className="hidden min-[1440px]:table-cell px-3.5 py-2.5 text-right" title="Citation precision">Cit. prec.</th>
+              <th scope="col" className="hidden px-3.5 py-2.5 text-right md:table-cell">Faithfulness</th>
+              <th scope="col" className="hidden px-3.5 py-2.5 text-right sm:table-cell">Latency</th>
+              <th scope="col" className="sticky right-0 bg-surface-studio px-3.5 py-2.5 text-right">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -205,7 +208,7 @@ function CaseRow({
     { staleTime: CASE_DETAIL_STALE_MS },
   );
   const faith = useMemo(
-    () => (c.faithfulness !== undefined ? `${Number(c.faithfulness).toFixed(1)} / 5` : "—"),
+    () => (typeof c.faithfulness === "number" ? `${c.faithfulness.toFixed(1)} / 5` : "—"),
     [c.faithfulness],
   );
   return (
@@ -222,32 +225,34 @@ function CaseRow({
               : "bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800/80"
           }`}
         >
-          {c.passed ? "✅ Pass" : "❌ Fail"}
+          {c.passed ? "✅ Pass" : c.passed === false ? "❌ Fail" : "Not scored"}
         </span>
       </td>
-      <td className="px-3.5 py-2.5 font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
+      <td className="hidden px-3.5 py-2.5 font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap sm:table-cell">
         <span className="px-2 py-0.5 rounded bg-teal-50 dark:bg-white/10 border border-teal-200/60 dark:border-teal-500/20 text-[10px] font-mono text-teal-800 dark:text-teal-300">
           {c.type}
         </span>
       </td>
-      <td className="max-w-md px-3.5 py-2.5 text-slate-800 dark:text-slate-100 font-medium truncate">{c.query}</td>
-      <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">
+      <td className="w-full max-w-0 px-3.5 py-2.5 text-slate-800 dark:text-slate-100 font-medium truncate" title={c.query}>
+        {c.query}
+      </td>
+      <td className="hidden min-[1440px]:table-cell px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">
         {num(c.confidence)}
       </td>
-      <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">
+      <td className="hidden min-[1440px]:table-cell px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">
         {pct(c.recall)}
       </td>
-      <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">
+      <td className="hidden min-[1440px]:table-cell px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">
         {pct(c.citation_precision)}
       </td>
-      <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
+      <td className="hidden px-3.5 py-2.5 text-right whitespace-nowrap md:table-cell">
         <span className="font-bold text-teal-700 dark:text-teal-300 font-mono tabular-nums">{faith}</span>
       </td>
-      <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">
+      <td className="hidden px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-500 dark:text-slate-400 whitespace-nowrap sm:table-cell">
         {formatLatencyMs(c.latency_ms)}
       </td>
-      <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
-        <button className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 dark:text-teal-400 group-hover:text-teal-700 dark:group-hover:text-teal-300">
+      <td className="sticky right-0 bg-surface-card px-3.5 py-2.5 text-right whitespace-nowrap group-hover:bg-brand-50 dark:group-hover:bg-surface-elevated">
+        <button type="button" aria-label={`Inspect: ${c.query ?? id}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 dark:text-teal-400 group-hover:text-teal-700 dark:group-hover:text-teal-300">
           <span>Inspect</span>
           <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
         </button>

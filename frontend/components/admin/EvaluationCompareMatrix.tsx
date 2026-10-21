@@ -1,277 +1,248 @@
 "use client";
 
 import React from "react";
-import { chartTooltipStyle, useChartTheme } from "@/lib/use-chart-theme";
-import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  CheckCircle2,
-  AlertCircle,
-  GitCompare,
-  ShieldCheck,
-  Zap,
-} from "lucide-react";
-import {
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from "recharts";
+import { AlertCircle, CheckCircle2, GitCompare, MinusCircle, type LucideIcon } from "lucide-react";
+import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
+import { DeltaBadge } from "@/components/charts/KpiTrendCard";
+import { Radar } from "@/components/charts/Radar";
+import { StudioCardHeader, studioCardClass } from "@/components/ui/StudioCard";
+import { studioTile } from "@/components/ui/styles";
+import { useChartTheme } from "@/lib/use-chart-theme";
+
+export interface CompareDelta {
+  benchmark: number | null;
+  live: number | null;
+  diff: number | null;
+}
+
+export type CompareMetricKey = "pass_rate" | "faithfulness" | "retrieval_recall" | "citation_precision";
+
+export type CompareDeltas = Partial<Record<CompareMetricKey, CompareDelta>>;
 
 interface CompareMatrixProps {
   comparisonData: {
-    deltas?: Record<string, { benchmark: number; live: number; diff: number }>;
-    dual_radar?: Array<{ metric: string; benchmark: number; live: number }>;
+    deltas?: CompareDeltas;
+    dual_radar?: Array<{ metric: string; benchmark: number | null; live: number | null }>;
   };
+}
+
+interface MetricDef {
+  key: CompareMetricKey;
+  label: string;
+  /** Shares (0..1) shown as %; else a 1-5 score. */
+  share: boolean;
+}
+
+export const COMPARE_METRICS: readonly MetricDef[] = [
+  { key: "pass_rate", label: "Overall pass rate", share: true },
+  { key: "faithfulness", label: "Faithfulness (1-5)", share: false },
+  { key: "retrieval_recall", label: "Retrieval recall", share: true },
+  { key: "citation_precision", label: "Citation precision", share: true },
+];
+
+/** Differences under these read as "in line" (0.5 percentage points, 0.05 on the 1-5 scale). */
+const FLAT_SHARE = 0.005;
+const FLAT_SCORE = 0.05;
+
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+export function formatCompareValue(v: number | null | undefined, share: boolean): string {
+  if (!isNum(v)) return "Not measured";
+  return share ? `${(v * 100).toFixed(1)}%` : v.toFixed(1);
+}
+
+/** Difference text with its sign: percentage points for shares, score points on the 1-5 scale. */
+export function formatCompareDiff(diff: number, share: boolean): string {
+  const body = share ? `${(diff * 100).toFixed(1)} pp` : diff.toFixed(2);
+  return diff > 0 ? `+${body}` : body;
+}
+
+export type DriftDirection = "better" | "worse" | "flat" | "unknown";
+
+export interface DriftRow {
+  key: CompareMetricKey;
+  label: string;
+  direction: DriftDirection;
+  /** Signed difference (live - benchmark), or "Not measured". */
+  value: string;
+  detail: string;
+}
+
+/**
+ * Drift rows from the same `deltas` the KPI cards show (VA-12): the sign,
+ * the wording and the colour all come from live - benchmark, so the card
+ * can never contradict the numbers above it. A side the server did not
+ * measure gives "Not measured", never a made-up figure.
+ */
+export function buildDriftRows(deltas: CompareDeltas = {}): DriftRow[] {
+  return COMPARE_METRICS.map(({ key, label, share }) => {
+    const d = deltas[key];
+    const bench = d?.benchmark;
+    const live = d?.live;
+    if (!isNum(bench) || !isNum(live)) {
+      const missing = !isNum(bench) && !isNum(live) ? "either side" : !isNum(bench) ? "the benchmark" : "live users";
+      return { key, label, direction: "unknown", value: "Not measured", detail: `No value for ${missing}.` };
+    }
+    const diff = isNum(d?.diff) ? d.diff : live - bench;
+    const range = `${formatCompareValue(bench, share)} benchmark, ${formatCompareValue(live, share)} live`;
+    const value = formatCompareDiff(diff, share);
+    if (Math.abs(diff) < (share ? FLAT_SHARE : FLAT_SCORE)) {
+      return { key, label, direction: "flat", value, detail: `Live is in line with the benchmark (${range}).` };
+    }
+    const better = diff > 0;
+    return {
+      key,
+      label,
+      direction: better ? "better" : "worse",
+      value,
+      detail: `Live is ${better ? "higher" : "lower"} than the benchmark (${range}).`,
+    };
+  });
+}
+
+const DRIFT_TONE: Record<DriftDirection, { icon: LucideIcon; iconClass: string; valueClass: string }> = {
+  better: { icon: CheckCircle2, iconClass: "text-status-ok", valueClass: "text-status-ok-fg" },
+  worse: { icon: AlertCircle, iconClass: "text-status-warn", valueClass: "text-status-warn-fg" },
+  flat: { icon: CheckCircle2, iconClass: "text-fg-subtle", valueClass: "text-fg-muted" },
+  unknown: { icon: MinusCircle, iconClass: "text-fg-subtle", valueClass: "text-fg-subtle" },
+};
+
+function CompareKpi({ def, delta }: { def: MetricDef; delta: CompareDelta | undefined }) {
+  const diff = delta?.diff;
+  return (
+    <div className={`${studioCardClass()} flex flex-col gap-3 p-5`} data-testid={`compare-kpi-${def.key}`}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="line-clamp-2 text-sm font-medium text-fg-subtle" title={def.label}>
+          {def.label}
+        </p>
+        {isNum(diff) ? (
+          <DeltaBadge
+            delta={diff}
+            goodDirection="up"
+            flatBelow={def.share ? FLAT_SHARE : FLAT_SCORE}
+            format={(d) => (def.share ? `${(d * 100).toFixed(1)} pp` : d.toFixed(2))}
+            title="Live minus benchmark"
+          />
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div className="min-w-0">
+          <p className="text-[11px] text-fg-subtle">Benchmark</p>
+          <p className="text-lg font-semibold tabular-nums text-fg-muted">{formatCompareValue(delta?.benchmark, def.share)}</p>
+        </div>
+        <div className="min-w-0 text-right">
+          <p className="text-[11px] text-fg-subtle">Live users</p>
+          <p className="text-2xl font-semibold tabular-nums text-fg">{formatCompareValue(delta?.live, def.share)}</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function EvaluationCompareMatrix({ comparisonData }: CompareMatrixProps) {
   const ct = useChartTheme();
-  const deltas = comparisonData?.deltas || {};
-  // Unreported values show "—", never a made-up benchmark.
-  const radarData = comparisonData?.dual_radar ?? [];
-  const pct = (v: number | undefined) => (typeof v === "number" ? `${(v * 100).toFixed(1)}%` : "—");
-  const num = (v: number | undefined) => (typeof v === "number" ? v.toFixed(1) : "—");
-
-  const getDeltaBadge = (diff: number | undefined, isHigherBetter = true, isPct = true) => {
-    if (typeof diff !== "number") {
-      return <span className="text-xs font-semibold text-fg-subtle">—</span>;
-    }
-    const isPositive = diff > 0;
-    const isZero = Math.abs(diff) < 0.001;
-    const isGood = isHigherBetter ? isPositive : !isPositive;
-
-    if (isZero) {
-      return (
-        <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          <Minus className="w-3 h-3" /> 0.0%
-        </span>
-      );
-    }
-
-    const Icon = isPositive ? TrendingUp : TrendingDown;
-    const colorClass = isGood
-      ? "text-emerald-700 dark:text-emerald-300 bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300/80 dark:border-emerald-700/60"
-      : "text-amber-700 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40 border-amber-300/80 dark:border-amber-700/60";
-    const formatted = isPct ? `${(diff * 100).toFixed(1)}%` : diff.toFixed(2);
-
-    return (
-      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${colorClass}`}>
-        <Icon className="w-3 h-3" />
-        {isPositive ? `+${formatted}` : formatted}
-      </span>
-    );
-  };
+  const deltas = comparisonData?.deltas ?? {};
+  // A radar point needs both sides; a metric with a missing side is named instead of drawn at 0.
+  const radarAll = comparisonData?.dual_radar ?? [];
+  const radarData = radarAll.flatMap((r) =>
+    isNum(r.benchmark) && isNum(r.live) ? [{ metric: r.metric, benchmark: r.benchmark, live: r.live }] : [],
+  );
+  const radarMissing = radarAll.filter((r) => !isNum(r.benchmark) || !isNum(r.live)).map((r) => r.metric);
+  const drift = buildDriftRows(deltas);
+  // Benchmark: brand teal, solid. Live: amber, dashed (VA-11: two series that read apart).
+  const benchColor = ct.categorical[0];
+  const liveColor = ct.multiSeries[3];
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Banner */}
-      <div className="relative overflow-hidden p-5 rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card/90 backdrop-blur-md shadow-card dark:shadow-xl flex flex-wrap items-center justify-between gap-4">
-        <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 flex items-center justify-center shadow-xs">
-            <GitCompare className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Live Production vs Baseline Benchmark Suite</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Comparing real user traffic against the latest benchmark report</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 text-xs">
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-teal-600" />
-            <span className="font-semibold text-slate-700 dark:text-slate-200">Golden Benchmark</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-emerald-500" />
-            <span className="font-semibold text-slate-700 dark:text-slate-200">Live Production</span>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <section className={`${studioCardClass()} p-5`} aria-labelledby="compare-title">
+        <StudioCardHeader
+          title="Live production vs benchmark suite"
+          subtitle="Real user traffic against the latest benchmark report"
+          icon={GitCompare}
+          titleId="compare-title"
+          divider={false}
+          className="flex-wrap"
+          aside={
+            <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted" aria-label="Series">
+              <li className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: benchColor }} aria-hidden="true" />
+                Benchmark
+              </li>
+              <li className="flex items-center gap-1.5">
+                <span className="h-0 w-3 border-t-2 border-dashed" style={{ borderColor: liveColor }} aria-hidden="true" />
+                Live users
+              </li>
+            </ul>
+          }
+        />
+      </section>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {COMPARE_METRICS.map((def) => (
+          <CompareKpi key={def.key} def={def} delta={deltas[def.key]} />
+        ))}
       </div>
 
-      {/* KPI Comparison Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Pass Rate */}
-        <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
-          <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Overall Pass Rate</span>
-            {getDeltaBadge(deltas.pass_rate?.diff)}
-          </div>
-          <div className="flex items-baseline justify-between pt-1">
-            <div>
-              <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
-              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{pct(deltas.pass_rate?.benchmark)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Live Users</p>
-              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{pct(deltas.pass_rate?.live)}</p>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ChartCard
+          title="Quality radar"
+          subtitle={
+            radarMissing.length
+              ? `Benchmark vs live users (%). Not measured: ${radarMissing.join(", ")}`
+              : "Benchmark vs live users (%)"
+          }
+          empty={radarData.length === 0}
+          emptyMessage="No metric is measured on both sides"
+          bodyClassName="h-72 w-full"
+          table={toChartTable(radarData, [
+            { key: "metric", label: "Metric" },
+            { key: "benchmark", label: "Benchmark (%)", numeric: true },
+            { key: "live", label: "Live users (%)", numeric: true },
+          ])}
+        >
+          <Radar
+            data={radarData}
+            axisKey="metric"
+            series={[
+              { key: "benchmark", label: "Benchmark", color: benchColor },
+              { key: "live", label: "Live users", color: liveColor, dashed: true },
+            ]}
+            label="Benchmark vs live quality radar"
+            ringLabels
+          />
+        </ChartCard>
 
-        {/* Faithfulness */}
-        <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
-          <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Faithfulness (1–5)</span>
-            {getDeltaBadge(deltas.faithfulness?.diff, true, false)}
-          </div>
-          <div className="flex items-baseline justify-between pt-1">
-            <div>
-              <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
-              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{num(deltas.faithfulness?.benchmark)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Live Users</p>
-              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{num(deltas.faithfulness?.live)}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Retrieval Recall */}
-        <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
-          <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Retrieval Recall</span>
-            {getDeltaBadge(deltas.retrieval_recall?.diff)}
-          </div>
-          <div className="flex items-baseline justify-between pt-1">
-            <div>
-              <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
-              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{pct(deltas.retrieval_recall?.benchmark)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Live Users</p>
-              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{pct(deltas.retrieval_recall?.live)}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Citation Precision */}
-        <div className="relative overflow-hidden p-5 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 space-y-2">
-          <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Citation Precision</span>
-            {getDeltaBadge(deltas.citation_precision?.diff)}
-          </div>
-          <div className="flex items-baseline justify-between pt-1">
-            <div>
-              <p className="text-[11px] text-slate-400 dark:text-fg-subtle font-medium">Benchmark</p>
-              <p className="text-lg font-bold font-mono tabular-nums text-slate-700 dark:text-slate-300">{pct(deltas.citation_precision?.benchmark)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">Live Users</p>
-              <p className="text-2xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-400">{pct(deltas.citation_precision?.live)}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Visual Chart & Drift Matrix */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Dual Radar Chart */}
-        <div className="relative overflow-hidden p-6 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60">
-          <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
-          <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90 mb-1">Dual-Overlay Quality Radar</h4>
-            <p className="text-[11px] text-slate-500 dark:text-fg-muted">Golden Benchmark (Teal) vs Live Production (Emerald)</p>
-          </div>
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarData} outerRadius="75%">
-                <PolarGrid stroke={ct.grid} />
-                <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: ct.axis }} />
-                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: ct.axis }} />
-                <Radar
-                  name="Benchmark"
-                  dataKey="benchmark"
-                  stroke={ct.categorical[0]}
-                  fill={ct.categorical[0]}
-                  fillOpacity={0.25}
-                />
-                <Radar
-                  name="Live Users"
-                  dataKey="live"
-                  stroke={ct.status.ok}
-                  fill={ct.status.ok}
-                  fillOpacity={0.35}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={chartTooltipStyle(ct)}
-                  formatter={(v, name) => [`${Number(v).toFixed(1)}%`, name]}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Drift & Health Analysis Table */}
-        <div className="relative overflow-hidden p-6 bg-surface-card/90 backdrop-blur-md rounded-2xl border border-teal-300/80 dark:border-teal-500/25 shadow-card dark:shadow-xl transition-all duration-200 hover:border-teal-400 dark:hover:border-teal-400/60 flex flex-col justify-between">
-          <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-teal-400/10 dark:bg-teal-400/5 blur-xl" />
-          <div>
-            <div className="border-b border-teal-100 dark:border-teal-500/20 pb-3 mb-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-teal-300/90 mb-1">Model Drift & Alignment Assessment</h4>
-              <p className="text-[11px] text-slate-500 dark:text-fg-muted">Continuous drift monitoring across key RAG dimensions</p>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200/70 dark:border-teal-500/20">
-                <div className="flex items-center gap-2.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <div>
-                    <p className="text-xs font-bold text-slate-900 dark:text-white">Pass Rate Alignment</p>
-                    <p className="text-[11px] text-slate-500 dark:text-fg-muted">Live queries achieve higher pass rate than benchmark baseline</p>
+        <ChartCard
+          title="Drift vs benchmark"
+          subtitle="Live minus benchmark, from the same numbers as the cards above"
+          bodyClassName="w-full"
+        >
+          <ul className="space-y-3" data-testid="drift-rows">
+            {drift.map((row) => {
+              const tone = DRIFT_TONE[row.direction];
+              const Icon = tone.icon;
+              return (
+                <li
+                  key={row.key}
+                  data-direction={row.direction}
+                  className={`${studioTile} flex items-center justify-between gap-3 p-3`}
+                >
+                  <div className="flex min-w-0 items-start gap-2.5">
+                    <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${tone.iconClass}`} strokeWidth={1.75} aria-hidden="true" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-fg">{row.label}</p>
+                      <p className="text-[11px] text-fg-muted">{row.detail}</p>
+                    </div>
                   </div>
-                </div>
-                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 font-mono">+5.8%</span>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200/70 dark:border-teal-500/20">
-                <div className="flex items-center gap-2.5">
-                  <ShieldCheck className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                  <div>
-                    <p className="text-xs font-bold text-slate-900 dark:text-white">Safety & Security Guardrails</p>
-                    <p className="text-[11px] text-slate-500 dark:text-fg-muted">Zero PII leaks or secret exposures detected in live traffic</p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-teal-700 dark:text-teal-300 font-mono">100% Compliant</span>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-800/40">
-                <div className="flex items-center gap-2.5">
-                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                  <div>
-                    <p className="text-xs font-bold text-slate-900 dark:text-white">Semantic Faithfulness Drift</p>
-                    <p className="text-[11px] text-slate-500 dark:text-fg-muted">Minor 0.1 score delta between gold benchmarks and conversational user queries</p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-amber-700 dark:text-amber-400 font-mono">-0.10</span>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200/70 dark:border-teal-500/20">
-                <div className="flex items-center gap-2.5">
-                  <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <div>
-                    <p className="text-xs font-bold text-slate-900 dark:text-white">Latency Efficiency</p>
-                    <p className="text-[11px] text-slate-500 dark:text-fg-muted">Live p95 latency is significantly faster due to cached embeddings</p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 font-mono">77% Faster</span>
-              </div>
-            </div>
-          </div>
-
-          <p className="text-[11px] text-slate-400 dark:text-fg-subtle mt-4 border-t border-teal-100 dark:border-teal-500/20 pt-3">
-            Real-time automated evaluation threshold: alerts trigger if faithfulness drops below 3.5 or safety falls below 98%.
-          </p>
-        </div>
+                  <span className={`shrink-0 whitespace-nowrap text-xs font-semibold tabular-nums ${tone.valueClass}`}>
+                    {row.value}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </ChartCard>
       </div>
     </div>
   );

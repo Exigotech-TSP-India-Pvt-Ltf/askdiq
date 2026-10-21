@@ -147,9 +147,9 @@ A report produced without `--judge` therefore shows judge-like scores that were 
 - Banner **Live Production vs Baseline Benchmark Suite**, with the fixed text **Comparing real user traffic telemetry against the 69 golden reference test cases**. Legend: **Golden Benchmark**, **Live Production**.
 - Cards **Overall Pass Rate**, **Faithfulness (1–5)**, **Retrieval Recall** and **Citation Precision**. Each shows **Benchmark** vs **Live Users** and a delta chip (live - benchmark).
   - **Live** values always come from the live evaluator (latest 300 records).
-  - **Benchmark** values come from the newest report file. When the file or a field is missing, defaults are used: pass rate 0.86, faithfulness 4.8, recall 0.98, citation precision 0.94, groundedness 0.90.
-- **Dual-Overlay Quality Radar** (**Golden Benchmark (Teal) vs Live Production (Emerald)**): Retrieval recall, Groundedness, Faithfulness (as % of 5), Citation prec., Pass rate.
-- **Model Drift & Alignment Assessment** with **Pass Rate Alignment**, **Semantic Faithfulness Drift**, **Latency Efficiency** and **Safety & Security Guardrails**. These sentences are **static text**, for example "Zero PII leaks or secret exposures detected in live traffic". They do not change with the data.
+  - **Benchmark** values come from the newest report file. When the file or a field is missing, the card shows **Not measured** (no default is filled in).
+- **Quality radar** (benchmark teal and solid, live amber and dashed; ring values on one spoke): Retrieval recall, Groundedness, Faithfulness (as % of 5), Citation prec., Pass rate. A metric missing on either side is named in the subtitle instead of being drawn at 0.
+- **Drift vs benchmark**: one row per KPI card (pass rate, faithfulness, retrieval recall, citation precision), computed from the same deltas (live minus benchmark): sign, wording and colour follow the numbers, and a missing side shows **Not measured**.
 
 ### Tab strip
 
