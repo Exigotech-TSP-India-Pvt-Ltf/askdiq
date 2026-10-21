@@ -1,8 +1,35 @@
 "use client";
 
-import { useState, type KeyboardEvent } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import type { ChatSessionSummary } from "@/lib/types";
-import { RelativeTime } from "@/components/ui/RelativeTime";
+import { formatAbsoluteTime, toServerDate } from "@/lib/time";
+import { SESSION_GROUPS, formatLastActive, sessionGroup, type SessionGroup } from "@/lib/session-recency";
+
+/** When the chat was last active ("2h ago", "Yesterday 14:05", "12 Oct"); full date-time in the tooltip. */
+function LastActive({ value }: { value: string }) {
+  const date = toServerDate(value);
+  if (!date) return null;
+  return (
+    <time dateTime={date.toISOString()} title={formatAbsoluteTime(date)} suppressHydrationWarning>
+      {formatLastActive(date)}
+    </time>
+  );
+}
+
+/**
+ * Chats with at least one message, grouped by last activity (newest first).
+ * Empty sessions (left by old "New chat" clicks) are hidden.
+ */
+function groupSessions(sessions: ChatSessionSummary[], now: number) {
+  const groups = new Map<SessionGroup, ChatSessionSummary[]>();
+  for (const session of sessions) {
+    if (session.message_count === 0) continue;
+    const date = toServerDate(session.last_activity_at);
+    const group = date ? sessionGroup(date, now) : "Older";
+    groups.set(group, [...(groups.get(group) ?? []), session]);
+  }
+  return SESSION_GROUPS.filter((g) => groups.has(g)).map((g) => ({ label: g, items: groups.get(g) ?? [] }));
+}
 
 function PencilIcon() {
   return (
@@ -54,6 +81,7 @@ export function ChatSessionList({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+  const groups = useMemo(() => groupSessions(sessions, Date.now()), [sessions]);
 
   function startRename(id: string, currentTitle: string) {
     setEditingId(id);
@@ -85,74 +113,80 @@ export function ChatSessionList({
         </button>
       </div>
 
-      <div className="scrollbar-thin flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
-        {sessions.length === 0 && (
-          <p className="px-2 py-3 text-center text-xs text-ink/40 dark:text-slate-400">
-            No chats yet — start one above.
+      <div className="scrollbar-thin flex-1 overflow-y-auto px-2 pb-3">
+        {groups.length === 0 && (
+          <p className="px-2 py-3 text-center text-xs text-fg-muted" data-testid="chat-sessions-empty">
+            No chats yet. Start one above.
           </p>
         )}
 
-        {sessions.map((session) => {
-          const active = session.id === activeSessionId;
-          return (
-            <div
-              key={session.id}
-              onClick={() => editingId !== session.id && onSelect(session.id)}
-              onMouseEnter={onIntent ? () => onIntent(session.id) : undefined}
-              onFocus={onIntent ? () => onIntent(session.id) : undefined}
-              className={`group flex cursor-pointer items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs transition ${
-                active
-                  ? "bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-semibold"
-                  : "text-ink/70 dark:text-slate-300 hover:bg-ink/5 dark:hover:bg-white/5"
-              }`}
-            >
-              <div className="min-w-0 flex-1">
-                {editingId === session.id ? (
-                  <input
-                    autoFocus
-                    value={draftTitle}
-                    onChange={(e) => setDraftTitle(e.target.value)}
-                    onBlur={() => commitRename(session.id)}
-                    onKeyDown={(e) => onRenameKeyDown(e, session.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full rounded border border-brand-300 dark:border-brand-600 bg-white dark:bg-dark-card text-ink dark:text-white px-1 py-0.5 text-xs outline-none"
-                  />
-                ) : (
-                  <p className="truncate font-medium">{session.title}</p>
-                )}
-                <p className="mt-0.5 truncate text-[10px] text-ink/40 dark:text-slate-400">
-                  <RelativeTime value={session.last_activity_at} />
-                  {session.is_expired ? " · expired" : ""}
-                </p>
-              </div>
+        {groups.map((group) => (
+          <section key={group.label} aria-label={group.label} className="space-y-0.5 pb-2">
+            <h2 className="px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+              {group.label}
+            </h2>
+            {group.items.map((session) => {
+              const active = session.id === activeSessionId;
+              return (
+                <div
+                  key={session.id}
+                  onClick={() => editingId !== session.id && onSelect(session.id)}
+                  onMouseEnter={onIntent ? () => onIntent(session.id) : undefined}
+                  onFocus={onIntent ? () => onIntent(session.id) : undefined}
+                  className={`group flex cursor-pointer items-start gap-1.5 rounded-lg px-2.5 py-2 text-xs transition ${
+                    active
+                      ? "bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-semibold"
+                      : "text-ink/70 dark:text-slate-300 hover:bg-ink/5 dark:hover:bg-white/5"
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    {editingId === session.id ? (
+                      <input
+                        autoFocus
+                        value={draftTitle}
+                        onChange={(e) => setDraftTitle(e.target.value)}
+                        onBlur={() => commitRename(session.id)}
+                        onKeyDown={(e) => onRenameKeyDown(e, session.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full rounded border border-brand-300 dark:border-brand-600 bg-white dark:bg-dark-card text-ink dark:text-white px-1 py-0.5 text-xs outline-none"
+                      />
+                    ) : (
+                      <p className="truncate font-medium">{session.title}</p>
+                    )}
+                    <p className="mt-0.5 truncate text-[11px] font-normal text-fg-muted">
+                      <LastActive value={session.last_activity_at} />
+                    </p>
+                  </div>
 
-              <div className="flex shrink-0 items-center gap-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    startRename(session.id, session.title);
-                  }}
-                  title="Rename"
-                  className="rounded p-1 text-ink/40 dark:text-slate-400 hover:bg-ink/10 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white"
-                >
-                  <PencilIcon />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (window.confirm("Delete this chat? This can't be undone.")) {
-                      onDelete(session.id);
-                    }
-                  }}
-                  title="Delete"
-                  className="rounded p-1 text-ink/40 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400"
-                >
-                  <TrashIcon />
-                </button>
-              </div>
-            </div>
-          );
-        })}
+                  <div className="flex shrink-0 items-center gap-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startRename(session.id, session.title);
+                      }}
+                      title="Rename"
+                      className="rounded p-1 text-ink/40 dark:text-slate-400 hover:bg-ink/10 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white"
+                    >
+                      <PencilIcon />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm("Delete this chat? This can't be undone.")) {
+                          onDelete(session.id);
+                        }
+                      }}
+                      title="Delete"
+                      className="rounded p-1 text-ink/40 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        ))}
       </div>
     </div>
   );

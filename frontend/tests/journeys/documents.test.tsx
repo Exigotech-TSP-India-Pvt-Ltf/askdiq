@@ -197,7 +197,7 @@ beforeEach(() => {
   linkPatches = [];
   history.reset("/documents");
   window.localStorage.clear();
-  // Wide screen: the format column starts visible (VA-23 hides it below 1440 px).
+  // Wide screen: every column starts visible (VA-23 hides hash + size below 1440 px).
   setViewportWidth(1920);
   Element.prototype.scrollIntoView = vi.fn();
 });

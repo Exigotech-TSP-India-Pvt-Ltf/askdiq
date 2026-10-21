@@ -69,7 +69,10 @@ const PREVIEW_CHAR_LIMIT = 900;
 const HEATMAP_CHUNKS = 15;
 /** VA-4: fewer weeks than this is not a pattern; capped cells keep a sparse grid readable. */
 const MIN_HEATMAP_WEEKS = 2;
-const HEAT_CELL_MAX_W = 56;
+/** Cells stretch to the card width up to this (a 1920 px screen keeps a grid, not wide bars). */
+const HEAT_CELL_MAX_W = 128;
+/** Narrower than this (phones) the grid scrolls inside its card. */
+const HEAT_CELL_MIN_W = 28;
 const HEAT_CELL_MAX_H = 22;
 const HEAT_CELL_GAP = 3;
 
@@ -654,6 +657,8 @@ function DocumentDetailContent() {
                 <ChartCard
                   title="Chunk hits by week"
                   subtitle="Most cited chunks over the last 8 weeks; select a cell to jump to the chunk"
+                  // The heatmap sizes itself to its rows (capped cells): no fixed body height.
+                  bodyClassName="min-h-[6rem] w-full"
                   loading={chunks.isLoading && !rawChunks}
                   empty={heatData.length === 0 || weeks.length < MIN_HEATMAP_WEEKS}
                   emptyMessage={
@@ -684,6 +689,7 @@ function DocumentDetailContent() {
                     valueLabel="Hits"
                     maxCellWidth={HEAT_CELL_MAX_W}
                     maxCellHeight={HEAT_CELL_MAX_H}
+                    minCellWidth={HEAT_CELL_MIN_W}
                     cellGap={HEAT_CELL_GAP}
                     legend
                     xAxisLabel="Week starting"

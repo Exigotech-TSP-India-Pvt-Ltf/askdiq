@@ -27,6 +27,8 @@ import {
 import { formatLatencyMs } from "@/lib/format";
 import { useApiQuery, usePrefetchNextPage, usePrefetchOnIntent, usePrefetchRows } from "@/lib/query-cache";
 import type { Audience } from "@/lib/types";
+import { useScrollUnder } from "@/lib/use-scroll-under";
+import { stickyCell, stickyHeadCell, tableRow, tableSurface } from "@/components/ui/styles";
 
 /** A case of the precomputed report changes rarely (hover / batch warm it for a minute). */
 const CASE_DETAIL_STALE_MS = 60_000;
@@ -93,6 +95,7 @@ export function EvaluationExplorer({ token, audience, range, state, onStateChang
   const data = page.data;
   const total = data?.total ?? 0;
   const pageCount = Math.ceil(total / state.pageSize);
+  const [scrollRef, scrollUnder] = useScrollUnder<HTMLDivElement>();
   // The server clamps a page past the end to the last page.
   const shownPage = data ? Math.floor(data.offset / Math.max(1, data.limit)) + 1 : state.page;
   const nextQuery = { ...query, offset: query.offset + query.limit };
@@ -156,8 +159,10 @@ export function EvaluationExplorer({ token, audience, range, state, onStateChang
       }
     >
       <div
+        ref={scrollRef}
         data-tour="evaluation-explorer-table"
-        className="overflow-x-auto"
+        data-scroll-under={scrollUnder ? "true" : undefined}
+        className={`overflow-x-auto ${tableSurface}`}
         aria-busy={page.isLoading || page.isPlaceholderData}
       >
         <table className="w-full text-left text-xs">
@@ -174,7 +179,7 @@ export function EvaluationExplorer({ token, audience, range, state, onStateChang
               <th scope="col" className="hidden min-[1440px]:table-cell px-3.5 py-2.5 text-right" title="Citation precision">Cit. prec.</th>
               <th scope="col" className="hidden px-3.5 py-2.5 text-right md:table-cell">Faithfulness</th>
               <th scope="col" className="hidden px-3.5 py-2.5 text-right sm:table-cell">Latency</th>
-              <th scope="col" className="sticky right-0 bg-surface-studio px-3.5 py-2.5 text-right">Action</th>
+              <th scope="col" className={`${stickyHeadCell} px-3.5 py-2.5 text-right`}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -215,7 +220,7 @@ function CaseRow({
     <tr
       onClick={() => onOpen(c)}
       {...intent}
-      className="border-b border-teal-100/50 dark:border-teal-500/10 align-top even:bg-surface-muted/30 dark:even:bg-white/[0.015] hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07] cursor-pointer transition-colors group"
+      className={`${tableRow} group cursor-pointer border-b border-teal-100/50 align-top dark:border-teal-500/10`}
     >
       <td className="px-3.5 py-2.5 whitespace-nowrap">
         <span
@@ -251,7 +256,7 @@ function CaseRow({
       <td className="hidden px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-500 dark:text-slate-400 whitespace-nowrap sm:table-cell">
         {formatLatencyMs(c.latency_ms)}
       </td>
-      <td className="sticky right-0 bg-surface-card px-3.5 py-2.5 text-right whitespace-nowrap group-hover:bg-brand-50 dark:group-hover:bg-surface-elevated">
+      <td className={`${stickyCell} px-3.5 py-2.5 text-right whitespace-nowrap`}>
         <button type="button" aria-label={`Inspect: ${c.query ?? id}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 dark:text-teal-400 group-hover:text-teal-700 dark:group-hover:text-teal-300">
           <span>Inspect</span>
           <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />

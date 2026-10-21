@@ -70,6 +70,8 @@ EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/admin/feedback/bulk"): Permission.FEEDBACK_TRIAGE,
     ("PATCH", "/admin/feedback/{feedback_id}"): Permission.FEEDBACK_TRIAGE,
     ("POST", "/admin/feedback/golden/{case_id}/run"): Permission.FEEDBACK_TRIAGE,
+    ("POST", "/metrics/evaluation/runs"): Permission.EVAL_RUN,
+    ("POST", "/metrics/evaluation/runs/{run_id}/cancel"): Permission.EVAL_RUN,
     ("POST", "/query"): CHAT_OR_KEY,
     ("POST", "/sessions"): CHAT_OR_KEY,
     ("PATCH", "/sessions/{session_id}"): CHAT_OR_KEY,
@@ -130,6 +132,12 @@ EXPECTED_AZURE_READS: dict[str, str] = {
     "/admin/azure/health": Permission.DASHBOARD_READ,
     "/admin/azure/advisor": Permission.DASHBOARD_READ,
     "/admin/azure/costs": Permission.DASHBOARD_READ,
+}
+# Full evaluation run reads (history, estimate, one run): dashboard:read.
+EXPECTED_EVAL_RUN_READS: dict[str, str] = {
+    "/metrics/evaluation/runs": Permission.DASHBOARD_READ,
+    "/metrics/evaluation/runs/estimate": Permission.DASHBOARD_READ,
+    "/metrics/evaluation/runs/{run_id}": Permission.DASHBOARD_READ,
 }
 # Open to every signed-in user, whatever their status.
 SIGNED_IN_ROUTES = frozenset({("GET", "/auth/me"), ("POST", "/auth/logout")})
@@ -275,6 +283,12 @@ def test_batch_detail_routes_need_their_item_permission() -> None:
 def test_azure_insights_routes_need_dashboard_read() -> None:
     reads = {p: req for m, p, req in guarded_endpoints() if m == "GET"}
     for path, permission in EXPECTED_AZURE_READS.items():
+        assert reads.get(path) == str(permission), path
+
+
+def test_evaluation_run_reads_need_dashboard_read() -> None:
+    reads = {p: req for m, p, req in guarded_endpoints() if m == "GET"}
+    for path, permission in EXPECTED_EVAL_RUN_READS.items():
         assert reads.get(path) == str(permission), path
 
 

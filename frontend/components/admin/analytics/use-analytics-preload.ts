@@ -60,9 +60,8 @@ export function useAnalyticsPreload(
     if (!token || process.env.NODE_ENV === "test") return undefined;
     const page = pageOf({ ...state, page: 1 });
     return runWhenIdle(() => {
-      // The code-split Flow and Topics charts: their tabs never wait on a chunk.
+      // The code-split Flow chart: its tab never waits on a chunk.
       void import("@/components/charts/heavy/SankeyImpl").catch(() => undefined);
-      void import("@/components/charts/heavy/TreemapImpl").catch(() => undefined);
       for (const preset of RANGE_PRESETS) prefetchBundle(token, filtersForPreset(filters, preset), page);
       for (const audience of AUDIENCES) {
         if (audience !== filters.audience) prefetchBundle(token, { ...filters, audience }, page);

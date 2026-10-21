@@ -19,7 +19,7 @@ import os
 import signal
 import socket
 import uuid
-from collections.abc import Awaitable
+from collections.abc import AsyncIterator, Awaitable
 from typing import TYPE_CHECKING, TypeVar
 
 from app.azure_insights.scheduler import SCHEDULE_CHECK_SECONDS, ensure_azure_scheduled
@@ -30,8 +30,10 @@ from app.core.state import get_state_backend
 from app.jobs import handlers, queue  # noqa: F401 - registers built-in handlers
 from app.jobs.registry import (
     ALERTS_EVALUATE_JOB,
+    CHAT_PRUNE_EMPTY_SESSIONS_JOB,
     STATE_CLEANUP_JOB,
     get_handler,
+    get_timeout,
     registered_types,
 )
 
@@ -120,6 +122,7 @@ class JobWorker:
                     next_reclaim = now + max(1.0, min(60.0, self.lock_timeout / 2))
                 if self._schedule_periodic and now >= next_schedule:
                     await self._schedule_cleanup()
+                    await self._schedule_session_prune()
                     next_schedule = now + self.cleanup_interval
                 if self._schedule_periodic and now >= next_alerts:
                     # Polled at a quarter of the interval; put_once spaces runs.
@@ -157,6 +160,31 @@ class JobWorker:
             STATE_CLEANUP_JOB, {}, dedupe_key=STATE_CLEANUP_JOB, engine=self._engine
         )
 
+    async def _schedule_session_prune(self) -> None:
+        """Queue ``chat.prune_empty_sessions`` at most once per day (all workers).
+
+        Checked on the cleanup cadence; the shared ``put_once`` claim spaces
+        runs by ``session_prune_interval_seconds`` across workers and restarts.
+        """
+        settings = get_settings()
+        if (
+            not settings.session_prune_enabled
+            or get_handler(CHAT_PRUNE_EMPTY_SESSIONS_JOB) is None
+        ):
+            return
+        claimed = await get_state_backend().put_once(
+            CHAT_PRUNE_EMPTY_SESSIONS_JOB,
+            {"worker": self.worker_id},
+            ttl=float(settings.session_prune_interval_seconds),
+        )
+        if claimed:
+            await queue.enqueue(
+                CHAT_PRUNE_EMPTY_SESSIONS_JOB,
+                {},
+                dedupe_key=CHAT_PRUNE_EMPTY_SESSIONS_JOB,
+                engine=self._engine,
+            )
+
     async def _schedule_alerts(self) -> None:
         """Queue ``alerts.evaluate`` at most once per interval across all workers.
 
@@ -189,7 +217,8 @@ class JobWorker:
         try:
             if handler is None:
                 raise LookupError(f"No handler registered for '{job.type}'")
-            async with asyncio.timeout(self.lock_timeout):
+            limit = max(self.lock_timeout, get_timeout(job.type) or 0.0)
+            async with self._lock_kept_alive(job, limit), asyncio.timeout(limit):
                 await handler(job.payload)
         except asyncio.CancelledError:
             # Shutdown: the lock expires and another worker reclaims the job.
@@ -225,6 +254,31 @@ class JobWorker:
             return
         await self._safe(queue.complete(job.id, engine=self._engine))
         self.processed += 1
+
+    @contextlib.asynccontextmanager
+    async def _lock_kept_alive(
+        self, job: queue.Job, limit: float
+    ) -> AsyncIterator[None]:
+        """Heartbeat the lock of a job allowed to run past the lock timeout."""
+        if limit <= self.lock_timeout:
+            yield
+            return
+
+        async def beat() -> None:
+            interval = max(1.0, self.lock_timeout / 3)
+            while True:
+                await asyncio.sleep(interval)
+                await self._safe(
+                    queue.heartbeat(job.id, self.worker_id, engine=self._engine)
+                )
+
+        task = asyncio.create_task(beat(), name=f"job-heartbeat-{job.id}")
+        try:
+            yield
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def _safe(self, coro: Awaitable[T]) -> T | None:
         try:

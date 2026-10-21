@@ -133,9 +133,9 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
               )
             : undefined
         }
-        actions={
+        meta={
           forecast?.forecast_month_end_usd != null || (budget !== null && !budgetLine) ? (
-            <span className="flex flex-col items-end gap-1">
+            <>
               {forecast?.forecast_month_end_usd != null ? (
                 <span className="whitespace-nowrap rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold tabular-nums text-fg-muted">
                   {usd.format(forecast.forecast_month_end_usd)} forecast
@@ -146,7 +146,7 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
                   Budget {usd.format(budget)}
                 </span>
               ) : null}
-            </span>
+            </>
           ) : undefined
         }
       >

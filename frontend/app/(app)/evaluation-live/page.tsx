@@ -12,7 +12,7 @@ import {
 import { prefetch, runWhenIdle, useApiQuery } from "@/lib/query-cache";
 import dynamic from "next/dynamic";
 import { ApiError } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, usePermission } from "@/lib/auth-context";
 import {
   RECHARTS_AXIS_TITLE_SPACE,
   chartTooltipStyle,
@@ -46,6 +46,8 @@ import { ChartCard, toChartTable } from "@/components/charts/ChartCard";
 import { StatCard } from "@/components/admin/insights/StatCard";
 import { JudgeDisabledState, hasJudgedSamples } from "@/components/admin/evaluation/JudgeDisabledState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
+import { RunEvaluationControl } from "@/components/admin/evaluation/RunEvaluationControl";
+import { EvaluationRunsPanel } from "@/components/admin/evaluation/EvaluationRunsPanel";
 import {
   DEFAULT_EXPLORER_STATE,
   EvaluationExplorer,
@@ -156,6 +158,7 @@ function HeroStat({
 
 export default function EvaluationLivePage() {
   const { token } = useAuth();
+  const canRunEval = usePermission("eval:run");
   const ct = useChartTheme();
   const tooltipStyle = chartTooltipStyle(ct);
   // Pass / fail / partial outcome colours.
@@ -297,15 +300,19 @@ export default function EvaluationLivePage() {
             />
           }
           actions={
+            <>
             <HeaderIconButton
               icon={GitCompare}
               label="Compare with benchmark"
-              tooltip={compareMode ? "Exit comparison" : undefined}
+              text="Compare"
+              tooltip={compareMode ? "Exit comparison" : "Compare with benchmark"}
               showLabel
               pressed={compareMode}
               data-tour="evaluation-compare"
               onClick={() => setCompareMode(!compareMode)}
             />
+            {token ? <RunEvaluationControl token={token} canRun={canRunEval} /> : null}
+            </>
           }
           dateRange
         />
@@ -314,7 +321,7 @@ export default function EvaluationLivePage() {
         {activeTab === "overview" && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Unified 6-stat hero grid */}
-            <div data-tour="evaluation-overview-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div data-tour="evaluation-overview-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
               <HeroStat label="Pass rate" value={pct(r?.pass_rate)} icon={CheckCircle2} />
               <HeroStat label="Cases total" value={String(r?.n_cases ?? "—")} icon={Target} />
               <HeroStat label="Retrieval recall" value={pct(r?.retrieval_recall)} icon={ShieldCheck} />
@@ -611,6 +618,15 @@ export default function EvaluationLivePage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Full evaluation runs: history and one run's results */}
+        {activeTab === "runs" && token && (
+          <EvaluationRunsPanel
+            token={token}
+            selectedId={get("eval_run")}
+            onSelect={(id) => set({ eval_run: id })}
+          />
         )}
 
         {/* Domain Tab 4: Query & Case Explorer */}

@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { axisTicks, integerTicks, isIntegerSeries, textWidth } from "@/components/charts/primitives";
-import { xTickIndices, X_LABEL_GAP } from "@/components/charts/cartesian";
+import { compactDayLabels, layoutXLabels, plotArea, xTickIndices, X_LABEL_GAP } from "@/components/charts/cartesian";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { Funnel } from "@/components/charts/Funnel";
 import { StackedArea } from "@/components/charts/StackedArea";
@@ -16,11 +16,9 @@ import { tileLabel } from "@/components/charts/heavy/TreemapImpl";
 import { buildDriftRows, formatCompareDiff, EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { showBudgetLine } from "@/components/admin/usage/CostInsights";
 import { spreadLabels } from "@/components/admin/analytics/FlowSankey";
-import { smallTopics } from "@/components/admin/analytics/TopicsTreemap";
 import { dropoffSummary } from "@/components/admin/analytics/DropoffChart";
 import { errorRateTone } from "@/app/(app)/admin/governance/overall/OverallView";
 import type { HealthSignal } from "@/lib/governance-api";
-import type { TopicItem } from "@/lib/insights-api";
 
 const yTickTexts = (container: HTMLElement) =>
   Array.from(container.querySelectorAll("svg text[text-anchor='end']")).map((t) => t.textContent ?? "");
@@ -63,7 +61,67 @@ describe("integer axis ticks (VA-18)", () => {
   });
 });
 
-describe("x label density follows the width (VA-7, VA-8)", () => {
+const days = (n: number, startDay = 8) =>
+  Array.from({ length: n }, (_, i) => {
+    const d = new Date(Date.UTC(2026, 9, startDay + i));
+    return `${d.getUTCDate()} ${d.toLocaleString("en", { month: "short", timeZone: "UTC" })}`;
+  });
+
+describe("every daily label is shown up to 31 points (VA-7, VA-8)", () => {
+  it.each([7, 14, 30, 31])("draws all %i labels at any width a chart can have", (n) => {
+    for (const spacing of [15, 18, 24, 40, 80]) {
+      const layout = layoutXLabels(days(n), spacing);
+      expect(layout.mode).not.toBe("thinned");
+      expect(layout.shown).toEqual(Array.from({ length: n }, (_, i) => i));
+    }
+  });
+
+  it("keeps full labels when they fit", () => {
+    const layout = layoutXLabels(days(7), 80);
+    expect(layout.mode).toBe("full");
+    expect(layout.texts).toEqual(days(7));
+    expect(layout.extraBottom).toBe(0);
+  });
+
+  it("adapts to compact day numbers, with the month on the first tick and at a change", () => {
+    const labels = days(14, 25); // 25 Oct .. 7 Nov
+    const layout = layoutXLabels(labels, 30);
+    expect(layout.mode).toBe("compact");
+    expect(layout.texts.slice(0, 3)).toEqual(["25 Oct", "26", "27"]);
+    expect(layout.texts[7]).toBe("1 Nov");
+    expect(layout.texts[8]).toBe("2");
+    expect(compactDayLabels(["Oct 8", "Oct 9", "Nov 1"])).toEqual(["Oct 8", "9", "Nov 1"]);
+    expect(compactDayLabels(["p50", "p95"])).toBeNull();
+  });
+
+  it("rotates labels with reserved bottom space when compact ones are still too tight", () => {
+    const layout = layoutXLabels(days(14), 16);
+    expect(layout.mode).toBe("rotated");
+    expect(layout.shown).toHaveLength(14);
+    expect(layout.extraBottom).toBeGreaterThan(0);
+    const area = plotArea(400, 240, { xAxisLabel: "Date" }, { labels: days(14), placement: "band" });
+    const flat = plotArea(400, 240, { xAxisLabel: "Date" });
+    expect(area.y1).toBeLessThanOrEqual(flat.y1);
+  });
+
+  it("drops labels only as a last resort: beyond 31 points or when even rotated labels collide", () => {
+    expect(layoutXLabels(days(45), 30).mode).toBe("thinned");
+    expect(layoutXLabels(days(31), 7).mode).toBe("thinned");
+    expect(layoutXLabels(["0-100", "100-200", "200-300", "300-400", "400-500", "500-600", "600+"], 10, 6).mode).toBe("thinned");
+  });
+
+  it("renders every label of a 14-day chart", () => {
+    const data = days(14).map((day, i) => ({ day, up: i, down: 1 }));
+    const { container } = render(
+      <StackedArea data={data} xKey="day" series={[{ key: "up", label: "Up" }, { key: "down", label: "Down" }]} xAxisLabel="Date" />,
+    );
+    const group = container.querySelector('[data-testid="chart-x-labels"]');
+    expect(group?.querySelectorAll("text")).toHaveLength(14);
+    expect(group?.getAttribute("data-mode")).not.toBe("thinned");
+  });
+});
+
+describe("last-resort thinning (> 31 points)", () => {
   const w = textWidth("15 Oct");
 
   it("thins labels so neighbours never overlap", () => {
@@ -77,7 +135,6 @@ describe("x label density follows the width (VA-7, VA-8)", () => {
   });
 
   it("keeps the last label without crowding the previous one", () => {
-    // 14 days, every 3rd label fits: 0,3,6,9,12 then 13 would sit one slot from 12.
     const shown = xTickIndices(14, 20, 40);
     expect(shown[0]).toBe(0);
     expect(shown[shown.length - 1]).toBe(13);
@@ -187,11 +244,6 @@ describe("treemap labels (VA-27)", () => {
     expect(tileLabel("Contact and sales", 40, 11)).toBeNull();
   });
 
-  it("lists the smallest topics under the chart", () => {
-    const topic = (intent: string, questions: number) => ({ intent, label: intent, questions, handled: 0, handled_pct: 0 }) as TopicItem;
-    const small = smallTopics([topic("a", 90), topic("b", 3), topic("c", 4), topic("d", 0)]);
-    expect(small.map((t) => t.intent)).toEqual(["c", "b"]);
-  });
 });
 
 describe("Sankey label spacing (VA-30)", () => {

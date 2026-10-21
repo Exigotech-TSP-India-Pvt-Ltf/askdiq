@@ -6,7 +6,17 @@ import { m } from "motion/react";
 import { fadeUp, useMotionVariants } from "@/lib/motion";
 import { useRowIntentHandlers } from "@/lib/query-cache";
 import type { TableDensity } from "@/lib/use-table-preferences";
-import { secondaryButton, studioSurface, tableBody, tableHead, tableRow } from "@/components/ui/styles";
+import { useScrollUnder } from "@/lib/use-scroll-under";
+import {
+  secondaryButton,
+  stickyCell,
+  stickyHeadCell,
+  studioSurface,
+  tableBody,
+  tableHead,
+  tableRow,
+  tableSurface,
+} from "@/components/ui/styles";
 
 const CELL_PADDING: Record<TableDensity, string> = {
   comfortable: "px-4 py-3",
@@ -31,9 +41,14 @@ export interface ColumnDef<T> {
   render?: (row: T) => React.ReactNode;
 }
 
-/** Opaque background so scrolled cells don't show through a pinned column. */
-const STICKY_HEAD = "sticky right-0 z-[1] bg-surface-studio";
-const STICKY_CELL = "sticky right-0 z-[1] bg-surface-card";
+/**
+ * Pinned column (the shared style in components/ui/styles): the row's own
+ * themed colour over the table surface, so it matches every other cell in
+ * every row state, with a divider only while content scrolls under it.
+ * Stacked phone cards don't pin.
+ */
+export const STICKY_HEAD = stickyHeadCell;
+export const STICKY_CELL = `${stickyCell} max-sm:static max-sm:shadow-none`;
 
 export interface DataTableProps<T> {
   columns: ColumnDef<T>[];
@@ -101,6 +116,7 @@ export function DataTable<T extends Record<string, any>>({
   className = "",
 }: DataTableProps<T>) {
   const stack = (part: keyof typeof STACK) => (stackOnPhone ? STACK[part] : "");
+  const [scrollRef, scrollUnder] = useScrollUnder<HTMLDivElement>();
   const rowVariants = useMotionVariants(fadeUp);
   // Hover / focus a row for 120 ms: warm what a click on it opens.
   const intentHandlers = useRowIntentHandlers(onRowIntent);
@@ -154,7 +170,11 @@ export function DataTable<T extends Record<string, any>>({
         </div>
       )}
 
-      <div className="overflow-x-auto min-h-[280px]">
+      <div
+        ref={scrollRef}
+        data-scroll-under={scrollUnder ? "true" : undefined}
+        className={`overflow-x-auto min-h-[280px] ${tableSurface}`}
+      >
         <table className={`w-full text-left text-xs border-collapse ${stack("table")}`}>
           {/* Header */}
           <thead className={`sticky top-0 z-10 font-medium ${tableHead} ${stack("head")}`}>
@@ -175,7 +195,7 @@ export function DataTable<T extends Record<string, any>>({
                     aria-sort={getAriaSort(col)}
                     style={col.width ? { width: col.width } : undefined}
                     onClick={() => handleHeaderClick(col)}
-                    className={`${CELL_PADDING[density]} font-semibold select-none ${alignClass} ${col.sticky ? STICKY_HEAD : ""} ${
+                    className={`${CELL_PADDING[density]} whitespace-nowrap font-semibold select-none ${alignClass} ${col.sticky ? STICKY_HEAD : ""} ${
                       col.sortable ? "cursor-pointer group hover:bg-brand-50/70 hover:text-fg dark:hover:bg-white/5 transition" : ""
                     }`}
                   >

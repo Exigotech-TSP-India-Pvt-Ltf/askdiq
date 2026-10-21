@@ -79,7 +79,7 @@ export function PercentileBand({
   ];
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const area = plotArea(width, h, titles);
+    const area = plotArea(width, h, titles, { labels: data.map((d) => d.label), placement: "point" });
     return { area, x: pointX(data.length, area), y: scaleLinear([0, max], [area.y1, area.y0]) };
   };
 

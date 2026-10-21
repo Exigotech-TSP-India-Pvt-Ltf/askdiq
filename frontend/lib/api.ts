@@ -89,6 +89,8 @@ export const api = {
       query: string;
       filters?: Record<string, string>;
       session_id?: string | null;
+      /** Start a fresh session ("New chat"); never sent with a `session_id`. */
+      new_session?: boolean;
       clarification_answers?: ClarificationAnswer[] | null;
     }
   ) =>
@@ -101,6 +103,7 @@ export const api = {
   listSessions: (token: string) =>
     request<ChatSessionSummary[]>("/sessions", { token }),
 
+  /** @deprecated The UI creates sessions lazily (`query` with `new_session`). */
   createSession: (token: string, title?: string) =>
     request<ChatSessionSummary>("/sessions", {
       method: "POST",

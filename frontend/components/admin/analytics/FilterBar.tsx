@@ -70,6 +70,11 @@ export function analyticsFilterDescriptors(
 export function FilterBar({ state, update, clearFilters, userTypes = [], chipLabels = {} }: FilterBarProps) {
   const id = useId();
   const [search, setSearch] = useState(state.q);
+  // Below 1440 px the search is an icon button on the tab row until opened
+  // (it keeps its value while closed); from 1440 px it is always a field.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const pushed = useRef(state.q);
 
   // Keep the box in sync when the URL changes elsewhere (chip removed, Clear,
@@ -109,21 +114,64 @@ export function FilterBar({ state, update, clearFilters, userTypes = [], chipLab
       onChange={onChange}
       onClearAll={clearFilters}
       leading={
-        <div className="relative w-full sm:w-56">
-          <label htmlFor={`${id}-q`} className="sr-only">
-            Search
-          </label>
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" strokeWidth={1.75} aria-hidden="true" />
-          <input
-            id={`${id}-q`}
-            type="search"
-            className={`h-9 w-full rounded-lg border border-line bg-surface-card pl-8 pr-2 text-xs text-fg shadow-sm placeholder:text-fg-subtle ${focusRing}`}
-            placeholder="Question, issue or person"
-            maxLength={MAX_SEARCH_CHARS}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+        <>
+          <button
+            ref={toggleRef}
+            type="button"
+            aria-label="Show search"
+            aria-expanded={searchOpen}
+            aria-controls={`${id}-q`}
+            title={search ? `Search: ${search}` : "Search"}
+            data-search-toggle
+            onClick={() => {
+              setSearchOpen(true);
+              // Focus once the field is shown (next frame).
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }}
+            className={`relative h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-card text-fg-muted shadow-sm hover:text-fg min-[1440px]:hidden ${
+              searchOpen ? "hidden" : "inline-flex"
+            } ${focusRing}`}
+          >
+            <Search className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+            {search ? (
+              <span aria-hidden="true" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-brand-500 ring-2 ring-surface-card" />
+            ) : null}
+          </button>
+          <div
+            data-search-field
+            className={`relative w-full min-w-[9rem] shrink sm:w-56 min-[1440px]:block ${searchOpen ? "block" : "hidden"}`}
+          >
+            <label htmlFor={`${id}-q`} className="sr-only">
+              Search
+            </label>
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" strokeWidth={1.75} aria-hidden="true" />
+            <input
+              ref={inputRef}
+              id={`${id}-q`}
+              type="search"
+              className={`h-9 w-full rounded-lg border border-line bg-surface-card pl-8 pr-2 text-xs text-fg shadow-sm placeholder:text-fg-subtle ${focusRing}`}
+              placeholder="Question, issue or person"
+              maxLength={MAX_SEARCH_CHARS}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onFocus={() => setSearchOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key !== "Escape" || !searchOpen) return;
+                // Keep the value (a search field's Esc would clear it).
+                e.preventDefault();
+                e.stopPropagation();
+                setSearchOpen(false);
+                requestAnimationFrame(() => {
+                  // Wide screens keep the field; narrower ones return to the icon.
+                  if (toggleRef.current?.offsetParent) toggleRef.current.focus();
+                });
+              }}
+              onBlur={() => {
+                if (!search) setSearchOpen(false);
+              }}
+            />
+          </div>
+        </>
       }
     />
   );

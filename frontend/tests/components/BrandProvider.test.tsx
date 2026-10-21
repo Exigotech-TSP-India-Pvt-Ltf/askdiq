@@ -23,6 +23,7 @@ vi.mock("@/lib/chat-context", () => ({
     input: "",
     setInput: vi.fn(),
     sending: false,
+    settled: true,
     sendQuery,
     deleteExchange: vi.fn(),
     selectSession: vi.fn(),

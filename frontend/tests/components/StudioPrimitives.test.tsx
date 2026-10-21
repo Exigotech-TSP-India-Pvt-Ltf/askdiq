@@ -290,7 +290,9 @@ describe("shared components inherit the studio look", () => {
     const thead = screen.getByRole("table").querySelector("thead");
     expect(thead).toHaveClass("sticky", "top-0", "bg-surface-studio");
     const row = screen.getByText("a").closest("tr");
-    expect(row).toHaveClass("even:bg-surface-muted/30", "hover:bg-brand-50/60", "dark:hover:bg-brand-500/[0.07]");
+    // Zebra / hover / selected tints are one --row-tint (globals.css) over the themed table surface.
+    expect(row).toHaveClass("dt-row");
+    expect(row?.closest("[data-scroll-under], .dt-surface")).toHaveClass("dt-surface");
     expect(row?.className).not.toMatch(/slate|dark-surface/);
 
     rerender(<DataTable columns={columns} data={[]} emptyMessage="Nothing yet" />);

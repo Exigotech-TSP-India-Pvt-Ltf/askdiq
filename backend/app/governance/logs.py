@@ -8,9 +8,11 @@ all happen in Postgres (G12: no more ``limit=2000`` + browser filtering).
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
@@ -29,7 +31,9 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.audit import AuthEvent
 from app.governance.audience import build_audience_filter
+from app.governance.audit import SYSTEM_REQUEST_ID
 from app.governance.log_summary import (
     AUTH_PREFIXES,
     LEVEL_BY_ACTION,
@@ -42,7 +46,24 @@ from app.governance.log_summary import (
 )
 from app.governance.pagination import Cursor, Total, estimated_total, keyset_after
 from app.governance.usage_queries import escape_ilike_pattern
-from app.models.db_models import AuditLog
+from app.models.db_models import AuditLog, AuthSession
+
+# Login events whose ``detail.session_id`` names the auth session they opened.
+SESSION_LINKED_ACTIONS: frozenset[str] = frozenset({AuthEvent.LOGIN_SUCCESS.value})
+
+
+class IpSource(StrEnum):
+    """Where a log row's displayed client IP comes from."""
+
+    RECORDED = "recorded"  # stored on the row itself
+    SESSION = "session"  # the auth session the login opened
+    REQUEST = "request"  # another audit row of the same request
+
+
+@dataclass(frozen=True, slots=True)
+class IpLink:
+    ip_address: str
+    source: IpSource
 
 
 def _text_array(values: Sequence[str]) -> Any:
@@ -218,7 +239,70 @@ async def level_counts_and_total(
     return counts, True, total
 
 
-def to_item(row: AuditLog) -> dict[str, Any]:
+def _session_id(row: AuditLog) -> uuid.UUID | None:
+    if row.action not in SESSION_LINKED_ACTIONS or not isinstance(row.detail, dict):
+        return None
+    try:
+        return uuid.UUID(str(row.detail.get("session_id") or ""))
+    except ValueError:
+        return None
+
+
+async def linked_ips(
+    db: AsyncSession, rows: Sequence[AuditLog], hidden_actions: frozenset[str]
+) -> dict[Any, IpLink]:
+    """Correlated client IPs for a page's rows that have none recorded.
+
+    Two batched lookups (never one per row): the auth session a login opened,
+    then another audit row of the same request. Only real stored values are
+    returned, marked with their source; nothing is backfilled or guessed. Rows
+    of ``hidden_actions`` never lend their IP to a visible row.
+    """
+    missing = [row for row in rows if not row.ip_address]
+    links: dict[Any, IpLink] = {}
+    sessions = {sid: row for row in missing if (sid := _session_id(row))}
+    if sessions:
+        found = await db.execute(
+            select(AuthSession.id, AuthSession.ip_address).where(
+                AuthSession.id.in_(sessions), AuthSession.ip_address.is_not(None)
+            )
+        )
+        for sid, ip in found.all():
+            if ip:
+                links[sessions[sid].id] = IpLink(ip, IpSource.SESSION)
+    by_request: dict[str, list[AuditLog]] = {}
+    for row in missing:
+        if row.id not in links and row.request_id != SYSTEM_REQUEST_ID:
+            by_request.setdefault(row.request_id, []).append(row)
+    if by_request:
+        conds = [
+            AuditLog.request_id.in_(by_request),
+            AuditLog.ip_address.is_not(None),
+            AuditLog.ip_address != "",
+        ]
+        if hidden_actions:
+            conds.append(AuditLog.action.not_in(hidden_actions))
+        found = await db.execute(
+            select(AuditLog.request_id, func.min(AuditLog.ip_address))
+            .where(*conds)
+            .group_by(AuditLog.request_id)
+        )
+        for request_id, ip in found.all():
+            for row in by_request.get(request_id, []):
+                links[row.id] = IpLink(ip, IpSource.REQUEST)
+    return links
+
+
+async def fetch_items(
+    db: AsyncSession, f: LogFilters, cursor: Cursor | None, limit: int
+) -> tuple[list[dict[str, Any]], Cursor | None]:
+    """One page as API items, with correlated IPs for rows that lack one."""
+    rows, next_cursor = await fetch_page(db, f, cursor, limit)
+    links = await linked_ips(db, rows, f.hidden_actions)
+    return [to_item(row, links.get(row.id)) for row in rows], next_cursor
+
+
+def to_item(row: AuditLog, link: IpLink | None = None) -> dict[str, Any]:
     action = str(getattr(row.action, "value", row.action))
     detail = row.detail if isinstance(row.detail, dict) else {}
     return {
@@ -232,7 +316,12 @@ def to_item(row: AuditLog) -> dict[str, Any]:
         # Deprecated legacy form of ``detail`` (kept for old clients).
         "message": json.dumps(detail, default=str)[:300] if detail else "",
         "user_id": row.actor,
-        "ip_address": row.ip_address,
+        "ip_address": row.ip_address or (link.ip_address if link else None),
+        "ip_source": (
+            IpSource.RECORDED.value
+            if row.ip_address
+            else (link.source.value if link else None)
+        ),
         "request_id": row.request_id,
     }
 

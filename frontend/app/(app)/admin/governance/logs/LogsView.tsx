@@ -27,6 +27,7 @@ import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { EntityLink } from "@/components/ui/EntityLink";
+import { ClientIpCell } from "@/components/admin/governance/ClientIpCell";
 import { focusRing, secondaryButton, studioDivider } from "@/components/ui/styles";
 import { LEVEL_TONE, LevelBadge } from "@/components/admin/governance/badges";
 import { JsonViewer } from "@/components/admin/governance/JsonViewer";
@@ -78,7 +79,7 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "created_at",
     header: "Time",
-    render: (log) => <RelativeTime value={log.created_at} className="text-[11px] text-fg-muted" />,
+    render: (log) => <RelativeTime value={log.created_at} className="whitespace-nowrap text-[11px] text-fg-muted" />,
   },
   {
     key: "level",
@@ -98,8 +99,10 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "summary",
     header: "Event",
+    // The flexible column: it takes the slack, the others size to their content.
+    width: "100%",
     render: (log) => (
-      <div className="flex min-w-[16rem] max-w-xl flex-col gap-1">
+      <div className="flex min-w-[16rem] flex-col gap-1">
         <span className="text-xs text-fg">{log.summary}</span>
         <span className="font-mono text-[10px] text-fg-subtle">{log.action}</span>
         {Object.keys(log.detail ?? {}).length > 0 ? <JsonViewer value={log.detail} /> : null}
@@ -109,12 +112,12 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "user_id",
     header: "User",
-    render: (log) => <span className="font-mono text-[11px] text-fg-muted">{log.user_id ?? "—"}</span>,
+    render: (log) => <span className="whitespace-nowrap font-mono text-[11px] text-fg-muted">{log.user_id ?? "—"}</span>,
   },
   {
     key: "ip_address",
     header: "Client IP",
-    render: (log) => <span className="font-mono text-[11px] text-fg-muted">{log.ip_address ?? "—"}</span>,
+    render: (log) => <ClientIpCell log={log} />,
   },
   {
     key: "request_id",

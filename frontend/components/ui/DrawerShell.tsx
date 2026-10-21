@@ -142,9 +142,11 @@ export function DrawerShell({
                 {fullViewHref ? (
                   <Link
                     href={fullViewHref}
+                    title="Open full view"
                     className={`group inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-surface-muted dark:text-brand-300 ${focusRing}`}
                   >
-                    Open full view
+                    {/* Icon only on phones, where the header is tight. */}
+                    <span className="sr-only sm:not-sr-only">Open full view</span>
                     <ArrowUpRight
                       className="h-3.5 w-3.5 transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
                       strokeWidth={1.75}

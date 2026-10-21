@@ -12,6 +12,8 @@ client — so:
 import asyncio
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -113,12 +115,18 @@ async def resolve_session_for_query(
     user_email: str,
     session_id: str | None,
     client_ip: str | None = None,
+    *,
+    new_session: bool = False,
 ) -> ChatSession:
     """Return the session a new /query call should read/write.
 
-    - Explicit, valid, non-expired session_id -> reuse it.
-    - Explicit but expired/unknown/foreign session_id -> silently start a
-      fresh session instead of erroring, so a stale tab never gets "stuck".
+    - Explicit session_id owned by the caller -> reuse it, expired or not:
+      an old chat resumes in place (``session_resumed`` is audited when it
+      was idle past ``expires_at``), with only its own history.
+    - Explicit but unknown/foreign session_id -> silently start a fresh
+      session (``not_found``), never revealing whether the id exists.
+    - ``new_session`` -> always a fresh session (the UI's "New chat"). It is
+      persisted with the first exchange, so an unused "New chat" leaves no row.
     - No session_id -> resume the user's most recent non-expired session
       FOR THIS SAME IP, or start a new one if there isn't one — so a
       different IP (e.g. a different network/location) always gets its own
@@ -136,12 +144,11 @@ async def resolve_session_for_query(
         candidate = await db.get(ChatSession, sid) if sid else None
         if candidate is None or candidate.user_email != user_email:
             rotated_from, rotate_reason = session_id[:64], "not_found"
-        elif _is_expired(candidate, now):
-            rotated_from, rotate_reason = str(candidate.id), "expired"
-            _emit_session_expired(candidate, user_email, client_ip)
         else:
+            if _is_expired(candidate, now):
+                _emit_session_resumed(candidate, user_email, client_ip, now)
             session = candidate
-    else:
+    elif not new_session:
         result = await db.execute(
             select(ChatSession)
             .where(
@@ -183,6 +190,18 @@ async def resolve_session_for_query(
             ip_address=client_ip,
         )
     return session
+
+
+def _emit_session_resumed(
+    session: ChatSession, user_email: str, client_ip: str | None, now: datetime
+) -> None:
+    idle = max(0, int((now - session.last_activity_at).total_seconds() // 60))
+    emit_audit_event(
+        "session_resumed",
+        {"session_id": str(session.id), "idle_minutes": idle},
+        actor=user_email,
+        ip_address=client_ip,
+    )
 
 
 def _emit_session_expired(
@@ -587,6 +606,54 @@ async def create_session(
     await db.commit()
     await db.refresh(session)
     return _to_summary(session, 0, now)
+
+
+def _empty_session_ids(cutoff: datetime, batch_size: int):
+    """Ids of sessions created before ``cutoff`` that never got a message."""
+    return (
+        select(ChatSession.id)
+        .where(
+            ChatSession.created_at < cutoff,
+            ~select(ChatMessageRecord.id)
+            .where(ChatMessageRecord.session_id == ChatSession.id)
+            .exists(),
+        )
+        .limit(batch_size)
+    )
+
+
+async def prune_empty_sessions(
+    *,
+    min_age: timedelta | None = None,
+    batch_size: int | None = None,
+    now: datetime | None = None,
+    session_factory: Callable[
+        [], AbstractAsyncContextManager[AsyncSession]
+    ] = AsyncSessionLocal,
+) -> int:
+    """Delete sessions with no messages, older than ``min_age``, in batches.
+
+    Idempotent and bounded: each batch is its own short transaction (one
+    ``DELETE … WHERE id IN (SELECT … LIMIT n)``), repeated until a batch
+    deletes nothing. Sessions with any message are never touched, so no
+    conversation, feedback or evaluation row is lost.
+    """
+    min_age = min_age or timedelta(minutes=settings.session_prune_min_age_minutes)
+    batch_size = batch_size or settings.session_prune_batch_size
+    cutoff = (now or datetime.utcnow()) - min_age
+    total = 0
+    while True:
+        async with session_factory() as db:
+            result = await db.execute(
+                delete(ChatSession)
+                .where(ChatSession.id.in_(_empty_session_ids(cutoff, batch_size)))
+                .execution_options(synchronize_session=False)
+            )
+            await db.commit()
+        deleted = result.rowcount or 0
+        total += deleted
+        if deleted < batch_size:
+            return total
 
 
 async def get_session_detail(

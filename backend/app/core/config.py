@@ -175,13 +175,21 @@ class Settings(BaseSettings):
 
     # Chat sessions — history is stored per-session in the database (see
     # app.core.sessions) so different sessions never see each other's history.
-    # Minutes of inactivity before a session expires and a new one starts.
+    # Idle window for the IMPLICIT resume (a /query with no session_id). An
+    # explicit, owned session_id always resumes, however old (label only).
     session_timeout_minutes: int = 60
     # How many prior messages (user+assistant combined) to load as context
     # for a follow-up question in the same session.
     session_history_max_messages: int = 20
     # Most recent sessions returned by GET /sessions (newest activity first).
     session_list_max_items: int = Field(default=200, ge=1, le=1000)
+    # Daily job (chat.prune_empty_sessions) deleting sessions that never got a
+    # message (left by old "New chat" clicks). False = never scheduled.
+    session_prune_enabled: bool = True
+    session_prune_interval_seconds: int = Field(default=86_400, ge=3600)
+    # Only sessions older than this are pruned, so a just-opened chat is safe.
+    session_prune_min_age_minutes: int = Field(default=60, ge=10)
+    session_prune_batch_size: int = Field(default=1000, ge=1, le=10_000)
 
     # Per-user request throttling on /query (the expensive LLM path), so one
     # user hammering the endpoint can't degrade it for everyone else.
@@ -404,6 +412,13 @@ class Settings(BaseSettings):
     jobs_shutdown_timeout_seconds: float = 30.0
     jobs_retention_days: int = 7
     state_cleanup_interval_seconds: int = 60
+    # "Run full evaluation" (eval.full_run job): cases in flight at once,
+    # the hard time limit of one run, how often progress is stored/announced
+    # and the starts allowed per admin per minute.
+    eval_run_concurrency: int = Field(default=2, ge=1, le=8)
+    eval_run_timeout_seconds: int = Field(default=7_200, ge=60, le=86_400)
+    eval_run_progress_seconds: float = Field(default=2.0, gt=0, le=60)
+    eval_run_rate_limit_per_minute: int = Field(default=3, ge=1, le=60)
     # Feedback / RLHF loop (PR-11).
     feedback_trend_days: int = Field(default=30, ge=1, le=365)
     # Retrieval confidence below this marks a low-rated turn as a knowledge gap.

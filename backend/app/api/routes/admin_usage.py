@@ -45,6 +45,7 @@ from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.http_cache import cached_response
+from app.core.request_meta import get_client_ip
 from app.core.serialization import sanitize_csv_cell
 from app.dashboard import usage_rollup, usage_series
 from app.dashboard.queries import cached_tokens_sql
@@ -1236,6 +1237,7 @@ async def export_usage_csv(
         actor=user.email,
         action="usage_export",
         detail={"tab": tab, "audience": audience},
+        ip_address=get_client_ip(request),
         commit=True,
     )
 
