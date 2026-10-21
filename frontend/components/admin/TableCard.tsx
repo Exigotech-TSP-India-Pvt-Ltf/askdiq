@@ -42,19 +42,19 @@ export function TableCard({
       {/* One header row: title (+ badge, description) on the left, search / filters
           and header actions on the right, so a table never shows its title in one
           band and its search alone on the row below. z-30 keeps the filter and
-          column popovers above the table slot (same-z siblings paint in DOM order). */}
+          column popovers above the table slot (same-z siblings paint in DOM order).
+          The header is a size container: once it is at least 48rem wide the search,
+          filters and actions stay on ONE row (beside the title when both fit,
+          otherwise under it as a unit); narrower, they wrap after the search. */}
       {hasCardHeader || toolbar ? (
         <div
           data-testid="table-card-header"
-          className={`relative z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b px-4 sm:px-5 ${
+          className={`relative z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b px-4 [container-type:inline-size] sm:px-5 ${
             toolbar ? "bg-surface-studio/40 py-3 dark:bg-white/[0.02]" : "py-4"
           } ${studioDivider}`}
         >
-          {/* The title side takes the leftover width (its description wraps);
-              the controls keep their natural one-row width and wrap as a
-              whole under the title only when the card is too narrow. */}
           {hasCardHeader ? (
-            <div className="min-w-0 flex-1 basis-64">
+            <div className={`min-w-0 ${toolbar ? "flex-[1_1_16rem]" : "shrink"}`}>
               <div className="flex min-w-0 items-center gap-2.5">
                 {typeof title === "string" ? <h2 className={`truncate ${studioTitle}`}>{title}</h2> : title}
                 {badge}
@@ -66,10 +66,19 @@ export function TableCard({
           ) : null}
           {toolbar || headerActions ? (
             <div
-              className={`ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 ${hasCardHeader ? "" : "w-full"}`}
+              data-testid="table-card-actions"
+              className={`flex flex-wrap items-center justify-end gap-2 [@container(min-width:48rem)]:flex-nowrap ${
+                hasCardHeader ? "" : "w-full"
+              } ${toolbar ? "w-full [@container(min-width:48rem)]:w-auto [@container(min-width:48rem)]:grow" : ""}`}
             >
-              {toolbar ? <div className={`min-w-0 max-w-full ${hasCardHeader ? "" : "flex-1"}`}>{toolbar}</div> : null}
-              {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
+              {toolbar ? (
+                <div className="w-full min-w-0 [@container(min-width:48rem)]:w-auto [@container(min-width:48rem)]:min-w-fit [@container(min-width:48rem)]:flex-1">
+                  {toolbar}
+                </div>
+              ) : null}
+              {headerActions ? (
+                <div className="flex shrink-0 flex-wrap items-center gap-2 whitespace-nowrap">{headerActions}</div>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -50,7 +50,7 @@ export interface TableToolbarProps {
 
 export type ColumnOption = { key: string; label: string; hideable?: boolean };
 
-const toolbarButton = `flex items-center gap-1.5 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg shadow-sm transition-colors hover:bg-surface-muted hover:text-fg ${focusRing}`;
+const toolbarButton = `flex shrink-0 items-center whitespace-nowrap gap-1.5 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg shadow-sm transition-colors hover:bg-surface-muted hover:text-fg ${focusRing}`;
 
 function ColumnMenu({
   options,
@@ -213,9 +213,11 @@ export function TableToolbar({
   return (
     <div className="flex flex-col gap-2.5" ref={containerRef}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {title ? (
+        {title || countLabel ? (
           <div className="flex min-w-0 flex-col gap-0.5">
-            <h2 className="truncate text-sm font-semibold text-fg dark:text-white">{title}</h2>
+            {title ? (
+              <h2 className="truncate text-sm font-semibold text-fg dark:text-white">{title}</h2>
+            ) : null}
             {countLabel ? <span className="text-xs font-medium text-fg-subtle">{countLabel}</span> : null}
           </div>
         ) : null}
@@ -223,15 +225,12 @@ export function TableToolbar({
           {countLabel || ""}
         </div>
 
-        {/* One row: count, search, Filters, Columns, Compact, actions (wraps only when narrow). */}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          {countLabel && !title ? (
-            <span data-testid="table-count" className="whitespace-nowrap text-xs font-medium text-fg-subtle">
-              {countLabel}
-            </span>
-          ) : null}
+        {/* In a wide container (TableCard's header, 48rem+) the controls are one
+            row: a flexible search (16rem minimum) then the buttons. Narrower, the
+            buttons wrap after the search. */}
+        <div className="ml-auto flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 [@container(min-width:48rem)]:min-w-fit [@container(min-width:48rem)]:flex-nowrap">
           {/* Integrated Search Input with Clear Button */}
-          <div className="relative w-full max-w-xs sm:w-56 2xl:w-64">
+          <div className="relative min-w-0 flex-[1_1_16rem] [@container(min-width:48rem)]:min-w-[16rem] [@container(min-width:48rem)]:max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
             <input
               type="text"
@@ -273,7 +272,7 @@ export function TableToolbar({
                 aria-haspopup="dialog"
                 aria-expanded={isOpen}
                 onClick={() => setIsOpen(!isOpen)}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 ${
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 ${
                   activeCount > 0
                     ? "border-brand-500 bg-brand-50/70 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold shadow-brand-glow/20"
                     : "border-line bg-surface-card text-fg hover:bg-surface-muted hover:text-fg"
@@ -370,7 +369,7 @@ export function TableToolbar({
               data-active={density === "compact" ? "true" : undefined}
               className={
                 density === "compact"
-                  ? `flex items-center gap-1.5 rounded-lg border border-brand-500 bg-brand-50/70 px-2.5 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors dark:bg-brand-950/60 dark:text-brand-300 ${focusRing}`
+                  ? `flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-brand-500 bg-brand-50/70 px-2.5 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors dark:bg-brand-950/60 dark:text-brand-300 ${focusRing}`
                   : toolbarButton
               }
             >
@@ -395,7 +394,7 @@ export function TableToolbar({
               type="button"
               onClick={handleResetAll}
               title="Reset all filters and search"
-              className="flex items-center gap-1 rounded-lg border border-line bg-surface-muted px-2.5 py-1.5 text-xs text-fg-subtle hover:bg-surface-muted hover:text-fg transition"
+              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-line bg-surface-muted px-2.5 py-1.5 text-xs text-fg-subtle hover:bg-surface-muted hover:text-fg transition"
             >
               <RotateCcw className="h-3 w-3" />
               <span>Reset</span>

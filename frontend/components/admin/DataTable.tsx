@@ -195,7 +195,7 @@ export function DataTable<T extends Record<string, any>>({
                     aria-sort={getAriaSort(col)}
                     style={col.width ? { width: col.width } : undefined}
                     onClick={() => handleHeaderClick(col)}
-                    className={`${CELL_PADDING[density]} font-semibold select-none ${alignClass} ${col.sticky ? STICKY_HEAD : ""} ${
+                    className={`${CELL_PADDING[density]} whitespace-nowrap font-semibold select-none ${alignClass} ${col.sticky ? STICKY_HEAD : ""} ${
                       col.sortable ? "cursor-pointer group hover:bg-brand-50/70 hover:text-fg dark:hover:bg-white/5 transition" : ""
                     }`}
                   >
