@@ -72,6 +72,7 @@ async def query(
         request_id=request.state.request_id,
         stage_timings=request.state.stage_timings,
         history=history,
+        style_key=str(session.id),
     )
 
     # Subtask 2.1.3 & 2.3.2: Separate query embedding tokens and guardrail embedding tokens
@@ -136,6 +137,8 @@ async def query(
             "cost_usd": cost_usd,
             "outcome": response.outcome,
             "tokens": merged_details.get("tokens", {}),
+            # Response-style A/B variant and answer shape (OR-8), audit only.
+            **{k: merged_details[k] for k in ("style", "shape") if k in merged_details},
         },
     )
 

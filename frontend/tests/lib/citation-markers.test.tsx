@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { stripCitationMarkers } from "@/lib/citation-markers";
-import { createCitationInlineRenderer, renderCitedText } from "@/lib/format-text";
+import { createAnswerInlineRenderer, createCitationInlineRenderer, renderCitedText } from "@/lib/format-text";
 import type { Citation } from "@/lib/types";
 
 const CITATION: Citation = {
@@ -55,5 +55,24 @@ describe("renderCitedText / createCitationInlineRenderer", () => {
     render(<p>{renderInline("Yes [2].", "k1")}</p>);
     expect(screen.getAllByRole("link")).toHaveLength(1);
     expect(createCitationInlineRenderer(null)("Yes [2].", "k2")).toBe("Yes.");
+  });
+});
+
+describe("createAnswerInlineRenderer (chat: Markdown bold + pills)", () => {
+  it("renders bold and pills together, including a marker inside bold", () => {
+    const renderInline = createAnswerInlineRenderer([CITATION]);
+    const { container } = render(<p>{renderInline("**From $10 [2]** a month [2].", "k")}</p>);
+    const strong = container.querySelector("strong") as HTMLElement;
+    expect(strong).toHaveTextContent("From $10");
+    expect(strong.querySelector("a")).toHaveAttribute("href", CITATION.url);
+    expect(screen.getAllByRole("link", { name: /^Source: deployiq/ })).toHaveLength(2);
+    expect(container).not.toHaveTextContent("[2]");
+  });
+
+  it("without citations is the plain bold renderer: markers are left as text", () => {
+    const { container } = render(<p>{createAnswerInlineRenderer(null)("**Yes** [2].", "k")}</p>);
+    expect(container.querySelector("strong")).toHaveTextContent("Yes");
+    expect(container).toHaveTextContent("Yes [2].");
+    expect(screen.queryByRole("link")).toBeNull();
   });
 });

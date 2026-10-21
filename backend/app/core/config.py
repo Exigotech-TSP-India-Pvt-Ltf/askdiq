@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     # so answer quality safety net is unchanged.
     llm_reasoning_effort: str = "minimal"
     answer_max_words: int = 150
+    # Response style (OR-8, app/harness/style.py): "adaptive" structures every
+    # answer by question type; "current" is the original prompt (the off
+    # switch). RESPONSE_STYLE_B is served to RESPONSE_STYLE_B_PCT% of sessions
+    # (sticky per session) for an A/B; 0 serves RESPONSE_STYLE to everyone.
+    response_style: Literal["current", "adaptive"] = "adaptive"
+    response_style_b: Literal["current", "adaptive"] = "current"
+    response_style_b_pct: int = Field(default=0, ge=0, le=100)
+    # Word cap for how-to and comparison answers under "adaptive" (steps and
+    # tables need more room than answer_max_words).
+    answer_max_words_long: int = Field(default=220, ge=1)
     # Bound the RAG evidence/history included in each generation prompt.
     llm_context_max_tokens: int = 2400
     llm_history_max_tokens: int = 400
