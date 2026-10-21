@@ -213,23 +213,25 @@ export function TableToolbar({
   return (
     <div className="flex flex-col gap-2.5" ref={containerRef}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {title || countLabel ? (
+        {title ? (
           <div className="flex min-w-0 flex-col gap-0.5">
-            {title ? (
-              <h2 className="truncate text-sm font-semibold text-fg dark:text-white">{title}</h2>
-            ) : null}
+            <h2 className="truncate text-sm font-semibold text-fg dark:text-white">{title}</h2>
             {countLabel ? <span className="text-xs font-medium text-fg-subtle">{countLabel}</span> : null}
           </div>
-        ) : (
-          <div />
-        )}
+        ) : null}
         <div role="status" aria-live="polite" className="sr-only">
           {countLabel || ""}
         </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        {/* One row: count, search, Filters, Columns, Compact, actions (wraps only when narrow). */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {countLabel && !title ? (
+            <span data-testid="table-count" className="whitespace-nowrap text-xs font-medium text-fg-subtle">
+              {countLabel}
+            </span>
+          ) : null}
           {/* Integrated Search Input with Clear Button */}
-          <div className="relative w-full max-w-xs sm:w-64">
+          <div className="relative w-full max-w-xs sm:w-56 2xl:w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
             <input
               type="text"

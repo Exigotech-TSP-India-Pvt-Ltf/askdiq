@@ -105,7 +105,7 @@ function setViewportWidth(width: number) {
 beforeEach(() => {
   history.reset("/documents");
   window.localStorage.clear();
-  // Wide screen: every column starts visible (narrow screens hide hash + format, VA-23).
+  // Wide screen: every column starts visible (below 1440 px hash + size hide by priority, VA-23).
   setViewportWidth(1920);
 });
 afterEach(() => {
@@ -375,17 +375,47 @@ describe("Documents inline link editor (OR-7)", () => {
 });
 
 describe("Documents table width (VA-23)", () => {
-  it("below 1440 px the hash, format and size columns start hidden but stay in the Columns menu", async () => {
-    setViewportWidth(1366);
+  const headerNames = () => screen.getAllByRole("columnheader").map((h) => h.textContent?.trim());
+
+  it("at 1366 / 1440 px the hash and size columns hide by priority but stay in the Columns menu", async () => {
+    setViewportWidth(1440);
     mockFetch(routes);
     renderPage(<DocumentsPage />);
     await screen.findByRole("link", { name: /^essential-eight.md/ });
-    const headers = screen.getAllByRole("columnheader").map((h) => h.textContent?.trim());
-    expect(headers).toEqual(["Document", "Link", "Chunks", "Ingested", "Status", "Actions"]);
+    expect(headerNames()).toEqual(["Document", "Link", "Format", "Chunks", "Ingested", "Status", "Actions"]);
     fireEvent.click(screen.getByRole("button", { name: "Columns" }));
     const menu = screen.getByRole("group", { name: "Visible columns" });
     expect(within(menu).getByLabelText("Content hash")).not.toBeChecked();
-    expect(within(menu).getByLabelText("Format")).not.toBeChecked();
     expect(within(menu).getByLabelText("Size")).not.toBeChecked();
+    expect(within(menu).getByLabelText("Format")).toBeChecked();
+    // The user can turn a priority column back on.
+    fireEvent.click(within(menu).getByLabelText("Content hash"));
+    expect(headerNames()).toContain("Content hash");
+  });
+
+  it("follows the viewport: 1280 px also drops Format; widening shows every column again", async () => {
+    setViewportWidth(1280);
+    mockFetch(routes);
+    renderPage(<DocumentsPage />);
+    await screen.findByRole("link", { name: /^essential-eight.md/ });
+    expect(headerNames()).toEqual(["Document", "Link", "Chunks", "Ingested", "Status", "Actions"]);
+    setViewportWidth(1366);
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(headerNames()).toContain("Format"));
+    setViewportWidth(1920);
+    fireEvent(window, new Event("resize"));
+    await waitFor(() =>
+      expect(headerNames()).toEqual(["Document", "Link", "Format", "Size", "Chunks", "Content hash", "Ingested", "Status", "Actions"]),
+    );
+  });
+
+  it("pins Actions with the shared sticky style (the row's colour, no own background)", async () => {
+    mockFetch(routes);
+    renderPage(<DocumentsPage />);
+    await screen.findByRole("link", { name: /^essential-eight.md/ });
+    expect(screen.getByRole("columnheader", { name: "Actions" })).toHaveClass("dt-sticky-head");
+    const cell = screen.getByRole("button", { name: "Delete essential-eight.md" }).closest("td");
+    expect(cell).toHaveClass("dt-sticky-cell");
+    expect(cell?.className).not.toMatch(/bg-surface-card|bg-white/);
   });
 });

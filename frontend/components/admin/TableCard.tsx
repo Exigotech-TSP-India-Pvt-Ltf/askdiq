@@ -50,8 +50,11 @@ export function TableCard({
             toolbar ? "bg-surface-studio/40 py-3 dark:bg-white/[0.02]" : "py-4"
           } ${studioDivider}`}
         >
+          {/* The title side takes the leftover width (its description wraps);
+              the controls keep their natural one-row width and wrap as a
+              whole under the title only when the card is too narrow. */}
           {hasCardHeader ? (
-            <div className="min-w-0 shrink">
+            <div className="min-w-0 flex-1 basis-64">
               <div className="flex min-w-0 items-center gap-2.5">
                 {typeof title === "string" ? <h2 className={`truncate ${studioTitle}`}>{title}</h2> : title}
                 {badge}
@@ -63,11 +66,9 @@ export function TableCard({
           ) : null}
           {toolbar || headerActions ? (
             <div
-              className={`flex min-w-0 flex-wrap items-center justify-end gap-2 ${hasCardHeader ? "" : "w-full"} ${
-                toolbar ? "flex-1 basis-[22rem]" : ""
-              }`}
+              className={`ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 ${hasCardHeader ? "" : "w-full"}`}
             >
-              {toolbar ? <div className="min-w-0 flex-1">{toolbar}</div> : null}
+              {toolbar ? <div className={`min-w-0 max-w-full ${hasCardHeader ? "" : "flex-1"}`}>{toolbar}</div> : null}
               {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
             </div>
           ) : null}

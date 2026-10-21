@@ -47,7 +47,7 @@ export function DocumentLink({ doc, compact = false }: { doc: LinkFields; compac
     <div className={`flex min-w-0 ${compact ? "flex-col items-start gap-1" : "flex-wrap items-center gap-2"}`}>
       <div className="flex min-w-0 max-w-full items-center gap-0.5">
         <span
-          className={`min-w-0 truncate text-fg-muted ${compact ? "max-w-[9rem] min-[1440px]:max-w-[13rem]" : "max-w-[28rem] text-xs"}`}
+          className={`min-w-0 truncate text-fg-muted ${compact ? "max-w-[7rem] min-[1440px]:max-w-[9rem] min-[1920px]:max-w-[13rem]" : "max-w-[28rem] text-xs"}`}
           title={url}
         >
           {displayUrl(url)}

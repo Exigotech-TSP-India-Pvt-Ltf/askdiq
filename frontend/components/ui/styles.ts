@@ -78,8 +78,20 @@ export const tableHead =
   "border-b border-line-brand/70 bg-surface-studio text-fg-muted dark:border-brand-500/20";
 export const tableHeadCell = "font-semibold text-fg-muted";
 export const tableBody = "divide-y divide-line/70 text-fg-muted dark:divide-white/[0.06]";
-export const tableRow =
-  "transition-colors duration-150 even:bg-surface-muted/30 hover:bg-brand-50/60 dark:even:bg-white/[0.015] dark:hover:bg-brand-500/[0.07] motion-reduce:transition-none";
+/**
+ * Row states (zebra, hover, `aria-selected` / `data-selected`) set one colour,
+ * --row-tint (app/globals.css), so pinned cells can repaint it exactly.
+ */
+export const tableRow = "dt-row";
+/** Opaque themed surface under a table's rows: what pinned cells paint over. */
+export const tableSurface = "dt-surface";
+/**
+ * The one pinned-column style (header + body cell, right edge): the same
+ * themed background as its row in every state, and a divider only while
+ * content scrolls under it (`data-scroll-under` from `useScrollUnder`).
+ */
+export const stickyHeadCell = "dt-sticky-head";
+export const stickyCell = "dt-sticky-cell";
 export const tableFooter = "border-t border-line-brand/60 bg-surface-studio/50 dark:border-brand-500/15";
 
 /** Segmented control track (TabGroup, StudioSegmented). */

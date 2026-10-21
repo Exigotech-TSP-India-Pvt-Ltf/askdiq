@@ -45,7 +45,7 @@ import { ToneChip, errorMessage, useRangeParams } from "@/components/admin/entit
 import { entityHref } from "@/lib/entity-links";
 import { useCan } from "@/lib/use-can";
 import { useDeepLink } from "@/lib/use-deep-link";
-import { useTablePreferences } from "@/lib/use-table-preferences";
+import { useTablePreferences, type AutoHideColumns } from "@/lib/use-table-preferences";
 import { fadeUp, stagger, useMotionVariants } from "@/lib/motion";
 import { invalidate, runWhenIdle, useApiQuery, usePrefetchRows } from "@/lib/query-cache";
 import {
@@ -83,7 +83,8 @@ import {
 
 const COVERAGE_BANDS = { warn: 80, danger: 60 } as const;
 const DEFAULT_PAGE_SIZE: PageSize = 10;
-const TABLE_ID = "documents-inventory";
+/** v2: drops prefs that froze the old viewport defaults (Format hidden) into storage. */
+const TABLE_ID = "documents-inventory.v2";
 const DOCS_KEY = "documents";
 /** Rows whose chunks warm while idle (a document's chunks can be large). */
 const CHUNK_PREFETCH_ROWS = 5;
@@ -105,14 +106,13 @@ const SORT_COLUMNS: Record<string, string> = {
 };
 
 /**
- * Below this viewport width the hash, original-format and size columns start hidden
- * (still in the Columns menu), so the table fits without a sideways scroll
- * at 1366 px (VA-23). Applies until the user changes the columns.
+ * Priority columns (VA-23), measured with the 16 rem sidebar: each hides below
+ * the viewport width where it no longer fits (still in the Columns menu, where
+ * the user can turn it back on), so the table fits without sliding columns
+ * under the pinned Actions. 1366 / 1440: Document, Link, Format, Chunks,
+ * Ingested, Status, Actions; 1600: + Size; 1760: + Content hash; 1280: no Format.
  */
-const WIDE_TABLE_MIN_PX = 1440;
-const NARROW_HIDDEN_COLUMNS = ["hash", "format", "size"] as const;
-const narrowDefaults = (): readonly string[] =>
-  typeof window !== "undefined" && window.innerWidth < WIDE_TABLE_MIN_PX ? NARROW_HIDDEN_COLUMNS : [];
+const AUTO_HIDE_COLUMNS: AutoHideColumns = { format: 1366, size: 1600, hash: 1760 };
 
 interface PendingDelete {
   id: string;
@@ -152,7 +152,7 @@ function DocumentsContent() {
   const canEditLinks = useCan("knowledge:links");
   const range = useRangeParams();
   const { get, set } = useDeepLink();
-  const prefs = useTablePreferences(TABLE_ID, { defaultHidden: narrowDefaults });
+  const prefs = useTablePreferences(TABLE_ID, { autoHide: AUTO_HIDE_COLUMNS });
   const gridVariants = useMotionVariants(stagger);
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
@@ -287,7 +287,7 @@ function DocumentsContent() {
       header: "Document",
       sortable: true,
       render: (doc) => (
-        <div className="flex min-w-[9rem] max-w-[16rem] flex-col gap-0.5">
+        <div className="flex min-w-[8rem] max-w-[10rem] flex-col gap-0.5 min-[1440px]:max-w-[12rem] min-[1920px]:max-w-[16rem]">
           <Link
             href={entityHref({ kind: "document", id: doc.document_id })}
             onClick={(e) => e.stopPropagation()}
@@ -386,7 +386,7 @@ function DocumentsContent() {
       render: (doc) => (
         <div className="flex flex-col whitespace-nowrap">
           <RelativeTime value={ingestedAt(doc)} className="text-fg-muted" />
-          <span className="max-w-[10rem] truncate text-[10px] text-fg-subtle" title={doc.ingested_by ?? undefined}>
+          <span className="max-w-[7rem] truncate min-[1440px]:max-w-[8rem] min-[1920px]:max-w-[10rem] text-[10px] text-fg-subtle" title={doc.ingested_by ?? undefined}>
             {doc.ingested_by ? `by ${doc.ingested_by}` : "by —"}
             {doc.ingest_count && doc.ingest_count > 1 ? ` · ${doc.ingest_count} ingests` : ""}
           </span>
