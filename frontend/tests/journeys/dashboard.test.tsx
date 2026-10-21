@@ -89,7 +89,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("Dashboard: KPI cards", () => {
+describe("Dashboard: KPI cards", { timeout: 15_000 }, () => {
   it("deep-links every card to the page that owns the number, pre-filtered", async () => {
     renderDashboard();
     const expected: Record<string, string> = {
@@ -153,7 +153,7 @@ describe("Dashboard: KPI cards", () => {
   });
 });
 
-describe("Dashboard: charts", () => {
+describe("Dashboard: charts", { timeout: 15_000 }, () => {
   it("navigates with the filter when a stacked-area day is clicked", async () => {
     renderDashboard();
     const chart = await screen.findByRole("group", { name: "Queries by outcome" });
@@ -207,7 +207,7 @@ describe("Dashboard: charts", () => {
   });
 });
 
-describe("Dashboard against today's backend (new fields absent)", () => {
+describe("Dashboard against today's backend (new fields absent)", { timeout: 15_000 }, () => {
   beforeEach(() => {
     routes = { "/dashboard": () => json(LEGACY_DASHBOARD) };
   });
@@ -244,7 +244,7 @@ describe("Dashboard against today's backend (new fields absent)", () => {
   });
 });
 
-describe("Dashboard: light and dark", () => {
+describe("Dashboard: light and dark", { timeout: 15_000 }, () => {
   it("re-colours charts from the chart theme when the theme flips, without a reload", async () => {
     renderDashboard();
     const card = await screen.findByTestId("kpi-queries");

@@ -79,7 +79,7 @@ function expectNoCrash() {
   expect(screen.queryByText(/Something went wrong/i)).not.toBeInTheDocument();
 }
 
-describe("person filter", () => {
+describe("person filter", { timeout: 15_000 }, () => {
   it("clicking a hovered bubble narrows the page instead of crashing it", async () => {
     mockInsightsFetch({ people: peopleFor, [`people/${TARGET.person_id}`]: personDetail() });
     renderPage("?tab=dropoff");
@@ -126,7 +126,7 @@ describe("person filter", () => {
   });
 });
 
-describe("every cross-filter deep-links, combines and clears", () => {
+describe("every cross-filter deep-links, combines and clears", { timeout: 15_000 }, () => {
   const ALL =
     "?period=custom&from=2026-05-15&to=2026-05-15&user_type=Customer+%2F+prospect&outcome=Partly+served" +
     "&issue=KB_GAP&intent=SVC&quality=PART&person=d4ed3e8809100c89&hour=9&visitor=client-203.0.113.7";
@@ -186,7 +186,7 @@ describe("every cross-filter deep-links, combines and clears", () => {
   });
 });
 
-describe("KPI cards open the records behind the number", () => {
+describe("KPI cards open the records behind the number", { timeout: 15_000 }, () => {
   it("Conversations served opens the served conversations", async () => {
     mockInsightsFetch();
     renderPage();

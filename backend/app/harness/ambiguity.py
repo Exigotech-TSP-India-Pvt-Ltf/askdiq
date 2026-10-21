@@ -21,7 +21,8 @@ clarification, and the consecutive-clarification cap never ask.
 
 Every option is grounded in the retrieved knowledge base: service/framework
 options are the retrieved documents (by title), and detail options are kept
-only when a retrieved chunk covers them. A borderline request (only two open
+only when a retrieved chunk covers them. An option whose best retrieval score
+clearly leads is tagged ``recommended`` (``clarify.recommend_option``). A borderline request (only two open
 details) is confirmed by one cheap LLM call with a timeout; on timeout or any
 error the question is answered as usual.
 """
@@ -43,6 +44,7 @@ from app.harness.clarify import (
     clarification_streak,
     humanize_source_name,
     metadata_text,
+    recommend_option,
 )
 from app.harness.prompts import get_chat_client
 from app.model_settings.service import current_model_settings
@@ -102,6 +104,8 @@ class CatalogueEntry:
     pattern: re.Pattern[str]
     description: str
     framework: bool = False
+    # Breaks a recommendation tie between close options (see recommend_option).
+    default: bool = False
 
 
 def _re(pattern: str) -> re.Pattern[str]:
@@ -186,6 +190,10 @@ def _option(
     )
 
 
+def _best_score(sources: list[SourceChunk]) -> float:
+    return max((s.score for s in sources), default=0.0)
+
+
 def service_options(
     sources: list[SourceChunk], *, frameworks_only: bool = False
 ) -> list[ClarificationOption]:
@@ -205,8 +213,10 @@ def service_options(
     if frameworks_only and len(grouped) < settings.clarify_min_options:
         return service_options(sources)
 
+    defaults: list[bool] | None = None
     if len(grouped) >= settings.clarify_min_options:
         items = [(e.label, e.description, docs) for e, docs in grouped.values()]
+        defaults = [e.default for e, _ in grouped.values()]
     else:
         by_doc: dict[str, list[SourceChunk]] = {}
         for source in ranked:
@@ -216,12 +226,16 @@ def service_options(
             (humanize_source_name(_source_name(docs[0]) or ""), "", docs)
             for docs in by_doc.values()
         ]
-    return [
+    shown = items[: settings.clarify_max_options]
+    options = [
         _option(i, label, description, docs)
-        for i, (label, description, docs) in enumerate(
-            items[: settings.clarify_max_options], 1
-        )
+        for i, (label, description, docs) in enumerate(shown, 1)
     ]
+    return recommend_option(
+        options,
+        [_best_score(docs) for _, _, docs in shown],
+        defaults[: len(shown)] if defaults is not None else None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +554,7 @@ def _slot_question(
     if not covering:
         return None
     options: list[ClarificationOption] = []
+    scores: list[float] = []
     for spec in slot.options:
         grounded = (
             [s for s in covering if _hit(spec.evidence, s.content)]
@@ -550,6 +565,7 @@ def _slot_question(
             options.append(
                 _option(len(options) + 1, spec.label, spec.description, grounded)
             )
+            scores.append(_best_score(grounded))
     if len(options) < get_settings().clarify_min_options:
         return None
     return ClarificationQuestion(
@@ -557,7 +573,7 @@ def _slot_question(
         header=slot.header,
         question=slot.question,
         multi_select=slot.multi_select,
-        options=options,
+        options=recommend_option(options, scores),
     )
 
 

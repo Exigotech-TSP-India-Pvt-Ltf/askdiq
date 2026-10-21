@@ -257,6 +257,78 @@ describe("ClarificationCard", () => {
   });
 });
 
+describe("ClarificationCard recommended option", () => {
+  // O2 clearly leads: tagged, but kept in place (shortcut 2) and not picked.
+  const tagged: Clarification = {
+    ...two,
+    questions: [
+      {
+        ...two.questions[0],
+        options: two.questions[0].options.map((o) => ({ ...o, recommended: o.id === "O2" })),
+      },
+      {
+        ...two.questions[1],
+        options: two.questions[1].options.map((o) => ({ ...o, recommended: o.id === "O1" })),
+      },
+    ],
+  };
+
+  it("shows the badge only on the recommended option, in the accessible name", () => {
+    render(<ClarificationCard clarification={tagged} onSubmit={vi.fn()} />);
+    const radios = screen.getAllByRole("radio");
+    expect(screen.getAllByText("Recommended")).toHaveLength(1);
+    expect(within(radios[1]).getByText("Recommended")).toBeInTheDocument();
+    expect(within(radios[0]).queryByText("Recommended")).not.toBeInTheDocument();
+    expect(radios[1]).toHaveAccessibleName(/Pricing and plans.*Recommended/);
+    expect(screen.getByRole("radio", { name: /Recommended/ })).toBe(radios[1]);
+    // Server order kept: the number hint still matches the position.
+    expect(within(radios[1]).getByText("2")).toBeInTheDocument();
+  });
+
+  it("is never pre-selected: nothing is checked and Next stays disabled", () => {
+    render(<ClarificationCard clarification={tagged} onSubmit={vi.fn()} />);
+    for (const radio of screen.getAllByRole("radio")) {
+      expect(radio).toHaveAttribute("aria-checked", "false");
+    }
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+
+  it("keeps the digit shortcuts and answers unchanged, multi-select included", () => {
+    const onSubmit = vi.fn();
+    render(<ClarificationCard clarification={tagged} onSubmit={onSubmit} autoFocus />);
+    const radios = screen.getAllByRole("radio");
+    key(radios[0], "1"); // picks O1, not the recommended O2
+    expect(radios[0]).toHaveAttribute("aria-checked", "true");
+    expect(radios[1]).toHaveAttribute("aria-checked", "false");
+    key(radios[0], "Enter");
+    const boxes = screen.getAllByRole("checkbox");
+    expect(within(boxes[0]).getByText("Recommended")).toBeInTheDocument();
+    expect(boxes[0]).toHaveAttribute("aria-checked", "false");
+    key(boxes[0], "2");
+    key(boxes[1], "Enter");
+    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      [
+        { question_id: "Q1", option_ids: ["O1"] },
+        { question_id: "Q2", option_ids: ["O2"] },
+      ],
+      "Topic: Buy a service · Region: New Zealand",
+    );
+  });
+
+  it("shows no badge without a recommendation, and at most one per question", () => {
+    const { unmount } = render(<ClarificationCard clarification={two} onSubmit={vi.fn()} />);
+    expect(screen.queryByText("Recommended")).not.toBeInTheDocument();
+    unmount();
+    const both: Clarification = {
+      ...one,
+      questions: [{ ...one.questions[0], options: one.questions[0].options.map((o) => ({ ...o, recommended: true })) }],
+    };
+    render(<ClarificationCard clarification={both} onSubmit={vi.fn()} />);
+    expect(screen.getAllByText("Recommended")).toHaveLength(1);
+  });
+});
+
 describe("MessageBubble with a clarification", () => {
   const message: ChatMessage = {
     id: "a1",

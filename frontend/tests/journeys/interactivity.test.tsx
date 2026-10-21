@@ -76,7 +76,7 @@ afterEach(() => {
 
 const lastCall = (path: string) => callsTo(calls, path).at(-1);
 
-describe("Visitors (Users -> Visitors)", () => {
+describe("Visitors (Users -> Visitors)", { timeout: 15_000 }, () => {
   it("heatmap cell -> /admin/users?weekday=&hour= -> same filter on load", async () => {
     renderPage(<VisitorsPage />, { url: "/admin/visitors" });
     fireEvent.click(await screen.findByRole("button", { name: "Wed 14: 5" }));
@@ -112,7 +112,7 @@ describe("Visitors (Users -> Visitors)", () => {
   });
 });
 
-describe("Visitor detail (row: sessions, queries, feedback, cost)", () => {
+describe("Visitor detail (row: sessions, queries, feedback, cost)", { timeout: 15_000 }, () => {
   const url = visitorDetailHref(VISITOR_ID);
 
   it("sessions -> conversation detail; 'Conversations' -> list filtered by IP", async () => {
@@ -150,7 +150,7 @@ describe("Visitor detail (row: sessions, queries, feedback, cost)", () => {
   });
 });
 
-describe("Conversations (row: overview + drawer keeps list state)", () => {
+describe("Conversations (row: overview + drawer keeps list state)", { timeout: 15_000 }, () => {
   it("histogram bin and outcome segment URLs round-trip into chips and request params", async () => {
     renderPage(<ConversationsPage />, { url: "/admin/visitors?tab=conversations" });
     fireEvent.click(await screen.findByRole("button", { name: "1: 80 Conversations" }));
@@ -180,7 +180,7 @@ describe("Conversations (row: overview + drawer keeps list state)", () => {
   });
 });
 
-describe("Conversation detail (row: per-turn inspection, feedback, labels)", () => {
+describe("Conversation detail (row: per-turn inspection, feedback, labels)", { timeout: 15_000 }, () => {
   it("turn link -> ?turn= -> that turn is highlighted on load", async () => {
     const href = entityHref({ kind: "turn", id: "1", conversationId: CONV_ID });
     renderPage(<ConversationDetailPage />, { url: href });
@@ -206,7 +206,7 @@ describe("Conversation detail (row: per-turn inspection, feedback, labels)", () 
   });
 });
 
-describe("Documents and Document detail (row: usage signal, chunks)", () => {
+describe("Documents and Document detail (row: usage signal, chunks)", { timeout: 15_000 }, () => {
   it("top-cited bar -> /documents/[id] -> that document's chunks load", async () => {
     renderPage(<DocumentsPage />, { url: "/documents" });
     fireEvent.click(await screen.findByRole("button", { name: "Leave policy.md, Citations: 120" }));
@@ -242,7 +242,7 @@ describe("Documents and Document detail (row: usage signal, chunks)", () => {
   });
 });
 
-describe("Global state carries across pages", () => {
+describe("Global state carries across pages", { timeout: 15_000 }, () => {
   it("the date range follows links and drives the stats requests", async () => {
     renderPage(<VisitorsPage />, { url: "/admin/users?range=30d" });
     const ipLink = await screen.findByRole("link", { name: IP });

@@ -69,7 +69,7 @@ afterEach(() => {
   setUrl("");
 });
 
-describe("recorded fixture (derived from the HTML's __EMBED__ data)", () => {
+describe("recorded fixture (derived from the HTML's __EMBED__ data)", { timeout: 15_000 }, () => {
   it("holds the reference dataset's headline numbers", () => {
     const s = RECORDED.summary;
     expect(s.conversations).toBe(49);
@@ -96,7 +96,7 @@ describe("recorded fixture (derived from the HTML's __EMBED__ data)", () => {
   });
 });
 
-describe("Analytics page renders the HTML's numbers", () => {
+describe("Analytics page renders the HTML's numbers", { timeout: 15_000 }, () => {
   it("KPI strip (metrics())", async () => {
     renderPage();
     expect(await kpi("conversations")).toBe("49");

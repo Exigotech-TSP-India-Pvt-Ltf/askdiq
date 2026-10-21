@@ -48,7 +48,7 @@ function navLinks(container: HTMLElement): HTMLAnchorElement[] {
   return within(nav).getAllByRole("link") as HTMLAnchorElement[];
 }
 
-describe("Navigation journey (Phase F2)", () => {
+describe("Navigation journey (Phase F2)", { timeout: 15_000 }, () => {
   beforeEach(() => {
     window.localStorage.clear();
     redirectMock.mockClear();

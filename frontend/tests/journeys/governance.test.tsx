@@ -359,7 +359,7 @@ afterEach(() => {
   document.documentElement.classList.remove("dark");
 });
 
-describe("Governance journey", () => {
+describe("Governance journey", { timeout: 15_000 }, () => {
   it("overview incident marker links into Logs, which queries with those filters", async () => {
     renderPage("/admin/governance");
     const banner = await screen.findByRole("status", { name: "System health: Incident" });

@@ -6,6 +6,7 @@ import { Check, CheckCircle2, MessageSquareText } from "lucide-react";
 import type { Clarification, ClarificationAnswer, ClarificationQuestion } from "@/lib/types";
 import { fadeUp, useMotionVariants } from "@/lib/motion";
 import { focusRing, primaryButton, secondaryButton } from "@/components/ui/styles";
+import { Badge } from "@/components/ui/Badge";
 
 /** What the user picked for one question. */
 export interface QuestionSelection {
@@ -481,6 +482,8 @@ function QuestionRows({
 }) {
   const multi = question.multi_select === true;
   const labelId = `${uid}-${question.id}-label`;
+  // A tag only (never pre-selected); at most one, even if the payload had more.
+  const recommendedId = question.options.find((o) => o.recommended === true)?.id;
   const rows = [
     ...question.options.map((o) => ({
       key: o.id,
@@ -488,9 +491,19 @@ function QuestionRows({
       description: o.description ?? "",
       sources: o.sources ?? [],
       checked: selection.optionIds.includes(o.id),
+      recommended: o.id === recommendedId,
     })),
     ...(allowOther
-      ? [{ key: OTHER_ID, label: "Other", description: "Type your own answer", sources: [] as string[], checked: selection.other }]
+      ? [
+          {
+            key: OTHER_ID,
+            label: "Other",
+            description: "Type your own answer",
+            sources: [] as string[],
+            checked: selection.other,
+            recommended: false,
+          },
+        ]
       : []),
   ];
 
@@ -529,7 +542,10 @@ function QuestionRows({
                   {i + 1}
                 </kbd>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-fg">{row.label}</span>
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-semibold text-fg">
+                    <span>{row.label}</span>{" "}
+                    {row.recommended ? <Badge tone="brand">Recommended</Badge> : null}
+                  </span>
                   {row.description || row.sources.length ? (
                     <span id={descId} className="mt-0.5 block truncate text-xs text-fg-muted" title={row.description}>
                       {row.description}
