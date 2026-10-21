@@ -39,6 +39,23 @@ class Settings(BaseSettings):
     # Postgres ends a session left "idle in transaction" this long (ms; 0 =
     # off): a safety net so a lost request can never pin locks or a slot.
     db_idle_in_transaction_timeout_ms: int = Field(default=60_000, ge=0)
+    # Per-statement cap (ms; 0 = off) for request-scoped sessions (`get_db`,
+    # `get_session_factory`, `get_scoped_runner`): `SET LOCAL
+    # statement_timeout` at every transaction begin, so a query stuck behind a
+    # lock returns 503 `db_timeout` instead of hanging the request. Jobs,
+    # schedulers and scripts (`AsyncSessionLocal`) are not subject to it; long
+    # request paths opt out via `database.unbounded_session` /
+    # `database.disable_statement_timeout`.
+    db_statement_timeout_ms: int = Field(default=15_000, ge=0)
+    # Alembic online migrations (alembic/env.py): stop waiting for a table
+    # lock after this long (ms) instead of queueing every query behind the
+    # ALTER, then retry the whole upgrade with exponential backoff.
+    migration_lock_timeout_ms: int = Field(default=5000, ge=0)
+    # Statement cap for migrations (ms; 0 = unlimited, for long data migrations).
+    migration_statement_timeout_ms: int = Field(default=0, ge=0)
+    migration_lock_retries: int = Field(default=5, ge=0)
+    # First backoff between retries (s); doubles each attempt, capped at 60 s.
+    migration_lock_retry_backoff_seconds: float = Field(default=2.0, ge=0)
     # SQL statement logging (incl. 1536-float vector params) — off by default.
     db_echo: bool = False
 

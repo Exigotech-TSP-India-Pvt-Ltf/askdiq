@@ -273,7 +273,7 @@ class _FlakySession:
 
 async def test_get_db_retries_close_while_operation_in_progress() -> None:
     session = _FlakySession(busy_closes=3)
-    with patch.object(database, "AsyncSessionLocal", return_value=session):
+    with patch.object(database, "RequestSessionLocal", return_value=session):
         gen = database.get_db()
         assert await gen.__anext__() is session
         await gen.aclose()
@@ -283,7 +283,7 @@ async def test_get_db_retries_close_while_operation_in_progress() -> None:
 
 async def test_get_db_close_survives_request_cancellation() -> None:
     session = _FlakySession(busy_closes=5)
-    with patch.object(database, "AsyncSessionLocal", return_value=session):
+    with patch.object(database, "RequestSessionLocal", return_value=session):
 
         async def request() -> None:
             async for _db in database.get_db():
@@ -310,7 +310,7 @@ async def test_get_db_close_waits_for_a_running_checkout() -> None:
     factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     try:
         blocker = await engine.connect()  # holds the only pooled connection
-        with patch.object(database, "AsyncSessionLocal", factory):
+        with patch.object(database, "RequestSessionLocal", factory):
             gen = database.get_db()
             session = await gen.__anext__()
 
