@@ -5,6 +5,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import {
   MAX_RANGE_DAYS,
   RangeProvider,
@@ -130,22 +131,37 @@ describe("DateRangePicker + RangeProvider", () => {
     expect(screen.getByRole("button", { name: /date range:.*5 jan 2026/i })).toBeInTheDocument();
   });
 
-  it("is icon-only: the current range is its accessible name and tooltip, with a dot when not the default", () => {
+  it("reads as a filter dropdown (OR-2): filter icon, the active range as visible text and a chevron, with a dot when not the default", () => {
     renderPicker();
     const trigger = screen.getByRole("button", { name: "Date range: Last 7 days" });
-    expect(trigger).not.toHaveTextContent(/\S/);
-    const tip = trigger.parentElement?.querySelector("[data-tooltip]");
-    expect(tip).toHaveTextContent("Date range: Last 7 days");
+    // Visible label = part of the accessible name (WCAG 2.5.3); it collapses to the icon below sm.
+    const label = trigger.querySelector("[data-label]");
+    expect(label).toHaveTextContent("Last 7 days");
+    expect(label).toHaveClass("hidden", "sm:inline");
+    expect(trigger.querySelector("svg.lucide-list-filter")).not.toBeNull();
+    expect(trigger.querySelector("svg.lucide-chevron-down")).not.toBeNull();
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    // The tooltip is for phones only (the text is visible from sm up).
+    expect(trigger.parentElement?.querySelector("[data-tooltip]")).toHaveClass("sm:hidden");
     expect(trigger.querySelector("[data-indicator]")).toBeNull();
 
     fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
     // The bubble hides while the menu is open so it never covers the panel.
     expect(trigger.parentElement?.querySelector("[data-tooltip]")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Last 30 days" }));
 
     const changed = screen.getByRole("button", { name: "Date range: Last 30 days" });
-    expect(changed.parentElement?.querySelector("[data-tooltip]")).toHaveTextContent("Date range: Last 30 days");
+    expect(changed.querySelector("[data-label]")).toHaveTextContent("Last 30 days");
     expect(changed.querySelector("[data-indicator]")).not.toBeNull();
+  });
+
+  it("shows a custom range as its dates", () => {
+    router.state.url = "/admin?from=2026-10-12&to=2026-10-19";
+    renderPicker();
+    const trigger = screen.getByRole("button", { name: /date range: 12 oct 2026 – 19 oct 2026/i });
+    expect(trigger.querySelector("[data-label]")).toHaveTextContent("12 Oct 2026 – 19 Oct 2026");
   });
 
   it("restores a shared custom URL and closes on Esc", () => {
@@ -162,33 +178,31 @@ describe("DateRangePicker + RangeProvider", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("leads the right-corner action cluster in DashboardHeader (not beside the audience tabs), and hides outside a provider", () => {
+  it("sits last on the tab row (PageToolbar), after the actions and filters, never in the header; hides outside a provider", () => {
     const { unmount } = render(
       <RangeProvider>
-        <DashboardHeader
-          title="Dashboard"
-          icon={LayoutDashboard}
-          showDateRange
-          actions={<button type="button" aria-label="Page action" />}
+        <DashboardHeader title="Dashboard" icon={LayoutDashboard} />
+        <PageToolbar
+          tabs={<div role="tablist" aria-label="Sections" />}
+          actions={<button type="button">Page action</button>}
+          filters={<span data-testid="chips" />}
+          dateRange
         />
       </RangeProvider>,
     );
-    const tabs = screen.getByRole("tablist", { name: "Audience Scope" });
+    const header = screen.getByRole("banner");
     const picker = screen.getByRole("button", { name: /date range/i });
-    const audienceAnchor = tabs.closest('[data-tour="shell-audience"]');
+    expect(header).not.toContainElement(picker);
     const rangeAnchor = picker.closest('[data-tour="shell-date-range"]');
-    expect(audienceAnchor).not.toBeNull();
-    expect(rangeAnchor).not.toBeNull();
-    // The audience switcher keeps the centre column to itself, so adding the
-    // date range cannot shift it; the picker comes first in the action cluster.
-    const cluster = picker.closest("[data-header-actions]");
+    const cluster = picker.closest("[data-toolbar-actions]");
     expect(cluster).not.toBeNull();
-    expect(cluster?.contains(audienceAnchor ?? null)).toBe(false);
-    expect(cluster?.firstElementChild).toBe(rangeAnchor);
-    expect(cluster).toContainElement(screen.getByRole("button", { name: "Page action" }));
+    expect(cluster?.lastElementChild).toBe(rangeAnchor);
+    const order = Array.from(cluster!.children);
+    expect(order.indexOf(screen.getByRole("button", { name: "Page action" }))).toBeLessThan(order.indexOf(screen.getByTestId("chips")));
+    expect(order.indexOf(screen.getByTestId("chips"))).toBeLessThan(order.indexOf(rangeAnchor!));
     unmount();
 
-    render(<DashboardHeader title="Dashboard" icon={LayoutDashboard} showDateRange />);
+    render(<PageToolbar dateRange />);
     expect(screen.queryByRole("button", { name: /date range/i })).not.toBeInTheDocument();
   });
 });

@@ -19,6 +19,8 @@ export const PENDING_ACCESS_POLL_MS = 60_000;
 export const ACTIVE_ALERTS_POLL_MS = 30_000;
 const STALE_MS = 30_000;
 export const USER_MANAGEMENT_REQUESTS_HREF = "/admin/user-management?tab=requests";
+/** Where an alert without its own console page opens (VA-48). */
+export const MONITORING_HREF = "/admin/governance?tab=Monitoring";
 /** Access-request alerts are already summarised by the pending-requests item. */
 const ACCESS_REQUEST_PATH = "/admin/user-management";
 
@@ -65,7 +67,7 @@ export function alertNotification(alert: ActiveAlert, now: number = Date.now()):
     id: `alert-${alert.id}`,
     title: alert.title,
     description: alert.summary || undefined,
-    href: alert.consolePath,
+    href: alert.consolePath || MONITORING_HREF,
     tone: ALERT_TONE[alert.severity],
     time: seen && !Number.isNaN(seen.getTime()) ? formatRelativeTime(seen, now) : undefined,
   };

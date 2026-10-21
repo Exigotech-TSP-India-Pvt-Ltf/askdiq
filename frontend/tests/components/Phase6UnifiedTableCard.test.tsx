@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
@@ -55,8 +55,15 @@ describe("Phase 6: Unified TableCard and Single Filters Architecture", () => {
     // Active pill rendered
     expect(screen.getByText("Status: Active")).toBeInTheDocument();
 
+    // OR-13: the chip is editable in place: it opens the group's options as a listbox.
+    fireEvent.click(screen.getByRole("button", { name: "Status: Active, change filter" }));
+    const list = screen.getByRole("listbox", { name: "Status" });
+    expect(within(list).getByRole("option", { name: "Active" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(within(list).getByRole("option", { name: "Archived" }));
+    expect(handleStatusChange).toHaveBeenCalledWith("archived");
+
     // Dismiss pill via X
-    const removePillBtn = screen.getByLabelText("Remove filter Active");
+    const removePillBtn = screen.getByLabelText("Remove filter Status: Active");
     fireEvent.click(removePillBtn);
     expect(handleStatusChange).toHaveBeenCalledWith("all");
 

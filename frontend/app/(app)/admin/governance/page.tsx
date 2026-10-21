@@ -7,6 +7,7 @@ import { crossfade, useMotionVariants } from "@/lib/motion";
 import { useDeepLink } from "@/lib/use-deep-link";
 import { TAB_PARAMS, isGovernanceTab, type GovernanceTab } from "@/lib/governance-links";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import { TabGroup, GOVERNANCE_TABS } from "@/components/admin/TabGroup";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
@@ -78,13 +79,15 @@ function GovernanceContent() {
         title="Admin Governance"
         subtitle={SUBTITLE[activeTab]}
         icon={ShieldCheck}
-        showDateRange={RANGED_TABS.has(activeTab)}
       />
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
-        <div data-tour="governance-tabs" onPointerOver={onTabIntent} onFocus={onTabIntent}>
-          <TabGroup tabs={GOVERNANCE_TABS} activeTab={activeTab} onChange={onTabChange} ariaLabel="Governance sub-tabs" />
-        </div>
+        <PageToolbar
+          tabsTour="governance-tabs"
+          onTabsIntent={onTabIntent}
+          tabs={<TabGroup tabs={GOVERNANCE_TABS} activeTab={activeTab} onChange={onTabChange} ariaLabel="Governance sub-tabs" />}
+          dateRange={RANGED_TABS.has(activeTab)}
+        />
 
         <m.div key={activeTab} variants={variants} initial="hidden" animate="visible">
           {activeTab === "Overall" && <OverallView />}

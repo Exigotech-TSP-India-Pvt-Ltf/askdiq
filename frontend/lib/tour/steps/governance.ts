@@ -14,7 +14,7 @@ export const governanceTour: PageTour = {
     {
       target: '[data-tour="governance-tabs"]',
       title: "Four views",
-      body: "Overall is the health summary, Monitoring holds live latency and traffic charts, Traces lists every request and Logs holds audit and security events. The header date range applies to Traces and Logs.",
+      body: "Overall is the health summary, Monitoring holds live latency and traffic charts, Traces lists every request and Logs holds audit and security events. On Traces and Logs, the date filter at the right of the tab row sets the period.",
       placement: "bottom",
     },
 

@@ -10,10 +10,10 @@ export const documentsTour: PageTour = {
       body: "Every document the assistant can answer from lives here. Operators use it to check what is indexed and how it is cited; admins also upload and delete documents.",
     },
     {
-      target: '[data-tour="documents-header"]',
+      target: '[data-tour="shell-date-range"]',
       placement: "bottom",
-      title: "Page header and date range",
-      body: "The date range in the middle only affects the citation charts at the bottom; the KPI cards and inventory always show every document.",
+      title: "Date range",
+      body: "The date filter at the right of the toolbar only affects the citation charts at the bottom; the KPI cards and inventory always show every document.",
     },
     {
       target: '[data-tour="documents-kpis"]',

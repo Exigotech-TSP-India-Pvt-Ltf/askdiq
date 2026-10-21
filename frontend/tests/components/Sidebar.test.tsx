@@ -21,6 +21,12 @@ function signInAs(role: Role | null, status?: "pending" | "rejected" | "active")
   auth.current = authValue(makeMe(role, status), { logout: auth.logout });
 }
 
+/** Opens the OR-3 profile menu and returns its top-level panel. */
+function openAccountMenu(scope: Pick<typeof screen, "getByRole"> = screen): HTMLElement {
+  fireEvent.click(scope.getByRole("button", { name: /account menu/i }));
+  return scope.getByRole("menu", { name: "Account" });
+}
+
 beforeEach(() => {
   // Admin by default; the role matrix below switches roles per case.
   signInAs("admin");
@@ -99,7 +105,8 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
   it("collapsed rail still offers Sign out", () => {
     render(<Sidebar />);
     fireEvent.click(screen.getByTitle("Collapse sidebar"));
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    const menu = openAccountMenu();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Sign out" }));
     expect(auth.logout).toHaveBeenCalled();
   });
 
@@ -107,12 +114,14 @@ describe("Sidebar Navigation Component (Task 4.3)", () => {
     auth.logout.mockReset();
     auth.logout.mockReturnValue(new Promise<void>(() => undefined));
     render(<Sidebar />);
-    const button = screen.getByRole("button", { name: "Sign out" });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    const menu = openAccountMenu();
+    const item = within(menu).getByRole("menuitem", { name: "Sign out" });
+    fireEvent.click(item);
+    fireEvent.click(item);
     expect(auth.logout).toHaveBeenCalledTimes(1);
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    expect(item).toHaveAttribute("aria-busy", "true");
+    expect(item).toHaveTextContent("Signing out…");
   });
 
   it("toggles sidebar collapsed state on expand/collapse button click", () => {
@@ -161,7 +170,7 @@ describe("Sidebar nav registry, icons and active indicator (PR-17)", () => {
   it("names the icon-only controls", () => {
     render(<Sidebar />);
     expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /account menu/i })).toHaveAttribute("aria-haspopup", "menu");
   });
 });
 
@@ -189,9 +198,9 @@ describe("Mobile off-canvas sidebar", () => {
     await waitFor(() => expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus());
 
     // Shift+Tab from the first control wraps to the last control inside the drawer:
-    // Sign out, at the end of the account corner.
+    // the profile menu button, at the end of the account corner.
     await user.tab({ shift: true });
-    expect(within(drawer).getByRole("button", { name: "Sign out" })).toHaveFocus();
+    expect(within(drawer).getByRole("button", { name: /account menu/i })).toHaveFocus();
     await user.tab();
     expect(within(drawer).getByRole("button", { name: "Close navigation" })).toHaveFocus();
 
@@ -226,7 +235,7 @@ describe("Mobile off-canvas sidebar", () => {
     expect(within(bar).getByRole("button", { name: "Open navigation" })).toBeInTheDocument();
   });
 
-  it("the drawer ends with the account corner: identity, bell, theme and sign out", async () => {
+  it("the drawer ends with the account corner: identity and the profile menu (notifications, theme, sign out)", async () => {
     signInAs("superadmin");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
     render(
@@ -240,11 +249,11 @@ describe("Mobile off-canvas sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
     const drawer = await screen.findByRole("dialog", { name: "Navigation" });
     expect(within(drawer).getByTestId("role-badge")).toHaveTextContent("Superadmin");
-    expect(within(drawer).getByTestId("account-email")).toHaveTextContent("jane@contoso.example");
-    const actions = within(drawer).getByRole("group", { name: "Account actions" });
-    expect(within(actions).getByRole("button", { name: "Notifications" })).toBeInTheDocument();
-    expect(within(actions).getByRole("button", { name: /theme:/i })).toBeInTheDocument();
-    fireEvent.click(within(actions).getByRole("button", { name: "Sign out" }));
+    const menu = openAccountMenu(within(drawer));
+    expect(within(menu).getByTestId("account-email")).toHaveTextContent("jane@contoso.example");
+    expect(within(menu).getByRole("menuitem", { name: /^Notifications/ })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: /^Theme/ })).toBeInTheDocument();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Sign out" }));
     expect(auth.logout).toHaveBeenCalled();
   });
 
@@ -314,42 +323,38 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
     render(<Sidebar />);
     expect(screen.getByText("Jane Doe")).toHaveAttribute("title", "Jane Doe");
-    const email = screen.getByTestId("account-email");
+    expect(screen.getByTestId("role-badge")).toHaveTextContent("Superadmin");
+    // The email line moved into the menu header (OR-3).
+    expect(screen.queryByTestId("account-email")).not.toBeInTheDocument();
+    const menu = openAccountMenu();
+    const email = within(menu).getByTestId("account-email");
     expect(email).toHaveTextContent("jane@contoso.example");
     // Full address on hover even when the line truncates.
     expect(email).toHaveAttribute("title", "jane@contoso.example");
     // One line, one trailing ellipsis: a single truncating text node (no local-part / domain split).
     expect(email).toHaveClass("truncate");
     expect(email.children).toHaveLength(0);
-    expect(screen.getByTestId("role-badge")).toHaveTextContent("Superadmin");
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Sign out" }));
     expect(auth.logout).toHaveBeenCalled();
   });
 
-  it("puts the role badge on the name line and the actions on their own row", () => {
+  it("one profile button: avatar, name, role badge and a chevron; the actions live in its menu", () => {
     signInAs("superadmin");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
     render(<Sidebar />);
-    const name = screen.getByText("Jane Doe");
-    const nameLine = name.parentElement!;
-    // Name truncates first; the badge never shrinks.
-    expect(name).toHaveClass("truncate", "min-w-0");
-    expect(nameLine).toContainElement(screen.getByTestId("role-badge"));
-    expect(nameLine).not.toContainElement(screen.getByTestId("account-email"));
-    const actions = screen.getByRole("group", { name: "Account actions" });
-    expect(actions).not.toContainElement(screen.getByTestId("role-badge"));
-    for (const control of [
-      screen.getByRole("button", { name: "Notifications" }),
-      screen.getByRole("button", { name: /theme:/i }),
-      screen.getByRole("button", { name: "Sign out" }),
-    ]) {
-      expect(actions).toContainElement(control);
-      expect(control).toHaveClass("h-8", "w-8", "rounded-lg", "border");
-      expect(control).toHaveAttribute("title");
-    }
+    const trigger = screen.getByRole("button", { name: /account menu/i });
+    expect(trigger).toHaveTextContent("JD");
+    expect(trigger).toContainElement(screen.getByText("Jane Doe"));
+    expect(trigger).toContainElement(screen.getByTestId("role-badge"));
+    expect(screen.getByText("Jane Doe")).toHaveClass("truncate");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    // No standalone account buttons any more.
+    expect(screen.queryByRole("button", { name: /^Notifications/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /theme:/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
   });
 
-  it("the bell keeps its unread badge and opens its panel upward from the account row", async () => {
+  it("the notifications submenu keeps the unread count and opens upward from the account row", async () => {
     signInAs("superadmin");
     vi.stubGlobal(
       "fetch",
@@ -360,63 +365,54 @@ describe("Role-aware sidebar (PR-18, F1.3)", () => {
         <Sidebar />
       </MotionProvider>,
     );
-    const bell = await screen.findByRole("button", { name: "Notifications (1 new)" });
-    expect(bell).toHaveTextContent("1");
-    fireEvent.click(bell);
-    expect(bell).toHaveAttribute("aria-expanded", "true");
-    const panel = await screen.findByRole("dialog", { name: "Notifications" });
-    expect(panel.className).toContain("bottom-full");
-    expect(within(panel).getByRole("link", { name: /2 access requests waiting/i })).toHaveAttribute(
+    const trigger = await screen.findByRole("button", { name: /account menu \(1 new notification\)/i });
+    expect(screen.getByTestId("account-unread-dot")).toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const menu = screen.getByRole("menu", { name: "Account" });
+    expect(menu.parentElement!.className).toContain("bottom-full");
+    const item = within(menu).getByRole("menuitem", { name: /^Notifications/ });
+    expect(item).toHaveTextContent("1");
+    fireEvent.click(item);
+    const sub = screen.getByRole("menu", { name: "Notifications" });
+    expect(within(sub).getByRole("menuitem", { name: /2 access requests waiting/i })).toHaveAttribute(
       "href",
       "/admin/user-management?tab=requests",
     );
   });
 
-  it("offers Help when the brand sets a help URL, and hides it otherwise", () => {
-    const { unmount } = render(
+  it("has no Help item, even when the brand sets a help URL (owner decision D8)", () => {
+    render(
       <BrandProvider brand={{ ...DEFAULT_BRAND, links: { ...DEFAULT_BRAND.links, help: "https://help.example.com/askdiq" } }}>
         <Sidebar />
       </BrandProvider>,
     );
-    const help = screen.getByRole("link", { name: "Help" });
-    expect(help).toHaveAttribute("href", "https://help.example.com/askdiq");
-    expect(help).toHaveAttribute("rel", expect.stringContaining("noopener"));
-    expect(help).toHaveAttribute("title", "Help (opens in a new tab)");
-    unmount();
-    render(<Sidebar />);
     expect(screen.queryByRole("link", { name: "Help" })).not.toBeInTheDocument();
+    const menu = openAccountMenu();
+    expect(within(menu).queryByRole("menuitem", { name: /help/i })).not.toBeInTheDocument();
   });
 
-  it("collapsed account shows an avatar with the name, email and role as its label", () => {
+  it("collapsed account shows the avatar only, with the name, email and role as its tooltip", () => {
     signInAs("superadmin");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ total: 0 }), { status: 200 })));
     render(<Sidebar />);
     fireEvent.click(screen.getByTitle("Collapse sidebar"));
-    const avatar = screen.getByRole("img", { name: "Jane Doe, jane@contoso.example, Superadmin" });
-    expect(avatar).toHaveTextContent("JD");
-    expect(screen.queryByTestId("account-email")).not.toBeInTheDocument();
-    // Every action stays reachable, stacked under the avatar, each with a tooltip.
-    const actions = screen.getByRole("group", { name: "Account actions" });
-    expect(actions).toHaveClass("flex-col");
-    for (const control of [
-      screen.getByRole("button", { name: "Notifications" }),
-      screen.getByRole("button", { name: /theme:/i }),
-      screen.getByRole("button", { name: "Sign out" }),
-    ]) {
-      expect(actions).toContainElement(control);
-      expect(control).toHaveAttribute("title");
-    }
+    const trigger = screen.getByRole("button", { name: /account menu/i });
+    expect(trigger).toHaveTextContent("JD");
+    expect(trigger.getAttribute("title")).toBe(["Jane Doe", "jane@contoso.example", "Superadmin"].join(String.fromCharCode(10)));
+    expect(screen.queryByText("Jane Doe")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("role-badge")).not.toBeInTheDocument();
   });
 
-  it("collapsed: the bell panel opens to the side of the rail", async () => {
+  it("collapsed: the menu opens to the side of the rail", () => {
     render(
       <MotionProvider>
         <Sidebar />
       </MotionProvider>,
     );
     fireEvent.click(screen.getByTitle("Collapse sidebar"));
-    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
-    expect((await screen.findByRole("dialog", { name: "Notifications" })).className).toContain("left-full");
+    const menu = openAccountMenu();
+    expect(menu.parentElement!.className).toContain("left-full");
   });
 });
 

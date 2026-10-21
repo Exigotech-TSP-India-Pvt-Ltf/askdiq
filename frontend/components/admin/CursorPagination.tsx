@@ -56,23 +56,27 @@ export function CursorPagination({
   return (
     <nav
       aria-label="Cursor pagination"
-      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-studio/50 dark:bg-white/[0.02] px-5 py-3 ${className}`}
+      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-studio/50 dark:bg-white/[0.02] px-4 py-3 sm:px-5 ${className}`}
     >
-      <p className="flex items-center gap-1.5 text-xs text-fg-subtle" aria-live="polite">
-        {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} aria-hidden="true" /> : null}
+      {/* VA-35: on phones only "x–y of N" and the buttons (no "Rows per page" / "Page n of m"). */}
+      <p className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-subtle" aria-live="polite">
+        {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.75} aria-hidden="true" /> : null}
         {start !== undefined && end !== undefined && totalItems !== undefined ? (
-          <>
-            Showing <span className="font-medium text-fg">{start.toLocaleString()}</span>–
+          <span>
+            <span className="hidden sm:inline">Showing </span>
+            <span className="font-medium text-fg">{start.toLocaleString()}</span>–
             <span className="font-medium text-fg">{end.toLocaleString()}</span> of{" "}
-            <span className="font-medium text-fg">{totalItems.toLocaleString()}</span> {itemLabel}
-          </>
+            <span className="font-medium text-fg">{totalItems.toLocaleString()}</span>
+            <span className="hidden sm:inline"> {itemLabel}</span>
+          </span>
         ) : (
-          <>
-            Showing <span className="font-medium text-fg">{pageItemCount.toLocaleString()}</span> {itemLabel}
-          </>
+          <span>
+            <span className="hidden sm:inline">Showing </span>
+            <span className="font-medium text-fg">{pageItemCount.toLocaleString()}</span> {itemLabel}
+          </span>
         )}
         {onPageSizeChange && pageSize ? (
-          <span className="ml-3 flex items-center gap-1.5 border-l border-line pl-3">
+          <span className="ml-3 hidden items-center gap-1.5 border-l border-line pl-3 sm:flex">
             <label htmlFor="cursor-page-size" className="text-fg-subtle">
               Rows per page:
             </label>
@@ -91,9 +95,9 @@ export function CursorPagination({
           </span>
         ) : null}
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 max-sm:mr-auto">
         {page ? (
-          <span className="text-xs text-fg-subtle tabular-nums" data-testid="cursor-page">
+          <span className="hidden text-xs text-fg-subtle tabular-nums sm:inline" data-testid="cursor-page">
             Page <span className="font-medium text-fg">{page}</span>
             {pageCount ? (
               <>

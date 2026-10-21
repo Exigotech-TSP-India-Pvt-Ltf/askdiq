@@ -134,7 +134,7 @@ describe("Visitors list", () => {
     renderPage(<VisitorsPage />, { role: "operator" });
     await screen.findByRole("link", { name: IP });
     expect(screen.queryByRole("button", { name: /as test IP/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Manage test IPs/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Test IPs$/ })).not.toBeInTheDocument();
   });
 });
 

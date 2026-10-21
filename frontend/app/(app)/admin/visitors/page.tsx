@@ -3,6 +3,7 @@
 import React, { useCallback, useState } from "react";
 import { MessagesSquare, Network, Users as UsersIcon } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { VisitorsPanel } from "@/components/admin/audience/VisitorsPanel";
@@ -54,26 +55,28 @@ function AudienceContent() {
           title={AUDIENCE_PAGE_LABEL}
           subtitle={SUBTITLE[tab]}
           icon={tab === "visitors" ? UsersIcon : MessagesSquare}
-          showDateRange
+        />
+      </div>
+
+      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-4 sm:p-8">
+        <PageToolbar
+          tabsTour="audience-tabs"
+          tabs={<TabGroup tabs={TABS} activeTab={tab} onChange={changeTab} ariaLabel="Visitors and conversations" />}
           actions={
             canWriteTestIp ? (
               <HeaderIconButton
                 icon={Network}
-                label="Manage test IPs"
+                label="Test IPs"
                 tooltip="Manage test IPs (excluded from Users)"
+                showLabel
                 data-tour="visitors-manage-test-ips"
                 aria-haspopup="dialog"
                 onClick={() => setConfigOpen(true)}
               />
             ) : undefined
           }
+          dateRange
         />
-      </div>
-
-      <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-4 sm:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-3" data-tour="audience-tabs">
-          <TabGroup tabs={TABS} activeTab={tab} onChange={changeTab} ariaLabel="Visitors and conversations" />
-        </div>
 
         <div role="tabpanel" aria-label={tab === "visitors" ? "Visitors" : "Conversations"}>
           {tab === "visitors" ? <VisitorsPanel /> : <ConversationsPanel />}

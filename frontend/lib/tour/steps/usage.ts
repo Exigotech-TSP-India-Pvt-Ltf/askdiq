@@ -101,7 +101,7 @@ export const usageTour: PageTour = {
     },
     {
       title: "That's Usage & Cost",
-      body: "Start from net spend and the forecast, then drill from user, to session, to turn to explain any spike. Use Configure Test IPs to keep QA traffic out of production numbers. Related: Conversations, Governance traces and the Dashboard.",
+      body: "Start from net spend and the forecast, then drill from user, to session, to turn to explain any spike. Use Test IPs on the tab row to keep QA traffic out of production numbers. Related: Conversations, Governance traces and the Dashboard.",
       placement: "center",
     },
   ],

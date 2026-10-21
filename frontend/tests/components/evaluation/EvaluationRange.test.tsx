@@ -22,14 +22,15 @@ function summaryCalls(spy: { mock: { calls: unknown[][] } }) {
 }
 
 describe("Evaluation header actions", () => {
-  it("Compare with benchmark is an icon-only toggle in the action cluster beside the date range", async () => {
+  it("Compare with benchmark is a labelled toggle on the tab row, before the date filter (OR-2)", async () => {
     vi.spyOn(api, "evaluationLiveView").mockResolvedValue(REPORT);
     renderPage(<EvaluationLivePage />, { url: "/admin/evaluation-live" });
     const compare = await screen.findByRole("button", { name: /compare with benchmark/i });
-    expect(compare).not.toHaveTextContent(/\S/);
+    expect(compare).toHaveTextContent("Compare with benchmark");
     expect(compare).toHaveAttribute("aria-pressed", "false");
-    const cluster = compare.closest("[data-header-actions]");
+    const cluster = compare.closest("[data-toolbar-actions]");
     expect(cluster).toContainElement(screen.getByRole("button", { name: /date range: last 7 days/i }));
+    expect(compare.closest("[data-page-toolbar]")).toContainElement(screen.getByRole("tablist", { name: "Live evaluation domains" }));
 
     fireEvent.click(compare);
     expect(compare).toHaveAttribute("aria-pressed", "true");

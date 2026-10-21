@@ -25,20 +25,22 @@ vi.mock("@/lib/audience-context", () => ({
 }));
 
 describe("DashboardHeader Component (Task 5.2)", () => {
-  it("renders 3-column layout with icon badge, title, and actions", () => {
-    render(
-      <DashboardHeader
-        title="Usage & Cost Analytics"
-        icon={LayoutDashboard}
-        badgeCount={42}
-        actions={<button>Export CSV</button>}
-      />
-    );
+  it("renders the icon badge, title and centred audience tabs, and no actions (OR-2)", () => {
+    render(<DashboardHeader title="Usage & Cost Analytics" icon={LayoutDashboard} badgeCount={42} />);
 
     expect(screen.getByText("Usage & Cost Analytics")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
-    expect(screen.getByText("Export CSV")).toBeInTheDocument();
-    expect(screen.getByRole("tablist", { name: "Audience Scope" })).toBeInTheDocument();
+    const tabs = screen.getByRole("tablist", { name: "Audience Scope" });
+    expect(tabs).toBeInTheDocument();
+    // VA-33: one switcher; below md it is a full-width row (not hidden).
+    expect(tabs.closest("[data-header-centre]")).not.toHaveClass("hidden");
+    expect(tabs).toHaveClass("w-full", "md:w-auto");
+  });
+
+  it("without the audience switcher it is a single column (no empty centre)", () => {
+    const { container } = render(<DashboardHeader title="Settings" icon={LayoutDashboard} showAudienceTabs={false} />);
+    expect(container.querySelector("[data-header-centre]")).toBeNull();
+    expect(screen.getByRole("banner")).toHaveClass("h-20");
   });
 });
 

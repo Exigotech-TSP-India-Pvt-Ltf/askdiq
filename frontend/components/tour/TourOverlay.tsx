@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { m } from "motion/react";
 import { ArrowLeft, ArrowRight, Check, Compass, X } from "lucide-react";
 import type { TourStep } from "@/lib/tour/types";
-import { SPOTLIGHT_PADDING, placeCard, type Box } from "@/lib/tour/dom";
+import { placeCard, spotlightBox, type Box } from "@/lib/tour/dom";
 import { instant, spring, tourProgress, tourScrimFade } from "@/lib/motion";
 import { iconButton, primaryButton, secondaryButton } from "@/components/ui/styles";
 
@@ -27,12 +27,19 @@ interface TourOverlayProps {
 function measure(el: HTMLElement | null): Box | null {
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  return {
-    top: r.top - SPOTLIGHT_PADDING,
-    left: r.left - SPOTLIGHT_PADDING,
-    width: r.width + SPOTLIGHT_PADDING * 2,
-    height: r.height + SPOTLIGHT_PADDING * 2,
-  };
+  const viewportBox = { top: 0, left: 0, right: window.innerWidth, bottom: window.innerHeight };
+  // Inside the page column the spotlight stays within it (never over the sidebar).
+  const column = el.closest("main")?.getBoundingClientRect();
+  const bounds =
+    column && column.width > 0
+      ? {
+          top: Math.max(column.top, 0),
+          left: Math.max(column.left, 0),
+          right: Math.min(column.right, viewportBox.right),
+          bottom: Math.min(column.bottom, viewportBox.bottom),
+        }
+      : viewportBox;
+  return spotlightBox(r, bounds);
 }
 
 function viewport(): { vw: number; vh: number } {

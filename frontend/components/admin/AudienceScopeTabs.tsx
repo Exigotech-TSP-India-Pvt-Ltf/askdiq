@@ -11,6 +11,8 @@ interface AudienceScopeTabsProps {
   token?: string | null;
   className?: string;
   counts?: AudienceCounts | null;
+  /** Below `md`, a full-width segmented row (VA-33): the tabs share the width. */
+  fill?: boolean;
 }
 
 const TABS: Array<{
@@ -42,6 +44,7 @@ const TABS: Array<{
 export function AudienceScopeTabs({
   className = "",
   counts: externalCounts,
+  fill = false,
 }: AudienceScopeTabsProps) {
   const { audience, setAudience, counts: contextCounts } = useAudience();
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -67,7 +70,7 @@ export function AudienceScopeTabs({
     <div
       role="tablist"
       aria-label="Audience Scope"
-      className={`${segmentTrack} select-none ${className}`}
+      className={`${segmentTrack} select-none ${fill ? "flex w-full md:inline-flex md:w-auto" : ""} ${className}`}
     >
       {TABS.map((tab, idx) => {
         const isActive = audience === tab.id;
@@ -90,7 +93,7 @@ export function AudienceScopeTabs({
             onClick={() => setAudience(tab.id)}
             onKeyDown={(e) => handleKeyDown(e, idx)}
             title={tooltip}
-            className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
+            className={`relative flex items-center gap-2 ${fill ? "min-w-0 flex-1 justify-center px-2 md:flex-none md:px-3.5" : "px-3.5"} py-1.5 text-xs font-semibold rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
               isActive
                 ? "text-white"
                 : "text-fg-muted hover:text-fg hover:bg-surface-card/80 dark:hover:bg-white/[0.06]"

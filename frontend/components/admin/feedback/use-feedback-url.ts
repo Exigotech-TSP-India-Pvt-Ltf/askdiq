@@ -2,15 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useDeepLink } from "@/lib/use-deep-link";
-import {
-  FILTER_URL_KEYS,
-  activeChips,
-  parseFilters,
-  patchToUrl,
-  type FeedbackFilters,
-  type FilterChip,
-  type FilterPatch,
-} from "@/lib/feedback-filters";
+import { FILTER_URL_KEYS, parseFilters, patchToUrl, type FeedbackFilters, type FilterPatch } from "@/lib/feedback-filters";
 
 export const FEEDBACK_TABS = ["overview", "queue", "golden", "pairs", "gaps"] as const;
 export type FeedbackTab = (typeof FEEDBACK_TABS)[number];
@@ -22,17 +14,16 @@ function isTab(value: string | null): value is FeedbackTab {
 export interface FeedbackUrlState {
   tab: FeedbackTab;
   filters: FeedbackFilters;
-  chips: FilterChip[];
   setTab: (tab: FeedbackTab) => void;
   /** Applies a filter patch; `openQueue` also switches to the Review Queue (chart clicks). */
   applyFilters: (patch: FilterPatch, options?: { openQueue?: boolean }) => void;
-  removeChip: (chip: FilterChip) => void;
   clearAll: () => void;
 }
 
 /**
  * Tab and queue filters for the Feedback page, kept in the URL
- * ("active filters show as removable chips and sync to the URL").
+ * ("active filters show as editable chips and sync to the URL"; the chips
+ * themselves are `FilterChipBar` descriptors, see `filter-descriptors.ts`).
  */
 export function useFeedbackUrl(): FeedbackUrlState {
   const { get, set, search } = useDeepLink();
@@ -40,7 +31,7 @@ export function useFeedbackUrl(): FeedbackUrlState {
   // A deep link to a message (EntityLink "feedback") lands on the queue.
   const tab: FeedbackTab = isTab(rawTab) ? rawTab : get("message_id") ? "queue" : "overview";
   const filters = useMemo(() => parseFilters(new URLSearchParams(search)), [search]);
-  const chips = useMemo(() => activeChips(filters), [filters]);
+
 
   // Switching tab drops a message deep link; otherwise `message_id` would keep
   // resolving the page back to the queue and Overview could not be reached.
@@ -56,10 +47,6 @@ export function useFeedbackUrl(): FeedbackUrlState {
     [set],
   );
 
-  const removeChip = useCallback(
-    (chip: FilterChip) => set(patchToUrl({ [chip.key]: chip.resetTo ?? null })),
-    [set],
-  );
 
   const clearAll = useCallback(() => {
     const update: Record<string, string | null> = {};
@@ -68,5 +55,5 @@ export function useFeedbackUrl(): FeedbackUrlState {
     set(update);
   }, [set]);
 
-  return { tab, filters, chips, setTab, applyFilters, removeChip, clearAll };
+  return { tab, filters, setTab, applyFilters, clearAll };
 }

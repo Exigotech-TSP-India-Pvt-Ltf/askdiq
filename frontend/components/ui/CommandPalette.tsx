@@ -2,7 +2,7 @@
 
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Command, CornerDownLeft, FileSearch, Loader2, Search } from "lucide-react";
+import { CornerDownLeft, FileSearch, Loader2, Search } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 
 export interface PaletteItem {
@@ -222,10 +222,8 @@ export function CommandPalette({ open, onClose, pages, searchProvider, canAccess
         )}
       </ul>
       <div className="flex items-center justify-between border-t border-line bg-surface-muted/50 px-4 py-2 text-[11px] text-fg-subtle">
-        <span className="flex items-center gap-1">
-          <Command className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-          <span>↑ ↓ to move · Enter to open · Esc to close</span>
-        </span>
+        {/* VA-49: no Mac-only ⌘ glyph here; moving needs no modifier on any platform. */}
+        <span data-testid="palette-key-hints">↑ ↓ to move · Enter to open · Esc to close</span>
         <span>? for shortcuts</span>
       </div>
     </Modal>

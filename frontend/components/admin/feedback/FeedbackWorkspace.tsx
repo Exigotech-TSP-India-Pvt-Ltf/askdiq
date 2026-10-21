@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useMemo } from "react";
 import { FileJson, FlaskConical, Inbox, LayoutDashboard, SearchX, ThumbsUp } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
+import { FilterChipBar } from "@/components/admin/filters/FilterChipBar";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import { useAuth } from "@/lib/auth-context";
 import { useAudience } from "@/lib/audience-context";
@@ -18,7 +20,7 @@ import {
   type FeedbackAnalytics,
 } from "@/lib/feedback-api";
 import { hasClientFilters, type FilterPatch } from "@/lib/feedback-filters";
-import { FilterChips } from "./FilterChips";
+import { feedbackFilterDescriptors } from "./filter-descriptors";
 import { FeedbackOverview } from "./FeedbackOverview";
 import { ReviewQueue, queueBaseParams } from "./ReviewQueue";
 import { GOLDEN_PAGE_SIZE, GoldenCasesTab } from "./GoldenCasesTab";
@@ -36,7 +38,12 @@ export function FeedbackWorkspace() {
   const { audience } = useAudience();
   const canTriage = useCan("feedback:triage");
   const canExport = useCan("feedback:export");
-  const { tab, filters, chips, setTab, applyFilters, removeChip, clearAll } = useFeedbackUrl();
+  const { tab, filters, setTab, applyFilters, clearAll } = useFeedbackUrl();
+  const descriptors = useMemo(() => feedbackFilterDescriptors(filters), [filters]);
+  const onFilterChange = useCallback(
+    (key: string, value: string) => applyFilters({ [key]: value === "" ? null : value } as FilterPatch),
+    [applyFilters],
+  );
   // The global date range (header picker) bounds every tab: KPIs, queue,
   // golden cases and preference pairs.
   const { from, to } = useRangeParams();
@@ -90,20 +97,24 @@ export function FeedbackWorkspace() {
         title="Feedback"
         subtitle="Human feedback loop: triage ratings, promote golden cases, export preference pairs"
         icon={ThumbsUp}
-        showDateRange
       />
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-5 p-4 sm:p-6 lg:p-8">
-        <div data-tour="feedback-tabs">
-          <TabGroup tabs={tabs} activeTab={tab} onChange={setTab} ariaLabel="Feedback sections" />
-        </div>
-        {showChips ? (
-          <FilterChips
-            chips={chips}
-            onRemove={removeChip}
-            onClearAll={clearAll}
-            note={hasClientFilters(filters) ? "Reason and sentiment narrow the loaded page." : undefined}
-          />
-        ) : null}
+        <PageToolbar
+          tabsTour="feedback-tabs"
+          tabs={<TabGroup tabs={tabs} activeTab={tab} onChange={setTab} ariaLabel="Feedback sections" />}
+          filters={
+            showChips ? (
+              <FilterChipBar
+                data-tour="feedback-filter-chips"
+                filters={descriptors}
+                onChange={onFilterChange}
+                onClearAll={clearAll}
+                note={hasClientFilters(filters) ? "Reason and sentiment narrow the loaded page." : undefined}
+              />
+            ) : null
+          }
+          dateRange
+        />
 
         <div data-tour="feedback-panel" role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
           {tab === "overview" ? (

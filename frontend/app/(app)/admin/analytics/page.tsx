@@ -12,7 +12,6 @@ export default function AnalyticsPage() {
         title="Analytics"
         subtitle="What people ask, how it was answered and where conversations drop"
         icon={ChartColumnBig}
-        showDateRange
       />
       <AnalyticsView />
     </div>

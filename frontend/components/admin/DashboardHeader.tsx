@@ -4,7 +4,6 @@ import React from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { AudienceScopeTabs } from "@/components/admin/AudienceScopeTabs";
-import { DateRangePicker } from "@/components/ui/DateRangePicker";
 
 export interface BreadcrumbItem {
   label: string;
@@ -12,6 +11,11 @@ export interface BreadcrumbItem {
   href?: string;
 }
 
+/**
+ * Page header: icon, title and subtitle (or breadcrumb), plus the centred
+ * audience switcher where the page has one. It holds no actions (OR-2):
+ * every page action and the date filter live on the tab row (`PageToolbar`).
+ */
 export interface DashboardHeaderProps {
   title: string;
   subtitle?: string;
@@ -21,14 +25,6 @@ export interface DashboardHeaderProps {
   badgeCount?: number | string | null;
   centerSlot?: React.ReactNode;
   showAudienceTabs?: boolean;
-  /**
-   * Shows the global DateRangePicker (icon button) at the start of the
-   * right-corner action cluster. Opt-in until a
-   * page reads `useRange()`, so the control never appears without effect.
-   */
-  showDateRange?: boolean;
-  actions?: React.ReactNode;
-  children?: React.ReactNode;
   className?: string;
 }
 
@@ -40,18 +36,29 @@ export function DashboardHeader({
   badgeCount,
   centerSlot,
   showAudienceTabs = true,
-  showDateRange = false,
-  actions,
-  children,
   className = "",
 }: DashboardHeaderProps) {
+  const centre =
+    centerSlot !== undefined ? (
+      centerSlot
+    ) : showAudienceTabs ? (
+      <div data-tour="shell-audience">
+        <AudienceScopeTabs fill />
+      </div>
+    ) : null;
+  const hasCentre = centre !== null && centre !== false;
+
   return (
     <header
-      className={`grid h-20 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-line bg-surface-card px-4 sm:px-6 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] dark:border-brand-500/15 ${className}`}
+      className={`grid shrink-0 grid-cols-[minmax(0,1fr)] items-center border-b border-line bg-surface-card px-4 sm:px-6 ${
+        hasCentre
+          ? "min-h-20 gap-x-4 gap-y-2 py-3 md:h-20 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:py-0"
+          : "h-20 gap-4"
+      } dark:border-brand-500/15 ${className}`}
     >
       {/* Left column: icon badge + title + subtitle. Equal-width side columns
           keep the centre column (audience switcher) at the same position on
-          every page, whatever the title or the action cluster holds. */}
+          every page, whatever the title holds. */}
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm border-brand-200/80 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/15 dark:text-brand-300">
           <Icon className="h-4 w-4" />
@@ -62,7 +69,7 @@ export function DashboardHeader({
               {title}
             </h1>
             {badgeCount !== undefined && badgeCount !== null ? (
-              <span className="inline-flex items-center rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-fg-muted">
+              <span className="inline-flex shrink-0 items-center rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-fg-muted">
                 {badgeCount}
               </span>
             ) : null}
@@ -76,12 +83,13 @@ export function DashboardHeader({
                     {item.href ? (
                       <Link
                         href={item.href}
+                        title={item.label}
                         className="truncate rounded hover:text-accent-fg hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                       >
                         {item.label}
                       </Link>
                     ) : (
-                      <span aria-current="page" className="truncate text-fg-muted">
+                      <span aria-current="page" title={item.label} className="truncate text-fg-muted">
                         {item.label}
                       </span>
                     )}
@@ -89,37 +97,23 @@ export function DashboardHeader({
                 ))}
               </ol>
             </nav>
-          ) : subtitle && (
-            <p title={subtitle} className="truncate text-[11px] text-fg-subtle font-normal leading-tight">
-              {subtitle}
-            </p>
+          ) : (
+            subtitle && (
+              // VA-43: up to two lines, then an ellipsis; the full text is the tooltip.
+              <p title={subtitle} data-testid="header-subtitle" className="line-clamp-2 text-[11px] font-normal leading-tight text-fg-subtle">
+                {subtitle}
+              </p>
+            )
           )}
         </div>
       </div>
 
       {/* Centre column: AudienceScopeTabs (or a custom slot), always centred.
-          Rendered empty when unused so the side columns stay equal. */}
-      <div className="hidden items-center justify-center md:flex">
-        {centerSlot !== undefined ? (
-          centerSlot
-        ) : showAudienceTabs ? (
-          <div data-tour="shell-audience">
-            <AudienceScopeTabs />
-          </div>
-        ) : null}
-      </div>
-
-      {/* Right corner: compact cluster of 36px icon actions (date range first,
-          then page actions). Notifications, tours, theme and sign out live in
-          the sidebar account corner. */}
-      <div data-header-actions className="flex min-w-0 items-center justify-end gap-2">
-        {showDateRange ? (
-          <div data-tour="shell-date-range" className="flex">
-            <DateRangePicker />
-          </div>
-        ) : null}
-        {actions ?? children}
-      </div>
+          VA-33: below md it is a full-width second row, so the audience can
+          still be changed on a phone. */}
+      {hasCentre ? <div data-header-centre className="flex min-w-0 items-center justify-center [&>*]:w-full md:[&>*]:w-auto">{centre}</div> : null}
+      {/* Empty right column keeps the side columns equal, so the switcher stays centred. */}
+      {hasCentre ? <div aria-hidden="true" className="hidden md:block" /> : null}
     </header>
   );
 }

@@ -3,7 +3,8 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, m } from "motion/react";
-import { Compass, LayoutDashboard, MapPin } from "lucide-react";
+import { Compass, LayoutDashboard, MapPin, type LucideIcon } from "lucide-react";
+import type { TourId } from "@/lib/tour/types";
 import { TOURS } from "@/lib/tour/registry";
 import { tourIdForPath } from "@/lib/tour/routes";
 import { hasSeenTour, markTourSeen } from "@/lib/tour/dom";
@@ -11,6 +12,9 @@ import { pop, useMotionVariants } from "@/lib/motion";
 import { focusRing, menuItem, popoverPanel } from "@/components/ui/styles";
 import { useTourOptional, type TourContextValue } from "@/components/tour/TourProvider";
 import { accountActionButton, accountPopoverPosition, type AccountPopoverPlacement } from "@/components/shell/account-actions";
+
+/** How long the first-visit pulse shows. */
+const HINT_MS = 12000;
 
 export type TourLauncherVariant = "sidebar" | "drawer" | "floating";
 
@@ -38,7 +42,19 @@ interface TourLauncherInnerProps extends Required<Pick<TourLauncherProps, "varia
   onBeforeStart?: () => void;
 }
 
-function TourLauncherInner({ tour, variant, placement, onBeforeStart }: TourLauncherInnerProps) {
+/** One entry of the tour menu (the sidebar profile menu reuses these). */
+export interface TourChoice {
+  id: TourId;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+}
+
+/**
+ * The tours offered on the current route: "Tour this page" (when the page has
+ * one) and "Dashboard basics". `pageId` is null on routes without a tour.
+ */
+export function useTourChoices(): { pageId: TourId | null; choices: TourChoice[] } {
   const pathname = usePathname() ?? "";
   // Tabbed pages pick their tour from ?tab= (read after mount: no hydration mismatch).
   // Re-checked after every render (a tab switch re-renders the header) and only set
@@ -50,33 +66,52 @@ function TourLauncherInner({ tour, variant, placement, onBeforeStart }: TourLaun
     if (window.location.search !== search) setSearch(window.location.search);
   });
   const pageId = tourIdForPath(pathname, search);
-  const [open, setOpen] = useState(false);
+  if (!pageId) return { pageId: null, choices: [] };
+  const pageTour = TOURS[pageId];
+  const choices: TourChoice[] = [];
+  if (pageId !== "shell" && pageTour.steps.length > 0) {
+    choices.push({ id: pageId, label: "Tour this page", description: pageTour.title, icon: MapPin });
+  }
+  choices.push({ id: "shell", label: "Dashboard basics", description: "Navigation, filters and tools", icon: LayoutDashboard });
+  return { pageId, choices };
+}
+
+/**
+ * First visit to a toured page: a subtle pulse on the visible launcher (never
+ * auto-opens the tour). Only a rendered anchor claims the hint, so a hidden
+ * mobile / desktop twin doesn't swallow it.
+ */
+export function useTourHint(pageId: TourId | null, anchorRef: React.RefObject<HTMLElement>, recheck: unknown) {
   const [hint, setHint] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuId = useId();
-  const variants = useMotionVariants(pop);
-  const { registerHeaderLauncher, headerLaunchers, start } = tour;
-
-  useEffect(() => (variant === "sidebar" ? registerHeaderLauncher() : undefined), [variant, registerHeaderLauncher]);
-
-  // First visit: a subtle pulse on the launcher (never auto-opens the tour). Only a visible
-  // launcher claims the hint, so the hidden mobile/desktop twin doesn't swallow it.
   useEffect(() => {
     setHint(false);
   }, [pageId]);
   useEffect(() => {
     if (!pageId || hasSeenTour(pageId)) return;
-    const el = rootRef.current;
+    const el = anchorRef.current;
     if (!el || el.getClientRects().length === 0) return;
     markTourSeen(pageId);
     setHint(true);
-  }, [pageId, headerLaunchers]);
+  }, [pageId, recheck, anchorRef]);
   useEffect(() => {
-    if (!hint) return;
-    const timer = window.setTimeout(() => setHint(false), 12000);
+    if (!hint) return undefined;
+    const timer = window.setTimeout(() => setHint(false), HINT_MS);
     return () => window.clearTimeout(timer);
   }, [hint]);
+  return [hint, setHint] as const;
+}
+
+function TourLauncherInner({ tour, variant, placement, onBeforeStart }: TourLauncherInnerProps) {
+  const { pageId, choices } = useTourChoices();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  const variants = useMotionVariants(pop);
+  const { registerHeaderLauncher, headerLaunchers, start } = tour;
+  const [hint, setHint] = useTourHint(pageId, rootRef, headerLaunchers);
+
+  useEffect(() => (variant === "sidebar" ? registerHeaderLauncher() : undefined), [variant, registerHeaderLauncher]);
 
   useEffect(() => {
     if (!open) return;
@@ -100,10 +135,7 @@ function TourLauncherInner({ tour, variant, placement, onBeforeStart }: TourLaun
   if (!pageId) return null;
   if (variant === "floating" && headerLaunchers > 0) return null;
 
-  const pageTour = TOURS[pageId];
-  const hasPageTour = pageId !== "shell" && pageTour.steps.length > 0;
-
-  const launch = (id: typeof pageId) => {
+  const launch = (id: TourId) => {
     setOpen(false);
     setHint(false);
     onBeforeStart?.();
@@ -158,22 +190,15 @@ function TourLauncherInner({ tour, variant, placement, onBeforeStart }: TourLaun
             className={`absolute z-50 w-56 max-w-[calc(100vw-2rem)] ${menuPosition} ${popoverPanel}`}
           >
             <p className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">Product tours</p>
-            {hasPageTour ? (
-              <button type="button" role="menuitem" className={menuItem} onClick={() => launch(pageId)}>
-                <MapPin className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" strokeWidth={1.75} aria-hidden="true" />
+            {choices.map((choice) => (
+              <button key={choice.id} type="button" role="menuitem" className={menuItem} onClick={() => launch(choice.id)}>
+                <choice.icon className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" strokeWidth={1.75} aria-hidden="true" />
                 <span className="min-w-0">
-                  <span className="block font-medium text-fg">Tour this page</span>
-                  <span className="block truncate text-[11px] text-fg-subtle">{pageTour.title}</span>
+                  <span className="block font-medium text-fg">{choice.label}</span>
+                  <span className="block truncate text-[11px] text-fg-subtle">{choice.description}</span>
                 </span>
               </button>
-            ) : null}
-            <button type="button" role="menuitem" className={menuItem} onClick={() => launch("shell")}>
-              <LayoutDashboard className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" strokeWidth={1.75} aria-hidden="true" />
-              <span className="min-w-0">
-                <span className="block font-medium text-fg">Dashboard basics</span>
-                <span className="block truncate text-[11px] text-fg-subtle">Navigation, filters and tools</span>
-              </span>
-            </button>
+            ))}
           </m.div>
         ) : null}
       </AnimatePresence>

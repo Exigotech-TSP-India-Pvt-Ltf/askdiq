@@ -2,6 +2,7 @@
 
 import { LayoutDashboard } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import { ActiveVisitorsPanel } from "@/components/admin/ActiveVisitorsPanel";
 import { DashboardKpis } from "@/components/admin/dashboard/DashboardKpis";
 import {
@@ -43,16 +44,18 @@ export default function AdminDashboard() {
           title="Dashboard"
           subtitle="Monitor users, conversations, RAG performance and governance."
           icon={LayoutDashboard}
-          showDateRange
-          actions={
-            <span data-tour="dashboard-health">
-              <HealthPill />
-            </span>
-          }
         />
       </div>
 
       <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6 sm:p-8">
+        <PageToolbar
+          actions={
+            <span data-tour="dashboard-health" className="flex">
+              <HealthPill />
+            </span>
+          }
+          dateRange
+        />
         <div data-tour="dashboard-kpis">
           <DashboardKpis
             data={summary.data}

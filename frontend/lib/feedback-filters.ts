@@ -11,10 +11,8 @@ import {
   NEGATIVE_MAX,
   OUTCOMES,
   POSITIVE_MIN,
-  TRIAGE_LABELS,
   TRIAGE_STATUSES,
   isReasonTag,
-  reasonLabel,
   type FeedbackItem,
   type FeedbackListParams,
   type FeedbackSort,
@@ -160,13 +158,6 @@ export function matchesFilters(item: FeedbackItem, f: FeedbackFilters): boolean 
   return matchesClientFilters(item, f);
 }
 
-export interface FilterChip {
-  key: FilterUrlKey;
-  label: string;
-  /** Value written when the chip is removed (default: remove the key). */
-  resetTo?: string;
-}
-
 const OUTCOME_LABELS: Record<string, string> = {
   answered: "Answered",
   ungrounded: "Ungrounded",
@@ -180,20 +171,4 @@ const OUTCOME_LABELS: Record<string, string> = {
 export function outcomeLabel(outcome: string | null | undefined): string {
   if (!outcome) return "Unknown";
   return OUTCOME_LABELS[outcome] ?? outcome.replace(/_/g, " ");
-}
-
-/** Removable chips for the active filters (the default status shows too, so it can be widened). */
-export function activeChips(f: FeedbackFilters): FilterChip[] {
-  const chips: FilterChip[] = [];
-  if (f.status !== "all") chips.push({ key: "status", label: `Status: ${TRIAGE_LABELS[f.status]}`, resetTo: "all" });
-  if (f.rating !== undefined) chips.push({ key: "rating", label: `Rating: ${f.rating}` });
-  if (f.sentiment) chips.push({ key: "sentiment", label: f.sentiment === "positive" ? "Positive (4-5)" : "Negative (1-2)" });
-  if (f.outcome) chips.push({ key: "outcome", label: `Outcome: ${outcomeLabel(f.outcome)}` });
-  if (f.grounded !== undefined) chips.push({ key: "grounded", label: f.grounded ? "Grounded" : "Ungrounded" });
-  if (f.day) chips.push({ key: "day", label: `Day: ${f.day}` });
-  if (f.reason) chips.push({ key: "reason", label: `Reason: ${reasonLabel(f.reason)}` });
-  if (f.has_comment !== undefined) chips.push({ key: "has_comment", label: f.has_comment ? "Has comment" : "No comment" });
-  if (f.message_id) chips.push({ key: "message_id", label: `Message: ${f.message_id.slice(0, 8)}` });
-  if (f.q) chips.push({ key: "q", label: `Search: ${f.q}` });
-  return chips;
 }

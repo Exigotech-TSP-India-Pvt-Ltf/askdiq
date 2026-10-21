@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Search } from "lucide-react";
 import { CONVERSATION_OUTCOMES, EXPERIENCE_RATINGS, MAX_SEARCH_CHARS } from "@/lib/insights-api";
+import { FilterChipBar } from "@/components/admin/filters/FilterChipBar";
+import type { FilterDescriptor } from "@/components/admin/filters/types";
+import { focusRing } from "@/components/ui/styles";
 import { hourRangeLabel } from "./format";
 import { stripControlChars, type AnalyticsState } from "./url-state";
 
@@ -10,11 +13,7 @@ import { stripControlChars, type AnalyticsState } from "./url-state";
 export const BASE_USER_TYPES = ["Customer / prospect", "Off-scope request", "Mixed", "Greeting only"] as const;
 
 const SEARCH_DEBOUNCE_MS = 300;
-
-const FIELD = "flex flex-col gap-0.5";
-const LABEL = "text-[10.5px] font-semibold uppercase tracking-wide text-fg-muted";
-const CONTROL =
-  "min-w-[118px] rounded-lg border border-line-strong bg-surface-card px-2 py-1.5 text-xs text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500";
+const VISITOR_PREFIX = "client-";
 
 export interface ChipLabels {
   issue?: string;
@@ -33,9 +32,40 @@ export interface FilterBarProps {
   chipLabels?: ChipLabels;
 }
 
+const choices = (values: readonly string[]) => [{ value: "", label: "All" }, ...values.map((v) => ({ value: v, label: v }))];
+
+/** The page's filters as shared chip descriptors (chip text kept as before). */
+export function analyticsFilterDescriptors(
+  state: AnalyticsState,
+  userTypes: readonly string[],
+  labels: ChipLabels,
+): FilterDescriptor[] {
+  const visitor = state.visitor.startsWith(VISITOR_PREFIX) ? state.visitor.slice(VISITOR_PREFIX.length) : state.visitor;
+  return [
+    { key: "user_type", label: "User type", value: state.user_type, kind: "single", options: choices(userTypes), chipLabel: state.user_type },
+    { key: "outcome", label: "Outcome", value: state.outcome, kind: "single", options: choices(CONVERSATION_OUTCOMES), chipLabel: state.outcome },
+    { key: "rating", label: "Rating", value: state.rating, kind: "single", options: choices(EXPERIENCE_RATINGS), chipLabel: state.rating },
+    { key: "issue", label: "Issue", value: state.issue, kind: "text", chipLabel: labels.issue ?? state.issue },
+    { key: "intent", label: "Topic", value: state.intent, kind: "text", chipLabel: labels.intent ?? state.intent },
+    { key: "quality", label: "Quality", value: state.quality, kind: "text", chipLabel: labels.quality ?? state.quality },
+    { key: "person", label: "Person", value: state.person, kind: "text", chipLabel: labels.person ?? "Selected person" },
+    { key: "visitor", label: "Visitor", value: state.visitor, kind: "text", chipLabel: `Visitor ${visitor}` },
+    {
+      key: "hour",
+      label: "Hour",
+      value: state.hour === null ? "" : String(state.hour),
+      kind: "text",
+      chipLabel: state.hour === null ? undefined : hourRangeLabel(state.hour),
+    },
+    { key: "q", label: "Search", value: state.q, kind: "text", chipLabel: `“${state.q}”` },
+  ];
+}
+
 /**
- * User type, outcome, rating and search, all synced to the URL.
- * The date range comes from the global picker in the page header.
+ * Search plus the shared filter chips (OR-13 / VA-25): user type, outcome and
+ * rating are edited in the Filters popover or on their chip; chart
+ * cross-filters (issue, topic, person, hour…) show as removable chips. All
+ * synced to the URL; the date range is the filter at the end of the tab row.
  */
 export function FilterBar({ state, update, clearFilters, userTypes = [], chipLabels = {} }: FilterBarProps) {
   const id = useId();
@@ -61,140 +91,40 @@ export function FilterBar({ state, update, clearFilters, userTypes = [], chipLab
     return () => clearTimeout(timer);
   }, [search, update]);
 
-  const typeOptions = Array.from(new Set([...BASE_USER_TYPES, ...userTypes, ...(state.user_type ? [state.user_type] : [])]));
+  const typeOptions = useMemo(
+    () => Array.from(new Set([...BASE_USER_TYPES, ...userTypes, ...(state.user_type ? [state.user_type] : [])])),
+    [userTypes, state.user_type],
+  );
+  const descriptors = analyticsFilterDescriptors(state, typeOptions, chipLabels);
+
+  function onChange(key: string, value: string) {
+    if (key === "hour") update({ hour: value === "" ? null : Number(value) });
+    else update({ [key]: value } as Partial<AnalyticsState>);
+  }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div
-        role="group"
-        aria-label="Filters"
-        data-tour="filters"
-        className="flex flex-col gap-2 rounded-xl border border-line bg-surface-muted/60 p-3 sm:flex-row sm:flex-wrap sm:items-end"
-      >
-        <div className={FIELD}>
-          <label htmlFor={`${id}-type`} className={LABEL}>
-            User type
-          </label>
-          <select id={`${id}-type`} className={CONTROL} value={state.user_type} onChange={(e) => update({ user_type: e.target.value })}>
-            <option value="">All</option>
-            {typeOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className={FIELD}>
-          <label htmlFor={`${id}-outcome`} className={LABEL}>
-            Outcome
-          </label>
-          <select
-            id={`${id}-outcome`}
-            className={CONTROL}
-            value={state.outcome}
-            onChange={(e) => update({ outcome: e.target.value as AnalyticsState["outcome"] })}
-          >
-            <option value="">All</option>
-            {CONVERSATION_OUTCOMES.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className={FIELD}>
-          <label htmlFor={`${id}-rating`} className={LABEL}>
-            Rating
-          </label>
-          <select
-            id={`${id}-rating`}
-            className={CONTROL}
-            value={state.rating}
-            onChange={(e) => update({ rating: e.target.value as AnalyticsState["rating"] })}
-          >
-            <option value="">All</option>
-            {EXPERIENCE_RATINGS.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className={`${FIELD} sm:min-w-[200px] sm:flex-1`}>
-          <label htmlFor={`${id}-q`} className={LABEL}>
+    <FilterChipBar
+      data-tour="filters"
+      filters={descriptors}
+      onChange={onChange}
+      onClearAll={clearFilters}
+      leading={
+        <div className="relative w-full sm:w-56">
+          <label htmlFor={`${id}-q`} className="sr-only">
             Search
           </label>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" strokeWidth={1.75} aria-hidden="true" />
-            <input
-              id={`${id}-q`}
-              type="search"
-              className={`${CONTROL} w-full pl-7`}
-              placeholder="Question, issue or person"
-              maxLength={MAX_SEARCH_CHARS}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" strokeWidth={1.75} aria-hidden="true" />
+          <input
+            id={`${id}-q`}
+            type="search"
+            className={`h-9 w-full rounded-lg border border-line bg-surface-card pl-8 pr-2 text-xs text-fg shadow-sm placeholder:text-fg-subtle ${focusRing}`}
+            placeholder="Question, issue or person"
+            maxLength={MAX_SEARCH_CHARS}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-        <button
-          type="button"
-          onClick={clearFilters}
-          className="rounded-lg border border-line bg-surface-card px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors duration-150 hover:border-brand-300 hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 sm:ml-auto dark:hover:border-brand-700/60"
-        >
-          Clear filters
-        </button>
-      </div>
-      <FilterChips state={state} update={update} labels={chipLabels} />
-    </div>
-  );
-}
-
-interface Chip {
-  key: string;
-  text: string;
-  clear: Partial<AnalyticsState>;
-}
-
-/** Active filters as removable chips (the HTML's `chips()`). */
-export function FilterChips({
-  state,
-  update,
-  labels,
-}: {
-  state: AnalyticsState;
-  update: (patch: Partial<AnalyticsState>) => void;
-  labels: ChipLabels;
-}) {
-  // The date range is shown (and changed) by the picker in the page header.
-  const chips: Chip[] = [];
-  if (state.user_type) chips.push({ key: "user_type", text: state.user_type, clear: { user_type: "" } });
-  if (state.outcome) chips.push({ key: "outcome", text: state.outcome, clear: { outcome: "" } });
-  if (state.rating) chips.push({ key: "rating", text: state.rating, clear: { rating: "" } });
-  if (state.issue) chips.push({ key: "issue", text: labels.issue ?? state.issue, clear: { issue: "" } });
-  if (state.intent) chips.push({ key: "intent", text: labels.intent ?? state.intent, clear: { intent: "" } });
-  if (state.quality) chips.push({ key: "quality", text: labels.quality ?? state.quality, clear: { quality: "" } });
-  if (state.person) chips.push({ key: "person", text: labels.person ?? "Selected person", clear: { person: "" } });
-  if (state.visitor) chips.push({ key: "visitor", text: `Visitor ${state.visitor.replace(/^client-/, "")}`, clear: { visitor: "" } });
-  if (state.hour !== null) chips.push({ key: "hour", text: hourRangeLabel(state.hour), clear: { hour: null } });
-  if (state.q) chips.push({ key: "q", text: `“${state.q}”`, clear: { q: "" } });
-
-  if (chips.length === 0) return null;
-  return (
-    <ul className="flex flex-wrap gap-1.5" aria-label="Active filters">
-      {chips.map((c) => (
-        <li key={c.key}>
-          <button
-            type="button"
-            aria-label={`Remove filter ${c.text}`}
-            onClick={() => update(c.clear)}
-            className="inline-flex items-center gap-1 rounded-full border border-brand-500 bg-brand-50 py-0.5 pl-2 pr-2.5 text-[11.5px] font-medium text-brand-800 transition-colors duration-150 hover:bg-brand-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:border-brand-400/60 dark:bg-brand-950/60 dark:text-brand-200 dark:hover:bg-brand-900/60"
-          >
-            <X className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
-            {c.text}
-          </button>
-        </li>
-      ))}
-    </ul>
+      }
+    />
   );
 }

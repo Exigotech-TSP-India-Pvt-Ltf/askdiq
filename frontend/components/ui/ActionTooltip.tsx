@@ -12,6 +12,8 @@ export interface ActionTooltipProps {
   side?: "top" | "bottom";
   /** Suppress the bubble (e.g. while the control's own popover is open). */
   hidden?: boolean;
+  /** Show the bubble only below `sm` (a labelled control whose text is hidden on phones). */
+  compactOnly?: boolean;
   className?: string;
 }
 
@@ -27,6 +29,7 @@ export function ActionTooltip({
   align = "center",
   side = "top",
   hidden = false,
+  compactOnly = false,
   className = "",
 }: ActionTooltipProps) {
   return (
@@ -36,7 +39,7 @@ export function ActionTooltip({
       <span
         aria-hidden="true"
         data-tooltip
-        className={`pointer-events-none absolute z-30 whitespace-nowrap ${side === "bottom" ? "top-full mt-1.5" : "bottom-full mb-1.5"} rounded-md bg-surface-inverse px-2 py-0.5 text-[11px] font-medium text-fg-inverse opacity-0 shadow-md transition-opacity duration-100 group-focus-within/tip:opacity-100 group-hover/tip:opacity-100 motion-reduce:transition-none ${
+        className={`pointer-events-none absolute z-30 whitespace-nowrap ${side === "bottom" ? "top-full mt-1.5" : "bottom-full mb-1.5"} rounded-md bg-surface-inverse px-2 py-0.5 text-[11px] font-medium text-fg-inverse opacity-0 shadow-md transition-opacity duration-100 group-focus-within/tip:opacity-100 group-hover/tip:opacity-100 motion-reduce:transition-none ${compactOnly ? "sm:hidden" : ""} ${
           align === "end" ? "right-0" : "left-1/2 -translate-x-1/2"
         }`}
       >

@@ -113,14 +113,15 @@ describe("Conversations table", { timeout: 15_000 }, () => {
   it("filters by Type, Outcome, Rating and Issue through the page's URL filters", async () => {
     renderPage("?tab=conversations");
     await screen.findAllByTestId("conversation-row");
-    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    const table = screen.getAllByTestId("conversation-row")[0].closest("[data-testid=table-card]") as HTMLElement;
+    fireEvent.click(within(table).getByRole("button", { name: /^Filters/ }));
     const panel = screen.getByRole("dialog", { name: "Filter Options" });
     for (const label of ["Type", "Outcome", "Rating", "Issue"]) expect(within(panel).getByText(label)).toBeInTheDocument();
     fireEvent.click(within(panel).getByRole("button", { name: "Served" }));
     expect(currentParams().get("outcome")).toBe("Served");
     await waitFor(() => expect(api.last("conversations")?.params.get("outcome")).toBe("Served"));
-    // The page filter bar's Outcome control is the same filter.
-    expect(screen.getByLabelText("Outcome")).toHaveValue("Served");
+    // The page's Outcome chip is the same filter.
+    expect(within(screen.getByRole("region", { name: "Active filters" })).getByRole("button", { name: "Served, change filter" })).toBeInTheDocument();
     fireEvent.click(within(panel).getByRole("button", { name: "No live job openings" }));
     expect(currentParams().get("issue")).toBe("JOBS");
   });
