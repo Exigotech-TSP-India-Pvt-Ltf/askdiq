@@ -7,6 +7,8 @@ import { usePopover } from "@/lib/use-popover";
 import { m } from "motion/react";
 import { popover, useMotionVariants } from "@/lib/motion";
 import { focusRing, popoverPanel, primaryButton } from "@/components/ui/styles";
+import { FilterChipBar } from "@/components/admin/filters/FilterChipBar";
+import { isActive, type FilterDescriptor } from "@/components/admin/filters/types";
 
 export type FilterOption = { label: string; value: string };
 
@@ -189,22 +191,17 @@ export function TableToolbar({
     });
   }
 
-  // Active filter pills
-  const activePills = allFilterGroups.flatMap((group) => {
-    if (!group.value || group.value === "all" || group.value === "") return [];
-    const opt = group.options.find((o) => o.value === group.value);
-    return [
-      {
-        groupId: group.id,
-        groupLabel: group.label,
-        value: group.value,
-        label: opt ? opt.label : group.value,
-        onClear: () => group.onChange("all"),
-      },
-    ];
-  });
-
-  const activeCount = activePills.length;
+  // Every group as a shared chip descriptor ("all" / "" = no filter).
+  const chipDescriptors: FilterDescriptor[] = allFilterGroups.map((group) => ({
+    key: group.id,
+    label: group.label,
+    value: group.value ?? "",
+    kind: "single",
+    options: group.options,
+    clearedValue: "all",
+    resetTo: "all",
+  }));
+  const activeCount = chipDescriptors.filter(isActive).length;
   const hasActiveControls = search.length > 0 || activeCount > 0;
 
   const handleResetAll = () => {
@@ -405,39 +402,18 @@ export function TableToolbar({
         </div>
       </div>
 
-      {/* Active Filter Pills Strip */}
-      {activePills.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <span className="text-[11px] font-medium text-fg-subtle">Active filters:</span>
-          {activePills.map((pill) => (
-            <span
-              key={`${pill.groupId}-${pill.value}`}
-              className="inline-flex items-center gap-1 rounded-md bg-brand-50 dark:bg-brand-950/60 border border-brand-200/80 dark:border-brand-800/80 px-2 py-0.5 text-[11px] font-medium text-brand-700 dark:text-brand-300 shadow-xs"
-            >
-              <span>
-                {pill.groupLabel}: {pill.label}
-              </span>
-              <button
-                type="button"
-                onClick={pill.onClear}
-                aria-label={`Remove filter ${pill.label}`}
-                className="hover:text-brand-900 dark:hover:text-brand-100 focus:outline-none"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-          {activePills.length > 1 && (
-            <button
-              type="button"
-              onClick={() => allFilterGroups.forEach((g) => g.onChange("all"))}
-              className="text-[11px] font-medium text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-200 hover:underline pl-1"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
-      )}
+      {/* Active filters as the shared editable chips (OR-13): a chip opens its
+          options in place; × resets that group. */}
+      {activeCount > 0 ? (
+        <FilterChipBar
+          ariaLabel="Active table filters"
+          className="justify-start pt-1"
+          showFiltersButton={false}
+          filters={chipDescriptors}
+          onChange={(key, value) => allFilterGroups.find((g) => g.id === key)?.onChange(value)}
+          onClearAll={activeCount > 1 ? () => allFilterGroups.forEach((g) => g.onChange("all")) : undefined}
+        />
+      ) : null}
     </div>
   );
 }

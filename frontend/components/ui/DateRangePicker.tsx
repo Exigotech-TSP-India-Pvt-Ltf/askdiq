@@ -2,7 +2,7 @@
 
 import React, { useEffect, useId, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { CalendarRange, Check } from "lucide-react";
+import { CalendarRange, Check, ListFilter } from "lucide-react";
 import { pop, useMotionVariants } from "@/lib/motion";
 import { usePopover } from "@/lib/use-popover";
 import { DEFAULT_PRESET, PRESET_LABEL, RANGE_PRESETS, toIsoDay, useRange } from "@/lib/range-context";
@@ -17,9 +17,10 @@ function parseInputDay(value: string): Date | null {
 }
 
 /**
- * Global date-range control for `DashboardHeader`, an icon button in the
- * header's right-corner cluster (the active range is its accessible name and
- * tooltip; a dot marks a non-default range): presets
+ * Global date-range filter for the `PageToolbar` (OR-2): a filter icon, the
+ * active range as visible text ("Last 7 days", or "12 Oct – 19 Oct") and a
+ * chevron, so it reads as a dropdown; below `sm` it collapses to the icon
+ * (name and tooltip kept). A dot marks a non-default range. Presets
  * 24h / 7d / 30d / 90d plus a custom range, all synced to the URL by
  * `RangeProvider`. Renders nothing outside a RangeProvider.
  */
@@ -57,8 +58,11 @@ export function DateRangePicker({ className = "" }: { className?: string }) {
     <div className={`relative ${className}`}>
       <HeaderIconButton
         ref={triggerRef}
-        icon={CalendarRange}
+        icon={ListFilter}
         label={`Date range: ${range.label}`}
+        text={range.label}
+        showLabel
+        chevron
         indicator={range.kind !== DEFAULT_PRESET}
         hideTooltip={open}
         onClick={toggle}
@@ -80,6 +84,10 @@ export function DateRangePicker({ className = "" }: { className?: string }) {
             exit="exit"
             className={`absolute right-0 z-50 mt-2 w-64 origin-top-right ${popoverPanel}`}
           >
+            <p className="flex items-center gap-1.5 px-2.5 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+              <CalendarRange className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+              Date range
+            </p>
             <div role="group" aria-label="Presets" className="space-y-0.5">
               {RANGE_PRESETS.map((preset) => {
                 const active = range.kind === preset;

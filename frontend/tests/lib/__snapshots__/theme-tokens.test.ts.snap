@@ -64,6 +64,16 @@ exports[`theme tokens: values (snapshot) > matches the light and dark token snap
           "SCOPE": "#94A3B8",
         },
       },
+      "multiSeries": [
+        "#2DA9A0",
+        "#D95926",
+        "#3987E5",
+        "#C98500",
+        "#D55181",
+        "#008300",
+        "#9085E9",
+        "#E66767",
+      ],
       "sequential": [
         "#00433D",
         "#006B68",
@@ -133,6 +143,16 @@ exports[`theme tokens: values (snapshot) > matches the light and dark token snap
           "SCOPE": "#6E7C7D",
         },
       },
+      "multiSeries": [
+        "#008080",
+        "#D4561C",
+        "#2A78D6",
+        "#A66B00",
+        "#C83E86",
+        "#2E7D32",
+        "#6250D6",
+        "#D93636",
+      ],
       "sequential": [
         "#CCEDEA",
         "#99DBD5",

@@ -16,6 +16,7 @@ import { TableToolbar } from "../TableToolbar";
 import { Pagination } from "../Pagination";
 import { TableCard } from "../TableCard";
 import { RelativeTime } from "@/components/ui/RelativeTime";
+import { CopyButton } from "@/components/ui/CopyButton";
 import { StatCard, HighlightCard } from "../insights";
 import {
   MessageSquare,
@@ -136,8 +137,12 @@ export function SessionsTab({
           <span className="font-medium text-slate-800 dark:text-slate-200 line-clamp-1" title={r.title}>
             {r.title || "Untitled Session"}
           </span>
-          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
-            {r.id}
+          {/* 12 px mono in fg-muted (>= 4.5:1, VA-31), with a copy button. */}
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <span className="truncate font-mono text-xs text-fg-muted" title={r.id}>
+              {r.id}
+            </span>
+            <CopyButton value={r.id} label="Copy session id" />
           </span>
         </div>
       ),

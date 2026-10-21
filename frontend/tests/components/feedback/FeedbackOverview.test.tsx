@@ -48,7 +48,8 @@ const CASES: { chart: string; mark: RegExp; param: [string, string]; chip: strin
   { chart: "rating bar", mark: /^1 star: /, param: ["rating", "1"], chip: "Rating: 1" },
   { chart: "outcome bar", mark: /^Ungrounded: /, param: ["outcome", "ungrounded"], chip: "Outcome: Ungrounded" },
   { chart: "reasons bar", mark: /^Wrong: /, param: ["reason", "wrong"], chip: "Reason: Wrong" },
-  { chart: "trend point", mark: /^10-13: Positive/, param: ["day", "2026-10-13"], chip: "Day: 2026-10-13" },
+  // One date tick format across the console: "13 Oct" (VA-18).
+  { chart: "trend point", mark: /^13 Oct: Positive/, param: ["day", "2026-10-13"], chip: "Day: 2026-10-13" },
   { chart: "funnel stage", mark: /^Reviewed: /, param: ["status", "reviewed"], chip: "Status: Reviewed" },
   { chart: "KPI sparkline point", mark: /^2026-10-14: /, param: ["day", "2026-10-14"], chip: "Day: 2026-10-14" },
 ];
@@ -160,5 +161,43 @@ describe("Feedback outcomes", () => {
     });
     await renderOverview();
     expect(screen.getAllByRole("button", { name: /^Empty LLM reply: / }).length).toBeGreaterThan(0);
+  });
+});
+
+describe("Feedback filter chips on the tab row (OR-13)", () => {
+  it("regression: the Status: New chip opens the statuses and choosing Reviewed sets status=reviewed in the URL", async () => {
+    history.reset("/admin/feedback?tab=queue");
+    render(
+      <Providers>
+        <FeedbackWorkspace />
+      </Providers>,
+    );
+    const bar = chips();
+    // Same row as the tabs and the date filter.
+    const row = bar.closest("[data-page-toolbar]");
+    expect(row).toContainElement(screen.getByRole("tablist", { name: "Feedback sections" }));
+    fireEvent.click(within(bar).getByRole("button", { name: "Status: New, change filter" }));
+    const list = screen.getByRole("listbox", { name: "Status" });
+    expect(within(list).getByRole("option", { name: "New" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(within(list).getByRole("option", { name: "Reviewed" }));
+    await waitFor(() => expect(history.params().get("status")).toBe("reviewed"));
+    expect(within(chips()).getByRole("button", { name: "Status: Reviewed, change filter" })).toBeInTheDocument();
+    expect(within(chips()).getByRole("button", { name: "Filters, 1 active" })).toBeInTheDocument();
+  });
+
+  it("the Filters popover edits rating and reason through the URL", async () => {
+    history.reset("/admin/feedback?tab=queue");
+    render(
+      <Providers>
+        <FeedbackWorkspace />
+      </Providers>,
+    );
+    fireEvent.click(within(chips()).getByRole("button", { name: /^Filters/ }));
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    fireEvent.click(within(within(dialog).getByRole("group", { name: "Rating" })).getByRole("button", { name: "2" }));
+    await waitFor(() => expect(history.params().get("rating")).toBe("2"));
+    fireEvent.click(within(within(screen.getByRole("dialog", { name: "Filters" })).getByRole("group", { name: "Reason" })).getByRole("button", { name: "Wrong" }));
+    await waitFor(() => expect(history.params().get("reason")).toBe("wrong"));
+    expect(screen.getByRole("dialog", { name: "Filters" })).toHaveTextContent("Reason and sentiment narrow the loaded page.");
   });
 });

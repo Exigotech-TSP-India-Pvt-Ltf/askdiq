@@ -10,6 +10,8 @@ import { sessionCookieName } from "@/lib/server/auth-cookies";
 import { preloadMe } from "@/lib/server/session-me";
 import { THEME_INIT_SCRIPT } from "@/lib/theme-script";
 import { MotionProvider } from "@/components/providers/MotionProvider";
+import { AudienceSeedProvider } from "@/lib/audience-context";
+import { AUDIENCE_COOKIE, AUDIENCE_HEADER, resolveInitialAudience } from "@/lib/audience-seed";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import "./globals.css";
 
@@ -42,6 +44,8 @@ export default async function RootLayout({
     }),
   ]);
   const brandCss = brandCssText(brand);
+  // One starting audience for the server render and the first client render (VA-54).
+  const initialAudience = resolveInitialAudience(requestHeaders.get(AUDIENCE_HEADER), cookies().get(AUDIENCE_COOKIE)?.value);
 
   return (
     // suppressHydrationWarning: the pre-paint script below changes the <html>
@@ -64,7 +68,9 @@ export default async function RootLayout({
           <BrandProvider brand={brand}>
             <MotionProvider>
               <ToastProvider>
-                <AuthProvider initialMe={initialMe}>{children}</AuthProvider>
+                <AuthProvider initialMe={initialMe}>
+                  <AudienceSeedProvider audience={initialAudience}>{children}</AudienceSeedProvider>
+                </AuthProvider>
               </ToastProvider>
             </MotionProvider>
           </BrandProvider>

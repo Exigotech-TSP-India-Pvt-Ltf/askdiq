@@ -38,6 +38,8 @@ export function ColorField({ label, value, onChange, fallback, error, hint, badg
           onChange={(e) => onChange(e.target.value)}
           className="h-9 w-11 shrink-0 cursor-pointer rounded-lg border border-line bg-surface-card p-1"
         />
+        {/* The reset icon sits inside the field so the hex value keeps at least 9ch (VA-39). */}
+        <div className="relative min-w-[9ch] flex-1">
         <input
           id={`${id}-hex`}
           type="text"
@@ -50,13 +52,20 @@ export function ColorField({ label, value, onChange, fallback, error, hint, badg
           aria-invalid={Boolean(error)}
           aria-describedby={error ? errorId : undefined}
           onChange={(e) => onChange(e.target.value)}
-          className={`${inputClass} font-mono uppercase tabular-nums`}
+          className={`${inputClass} min-w-[9ch] font-mono uppercase tabular-nums ${clearable && value ? "pr-9" : ""}`}
         />
         {clearable && value ? (
-          <button type="button" className={iconButton} aria-label={`Use the derived ${label.toLowerCase()}`} onClick={() => onChange("")}>
-            <RotateCcw className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+          <button
+            type="button"
+            className={`${iconButton} absolute right-0.5 top-1/2 -translate-y-1/2`}
+            aria-label={`Use the derived ${label.toLowerCase()}`}
+            title={`Use the derived ${label.toLowerCase()}`}
+            onClick={() => onChange("")}
+          >
+            <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
         ) : null}
+        </div>
       </div>
       {badges ? (
         <div className="flex flex-wrap gap-1.5" aria-live="polite">

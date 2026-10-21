@@ -62,6 +62,9 @@ describe("theme tokens: values (snapshot)", () => {
   it("chartTheme has the categorical, sequential and diverging scales in both themes", () => {
     for (const t of THEMES) {
       expect(chartTheme[t].categorical).toHaveLength(6);
+      // Eight distinct hues for multi-series stacks (VA-9); none repeats.
+      expect(chartTheme[t].multiSeries).toHaveLength(8);
+      expect(new Set(chartTheme[t].multiSeries).size).toBe(8);
       expect(chartTheme[t].sequential.length).toBeGreaterThanOrEqual(5);
       expect(chartTheme[t].diverging.length % 2).toBe(1);
       expect(chartTheme[t].dimOpacity).toBe(0.35);
@@ -128,7 +131,12 @@ describe("contrast (WCAG AA) in both themes", () => {
     });
 
     it(`${theme}: status fills, accent and chart series are >= 3:1 on every surface`, () => {
-      const fills = [...STATUSES.map((s) => t[`status-${s}`]), t.accent, ...chartTheme[theme].categorical];
+      const fills = [
+        ...STATUSES.map((s) => t[`status-${s}`]),
+        t.accent,
+        ...chartTheme[theme].categorical,
+        ...chartTheme[theme].multiSeries,
+      ];
       for (const fill of fills) {
         for (const bg of SURFACES) {
           expect(contrastRatio(fill, t[bg]), `${theme} ${fill} on ${bg}`).toBeGreaterThanOrEqual(AA_NON_TEXT);

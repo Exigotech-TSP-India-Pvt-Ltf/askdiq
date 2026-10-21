@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { formatAbsoluteTime, formatRelativeTime, formatShortDateTime, toServerDate } from "@/lib/time";
+import { formatAbsoluteTime, formatRelativeTime, formatShortTime, toServerDate } from "@/lib/time";
 
 interface RelativeTimeProps {
   /** Server timestamp (ISO 8601; naive values are read as UTC). */
@@ -11,7 +11,8 @@ interface RelativeTimeProps {
   /**
    * `relative` (default) shows "3h ago" with the full local date-time in the
    * tooltip; `absolute` shows the full date-time with the age in the tooltip;
-   * `short` shows "19 Oct 2026, 09:53" with the full date-time in the tooltip.
+   * `short` shows the date-time without the timezone (narrow cells), with the
+   * full date-time, timezone and age in the tooltip.
    */
   display?: "relative" | "absolute" | "short";
   /** Text before the date, e.g. "last seen ". */
@@ -33,7 +34,7 @@ export function RelativeTime({ value, fallback = "—", display = "relative", pr
     display === "absolute"
       ? [absolute, relative]
       : display === "short"
-        ? [formatShortDateTime(date), `${absolute} (${relative})`]
+        ? [formatShortTime(date), `${absolute} · ${relative}`]
         : [relative, absolute];
   return (
     <time dateTime={date.toISOString()} title={tooltip} className={`whitespace-nowrap ${className}`} suppressHydrationWarning>
