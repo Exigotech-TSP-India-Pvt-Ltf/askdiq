@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta
+from typing import Any
 
+from sqlalchemy import insert, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db_models import (
@@ -96,6 +98,24 @@ async def make_exchange(
         db.add(LatencyRecord(request_id=request_id, total_ms=latency_ms))
     await db.commit()
     return user_msg, asst
+
+
+_STATS_HEAD = 200
+
+
+async def bulk_insert_messages(db: AsyncSession, rows: list[dict[str, Any]]) -> None:
+    """Bulk-insert ``chat_messages`` rows without an O(n^2) ledger trigger.
+
+    The per-row ``usage_turns`` trigger plans its pair lookup from the
+    table's statistics; in a fresh test database (never analysed, every row
+    uncommitted) that plan scans the session once per row, so 20k rows took
+    ~2 minutes. ANALYZE counts the transaction's own rows, so analysing after
+    a small head gives the trigger an index plan for the rest (seconds).
+    """
+    await db.execute(insert(ChatMessageRecord), rows[:_STATS_HEAD])
+    await db.execute(text("ANALYZE chat_messages"))
+    if rows[_STATS_HEAD:]:
+        await db.execute(insert(ChatMessageRecord), rows[_STATS_HEAD:])
 
 
 async def make_feedback(
