@@ -36,6 +36,29 @@ export interface CalendarHeatmapProps extends AxisLabelProps {
   colLabelEvery?: number;
   /** Tooltip name of the cell value (default "Value"), e.g. "Sessions". */
   valueLabel?: string;
+  /** Cap on a cell's width / height (px), so a sparse grid stays a grid instead of one solid block. */
+  maxCellWidth?: number;
+  maxCellHeight?: number;
+  /** Gap between cells (px). */
+  cellGap?: number;
+  /** Value scale under the grid ("0 … max" swatches). */
+  legend?: boolean;
+}
+
+const LEGEND_STEPS = 5;
+
+function HeatLegend({ ramp, max, formatValue, valueLabel }: { ramp: readonly string[]; max: number; formatValue: (v: number) => string; valueLabel: string }) {
+  const steps = Array.from({ length: LEGEND_STEPS }, (_, i) => (max * (i + 1)) / LEGEND_STEPS);
+  return (
+    <div className="mt-2 flex items-center gap-1.5 text-[11px] text-fg-subtle" aria-label={`${valueLabel} scale: 0 to ${formatValue(max)}`} role="img">
+      <span aria-hidden="true">{formatValue(0)}</span>
+      {steps.map((v) => (
+        <span key={v} aria-hidden="true" className="h-2.5 w-4 rounded-sm" style={{ backgroundColor: rampColor(ramp, v, max) }} />
+      ))}
+      <span aria-hidden="true">{formatValue(max)}</span>
+      <span aria-hidden="true" className="ml-1">{valueLabel.toLowerCase()}</span>
+    </div>
+  );
 }
 
 const LEFT = 36;
@@ -59,6 +82,10 @@ export function CalendarHeatmap({
   valueLabel = "Value",
   xAxisLabel,
   yAxisLabel,
+  maxCellWidth = Number.POSITIVE_INFINITY,
+  maxCellHeight = Number.POSITIVE_INFINITY,
+  cellGap = GAP,
+  legend = false,
 }: CalendarHeatmapProps) {
   const ct = useChartTheme();
   const titles = { xAxisLabel, yAxisLabel };
@@ -78,9 +105,11 @@ export function CalendarHeatmap({
   const layout = ({ width, height: h }: ChartSize) => {
     const inset = titleInsets(titles);
     const left = LEFT + inset.left;
-    const gridH = Math.max(2, h - BOTTOM - inset.bottom);
-    const cw = Math.max(2, (width - left) / Math.max(1, colKeys.length));
-    const rh = Math.max(2, gridH / Math.max(1, rowKeys.length));
+    const availH = Math.max(2, h - BOTTOM - inset.bottom);
+    const cw = Math.max(2, Math.min(maxCellWidth, (width - left) / Math.max(1, colKeys.length)));
+    const rh = Math.max(2, Math.min(maxCellHeight, availH / Math.max(1, rowKeys.length)));
+    // Uncapped, this is the full available height (as before); capped, the grid ends with its last row.
+    const gridH = Math.min(availH, rh * Math.max(1, rowKeys.length));
     const pos = (c: HeatCell) => ({
       x: left + colKeys.indexOf(c.col) * cw,
       y: rowKeys.indexOf(c.row) * rh,
@@ -104,7 +133,13 @@ export function CalendarHeatmap({
   };
 
   return (
-    <ChartFrame label={label} height={height} tooltip={tooltip} description={axisDescription(titles)}>
+    <ChartFrame
+      label={label}
+      height={height}
+      tooltip={tooltip}
+      description={axisDescription(titles)}
+      footer={legend ? <HeatLegend ramp={ct.sequential} max={max} formatValue={formatValue} valueLabel={valueLabel} /> : undefined}
+    >
       {(size) => {
         const { cw, rh, pos, left, colLabelY, titleArea } = layout(size);
         return (
@@ -118,10 +153,10 @@ export function CalendarHeatmap({
                 {colKeys.map((c, ci) => (
                   <rect
                     key={c}
-                    x={left + ci * cw + GAP / 2}
-                    y={ri * rh + GAP / 2}
-                    width={cw - GAP}
-                    height={rh - GAP}
+                    x={left + ci * cw + cellGap / 2}
+                    y={ri * rh + cellGap / 2}
+                    width={cw - cellGap}
+                    height={rh - cellGap}
                     rx={2}
                     fill={ct.track}
                     fillOpacity={0.5}
@@ -151,10 +186,10 @@ export function CalendarHeatmap({
                 <rect
                   key={i}
                   {...getMarkProps(i)}
-                  x={p.x + GAP / 2}
-                  y={p.y + GAP / 2}
-                  width={cw - GAP}
-                  height={rh - GAP}
+                  x={p.x + cellGap / 2}
+                  y={p.y + cellGap / 2}
+                  width={cw - cellGap}
+                  height={rh - cellGap}
                   rx={2}
                   fill={rampColor(ct.sequential, cell.value, max)}
                   stroke={active === i ? ct.axis : "none"}

@@ -21,8 +21,14 @@ export interface ColumnDef<T> {
   sortable?: boolean;
   align?: "left" | "center" | "right";
   width?: string;
+  /** Pin the column to the right edge while the table scrolls sideways (row actions). */
+  sticky?: "right";
   render?: (row: T) => React.ReactNode;
 }
+
+/** Opaque background so scrolled cells don't show through a pinned column. */
+const STICKY_HEAD = "sticky right-0 z-[1] bg-surface-studio";
+const STICKY_CELL = "sticky right-0 z-[1] bg-surface-card";
 
 export interface DataTableProps<T> {
   columns: ColumnDef<T>[];
@@ -147,7 +153,7 @@ export function DataTable<T extends Record<string, any>>({
                     aria-sort={getAriaSort(col)}
                     style={col.width ? { width: col.width } : undefined}
                     onClick={() => handleHeaderClick(col)}
-                    className={`${CELL_PADDING[density]} font-semibold select-none ${alignClass} ${
+                    className={`${CELL_PADDING[density]} font-semibold select-none ${alignClass} ${col.sticky ? STICKY_HEAD : ""} ${
                       col.sortable ? "cursor-pointer group hover:bg-brand-50/70 hover:text-fg dark:hover:bg-white/5 transition" : ""
                     }`}
                   >
@@ -265,7 +271,11 @@ export function DataTable<T extends Record<string, any>>({
                       }
 
                       return (
-                        <td key={col.key} className={`${CELL_PADDING[density]} text-xs ${alignClass}`} data-density={density}>
+                        <td
+                          key={col.key}
+                          className={`${CELL_PADDING[density]} text-xs ${alignClass} ${col.sticky ? STICKY_CELL : ""}`}
+                          data-density={density}
+                        >
                           {content}
                         </td>
                       );
