@@ -143,3 +143,45 @@ describe("TableCard cursor-pagination variant", () => {
     expect(screen.queryByRole("navigation", { name: "Cursor pagination" })).not.toBeInTheDocument();
   });
 });
+
+describe("useTablePreferences priority (auto-hide) columns", () => {
+  const AUTO = { last_login: 1440 } as const;
+  function AutoTable() {
+    const prefs = useTablePreferences("users-auto", { autoHide: AUTO });
+    return (
+      <TableCard
+        toolbar={
+          <TableToolbar
+            search=""
+            onSearchChange={() => undefined}
+            columnOptions={COLUMNS.map((c) => ({ key: c.key, label: c.header, hideable: c.key !== "email" }))}
+            hiddenColumns={prefs.hiddenColumns}
+            onToggleColumn={prefs.toggleColumn}
+          />
+        }
+      >
+        <DataTable columns={prefs.visibleColumns(COLUMNS)} data={ROWS} />
+      </TableCard>
+    );
+  }
+  const width = window.innerWidth;
+  afterEach(() => Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width }));
+
+  it("hides below its width without storing anything, and remembers turning it back on", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1366 });
+    const { unmount } = render(<AutoTable />);
+    expect(headers()).toEqual(["Email", "Role"]);
+    expect(window.localStorage.getItem(tablePrefsKey("users-auto"))).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Columns" }));
+    fireEvent.click(screen.getByLabelText("Last login"));
+    expect(headers()).toEqual(["Email", "Role", "Last login"]);
+    expect(JSON.parse(window.localStorage.getItem(tablePrefsKey("users-auto")) ?? "{}")).toEqual({
+      hidden: [],
+      density: "comfortable",
+      shown: ["last_login"],
+    });
+    unmount();
+    render(<AutoTable />);
+    expect(headers()).toEqual(["Email", "Role", "Last login"]);
+  });
+});

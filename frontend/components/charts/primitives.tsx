@@ -63,8 +63,8 @@ export interface ChartFrameProps {
   /** Tooltip for the active mark, computed from the measured size. */
   tooltip?: (size: ChartSize) => TooltipAnchor | null;
   children: (size: ChartSize) => React.ReactNode;
-  /** HTML rendered under the SVG (legends). */
-  footer?: React.ReactNode;
+  /** HTML rendered under the SVG (legends); a function gets the measured size (e.g. to align a legend with the plot). */
+  footer?: React.ReactNode | ((size: ChartSize) => React.ReactNode);
   /** Longer accessible description (e.g. the axis titles), linked via aria-describedby. */
   description?: string;
 }
@@ -106,7 +106,7 @@ export function ChartFrame({ label, height, className = "", tooltip, children, f
           </div>
         )}
       </div>
-      {footer}
+      {typeof footer === "function" ? footer(size) : footer}
     </div>
   );
 }

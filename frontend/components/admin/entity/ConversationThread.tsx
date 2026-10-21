@@ -11,6 +11,7 @@ import { ToneChip, formatMs, formatUsd } from "@/components/admin/entity/shared"
 import type { TurnView } from "@/components/admin/entity/turns";
 import { entityHref } from "@/lib/entity-links";
 import type { TurnFeedback, TurnSource } from "@/lib/entity-stats-api";
+import { stripCitationMarkers } from "@/lib/citation-markers";
 import { renderFormattedText } from "@/lib/format-text";
 import { useCan } from "@/lib/use-can";
 
@@ -54,8 +55,10 @@ const PILL =
   "inline-flex max-w-[16rem] items-center gap-1 rounded-full border border-brand-500/25 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 transition-colors hover:border-brand-500/60 hover:bg-brand-100 dark:bg-brand-950/50 dark:text-brand-300 dark:hover:bg-brand-900/50";
 
 /** The full answer, collapsed to about `LONG_ANSWER_LINES` lines with "Show more" when longer (never cut with an ellipsis). */
-function AnswerBody({ text }: { text: string }) {
+function AnswerBody({ text: raw }: { text: string }) {
   const id = useId();
+  // Stored answers carry `[n]` markers but no citation list to turn into pills: drop them (OR-7).
+  const text = stripCitationMarkers(raw);
   const long = estimateLines(text) > LONG_ANSWER_LINES;
   const [expanded, setExpanded] = useState(false);
   const collapsed = long && !expanded;

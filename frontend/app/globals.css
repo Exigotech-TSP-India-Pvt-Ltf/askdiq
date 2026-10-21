@@ -189,3 +189,72 @@ html.dark .scrollbar-thin::-webkit-scrollbar-thumb {
   outline: 2px solid rgb(var(--brand-500));
   outline-offset: 2px;
 }
+
+/* Admin tables (components/ui/styles: tableRow, tableSurface, stickyHeadCell,
+   stickyCell). A row's state colour is one variable, --row-tint, laid over an
+   opaque themed table surface, so a pinned (sticky) cell repaints exactly the
+   row's colour on top of the same surface: no white band in any state, theme
+   or density. The divider shows only while content scrolls under the pin. */
+@property --row-tint {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@layer components {
+  .dt-surface {
+    background-color: rgb(var(--surface-card));
+    background-image: linear-gradient(rgb(var(--surface-studio) / 0.55), rgb(var(--surface-studio) / 0.55));
+  }
+  .dt-row {
+    --row-tint: transparent;
+    background-color: var(--row-tint);
+    transition: --row-tint 150ms ease, background-color 150ms ease;
+  }
+  .dt-row:nth-child(even) {
+    --row-tint: rgb(var(--surface-muted) / 0.3);
+  }
+  .dt-row:hover {
+    --row-tint: rgb(var(--brand-50) / 0.6);
+  }
+  .dt-row[aria-selected="true"],
+  .dt-row[data-selected="true"] {
+    --row-tint: rgb(var(--brand-50) / 0.95);
+  }
+  .dark .dt-row:nth-child(even) {
+    --row-tint: rgb(255 255 255 / 0.015);
+  }
+  .dark .dt-row:hover {
+    --row-tint: rgb(var(--brand-500) / 0.07);
+  }
+  .dark .dt-row[aria-selected="true"],
+  .dark .dt-row[data-selected="true"] {
+    --row-tint: rgb(var(--brand-500) / 0.14);
+  }
+  .dt-sticky-head,
+  .dt-sticky-cell {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+  }
+  .dt-sticky-head {
+    background-color: rgb(var(--surface-studio));
+  }
+  .dt-sticky-cell {
+    background-color: rgb(var(--surface-card));
+    background-image: linear-gradient(var(--row-tint, transparent), var(--row-tint, transparent)),
+      linear-gradient(rgb(var(--surface-studio) / 0.55), rgb(var(--surface-studio) / 0.55));
+  }
+  [data-scroll-under="true"] .dt-sticky-head,
+  [data-scroll-under="true"] .dt-sticky-cell {
+    box-shadow: inset 1px 0 0 rgb(var(--line-brand) / 0.7), -10px 0 12px -10px rgb(var(--fg) / 0.16);
+  }
+  .dark [data-scroll-under="true"] .dt-sticky-head,
+  .dark [data-scroll-under="true"] .dt-sticky-cell {
+    box-shadow: inset 1px 0 0 rgb(var(--brand-500) / 0.25), -10px 0 12px -10px rgb(0 0 0 / 0.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dt-row {
+    transition: none;
+  }
+}
