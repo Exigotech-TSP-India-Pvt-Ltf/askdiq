@@ -288,6 +288,8 @@ export interface ResourcePoint {
   rss_mb: number | null;
   loop_lag_p95_ms: number | null;
   db_pool_percent: number | null;
+  /** In-flight /query requests as % of LLM slots (absent on older samples). */
+  queries_percent?: number | null;
 }
 
 /** Aggregate of every live API worker (`resources` in monitoring and SSE). */
@@ -315,6 +317,8 @@ export interface ResourcesSnapshot {
   event_loop: { scope: "process"; lag_p95_ms: number | null; lag_max_ms: number | null };
   db_pool: { scope: "process"; in_use_percent: number | null; checked_out: number; capacity: number };
   active_queries: number;
+  /** In-flight /query requests against the LLM slots of every live worker. */
+  queries?: { scope: "process"; in_use_percent: number | null; active: number; capacity: number };
   workers: Array<{
     worker_id: string;
     hostname: string;

@@ -101,8 +101,15 @@ describe("TableToolbar column visibility, density and export", () => {
     fireEvent.click(screen.getByRole("button", { name: "Columns" }));
     fireEvent.click(screen.getByLabelText("Last login"));
     expect(headers()).toEqual(["Email", "Role"]);
-    fireEvent.click(screen.getByRole("button", { name: "Compact" }));
-    expect(screen.getByRole("button", { name: "Compact" })).toHaveAttribute("aria-pressed", "true");
+    const compact = screen.getByRole("button", { name: "Compact" });
+    expect(compact).not.toHaveAttribute("data-active");
+    expect(compact).not.toHaveClass("border-brand-500");
+    fireEvent.click(compact);
+    const on = screen.getByRole("button", { name: "Compact" });
+    expect(on).toHaveAttribute("aria-pressed", "true");
+    // Visibly selected, like an active Filters button.
+    expect(on).toHaveAttribute("data-active", "true");
+    expect(on).toHaveClass("border-brand-500");
   });
 });
 

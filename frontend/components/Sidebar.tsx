@@ -249,14 +249,15 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
         }`}
       >
         <div
-          className={`flex h-16 shrink-0 items-center border-b border-ink/10 dark:border-white/10 ${
+          className={`flex h-20 shrink-0 items-center border-b border-ink/10 dark:border-white/10 ${
             collapsed ? "justify-center px-1" : "justify-between pl-4 pr-3"
           }`}
         >
           {!collapsed ? (
             <>
               <div className="flex flex-1 items-center min-w-0 h-full">
-                <BrandLogo variant="full" className="h-12 max-w-[230px]" />
+                {/* Width-led sizing: the wordmark fills the rail instead of a fixed height. */}
+                <BrandLogo variant="full" size="w-auto max-w-[200px] object-contain object-left" />
               </div>
               <button
                 onClick={toggleCollapsed}

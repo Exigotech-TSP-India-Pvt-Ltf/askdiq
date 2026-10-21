@@ -367,8 +367,13 @@ export function TableToolbar({
               type="button"
               aria-pressed={density === "compact"}
               onClick={() => onDensityChange(density === "compact" ? "comfortable" : "compact")}
-              title={density === "compact" ? "Comfortable rows" : "Compact rows"}
-              className={toolbarButton}
+              title={density === "compact" ? "Compact rows on: click for comfortable rows" : "Compact rows"}
+              data-active={density === "compact" ? "true" : undefined}
+              className={
+                density === "compact"
+                  ? `flex items-center gap-1.5 rounded-lg border border-brand-500 bg-brand-50/70 px-2.5 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors dark:bg-brand-950/60 dark:text-brand-300 ${focusRing}`
+                  : toolbarButton
+              }
             >
               {density === "compact" ? (
                 <Rows4 className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" strokeWidth={1.75} aria-hidden="true" />

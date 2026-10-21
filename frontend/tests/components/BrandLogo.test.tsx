@@ -117,11 +117,15 @@ describe("<BrandLogo />", () => {
     expect(dark).toHaveAttribute("src", "/branding/assets/dark");
   });
 
-  it("is what the Sidebar renders, inside an h-16 header", () => {
+  it("is what the Sidebar renders, inside an h-20 header, sized by width only", () => {
     const { container } = render(<Sidebar />);
     const sources = [...container.querySelectorAll("img")].map((img) => img.getAttribute("src"));
     expect(sources).toEqual(["/exigotech-logo.svg", "/exigotech-logo-dark.svg"]);
     const header = container.querySelector("aside > div");
-    expect(header).toHaveClass("h-16");
+    expect(header).toHaveClass("h-20");
+    for (const img of container.querySelectorAll("aside > div img")) {
+      expect(img).toHaveClass("w-auto", "max-w-[200px]", "object-contain", "object-left");
+      expect(img).not.toHaveClass("h-10", "h-12", "max-w-[230px]");
+    }
   });
 });

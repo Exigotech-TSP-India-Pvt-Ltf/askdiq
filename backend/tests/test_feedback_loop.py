@@ -47,7 +47,13 @@ from app.schemas.feedback import (
 from app.schemas.session import UserFeedbackRequest
 from main import app
 from tests.conftest import shared_session_factory
-from tests.feedback_helpers import make_exchange, make_feedback, make_session, marker
+from tests.feedback_helpers import (
+    bulk_insert_messages,
+    make_exchange,
+    make_feedback,
+    make_session,
+    marker,
+)
 from tests.pg_helpers import new_engine, require_postgres
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -890,7 +896,7 @@ async def test_export_streams_10k_pairs_with_flat_memory(db_session):
                 "updated_at": now,
             }
         )
-    await db_session.execute(insert(ChatMessageRecord), user_rows + asst_rows)
+    await bulk_insert_messages(db_session, user_rows + asst_rows)
     await db_session.execute(insert(MessageFeedback), fb_rows)
     del user_rows, asst_rows, fb_rows
     gc.collect()

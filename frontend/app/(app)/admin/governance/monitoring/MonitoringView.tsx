@@ -17,6 +17,7 @@ import {
   Layers,
   Loader,
   MemoryStick,
+  MessagesSquare,
   PieChart,
   Scale,
   Search,
@@ -390,6 +391,7 @@ const GAUGE_ICONS: Record<string, LucideIcon> = {
   rss: Layers,
   loop: Timer,
   pool: Database,
+  queries: MessagesSquare,
 };
 
 const RESOURCE_BANDS: Record<"cpu" | "ram" | "quota", GaugeBands> = {
