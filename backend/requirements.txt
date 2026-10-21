@@ -38,7 +38,7 @@ packaging==26.3
 passlib==1.7.4
 pgvector==0.3.4
 psycopg2-binary==2.9.13
-pillow==12.3.0
+pillow==13.0.0
 protobuf==7.36.2
 py_rust_stemmers==0.1.8
 pyasn1==0.6.4
