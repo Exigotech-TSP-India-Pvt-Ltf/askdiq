@@ -124,8 +124,10 @@ describe("Analytics page renders the HTML's numbers", { timeout: 15_000 }, () =>
     expect(sumLabels(flow, /to Not served: (\d+) conversations/)).toBe(22);
 
     const topics = card("Question topics");
-    await waitFor(() => expect(within(topics).getByRole("button", { name: /^Services: 33, 33 · 58% handled$/ })).toBeInTheDocument());
-    expect(sumLabels(topics, /^[^:]+: (\d+),/)).toBe(106);
+    await waitFor(() => expect(within(topics).getByRole("button", { name: "Services: 33 questions, 58% handled" })).toBeInTheDocument());
+    // Top 10 first; "Show all 14" expands the list in place.
+    fireEvent.click(within(topics).getByRole("button", { name: "Show all 14" }));
+    expect(sumLabels(topics, /^[^:]+: (\d+) questions, \d+% handled$/)).toBe(106);
 
     const donut = card("How questions were answered");
     await waitFor(() => expect(within(donut).getByRole("button", { name: "Partly answered: 37 questions." })).toBeInTheDocument());

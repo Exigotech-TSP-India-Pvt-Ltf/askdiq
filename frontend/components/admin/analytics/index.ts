@@ -5,7 +5,7 @@ export { KpiStrip, KPIS } from "./KpiStrip";
 export { TrendChart } from "./TrendChart";
 export { HourOfDayChart } from "./HourOfDayChart";
 export { FlowSankey } from "./FlowSankey";
-export { TopicsTreemap } from "./TopicsTreemap";
+export { TopicsBreakdown } from "./TopicsBreakdown";
 export { QualityDonut, QUALITY_ORDER } from "./QualityDonut";
 export { DropoffChart } from "./DropoffChart";
 export { PeopleBubble } from "./PeopleBubble";

@@ -16,11 +16,9 @@ import { tileLabel } from "@/components/charts/heavy/TreemapImpl";
 import { buildDriftRows, formatCompareDiff, EvaluationCompareMatrix } from "@/components/admin/EvaluationCompareMatrix";
 import { showBudgetLine } from "@/components/admin/usage/CostInsights";
 import { spreadLabels } from "@/components/admin/analytics/FlowSankey";
-import { smallTopics } from "@/components/admin/analytics/TopicsTreemap";
 import { dropoffSummary } from "@/components/admin/analytics/DropoffChart";
 import { errorRateTone } from "@/app/(app)/admin/governance/overall/OverallView";
 import type { HealthSignal } from "@/lib/governance-api";
-import type { TopicItem } from "@/lib/insights-api";
 
 const yTickTexts = (container: HTMLElement) =>
   Array.from(container.querySelectorAll("svg text[text-anchor='end']")).map((t) => t.textContent ?? "");
@@ -187,11 +185,6 @@ describe("treemap labels (VA-27)", () => {
     expect(tileLabel("Contact and sales", 40, 11)).toBeNull();
   });
 
-  it("lists the smallest topics under the chart", () => {
-    const topic = (intent: string, questions: number) => ({ intent, label: intent, questions, handled: 0, handled_pct: 0 }) as TopicItem;
-    const small = smallTopics([topic("a", 90), topic("b", 3), topic("c", 4), topic("d", 0)]);
-    expect(small.map((t) => t.intent)).toEqual(["c", "b"]);
-  });
 });
 
 describe("Sankey label spacing (VA-30)", () => {

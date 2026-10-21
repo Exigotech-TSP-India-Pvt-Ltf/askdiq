@@ -36,7 +36,7 @@ def test_empty_filters_apply_nothing(value: dict | None) -> None:
 
 def test_swagger_example_keeps_session_and_ip_but_omits_filters() -> None:
     (example,) = QueryRequest.model_json_schema()["examples"]
-    assert set(example) == {"query", "session_id", "ip_address"}
+    assert set(example) == {"query", "session_id", "ip_address", "new_session"}
 
 
 def test_client_ip_override_is_on_by_default() -> None:
