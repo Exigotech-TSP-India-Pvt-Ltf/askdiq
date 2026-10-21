@@ -7,8 +7,8 @@ import {
   ACTIVE_PERIODS,
   ACTIVE_VISITORS_DEFINITION,
   ACTIVE_VISITORS_LABEL,
+  comparisonLabel,
   periodWindow,
-  trendLabel,
   type ActivePeriodKey,
   type ActiveVisitors,
 } from "@/lib/active-visitors";
@@ -70,7 +70,7 @@ export function ActiveVisitorsPanel({
               title={title}
               value={period.value}
               subtitle={periodWindow(period.days)}
-              trend={trendLabel(period) ?? undefined}
+              delta={period.delta === null ? undefined : { value: period.delta, title: comparisonLabel(period.days) }}
               icon={PERIOD_ICONS[key]}
             />
           );

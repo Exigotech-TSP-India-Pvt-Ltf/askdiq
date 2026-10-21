@@ -106,7 +106,8 @@ export const STATS_DAYS_MAX = 90;
 export const AUDIT_LIMIT_MAX = 500;
 /** Auth audit page size bounds (`GET /admin/auth-audit`). */
 export const AUDIT_PAGE_MAX = 100;
-export const AUDIT_PAGE_DEFAULT = 25;
+/** Rows per audit-trail page: the console table standard (VA-47). */
+export const AUDIT_PAGE_DEFAULT = 10;
 
 export const USER_SORT_KEYS = ["created_at", "last_login_at", "email", "name"] as const;
 export type UserSortKey = (typeof USER_SORT_KEYS)[number];

@@ -261,7 +261,8 @@ export function BrandingTab() {
 
           <div data-tour="settings-colours">
           <SettingsCard title="Colours" description="Live WCAG check; the server re-checks on save." icon={Palette}>
-            <div className="grid gap-4 sm:grid-cols-3">
+            {/* Fields wrap before a hex value would be cut (VA-39). */}
+            <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]">
               <ColorField
                 label="Primary"
                 value={form.primary_hex}
@@ -365,6 +366,34 @@ export function BrandingTab() {
             />
           </SettingsCard>
           </div>
+          {/* The save bar spans the form column only, on a solid surface, so it never
+              sits over the preview or shows form content through it (VA-36). */}
+          <div data-tour="settings-save-bar" className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface-elevated px-4 py-3 shadow-md">
+            <button type="button" className={secondaryButton} onClick={() => setConfirmReset(true)} disabled={save.isPending} data-tour="settings-reset">
+              <RotateCcw className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+              Reset to defaults
+            </button>
+            <div className="flex items-center gap-2">
+              {dirty ? (
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  onClick={() => {
+                    setForm(baseline);
+                    setAssetUrls(assetUrlsFromBranding(server));
+                    setServerError(null);
+                    setShowErrors(false);
+                  }}
+                >
+                  Discard
+                </button>
+              ) : null}
+              <button type="submit" className={primaryButton} disabled={!dirty || save.isPending} aria-disabled={!valid}>
+                <Save className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                {save.isPending ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </div>
         </m.div>
 
         <aside className="space-y-3 xl:sticky xl:top-4 xl:self-start" aria-label="Live preview" data-tour="settings-preview">
@@ -374,33 +403,6 @@ export function BrandingTab() {
           </div>
           <BrandPreview brand={preview} />
         </aside>
-      </div>
-
-      <div data-tour="settings-save-bar" className="sticky bottom-0 z-10 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface-elevated/95 px-4 py-3 shadow-md backdrop-blur">
-        <button type="button" className={secondaryButton} onClick={() => setConfirmReset(true)} disabled={save.isPending} data-tour="settings-reset">
-          <RotateCcw className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-          Reset to defaults
-        </button>
-        <div className="flex items-center gap-2">
-          {dirty ? (
-            <button
-              type="button"
-              className={secondaryButton}
-              onClick={() => {
-                setForm(baseline);
-                setAssetUrls(assetUrlsFromBranding(server));
-                setServerError(null);
-                setShowErrors(false);
-              }}
-            >
-              Discard
-            </button>
-          ) : null}
-          <button type="submit" className={primaryButton} disabled={!dirty || save.isPending} aria-disabled={!valid}>
-            <Save className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-            {save.isPending ? "Saving…" : "Save changes"}
-          </button>
-        </div>
       </div>
 
       <ConfirmDialog

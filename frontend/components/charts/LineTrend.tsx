@@ -7,6 +7,7 @@ import {
   ChartFrame,
   TooltipBody,
   formatCompact,
+  isIntegerSeries,
   niceMax,
   scaleLinear,
   useChartMarks,
@@ -101,10 +102,11 @@ export function LineTrend<T extends object>({
   );
   const { active, getMarkProps } = useChartMarks(data, describe, onSelect, ct.dimOpacity);
 
-  const max = useMemo(() => {
-    if (fixedMax !== undefined) return fixedMax;
+  const { max, integer } = useMemo(() => {
     const values = data.flatMap((row) => series.map((s) => valueOf(row, s.key) ?? 0));
-    return niceMax(Math.max(0, reference?.value ?? 0, ...values));
+    const whole = isIntegerSeries(values);
+    if (fixedMax !== undefined) return { max: fixedMax, integer: whole && Number.isInteger(fixedMax) };
+    return { max: niceMax(Math.max(0, reference?.value ?? 0, ...values)), integer: whole };
   }, [data, fixedMax, reference, series]);
 
   if (data.length === 0) return <ChartEmpty height={height} />;
@@ -139,7 +141,7 @@ export function LineTrend<T extends object>({
         const band = data.length > 1 ? (area.x1 - area.x0) / (data.length - 1) : area.x1 - area.x0;
         return (
           <>
-            <YGrid area={area} max={max} ct={ct} format={formatValue} />
+            <YGrid area={area} max={max} ct={ct} format={formatValue} integer={integer} />
             <XLabels labels={data.map(xLabel)} xAt={x} area={area} ct={ct} />
             <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {reference && (

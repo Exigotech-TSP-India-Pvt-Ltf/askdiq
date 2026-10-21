@@ -139,6 +139,8 @@ class EvalResult:
             "run_index": self.run_index,
             "latency_ms": self.latency_ms,
             "answer_word_count": self.answer_word_count,
+            # The response text, so the case drawer can show it (VA-14).
+            "answer": self.answer,
         }
 
 

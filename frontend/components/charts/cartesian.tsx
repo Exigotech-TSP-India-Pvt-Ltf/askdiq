@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChartTheme } from "@/lib/theme-tokens";
-import { AXIS_FONT_SIZE, fitText, formatCompact, scaleLinear, ticks } from "./primitives";
+import { AXIS_FONT_SIZE, axisTicks, fitText, formatCompact, scaleLinear, textWidth } from "./primitives";
 
 /** Plot margins shared by the cartesian charts (room for axis labels). */
 export const MARGIN = { top: 10, right: 10, bottom: 22, left: 40 } as const;
@@ -117,17 +117,20 @@ export function YGrid({
   ct,
   format = formatCompact,
   min = 0,
+  integer = false,
 }: {
   area: PlotArea;
   max: number;
   ct: ChartTheme;
   format?: (v: number) => string;
   min?: number;
+  /** Count series: whole-number ticks only (see `isIntegerSeries`). */
+  integer?: boolean;
 }) {
   const y = scaleLinear([min, max], [area.y1, area.y0]);
   return (
     <g aria-hidden="true">
-      {ticks(max - min).map((t) => {
+      {axisTicks(max - min, integer).map((t) => {
         const v = min + t;
         return (
           <g key={v}>
@@ -149,25 +152,55 @@ export function YGrid({
   );
 }
 
-/** Category labels under the plot; thins them out so they never overlap. */
+/** Minimum free space between two category labels (px). */
+export const X_LABEL_GAP = 10;
+
+/**
+ * Which category labels to draw so none overlap: the step follows the
+ * space each label gets (`spacing`, px between neighbouring categories)
+ * and the widest label, so a wide card shows more dates than a narrow
+ * one. The first and last labels are always kept; when the last one would
+ * crowd the previous stepped label, that label is dropped instead.
+ * `maxLabels` optionally caps the count on top of the width rule.
+ */
+export function xTickIndices(count: number, spacing: number, labelWidth: number, maxLabels?: number): number[] {
+  if (count <= 0) return [];
+  if (count === 1) return [0];
+  const need = labelWidth + X_LABEL_GAP;
+  let every = spacing > 0 ? Math.max(1, Math.ceil(need / spacing)) : count;
+  if (maxLabels && maxLabels > 0) every = Math.max(every, Math.ceil(count / maxLabels));
+  const out: number[] = [];
+  for (let i = 0; i < count; i += every) out.push(i);
+  const last = count - 1;
+  if (out[out.length - 1] !== last) {
+    if (out.length > 1 && (last - out[out.length - 1]) * spacing < need) out.pop();
+    out.push(last);
+  }
+  return out;
+}
+
+/** Category labels under the plot; thinned by the available width so they never overlap. */
 export function XLabels({
   labels,
   xAt,
   area,
   ct,
-  maxLabels = 7,
+  maxLabels,
 }: {
   labels: readonly string[];
   xAt: (index: number) => number;
   area: PlotArea;
   ct: ChartTheme;
+  /** Optional upper bound on the number of labels (the width rule always applies). */
   maxLabels?: number;
 }) {
-  const every = Math.max(1, Math.ceil(labels.length / maxLabels));
+  const widest = labels.reduce((w, l) => Math.max(w, textWidth(l)), 0);
+  const spacing = labels.length > 1 ? Math.abs(xAt(1) - xAt(0)) : area.x1 - area.x0;
+  const shown = new Set(xTickIndices(labels.length, spacing, widest, maxLabels));
   return (
     <g aria-hidden="true">
       {labels.map((label, i) =>
-        i % every === 0 || i === labels.length - 1 ? (
+        shown.has(i) ? (
           <text
             key={i}
             x={xAt(i)}

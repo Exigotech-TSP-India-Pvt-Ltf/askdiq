@@ -528,6 +528,7 @@ async def _build_live_user_evaluation(
     cases = [
         {
             "id": str(r.id),
+            "source": "live",
             "request_id": r.request_id,
             "type": r.outcome or "answered",
             "query": r.query,
@@ -845,42 +846,8 @@ async def _live_evaluation_payload(
     benchmark_data = result[0] if result else {}
     benchmark_file = result[1] if result else "evaluation_report.json"
 
-    # Normalize benchmark cases
-    b_cases = benchmark_data.get("cases", [])
-    normalized_b_cases = []
-    for c in b_cases:
-        normalized_b_cases.append(
-            {
-                "id": c.get("id"),
-                "type": c.get("type", "answerable"),
-                "query": c.get("query"),
-                "answer": c.get("answer", ""),
-                "passed": c.get("passed", True),
-                "known_issue": c.get("known_issue", False),
-                "grounded": c.get("grounded", True),
-                "confidence": c.get("confidence", 0.90),
-                "abstained": c.get("abstained", False),
-                "flags": c.get("guardrail_flags") or [],
-                "latency_ms": c.get("latency_ms", 1200.0),
-                "faithfulness": (c.get("judge") or {}).get("faithfulness")
-                or (c.get("deep_judge") or {}).get("correctness")
-                or 4.8,
-                "relevance": (c.get("judge") or {}).get("relevance", 4.9),
-                "completeness": (c.get("judge") or {}).get("completeness", 4.7),
-                "citation_precision": (c.get("citation") or {}).get("precision", 0.94),
-                "citation_coverage": (c.get("citation") or {}).get("coverage", 0.91),
-                "recall": (c.get("retrieval_metrics") or {}).get("recall@k", 0.98),
-                "judge_reason": (c.get("judge") or {}).get(
-                    "reason", "Benchmark ground truth verified."
-                ),
-                "retrieved_chunks": c.get("retrieved") or [],
-                "unsupported_claims": (c.get("judge") or {}).get(
-                    "unsupported_claims", []
-                ),
-                "missing_keywords": c.get("missing_keywords"),
-                "error": c.get("error"),
-            }
-        )
+    # Normalize benchmark cases (values the report lacks stay None)
+    normalized_b_cases = [_benchmark_case(c) for c in benchmark_data.get("cases", [])]
 
     # Build comparison deltas
     # A side without a value stays None (no invented baseline).
@@ -931,7 +898,9 @@ async def _live_evaluation_payload(
     if audience in {"testing", "overview"}:
         res_data = dict(benchmark_data)
         res_data["cases"] = normalized_b_cases
-        res_data["failed_cases"] = [c for c in normalized_b_cases if not c["passed"]]
+        res_data["failed_cases"] = [
+            c for c in normalized_b_cases if c["passed"] is False
+        ]
         res_data["report_file"] = f"{benchmark_file} (Benchmark Golden Suite)"
         res_data["comparison"] = {
             "deltas": deltas,
@@ -953,6 +922,50 @@ async def _live_evaluation_payload(
     live = await eval_series.live_runs(db, run_limit, window)
     live_data.update(eval_series.insight_fields(live))
     return _with_window(live_data, days)
+
+
+def _benchmark_case(c: dict) -> dict:
+    """One benchmark report case in the drawer / explorer shape.
+
+    A value the report file does not carry stays ``None`` (shown as "not
+    measured"); it is never filled with a plausible score, so an unjudged
+    report never looks judged. ``source`` lets the drawer explain why a
+    benchmark row has no response text (older reports did not store it).
+    """
+    judge = c.get("judge") or {}
+    deep = c.get("deep_judge") or {}
+    citation = c.get("citation") or {}
+    retrieval = c.get("retrieval_metrics") or {}
+    faithfulness = judge.get("faithfulness")
+    safety_ok = c.get("safety_ok")
+    return {
+        "id": c.get("id"),
+        "source": "benchmark",
+        "type": c.get("type", "answerable"),
+        "query": c.get("query"),
+        "answer": c.get("answer") or None,
+        "passed": c.get("passed"),
+        "known_issue": c.get("known_issue", False),
+        "grounded": c.get("grounded"),
+        "confidence": c.get("confidence"),
+        "abstained": c.get("abstained", False),
+        "flags": c.get("guardrail_flags") or [],
+        "safety_passed": safety_ok if isinstance(safety_ok, bool) else None,
+        "latency_ms": c.get("latency_ms"),
+        "faithfulness": faithfulness
+        if faithfulness is not None
+        else deep.get("correctness"),
+        "relevance": judge.get("relevance"),
+        "completeness": judge.get("completeness"),
+        "citation_precision": citation.get("precision"),
+        "citation_coverage": citation.get("coverage"),
+        "recall": retrieval.get("recall@k"),
+        "judge_reason": judge.get("reason"),
+        "retrieved_chunks": c.get("retrieved") or [],
+        "unsupported_claims": judge.get("unsupported_claims") or [],
+        "missing_keywords": c.get("missing_keywords"),
+        "error": c.get("error"),
+    }
 
 
 def _with_window(payload: dict, days: DayRange | None) -> dict:
