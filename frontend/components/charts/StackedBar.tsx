@@ -142,7 +142,10 @@ export function StackedBar<T extends object>({
       });
       return { labelW, band, v, rect, area: null, titleArea };
     }
-    const area = plotArea(width, h, titles);
+    const area = plotArea(width, h, titles, {
+      labels: data.map((row) => formatLabel(category(row))),
+      placement: "band",
+    });
     const band = (area.x1 - area.x0) / data.length;
     const v = scaleLinear([0, max], [area.y1, area.y0]);
     const rect = (s: (typeof spans)[number]) => ({

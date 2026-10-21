@@ -235,7 +235,7 @@ function BilledBars({
   const { active, getMarkProps } = useChartMarks(rows, describe, undefined, ct.dimOpacity);
 
   const layout = ({ width, height }: ChartSize) => {
-    const area = plotArea(width, height, AXES);
+    const area = plotArea(width, height, AXES, { labels: rows.map((r) => bucketLabel(r.date)), placement: "band" });
     const band = (area.x1 - area.x0) / Math.max(1, rows.length);
     const v = scaleLinear([0, max || 1], [area.y1, area.y0]);
     const barW = Math.max(1, (band * (1 - BAR_GAP)) / 2);
