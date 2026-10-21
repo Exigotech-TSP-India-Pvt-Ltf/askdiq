@@ -162,3 +162,41 @@ describe("Feedback outcomes", () => {
     expect(screen.getAllByRole("button", { name: /^Empty LLM reply: / }).length).toBeGreaterThan(0);
   });
 });
+
+describe("Feedback filter chips on the tab row (OR-13)", () => {
+  it("regression: the Status: New chip opens the statuses and choosing Reviewed sets status=reviewed in the URL", async () => {
+    history.reset("/admin/feedback?tab=queue");
+    render(
+      <Providers>
+        <FeedbackWorkspace />
+      </Providers>,
+    );
+    const bar = chips();
+    // Same row as the tabs and the date filter.
+    const row = bar.closest("[data-page-toolbar]");
+    expect(row).toContainElement(screen.getByRole("tablist", { name: "Feedback sections" }));
+    fireEvent.click(within(bar).getByRole("button", { name: "Status: New, change filter" }));
+    const list = screen.getByRole("listbox", { name: "Status" });
+    expect(within(list).getByRole("option", { name: "New" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(within(list).getByRole("option", { name: "Reviewed" }));
+    await waitFor(() => expect(history.params().get("status")).toBe("reviewed"));
+    expect(within(chips()).getByRole("button", { name: "Status: Reviewed, change filter" })).toBeInTheDocument();
+    expect(within(chips()).getByRole("button", { name: "Filters, 1 active" })).toBeInTheDocument();
+  });
+
+  it("the Filters popover edits rating and reason through the URL", async () => {
+    history.reset("/admin/feedback?tab=queue");
+    render(
+      <Providers>
+        <FeedbackWorkspace />
+      </Providers>,
+    );
+    fireEvent.click(within(chips()).getByRole("button", { name: /^Filters/ }));
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    fireEvent.click(within(within(dialog).getByRole("group", { name: "Rating" })).getByRole("button", { name: "2" }));
+    await waitFor(() => expect(history.params().get("rating")).toBe("2"));
+    fireEvent.click(within(within(screen.getByRole("dialog", { name: "Filters" })).getByRole("group", { name: "Reason" })).getByRole("button", { name: "Wrong" }));
+    await waitFor(() => expect(history.params().get("reason")).toBe("wrong"));
+    expect(screen.getByRole("dialog", { name: "Filters" })).toHaveTextContent("Reason and sentiment narrow the loaded page.");
+  });
+});
