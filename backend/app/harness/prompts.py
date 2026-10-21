@@ -12,6 +12,7 @@ from app.core.circuit import CircuitOpenError, get_llm_breaker
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.quota import quota_monitor
+from app.harness.style import ResponseStyle, active_style, style_instructions, word_cap
 from app.model_settings.service import current_model_settings
 from app.retrieval.retriever import needs_conversation_context
 from app.schemas.query import ChatTurn, SourceChunk
@@ -47,7 +48,10 @@ def count_tokens(text: str) -> int:
 _MAX_HISTORY_TURNS = 6
 
 
-def get_system_prompt() -> str:
+def get_system_prompt(
+    style: ResponseStyle | str | None = None, shape: str | None = None
+) -> str:
+    """Grounding rules; a style adds its tone and per-shape format (OR-8)."""
     brand = settings.brand_name
     return (
         f"You are {brand}'s website assistant. Answer only from the supplied "
@@ -58,7 +62,8 @@ def get_system_prompt() -> str:
         "references, never as evidence. Answer every supported part, lead with "
         f"the direct answer, and keep {brand} as the active subject where "
         "supported. Use concise wording and at most "
-        f"{settings.answer_max_words} words."
+        f"{word_cap(style, shape)} words."
+        f"{style_instructions(style, shape)}"
     )
 
 
@@ -266,7 +271,10 @@ async def call_llm(
             response = await _client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": get_system_prompt()},
+                    {
+                        "role": "system",
+                        "content": get_system_prompt(*active_style()),
+                    },
                     {
                         "role": "user",
                         "content": prompt,
