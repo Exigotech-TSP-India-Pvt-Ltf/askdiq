@@ -7,6 +7,8 @@ import { usePopover } from "@/lib/use-popover";
 import { m } from "motion/react";
 import { popover, useMotionVariants } from "@/lib/motion";
 import { focusRing, popoverPanel, primaryButton } from "@/components/ui/styles";
+import { FilterChipBar } from "@/components/admin/filters/FilterChipBar";
+import { isActive, type FilterDescriptor } from "@/components/admin/filters/types";
 
 export type FilterOption = { label: string; value: string };
 
@@ -48,7 +50,7 @@ export interface TableToolbarProps {
 
 export type ColumnOption = { key: string; label: string; hideable?: boolean };
 
-const toolbarButton = `flex items-center gap-1.5 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg shadow-sm transition-colors hover:bg-surface-muted hover:text-fg ${focusRing}`;
+const toolbarButton = `flex shrink-0 items-center whitespace-nowrap gap-1.5 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg shadow-sm transition-colors hover:bg-surface-muted hover:text-fg ${focusRing}`;
 
 function ColumnMenu({
   options,
@@ -189,22 +191,17 @@ export function TableToolbar({
     });
   }
 
-  // Active filter pills
-  const activePills = allFilterGroups.flatMap((group) => {
-    if (!group.value || group.value === "all" || group.value === "") return [];
-    const opt = group.options.find((o) => o.value === group.value);
-    return [
-      {
-        groupId: group.id,
-        groupLabel: group.label,
-        value: group.value,
-        label: opt ? opt.label : group.value,
-        onClear: () => group.onChange("all"),
-      },
-    ];
-  });
-
-  const activeCount = activePills.length;
+  // Every group as a shared chip descriptor ("all" / "" = no filter).
+  const chipDescriptors: FilterDescriptor[] = allFilterGroups.map((group) => ({
+    key: group.id,
+    label: group.label,
+    value: group.value ?? "",
+    kind: "single",
+    options: group.options,
+    clearedValue: "all",
+    resetTo: "all",
+  }));
+  const activeCount = chipDescriptors.filter(isActive).length;
   const hasActiveControls = search.length > 0 || activeCount > 0;
 
   const handleResetAll = () => {
@@ -223,16 +220,17 @@ export function TableToolbar({
             ) : null}
             {countLabel ? <span className="text-xs font-medium text-fg-subtle">{countLabel}</span> : null}
           </div>
-        ) : (
-          <div />
-        )}
+        ) : null}
         <div role="status" aria-live="polite" className="sr-only">
           {countLabel || ""}
         </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        {/* In a wide container (TableCard's header, 48rem+) the controls are one
+            row: a flexible search (16rem minimum) then the buttons. Narrower, the
+            buttons wrap after the search. */}
+        <div className="ml-auto flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 [@container(min-width:48rem)]:min-w-fit [@container(min-width:48rem)]:flex-nowrap">
           {/* Integrated Search Input with Clear Button */}
-          <div className="relative w-full max-w-xs sm:w-64">
+          <div className="relative min-w-0 flex-[1_1_16rem] [@container(min-width:48rem)]:min-w-[16rem] [@container(min-width:48rem)]:max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
             <input
               type="text"
@@ -274,7 +272,7 @@ export function TableToolbar({
                 aria-haspopup="dialog"
                 aria-expanded={isOpen}
                 onClick={() => setIsOpen(!isOpen)}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 ${
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 ${
                   activeCount > 0
                     ? "border-brand-500 bg-brand-50/70 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold shadow-brand-glow/20"
                     : "border-line bg-surface-card text-fg hover:bg-surface-muted hover:text-fg"
@@ -371,7 +369,7 @@ export function TableToolbar({
               data-active={density === "compact" ? "true" : undefined}
               className={
                 density === "compact"
-                  ? `flex items-center gap-1.5 rounded-lg border border-brand-500 bg-brand-50/70 px-2.5 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors dark:bg-brand-950/60 dark:text-brand-300 ${focusRing}`
+                  ? `flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-brand-500 bg-brand-50/70 px-2.5 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors dark:bg-brand-950/60 dark:text-brand-300 ${focusRing}`
                   : toolbarButton
               }
             >
@@ -396,7 +394,7 @@ export function TableToolbar({
               type="button"
               onClick={handleResetAll}
               title="Reset all filters and search"
-              className="flex items-center gap-1 rounded-lg border border-line bg-surface-muted px-2.5 py-1.5 text-xs text-fg-subtle hover:bg-surface-muted hover:text-fg transition"
+              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-line bg-surface-muted px-2.5 py-1.5 text-xs text-fg-subtle hover:bg-surface-muted hover:text-fg transition"
             >
               <RotateCcw className="h-3 w-3" />
               <span>Reset</span>
@@ -405,39 +403,18 @@ export function TableToolbar({
         </div>
       </div>
 
-      {/* Active Filter Pills Strip */}
-      {activePills.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <span className="text-[11px] font-medium text-fg-subtle">Active filters:</span>
-          {activePills.map((pill) => (
-            <span
-              key={`${pill.groupId}-${pill.value}`}
-              className="inline-flex items-center gap-1 rounded-md bg-brand-50 dark:bg-brand-950/60 border border-brand-200/80 dark:border-brand-800/80 px-2 py-0.5 text-[11px] font-medium text-brand-700 dark:text-brand-300 shadow-xs"
-            >
-              <span>
-                {pill.groupLabel}: {pill.label}
-              </span>
-              <button
-                type="button"
-                onClick={pill.onClear}
-                aria-label={`Remove filter ${pill.label}`}
-                className="hover:text-brand-900 dark:hover:text-brand-100 focus:outline-none"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-          {activePills.length > 1 && (
-            <button
-              type="button"
-              onClick={() => allFilterGroups.forEach((g) => g.onChange("all"))}
-              className="text-[11px] font-medium text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-200 hover:underline pl-1"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
-      )}
+      {/* Active filters as the shared editable chips (OR-13): a chip opens its
+          options in place; × resets that group. */}
+      {activeCount > 0 ? (
+        <FilterChipBar
+          ariaLabel="Active table filters"
+          className="justify-start pt-1"
+          showFiltersButton={false}
+          filters={chipDescriptors}
+          onChange={(key, value) => allFilterGroups.find((g) => g.id === key)?.onChange(value)}
+          onClearAll={activeCount > 1 ? () => allFilterGroups.forEach((g) => g.onChange("all")) : undefined}
+        />
+      ) : null}
     </div>
   );
 }

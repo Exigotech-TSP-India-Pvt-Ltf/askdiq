@@ -32,9 +32,12 @@ export interface RunEvaluationControlProps {
   pollMs?: number;
 }
 
+function progressLabel(run: EvalRun): string {
+  return run.status === "queued" ? "Queued" : `${run.cases_done} / ${run.cases_total || 0} cases`;
+}
+
 function ProgressChip({ run }: { run: EvalRun }) {
-  const total = run.cases_total || 0;
-  const text = run.status === "queued" ? "Queued" : `${run.cases_done} / ${total} cases`;
+  const text = progressLabel(run);
   return (
     <span
       data-testid="run-progress-chip"
@@ -269,19 +272,30 @@ export function RunEvaluationControl({ token, canRun, pollMs = RUN_POLL_MS }: Ru
 
   return (
     <div className="flex items-center gap-2">
-      <ActionTooltip label={reason || "Run the full benchmark"} align="end" side="bottom">
+      <ActionTooltip
+        label={reason || "Run evaluation"}
+        align="end"
+        side="bottom"
+        // Idle: the bubble only names the icon on phones (text hidden there).
+        compactOnly={!running}
+      >
         <button
           type="button"
           data-testid="run-evaluation-button"
+          aria-label={running && active ? `Run evaluation (${progressLabel(active)})` : "Run evaluation"}
           aria-disabled={running || undefined}
           aria-describedby={running ? reasonId : undefined}
           onClick={() => {
             if (!running) setOpen(true);
           }}
-          className={`${primaryButton} h-9 ${running ? "cursor-not-allowed opacity-70 hover:bg-brand-600" : ""}`}
+          className={`relative inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-brand-gradient px-3 text-xs font-medium text-white shadow-brand-glow transition-opacity motion-reduce:transition-none sm:h-9 sm:min-w-0 ${
+            running ? "cursor-not-allowed opacity-70" : "hover:opacity-90"
+          } ${focusRing}`}
         >
-          <Play className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-          <span>Run evaluation</span>
+          <Play className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+          <span data-label className="hidden whitespace-nowrap sm:inline">
+            Run evaluation
+          </span>
           {running && active ? <ProgressChip run={active} /> : null}
         </button>
       </ActionTooltip>
@@ -298,10 +312,11 @@ export function RunEvaluationControl({ token, canRun, pollMs = RUN_POLL_MS }: Ru
           type="button"
           onClick={() => void cancel()}
           disabled={cancelling || active.cancel_requested}
-          className={`${secondaryButton} h-9`}
+          aria-label={active.cancel_requested ? "Stopping the run" : "Stop run"}
+          className={`${secondaryButton} h-11 min-w-11 sm:h-9 sm:min-w-0`}
         >
           <Square className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
-          {active.cancel_requested ? "Stopping…" : "Stop run"}
+          <span className="hidden sm:inline">{active.cancel_requested ? "Stopping…" : "Stop run"}</span>
         </button>
       ) : null}
       <RunEvaluationDialog open={open} token={token} onCancel={() => setOpen(false)} onRun={start} />

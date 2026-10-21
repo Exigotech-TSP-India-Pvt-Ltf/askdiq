@@ -154,7 +154,7 @@ describe("every cross-filter deep-links, combines and clears", { timeout: 15_000
     expect(screen.getByRole("link", { name: /Open visitor/ })).toHaveAttribute("href", "/admin/users/client-203.0.113.7");
     expectNoCrash();
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    fireEvent.click(within(screen.getByRole("region", { name: "Active filters" })).getByRole("button", { name: "Clear all" }));
     const left = currentParams();
     for (const key of ["period", "from", "to", "user_type", "outcome", "issue", "intent", "quality", "person", "hour", "visitor"]) {
       expect(left.get(key), key).toBeNull();

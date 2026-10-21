@@ -436,6 +436,7 @@ export function ConversationsPanel() {
           onClose={() => openPreview(null)}
           onPrev={prevId ? () => set({ preview: prevId }) : undefined}
           onNext={nextId ? () => set({ preview: nextId }) : undefined}
+          audience={audience}
         />
       ) : null}
     </div>

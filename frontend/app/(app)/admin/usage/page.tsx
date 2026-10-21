@@ -17,6 +17,7 @@ import { AzureTokensPanel } from "@/components/admin/azure/AzureTokensPanel";
 import { BilledVsEstimated } from "@/components/admin/usage/BilledVsEstimated";
 import { warmAzureCosts } from "@/lib/azure-costs-api";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
 import {
   DEFAULT_USAGE_TAB,
@@ -161,29 +162,34 @@ function UsageCostContent() {
         title="Usage & Financial Economics"
         subtitle="Audience-segmented cost accounting, token volume telemetry, and turn-level LLM economics"
         icon={CircleDollarSign}
-        showDateRange
-        actions={
-          <HeaderIconButton
-            icon={Network}
-            label="Configure Test IPs"
-            data-tour="usage-test-ips"
-            aria-haspopup="dialog"
-            onClick={() => setIsConfigOpen(true)}
-          />
-        }
       />
 
       {/* Main Responsive Body with Strict Width Bounds */}
       <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
         {/* Boxed Tab Navigation Strip */}
-        <div className="flex items-center justify-between" data-tour="usage-tabs">
-          <TabGroup
-            tabs={USAGE_CONSOLE_TABS}
-            activeTab={activeTab}
-            onChange={handleTabChange}
-            ariaLabel="Usage console navigation"
-          />
-        </div>
+        <PageToolbar
+          tabsTour="usage-tabs"
+          tabs={
+            <TabGroup
+              tabs={USAGE_CONSOLE_TABS}
+              activeTab={activeTab}
+              onChange={handleTabChange}
+              ariaLabel="Usage console navigation"
+            />
+          }
+          actions={
+            <HeaderIconButton
+              icon={Network}
+              label="Test IPs"
+              tooltip="Configure test IPs"
+              showLabel
+              data-tour="usage-test-ips"
+              aria-haspopup="dialog"
+              onClick={() => setIsConfigOpen(true)}
+            />
+          }
+          dateRange
+        />
 
         {/* Tab Panels */}
         <div className="pt-1">

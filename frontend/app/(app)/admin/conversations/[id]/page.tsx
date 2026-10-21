@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { CircleDollarSign, Clock, FlaskConical, Hash, MessagesSquare, Search, User } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import { StatCard } from "@/components/admin/insights/StatCard";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
@@ -46,6 +47,7 @@ import {
   OUTCOME_LABELS,
   STAGES,
   STAGE_LABELS,
+  hasTruncatedContent,
   intParam,
   isAbsent,
   promoteTurnToTest,
@@ -81,6 +83,12 @@ function ConversationDetailContent() {
   const detail = useApiQuery(token && id ? detailKey : null, detailQ.fetch, {
     revalidateOnFocus: false,
   });
+  // A preview from the batch may have cut long messages: load the full text.
+  const truncated = hasTruncatedContent(detail.data);
+  const { refetch } = detail;
+  useEffect(() => {
+    if (truncated) void refetch();
+  }, [truncated, refetch]);
   const turns = useMemo(() => buildTurns(detail.data), [detail.data]);
   const hasDetail = (detail.data?.turns?.length ?? 0) > 0;
   const conversation = detail.data?.conversation;
@@ -216,19 +224,21 @@ function ConversationDetailContent() {
         icon={MessagesSquare}
         showAudienceTabs={false}
         breadcrumb={[{ label: AUDIENCE_PAGE_LABEL, href: carry(conversationsHref()) }, { label: title }]}
-        actions={
-          conversation.created_ip ? (
-            <HeaderIconButton
-              href={carry(visitorDetailHref(`client-${conversation.created_ip}`))}
-              icon={User}
-              label="View visitor"
-              tooltip="Open this conversation's visitor"
-            />
-          ) : undefined
-        }
       />
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
+        <PageToolbar
+          actions={
+            conversation.created_ip ? (
+              <HeaderIconButton
+                href={carry(visitorDetailHref(`client-${conversation.created_ip}`))}
+                icon={User}
+                label="View visitor"
+                showLabel
+              />
+            ) : undefined
+          }
+        />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="conversations-detail-stats">
           <StatCard
             title="Visitor"

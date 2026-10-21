@@ -27,7 +27,7 @@ import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableCard } from "@/components/admin/TableCard";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { EntityLink } from "@/components/ui/EntityLink";
-import { focusRing, secondaryButton } from "@/components/ui/styles";
+import { focusRing, secondaryButton, studioDivider } from "@/components/ui/styles";
 import { LEVEL_TONE, LevelBadge } from "@/components/admin/governance/badges";
 import { JsonViewer } from "@/components/admin/governance/JsonViewer";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -78,7 +78,7 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "created_at",
     header: "Time",
-    render: (log) => <RelativeTime value={log.created_at} className="text-[11px] text-fg-muted" />,
+    render: (log) => <RelativeTime value={log.created_at} className="whitespace-nowrap text-[11px] text-fg-muted" />,
   },
   {
     key: "level",
@@ -98,8 +98,10 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "summary",
     header: "Event",
+    // The flexible column: it takes the slack, the others size to their content.
+    width: "100%",
     render: (log) => (
-      <div className="flex min-w-[16rem] max-w-xl flex-col gap-1">
+      <div className="flex min-w-[16rem] flex-col gap-1">
         <span className="text-xs text-fg">{log.summary}</span>
         <span className="font-mono text-[10px] text-fg-subtle">{log.action}</span>
         {Object.keys(log.detail ?? {}).length > 0 ? <JsonViewer value={log.detail} /> : null}
@@ -109,12 +111,12 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "user_id",
     header: "User",
-    render: (log) => <span className="font-mono text-[11px] text-fg-muted">{log.user_id ?? "—"}</span>,
+    render: (log) => <span className="whitespace-nowrap font-mono text-[11px] text-fg-muted">{log.user_id ?? "—"}</span>,
   },
   {
     key: "ip_address",
     header: "Client IP",
-    render: (log) => <span className="font-mono text-[11px] text-fg-muted">{log.ip_address ?? "—"}</span>,
+    render: (log) => <span className="whitespace-nowrap font-mono text-[11px] text-fg-muted">{log.ip_address ?? "—"}</span>,
   },
   {
     key: "request_id",
@@ -185,7 +187,9 @@ export default function LogsView() {
     <div data-tour="governance-logs-table">
     <TableCard
       title="Governance logs"
-      description="Audit, security and pipeline events, filtered and paged on the server."
+      description={`Audit, security and pipeline events, filtered and paged on the server${
+        !hour && rangeCtx ? ` · ${rangeCtx.range.label}` : ""
+      }.`}
       badge={
         total ? <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-fg-muted">{total}</span> : null
       }
@@ -224,44 +228,9 @@ export default function LogsView() {
         </>
       }
       toolbar={
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by level" data-tour="governance-logs-levels">
-            {LOG_LEVELS.map((level) => {
-              const active = levels.includes(level);
-              const count = page?.level_counts?.[level];
-              return (
-                <button
-                  key={level}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => toggleLevel(level)}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                    active ? LEVEL_TONE[level] : "border-line bg-surface-card text-fg-muted hover:text-fg"
-                  } ${focusRing}`}
-                >
-                  {humanize(level.toLowerCase())}
-                  <span className="tabular-nums opacity-80">
-                    {count === undefined ? "–" : `${page?.level_counts_capped ? "≥" : ""}${formatCount(count)}`}
-                  </span>
-                </button>
-              );
-            })}
-            {hour && at ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-line-brand bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">
-                <Clock className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-                Hour of {formatHour(at)}
-                <button
-                  type="button"
-                  aria-label="Clear hour filter"
-                  onClick={() => set({ at: null })}
-                  className={`rounded-full p-0.5 hover:bg-brand-100 dark:hover:bg-brand-900/60 ${focusRing}`}
-                >
-                  <X className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
-                </button>
-              </span>
-            ) : null}
-          </div>
-          <div data-tour="governance-logs-search">
+        // VA-6: one toolbar row (search, Filters) beside the title; the level
+        // chips are a single scrollable row at the top of the table.
+        <div data-tour="governance-logs-search">
           <TableToolbar
             search={q}
             onSearchChange={(v) => set({ q: v || null })}
@@ -277,9 +246,7 @@ export default function LogsView() {
               },
             ]}
             onClearAll={() => set({ level: null, at: null })}
-            countLabel={hour ? undefined : rangeCtx ? `Range: ${rangeCtx.range.label}` : undefined}
           />
-          </div>
         </div>
       }
       cursor={{
@@ -297,6 +264,47 @@ export default function LogsView() {
         onFirst: pager.reset,
       }}
     >
+      <div
+        className={`flex items-center gap-2 overflow-x-auto border-b px-4 py-2.5 [scrollbar-width:thin] sm:px-5 ${studioDivider}`}
+        role="group"
+        aria-label="Filter by level"
+        data-tour="governance-logs-levels"
+      >
+        {LOG_LEVELS.map((level) => {
+          const active = levels.includes(level);
+          const count = page?.level_counts?.[level];
+          return (
+            <button
+              key={level}
+              type="button"
+              aria-pressed={active}
+              onClick={() => toggleLevel(level)}
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                active ? LEVEL_TONE[level] : "border-line bg-surface-card text-fg-muted hover:text-fg"
+              } ${focusRing}`}
+            >
+              {humanize(level.toLowerCase())}
+              <span className="tabular-nums opacity-80">
+                {count === undefined ? "–" : `${page?.level_counts_capped ? "≥" : ""}${formatCount(count)}`}
+              </span>
+            </button>
+          );
+        })}
+        {hour && at ? (
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-line-brand bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">
+            <Clock className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+            Hour of {formatHour(at)}
+            <button
+              type="button"
+              aria-label="Clear hour filter"
+              onClick={() => set({ at: null })}
+              className={`rounded-full p-0.5 hover:bg-brand-100 dark:hover:bg-brand-900/60 ${focusRing}`}
+            >
+              <X className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          </span>
+        ) : null}
+      </div>
       <DataTable
         columns={COLUMNS}
         data={items}

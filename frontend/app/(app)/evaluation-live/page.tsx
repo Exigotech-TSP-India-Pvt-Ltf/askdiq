@@ -37,6 +37,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import { TabGroup, EVALUATION_LIVE_TABS } from "@/components/admin/TabGroup";
 import { EvaluationRecordDrawer } from "@/components/admin/EvaluationRecordDrawer";
@@ -252,19 +253,7 @@ export default function EvaluationLivePage() {
         title="Evaluation"
         subtitle="Continuous production evaluation, live query audit, and benchmark comparative scorecard"
         icon={Sparkles}
-        showDateRange
-      >
-        <HeaderIconButton
-          icon={GitCompare}
-          label="Compare with benchmark"
-          tooltip={compareMode ? "Exit comparison" : "Compare with benchmark"}
-          pressed={compareMode}
-          indicator={compareMode}
-          data-tour="evaluation-compare"
-          onClick={() => setCompareMode(!compareMode)}
-        />
-        {token ? <RunEvaluationControl token={token} canRun={canRunEval} /> : null}
-      </DashboardHeader>
+      />
       </div>
 
       <div className="flex-1 p-6 sm:p-8 space-y-6 max-w-[1600px] mx-auto w-full">
@@ -300,20 +289,39 @@ export default function EvaluationLivePage() {
         )}
 
         {/* Standardized Tab Navigation */}
-        <div data-tour="evaluation-tabs" className="flex items-center justify-between overflow-x-auto pb-1">
-          <TabGroup
-            tabs={EVALUATION_LIVE_TABS}
-            activeTab={activeTab}
-            onChange={(t) => setActiveTab(t)}
-            ariaLabel="Live evaluation domains"
-          />
-        </div>
+        <PageToolbar
+          tabsTour="evaluation-tabs"
+          tabs={
+            <TabGroup
+              tabs={EVALUATION_LIVE_TABS}
+              activeTab={activeTab}
+              onChange={(t) => setActiveTab(t)}
+              ariaLabel="Live evaluation domains"
+            />
+          }
+          actions={
+            <>
+            <HeaderIconButton
+              icon={GitCompare}
+              label="Compare with benchmark"
+              text="Compare"
+              tooltip={compareMode ? "Exit comparison" : "Compare with benchmark"}
+              showLabel
+              pressed={compareMode}
+              data-tour="evaluation-compare"
+              onClick={() => setCompareMode(!compareMode)}
+            />
+            {token ? <RunEvaluationControl token={token} canRun={canRunEval} /> : null}
+            </>
+          }
+          dateRange
+        />
 
         {/* Domain Tab 1: Quality & Retrieval */}
         {activeTab === "overview" && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Unified 6-stat hero grid */}
-            <div data-tour="evaluation-overview-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div data-tour="evaluation-overview-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
               <HeroStat label="Pass rate" value={pct(r?.pass_rate)} icon={CheckCircle2} />
               <HeroStat label="Cases total" value={String(r?.n_cases ?? "—")} icon={Target} />
               <HeroStat label="Retrieval recall" value={pct(r?.retrieval_recall)} icon={ShieldCheck} />

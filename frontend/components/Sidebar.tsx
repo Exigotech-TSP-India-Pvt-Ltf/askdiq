@@ -36,6 +36,10 @@ import { hasPermission, type Permission } from "@/lib/permissions";
 import { usePendingAccessCount } from "@/lib/use-shell-notifications";
 
 const COLLAPSED_STORAGE_KEY = "deployiq.sidebar.collapsed";
+/** Sidebar logo: width-led, capped at the 56px box the padded h-20 row leaves. */
+export const SIDEBAR_LOGO_SIZE = "max-h-14 h-auto w-auto max-w-[200px] object-contain object-left";
+/** Mobile drawer logo: the padded h-16 row leaves a 40px box. */
+export const DRAWER_LOGO_SIZE = "max-h-10 h-auto w-auto max-w-[200px] object-contain object-left";
 
 /** Count badges a nav item can show (fed by the access-request count). */
 export type NavBadgeKey = "pendingAccess";
@@ -249,15 +253,17 @@ export function Sidebar({ badges: badgeOverride }: SidebarProps = {}) {
         }`}
       >
         <div
-          className={`flex h-20 shrink-0 items-center border-b border-ink/10 dark:border-white/10 ${
+          data-testid="sidebar-logo-row"
+          className={`flex h-20 shrink-0 items-center border-b border-ink/10 py-3 dark:border-white/10 ${
             collapsed ? "justify-center px-1" : "justify-between pl-4 pr-3"
           }`}
         >
           {!collapsed ? (
             <>
               <div className="flex flex-1 items-center min-w-0 h-full">
-                {/* Width-led sizing: the wordmark fills the rail instead of a fixed height. */}
-                <BrandLogo variant="full" size="w-auto max-w-[200px] object-contain object-left" />
+                {/* Width-led but height-bounded: the h-20 row with py-3 leaves a 56px box,
+                    so a tall (e.g. 1:1 uploaded) logo never touches the borders. */}
+                <BrandLogo variant="full" size={SIDEBAR_LOGO_SIZE} />
               </div>
               <button
                 onClick={toggleCollapsed}
@@ -351,8 +357,8 @@ function MobileSidebar({
             exit="exit"
             className="relative flex h-full w-72 max-w-[85vw] flex-col border-r border-line bg-surface-card shadow-2xl"
           >
-            <div className="flex h-16 shrink-0 items-center justify-between border-b border-line pl-4 pr-3">
-              <BrandLogo variant="full" />
+            <div data-testid="drawer-logo-row" className="flex h-16 shrink-0 items-center justify-between border-b border-line py-3 pl-4 pr-3">
+              <BrandLogo variant="full" size={DRAWER_LOGO_SIZE} />
               <button type="button" onClick={() => setOpen?.(false)} aria-label="Close navigation" className={iconButton}>
                 <X className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden="true" />
               </button>
