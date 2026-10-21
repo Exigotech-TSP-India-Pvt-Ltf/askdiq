@@ -37,7 +37,7 @@ export const shellTour: PageTour = {
     {
       target: '[data-tour="shell-account"]',
       title: "Your profile menu",
-      body: "The sidebar footer shows who is signed in, with your role badge. Click it (or press Enter) to open the menu: Notifications with a count of what's new, Walkthrough guide to replay a tour, Theme (Light, Dark or System) and Sign out. A red dot on your avatar means unread notifications.",
+      body: "The sidebar footer shows who is signed in, with your role badge. Click it (or press Enter) to open the menu: Notifications with a count of what's new, Walkthrough guide to replay a tour, Theme (Light or Dark) and Sign out. A red dot on your avatar means unread notifications.",
       placement: "right",
     },
     {

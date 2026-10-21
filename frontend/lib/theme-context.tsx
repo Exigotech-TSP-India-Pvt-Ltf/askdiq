@@ -7,7 +7,6 @@ import {
   applyTheme,
   isThemeMode,
   resolveStoredMode,
-  resolveTheme,
   type ResolvedTheme,
   type ThemeMode,
 } from "@/lib/theme-script";
@@ -19,9 +18,8 @@ interface ThemeContextType {
   theme: ResolvedTheme;
   /** Same as `theme`. */
   resolvedTheme: ResolvedTheme;
-  /** The user's choice: "light", "dark" or "system" (follows the OS). */
+  /** The user's choice; always "light" or "dark" (there is no "system" mode). */
   mode: ThemeMode;
-  /** Switches to the opposite of the theme shown (an explicit light / dark choice). */
   toggleTheme: () => void;
   setTheme: (mode: ThemeMode) => void;
 }
@@ -41,7 +39,10 @@ function persist(mode: ThemeMode): void {
   }
 }
 
-/** Reads the stored choice; a missing or unknown value is System. */
+/**
+ * Reads the stored choice; a missing or legacy "system" value is resolved once
+ * to the OS preference and persisted (see lib/theme-script.ts).
+ */
 function readStoredMode(): ThemeMode {
   let stored: string | null = null;
   try {
@@ -49,19 +50,19 @@ function readStoredMode(): ThemeMode {
   } catch {
     // storage blocked
   }
-  return resolveStoredMode(stored);
+  const mode = resolveStoredMode(stored, systemPrefersDark());
+  if (stored !== mode) persist(mode);
+  return mode;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>("light");
-  const [osDark, setOsDark] = useState(false);
   // Until storage has been read, the pre-paint script (app/layout.tsx) owns the
   // <html> class; applying our SSR default here would flash the wrong theme.
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     setMode(readStoredMode());
-    setOsDark(systemPrefersDark());
     setReady(true);
 
     // T4: keep every open tab on the same theme.
@@ -73,21 +74,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // System mode follows OS changes live.
   useEffect(() => {
-    if (mode !== "system" || typeof window.matchMedia !== "function") return undefined;
-    const mql = window.matchMedia(DARK_QUERY);
-    const onChange = (event: MediaQueryListEvent) => setOsDark(event.matches);
-    setOsDark(mql.matches);
-    mql.addEventListener?.("change", onChange);
-    return () => mql.removeEventListener?.("change", onChange);
-  }, [mode]);
-
-  const resolved = resolveTheme(mode, osDark);
-
-  useEffect(() => {
-    if (ready) applyTheme(resolved);
-  }, [ready, resolved]);
+    if (ready) applyTheme(mode);
+  }, [ready, mode]);
 
   const setTheme = useCallback((next: ThemeMode) => {
     if (!isThemeMode(next)) return;
@@ -96,12 +85,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setTheme(resolved === "dark" ? "light" : "dark");
-  }, [resolved, setTheme]);
+    setTheme(mode === "dark" ? "light" : "dark");
+  }, [mode, setTheme]);
 
   const value = useMemo<ThemeContextType>(
-    () => ({ theme: resolved, resolvedTheme: resolved, mode, toggleTheme, setTheme }),
-    [resolved, mode, toggleTheme, setTheme],
+    () => ({ theme: mode, resolvedTheme: mode, mode, toggleTheme, setTheme }),
+    [mode, toggleTheme, setTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

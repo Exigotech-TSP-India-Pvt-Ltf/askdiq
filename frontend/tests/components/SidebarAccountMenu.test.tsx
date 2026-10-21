@@ -73,7 +73,7 @@ describe("SidebarAccount profile menu (OR-3)", () => {
     expect(list.map((el) => el.textContent?.replace(/\d+$/, "").trim())).toEqual([
       "Notifications",
       "Walkthrough guide",
-      "ThemeSystem",
+      "ThemeLight",
       "Sign out",
     ]);
     expect(list[0]).toHaveFocus();
@@ -147,7 +147,7 @@ describe("SidebarAccount profile menu (OR-3)", () => {
     await closed();
   });
 
-  it("Theme submenu: Light / Dark / System radios, applied at once and persisted", () => {
+  it("Theme submenu: Light and Dark radios only (no System), applied at once and persisted", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: false,
       media: query,
@@ -163,8 +163,10 @@ describe("SidebarAccount profile menu (OR-3)", () => {
     fireEvent.click(within(mainMenu()).getByRole("menuitem", { name: /^Theme/ }));
     const sub = screen.getByRole("menu", { name: "Theme" });
     const radios = within(sub).getAllByRole("menuitemradio");
-    expect(radios.map((r) => r.textContent)).toEqual(["Light", "Dark", "System"]);
-    expect(within(sub).getByRole("menuitemradio", { name: "System" })).toHaveAttribute("aria-checked", "true");
+    expect(radios.map((r) => r.textContent)).toEqual(["Light", "Dark"]);
+    expect(within(sub).queryByRole("menuitemradio", { name: /system/i })).not.toBeInTheDocument();
+    // A missing preference resolved once to the OS setting (light here): it is the checked one.
+    expect(within(sub).getByRole("menuitemradio", { name: "Light" })).toHaveAttribute("aria-checked", "true");
     fireEvent.click(within(sub).getByRole("menuitemradio", { name: "Dark" }));
     expect(within(sub).getByRole("menuitemradio", { name: "Dark" })).toHaveAttribute("aria-checked", "true");
     expect(within(sub).getByRole("menuitemradio", { name: "Light" })).toHaveAttribute("aria-checked", "false");

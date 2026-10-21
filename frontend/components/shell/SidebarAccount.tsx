@@ -14,7 +14,7 @@ import {
   Gauge,
   Loader2,
   LogOut,
-  Monitor,
+
   Moon,
   Palette,
   Sun,
@@ -41,9 +41,9 @@ type Submenu = "notifications" | "tours" | "theme";
 const THEME_OPTIONS: ReadonlyArray<{ mode: ThemeMode; label: string; icon: LucideIcon }> = [
   { mode: "light", label: "Light", icon: Sun },
   { mode: "dark", label: "Dark", icon: Moon },
-  { mode: "system", label: "System", icon: Monitor },
+
 ];
-const THEME_LABEL: Record<ThemeMode, string> = { light: "Light", dark: "Dark", system: "System" };
+const THEME_LABEL: Record<ThemeMode, string> = { light: "Light", dark: "Dark" };
 
 interface SidebarAccountProps {
   collapsed: boolean;
