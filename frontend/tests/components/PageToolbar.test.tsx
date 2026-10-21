@@ -43,6 +43,31 @@ describe("PageToolbar (OR-2)", () => {
     expect(kids[2]).toHaveAttribute("data-tour", "shell-date-range");
   });
 
+  it("keeps the actions on the tab row from lg up: one non-wrapping row, scrolling tabs, a fixed-size cluster", () => {
+    render(
+      <RangeProvider>
+        <PageToolbar
+          tabs={<div role="tablist" aria-label="Sections" className="flex flex-wrap" />}
+          actions={<HeaderIconButton icon={Network} label="Compare with benchmark" text="Compare" showLabel onClick={() => undefined} />}
+          dateRange
+        />
+      </RangeProvider>,
+    );
+    const tabs = screen.getByRole("tablist").parentElement!;
+    const row = tabs.parentElement!;
+    const right = row.querySelector("[data-toolbar-actions]")!;
+    // Tabs and actions are siblings in the same row container.
+    expect(row).toHaveAttribute("data-page-toolbar");
+    expect(right.parentElement).toBe(row);
+    expect(tabs).toHaveAttribute("data-toolbar-tabs");
+    // lg+: the row never wraps; the tabs give way (one line, sideways scroll),
+    // the action cluster keeps its size. Below lg the cluster wraps as one group.
+    expect(row).toHaveClass("flex-wrap", "lg:flex-nowrap");
+    expect(tabs).toHaveClass("min-w-0", "lg:overflow-x-auto", "lg:[&_[role=tablist]]:flex-nowrap", "lg:shrink-[4]");
+    expect(right).toHaveClass("ml-auto", "justify-end", "lg:shrink-0");
+    expect(right).toContainElement(screen.getByRole("button", { name: /date range/i }));
+  });
+
   it("every action is icon + text from sm up (no icon-only buttons), collapsing to the icon on phones", () => {
     render(<PageToolbar actions={<HeaderIconButton icon={Upload} label="Upload document" variant="primary" showLabel onClick={() => undefined} />} />);
     const button = screen.getByRole("button", { name: "Upload document" });

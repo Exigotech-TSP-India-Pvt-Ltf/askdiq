@@ -50,7 +50,7 @@ export function StatCard({
   return (
     <div className={`group flex flex-col gap-3 p-5 ${studioCardClass({ interactive: true })} ${className}`}>
       <div className="relative z-10 flex items-center justify-between gap-2">
-        <p className="line-clamp-2 min-w-0 break-words text-sm font-medium text-fg-subtle" title={title}>
+        <p className="line-clamp-2 min-w-0 break-normal text-sm font-medium text-fg-subtle" title={title}>
           {title}
         </p>
         {Icon ? <Icon className="h-4 w-4 shrink-0 text-fg-subtle" strokeWidth={1.75} aria-hidden="true" /> : null}
@@ -82,7 +82,7 @@ export function StatCard({
             </span>
           ) : null}
           {subtitle ? (
-            <span className="line-clamp-2 min-w-0 break-words" title={typeof subtitle === "string" ? subtitle : undefined}>
+            <span className="line-clamp-2 min-w-0 break-normal" title={typeof subtitle === "string" ? subtitle : undefined}>
               {subtitle}
             </span>
           ) : null}

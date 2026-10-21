@@ -17,6 +17,7 @@ from fastapi.routing import APIRoute
 
 from app.api import batch
 from app.api.routes import metrics
+from app.entities import conversations as conversation_stats
 from main import app
 from tests.dashboard_helpers import exchange, session_at, unique_day, unique_ip
 
@@ -123,6 +124,45 @@ async def test_conversations_batch_equals_single(client, db_session) -> None:
         headers={"If-None-Match": resp.headers["etag"]},
     )
     assert again.status_code == 304
+
+
+def test_cap_preview_content_cuts_and_flags_only_long_messages() -> None:
+    detail = {
+        "conversation": {"id": "c"},
+        "messages": [
+            {"id": "u", "role": "user", "content": "short"},
+            {"id": "a", "role": "assistant", "content": "y" * 12},
+        ],
+    }
+    capped = conversation_stats.cap_preview_content(detail, max_chars=10)
+    short, long_ = capped["messages"]
+    assert short == detail["messages"][0]
+    assert long_["content"] == "y" * 10
+    assert long_["content_truncated"] is True
+    assert long_["content_length"] == 12
+    # The stored snapshot is never mutated; small payloads pass through as is.
+    assert detail["messages"][1]["content"] == "y" * 12
+    assert conversation_stats.cap_preview_content(detail, max_chars=20) is detail
+
+
+async def test_conversations_batch_caps_long_messages(client, db_session) -> None:
+    day = unique_day()
+    session = await session_at(db_session, day, unique_ip(), title="long")
+    cap = conversation_stats.PREVIEW_CONTENT_MAX_CHARS
+    await exchange(db_session, session, 0, day, question="q" * (cap + 50))
+    resp = await client.get(
+        "/admin/conversations/batch", params={"ids": [str(session.id)]}
+    )
+    assert resp.status_code == 200
+    item = resp.json()["items"][str(session.id)]
+    user = next(m for m in item["messages"] if m["role"] == "user")
+    assert len(user["content"]) == cap
+    assert user["content_truncated"] is True
+    assert user["content_length"] == cap + 50
+    single = await client.get(f"/admin/conversations/{session.id}")
+    full = next(m for m in single.json()["messages"] if m["role"] == "user")
+    assert len(full["content"]) == cap + 50
+    assert "content_truncated" not in full
 
 
 async def test_usage_queries_batch_equals_single(client, db_session) -> None:

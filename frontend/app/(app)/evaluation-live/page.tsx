@@ -300,7 +300,8 @@ export default function EvaluationLivePage() {
             <HeaderIconButton
               icon={GitCompare}
               label="Compare with benchmark"
-              tooltip={compareMode ? "Exit comparison" : undefined}
+              text="Compare"
+              tooltip={compareMode ? "Exit comparison" : "Compare with benchmark"}
               showLabel
               pressed={compareMode}
               data-tour="evaluation-compare"
@@ -314,7 +315,7 @@ export default function EvaluationLivePage() {
         {activeTab === "overview" && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Unified 6-stat hero grid */}
-            <div data-tour="evaluation-overview-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div data-tour="evaluation-overview-kpis" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
               <HeroStat label="Pass rate" value={pct(r?.pass_rate)} icon={CheckCircle2} />
               <HeroStat label="Cases total" value={String(r?.n_cases ?? "—")} icon={Target} />
               <HeroStat label="Retrieval recall" value={pct(r?.retrieval_recall)} icon={ShieldCheck} />

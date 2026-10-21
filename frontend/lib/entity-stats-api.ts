@@ -143,6 +143,15 @@ export interface ConversationMessage {
   grounded?: boolean | null;
   guardrail_flags?: string[] | null;
   ip_address?: string | null;
+  /** Set by the preview batch when `content` was cut at its cap (the single endpoint never cuts). */
+  content_truncated?: boolean;
+  /** Original length of a cut `content`. */
+  content_length?: number;
+}
+
+/** True when the preview batch cut a message of `data` (the single endpoint has the full text). */
+export function hasTruncatedContent(data: { messages: readonly ConversationMessage[] } | undefined): boolean {
+  return Boolean(data?.messages.some((m) => m.content_truncated));
 }
 
 export interface ConversationHeader {

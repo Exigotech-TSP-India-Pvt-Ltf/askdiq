@@ -78,7 +78,7 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "created_at",
     header: "Time",
-    render: (log) => <RelativeTime value={log.created_at} className="text-[11px] text-fg-muted" />,
+    render: (log) => <RelativeTime value={log.created_at} className="whitespace-nowrap text-[11px] text-fg-muted" />,
   },
   {
     key: "level",
@@ -98,8 +98,10 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "summary",
     header: "Event",
+    // The flexible column: it takes the slack, the others size to their content.
+    width: "100%",
     render: (log) => (
-      <div className="flex min-w-[16rem] max-w-xl flex-col gap-1">
+      <div className="flex min-w-[16rem] flex-col gap-1">
         <span className="text-xs text-fg">{log.summary}</span>
         <span className="font-mono text-[10px] text-fg-subtle">{log.action}</span>
         {Object.keys(log.detail ?? {}).length > 0 ? <JsonViewer value={log.detail} /> : null}
@@ -109,12 +111,12 @@ const COLUMNS: ColumnDef<GovernanceLogItem>[] = [
   {
     key: "user_id",
     header: "User",
-    render: (log) => <span className="font-mono text-[11px] text-fg-muted">{log.user_id ?? "—"}</span>,
+    render: (log) => <span className="whitespace-nowrap font-mono text-[11px] text-fg-muted">{log.user_id ?? "—"}</span>,
   },
   {
     key: "ip_address",
     header: "Client IP",
-    render: (log) => <span className="font-mono text-[11px] text-fg-muted">{log.ip_address ?? "—"}</span>,
+    render: (log) => <span className="whitespace-nowrap font-mono text-[11px] text-fg-muted">{log.ip_address ?? "—"}</span>,
   },
   {
     key: "request_id",

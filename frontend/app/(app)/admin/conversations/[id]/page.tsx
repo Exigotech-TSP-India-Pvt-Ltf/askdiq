@@ -49,6 +49,7 @@ import {
   OUTCOME_LABELS,
   STAGES,
   STAGE_LABELS,
+  hasTruncatedContent,
   intParam,
   isAbsent,
   promoteTurnToTest,
@@ -84,6 +85,12 @@ function ConversationDetailContent() {
   const detail = useApiQuery(token && id ? detailKey : null, detailQ.fetch, {
     revalidateOnFocus: false,
   });
+  // A preview from the batch may have cut long messages: load the full text.
+  const truncated = hasTruncatedContent(detail.data);
+  const { refetch } = detail;
+  useEffect(() => {
+    if (truncated) void refetch();
+  }, [truncated, refetch]);
   const turns = useMemo(() => buildTurns(detail.data), [detail.data]);
   const hasDetail = (detail.data?.turns?.length ?? 0) > 0;
   const conversation = detail.data?.conversation;

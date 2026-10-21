@@ -58,6 +58,9 @@ TURN_BINS: tuple[tuple[int, int | None], ...] = (
 )
 # Snapshot kind of ``GET /admin/conversations/{id}`` (dropped when a turn is promoted).
 DETAIL_SNAPSHOT_KIND = "conversations.detail"
+# Message text cap in the preview batch (``GET /admin/conversations/batch``);
+# longer messages are cut and flagged ``content_truncated``.
+PREVIEW_CONTENT_MAX_CHARS = 8_000
 STAGE_KEYS: tuple[str, ...] = (
     "guardrail_pre",
     "embedding",
@@ -532,6 +535,35 @@ def turn_item(
         }
     )
     return item
+
+
+def cap_preview_content(
+    detail: dict[str, Any], max_chars: int = PREVIEW_CONTENT_MAX_CHARS
+) -> dict[str, Any]:
+    """``detail`` with each message over ``max_chars`` cut to that length and
+    flagged ``content_truncated`` (with the original ``content_length``).
+
+    Returns a copy when anything is cut (the stored snapshot is never
+    mutated); unchanged payloads are returned as is.
+    """
+    messages = detail.get("messages") or []
+    if not any(len(m.get("content") or "") > max_chars for m in messages):
+        return detail
+    capped = []
+    for message in messages:
+        content = message.get("content") or ""
+        if len(content) > max_chars:
+            capped.append(
+                {
+                    **message,
+                    "content": content[:max_chars],
+                    "content_truncated": True,
+                    "content_length": len(content),
+                }
+            )
+        else:
+            capped.append(message)
+    return {**detail, "messages": capped}
 
 
 async def turn_details(
