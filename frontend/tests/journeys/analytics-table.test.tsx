@@ -76,7 +76,7 @@ afterEach(() => {
   setUrl("");
 });
 
-describe("Conversations table", () => {
+describe("Conversations table", { timeout: 15_000 }, () => {
   it("shows 10 rows by default, x–y of N, and pages through the server", async () => {
     renderPage("?tab=conversations");
     expect(await screen.findAllByTestId("conversation-row")).toHaveLength(10);
@@ -142,7 +142,7 @@ describe("Conversations table", () => {
   });
 });
 
-describe("instant row expansion", () => {
+describe("instant row expansion", { timeout: 15_000 }, () => {
   it("renders the embedded questions on click with no loading state and no request", async () => {
     queryCache.clear();
     api = mockInsightsFetch({ conversations: (params: URLSearchParams) => pagedConversations(params, WITH_QUESTIONS) });

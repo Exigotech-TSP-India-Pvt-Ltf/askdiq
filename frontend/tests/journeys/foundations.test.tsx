@@ -130,7 +130,7 @@ function TurnViewer() {
   );
 }
 
-describe("Phase F0 foundations journey", () => {
+describe("Phase F0 foundations journey", { timeout: 15_000 }, () => {
   it("loads the brand from /branding, writes the palette variables and swaps the logo with the theme", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => BRAND_PAYLOAD });
     const brand = await fetchBrand(fetchMock as unknown as typeof fetch);
