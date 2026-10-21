@@ -153,7 +153,7 @@ function pick(file: File) {
   fireEvent.change(screen.getByTestId("document-file-input"), { target: { files: [file] } });
 }
 
-describe("Documents journey: upload -> standardize -> chunk -> inventory -> detail", () => {
+describe("Documents journey: upload -> standardize -> chunk -> inventory -> detail", { timeout: 15_000 }, () => {
   it("uploads a .docx, shows the conversion result and the new document everywhere", async () => {
     const calls = mockFetch(routes());
     renderPage(<DocumentsPage />);

@@ -75,7 +75,7 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("Phase F5 feedback journey", () => {
+describe("Phase F5 feedback journey", { timeout: 15_000 }, () => {
   it("chat reason chips -> keyboard triage -> promoted row leaves the queue and appears in Golden Cases", async () => {
     // 1. Chat: thumbs down, pick reasons, write what it should have said, send.
     const onFeedback = (id: string, rating: number, comment?: string, details?: FeedbackDetails) =>

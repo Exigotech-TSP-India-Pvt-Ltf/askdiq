@@ -19,7 +19,10 @@ model makes the final call in the same generation request (no extra LLM call):
 ``parse_decision`` validates the model's questions server-side: an option
 whose sources are not in the retrieved set is dropped, a question left with
 fewer than two options is dropped, and with no question left the query is
-answered directly. The follow-up turn carries all answers at once;
+answered directly. At most one option per question is tagged ``recommended``
+by ``recommend_option``: a deterministic margin rule over the retrieval
+scores already computed (never the model, so document text cannot steer it).
+The follow-up turn carries all answers at once;
 ``resolve_clarification_reply`` rewrites the original question plus those
 answers into one explicit query, and the chosen options' documents are
 boosted when it is answered.
@@ -62,6 +65,8 @@ _MAX_QUERY_CHARS = 2000
 _MAX_OTHER_CHARS = 300
 _MAX_OPTION_SOURCES = 4
 _EXCERPT_CHARS = 220
+_SCORE_EPSILON = 1e-9  # float noise: 0.65 - 0.60 must count as a 0.05 lead
+RECOMMENDED_SUFFIX = " (recommended)"
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'&+-]*")
 _ANSWER_SPLIT_RE = re.compile(r"[,;\n·]+")
 _STOPWORDS = frozenset(
@@ -350,6 +355,49 @@ def clarify_instruction(candidates: list[ClarifyCandidate]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Recommended option (rule-based, from the retrieval scores)
+# ---------------------------------------------------------------------------
+
+
+def recommend_option(
+    options: list[ClarificationOption],
+    scores: list[float],
+    defaults: list[bool] | None = None,
+) -> list[ClarificationOption]:
+    """Tag at most one option ``recommended``, only when the evidence clearly leads.
+
+    ``scores[i]`` is option ``i``'s best grounding score. The top option is
+    recommended when it leads the runner-up by ``clarify_recommend_margin``;
+    otherwise, among the options tied with the top, a single ``defaults`` flag
+    breaks the tie. Anything else recommends nothing. The order is kept (the
+    1-4 shortcuts map to positions), and nothing is ever pre-selected.
+    """
+    settings = get_settings()
+    if (
+        not settings.clarify_recommend_enabled
+        or len(options) < 2  # noqa: PLR2004 - a lead needs a runner-up
+        or len(scores) != len(options)
+    ):
+        return options
+    margin = settings.clarify_recommend_margin
+    order = sorted(range(len(options)), key=lambda i: scores[i], reverse=True)
+    top = scores[order[0]]
+    lead = top - scores[order[1]]
+    pick: int | None = None
+    if lead > _SCORE_EPSILON and lead + _SCORE_EPSILON >= margin:
+        pick = order[0]
+    elif defaults is not None and len(defaults) == len(options):
+        tied = [i for i in order if top - scores[i] + _SCORE_EPSILON < margin]
+        flagged = [i for i in tied if defaults[i]]
+        pick = flagged[0] if len(flagged) == 1 else None
+    if pick is None:
+        return options
+    return [
+        o.model_copy(update={"recommended": i == pick}) for i, o in enumerate(options)
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Validation of the model's questions
 # ---------------------------------------------------------------------------
 
@@ -394,6 +442,7 @@ def _options(
 ) -> list[ClarificationOption]:
     settings = get_settings()
     options: list[ClarificationOption] = []
+    scores: list[float] = []
     seen: set[str] = set()
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict):
@@ -420,9 +469,10 @@ def _options(
                 sources=names[:_MAX_OPTION_SOURCES],
             )
         )
+        scores.append(max(t.score for t in topics))
         if len(options) >= settings.clarify_max_options:
             break
-    return options
+    return recommend_option(options, scores)
 
 
 def build_clarification(
@@ -496,7 +546,8 @@ def render_clarification_text(clarification: Clarification) -> str:
         for oi, option in enumerate(question.options, 1):
             marker = f"{oi}." if single else "  -"
             detail = f": {option.description}" if option.description else ""
-            lines.append(f"{marker} {option.label}{detail}")
+            tag = RECOMMENDED_SUFFIX if option.recommended else ""
+            lines.append(f"{marker} {option.label}{tag}{detail}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks) + f"\n\n{REPLY_HINT}"
 
@@ -580,7 +631,10 @@ def _match_text(clarification: Clarification, text: str) -> list[dict[str, objec
         if 0 <= index < len(options):
             return [_entry(questions[0], [options[index]], None)]
         return []
-    pieces = {p.strip().strip(".!?").lower() for p in _ANSWER_SPLIT_RE.split(text)}
+    pieces = {
+        p.strip().strip(".!?").lower().removesuffix(RECOMMENDED_SUFFIX).strip()
+        for p in _ANSWER_SPLIT_RE.split(text)
+    }
     entries: list[dict[str, object]] = []
     for question in questions:
         picked = [o for o in question.options if o.label.lower() in pieces]

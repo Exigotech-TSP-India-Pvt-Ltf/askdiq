@@ -24,6 +24,7 @@ import {
   type TrendPoint,
 } from "@/lib/feedback-api";
 import { outcomeLabel, type FilterPatch } from "@/lib/feedback-filters";
+import { bucketLabel } from "@/lib/dashboard-api";
 
 /** Spike alert: negative share above this (%) with at least `SPIKE_MIN_TOTAL` ratings. */
 export const SPIKE_NEGATIVE_RATIO = 25;
@@ -47,7 +48,8 @@ const QUADRANTS: readonly { id: QuadrantId; label: string; x: number; y: number 
 ];
 
 const percent = (v: number) => `${Math.round(v * 10) / 10}%`;
-const shortDay = (day: string) => day.slice(5);
+/** The console's one date tick format ("15 Oct"), as on every other chart (VA-18). */
+const shortDay = (day: string) => bucketLabel(day);
 
 export interface FeedbackOverviewProps {
   analytics: FeedbackAnalytics | undefined;
@@ -168,7 +170,7 @@ export function FeedbackOverview({ analytics, loading, error, onRetry, onFilter 
           hint={`${analytics.positive_count.toLocaleString()} ratings`}
         />
         <KpiTrendCard
-          label="Needs improvement (1-2 stars)"
+          label="Needs work (1-2 stars)"
           value={percent(analytics.negative_ratio)}
           trend={derived.spark((p) => p.negative)}
           onSelect={dayFilter}

@@ -53,11 +53,12 @@ describe("ActiveVisitorsPanel", () => {
     expect(within(panel).getByText("Last 5 minutes")).toBeInTheDocument();
     expect(within(panel).getByText("Daily active visitors")).toBeInTheDocument();
     expect(within(panel).getByText("12")).toBeInTheDocument();
-    expect(within(panel).getByText("+50% vs previous 24 hours")).toBeInTheDocument();
+    // VA-41: the shared delta pill; the comparison window is its tooltip.
+    expect(panel.querySelector('[title="vs previous 24 hours"]')).toHaveTextContent("+50%");
     expect(within(panel).getByText("Weekly active visitors")).toBeInTheDocument();
     expect(within(panel).getByText("40")).toBeInTheDocument();
-    expect(within(panel).getByText("-10% vs previous 30 days")).toBeInTheDocument();
-    expect(within(panel).queryByText(/vs previous 7 days/)).not.toBeInTheDocument();
+    expect(panel.querySelector('[title="vs previous 30 days"]')).toHaveTextContent("-10%");
+    expect(panel.querySelector('[title="vs previous 7 days"]')).toBeNull();
     expect(within(panel).getByRole("button", { name: "About Active visitors" })).toBeInTheDocument();
   });
 
