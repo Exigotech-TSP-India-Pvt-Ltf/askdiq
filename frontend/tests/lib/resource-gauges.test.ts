@@ -10,6 +10,7 @@ describe("resource gauges", () => {
       process: { scope: "process", rss_mb: 512, cpu_percent: 80 },
       event_loop: { scope: "process", lag_p95_ms: 250, lag_max_ms: 400 },
       db_pool: { scope: "process", in_use_percent: 40, checked_out: 12, capacity: 30 },
+      queries: { scope: "process", in_use_percent: 6.3, active: 8, capacity: 128 },
       workers_live: 2,
     });
     const byKey = Object.fromEntries(gauges.map((g) => [g.key, g]));
@@ -22,11 +23,20 @@ describe("resource gauges", () => {
     expect(byKey.rss.caption).toContain("2 workers");
     expect(byKey.loop.value).toBe(25); // 250 ms on a 1 s dial
     expect(byKey.pool.caption).toBe("DB pool · 12/30 in use");
+    expect(byKey.queries.value).toBe(6.3);
+    expect(byKey.queries.caption).toBe("Chat in flight · 8/128 LLM slots");
   });
 
   it("falls back to server scope and shows no data without samples", () => {
     const gauges = resourceGauges(undefined);
-    expect(gauges.map((g) => g.label)).toEqual(["Server CPU", "Server memory", "API workers RSS", "Event-loop lag", "DB pool"]);
+    expect(gauges.map((g) => g.label)).toEqual([
+      "Server CPU",
+      "Server memory",
+      "API workers RSS",
+      "Event-loop lag",
+      "DB pool",
+      "Chat in flight",
+    ]);
     expect(gauges.every((g) => g.value === null)).toBe(true);
   });
 
@@ -40,6 +50,7 @@ describe("resource gauges", () => {
       rss_mb: 1024,
       loop_lag_p95_ms: 100,
       db_pool_percent: null,
+      queries_percent: v / 10,
     });
     const gauges = resourceGauges(
       {
@@ -54,6 +65,7 @@ describe("resource gauges", () => {
     expect(byKey.rss.trend[0]).toMatchObject({ value: 25, display: "1024 MB" });
     expect(byKey.loop.trend[0]).toMatchObject({ value: 10, display: "100 ms" });
     expect(byKey.pool.trend).toEqual([]);
+    expect(byKey.queries.trend.map((p) => p.value)).toEqual([4, 6]);
   });
 
   it("quota trend is the busiest of chat and embedding", () => {

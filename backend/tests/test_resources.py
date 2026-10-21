@@ -233,6 +233,7 @@ def sample(
         "loop": {"p95_ms": lag, "max_ms": lag * 2},
         "db_pool": {"size": 10, "max_overflow": 0, "checked_out": pool_used},
         "active_queries": 2,
+        "query_capacity": 64,
     }
 
 
@@ -261,8 +262,25 @@ def test_aggregate_sums_workers_and_drops_dead_ones() -> None:
         "capacity": 20,
     }
     assert snap["active_queries"] == 4
+    assert snap["queries"] == {
+        "scope": "process",
+        "in_use_percent": 3.1,
+        "active": 4,
+        "capacity": 128,
+    }
     assert snap["host"]["scope"] == "host"
     assert len(snap["history"]) >= 2
+    assert snap["history"][-1]["queries_percent"] is not None
+
+
+def test_queries_gauge_is_empty_for_samples_without_capacity() -> None:
+    old = sample()
+    del old["query_capacity"]
+    snap = resource_store.aggregate(
+        [("w1", "api-1", NOW - timedelta(seconds=1), old)], now=NOW, settings=cfg()
+    )
+    assert snap["queries"]["in_use_percent"] is None
+    assert snap["queries"]["capacity"] == 0
 
 
 # --- sustain logic and rules ---------------------------------------------------------
