@@ -21,6 +21,8 @@ import { formatLatencyMs } from "@/lib/format";
 import { entityHref } from "@/lib/entity-links";
 import { DrawerShell } from "@/components/ui/DrawerShell";
 import { CopyButton } from "@/components/ui/CopyButton";
+import { stripCitationMarkers } from "@/lib/citation-markers";
+import { renderCitedText } from "@/lib/format-text";
 
 const DETAIL_STALE_MS = 60_000;
 
@@ -253,7 +255,7 @@ export function EvaluationRecordDrawer({
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Generated Assistant Response</label>
               <button
-                onClick={() => copyToClipboard(data?.answer || "")}
+                onClick={() => copyToClipboard(stripCitationMarkers(data?.answer || ""))}
                 className="inline-flex items-center gap-1 text-[11px] text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 font-medium"
               >
                 {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
@@ -261,7 +263,7 @@ export function EvaluationRecordDrawer({
               </button>
             </div>
             <div className="p-4 bg-surface-card rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-fg leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap select-text">
-              {data?.answer || "No response text available."}
+              {data?.answer ? renderCitedText(data.answer) : "No response text available."}
             </div>
           </div>
 
