@@ -11,5 +11,5 @@ export { DropoffChart } from "./DropoffChart";
 export { PeopleBubble } from "./PeopleBubble";
 export { ConversationsTable, CONVERSATION_COLUMNS } from "./ConversationsTable";
 export { PendingState } from "./PendingState";
-export { FilterBar, FilterChips } from "./FilterBar";
+export { FilterBar, analyticsFilterDescriptors } from "./FilterBar";
 export * from "./url-state";

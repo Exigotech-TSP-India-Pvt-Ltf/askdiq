@@ -106,7 +106,7 @@ export function KpiTrendCard({
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0">
         {/* Two lines before the ellipsis, with the full text on hover (VA-15). */}
-        <p className="line-clamp-2 break-words text-sm font-medium text-fg-subtle" title={label}>
+        <p className="line-clamp-2 break-normal text-sm font-medium text-fg-subtle" title={label}>
           {label}
         </p>
         {windowLabel && (
@@ -158,7 +158,7 @@ export function KpiTrendCard({
         formatValue={formatTrendValue}
       />
       {hint ? (
-        <p className="line-clamp-2 break-words text-[11px] text-fg-subtle" title={typeof hint === "string" ? hint : undefined}>
+        <p className="line-clamp-2 break-normal text-[11px] text-fg-subtle" title={typeof hint === "string" ? hint : undefined}>
           {hint}
         </p>
       ) : null}
