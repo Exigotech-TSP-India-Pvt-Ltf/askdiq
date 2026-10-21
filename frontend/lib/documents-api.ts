@@ -8,7 +8,7 @@
  * `lib/api.ts`.
  */
 import { ApiError } from "./api";
-import type { DocumentSummary, IngestResult } from "./types";
+import type { DocumentSummary, IngestResult, LinkStatus } from "./types";
 
 const API_BASE_URL = "/api/proxy";
 const CLIENT_ID_STORAGE_KEY = "deployiq.client_id";
@@ -102,6 +102,34 @@ export interface UploadResult extends IngestResult {
   canonical_size_bytes?: number | null;
 }
 
+/** `PATCH /documents/{id}` body (permission `knowledge:links`). */
+export interface DocumentLinkUpdate {
+  source_url: string | null;
+  section_links: boolean;
+}
+
+/** `PATCH /documents/{id}` response (`DocumentLinkRead`). */
+export interface DocumentLinkRead {
+  document_id: string;
+  source_url: string | null;
+  section_links: boolean;
+  has_link: boolean;
+  link_status: LinkStatus;
+  link_host: string | null;
+}
+
+/** 422 codes of the Source URL rules (shown next to the field, verbatim). */
+export const SOURCE_URL_ERROR_CODES = ["invalid_source_url", "source_url_not_allowed", "source_url_required"] as const;
+
+export function isSourceUrlError(err: unknown): err is ApiError & { code: string } {
+  return (
+    err instanceof ApiError &&
+    err.status === 422 &&
+    typeof err.code === "string" &&
+    (SOURCE_URL_ERROR_CODES as readonly string[]).includes(err.code)
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Transport
 // ---------------------------------------------------------------------------
@@ -122,29 +150,36 @@ function getClientId(): string {
 
 async function errorFrom(res: Response): Promise<ApiError> {
   let detail: string = res.statusText || `Request failed (${res.status})`;
+  let code: string | undefined;
   try {
     const body: unknown = await res.json();
     if (body && typeof body === "object") {
-      const { detail: d, title } = body as { detail?: unknown; title?: unknown };
+      const { detail: d, title, code: c } = body as { detail?: unknown; title?: unknown; code?: unknown };
       if (typeof d === "string") detail = d;
       else if (typeof title === "string") detail = title;
+      if (typeof c === "string") code = c;
     }
   } catch {
     // no JSON body
   }
-  return new ApiError(detail, res.status);
+  return new ApiError(detail, res.status, code);
 }
 
 async function send<T>(
   path: string,
-  { token, method = "GET", body, signal }: { token: string; method?: string; body?: FormData; signal?: AbortSignal },
+  {
+    token,
+    method = "GET",
+    body,
+    signal,
+  }: { token: string; method?: string; body?: FormData | string; signal?: AbortSignal },
 ): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
     body,
     signal,
     headers: {
-      ...(body ? {} : { "Content-Type": "application/json" }),
+      ...(body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       "X-Client-Id": getClientId(),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
@@ -184,13 +219,40 @@ export async function getCanonicalMarkdown(token: string, id: string, signal?: A
   }
 }
 
-/** `POST /ingest/file`. Flags go as form fields (what the endpoint reads). */
-export function uploadDocument(token: string, file: File, options: { dryRun?: boolean; force?: boolean } = {}) {
+/** `POST /ingest/file`. Flags and the optional `source_url` go as form fields (what the endpoint reads). */
+export function uploadDocument(
+  token: string,
+  file: File,
+  options: { dryRun?: boolean; force?: boolean; sourceUrl?: string | null } = {},
+) {
   const form = new FormData();
   form.append("file", file);
   if (options.dryRun) form.append("dry_run", "true");
   if (options.force) form.append("force", "true");
+  if (options.sourceUrl) form.append("source_url", options.sourceUrl);
   return send<UploadResult>("/ingest/file", { token, method: "POST", body: form });
+}
+
+/** `PATCH /documents/{id}`: edit the document's link (superadmin; audited, no re-embed). */
+export function patchDocumentLink(token: string, id: string, body: DocumentLinkUpdate) {
+  return send<DocumentLinkRead>(`/documents/${seg(id)}`, { token, method: "PATCH", body: JSON.stringify(body) });
+}
+
+/** Merges a PATCH result into a list row or detail payload. */
+export function withLink<T extends DocumentSummary>(doc: T, link: DocumentLinkRead): T {
+  return {
+    ...doc,
+    source_url: link.source_url,
+    section_links: link.section_links,
+    has_link: link.has_link,
+    link_status: link.link_status,
+    link_host: link.link_host,
+  };
+}
+
+/** Missing or no-longer-allowed link: counts towards Needs attention. */
+export function linkNeedsAttention(doc: Pick<DocumentSummary, "link_status">): boolean {
+  return doc.link_status === "missing" || doc.link_status === "not_allowed";
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +277,7 @@ export function validateUploadFile(file: Pick<File, "name" | "size">): string | 
 /** Message for an upload error status (problem+json detail as fallback). */
 export function uploadErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
+    if (isSourceUrlError(err)) return err.message;
     if (err.status === 413) return "The file is larger than the upload limit.";
     if (err.status === 415) return "Unsupported file type. Only .md, .markdown and .docx are accepted.";
     if (err.status === 422) return `The document could not be read: ${err.message}`;
@@ -272,6 +335,9 @@ export const STATUS_FILTERS = ["all", "active", "quarantined", "empty"] as const
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
 export const WARNING_FILTERS = ["all", "with", "without"] as const;
 export type WarningFilter = (typeof WARNING_FILTERS)[number];
+/** `missing` = no link, or a link whose host is no longer allowed (the Needs-attention rows). */
+export const LINK_FILTERS = ["all", "missing"] as const;
+export type LinkFilter = (typeof LINK_FILTERS)[number];
 
 export const INVENTORY_SORTS = [
   "ingested_desc",
@@ -282,6 +348,8 @@ export const INVENTORY_SORTS = [
   "chunks_asc",
   "size_desc",
   "size_asc",
+  "link_desc",
+  "link_asc",
 ] as const;
 export type InventorySort = (typeof INVENTORY_SORTS)[number];
 export const DEFAULT_INVENTORY_SORT: InventorySort = "ingested_desc";
@@ -295,6 +363,13 @@ export interface InventoryFilters {
   format: FormatFilter;
   status: StatusFilter;
   warnings: WarningFilter;
+  /** Optional so callers that predate the Link column keep compiling. */
+  link?: LinkFilter;
+}
+
+/** 1 when the document has a link (sort by has-link). */
+function hasLinkRank(doc: DocumentInventoryItem): number {
+  return (doc.has_link ?? Boolean(doc.source_url)) ? 1 : 0;
 }
 
 function sizeOf(doc: DocumentInventoryItem): number {
@@ -331,6 +406,7 @@ export function filterInventory(
     const warnings = d.warnings?.length ?? 0;
     if (filters.warnings === "with" && warnings === 0) return false;
     if (filters.warnings === "without" && warnings > 0) return false;
+    if (filters.link === "missing" && !linkNeedsAttention(d)) return false;
     return true;
   });
   const byName = (a: DocumentInventoryItem, b: DocumentInventoryItem) => a.source_name.localeCompare(b.source_name);
@@ -343,6 +419,8 @@ export function filterInventory(
     chunks_asc: (a, b) => a.chunk_count - b.chunk_count || byName(a, b),
     size_desc: (a, b) => sizeOf(b) - sizeOf(a) || byName(a, b),
     size_asc: (a, b) => sizeOf(a) - sizeOf(b) || byName(a, b),
+    link_desc: (a, b) => hasLinkRank(b) - hasLinkRank(a) || byName(a, b),
+    link_asc: (a, b) => hasLinkRank(a) - hasLinkRank(b) || byName(a, b),
   };
   return out.sort(compare[sort]);
 }

@@ -39,6 +39,7 @@ import { Collapse } from "@/components/ui/Collapse";
 import { SkeletonCard, SkeletonGroup, Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { studioTile } from "@/components/ui/styles";
+import { stripCitationMarkers } from "@/lib/citation-markers";
 
 /** Milliseconds → seconds for display (e.g. 1116 → "1.12"). */
 const toSeconds = (ms: number | null | undefined): string =>
@@ -964,8 +965,8 @@ export function InteractiveOverviewTab({
                       <div className="font-semibold text-slate-900 dark:text-white truncate" title={q.query}>
                         &ldquo;{q.query}&rdquo;
                       </div>
-                      <div className="text-[11px] text-slate-500 dark:text-fg-muted truncate mt-0.5" title={q.answer}>
-                        {q.answer || "No response generated"}
+                      <div className="text-[11px] text-slate-500 dark:text-fg-muted truncate mt-0.5" title={stripCitationMarkers(q.answer)}>
+                        {stripCitationMarkers(q.answer) || "No response generated"}
                       </div>
                       <div className="text-[10px] text-slate-400 dark:text-fg-subtle font-mono mt-0.5 flex items-center gap-2">
                         <span>IP: {q.ip_address}</span>

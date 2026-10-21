@@ -83,11 +83,11 @@ def test_format_context_with_source_chunk_metadata():
     context = prompts._format_context([chunk1, chunk2, chunk3])
 
     assert (
-        "[Document: cis-benchmark-assessment.md | Section: Automated Controls]\n"
+        "[Source 1 | Document: cis-benchmark-assessment.md | Section: Automated Controls]\n"
         "DeployIQ automates CIS benchmark assessments." in context
     )
     assert (
-        "[Document: iso-27001-technical-controls.md]\n"
+        "[Source 2 | Document: iso-27001-technical-controls.md]\n"
         "DeployIQ aligns security controls with ISO 27001." in context
     )
     assert "Plain string chunk without metadata." in context

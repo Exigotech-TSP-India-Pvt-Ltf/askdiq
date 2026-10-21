@@ -51,6 +51,7 @@ SECTION_7_3 = [
     ("Branding", {Permission.BRANDING_WRITE}, 0, 0, 1),
     ("Taxonomy", {Permission.TAXONOMY_WRITE}, 0, 0, 1),
     ("Models and pricing", {Permission.MODELS_WRITE}, 0, 0, 1),
+    ("Knowledge links: edit, allow-list", {Permission.KNOWLEDGE_LINKS}, 0, 0, 1),
     ("Alerts: acknowledge, resolve", {Permission.ALERTS_MANAGE}, 0, 1, 1),
 ]
 _ROLE_COLUMNS = (Role.OPERATOR, Role.ADMIN, Role.SUPERADMIN)

@@ -1,6 +1,7 @@
 """Knowledge-base documents: inventory, detail, canonical Markdown, chunks, citations.
 
-Reads need ``dashboard:read``; deletion needs ``documents:write``. Uploads are
+Reads need ``dashboard:read``; deletion needs ``documents:write``; editing a
+document's source link needs ``knowledge:links`` (superadmin). Uploads are
 in ``ingest.py``.
 """
 
@@ -19,6 +20,7 @@ from app.auth.principal import AuthUser
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.exceptions import get_request_id
 from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
 from app.dashboard.snapshots import (
@@ -30,6 +32,7 @@ from app.dashboard.snapshots import (
 )
 from app.documents import citations, inventory
 from app.governance.audit import record_audit_event
+from app.knowledge.document_links import update_document_link
 from app.models.db_models import Chunk, Document
 from app.schemas.document import (
     CanonicalMarkdown,
@@ -39,6 +42,7 @@ from app.schemas.document import (
     DocumentSummary,
     LowRatedCitations,
 )
+from app.schemas.knowledge import DocumentLinkRead, DocumentLinkUpdate
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -234,6 +238,44 @@ async def get_canonical_markdown(
     if canonical is None:
         raise HTTPException(status_code=404, detail="Document not found")
     return canonical
+
+
+@router.patch(
+    "/documents/{document_id}",
+    response_model=DocumentLinkRead,
+    summary="Set or clear a document's source link (audited, no re-embed)",
+    responses={
+        401: {"description": "Not signed in or missing service key"},
+        403: {"description": "Requires knowledge:links (superadmin)"},
+        **_NOT_FOUND,
+        422: {
+            "description": (
+                "`code` invalid_source_url (not https, userinfo, control "
+                "characters, too long, bad host) or source_url_not_allowed "
+                "(host not on Settings > Knowledge links)."
+            )
+        },
+    },
+)
+async def patch_document_link(
+    request: Request,
+    document_id: uuid.UUID,
+    payload: DocumentLinkUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_permission(Permission.KNOWLEDGE_LINKS)),
+) -> DocumentLinkRead:
+    """Every chunk cites the document link (plus the section anchor when
+    ``section_links`` is on). Only the document row changes: nothing is
+    re-chunked or re-embedded, and old chat messages pick up the new link.
+    The audit detail holds hosts only."""
+    return await update_document_link(
+        db,
+        document_id,
+        payload,
+        actor=user.email,
+        request_id=get_request_id(request),
+        client_ip=get_client_ip(request),
+    )
 
 
 @router.delete(

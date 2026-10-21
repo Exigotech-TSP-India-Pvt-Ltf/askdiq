@@ -42,6 +42,7 @@ function toChatMessage(m: ChatMessageOut, sessionId: string): ChatMessage {
     feedbackRating: m.feedback_rating,
     requestId: m.request_id ?? null,
     clarification: m.clarification ?? null,
+    ...(m.citations?.length ? { citations: m.citations } : {}),
   };
 }
 

@@ -8,6 +8,8 @@ import { api, ApiError } from "@/lib/api";
 import { entityHref } from "@/lib/entity-links";
 import { DrawerShell } from "@/components/ui/DrawerShell";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { stripCitationMarkers } from "@/lib/citation-markers";
+import { renderCitedText } from "@/lib/format-text";
 
 interface QueryInspectorDrawerProps {
   requestId: string;
@@ -308,7 +310,7 @@ export function QueryInspectorDrawer({
                 </span>
                 <button
                   type="button"
-                  onClick={() => handleCopy(detail.assistant_answer || detail.answer, "answer")}
+                  onClick={() => handleCopy(stripCitationMarkers(detail.assistant_answer || detail.answer), "answer")}
                   className="inline-flex items-center gap-1 text-[11px] text-fg-subtle hover:text-slate-800 dark:hover:text-slate-200"
                 >
                   {copiedAnswer ? (
@@ -325,7 +327,7 @@ export function QueryInspectorDrawer({
                 </button>
               </div>
               <div className="rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50/30 dark:bg-teal-950/20 p-3.5 text-xs text-fg whitespace-pre-wrap font-sans leading-relaxed max-h-60 overflow-y-auto">
-                {detail.assistant_answer || detail.answer || "—"}
+                {detail.assistant_answer || detail.answer ? renderCitedText(detail.assistant_answer || detail.answer || "") : "—"}
               </div>
             </div>
           </div>

@@ -1394,7 +1394,7 @@ function tbl(id, group, status, desc, cols, rel, extra) {
   def("t_" + id, o);
 }
 tbl("documents", "Content", "live", "One row per knowledge-base document, keyed by canonical name.", [
-  ["id", "UUID PK"], ["source_name", "String(512), unique on lower()"], ["source_type", "String(64)"], ["content_hash", "String(64)"], ["doc_metadata", "JSON"], ["canonical_markdown", "Text, deferred"], ["created_at / updated_at", "DateTime"]], ["chunks"]);
+  ["id", "UUID PK"], ["source_name", "String(512), unique on lower()"], ["source_type", "String(64)"], ["content_hash", "String(64)"], ["doc_metadata", "JSON"], ["canonical_markdown", "Text, deferred"], ["source_url", "String(2048), nullable: the public https page (OR-7); chunks never copy it, so editing it never re-embeds"], ["section_links", "Bool, default false: cite source_url#anchor per chunk"], ["created_at / updated_at", "DateTime"]], ["chunks", "knowledge_settings"]);
 tbl("chunks", "Content", "live", "Retrieval units with their embedding and provenance. No ANN index: similarity is an exact scan.", [
   ["id", "UUID PK"], ["document_id", "FK → documents.id"], ["content", "Text"], ["embedding", "vector(1536)"], ["strategy", "String(64)"], ["chunk_index", "Integer"], ["chunk_metadata", "JSON provenance"], ["content_hash", "String(64), ix (document_id, content_hash)"]], ["documents"]);
 tbl("chat_sessions", "Chat", "live", "A conversation for one actor (email or client id).", [
@@ -1442,6 +1442,8 @@ tbl("brand_assets", "Branding", "live", "Content-addressed logo images (PNG, Web
   ["sha256", "PK, CHECK hex"], ["mime", "png | webp | svg+xml"], ["data", "bytea"], ["size_bytes / width / height", "Integer"]], [],
   { sec: { A05: "SVG sanitised (no script, on*, external href); served with nosniff." } });
 
+tbl("knowledge_settings", "Console", "live", "Singleton (id = 1) source-link policy from Settings > Knowledge links: host allow-list (empty = any https host) and whether uploads need a source URL. Cached per process; used for citation links on every /query (zero extra queries: the vector search joins documents), the documents list link status and upload validation. Answers carry [n] markers mapped server-side to retrieved sources only (app/harness/citations.py); session detail refreshes citation links in one IN query. The server never fetches these URLs.", [
+  ["id", "Integer PK (1)"], ["allowed_hosts", "JSON list (host or *.host, max 50)"], ["require_source_url", "Bool, default false"], ["updated_by / updated_at", ""], ["version", "Integer"]], ["documents"], { files: ["backend/app/models/db_models.py", "backend/app/knowledge/links.py", "backend/app/knowledge/settings_service.py", "backend/app/harness/citations.py"], endpoints: ["GET /knowledge/settings", "PUT /knowledge/settings", "PATCH /documents/{id}"] });
 tbl("model_settings", "Console", "live", "Singleton runtime overrides from Settings > Models & Pricing.", [
   ["id", "Integer PK (1)"], ["llm_deployment / embedding_model", "String, nullable"], ["price_prompt / cached / output / embed _per_million", "Float, nullable"], ["updated_by / updated_at", ""], ["version", "Integer"]], []);
 tbl("alerts", "Console", "live", "Deduplicated alerts: one open row per rule and dedupe key.", [
@@ -1655,7 +1657,7 @@ var VIEWS = [
      ["t_users", 45, 690, 180, 64], ["t_access_requests", 45, 800, 180, 64], ["t_auth_sessions", 300, 690, 190, 64], ["t_oidc_states", 300, 800, 190, 64],
      ["t_jobs", 725, 690, 190, 64], ["t_rate_limit_buckets", 935, 690, 190, 64],
      ["t_dashboard_snapshots", 45, 975, 200, 64], ["t_alerts", 280, 975, 180, 64], ["t_resource_samples", 495, 975, 190, 64], ["t_model_settings", 725, 975, 190, 64],
-     ["t_citation_sources", 45, 1085, 200, 64], ["t_citation_sync_state", 280, 1085, 200, 64], ["t_usage_turns", 725, 1085, 190, 64],
+     ["t_citation_sources", 45, 1085, 200, 64], ["t_citation_sync_state", 280, 1085, 200, 64], ["t_knowledge_settings", 495, 1085, 190, 64], ["t_usage_turns", 725, 1085, 190, 64],
      ["t_usage_hourly_rollup", 935, 975, 190, 64], ["t_usage_rollup_state", 935, 1085, 190, 64],
      ["t_azure_retail_prices", 45, 1250, 200, 64], ["t_azure_metric_points", 265, 1250, 200, 64], ["t_azure_billed_costs", 485, 1250, 200, 64], ["t_azure_deployments", 705, 1250, 200, 64], ["t_azure_quota_usage", 925, 1250, 200, 64],
      ["t_azure_health_status", 45, 1340, 200, 64], ["t_azure_service_events", 265, 1340, 200, 64], ["t_azure_advisor_recs", 485, 1340, 200, 64], ["t_azure_sync_status", 705, 1340, 200, 64]],

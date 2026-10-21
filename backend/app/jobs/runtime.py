@@ -30,6 +30,10 @@ from app.dashboard.snapshots import SnapshotRefresher, on_snapshot_updated
 from app.governance.audience import invalidate_audience_cache
 from app.governance.metrics_sampler import MetricsSampler
 from app.jobs.worker import JobWorker
+from app.knowledge.settings_service import (
+    KNOWLEDGE_SETTINGS_CACHE_ID,
+    invalidate_knowledge_settings_cache,
+)
 from app.model_settings.service import (
     MODEL_SETTINGS_CACHE_ID,
     invalidate_model_settings_cache,
@@ -49,6 +53,9 @@ def _invalidate_local_caches(event: Event) -> None:
         return
     if event.id == MODEL_SETTINGS_CACHE_ID:
         invalidate_model_settings_cache()
+        return
+    if event.id == KNOWLEDGE_SETTINGS_CACHE_ID:
+        invalidate_knowledge_settings_cache()
         return
     aggregation_cache.invalidate_prefix(event.id)
     dashboard_cache.invalidate_prefix(event.id)

@@ -14,7 +14,9 @@ Retrieval pipeline (in order):
 
 import asyncio
 import logging
+import uuid
 from collections import defaultdict
+from typing import NamedTuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,9 +63,20 @@ def quarantined_document_ids():
     )
 
 
+class DocumentLink(NamedTuple):
+    """A candidate's document link fields (read in the same query, OR-7)."""
+
+    source_url: str | None
+    section_links: bool
+    title: str | None
+
+
 class VectorStore:
     def __init__(self, session: AsyncSession):
         self.session = session
+        # Filled by similarity_search: document id -> its link fields, so
+        # citations cost no extra query.
+        self.document_links: dict[uuid.UUID, DocumentLink] = {}
 
     async def fetch_embeddings(self, chunk_ids: list) -> dict:
         """Embeddings for just these chunks (candidates are loaded without them)."""
@@ -104,10 +117,17 @@ class VectorStore:
             settings.retrieval_candidate_min,
         )
 
-        stmt = select(
-            Chunk,
-            Chunk.embedding.cosine_distance(query_embedding).label("distance"),
-        ).options(defer(Chunk.embedding))
+        stmt = (
+            select(
+                Chunk,
+                Chunk.embedding.cosine_distance(query_embedding).label("distance"),
+                Document.source_url,
+                Document.section_links,
+                Document.doc_metadata["title"].as_string(),
+            )
+            .join(Document, Document.id == Chunk.document_id)
+            .options(defer(Chunk.embedding))
+        )
         stmt = stmt.where(Chunk.document_id.not_in(quarantined_document_ids()))
 
         for key, value in usable_filters(filters).items():
@@ -130,7 +150,10 @@ class VectorStore:
 
         unique_candidates: dict = {}
 
-        for chunk, distance in rows:
+        for chunk, distance, source_url, section_links, title in rows:
+            self.document_links[chunk.document_id] = DocumentLink(
+                source_url, bool(section_links), title
+            )
             score = 1 - distance
             existing = unique_candidates.get(chunk.id)
 

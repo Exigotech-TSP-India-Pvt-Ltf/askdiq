@@ -14,6 +14,7 @@ import {
 import { outcomeLabel } from "@/lib/feedback-filters";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { ACTION_LABELS, STATUS_BADGE, canTransition, ratingTone, type TriageAction } from "./triage";
+import { renderCitedText } from "@/lib/format-text";
 
 export interface FeedbackDrawerProps {
   item: FeedbackItem | null;
@@ -206,7 +207,7 @@ export function FeedbackDrawer({
             <p className="whitespace-pre-wrap rounded-lg bg-surface-muted/50 p-3 text-sm text-fg">{item.user_query ?? "—"}</p>
           </Section>
           <Section title="Answer">
-            <p className="whitespace-pre-wrap rounded-lg border border-line p-3 text-sm text-fg">{item.answer ?? "—"}</p>
+            <p className="whitespace-pre-wrap rounded-lg border border-line p-3 text-sm text-fg">{item.answer ? renderCitedText(item.answer) : "—"}</p>
           </Section>
 
           <Section title="Labels and flags">

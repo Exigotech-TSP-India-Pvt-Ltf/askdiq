@@ -24,6 +24,7 @@ export const PERMISSIONS = [
   "branding:write",
   "taxonomy:write",
   "models:write",
+  "knowledge:links",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -45,6 +46,7 @@ const SUPERADMIN_PERMISSIONS: readonly Permission[] = [
   "branding:write",
   "taxonomy:write",
   "models:write",
+  "knowledge:links",
 ];
 
 /**

@@ -14,6 +14,8 @@ from functools import lru_cache
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.guardrails.pre_checks import is_gibberish_token
+from app.knowledge.links import citation_url
+from app.knowledge.settings_service import current_knowledge_settings
 from app.retrieval.embeddings import embed_text, embedding_timing_sink
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, SourceChunk
@@ -279,15 +281,35 @@ async def retrieve(
     embeddings_by_id = await vector_store.fetch_embeddings(
         [chunk.id for chunk, _ in results]
     )
+    allowed_hosts = current_knowledge_settings().allowed_hosts
+    links = getattr(vector_store, "document_links", {})
 
-    return [
-        SourceChunk(
-            chunk_id=str(chunk.id),
-            document_id=str(chunk.document_id),
-            content=chunk.content,
-            score=score,
+    def _link(chunk) -> tuple[str | None, str | None]:  # noqa: ANN001
+        """Every chunk cites its document URL (+ anchor with section links)."""
+        found = links.get(chunk.document_id)
+        if found is None:
+            return None, None
+        url = citation_url(
+            found.source_url,
+            section_links=found.section_links,
             metadata=chunk.chunk_metadata,
-            embedding=embeddings_by_id.get(chunk.id),
+            allowed_hosts=allowed_hosts,
         )
-        for chunk, score in results
-    ]
+        return url, found.title
+
+    sources = []
+    for chunk, score in results:
+        url, title = _link(chunk)
+        sources.append(
+            SourceChunk(
+                chunk_id=str(chunk.id),
+                document_id=str(chunk.document_id),
+                content=chunk.content,
+                score=score,
+                metadata=chunk.chunk_metadata,
+                embedding=embeddings_by_id.get(chunk.id),
+                url=url,
+                title=title,
+            )
+        )
+    return sources

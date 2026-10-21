@@ -45,6 +45,7 @@ class Permission(StrEnum):
     TAXONOMY_WRITE = "taxonomy:write"
     MODELS_WRITE = "models:write"
     ALERTS_MANAGE = "alerts:manage"
+    KNOWLEDGE_LINKS = "knowledge:links"
 
 
 _OPERATOR = frozenset({Permission.DASHBOARD_READ})
@@ -63,6 +64,7 @@ _SUPERADMIN = _ADMIN | {
     Permission.BRANDING_WRITE,
     Permission.TAXONOMY_WRITE,
     Permission.MODELS_WRITE,
+    Permission.KNOWLEDGE_LINKS,
 }
 
 ROLE_PERMISSIONS: MappingProxyType[Role, frozenset[Permission]] = MappingProxyType(

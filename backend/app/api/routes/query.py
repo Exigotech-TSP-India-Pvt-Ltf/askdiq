@@ -16,6 +16,7 @@ from app.core.sessions import (
 from app.governance.costing import compute_exchange_cost
 from app.governance.online_eval import schedule_online_evaluation
 from app.governance.pii import redact_pii
+from app.harness.citations import strip_markers
 from app.harness.clarify import CLARIFY_OUTCOME, resolve_clarification_reply
 from app.harness.orchestrator import run_query
 from app.retrieval.embeddings import embedding_tokens_sink
@@ -143,7 +144,8 @@ async def query(
         schedule_online_evaluation(
             request_id=request.state.request_id,
             query=resolved.query if resolved else body.query,
-            answer=response.answer,
+            # The judge scores the prose; citation markers are not content.
+            answer=strip_markers(response.answer),
             sources=response.sources,
             guardrail_flags=response.guardrail_flags,
             ip_address=client_ip,

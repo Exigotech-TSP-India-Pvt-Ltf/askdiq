@@ -1,9 +1,10 @@
 """Pure (no I/O) checks for citations, abstention, safety, robustness and
 operational metrics. Unit-tested offline in tests/test_eval_quality.py.
 
-Citations: the pipeline does not emit inline ``[n]`` markers; the *sources*
-returned with an answer are its citations. Every citation metric here is
-therefore computed over ``response.sources``.
+Citations: answers carry inline ``[n]`` markers (``response.citations``,
+OR-7), where ``n`` is the source's position in ``response.sources`` (from 1).
+:func:`cited_sources` narrows the sources to the cited ones; an answer
+without markers (older behaviour) keeps every returned source as a citation.
 """
 
 from __future__ import annotations
@@ -18,6 +19,14 @@ from app.governance.pii import PATTERNS as PII_PATTERNS
 # ---------------------------------------------------------------------------
 # Citation and attribution
 # ---------------------------------------------------------------------------
+
+
+def cited_sources(sources: Sequence[dict], cited_numbers: Iterable[int]) -> list[dict]:
+    """The sources named by inline markers (all of them when there are none)."""
+    numbers = sorted({n for n in cited_numbers if 1 <= n <= len(sources)})
+    if not numbers:
+        return list(sources)
+    return [sources[n - 1] for n in numbers]
 
 
 def citation_precision(

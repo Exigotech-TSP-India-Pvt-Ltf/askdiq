@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { primaryButton } from "@/components/ui/styles";
 import { useApiQuery } from "@/lib/query-cache";
 import { downloadPairs, feedbackKeys, previewPairs, reasonLabel, type PreferencePair } from "@/lib/feedback-api";
+import { stripCitationMarkers } from "@/lib/citation-markers";
 
 export const PREVIEW_LIMIT = 50;
 
@@ -110,10 +111,10 @@ export function PreferenceDataTab({ token, canExport, days }: PreferenceDataTabP
                 <Cell text={p.prompt} missing={p.missing.includes("prompt")} />
               </td>
               <td className="max-w-xs px-3 py-3">
-                <Cell text={p.chosen} missing={p.missing.includes("chosen")} />
+                <Cell text={stripCitationMarkers(p.chosen)} missing={p.missing.includes("chosen")} />
               </td>
               <td className="max-w-xs px-3 py-3">
-                <Cell text={p.rejected} missing={p.missing.includes("rejected")} />
+                <Cell text={stripCitationMarkers(p.rejected)} missing={p.missing.includes("rejected")} />
               </td>
               <td className="px-3 py-3 tabular-nums text-fg-muted">
                 {p.rating}

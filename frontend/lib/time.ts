@@ -51,6 +51,8 @@ export function formatAbsoluteTime(date: Date): string {
   return absoluteFormat.format(date);
 }
 
+
+
 /** Compact relative age ("just now", "5m ago", "3h ago", "2d ago"); a calendar date past 30 days. */
 export function formatRelativeTime(date: Date, now: number = Date.now()): string {
   const diff = now - date.getTime();

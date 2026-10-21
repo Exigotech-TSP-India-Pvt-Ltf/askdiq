@@ -1,8 +1,13 @@
 """Request/response schemas for document ingestion and listing."""
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from app.knowledge.links import MAX_URL_LENGTH
+
+LinkStatusValue = Literal["ok", "missing", "not_allowed"]
 
 
 class IngestRequest(BaseModel):
@@ -24,6 +29,14 @@ class IngestRequest(BaseModel):
         default=False,
         description="Preview chunking and diff without saving or embedding",
     )
+    source_url: str | None = Field(
+        default=None,
+        max_length=MAX_URL_LENGTH,
+        description=(
+            "The public https page this document comes from (allow-list in "
+            "Settings > Knowledge links). Overrides a `url:` front-matter key."
+        ),
+    )
 
 
 class IngestResponse(BaseModel):
@@ -39,7 +52,9 @@ class IngestResponse(BaseModel):
         description=(
             "Why an existing document was re-chunked: content_changed, "
             "source_format_changed, hash_scheme_changed, chunking_changed, "
-            "forced or chunks_missing. Empty for new or unchanged documents."
+            "forced or chunks_missing; source_url_changed when only the "
+            "source link changed (no re-chunk, no re-embed). Otherwise empty "
+            "for new or unchanged documents."
         ),
     )
     chunk_count: int = 0
@@ -55,6 +70,20 @@ class IngestResponse(BaseModel):
     quality: dict | None = None
     original_size_bytes: int | None = None
     canonical_size_bytes: int | None = None
+    source_url: str | None = Field(
+        default=None,
+        description="The stored source link (on a dry run: the one it would store).",
+    )
+    detected_source_url: str | None = Field(
+        default=None,
+        description=(
+            "A valid link found in the file itself (.md `url:` front matter, "
+            ".docx dc:identifier or custom property SourceURL), to pre-fill the "
+            "upload form."
+        ),
+    )
+    section_links: bool = False
+    link_status: LinkStatusValue = "missing"
 
 
 class DocumentSummary(BaseModel):
@@ -110,6 +139,22 @@ class DocumentSummary(BaseModel):
         default_factory=dict,
         description="Free-form ingestion metadata (e.g. corpus).",
     )
+    # --- Source link (OR-7) ---
+    source_url: str | None = Field(
+        default=None, description="The public https page this document comes from."
+    )
+    section_links: bool = Field(
+        default=False, description="Citations add the section anchor to the link."
+    )
+    has_link: bool = Field(default=False, description="A source URL is stored.")
+    link_status: LinkStatusValue = Field(
+        default="missing",
+        description=(
+            "ok | missing (no link: Needs attention) | not_allowed (the host "
+            "is no longer on the allow-list; cited without a link)."
+        ),
+    )
+    link_host: str | None = Field(default=None, description="The link's host.")
 
 
 class IngestEvent(BaseModel):

@@ -71,6 +71,7 @@ export const ME: Me = {
     "branding:write",
     "taxonomy:write",
     "models:write",
+    "knowledge:links",
   ],
   version: 1,
   access_contact_email: "it@contoso.example",

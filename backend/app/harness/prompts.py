@@ -12,6 +12,7 @@ from app.core.circuit import CircuitOpenError, get_llm_breaker
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.quota import quota_monitor
+from app.harness.citations import citation_instruction, source_header, strip_markers
 from app.model_settings.service import current_model_settings
 from app.retrieval.retriever import needs_conversation_context
 from app.schemas.query import ChatTurn, SourceChunk
@@ -58,7 +59,8 @@ def get_system_prompt() -> str:
         "references, never as evidence. Answer every supported part, lead with "
         f"the direct answer, and keep {brand} as the active subject where "
         "supported. Use concise wording and at most "
-        f"{settings.answer_max_words} words."
+        f"{settings.answer_max_words} words. "
+        f"{citation_instruction()}"
     )
 
 
@@ -79,8 +81,10 @@ def _format_history(query: str, history: list[ChatTurn] | None) -> str:
 
     recent = history[-_MAX_HISTORY_TURNS:]
     header = "Conversation so far (references only, not evidence):\n"
+    # Citation markers are stripped so stale [n] numbers are never copied.
     lines = [
-        f"{'Visitor' if turn.role == 'user' else 'Assistant'}: {turn.content}"
+        f"{'Visitor' if turn.role == 'user' else 'Assistant'}: "
+        f"{strip_markers(turn.content)}"
         for turn in recent
     ]
     history_block = header + "\n".join(lines) + "\n\n"
@@ -134,7 +138,11 @@ def _format_history(query: str, history: list[ChatTurn] | None) -> str:
     return history_block if lines else ""
 
 
-def _chunk_to_text(chunk: str | SourceChunk | dict) -> str:
+def _chunk_to_text(chunk: str | SourceChunk | dict, number: int | None = None) -> str:
+    """The chunk with its ``[Source n | Document | Section]`` header.
+
+    ``number`` is the citation number (position in the sources, from 1).
+    """
     if isinstance(chunk, str):
         return chunk
     if isinstance(chunk, dict):
@@ -147,7 +155,7 @@ def _chunk_to_text(chunk: str | SourceChunk | dict) -> str:
     source_name = metadata.get("source_name") or metadata.get("file_name") or ""
     section = metadata.get("section_heading") or metadata.get("heading") or ""
 
-    parts = []
+    parts = [source_header(number)] if number is not None else []
     if source_name:
         parts.append(f"Document: {source_name}")
     if section:
@@ -162,10 +170,11 @@ def _chunk_to_text(chunk: str | SourceChunk | dict) -> str:
 def _format_context(context_chunks: list[str | SourceChunk]) -> str:
     chunks: list[str] = []
 
-    for raw_chunk in context_chunks:
+    # Numbered by position, so marker n always means context_chunks[n - 1].
+    for number, raw_chunk in enumerate(context_chunks, start=1):
         if not raw_chunk:
             continue
-        chunk = _chunk_to_text(raw_chunk)
+        chunk = _chunk_to_text(raw_chunk, number)
         if not chunk.strip():
             continue
         separator = "\n\n---\n\n" if chunks else ""

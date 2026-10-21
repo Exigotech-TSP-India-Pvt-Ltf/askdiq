@@ -8,7 +8,7 @@ from app.schemas.feedback import (
     ReasonTag,
     strip_control_chars,
 )
-from app.schemas.query import Clarification
+from app.schemas.query import Citation, Clarification
 
 
 class ChatMessageOut(BaseModel):
@@ -33,6 +33,8 @@ class ChatMessageOut(BaseModel):
     # question (outcome "clarify") so the client can re-render them on reload.
     outcome: str | None = None
     clarification: Clarification | None = None
+    # Assistant turns: the inline citations, with today's document links.
+    citations: list[Citation] = Field(default_factory=list)
 
 
 class ChatSessionSummary(BaseModel):

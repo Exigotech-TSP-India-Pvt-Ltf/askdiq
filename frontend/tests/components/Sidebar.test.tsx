@@ -150,7 +150,7 @@ describe("Sidebar nav registry, icons and active indicator (PR-17)", () => {
     const um = NAV_ITEMS.find((item) => item.label === "User Management");
     expect(um?.badgeKey).toBe("pendingAccess");
     expect(um?.permission).toBe("users:manage");
-    expect(NAV_ITEMS.find((item) => item.label === "Settings")?.anyPermission).toEqual(["branding:write", "taxonomy:write", "models:write"]);
+    expect(NAV_ITEMS.find((item) => item.label === "Settings")?.anyPermission).toEqual(["branding:write", "taxonomy:write", "models:write", "knowledge:links"]);
     expect(screen.getByRole("link", { name: /user management/i })).toHaveAttribute("href", "/admin/user-management");
     expect(screen.getByRole("link", { name: /^analytics$/i })).toHaveAttribute("href", "/admin/analytics");
     expect(screen.getByRole("link", { name: /^settings$/i })).toHaveAttribute("href", "/admin/settings");

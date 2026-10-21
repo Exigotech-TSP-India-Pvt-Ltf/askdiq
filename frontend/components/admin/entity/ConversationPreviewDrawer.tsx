@@ -12,6 +12,7 @@ import { entityHref } from "@/lib/entity-links";
 import { useApiQuery } from "@/lib/query-cache";
 import { conversationQuery } from "@/lib/audience-data";
 import { buildTurns } from "@/components/admin/entity/turns";
+import { stripCitationMarkers } from "@/lib/citation-markers";
 
 const EXCERPT_CHARS = 280;
 
@@ -82,7 +83,7 @@ export function ConversationPreviewDrawer({ token, conversationId, onClose, onPr
                   <RelativeTime value={t.createdAt} className="ml-auto text-fg-subtle" />
                 </div>
                 <p className="mt-1.5 text-xs font-semibold text-fg">{excerpt(t.question)}</p>
-                <p className="mt-1 whitespace-pre-wrap text-xs text-fg-muted">{excerpt(t.answer)}</p>
+                <p className="mt-1 whitespace-pre-wrap text-xs text-fg-muted">{excerpt(stripCitationMarkers(t.answer))}</p>
               </li>
             );
           })}
