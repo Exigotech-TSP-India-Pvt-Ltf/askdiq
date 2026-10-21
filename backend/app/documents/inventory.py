@@ -17,6 +17,8 @@ from typing import Any
 from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.knowledge.links import link_host, link_status
+from app.knowledge.settings_service import current_knowledge_settings
 from app.models.db_models import AuditLog, Chunk, Document, User
 from app.schemas.document import (
     CanonicalMarkdown,
@@ -60,6 +62,7 @@ _RESERVED_KEYS = frozenset(
         "doc_hash_version",
         "pipeline_version",
         "pii_redacted",
+        "title",
     }
 )
 
@@ -150,9 +153,11 @@ def build_summary(
     canonical_bytes: int | None,
     last_ingest: LastIngest | None = None,
     actor_names: dict[str, str] | None = None,
+    allowed_hosts: list[str] | None = None,
 ) -> DocumentSummary:
     """Pure mapping of one document row (+ aggregates) to its inventory entry."""
     meta = _meta(doc)
+    source_url = doc.source_url
     original_filename = str(meta.get("original_filename") or doc.source_name)
     original_format = infer_original_format(meta, original_filename)
     full_hash = doc.content_hash or meta.get("content_hash")
@@ -213,6 +218,11 @@ def build_summary(
         pii_redacted=_str_list(pii) if isinstance(pii, list) else None,
         pipeline_version=meta.get("pipeline_version"),
         labels=_labels(meta),
+        source_url=source_url,
+        section_links=bool(doc.section_links),
+        has_link=source_url is not None,
+        link_status=link_status(source_url, allowed_hosts or []).value,
+        link_host=link_host(source_url),
     )
 
 
@@ -356,6 +366,7 @@ async def _summaries(
     last = await _last_ingests(db, (doc.source_name for doc, _ in rows))
     actors = [_actor_of(doc, last.get(doc.source_name.lower())) for doc, _ in rows]
     names = await _actor_names(db, (a for a in actors if a))
+    allowed = current_knowledge_settings().allowed_hosts
     return [
         build_summary(
             doc,
@@ -363,6 +374,7 @@ async def _summaries(
             canonical_bytes=canonical_bytes,
             last_ingest=last.get(doc.source_name.lower()),
             actor_names=names,
+            allowed_hosts=allowed,
         )
         for doc, canonical_bytes in rows
     ]
