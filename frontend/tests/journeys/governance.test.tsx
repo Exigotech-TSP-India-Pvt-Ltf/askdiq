@@ -411,7 +411,7 @@ describe("Governance journey", { timeout: 15_000 }, () => {
     renderPage("/admin/governance?tab=Traces&request_id=req-1");
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByText("Essential Eight.pdf");
-    expect(within(dialog).getByRole("link", { name: "Open conversation" })).toHaveAttribute(
+    expect(within(dialog).getByRole("link", { name: "conv-1" })).toHaveAttribute(
       "href",
       "/admin/conversations/conv-1",
     );
@@ -423,9 +423,9 @@ describe("Governance journey", { timeout: 15_000 }, () => {
     await screen.findByText("question 2");
     fireEvent.click(within(dialog).getByRole("button", { name: "Next record" }));
     expect(history.current()).toContain("request_id=req-2");
-    await within(await screen.findByRole("dialog")).findByRole("link", { name: "Open conversation" });
+    await within(await screen.findByRole("dialog")).findByRole("link", { name: "conv-2" });
     await waitFor(() =>
-      expect(within(screen.getByRole("dialog")).getByRole("link", { name: "Open conversation" })).toHaveAttribute(
+      expect(within(screen.getByRole("dialog")).getByRole("link", { name: "conv-2" })).toHaveAttribute(
         "href",
         "/admin/conversations/conv-2",
       ),
@@ -536,7 +536,7 @@ describe("Governance journey", { timeout: 15_000 }, () => {
     await screen.findByText("1,119");
     const labels = screen.getAllByTestId("count-label").map((n) => n.textContent);
     expect(labels).toContain("since restart · process counter");
-    expect(labels).toContain("24h · latency records");
+    expect(labels).toContain("Last 24h · latency records");
     expect(labels).toContain("all time · latency records");
     expect(screen.getByText(/No data: Embedding, Reranker/)).toBeInTheDocument();
     expect(FakeEventSource.instances).toHaveLength(1);

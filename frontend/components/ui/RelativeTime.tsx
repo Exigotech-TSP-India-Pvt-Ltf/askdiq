@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { formatAbsoluteTime, formatRelativeTime, toServerDate } from "@/lib/time";
+import { formatAbsoluteTime, formatRelativeTime, formatShortTime, toServerDate } from "@/lib/time";
 
 interface RelativeTimeProps {
   /** Server timestamp (ISO 8601; naive values are read as UTC). */
@@ -10,9 +10,11 @@ interface RelativeTimeProps {
   fallback?: string;
   /**
    * `relative` (default) shows "3h ago" with the full local date-time in the
-   * tooltip; `absolute` shows the full date-time with the age in the tooltip.
+   * tooltip; `absolute` shows the full date-time with the age in the tooltip;
+   * `short` shows the date-time without the timezone (narrow cells), with the
+   * full date-time, timezone and age in the tooltip.
    */
-  display?: "relative" | "absolute";
+  display?: "relative" | "absolute" | "short";
   /** Text before the date, e.g. "last seen ". */
   prefix?: string;
   className?: string;
@@ -28,7 +30,12 @@ export function RelativeTime({ value, fallback = "—", display = "relative", pr
   if (!date) return <span className={className}>{fallback}</span>;
   const absolute = formatAbsoluteTime(date);
   const relative = formatRelativeTime(date);
-  const [text, tooltip] = display === "absolute" ? [absolute, relative] : [relative, absolute];
+  const [text, tooltip] =
+    display === "absolute"
+      ? [absolute, relative]
+      : display === "short"
+        ? [formatShortTime(date), `${absolute} · ${relative}`]
+        : [relative, absolute];
   return (
     <time dateTime={date.toISOString()} title={tooltip} className={`whitespace-nowrap ${className}`} suppressHydrationWarning>
       {prefix}

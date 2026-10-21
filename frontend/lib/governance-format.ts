@@ -92,21 +92,51 @@ const SOURCE_LABELS: Record<string, string> = {
   chat_messages: "chat turns",
 };
 
+/**
+ * Human name of a source table. A source part such as
+ * `chat_messages.outcome` or `chat_messages.role=user (visitor id)` is
+ * named by its table only; the column stays in the technical definition
+ * (`windowSourceDefinition`), never in the visible footer (VA-19).
+ */
+const TABLE_LABELS: Record<string, string> = {
+  chat_messages: "chat turns",
+  chat_sessions: "chat sessions",
+  audit_log: "audit log",
+  guardrail_flags: "guardrail flags",
+  latency_metrics: "latency records",
+  in_memory_counter: "process counter",
+};
+
+function sourcePartLabel(part: string): string {
+  const key = part.trim();
+  if (SOURCE_LABELS[key]) return SOURCE_LABELS[key];
+  const table = key.split(/[.= (]/, 1)[0];
+  return TABLE_LABELS[table] ?? table.replace(/_/g, " ");
+}
+
 const WINDOW_LABELS: Record<string, string> = {
+  "24h": "Last 24h",
   since_process_start: "since restart",
   all_time: "all time",
   now: "right now",
   today_utc: "since 00:00 UTC",
 };
 
-/** "24h · chat turns" — where a count comes from and over which window (G7). */
+/** "Last 24h · chat turns + audit log": where a count comes from and over which window (G7). */
 export function windowSourceLabel(window: string, source: string): string {
   const w = WINDOW_LABELS[window] ?? window;
-  const s = source
+  const parts = [...new Set(source.split("+").map(sourcePartLabel).filter(Boolean))];
+  return `${w} · ${parts.join(" + ")}`;
+}
+
+/** Technical definition for the InfoTip: the raw window and source columns. */
+export function windowSourceDefinition(window: string, source: string): string {
+  const columns = source
     .split("+")
-    .map((part) => SOURCE_LABELS[part] ?? part.replace(/_/g, " "))
-    .join(" + ");
-  return `${w} · ${s}`;
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .join(", ");
+  return `Window: ${window}. Source: ${columns}.`;
 }
 
 const timeFormat = new Intl.DateTimeFormat("en-AU", { hour: "2-digit", minute: "2-digit" });
