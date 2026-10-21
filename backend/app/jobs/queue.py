@@ -228,6 +228,25 @@ async def fail(
     return status
 
 
+async def heartbeat(
+    job_id: uuid.UUID,
+    worker_id: str,
+    *,
+    now: datetime | None = None,
+    engine: AsyncEngine | None = None,
+) -> bool:
+    """Refresh a running job's lock so ``reclaim_stale`` leaves it alone."""
+    async with _engine(engine).begin() as conn:
+        result = await conn.execute(
+            text(
+                "UPDATE jobs SET locked_at = :now WHERE id = :id "
+                "AND status = 'running' AND locked_by = :worker"
+            ),
+            {"id": job_id, "worker": worker_id, "now": now or utcnow()},
+        )
+    return bool(result.rowcount)
+
+
 class JobDeferredError(Exception):
     """Raised by a handler to postpone its job without spending an attempt."""
 

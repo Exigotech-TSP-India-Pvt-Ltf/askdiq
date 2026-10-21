@@ -376,6 +376,74 @@ class EvalPromotedCase(Base):
     )
 
 
+class EvalRun(Base):
+    """One full benchmark run started from the Evaluation page (eval.full_run).
+
+    Holds the run's options, live progress, the report summary and the
+    per-case results, so the history survives container recreation. At most
+    one run is queued or running at a time (partial unique index).
+    """
+
+    __tablename__ = "eval_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    started_by: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(
+        String(16), default="queued", server_default="queued"
+    )
+    options: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb")
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cases_total: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cases_done: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cases_passed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    pass_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    case_results: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    report_file: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="ck_eval_runs_status",
+        ),
+        Index("ix_eval_runs_created_at", "created_at"),
+        Index(
+            "ix_eval_runs_succeeded_finished",
+            "finished_at",
+            postgresql_where=text("status = 'succeeded'"),
+        ),
+        Index(
+            "uq_eval_runs_one_active",
+            text("(true)"),
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
+
 class TestIpConfig(Base):
     """Test and development IP addresses excluded from user metrics and manageable via dashboard."""
 

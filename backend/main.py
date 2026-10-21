@@ -15,6 +15,7 @@ from app.api.routes import (
     branding,
     console,
     documents,
+    evaluation_runs,
     governance,
     health,
     ingest,
@@ -145,6 +146,7 @@ app.include_router(sessions.router)
 app.include_router(ingest.router, tags=["ingest"])
 app.include_router(documents.router, tags=["documents"])
 app.include_router(metrics.router, tags=["metrics"])
+app.include_router(evaluation_runs.router)
 app.include_router(governance.router, tags=["governance"])
 app.include_router(admin.router, tags=["admin"])
 app.include_router(insights.router)
