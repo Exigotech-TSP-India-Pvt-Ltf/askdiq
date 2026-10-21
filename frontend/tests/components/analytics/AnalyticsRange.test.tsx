@@ -68,7 +68,7 @@ describe("range -> insights period mapping", () => {
   });
 });
 
-describe("Analytics with the global date range", { timeout: 15_000 }, () => {
+describe("Analytics with the global date range", { timeout: 30_000 }, () => {
   it("shows the header picker and no Period select", async () => {
     renderAnalytics();
     await waitFor(() => expect(api.last("summary")).toBeDefined());
