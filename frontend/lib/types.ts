@@ -81,6 +81,7 @@ export interface ChatSessionSummary {
   created_at: string;
   last_activity_at: string;
   expires_at: string;
+  /** Idle past the implicit-resume window. Informational: never blocks resuming. */
   is_expired: boolean;
   message_count: number;
 }
@@ -117,9 +118,9 @@ export interface ChatMessage {
   /** Clarifying question options (live from `response`, or restored from history). */
   clarification?: Clarification | null;
   /**
-   * Session the message is stored in. An expired session rotates to a new one
-   * mid-conversation, so the messages above the rotation still belong to the
-   * old session and must be rated/deleted there, not in the active one.
+   * Session the message is stored in. A reply can land in a fresh session (the
+   * open one was deleted elsewhere), so earlier messages are rated/deleted in
+   * their own session, not the active one.
    */
   sessionId?: string | null;
 }
