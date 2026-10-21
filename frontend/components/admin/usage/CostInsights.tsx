@@ -18,6 +18,23 @@ const usd = new Intl.NumberFormat("en", { style: "currency", currency: "USD", ma
 const usdFine = new Intl.NumberFormat("en", { style: "currency", currency: "USD", maximumFractionDigits: 4 });
 const integer = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
 
+/**
+ * The budget is drawn as a reference line only when it is within
+ * `BUDGET_LINE_RATIO` x the largest actual / forecast value; a far larger
+ * budget would scale the axis so the cost lies flat on the floor (VA-10),
+ * so it is shown as text instead.
+ */
+export const BUDGET_LINE_RATIO = 3;
+
+export function showBudgetLine(
+  budget: number | null | undefined,
+  rows: readonly { actual: number | null; forecast: number | null }[],
+): boolean {
+  if (budget === null || budget === undefined || !Number.isFinite(budget) || budget <= 0) return false;
+  const peak = Math.max(0, ...rows.flatMap((r) => [r.actual ?? 0, r.forecast ?? 0]));
+  return peak > 0 && budget <= peak * BUDGET_LINE_RATIO;
+}
+
 export interface CostInsightsProps {
   summary: UsageSummaryWithInsights | null;
   isLoading: boolean;
@@ -43,10 +60,11 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
     () => (stageSeries?.points ?? []).map((p) => ({ ...p, label: bucketLabel(p.t, stageSeries?.bucket) })),
     [stageSeries],
   );
+  // Seven stages: the distinct-hue palette, one hue per stage in a fixed order (VA-9).
   const stageDefs = COST_STAGES.map((key: CostStage, i) => ({
     key,
     label: COST_STAGE_LABEL[key],
-    color: ct.categorical[i % ct.categorical.length],
+    color: ct.multiSeries[i % ct.multiSeries.length],
   }));
 
   const forecastRows = useMemo(
@@ -58,6 +76,9 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
       })),
     [forecast],
   );
+
+  const budget = forecast?.budget_usd ?? null;
+  const budgetLine = showBudgetLine(budget, forecastRows);
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-3" data-testid="cost-insights" data-tour="usage-cost-insights">
@@ -113,9 +134,18 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
             : undefined
         }
         actions={
-          forecast?.forecast_month_end_usd != null ? (
-            <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold tabular-nums text-fg-muted">
-              {usd.format(forecast.forecast_month_end_usd)} forecast
+          forecast?.forecast_month_end_usd != null || (budget !== null && !budgetLine) ? (
+            <span className="flex flex-col items-end gap-1">
+              {forecast?.forecast_month_end_usd != null ? (
+                <span className="whitespace-nowrap rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold tabular-nums text-fg-muted">
+                  {usd.format(forecast.forecast_month_end_usd)} forecast
+                </span>
+              ) : null}
+              {budget !== null && !budgetLine ? (
+                <span className="whitespace-nowrap text-[11px] tabular-nums text-fg-subtle" data-testid="forecast-budget-text">
+                  Budget {usd.format(budget)}
+                </span>
+              ) : null}
             </span>
           ) : undefined
         }
@@ -127,7 +157,7 @@ export function CostInsights({ summary, isLoading, error, onRetry }: CostInsight
             { key: "actual", label: "Actual" },
             { key: "forecast", label: "Forecast", dashed: true, color: ct.categorical[1] },
           ]}
-          reference={forecast?.budget_usd != null ? { value: forecast.budget_usd, label: `Budget ${usd.format(forecast.budget_usd)}` } : undefined}
+          reference={budget !== null && budgetLine ? { value: budget, label: `Budget ${usd.format(budget)}` } : undefined}
           formatValue={(v) => usd.format(v)}
           label="Month-end cost forecast"
           xAxisLabel="Date (UTC)"

@@ -33,6 +33,8 @@ interface ChartCase {
   render: (data: readonly Datum[], onSelect: (d: Datum) => void) => React.ReactElement;
   /** Datum passed to onSelect for mark `i` (default: `fixture[i]`). */
   datumAt?: (data: readonly Datum[], i: number) => Datum;
+  /** A trend needs two points: one point shows "not enough data" (VA-16). */
+  needsTwoPoints?: boolean;
 }
 
 const spark = [
@@ -67,6 +69,7 @@ const CASES: ChartCase[] = [
     render: (data, onSelect) => (
       <Sparkline data={data as typeof spark} onSelect={onSelect} label="Queries" />
     ),
+    needsTwoPoints: true,
   },
   {
     name: "KpiTrendCard",
@@ -74,6 +77,7 @@ const CASES: ChartCase[] = [
     render: (data, onSelect) => (
       <KpiTrendCard label="Queries" value="1,204" delta={0.12} trend={data as typeof spark} onSelect={onSelect} />
     ),
+    needsTwoPoints: true,
   },
   {
     name: "StackedArea",
@@ -195,7 +199,7 @@ afterEach(() => {
 
 const marks = () => screen.queryAllByRole("button");
 
-describe.each(CASES)("$name", ({ fixture, render: renderChart, datumAt }) => {
+describe.each(CASES)("$name", ({ fixture, render: renderChart, datumAt, needsTwoPoints }) => {
   const expected = (i: number) => (datumAt ? datumAt(fixture, i) : fixture[i]);
 
   it("renders the fixture with one focusable mark per datum and a single tab stop", () => {
@@ -215,6 +219,11 @@ describe.each(CASES)("$name", ({ fixture, render: renderChart, datumAt }) => {
   it("renders a single point", () => {
     const onSelect = vi.fn();
     render(renderChart(fixture.slice(0, 1), onSelect));
+    if (needsTwoPoints) {
+      expect(screen.getByRole("status")).toHaveTextContent(/not enough data/i);
+      expect(marks()).toHaveLength(0);
+      return;
+    }
     expect(marks()).toHaveLength(1);
     fireEvent.click(marks()[0]);
     expect(onSelect).toHaveBeenCalledWith(expected(0));

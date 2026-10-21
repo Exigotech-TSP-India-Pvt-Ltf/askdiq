@@ -48,6 +48,11 @@ export function periodWindow(days: number): string {
   return days === 1 ? "Last 24 hours" : `Last ${days} days`;
 }
 
+/** "vs previous 7 days": the window a period delta compares against. */
+export function comparisonLabel(days: number): string {
+  return days === 1 ? "vs previous 24 hours" : `vs previous ${days} days`;
+}
+
 /** Trend vs the previous equal window, or null when there is nothing to compare. */
 export function trendLabel(period: ActiveVisitorsPeriod): { value: string; isPositive: boolean } | null {
   if (period.delta === null) return null;

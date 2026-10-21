@@ -50,14 +50,23 @@ const SIGNAL_LABEL: Record<string, string> = {
   quota_utilization: "Azure quota used",
 };
 
-function SignalChip({ name, signal }: { name: string; signal: HealthSignal }) {
+function SignalChip({ name, signal, windowMinutes }: { name: string; signal: HealthSignal; windowMinutes: number }) {
   const unit = signal.unit;
+  const measured = signal.value !== null && signal.value !== undefined;
   return (
     <li className="rounded-lg border border-line bg-surface-card/70 px-3 py-2">
-      <p className="text-[11px] font-medium text-fg-subtle">{SIGNAL_LABEL[name] ?? humanize(name)}</p>
-      <p className={`text-sm font-semibold tabular-nums ${TEXT[signal.status] ?? "text-fg"}`}>
-        {formatByUnit(signal.value, unit)}
+      <p className="text-[11px] font-medium text-fg-subtle">
+        {SIGNAL_LABEL[name] ?? humanize(name)}
+        {/* The banner reads a short health window; the KPI cards below read 24 h (VA-21). */}
+        <span className="font-normal"> · {windowMinutes} min</span>
       </p>
+      {measured ? (
+        <p className={`text-sm font-semibold tabular-nums ${TEXT[signal.status] ?? "text-fg"}`}>
+          {formatByUnit(signal.value, unit)}
+        </p>
+      ) : (
+        <p className="text-sm font-medium text-fg-muted">Not measured</p>
+      )}
       <p className="text-[10px] text-fg-subtle">
         degraded ≥ {formatByUnit(signal.degraded_at, unit)} · incident ≥ {formatByUnit(signal.incident_at, unit)}
       </p>
@@ -70,7 +79,7 @@ function SignalChip({ name, signal }: { name: string; signal: HealthSignal }) {
  * between status colours (Motion), so a change from Healthy to Degraded is
  * noticed without a jarring swap. Colours come from the theme tokens.
  */
-export function HealthBanner({ health }: { health: HealthStatus }) {
+export function HealthBanner({ health, aside }: { health: HealthStatus; aside?: React.ReactNode }) {
   const theme = useResolvedThemeClass();
   const tokens = semanticTokens[theme];
   const status = (COPY[health.status] ? health.status : "Healthy") as HealthState;
@@ -91,8 +100,11 @@ export function HealthBanner({ health }: { health: HealthStatus }) {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-start gap-3">
           <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${TEXT[status]}`} strokeWidth={1.75} aria-hidden="true" />
-          <div>
-            <p className={`text-base font-semibold ${TEXT[status]}`}>{title}</p>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className={`text-base font-semibold ${TEXT[status]}`}>{title}</p>
+              {aside}
+            </div>
             <p className="mt-0.5 text-xs text-fg-muted">
               {body} Window: last {health.window_minutes} min.
             </p>
@@ -100,7 +112,7 @@ export function HealthBanner({ health }: { health: HealthStatus }) {
         </div>
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="Health signals">
           {Object.entries(health.signals).map(([name, signal]) => (
-            <SignalChip key={name} name={name} signal={signal} />
+            <SignalChip key={name} name={name} signal={signal} windowMinutes={health.window_minutes} />
           ))}
         </ul>
       </div>

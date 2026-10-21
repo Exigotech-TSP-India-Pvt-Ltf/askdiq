@@ -116,6 +116,7 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, onDrill
     const counts = new Map((stats?.time_to_approve ?? []).map((b) => [b.bucket, b.count]));
     return APPROVAL_BUCKETS.map((bucket, i) => ({ x0: i, x1: i, count: counts.get(bucket) ?? 0 }));
   }, [stats]);
+  const approveEmpty = !statsLoading && !statsError && approve.every((b) => b.count === 0);
   const logins = useMemo(
     () => (stats?.logins_per_day ?? []).slice(-LOGIN_CHART_DAYS).map((d) => ({ label: formatDay(d.date), value: d.count, date: d.date })),
     [stats],
@@ -236,6 +237,7 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, onDrill
           {...chartState}
           empty={!statsLoading && !statsError && roles.every((r) => r.value === 0)}
           emptyMessage="No active users yet"
+          bodyClassName="h-48 w-full"
           table={toChartTable(roles, [
             { key: "label", label: "Role" },
             { key: "value", label: "Active users", numeric: true },
@@ -256,8 +258,10 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, onDrill
           subtitle="Approved requests by wait; select a bin to see decisions"
           window={stats ? `Last ${stats.days} days` : undefined}
           {...chartState}
-          empty={!statsLoading && !statsError && approve.every((b) => b.count === 0)}
+          empty={approveEmpty}
           emptyMessage="No approvals in this period"
+          // An empty chart collapses to a short empty row instead of a dashed box (VA-46).
+          bodyClassName={approveEmpty ? "w-full" : "h-48 w-full"}
           table={toChartTable(
             approve.map((b, i) => ({ bucket: APPROVAL_BUCKETS[i], count: b.count })),
             [

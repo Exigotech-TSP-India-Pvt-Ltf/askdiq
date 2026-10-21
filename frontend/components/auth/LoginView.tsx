@@ -143,7 +143,10 @@ export function LoginView({ errorCode, next, contactEmail, year }: LoginViewProp
         </p>
       </aside>
 
-      <main className="flex flex-1 items-center justify-center px-6 py-10 sm:px-10">
+      {/* Phone: the sign-in block is centred in the space under the logo strip
+          and the copyright is pinned to the bottom (VA-53); desktop unchanged. */}
+      <main className="flex flex-1 flex-col px-6 py-10 sm:px-10">
+        <div className="flex flex-1 items-center justify-center">
         <m.div className="w-full max-w-md" {...motionProps}>
           <m.h1 {...itemProps} className="text-2xl font-bold tracking-tight text-fg sm:text-3xl">
             Welcome to {brand.productName}
@@ -200,11 +203,12 @@ export function LoginView({ errorCode, next, contactEmail, year }: LoginViewProp
               ))}
             </m.nav>
           ) : null}
-
-          <p className="mt-10 text-xs text-fg-subtle md:hidden">
-            © {year} {brand.companyName}
-          </p>
         </m.div>
+        </div>
+
+        <p className="mx-auto mt-10 w-full max-w-md text-xs text-fg-subtle md:hidden">
+          © {year} {brand.companyName}
+        </p>
       </main>
     </div>
   );

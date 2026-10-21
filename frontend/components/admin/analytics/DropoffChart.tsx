@@ -92,3 +92,39 @@ export function DropoffChart({ items, selected, onSelect }: DropoffChartProps) {
     </ChartFrame>
   );
 }
+
+/** Headline numbers under the lollipop: dropped conversations and the top issue's share. */
+export function dropoffSummary(
+  items: readonly DropoffItem[],
+  total?: number | null,
+): { dropped: number; top: DropoffItem | null; topShare: number | null; issues: number } {
+  const rows = items.filter((i) => i.conversations > 0);
+  const sum = rows.reduce((s, r) => s + r.conversations, 0);
+  const dropped = typeof total === "number" && total > 0 ? total : sum;
+  const top = rows.reduce<DropoffItem | null>((best, r) => (!best || r.conversations > best.conversations ? r : best), null);
+  return { dropped, top, topShare: top && dropped > 0 ? top.conversations / dropped : null, issues: rows.length };
+}
+
+export function DropoffInsight({ items, total }: { items: readonly DropoffItem[]; total?: number | null }) {
+  const { dropped, top, topShare, issues } = dropoffSummary(items, total);
+  if (!top) return null;
+  return (
+    <dl className="mt-4 grid grid-cols-1 gap-2 border-t border-line pt-3 text-xs sm:grid-cols-3" data-testid="dropoff-insight">
+      <div className="min-w-0">
+        <dt className="text-fg-subtle">Dropped conversations</dt>
+        <dd className="font-semibold tabular-nums text-fg">{dropped.toLocaleString()}</dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-fg-subtle">Distinct issues</dt>
+        <dd className="font-semibold tabular-nums text-fg">{issues.toLocaleString()}</dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-fg-subtle">Top issue</dt>
+        <dd className="truncate font-semibold text-fg" title={top.label}>
+          {top.label}
+          {topShare !== null ? <span className="font-normal tabular-nums text-fg-muted"> · {Math.round(topShare * 100)}%</span> : null}
+        </dd>
+      </div>
+    </dl>
+  );
+}

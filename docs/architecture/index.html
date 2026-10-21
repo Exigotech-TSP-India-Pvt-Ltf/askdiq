@@ -893,8 +893,8 @@ footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex
       <li><b>The AI judge is off by default</b> (ONLINE_EVAL_ENABLED=false). Live faithfulness, relevance and completeness are then a formula (for example faithfulness = 3.8 + 1.2 × citation precision when grounded), even on tiles labelled "LLM Judge".</li>
       <li><b>Live retrieval recall is not a real recall</b>: 1.0 whenever sources were found and the answer was not ungrounded.</li>
       <li><b>Golden-case "Passed"</b> checks only groundedness and errors; the reference answer is not compared.</li>
-      <li><b>Benchmark defaults</b>: when a report file lacks a per-case value, the page fills faithfulness 4.8, relevance 4.9, citation precision 0.94, recall 0.98 and similar, so an unjudged report looks judged.</li>
-      <li><b>Static text in Compare</b>: the "Model Drift &amp; Alignment Assessment" figures are hardcoded, and its note about alerts below faithfulness 3.5 or safety 98% has no matching rule. The real alert fires on 3 or more online-eval violations in 60 minutes.</li>
+      <li><b>Benchmark cases</b>: a value the report file does not carry stays empty and shows "Not measured" (no filled-in scores). Reports written before the response text was stored show "No response text" in the case drawer.</li>
+      <li><b>Compare drift</b>: the "Drift vs benchmark" rows are computed from the same deltas as the KPI cards (live minus benchmark); a side without a value shows "Not measured". The real alert fires on 3 or more online-eval violations in 60 minutes.</li>
       <li><b>Prompt-injection in the live safety score</b> looks for a flag (injection_detected) no guardrail emits; blocked injections are flagged unsafe_input_detected and stopped before an answer exists.</li>
       <li><b>Permission eval:run</b> exists but no route checks it; Run now uses feedback:triage.</li>
     </ul>

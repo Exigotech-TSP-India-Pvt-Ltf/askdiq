@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { RelativeTime } from "@/components/ui/RelativeTime";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { primaryButton, secondaryButton } from "@/components/ui/styles";
 import { queryCache, useApiMutation, useApiQuery } from "@/lib/query-cache";
 import { azureApi, azureKeys, hasDrift, type OfficialPrice, type OfficialPrices } from "@/lib/azure-api";
@@ -52,8 +53,9 @@ function SourceLine({ server }: { server: ModelSettingsRead }) {
     );
   }
   return (
-    <p className="text-[11px] text-fg-subtle">
-      Source: {server.price_source === "manual" ? "entered manually" : "the .env defaults"}
+    <p className="inline-flex items-center gap-1 text-[11px] text-fg-subtle">
+      Source: {server.price_source === "manual" ? "entered manually" : "the server defaults"}
+      {server.price_source === "manual" ? null : <InfoTip label="server defaults">Server defaults come from the backend .env file, set by an operator.</InfoTip>}
     </p>
   );
 }

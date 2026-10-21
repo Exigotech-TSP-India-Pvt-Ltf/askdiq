@@ -32,6 +32,19 @@ const absoluteFormat = new Intl.DateTimeFormat("en-AU", {
   timeZoneName: "short",
 });
 const calendarDayFormat = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", year: "numeric" });
+const shortFormat = new Intl.DateTimeFormat("en-AU", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/** Local date-time without the timezone, e.g. "21 Oct 2026, 16:20" (narrow cells; the zone goes in the tooltip). */
+export function formatShortTime(date: Date): string {
+  return shortFormat.format(date);
+}
 
 /** Local date-time with the viewer's timezone, e.g. "16 Oct 2026, 02:30 pm AEDT". */
 export function formatAbsoluteTime(date: Date): string {

@@ -3,12 +3,22 @@
 import type React from "react";
 import { ResponsiveContainer, Treemap, type TreemapNode } from "recharts";
 import { useChartTheme } from "@/lib/use-chart-theme";
-import { ChartEmpty } from "../primitives";
+import { ChartEmpty, fitText } from "../primitives";
 import type { TreemapChartProps, TreemapDatum } from "../types";
 
 const MIN_LABEL_WIDTH = 48;
 const MIN_LABEL_HEIGHT = 22;
 const MIN_DETAIL_HEIGHT = 40;
+const LABEL_PAD = 12;
+/** A label cut to fewer characters than this is hidden rather than shown as "Contact ar…". */
+const MIN_LABEL_CHARS = 4;
+
+/** Tile text that fits `width`, or null when only a stub would fit (VA-27). */
+export function tileLabel(text: string, width: number, fontSize: number): string | null {
+  const fitted = fitText(text, Math.max(0, width - LABEL_PAD), fontSize);
+  if (fitted === text) return text;
+  return fitted.length - 1 >= MIN_LABEL_CHARS ? fitted : null;
+}
 
 /** Loaded through `next/dynamic` (see `TreemapChart`); do not import directly. */
 export default function TreemapImpl({ data, onSelect, label = "Treemap", height }: TreemapChartProps) {
@@ -22,6 +32,9 @@ export default function TreemapImpl({ data, onSelect, label = "Treemap", height 
     const color = datum.color ?? ct.categorical[node.index % ct.categorical.length];
     const labelColor = datum.labelColor ?? ct.tooltip.background;
     const select = onSelect ? () => onSelect(datum) : undefined;
+    const name = node.height > MIN_LABEL_HEIGHT && node.width > MIN_LABEL_WIDTH ? tileLabel(datum.name, node.width, 11) : null;
+    const detail =
+      datum.detail && name && node.height > MIN_DETAIL_HEIGHT ? tileLabel(datum.detail, node.width, 10.5) : null;
     return (
       <g
         role={select ? "button" : "img"}
@@ -38,15 +51,16 @@ export default function TreemapImpl({ data, onSelect, label = "Treemap", height 
           }
         }}
       >
+        <title>{`${datum.name}: ${datum.value}${datum.detail ? ` (${datum.detail})` : ""}`}</title>
         <rect x={node.x} y={node.y} width={node.width} height={node.height} rx={4} fill={color} stroke={ct.tooltip.background} strokeWidth={datum.selected ? 3 : 2} />
-        {node.width > MIN_LABEL_WIDTH && node.height > MIN_LABEL_HEIGHT && (
+        {name && (
           <text x={node.x + 6} y={node.y + 16} fontSize={11} fontWeight={600} fill={labelColor}>
-            {datum.name}
+            {name}
           </text>
         )}
-        {datum.detail && node.width > MIN_LABEL_WIDTH && node.height > MIN_DETAIL_HEIGHT && (
-          <text x={node.x + 6} y={node.y + node.height - 8} fontSize={10.5} fill={labelColor} opacity={0.9}>
-            {datum.detail}
+        {detail && (
+          <text x={node.x + 6} y={node.y + node.height - 8} fontSize={10.5} fill={labelColor}>
+            {detail}
           </text>
         )}
       </g>

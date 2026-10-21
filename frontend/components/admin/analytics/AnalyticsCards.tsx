@@ -4,7 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import { ChartCard, toChartTable } from "@/components/charts";
 import { LazyMount } from "@/components/charts/LazyMount";
 import type { InsightsFilters } from "@/lib/insights-api";
-import { DropoffChart } from "./DropoffChart";
+import { DropoffChart, DropoffInsight } from "./DropoffChart";
 import { FlowSankey } from "./FlowSankey";
 import { dayLabel } from "./format";
 import { HourOfDayChart } from "./HourOfDayChart";
@@ -223,6 +223,8 @@ export function DropoffCard({ state, filters, update, learnLabel }: CardProps) {
           update(toggleValue(state, "issue", d.issue));
         }}
       />
+      {/* Fills the space beside the taller people chart with the headline numbers (VA-28). */}
+      <DropoffInsight items={items} total={data?.total} />
     </ChartCard>
   );
 }

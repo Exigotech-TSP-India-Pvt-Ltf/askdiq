@@ -16,8 +16,24 @@ const MARGIN = { t: 16, b: 16 };
 const GAP = 8;
 const ROW = 34;
 const MIN_HEIGHT = 190;
-const LINK_OPACITY = 0.32;
-const LINK_OPACITY_ACTIVE = 0.55;
+// Outcome colour at 0.45 so the bands stay apart on the dark card too (VA-30).
+const LINK_OPACITY = 0.45;
+const LINK_OPACITY_ACTIVE = 0.7;
+/** Minimum vertical distance between two node labels (one text line). */
+const LABEL_GAP = 14;
+
+/**
+ * Label y positions for nodes stacked top to bottom: each starts at its
+ * node's centre and is pushed apart so no two are closer than `gap`, staying
+ * inside [top, bottom]. Thin neighbouring nodes ("Mixed (11)", "Off-scope
+ * request (3)") no longer print on top of each other (VA-30).
+ */
+export function spreadLabels(centers: readonly number[], gap: number, top: number, bottom: number): number[] {
+  const out = [...centers];
+  for (let i = 0; i < out.length; i += 1) out[i] = Math.max(out[i], i === 0 ? top : out[i - 1] + gap);
+  for (let i = out.length - 1; i >= 0; i -= 1) out[i] = Math.min(out[i], i === out.length - 1 ? bottom : out[i + 1] - gap);
+  return out;
+}
 
 interface Span {
   y0: number;
@@ -83,7 +99,16 @@ export function FlowSankey({ flow, onSelect, height }: FlowSankeyProps) {
         `L${rx},${b0 + hgt}C${c2},${b0 + hgt} ${c1},${a0 + hgt} ${lx},${a0 + hgt}Z`;
       return { d, mid: { x: width / 2, y: (a0 + b0) / 2 + hgt / 2 } };
     });
-    return { lx, rx, left, right, bands };
+    const labelY = (spans: Span[]) =>
+      spreadLabels(
+        spans.map((s) => (s.y0 + s.y1) / 2),
+        LABEL_GAP,
+        MARGIN.t,
+        h - MARGIN.b,
+      );
+    const leftLabels = labelY(types.flatMap((t) => (left.get(t.name) ? [left.get(t.name) as Span] : [])));
+    const rightLabels = labelY(outcomeOrder.flatMap((o) => (right.get(o) ? [right.get(o) as Span] : [])));
+    return { lx, rx, left, right, bands, leftLabels, rightLabels };
   };
 
   return (
@@ -102,7 +127,7 @@ export function FlowSankey({ flow, onSelect, height }: FlowSankeyProps) {
       }}
     >
       {({ width, height: h }) => {
-        const { lx, rx, left, right, bands } = layout(width, h);
+        const { lx, rx, left, right, bands, leftLabels, rightLabels } = layout(width, h);
         return (
           <>
             {links.map((l, i) => (
@@ -114,25 +139,25 @@ export function FlowSankey({ flow, onSelect, height }: FlowSankeyProps) {
                 fillOpacity={active === i ? LINK_OPACITY_ACTIVE : LINK_OPACITY}
               />
             ))}
-            {types.map((t) => {
+            {types.map((t, i) => {
               const s = left.get(t.name);
               if (!s) return null;
               return (
                 <g key={t.name} aria-hidden="true">
                   <rect x={lx} y={s.y0} width={4} height={Math.max(2, s.y1 - s.y0)} fill={ct.axis} />
-                  <text x={lx + 9} y={(s.y0 + s.y1) / 2 + 3} fontSize={AXIS_FONT_SIZE} fill={ct.tooltip.text}>
+                  <text x={lx + 9} y={(leftLabels[i] ?? (s.y0 + s.y1) / 2) + 3} fontSize={AXIS_FONT_SIZE} fill={ct.tooltip.text}>
                     {`${t.name} (${t.conversations})`}
                   </text>
                 </g>
               );
             })}
-            {outcomeOrder.map((o) => {
+            {outcomeOrder.map((o, i) => {
               const s = right.get(o);
               if (!s) return null;
               return (
                 <g key={o} aria-hidden="true">
                   <rect x={rx - 4} y={s.y0} width={4} height={Math.max(2, s.y1 - s.y0)} fill={palette.outcome(o)} />
-                  <text x={rx - 9} y={(s.y0 + s.y1) / 2 + 3} textAnchor="end" fontSize={AXIS_FONT_SIZE} fill={ct.tooltip.text}>
+                  <text x={rx - 9} y={(rightLabels[i] ?? (s.y0 + s.y1) / 2) + 3} textAnchor="end" fontSize={AXIS_FONT_SIZE} fill={ct.tooltip.text}>
                     {o}
                   </text>
                 </g>

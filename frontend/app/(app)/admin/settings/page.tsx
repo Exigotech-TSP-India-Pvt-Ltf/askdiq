@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { BrainCircuit, Palette, Settings2, ShieldAlert, Tags } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
@@ -11,6 +11,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageShellSkeleton } from "@/components/ui/PageShellSkeleton";
 import { useDeepLinkParam } from "@/lib/use-deep-link";
 import { useCan } from "@/lib/use-can";
+import { prefetch } from "@/lib/query-cache";
+import { MODELS_KEY, TAXONOMY_KEY, settingsApi } from "@/lib/settings-api";
 
 type SettingsTab = "branding" | "taxonomy" | "models";
 
@@ -47,6 +49,13 @@ function SettingsView() {
   const tabs = SETTINGS_TABS.filter((t) => allowed[t.id]);
   const fallback = tabs[0]?.id ?? "branding";
   const tab: SettingsTab = isSettingsTab(tabParam) && allowed[tabParam] ? tabParam : fallback;
+
+  // Warm the other tabs when Settings opens (also on a direct link), so
+  // Taxonomy and Models render from cache instead of a long skeleton (VA-37).
+  useEffect(() => {
+    if (canTaxonomy) void prefetch(TAXONOMY_KEY, (signal) => settingsApi.listTaxonomy(signal));
+    if (canModels) void prefetch(MODELS_KEY, (signal) => settingsApi.getModelSettings(signal));
+  }, [canTaxonomy, canModels]);
 
   return (
     <div className="flex min-h-full flex-col bg-surface-page text-fg">

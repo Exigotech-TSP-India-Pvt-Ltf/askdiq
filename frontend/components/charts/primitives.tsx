@@ -289,6 +289,41 @@ export function ticks(max: number, count = 4): number[] {
   return Array.from({ length: count + 1 }, (_, i) => (max / count) * i);
 }
 
+/** Step multipliers for whole-number axes (x 10^n; 2.5 only where it stays whole). */
+const INTEGER_STEPS = [1, 2, 2.5, 5] as const;
+
+function integerStep(max: number, maxIntervals: number): number {
+  for (let exp = 1; exp < Number.MAX_SAFE_INTEGER; exp *= 10) {
+    const s = INTEGER_STEPS.map((m) => m * exp).find((c) => Number.isInteger(c) && max / c <= maxIntervals);
+    if (s !== undefined) return s;
+  }
+  return Math.ceil(max / maxIntervals);
+}
+
+/**
+ * Whole-number ticks from 0 to at most `max` for count series (queries,
+ * ratings, conversations): never 1.3 / 62.5. The step is the smallest of
+ * 1, 2, 2.5, 5 x 10^n that keeps at most `maxIntervals` gaps.
+ */
+export function integerTicks(max: number, maxIntervals = 5): number[] {
+  if (!Number.isFinite(max) || max <= 0) return [0];
+  const step = integerStep(max, maxIntervals);
+  const out: number[] = [];
+  for (let v = 0; v <= max + 1e-9; v += step) out.push(v);
+  return out;
+}
+
+/** True when every value is a whole number (a count series), so the axis gets integer ticks. */
+export function isIntegerSeries(values: Iterable<number>): boolean {
+  for (const v of values) if (Number.isFinite(v) && !Number.isInteger(v)) return false;
+  return true;
+}
+
+/** Axis ticks: whole numbers for count series, else four even steps. */
+export function axisTicks(max: number, integer = false): number[] {
+  return integer ? integerTicks(max) : ticks(max);
+}
+
 const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 
 export function formatCompact(value: number): string {
@@ -307,6 +342,11 @@ export const AXIS_FONT_SIZE = 11;
 
 /** Approximate glyph width of axis text, as a share of the font size. */
 const CHAR_WIDTH_RATIO = 0.58;
+
+/** Estimated rendered width (px) of `text` at `fontSize` (SVG text is not measured in layout). */
+export function textWidth(text: string, fontSize: number = AXIS_FONT_SIZE): number {
+  return text.length * fontSize * CHAR_WIDTH_RATIO;
+}
 
 /**
  * Cuts `text` with an ellipsis so it fits roughly `maxWidth` px at

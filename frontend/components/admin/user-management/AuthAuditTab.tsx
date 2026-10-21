@@ -28,6 +28,7 @@ import {
   type AuthEvent,
 } from "@/lib/user-management-api";
 import { RelativeTime } from "@/components/ui/RelativeTime";
+import { CopyButton } from "@/components/ui/CopyButton";
 import { auditSummary } from "./UserDrawer";
 
 const DEFAULT_PAGE_SIZE: PageSize = AUDIT_PAGE_DEFAULT;
@@ -89,7 +90,14 @@ export function AuthAuditTab({ action, update }: AuthAuditTabProps) {
     {
       key: "request_id",
       header: "Request",
-      render: (e) => <span className="font-mono text-[11px] text-fg-subtle">{e.request_id.slice(0, 12)}</span>,
+      render: (e) => (
+        <span className="inline-flex items-center gap-1">
+          <span className="font-mono text-xs text-fg-subtle" title={e.request_id}>
+            {e.request_id.slice(0, 12)}
+          </span>
+          {e.request_id ? <CopyButton value={e.request_id} label="Copy request id" /> : null}
+        </span>
+      ),
     },
   ];
 

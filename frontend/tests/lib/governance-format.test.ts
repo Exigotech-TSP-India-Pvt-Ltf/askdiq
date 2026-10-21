@@ -5,6 +5,7 @@ import {
   formatMs,
   latencyTick,
   niceTicks,
+  windowSourceDefinition,
   windowSourceLabel,
 } from "@/lib/governance-format";
 import { buildQuery, governanceStreamUrl, logsExportUrl } from "@/lib/governance-api";
@@ -58,13 +59,24 @@ describe("KPI formatting and labels (G7)", () => {
   });
 
   it("labels each count with its window and source", () => {
-    expect(windowSourceLabel("24h", "latency_metrics")).toBe("24h · latency records");
+    expect(windowSourceLabel("24h", "latency_metrics")).toBe("Last 24h · latency records");
     // Overall p50 and p95 share this source, so both hints say the same population.
-    expect(windowSourceLabel("24h", "latency_metrics.pipeline")).toBe("24h · RAG queries");
+    expect(windowSourceLabel("24h", "latency_metrics.pipeline")).toBe("Last 24h · RAG queries");
     expect(windowSourceLabel("since_process_start", "in_memory_counter")).toBe("since restart · process counter");
-    expect(windowSourceLabel("today_utc", "chat_messages.cost_usd")).toMatch(/^since 00:00 UTC · /);
+    expect(windowSourceLabel("today_utc", "chat_messages.cost_usd")).toBe("since 00:00 UTC · chat turns");
+    // VA-19: no raw table or column names in the visible footer.
     expect(windowSourceLabel("24h", "chat_messages.outcome+audit_log.server_error")).toBe(
-      "24h · chat messages.outcome + audit log.server error",
+      "Last 24h · chat turns + audit log",
+    );
+    expect(windowSourceLabel("24h", "chat_messages.role=user (visitor id)")).toBe("Last 24h · chat turns");
+    expect(windowSourceLabel("24h", "chat_messages.outcome+guardrail_flags")).toBe(
+      "Last 24h · chat turns + guardrail flags",
+    );
+  });
+
+  it("keeps the technical source in the definition", () => {
+    expect(windowSourceDefinition("24h", "chat_messages.outcome+audit_log.server_error")).toBe(
+      "Window: 24h. Source: chat_messages.outcome, audit_log.server_error.",
     );
   });
 });

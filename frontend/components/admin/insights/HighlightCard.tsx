@@ -43,7 +43,11 @@ export function HighlightCard({
               #{rank}
             </span>
           )}
-          <span className="text-[11px] font-medium text-slate-400 dark:text-teal-200/70 truncate max-w-[150px]">
+          {/* fg-muted at 12 px: AA contrast for metadata (VA-31). */}
+          <span
+            className="min-w-0 truncate text-xs font-medium text-fg-muted"
+            title={typeof subtitle === "string" ? subtitle : undefined}
+          >
             {subtitle}
           </span>
           {isClickable && (
@@ -63,7 +67,7 @@ export function HighlightCard({
             {typeof metricValue === "number" ? metricValue.toLocaleString() : metricValue}
           </span>
           {secondaryMetric && (
-            <span className="text-[10px] text-fg-subtle">({secondaryMetric})</span>
+            <span className="text-xs text-fg-muted">({secondaryMetric})</span>
           )}
         </div>
       </div>

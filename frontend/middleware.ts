@@ -3,6 +3,7 @@
 // every backend route checks the session itself.
 import { NextResponse, type NextRequest } from "next/server";
 import { sessionCookieName } from "@/lib/server/auth-cookies";
+import { AUDIENCE_HEADER, isAudience } from "@/lib/audience-seed";
 
 /** Pages reachable without a session cookie. */
 export const PUBLIC_PATHS = ["/login", "/suspended"];
@@ -59,6 +60,12 @@ export function middleware(req: NextRequest): NextResponse {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", csp);
+  // The page's ?audience= for the server render (root layout), so the first
+  // HTML matches the client's first render (VA-54). Only an allow-listed
+  // value is forwarded; a client-sent header of the same name is dropped.
+  requestHeaders.delete(AUDIENCE_HEADER);
+  const audience = req.nextUrl.searchParams.get("audience");
+  if (isAudience(audience)) requestHeaders.set(AUDIENCE_HEADER, audience);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
   return response;

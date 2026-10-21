@@ -48,7 +48,8 @@ const CASES: { chart: string; mark: RegExp; param: [string, string]; chip: strin
   { chart: "rating bar", mark: /^1 star: /, param: ["rating", "1"], chip: "Rating: 1" },
   { chart: "outcome bar", mark: /^Ungrounded: /, param: ["outcome", "ungrounded"], chip: "Outcome: Ungrounded" },
   { chart: "reasons bar", mark: /^Wrong: /, param: ["reason", "wrong"], chip: "Reason: Wrong" },
-  { chart: "trend point", mark: /^10-13: Positive/, param: ["day", "2026-10-13"], chip: "Day: 2026-10-13" },
+  // One date tick format across the console: "13 Oct" (VA-18).
+  { chart: "trend point", mark: /^13 Oct: Positive/, param: ["day", "2026-10-13"], chip: "Day: 2026-10-13" },
   { chart: "funnel stage", mark: /^Reviewed: /, param: ["status", "reviewed"], chip: "Status: Reviewed" },
   { chart: "KPI sparkline point", mark: /^2026-10-14: /, param: ["day", "2026-10-14"], chip: "Day: 2026-10-14" },
 ];

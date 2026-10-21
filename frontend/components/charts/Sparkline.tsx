@@ -13,15 +13,22 @@ import {
   type SelectHandler,
 } from "./primitives";
 
-/** Empty sparkline: a quiet dashed baseline instead of a boxed placeholder. */
-function SparkEmpty({ height }: { height: number }) {
+/**
+ * Empty sparkline: a quiet dashed baseline instead of a boxed placeholder.
+ * Also used for a single point (a one-day range), where a lone dot read
+ * as a rendering glitch: a trend needs at least two points.
+ */
+function SparkEmpty({ height, message = "No trend data" }: { height: number; message?: string }) {
   return (
     <div role="status" className="flex w-full items-end gap-2" style={{ height }}>
       <span aria-hidden="true" className="mb-1.5 h-px flex-1 border-t border-dashed border-line-brand dark:border-brand-500/25" />
-      <span className="text-[11px] text-fg-subtle">No trend data</span>
+      <span className="text-[11px] text-fg-subtle">{message}</span>
     </div>
   );
 }
+
+/** Points a sparkline needs to draw a trend. */
+export const MIN_SPARK_POINTS = 2;
 
 export interface SparkPoint {
   label: string;
@@ -68,6 +75,7 @@ export function Sparkline({
   }, [data]);
 
   if (data.length === 0) return <SparkEmpty height={height} />;
+  if (data.length < MIN_SPARK_POINTS) return <SparkEmpty height={height} message="Not enough data for a trend" />;
 
   const layout = ({ width, height: h }: ChartSize) => {
     const x = data.length === 1 ? () => width / 2 : scaleLinear([0, data.length - 1], [PAD, width - PAD]);

@@ -109,7 +109,7 @@ export function Histogram({
         const { area, bw, y } = layout(size);
         return (
           <>
-            <YGrid area={area} max={max} ct={ct} />
+            <YGrid area={area} max={max} ct={ct} integer />
             <XLabels labels={data.map(binLabel)} xAt={(i) => area.x0 + bw * i + bw / 2} area={area} ct={ct} maxLabels={6} />
             <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {data.map((b, i) => (

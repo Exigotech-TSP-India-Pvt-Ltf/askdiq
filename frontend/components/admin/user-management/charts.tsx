@@ -78,7 +78,7 @@ export function DailyBars({
         const barW = Math.max(1, Math.min(28, bw * 0.7));
         return (
           <>
-            <YGrid area={area} max={max} ct={ct} />
+            <YGrid area={area} max={max} ct={ct} integer />
             <XLabels labels={data.map((d) => d.label)} xAt={(i) => area.x0 + bw * i + bw / 2} area={area} ct={ct} maxLabels={7} />
             <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {data.map((d, i) => (
@@ -100,6 +100,8 @@ export function DailyBars({
     </ChartFrame>
   );
 }
+
+const DONUT_MAX_RADIUS = 72;
 
 export interface DonutDatum {
   id: string;
@@ -142,7 +144,8 @@ export function Donut({
   if (data.length === 0 || total === 0) return <ChartEmpty />;
 
   const geometry = ({ width, height }: ChartSize) => {
-    const r1 = Math.max(10, Math.min(width * 0.6, height) / 2 - 6);
+    // Capped so a single-role donut stays compact beside its legend (VA-46).
+    const r1 = Math.max(10, Math.min(DONUT_MAX_RADIUS, Math.min(width * 0.6, height) / 2 - 6));
     return { cx: Math.min(width * 0.32, r1 + 8), cy: height / 2, r1, r0: r1 * 0.62 };
   };
 

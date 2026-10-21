@@ -21,6 +21,7 @@ import { formatLatencyMs } from "@/lib/format";
 import { entityHref } from "@/lib/entity-links";
 import { DrawerShell } from "@/components/ui/DrawerShell";
 import { CopyButton } from "@/components/ui/CopyButton";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 const DETAIL_STALE_MS = 60_000;
 
@@ -32,7 +33,7 @@ const GUARDRAIL_DOT: Record<GuardrailTone, string> = {
   unknown: "bg-slate-400",
 };
 
-/** Guardrail status from the record's flags and booleans; "Not available" when it was never checked. */
+/** Guardrail status from the record's flags and booleans; "Not evaluated" when it was never checked. */
 export function guardrailRows(
   data: { safety_passed?: unknown; grounded?: unknown } | null | undefined,
   flags: readonly string[],
@@ -43,7 +44,7 @@ export function guardrailRows(
       ? { value: hit, tone: "bad" as const }
       : scanned
         ? { value: clean, tone: "ok" as const }
-        : { value: "Not available", tone: "unknown" as const };
+        : { value: "Not evaluated", tone: "unknown" as const };
   const grounded =
     data?.grounded === true
       ? { value: "Verified", tone: "ok" as const }
@@ -56,6 +57,27 @@ export function guardrailRows(
     { label: "Prompt Injection", ...scan("unsafe_input_detected", "Blocked", "None detected") },
     { label: "Groundedness", ...grounded },
   ];
+}
+
+/** The response text of a case or record, or null when none was stored. */
+export function responseText(data: { answer?: unknown; response?: unknown } | null | undefined): string | null {
+  for (const v of [data?.answer, data?.response]) {
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return null;
+}
+
+/** Why a case has no response text: benchmark reports did not store it; a live record may predate it. */
+export function missingResponseReason(data: { source?: unknown } | null | undefined): string {
+  return data?.source === "benchmark"
+    ? "Benchmark reports from before this release store scores only, not the response text. Re-run the benchmark to capture it."
+    : "No response text was stored for this record.";
+}
+
+/** Guardrail flags from a record detail (`guardrail_flags`) or a report case (`flags`). */
+export function recordFlags(data: { guardrail_flags?: unknown; flags?: unknown } | null | undefined): string[] {
+  const raw = Array.isArray(data?.guardrail_flags) ? data.guardrail_flags : Array.isArray(data?.flags) ? data.flags : [];
+  return raw.filter((f): f is string => typeof f === "string");
 }
 
 interface EvaluationRecordDrawerProps {
@@ -128,7 +150,8 @@ export function EvaluationRecordDrawer({
   const latency = data?.latency_ms ? formatLatencyMs(data.latency_ms) : "—";
 
   const requestId: string | null = data?.request_id || recordId;
-  const flags: string[] = Array.isArray(data?.guardrail_flags) ? data.guardrail_flags : [];
+  const flags = recordFlags(data);
+  const answer = responseText(data);
   const judgeRan = typeof data?.faithfulness === "number" || Boolean(data?.judge_reason);
   const guardrails = guardrailRows(data, flags);
 
@@ -253,16 +276,27 @@ export function EvaluationRecordDrawer({
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Generated Assistant Response</label>
               <button
-                onClick={() => copyToClipboard(data?.answer || "")}
-                className="inline-flex items-center gap-1 text-[11px] text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 font-medium"
+                type="button"
+                onClick={() => answer && copyToClipboard(answer)}
+                disabled={!answer}
+                className="inline-flex items-center gap-1 text-[11px] text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 font-medium disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copied ? "Copied" : "Copy Response"}
               </button>
             </div>
-            <div className="p-4 bg-surface-card rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-fg leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap select-text">
-              {data?.answer || "No response text available."}
-            </div>
+            {answer ? (
+              <div
+                data-testid="inspector-response"
+                className="p-4 bg-surface-card rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-fg leading-relaxed max-h-72 overflow-y-auto whitespace-pre-wrap select-text"
+              >
+                {answer}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-line-brand/70 dark:border-brand-500/20">
+                <EmptyState compact icon={FileText} title="No response text" description={missingResponseReason(data)} />
+              </div>
+            )}
           </div>
 
           {/* Quick Metrics Bar */}
@@ -293,10 +327,14 @@ export function EvaluationRecordDrawer({
             </p>
             <div className="grid grid-cols-2 gap-2 text-xs pt-1" data-testid="inspector-guardrails">
               {guardrails.map((g) => (
-                <div key={g.label} className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${GUARDRAIL_DOT[g.tone]}`} />
+                <div key={g.label} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-tone={g.tone}>
+                  <span className={`w-2 h-2 shrink-0 rounded-full ${GUARDRAIL_DOT[g.tone]}`} aria-hidden="true" />
                   <span className="text-slate-500 dark:text-fg-muted">{g.label}:</span>
-                  <span className="font-semibold text-fg">{g.value}</span>
+                  {g.tone === "unknown" ? (
+                    <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-fg-subtle">{g.value}</span>
+                  ) : (
+                    <span className="font-semibold text-fg">{g.value}</span>
+                  )}
                 </div>
               ))}
             </div>

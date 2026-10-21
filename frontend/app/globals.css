@@ -161,6 +161,26 @@ html.dark .scrollbar-thin::-webkit-scrollbar-thumb {
   background: rgb(var(--line));
 }
 
+/* ChartCard header: in a narrow card (Usage's three-up row, phones) the
+   "View as table" toggle keeps only its icon; the label stays for screen
+   readers and in the button's title. */
+.chart-card-header {
+  container-type: inline-size;
+}
+@container (max-width: 26rem) {
+  .chart-card-toggle-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
 /* Chart kit (components/charts): focusable marks get the brand focus ring. */
 .chart-mark {
   outline: none;

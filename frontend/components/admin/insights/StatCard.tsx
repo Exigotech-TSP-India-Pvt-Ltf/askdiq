@@ -4,11 +4,12 @@ import React from "react";
 import { studioCardClass } from "@/components/ui/StudioCard";
 import { studioToneClasses } from "@/components/ui/styles";
 import { Sparkline, type SparkPoint, type SparkTone } from "@/components/charts/Sparkline";
+import { DeltaBadge } from "@/components/charts/KpiTrendCard";
 
 export interface StatCardProps {
   title: string;
   value: React.ReactNode;
-  /** One-line footnote (truncated; strings also get a tooltip). */
+  /** Footnote (up to two lines; strings also get a tooltip). */
   subtitle?: React.ReactNode;
   icon?: React.ComponentType<{ className?: string; strokeWidth?: string | number }>;
   badge?: React.ReactNode;
@@ -16,6 +17,11 @@ export interface StatCardProps {
     value: string;
     isPositive?: boolean;
   };
+  /**
+   * Period change as a fraction, drawn with the shared KPI delta pill
+   * (same look as `KpiTrendCard`); `title` names the comparison window.
+   */
+  delta?: { value: number; goodDirection?: "up" | "down"; title?: string };
   /** Optional mini chart (same sparkline as `KpiTrendCard`). */
   spark?: readonly SparkPoint[];
   sparkTone?: SparkTone;
@@ -35,6 +41,7 @@ export function StatCard({
   icon: Icon,
   badge,
   trend,
+  delta,
   spark,
   sparkTone = "brand",
   formatSparkValue,
@@ -43,7 +50,9 @@ export function StatCard({
   return (
     <div className={`group flex flex-col gap-3 p-5 ${studioCardClass({ interactive: true })} ${className}`}>
       <div className="relative z-10 flex items-center justify-between gap-2">
-        <p className="min-w-0 truncate text-sm font-medium text-fg-subtle">{title}</p>
+        <p className="line-clamp-2 min-w-0 break-words text-sm font-medium text-fg-subtle" title={title}>
+          {title}
+        </p>
         {Icon ? <Icon className="h-4 w-4 shrink-0 text-fg-subtle" strokeWidth={1.75} aria-hidden="true" /> : null}
       </div>
 
@@ -52,6 +61,7 @@ export function StatCard({
           {typeof value === "number" ? value.toLocaleString() : value}
         </p>
         {badge}
+        {delta ? <DeltaBadge delta={delta.value} goodDirection={delta.goodDirection ?? "up"} title={delta.title} /> : null}
       </div>
 
       {spark ? (
@@ -72,7 +82,7 @@ export function StatCard({
             </span>
           ) : null}
           {subtitle ? (
-            <span className="min-w-0 truncate whitespace-nowrap" title={typeof subtitle === "string" ? subtitle : undefined}>
+            <span className="line-clamp-2 min-w-0 break-words" title={typeof subtitle === "string" ? subtitle : undefined}>
               {subtitle}
             </span>
           ) : null}

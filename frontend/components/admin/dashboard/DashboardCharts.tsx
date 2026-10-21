@@ -93,6 +93,8 @@ export function OutcomesWidget({ data, loading, error, onRetry, range }: WidgetP
   return (
     <ChartCard
       variant="aurora"
+      // Same height as the other card in its row (VA-42).
+      className="h-full"
       title="Queries by outcome"
       subtitle={subtitle}
       window={usingOutcomes ? range.label : "Last 7 days"}
@@ -156,6 +158,8 @@ export function LatencyWidget({ data, loading, error, onRetry, range }: WidgetPr
   return (
     <ChartCard
       variant="aurora"
+      // Same height as the other card in its row (VA-42).
+      className="h-full"
       title="Latency p50 / p95"
       subtitle="End-to-end response time per bucket. Click to open Monitoring"
       window={range.label}
@@ -206,6 +210,8 @@ export function CostWidget({ data, loading, error, onRetry }: WidgetProps) {
   return (
     <ChartCard
       variant="aurora"
+      // Same height as the other card in its row (VA-42).
+      className="h-full"
       title="Cost vs budget"
       subtitle="Month to date, linear month-end forecast and budget"
       window={cost ? cost.month : undefined}
@@ -242,7 +248,7 @@ export function CostWidget({ data, loading, error, onRetry }: WidgetProps) {
             formatValue={(v) => usd.format(v)}
             label="Cost month to date (USD)"
             valueLabel="Month to date (USD)"
-            height={56}
+            height={80}
           />
           <dl className="grid grid-cols-3 gap-2 text-xs">
             <div>
@@ -280,6 +286,8 @@ export function SatisfactionWidget({ data, loading, error, onRetry, range }: Wid
   return (
     <ChartCard
       variant="aurora"
+      // Same height as the other card in its row (VA-42).
+      className="h-full"
       title="Satisfaction"
       subtitle="Thumbs-up share of rated answers. Click to open Feedback"
       window={range.label}
@@ -335,6 +343,8 @@ export function IntentsWidget({ data, loading, error, onRetry, range }: WidgetPr
   return (
     <ChartCard
       variant="aurora"
+      // Same height as the other card in its row (VA-42).
+      className="h-full"
       title="Top intents"
       subtitle="Click an intent to open it in Analytics"
       window={range.label}
@@ -380,6 +390,8 @@ export function PipelineWidget({ data, loading, error, onRetry }: WidgetProps) {
   return (
     <ChartCard
       variant="aurora"
+      // Same height as the other card in its row (VA-42).
+      className="h-full"
       title="RAG pipeline"
       subtitle="Average time per stage"
       window="Last 24 hours"

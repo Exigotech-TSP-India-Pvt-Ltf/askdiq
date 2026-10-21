@@ -164,14 +164,43 @@ describe("inspectors show recorded data, not canned values", () => {
     expect(screen.getByText(/not evaluated/i)).toBeInTheDocument();
   });
 
-  it("evaluation inspector: an unscanned record shows Not available, never Clean", async () => {
+  it("evaluation inspector: shows the stored response text (VA-14)", async () => {
+    render(
+      <MotionProvider>
+        <EvaluationInspector isOpen onClose={() => undefined} recordId="rec-4" initialData={record} token="t" />
+      </MotionProvider>,
+    );
+    expect(await screen.findByTestId("inspector-response")).toHaveTextContent("A set of mitigation strategies.");
+    expect(screen.queryByText("No response text")).toBeNull();
+  });
+
+  it("evaluation inspector: a benchmark case without text explains why, and report-case flags count", async () => {
+    render(
+      <MotionProvider>
+        <EvaluationInspector
+          isOpen
+          onClose={() => undefined}
+          recordId="case-1"
+          initialData={{ ...record, answer: null, source: "benchmark", flags: ["secret_leak_detected"], safety_passed: false }}
+          token="t"
+        />
+      </MotionProvider>,
+    );
+    expect(await screen.findByText("No response text")).toBeInTheDocument();
+    expect(screen.getByText(/benchmark reports .* store scores only/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-response")).toBeNull();
+    expect(screen.getByRole("button", { name: /copy response/i })).toBeDisabled();
+    expect(screen.getByTestId("inspector-guardrails")).toHaveTextContent("Secret Scanning:Detected");
+  });
+
+  it("evaluation inspector: an unscanned record shows Not evaluated, never Clean", async () => {
     render(
       <MotionProvider>
         <EvaluationInspector isOpen onClose={() => undefined} recordId="rec-3" initialData={record} token="t" />
       </MotionProvider>,
     );
     const guardrails = await screen.findByTestId("inspector-guardrails");
-    expect(guardrails).toHaveTextContent("PII Leakage:Not available");
+    expect(guardrails).toHaveTextContent("PII Leakage:Not evaluated");
     expect(guardrails).not.toHaveTextContent("Clean");
   });
 

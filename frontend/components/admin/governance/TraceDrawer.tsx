@@ -78,13 +78,14 @@ function TraceBody({ detail }: { detail: GovernanceTraceDetail }) {
         <Field label="User">{detail.user_id ?? "—"}</Field>
         <Field label="Client IP">{detail.ip_address ?? "—"}</Field>
         <Field label="Time">
-          <RelativeTime value={detail.timestamp} display="absolute" />
+          {/* Short date-time so the tile never truncates; timezone in the tooltip (VA-44). */}
+          <RelativeTime value={detail.timestamp} display="short" />
         </Field>
       </dl>
 
       <Section title="Conversation" icon={MessagesSquare}>
         {detail.conversation_id ? (
-          <EntityLink entity={{ kind: "conversation", id: detail.conversation_id }}>Open conversation</EntityLink>
+          <EntityLink entity={{ kind: "conversation", id: detail.conversation_id }} />
         ) : (
           <p className="text-xs text-fg-subtle">No conversation was persisted for this request.</p>
         )}

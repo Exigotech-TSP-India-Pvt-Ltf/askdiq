@@ -103,9 +103,15 @@ export function TaxonomyTab() {
   const visible = useMemo(() => (showArchived ? ofKind : ofKind.filter((i) => i.is_active)), [ofKind, showArchived]);
   const archivedCount = ofKind.length - ofKind.filter((i) => i.is_active).length;
 
+  // A neutral placeholder until the list arrives: never "0" that then jumps to 13 (VA-37).
+  const loaded = query.data !== undefined;
   const tabs = useMemo(
-    () => KIND_TABS.map((t) => ({ ...t, badgeCount: items.filter((i) => i.kind === t.id && i.is_active).length })),
-    [items],
+    () =>
+      KIND_TABS.map((t) => ({
+        ...t,
+        badgeCount: loaded ? items.filter((i) => i.kind === t.id && i.is_active).length : "…",
+      })),
+    [items, loaded],
   );
 
   const replaceItems = (updated: TaxonomyRead[]) =>
@@ -344,14 +350,15 @@ export function TaxonomyTab() {
                           value={draft.label}
                           disabled={archived}
                           maxLength={TAXONOMY_LABEL_MAX}
+                          title={draft.label}
                           aria-label={`Label for ${item.code}`}
                           aria-invalid={Boolean(problem) && !draft.label.trim()}
                           onChange={(e) => edit({ label: e.target.value })}
-                          className={`${inputClass} py-1.5 text-xs`}
+                          className={`${inputClass} min-w-[14rem] py-1.5 text-xs`}
                         />
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
                           <input
                             type="color"
                             value={normalizeHex(draft.color) ?? brandRamp["600"].toLowerCase()}
@@ -360,7 +367,13 @@ export function TaxonomyTab() {
                             onChange={(e) => edit({ color: e.target.value })}
                             className="h-8 w-9 shrink-0 cursor-pointer rounded-md border border-line bg-surface-card p-0.5 disabled:cursor-not-allowed"
                           />
-                          <span className="font-mono text-[11px] uppercase text-fg-muted">{draft.color || "Default"}</span>
+                          {/* The hex in use, not "DEFAULT"; the tooltip says when it is the brand fallback (VA-38). */}
+                          <span
+                            className="font-mono text-[11px] uppercase text-fg-muted"
+                            title={draft.color ? draft.color : "Default: the brand colour"}
+                          >
+                            {draft.color || brandRamp["600"]}
+                          </span>
                         </div>
                       </td>
                       {kind === "intent" ? (

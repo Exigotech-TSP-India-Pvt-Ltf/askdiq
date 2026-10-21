@@ -8,6 +8,7 @@ import {
   ChartFrame,
   TooltipBody,
   formatCompact,
+  isIntegerSeries,
   niceMax,
   scaleLinear,
   useChartMarks,
@@ -85,7 +86,7 @@ export function StackedBar<T extends object>({
   const [hoverSeries, setHoverSeries] = useState<string | null>(null);
   const category = useCallback((row: T) => String((row as Record<string, unknown>)[xKey] ?? ""), [xKey]);
 
-  const { segments, spans, max } = useMemo(() => {
+  const { segments, spans, max, integer } = useMemo(() => {
     const segs: BarSegment<T>[] = [];
     const sp: { row: number; si: number; lo: number; hi: number }[] = [];
     let top = 0;
@@ -103,7 +104,12 @@ export function StackedBar<T extends object>({
       });
       top = Math.max(top, cursor);
     });
-    return { segments: segs, spans: sp, max: percent ? 100 : niceMax(top) };
+    return {
+      segments: segs,
+      spans: sp,
+      max: percent ? 100 : niceMax(top),
+      integer: !percent && isIntegerSeries(segs.map((s) => s.value)),
+    };
   }, [data, percent, series]);
 
   const seriesLabel = useCallback(
@@ -185,7 +191,7 @@ export function StackedBar<T extends object>({
             <AxisTitles {...titles} area={titleArea} height={size.height} ct={ct} />
             {area ? (
               <>
-                <YGrid area={area} max={max} ct={ct} format={percent ? pct : formatValue} />
+                <YGrid area={area} max={max} ct={ct} format={percent ? pct : formatValue} integer={integer} />
                 <XLabels
                   labels={data.map((row) => formatLabel(category(row)))}
                   xAt={(i) => area.x0 + band * i + band / 2}

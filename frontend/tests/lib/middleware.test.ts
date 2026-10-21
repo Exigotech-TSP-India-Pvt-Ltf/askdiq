@@ -32,6 +32,16 @@ describe("middleware: signed-out redirect (F1.1.3, UX only)", () => {
     expect(isPublicPath("/loginx")).toBe(false);
   });
 
+  it("forwards only an allow-listed ?audience= to the server render (VA-54)", () => {
+    const forwarded = (res: Response) => res.headers.get("x-middleware-request-x-askdiq-audience");
+    expect(forwarded(middleware(req("/admin?audience=users", "askdiq_session=abc")))).toBe("users");
+    expect(forwarded(middleware(req("/admin?audience=%3Cscript%3E", "askdiq_session=abc")))).toBeNull();
+    const spoofed = new NextRequest("http://localhost:3000/admin", {
+      headers: { cookie: "askdiq_session=abc", "x-askdiq-audience": "testing" },
+    });
+    expect(forwarded(middleware(spoofed))).toBeNull();
+  });
+
   it("lets a request with a session cookie through (the API still checks it)", () => {
     const res = middleware(req("/admin", "askdiq_session=abc"));
     expect(res.headers.get("location")).toBeNull();

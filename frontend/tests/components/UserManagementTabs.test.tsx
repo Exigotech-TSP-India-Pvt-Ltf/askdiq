@@ -217,6 +217,16 @@ describe("Audit Trail tab", () => {
     expect(memoryRouter.params().get("action")).toBe("login_denied");
     await waitFor(() => expect(screen.queryByText("alice@contoso.example")).not.toBeInTheDocument());
   });
+
+  it("loads 10 rows per page (table standard) and keeps the full request id in a tooltip (VA-47)", async () => {
+    renderTab("/admin/user-management?tab=audit");
+    await waitFor(() => expect(screen.getByText("Sign-in denied")).toBeInTheDocument());
+    const pages = server.callsTo("GET", "/admin/auth-audit");
+    expect(pages.length).toBeGreaterThan(0);
+    expect(pages[0].query.get("limit")).toBe("10");
+    expect(screen.getAllByTitle("req-aaaaaaaaaaaa1").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /copy request id/i }).length).toBeGreaterThan(0);
+  });
 });
 
 describe("user-management-api client", () => {

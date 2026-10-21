@@ -267,7 +267,8 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
   const columns: ColumnDef<ConversationRow>[] = [
     {
       key: EXPAND_KEY,
-      header: "",
+      // A labelled column with a quiet icon toggle instead of a bordered "View" button per row (VA-29).
+      header: "Details",
       width: "1%",
       render: (row) => {
         const open = Boolean(expanded[row.conv_id]);
@@ -277,15 +278,15 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
             aria-expanded={open}
             aria-controls={`turns-${row.conv_id}`}
             aria-label={`${open ? "Hide" : "View"} questions for ${shortId(row.conv_id)}`}
+            title={open ? "Hide questions" : "View questions"}
             onClick={(e) => {
               e.stopPropagation();
               toggle(row);
             }}
             onFocus={() => warmRow(row)}
-            className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 text-[11.5px] font-medium text-brand-700 transition-colors duration-150 hover:border-brand-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300 dark:hover:border-brand-700/60"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-surface-muted hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:hover:text-brand-300"
           >
-            <ChevronDown {...ICON} className={`h-3.5 w-3.5 transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
-            {open ? "Hide" : "View"}
+            <ChevronDown {...ICON} className={`h-4 w-4 transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
           </button>
         );
       },

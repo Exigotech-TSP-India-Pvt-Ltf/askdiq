@@ -13,17 +13,27 @@ import {
 } from "./primitives";
 import { Legend, num, seriesColor, type SeriesDef } from "./cartesian";
 
+export interface RadarSeriesDef<K extends string = string> extends SeriesDef<K> {
+  /** Dashed outline (a second series that must read apart from the first). */
+  dashed?: boolean;
+}
+
 export interface RadarProps<T extends object> {
   /** One row per axis, e.g. `{ dimension: "Groundedness", current: 82, previous: 76 }`. */
   data: readonly T[];
   axisKey: Extract<keyof T, string>;
-  series: readonly SeriesDef<Extract<keyof T, string>>[];
+  series: readonly RadarSeriesDef<Extract<keyof T, string>>[];
   onSelect?: SelectHandler<T>;
   /** Scale end. Default 100. */
   max?: number;
   label?: string;
   height?: number;
   formatValue?: (value: number) => string;
+  /**
+   * Ring values (25 / 50 / 75 / 100) along the top spoke, on a halo so they
+   * stay readable over the polygons instead of being drawn on top of them.
+   */
+  ringLabels?: boolean;
 }
 
 const RINGS = 4;
@@ -39,6 +49,7 @@ export function Radar<T extends object>({
   label = "Radar chart",
   height,
   formatValue = defaultFormat,
+  ringLabels = false,
 }: RadarProps<T>) {
   const ct = useChartTheme();
   const [hoverSeries, setHoverSeries] = useState<string | null>(null);
@@ -131,7 +142,14 @@ export function Radar<T extends object>({
               return (
                 <g key={s.key} opacity={dim ? ct.dimOpacity : 1} aria-hidden="true" data-series={s.key}>
                   {pts.length >= 3 && (
-                    <polygon points={pts.map((p) => p.join(",")).join(" ")} fill={color} fillOpacity={0.2} stroke={color} strokeWidth={2} />
+                    <polygon
+                      points={pts.map((p) => p.join(",")).join(" ")}
+                      fill={color}
+                      fillOpacity={s.dashed ? 0.08 : 0.2}
+                      stroke={color}
+                      strokeWidth={2}
+                      strokeDasharray={s.dashed ? "6 4" : undefined}
+                    />
                   )}
                   {pts.length === 2 && <line x1={pts[0][0]} y1={pts[0][1]} x2={pts[1][0]} y2={pts[1][1]} stroke={color} strokeWidth={2} />}
                   {pts.map(([x, y], i) => (
@@ -140,6 +158,26 @@ export function Radar<T extends object>({
                 </g>
               );
             })}
+            {ringLabels && (
+              <g aria-hidden="true" data-testid="radar-ring-labels">
+                {Array.from({ length: RINGS }, (_, k) => (k + 1) / RINGS).map((f) => (
+                  <text
+                    key={f}
+                    x={cx + 4}
+                    y={cy - r * f}
+                    dy="0.32em"
+                    fontSize={10}
+                    fill={ct.axis}
+                    stroke={ct.tooltip.background}
+                    strokeWidth={3}
+                    strokeLinejoin="round"
+                    paintOrder="stroke"
+                  >
+                    {formatValue(max * f)}
+                  </text>
+                ))}
+              </g>
+            )}
             {data.map((_, i) => {
               const [x, y] = at(i, max);
               return (
