@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ANALYTICS_TABS, TabGroup } from "@/components/admin/TabGroup";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import { useAuth } from "@/lib/auth-context";
 import { useLiveConnected } from "@/lib/live-updates";
 import { useVisibilityPolling } from "@/lib/use-visibility-polling";
@@ -46,6 +47,7 @@ export function AnalyticsView() {
   const bundle = useInsightsBundle(filters, pageOf(state));
   const summary = { ...bundle, data: bundle.data?.summary ?? undefined };
   const flowData = bundle.data?.flow ?? undefined;
+  const userTypes = useMemo(() => flowData?.user_types.map((t) => t.name), [flowData]);
   const pendingData = bundle.data?.pending ?? undefined;
   const [labels, setLabels] = useState<ChipLabels>({});
   const learnLabel = useCallback((kind: LabelKind, label: string) => setLabels((l) => ({ ...l, [kind]: label })), []);
@@ -66,27 +68,33 @@ export function AnalyticsView() {
   const noMatches = filtered && summary.data !== undefined && summary.data.conversations === 0 && !nothingLabelled;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 px-4 py-5 sm:px-6">
-      <div data-tour="analytics-tabs" className="self-start">
-      <TabGroup
-        tabs={ANALYTICS_TABS}
-        activeTab={state.tab}
-        onChange={(id) => {
-          if (isTab(id)) update({ tab: id });
-        }}
-        ariaLabel="Analytics sections"
-        className="self-start"
+    // VA-26: the same page container and gutter as every other admin page.
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-4 sm:p-8">
+      <PageToolbar
+        tabsTour="analytics-tabs"
+        tabs={
+          <TabGroup
+            tabs={ANALYTICS_TABS}
+            activeTab={state.tab}
+            onChange={(id) => {
+              if (isTab(id)) update({ tab: id });
+            }}
+            ariaLabel="Analytics sections"
+          />
+        }
+        filters={
+          <div data-tour="analytics-filters" className="flex min-w-0 max-w-full">
+            <FilterBar
+              state={state}
+              update={update}
+              clearFilters={clearFilters}
+              userTypes={userTypes}
+              chipLabels={labels}
+            />
+          </div>
+        }
+        dateRange
       />
-      </div>
-      <div data-tour="analytics-filters">
-      <FilterBar
-        state={state}
-        update={update}
-        clearFilters={clearFilters}
-        userTypes={flowData?.user_types.map((t) => t.name)}
-        chipLabels={labels}
-      />
-      </div>
       {backlog > 0 && pendingData && <PendingState pending={pendingData} nothingLabelled={nothingLabelled} />}
       <SectionBoundary label="The selected person" resetKey={`${state.person}|${state.visitor}`}>
         <PersonPanel state={state} filters={filters} update={update} learnLabel={learnLabel} />

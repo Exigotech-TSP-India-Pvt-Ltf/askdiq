@@ -59,13 +59,16 @@ describe("Phase 5: Header and Tabs Accessibility & Placement Audit", () => {
         title="Admin Control"
         subtitle="Operational telemetry"
         icon={LayoutDashboard}
-        actions={<button>Action</button>}
       />
     );
 
     expect(screen.getByText("Admin Control")).toBeInTheDocument();
     expect(screen.getByText("Operational telemetry")).toBeInTheDocument();
-    expect(screen.getByText("Action")).toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: /audience scope/i })).toBeInTheDocument();
+    // OR-2: no actions in the header; VA-43: the subtitle wraps to two lines with its full text as a tooltip.
+    expect(screen.getByRole("banner").querySelectorAll("button:not([role=tab])")).toHaveLength(0);
+    const subtitle = screen.getByTestId("header-subtitle");
+    expect(subtitle).toHaveClass("line-clamp-2");
+    expect(subtitle).toHaveAttribute("title", "Operational telemetry");
   });
 });
