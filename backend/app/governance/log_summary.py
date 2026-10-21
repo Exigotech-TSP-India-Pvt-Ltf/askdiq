@@ -22,6 +22,7 @@ SERVICE_BY_ACTION: dict[str, Service] = {
     "session_created": "query",
     "session_rotated": "query",
     "session_expired": "query",
+    "session_resumed": "query",
     "ingest": "ingest",
     "document_delete": "ingest",
     "user_feedback": "feedback",
@@ -241,6 +242,12 @@ def _session(verb: str) -> Summarizer:
     return lambda d: f"Session {d.get('session_id') or '?'} {verb}"
 
 
+def _session_resumed(d: Mapping[str, Any]) -> str:
+    idle = d.get("idle_minutes")
+    suffix = f" after {idle} min idle" if isinstance(idle, int) else ""
+    return f"Session {d.get('session_id') or '?'} resumed{suffix}"
+
+
 def _session_rotated(d: Mapping[str, Any]) -> str:
     return (
         f"Session rotated ({d.get('reason', 'unknown')}): "
@@ -267,6 +274,7 @@ SUMMARIZERS: dict[str, Summarizer] = {
     "llm_retry": _llm_retry,
     "session_created": _session("created"),
     "session_expired": _session("expired"),
+    "session_resumed": _session_resumed,
     "session_rotated": _session_rotated,
 }
 

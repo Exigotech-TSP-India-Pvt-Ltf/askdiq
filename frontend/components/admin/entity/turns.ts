@@ -10,6 +10,8 @@ export interface TurnView {
   assistantMessageId: string | null;
   grounded: boolean | null;
   guardrailFlags: string[];
+  /** The preview batch cut the question or answer (`ConversationMessage.content_truncated`). */
+  truncated: boolean;
   detail: TurnDetail | null;
 }
 
@@ -27,8 +29,10 @@ export function buildTurns(data: ConversationDetail | undefined): TurnView[] {
       assistantMessageId: null,
       grounded: null,
       guardrailFlags: [],
+      truncated: false,
       detail: null,
     };
+    if (m.content_truncated) t.truncated = true;
     if (m.role === "user") t.question = m.content;
     else {
       t.answer = m.content;

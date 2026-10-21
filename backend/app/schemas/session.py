@@ -43,7 +43,12 @@ class ChatSessionSummary(BaseModel):
     created_at: datetime
     last_activity_at: datetime
     expires_at: datetime
-    is_expired: bool
+    is_expired: bool = Field(
+        description=(
+            "Idle past the implicit-resume window; informational, does not "
+            "block resuming (sending with this session's id continues it)."
+        )
+    )
     message_count: int
 
 

@@ -21,6 +21,8 @@ export default function ChatPage() {
   // Phones: the session list is a drawer over the conversation, closed by
   // default, so the 256 px column no longer takes most of the width.
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Empty sessions are hidden in the list, so they are not counted either.
+  const chatCount = sessions.filter((s) => s.message_count !== 0).length;
   const closeAfter =
     <A extends unknown[]>(fn: (...args: A) => unknown) =>
     (...args: A) => {
@@ -57,7 +59,7 @@ export default function ChatPage() {
             aria-expanded={historyOpen}
             className="rounded-lg border border-ink/10 px-2.5 py-1 text-xs font-medium text-fg-muted transition hover:text-fg dark:border-white/10"
           >
-            Chats ({sessions.length})
+            Chats ({chatCount})
           </button>
         </div>
         <ChatHeader />

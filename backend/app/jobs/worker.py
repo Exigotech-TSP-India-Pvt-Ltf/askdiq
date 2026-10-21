@@ -30,6 +30,7 @@ from app.core.state import get_state_backend
 from app.jobs import handlers, queue  # noqa: F401 - registers built-in handlers
 from app.jobs.registry import (
     ALERTS_EVALUATE_JOB,
+    CHAT_PRUNE_EMPTY_SESSIONS_JOB,
     STATE_CLEANUP_JOB,
     get_handler,
     registered_types,
@@ -120,6 +121,7 @@ class JobWorker:
                     next_reclaim = now + max(1.0, min(60.0, self.lock_timeout / 2))
                 if self._schedule_periodic and now >= next_schedule:
                     await self._schedule_cleanup()
+                    await self._schedule_session_prune()
                     next_schedule = now + self.cleanup_interval
                 if self._schedule_periodic and now >= next_alerts:
                     # Polled at a quarter of the interval; put_once spaces runs.
@@ -156,6 +158,31 @@ class JobWorker:
         await queue.enqueue(
             STATE_CLEANUP_JOB, {}, dedupe_key=STATE_CLEANUP_JOB, engine=self._engine
         )
+
+    async def _schedule_session_prune(self) -> None:
+        """Queue ``chat.prune_empty_sessions`` at most once per day (all workers).
+
+        Checked on the cleanup cadence; the shared ``put_once`` claim spaces
+        runs by ``session_prune_interval_seconds`` across workers and restarts.
+        """
+        settings = get_settings()
+        if (
+            not settings.session_prune_enabled
+            or get_handler(CHAT_PRUNE_EMPTY_SESSIONS_JOB) is None
+        ):
+            return
+        claimed = await get_state_backend().put_once(
+            CHAT_PRUNE_EMPTY_SESSIONS_JOB,
+            {"worker": self.worker_id},
+            ttl=float(settings.session_prune_interval_seconds),
+        )
+        if claimed:
+            await queue.enqueue(
+                CHAT_PRUNE_EMPTY_SESSIONS_JOB,
+                {},
+                dedupe_key=CHAT_PRUNE_EMPTY_SESSIONS_JOB,
+                engine=self._engine,
+            )
 
     async def _schedule_alerts(self) -> None:
         """Queue ``alerts.evaluate`` at most once per interval across all workers.

@@ -1,8 +1,8 @@
 /**
- * Chat state after an expired session rotates: messages above the rotation
- * still belong to the old session, so rating and deleting them must target
- * that session (the backend 404s them in the new one). A failed delete puts
- * the pair back and rejects.
+ * Chat state when a reply lands in a different session (the open one was
+ * deleted elsewhere): messages above it still belong to the old session, so
+ * rating and deleting them must target that session (the backend 404s them
+ * in the new one). A failed delete puts the pair back and rejects.
  */
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
