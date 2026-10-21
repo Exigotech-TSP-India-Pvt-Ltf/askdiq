@@ -1,7 +1,7 @@
 """add documents.source_url / section_links and knowledge_settings (OR-7)
 
 Revision ID: 05b32ff49272
-Revises: 144fe4240293
+Revises: 041c4335565e
 Create Date: 2026-10-21 12:00:00.000000
 
 Knowledge source URLs: each document may carry the public https page it
@@ -21,7 +21,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "05b32ff49272"
-down_revision: str | None = "144fe4240293"
+down_revision: str | None = "041c4335565e"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
