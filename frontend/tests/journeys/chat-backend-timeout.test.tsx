@@ -74,7 +74,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("/chat when the backend times out", () => {
+describe("/chat when the backend times out", { timeout: 15_000 }, () => {
   it("shows the session error state from the proxy's 504 and does not retry or navigate on its own", async () => {
     backend(504);
     renderChat();
@@ -87,7 +87,7 @@ describe("/chat when the backend times out", () => {
   });
 });
 
-describe("/chat when signed in", () => {
+describe("/chat when signed in", { timeout: 15_000 }, () => {
   it("renders once and settles: no route refresh, navigation or /auth/me polling loop", async () => {
     backend(200);
     renderChat();

@@ -27,6 +27,14 @@ class ClarificationOption(BaseModel):
         max_length=4,
         description="Their document names (shown as a subtle `from:` hint).",
     )
+    recommended: bool = Field(
+        default=False,
+        description=(
+            "Tagged `Recommended` (at most one per question): its retrieved evidence "
+            "clearly leads the others. Rule-based from retrieval scores, never "
+            "pre-selected."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -60,6 +68,12 @@ class ClarificationQuestion(BaseModel):
         default=False, description="Several options may be picked together."
     )
     options: list[ClarificationOption] = Field(..., min_length=2, max_length=4)
+
+    @model_validator(mode="after")
+    def _at_most_one_recommended(self) -> "ClarificationQuestion":
+        if sum(o.recommended for o in self.options) > 1:
+            raise ValueError("at most one option per question may be recommended")
+        return self
 
 
 class Clarification(BaseModel):

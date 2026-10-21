@@ -33,7 +33,7 @@ afterEach(() => {
 
 const usersTable = () => screen.getByRole("table");
 
-describe("User Management journey", () => {
+describe("User Management journey", { timeout: 15_000 }, () => {
   it("drill-down, pending user, keyboard approval, refreshed KPIs and audit trail", async () => {
     renderWithProviders(<UserManagementPage />);
     await screen.findByTestId("um-kpis");

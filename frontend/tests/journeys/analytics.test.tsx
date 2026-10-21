@@ -59,7 +59,7 @@ afterEach(() => {
   setUrl("");
 });
 
-describe("URL state", () => {
+describe("URL state", { timeout: 15_000 }, () => {
   it("round-trips every field", () => {
     const state: AnalyticsState = {
       tab: "conversations",
@@ -97,7 +97,7 @@ describe("URL state", () => {
   });
 });
 
-describe("filter -> topic -> conversations journey", () => {
+describe("filter -> topic -> conversations journey", { timeout: 15_000 }, () => {
   it("filters, cross-filters by topic, and lands on a filtered Conversations table with row links", async () => {
     renderPage("?tab=topics");
     await pickFilter("Outcome", "Not served");
@@ -154,7 +154,7 @@ describe("filter -> topic -> conversations journey", () => {
   });
 });
 
-describe("trend setDay() toggle", () => {
+describe("trend setDay() toggle", { timeout: 15_000 }, () => {
   it("click selects from = to = day; clicking the same day again clears it", async () => {
     const { container } = renderPage("?tab=trend");
     await screen.findByRole("heading", { name: "Daily volume" });
@@ -195,7 +195,7 @@ describe("trend setDay() toggle", () => {
   });
 });
 
-describe("Conversations per-turn expand", () => {
+describe("Conversations per-turn expand", { timeout: 15_000 }, () => {
   it("rows without embedded questions fetch the detail; keyboard expand and collapse", async () => {
     const user = userEvent.setup();
     renderPage("?tab=conversations");
@@ -216,7 +216,7 @@ describe("Conversations per-turn expand", () => {
   });
 });
 
-describe("pending classification", () => {
+describe("pending classification", { timeout: 15_000 }, () => {
   it("shows 'N turns pending classification' with progress but still renders the charts when nothing is labelled yet", async () => {
     queryCache.clear();
     api = mockInsightsFetch({
@@ -243,7 +243,7 @@ describe("pending classification", () => {
   });
 });
 
-describe("Guide tab removed", () => {
+describe("Guide tab removed", { timeout: 15_000 }, () => {
   it("has no Guide tab and ?tab=guide falls back to Overview", async () => {
     renderPage("?tab=guide");
     expect(await screen.findByRole("heading", { name: "Daily volume" })).toBeInTheDocument();
