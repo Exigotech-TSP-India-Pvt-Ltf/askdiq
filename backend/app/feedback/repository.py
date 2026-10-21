@@ -26,6 +26,7 @@ from sqlalchemy import (
     or_,
     select,
     true,
+    tuple_,
     update,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -558,29 +559,52 @@ async def list_promoted_cases(
 # ---------------------------------------------------------------------------
 
 
-def _pairs_stmt(
+def pairs_stmt(
     *,
     triage_status: TriageStatus | None,
     include_dismissed: bool,
     window: tuple[datetime, datetime] | None,
     corrected_only: bool,
 ) -> Select:
+    """Pair rows oldest first; the question and the eval record are per-row
+    ``LATERAL`` lookups.
+
+    A plain join to the question lets the planner, misled by a missing or
+    stale ``role`` estimate (a fresh table, a bulk load), filter every user
+    message once per feedback row (``rows x messages``, minutes at 10k). The
+    ``LIMIT 1`` lateral can only be a parameterised probe of
+    ``ix_chat_messages_session_turn``: one index lookup per row, whatever the
+    statistics say.
+    """
     ev = latest_eval()
-    stmt = (
-        join_exchange(
-            select(
-                MessageFeedback.id,
-                MessageFeedback.message_id,
-                MessageFeedback.rating,
-                MessageFeedback.reason_tags,
-                MessageFeedback.corrected_answer,
-                MessageFeedback.triage_status,
-                MessageFeedback.created_at,
-                UserMessage.content.label("prompt"),
-                ChatMessageRecord.content.label("answer"),
-                ev.c.retrieved_chunks,
-            ).select_from(MessageFeedback)
+    question = (
+        select(UserMessage.content.label("prompt"))
+        .where(
+            UserMessage.session_id == ChatMessageRecord.session_id,
+            UserMessage.turn_index == ChatMessageRecord.turn_index,
+            UserMessage.role == "user",
         )
+        .limit(1)
+        .lateral("question")
+    )
+    stmt = (
+        select(
+            MessageFeedback.id,
+            MessageFeedback.message_id,
+            MessageFeedback.rating,
+            MessageFeedback.reason_tags,
+            MessageFeedback.corrected_answer,
+            MessageFeedback.triage_status,
+            MessageFeedback.created_at,
+            question.c.prompt,
+            ChatMessageRecord.content.label("answer"),
+            ev.c.retrieved_chunks,
+        )
+        .select_from(MessageFeedback)
+        .outerjoin(
+            ChatMessageRecord, MessageFeedback.message_id == ChatMessageRecord.id
+        )
+        .outerjoin(question, true())
         .outerjoin(ev, true())
         .order_by(MessageFeedback.created_at, MessageFeedback.id)
     )
@@ -602,6 +626,17 @@ def _pairs_stmt(
     return stmt
 
 
+def pairs_page(
+    stmt: Select, after: tuple[datetime, uuid.UUID] | None, batch_size: int
+) -> Select:
+    """The ``batch_size`` pair rows of ``stmt`` strictly after ``after``."""
+    if after is not None:
+        stmt = stmt.where(
+            tuple_(MessageFeedback.created_at, MessageFeedback.id) > after
+        )
+    return stmt.limit(batch_size)
+
+
 async def iter_pair_batches(
     db: AsyncSession,
     *,
@@ -615,9 +650,11 @@ async def iter_pair_batches(
 
     The read transaction ends after every page, so no pooled connection is
     held while the caller waits (a slow or vanished download client cannot
-    pin one).
+    pin one). The cursor is a row comparison on ``(created_at, id)`` (unique,
+    so ties advance), which ``ix_message_feedback_created_id`` can serve as
+    one range, unlike the equivalent ``OR``.
     """
-    stmt = _pairs_stmt(
+    stmt = pairs_stmt(
         triage_status=triage_status,
         include_dismissed=include_dismissed,
         window=window,
@@ -625,18 +662,7 @@ async def iter_pair_batches(
     )
     after: tuple[datetime, uuid.UUID] | None = None
     while True:
-        page = stmt
-        if after is not None:
-            page = page.where(
-                or_(
-                    MessageFeedback.created_at > after[0],
-                    and_(
-                        MessageFeedback.created_at == after[0],
-                        MessageFeedback.id > after[1],
-                    ),
-                )
-            )
-        rows = list((await db.execute(page.limit(batch_size))).all())
+        rows = list((await db.execute(pairs_page(stmt, after, batch_size))).all())
         await release_connection(db)
         if rows:
             yield rows
