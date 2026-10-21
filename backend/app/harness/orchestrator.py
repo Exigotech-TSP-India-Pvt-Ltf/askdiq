@@ -23,6 +23,7 @@ from app.guardrails.conversational import detect_conversational_intent
 from app.guardrails.post_checks import run_post_checks
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
 from app.harness.ambiguity import assess, rule_clarification, service_clarification
+from app.harness.answer_shape import detect_shape, refine_shape
 from app.harness.citations import (
     TOKEN_DETAILS_KEY,
     apply_citations,
@@ -40,6 +41,8 @@ from app.harness.clarify import (
     render_clarification_text,
 )
 from app.harness.prompts import _MAX_HISTORY_TURNS, call_llm
+from app.harness.style import resolve_style, use_style
+from app.harness.tone import polish_answer
 from app.retrieval.retriever import needs_conversation_context, retrieve
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, Clarification, QueryResponse, SourceChunk
@@ -195,6 +198,7 @@ async def run_query(
     history: list[ChatTurn] | None = None,
     boost_document_ids: list[str] | None = None,
     clarification_reply: bool = False,
+    style_key: str | None = None,
 ) -> QueryResponse:
     """Run the complete RAG query pipeline.
 
@@ -202,6 +206,7 @@ async def run_query(
     picked; their chunks are put first in the answer context.
     ``clarification_reply``: the query already carries the answers to a
     clarification, so it is never asked back again.
+    ``style_key``: the session id; it picks the response-style A/B bucket.
 
     Flow:
 
@@ -449,6 +454,16 @@ async def run_query(
     )
     clarification: Clarification | None = None
 
+    # Response style (OR-8): rule-detected shape, sticky A/B variant per session.
+    answer_style = resolve_style(style_key)
+    shape = refine_shape(
+        detect_shape(query, ambiguity),
+        query,
+        sources,
+        min_score=settings.min_retrieval_score,
+    )
+    use_style(answer_style, shape)
+
     # ---------------------------------------------------------
     # 4. LLM GENERATION (+ POST-GENERATION GROUNDEDNESS CHECK)
     # ---------------------------------------------------------
@@ -592,6 +607,9 @@ async def run_query(
         if has_llm_usage
         else {}
     )
+    token_details.update(style=answer_style.value, shape=shape.value)
+    if clarification is None:
+        answer = polish_answer(answer, answer_style)
 
     # ---------------------------------------------------------
     # 5. LLM FAILURE / EMPTY RESPONSE

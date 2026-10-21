@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Citation } from "@/lib/types";
 import { SourcePills } from "@/components/chat/SourcePill";
 import { CITATION_MARKER, stripCitationMarkers } from "@/lib/citation-markers";
+import { renderBold, withBold, type InlineRenderer } from "@/lib/answer-markdown";
 
 // Lightweight formatter (no markdown dependency): renders **bold** spans,
 // "- "/"• " bullet lines, "#"-style headings, and auto-detects loosely
@@ -89,6 +90,15 @@ export function createCitationInlineRenderer(
     return index ? <span key={key}>{renderCited(text, key, index)}</span> : stripCitationMarkers(text);
   }
   return renderCitationInline;
+}
+
+/**
+ * Inline renderer for chat answers (PR-E Markdown + OR-7 pills): `**bold**`
+ * with source pills in every text run. Without citations it is PR-E's bold
+ * renderer, so markers are not parsed at all (as before OR-7).
+ */
+export function createAnswerInlineRenderer(citations: readonly Citation[] | null | undefined): InlineRenderer {
+  return citations?.length ? withBold(createCitationInlineRenderer(citations)) : renderBold;
 }
 
 /** One stored answer as plain text with pills (with citations) or without markers. */

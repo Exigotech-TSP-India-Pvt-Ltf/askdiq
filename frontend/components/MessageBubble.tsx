@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
 import type { ChatMessage, ClarificationAnswer } from "@/lib/types";
-import { renderFormattedText } from "@/lib/format-text";
+import { renderAnswerMarkdown } from "@/lib/answer-markdown";
+import { createAnswerInlineRenderer } from "@/lib/format-text";
 import { useChat } from "@/lib/chat-context";
 import type { FeedbackDetails, ReasonTag } from "@/lib/feedback-api";
 import { ClarificationCard } from "@/components/chat/ClarificationCard";
@@ -382,7 +383,7 @@ export function MessageBubble({
               ) : null}
             </div>
           ) : (
-            renderFormattedText(message.content, { citations })
+            renderAnswerMarkdown(message.content, { renderInline: createAnswerInlineRenderer(citations) })
           )}
         </div>
         )}
