@@ -215,8 +215,11 @@ export function ChartCard({
           className="pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-brand-400/10 blur-2xl dark:bg-brand-500/15"
         />
       )}
-      <div className={`relative z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b pb-3 ${studioDivider}`}>
-        <div className="flex min-w-[10rem] flex-1 items-center gap-2.5">
+      {/* One header row on every card (VA-52): the actions stay top-right next to
+          the title; in a narrow card the "View as table" label folds to its icon
+          (container query in globals.css), so it never drops under the subtitle. */}
+      <div className={`chart-card-header relative z-10 flex items-start justify-between gap-3 border-b pb-3 ${studioDivider}`}>
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {icon ? <StudioIconBadge icon={icon} tone={tone} /> : null}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -229,7 +232,7 @@ export function ChartCard({
           </div>
         </div>
         {(actions || canToggle) && (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             {actions}
             {canToggle && (
               <button
@@ -238,9 +241,10 @@ export function ChartCard({
                 aria-controls={bodyId}
                 onClick={() => setAsTable((v) => !v)}
                 className={BUTTON}
+                title={asTable ? "View as chart" : "View as table"}
               >
                 {asTable ? <ChartColumnBig {...ICON} /> : <Table2 {...ICON} />}
-                {asTable ? "View as chart" : "View as table"}
+                <span className="chart-card-toggle-label">{asTable ? "View as chart" : "View as table"}</span>
               </button>
             )}
           </div>

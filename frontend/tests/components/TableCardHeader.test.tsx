@@ -33,7 +33,15 @@ describe("KPI cards share one layout", () => {
   it("StatCard and KpiTrendCard keep the value on one line", () => {
     render(
       <>
-        <StatCard title="Sessions" value={315} subtitle="All time" spark={[{ label: "1 Oct", value: 3 }]} />
+        <StatCard
+          title="Sessions"
+          value={315}
+          subtitle="All time"
+          spark={[
+            { label: "1 Oct", value: 3 },
+            { label: "2 Oct", value: 5 },
+          ]}
+        />
         <KpiTrendCard label="Cost" value="$0.0302" trend={[]} hint="LLM cost (USD) per day" />
       </>,
     );

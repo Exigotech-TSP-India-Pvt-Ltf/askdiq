@@ -7,6 +7,7 @@ import {
   ChartFrame,
   TooltipBody,
   formatCompact,
+  isIntegerSeries,
   niceMax,
   scaleLinear,
   useChartMarks,
@@ -69,7 +70,7 @@ export function StackedArea<T extends object>({
   const { active, getMarkProps } = useChartMarks(data, describe, onSelect, ct.dimOpacity);
 
   // stacks[s][i] = [lower, upper]
-  const { stacks, max } = useMemo(() => {
+  const { stacks, max, integer } = useMemo(() => {
     const totals = data.map((row) => series.reduce((sum, s) => sum + num(row, s.key), 0));
     const running = data.map(() => 0);
     const out = series.map((s) =>
@@ -81,7 +82,11 @@ export function StackedArea<T extends object>({
         return [lower, running[i]] as const;
       }),
     );
-    return { stacks: out, max: percent ? 100 : niceMax(Math.max(0, ...totals)) };
+    return {
+      stacks: out,
+      max: percent ? 100 : niceMax(Math.max(0, ...totals)),
+      integer: !percent && isIntegerSeries(data.flatMap((row) => series.map((s) => num(row, s.key)))),
+    };
   }, [data, percent, series]);
 
   if (data.length === 0 || series.length === 0) return <ChartEmpty height={height} />;
@@ -133,7 +138,7 @@ export function StackedArea<T extends object>({
             : pts;
         return (
           <>
-            <YGrid area={area} max={max} ct={ct} format={percent ? pct : formatValue} />
+            <YGrid area={area} max={max} ct={ct} format={percent ? pct : formatValue} integer={integer} />
             <XLabels labels={data.map(xLabel)} xAt={x} area={area} ct={ct} />
             <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {series.map((s, si) => {
