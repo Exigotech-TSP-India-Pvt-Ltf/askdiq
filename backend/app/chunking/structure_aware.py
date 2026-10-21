@@ -4,6 +4,7 @@ import re
 from collections import Counter
 
 from app.chunking.base import ChunkingStrategy, ChunkResult
+from app.knowledge.links import slugify_anchor
 
 _MIN_BOLD_SECTIONS = 2
 _MIN_BOLD_SEGMENTS = 3
@@ -99,6 +100,13 @@ class StructureAwareChunker(ChunkingStrategy):
                             **(source_metadata or {}),
                             "strategy": self.name,
                             "section_heading": heading,
+                            # Section-link anchor (used only when the document
+                            # opts in to section links; metadata, not content).
+                            **(
+                                {"anchor": anchor}
+                                if (anchor := slugify_anchor(heading))
+                                else {}
+                            ),
                         },
                     )
                 )
