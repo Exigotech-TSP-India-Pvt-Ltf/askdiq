@@ -269,6 +269,7 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
       key: EXPAND_KEY,
       // A labelled column with a quiet icon toggle instead of a bordered "View" button per row (VA-29).
       header: "Details",
+      srOnlyHeader: true,
       width: "1%",
       render: (row) => {
         const open = Boolean(expanded[row.conv_id]);
