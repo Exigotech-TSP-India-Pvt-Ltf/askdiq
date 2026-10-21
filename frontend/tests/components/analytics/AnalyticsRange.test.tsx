@@ -5,12 +5,13 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import AnalyticsPage from "@/app/(app)/admin/analytics/page";
 import { normaliseLegacyPeriod, periodFromRange } from "@/components/admin/analytics/url-state";
 import { clampCustomRange, presetRange } from "@/lib/range-context";
 import { currentParams, history, renderPage } from "../../helpers/entity-harness";
+import { openFiltersPopover, pickFilter } from "../../helpers/filter-chips";
 import { mockInsightsFetch } from "../../journeys/analytics-harness";
 
 vi.mock("next/navigation", async () => (await import("../../helpers/router-mock")).navigationMock());
@@ -73,7 +74,10 @@ describe("Analytics with the global date range", { timeout: 30_000 }, () => {
     renderAnalytics();
     await waitFor(() => expect(api.last("summary")).toBeDefined());
     expect(screen.queryByLabelText("Period")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Outcome")).toBeInTheDocument();
+    // Page filters live in the shared Filters popover, which has no Period group.
+    const popover = await openFiltersPopover();
+    expect(within(popover).getByRole("group", { name: "Outcome" })).toBeInTheDocument();
+    expect(within(popover).queryByRole("group", { name: "Period" })).not.toBeInTheDocument();
   });
 
   it("?range=30d sends period=30d on every insights request", async () => {
@@ -130,7 +134,7 @@ describe("Analytics with the global date range", { timeout: 30_000 }, () => {
 
   it("changing another filter keeps range / from / to in the URL", async () => {
     renderAnalytics("?range=30d");
-    fireEvent.change(await screen.findByLabelText("Outcome"), { target: { value: "Not served" } });
+    await pickFilter("Outcome", "Not served");
     await waitFor(() => expect(currentParams().get("outcome")).toBe("Not served"));
     expect(currentParams().get("range")).toBe("30d");
     await waitFor(() => {
@@ -139,14 +143,16 @@ describe("Analytics with the global date range", { timeout: 30_000 }, () => {
       expect(call?.params.get("period")).toBe("30d");
     });
 
+    cleanup();
     renderAnalytics("?from=2026-10-01&to=2026-10-05");
-    fireEvent.change(await screen.findByLabelText("Rating"), { target: { value: "Dropped" } });
+    await pickFilter("Rating", "Dropped");
     await waitFor(() => expect(currentParams().get("rating")).toBe("Dropped"));
     expect(currentParams().get("from")).toBe("2026-10-01");
     expect(currentParams().get("to")).toBe("2026-10-05");
 
     // Clear filters resets this page's filters, not the global range.
-    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(within(screen.getByRole("region", { name: "Active filters" })).getByRole("button", { name: "Clear all" }));
     await waitFor(() => expect(currentParams().get("rating")).toBeNull());
     expect(currentParams().get("from")).toBe("2026-10-01");
   });

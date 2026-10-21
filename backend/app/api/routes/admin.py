@@ -754,15 +754,21 @@ async def get_conversations_batch(
     runner: ScopedRunner = Depends(get_scoped_runner),
     user: AuthUser = Depends(require_permission(Permission.DASHBOARD_READ)),
 ) -> Response:
-    """`items[id]` is exactly `GET /admin/conversations/{id}` (no `turn`) for
-    each known id; unknown ids are listed in `missing`. The list page warms
-    the previews of its visible rows with this one request."""
+    """`items[id]` is `GET /admin/conversations/{id}` (no `turn`) for each
+    known id; unknown ids are listed in `missing`. The list page warms the
+    previews of its visible rows with this one request. To keep the batch
+    bounded, a message longer than `PREVIEW_CONTENT_MAX_CHARS` is cut to it
+    and flagged `content_truncated` (with `content_length`); the single
+    endpoint always returns the full text."""
 
     async def load(conversation_id: str) -> Any:
-        return await get_snapshot(
+        detail = await get_snapshot(
             CONVERSATION_DETAIL_KIND,
             {"id": conversation_id, "turn": None},
             runner.gather,
+        )
+        return (
+            None if detail is None else conversation_stats.cap_preview_content(detail)
         )
 
     return batch_response(request, await collect(ids, load))

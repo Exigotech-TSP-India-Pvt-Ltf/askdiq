@@ -52,4 +52,19 @@ describe("KPI cards share one layout", () => {
     expect(screen.getByRole("group", { name: "Sessions trend" })).toBeInTheDocument();
     expect(screen.getByText("LLM cost (USD) per day")).toHaveAttribute("title", "LLM cost (USD) per day");
   });
+
+  it("KPI labels wrap at word boundaries only (two lines, full text on hover)", () => {
+    render(
+      <>
+        <StatCard title="Groundedness" value="82%" />
+        <KpiTrendCard label="Groundedness rate" value="82%" trend={[]} />
+      </>,
+    );
+    for (const label of [screen.getByText("Groundedness"), screen.getByText("Groundedness rate")]) {
+      expect(label).toHaveClass("line-clamp-2", "break-normal");
+      expect(label).not.toHaveClass("break-words");
+      expect(label).not.toHaveClass("break-all");
+      expect(label).toHaveAttribute("title", label.textContent ?? "");
+    }
+  });
 });

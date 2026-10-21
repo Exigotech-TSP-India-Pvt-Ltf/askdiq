@@ -10,7 +10,7 @@ import { dayLabel } from "./format";
 import { HourOfDayChart } from "./HourOfDayChart";
 import { PeopleBubble } from "./PeopleBubble";
 import { QualityDonut, orderQuality } from "./QualityDonut";
-import { TopicsTreemap } from "./TopicsTreemap";
+import { TopicsBreakdown } from "./TopicsBreakdown";
 import { TrendChart } from "./TrendChart";
 import { errorText, pageOf, useInsightsAggregate } from "./use-insights";
 import { toggleDay, toggleValue, type AnalyticsState } from "./url-state";
@@ -136,7 +136,7 @@ export function TopicsCard({ state, filters, update, learnLabel }: CardProps) {
   return (
     <ChartCard
       title="Question topics"
-      subtitle="Size = volume, shade = handled %. Click a topic to filter."
+      subtitle="Bar = volume, colour = handled %. Click a topic to filter."
       actions={state.intent ? <ViewConversations update={update} /> : undefined}
       meta={!state.intent && data ? <span className={TAG}>{`${data.total} questions`}</span> : undefined}
       loading={isLoading}
@@ -145,7 +145,7 @@ export function TopicsCard({ state, filters, update, learnLabel }: CardProps) {
       resetKey={data}
       empty={!isLoading && !error && items.length === 0}
       emptyMessage="No questions in this selection."
-      bodyClassName="h-[280px] w-full"
+      bodyClassName="min-h-[260px] w-full flex-1"
       table={toChartTable(items, [
         { key: "label", label: "Topic" },
         { key: "questions", label: "Questions", numeric: true },
@@ -153,7 +153,7 @@ export function TopicsCard({ state, filters, update, learnLabel }: CardProps) {
         { key: "handled_pct", label: "Handled %", numeric: true, format: (v) => `${Number(v).toFixed(0)}%` },
       ])}
     >
-      <TopicsTreemap
+      <TopicsBreakdown
         items={items}
         selected={state.intent}
         onSelect={(t) => {
@@ -177,7 +177,8 @@ export function QualityCard({ state, filters, update, learnLabel }: CardProps) {
       resetKey={data}
       empty={!isLoading && !error && (data?.total ?? 0) === 0}
       emptyMessage="No questions in this selection."
-      bodyClassName="min-h-[260px] w-full"
+      // Grows with the Topics card beside it; the donut stays centred, with no dead band below.
+      bodyClassName="flex min-h-[260px] w-full flex-1 flex-col justify-center"
       table={toChartTable(items, [
         { key: "label", label: "Answer type" },
         { key: "questions", label: "Questions", numeric: true },

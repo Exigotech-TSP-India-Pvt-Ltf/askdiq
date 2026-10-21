@@ -128,4 +128,21 @@ describe("<BrandLogo />", () => {
       expect(img).not.toHaveClass("h-10", "h-12", "max-w-[230px]");
     }
   });
+
+  it("OR-1: the logo row has vertical padding and the logo keeps a height cap (tall uploaded logos stay visible)", () => {
+    const { container } = render(<Sidebar />);
+    const row = container.querySelector('[data-testid="sidebar-logo-row"]');
+    expect(row).toHaveClass("h-20", "py-3");
+    const imgs = row!.querySelectorAll("img");
+    expect(imgs.length).toBe(2);
+    for (const img of imgs) expect(img).toHaveClass("max-h-14", "h-auto", "max-w-[200px]");
+  });
+
+  it("OR-1: a size override replaces the defaults and keeps the caller's max-h cap", () => {
+    render(<BrandLogo size="max-h-14 h-auto w-auto max-w-[200px]" alt="Tall" />);
+    for (const img of screen.getAllByAltText("Tall")) {
+      expect(img).toHaveClass("max-h-14", "h-auto");
+      expect(img).not.toHaveClass("h-10");
+    }
+  });
 });
