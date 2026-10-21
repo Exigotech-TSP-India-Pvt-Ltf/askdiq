@@ -48,7 +48,9 @@ async def query(
     client_ip = resolve_client_ip(request, body.ip_address)
     await aenforce_ip_rate_limit(client_ip)
 
-    session = await resolve_session_for_query(db, actor, body.session_id, client_ip)
+    session = await resolve_session_for_query(
+        db, actor, body.session_id, client_ip, new_session=body.new_session
+    )
     history = await load_recent_history(db, session)
     # Release the pooled connection before embedding/rerank/LLM.
     await db.commit()

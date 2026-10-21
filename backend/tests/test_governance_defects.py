@@ -408,6 +408,10 @@ _SUMMARY_CASES: dict[str, tuple[dict, str]] = {
     ),
     "session_created": ({"session_id": "s1"}, "Session s1 created"),
     "session_expired": ({"session_id": "s1"}, "Session s1 expired"),
+    "session_resumed": (
+        {"session_id": "s1", "idle_minutes": 90},
+        "Session s1 resumed after 90 min idle",
+    ),
     "session_rotated": (
         {"from_session_id": "a", "to_session_id": "b", "reason": "expired"},
         "Session rotated (expired): a -> b",
@@ -440,6 +444,7 @@ def test_g11_unknown_action_and_bad_detail_fall_back_safely(monkeypatch):
         ("query", "query"),
         ("llm_call_failed", "query"),
         ("session_rotated", "query"),
+        ("session_resumed", "query"),
         ("ingest", "ingest"),
         ("document_delete", "ingest"),
         ("user_feedback", "feedback"),

@@ -113,9 +113,20 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> Iterator[_Calls]:
         }
 
     async def resolve_session(
-        _db: Any, actor: str, session_id: str | None, client_ip: str | None
+        _db: Any,
+        actor: str,
+        session_id: str | None,
+        client_ip: str | None,
+        *,
+        new_session: bool = False,
     ) -> Any:
-        recorded.record("query", actor=actor, session_id=session_id, ip=client_ip)
+        recorded.record(
+            "query",
+            actor=actor,
+            session_id=session_id,
+            ip=client_ip,
+            new_session=new_session,
+        )
         return type("S", (), {"id": uuid.UUID(SID)})()
 
     async def no_history(_db: Any, _session: Any) -> list[Any]:
@@ -221,6 +232,7 @@ async def test_query_with_api_key_client_id_and_ip(
         "actor": VISITOR,
         "session_id": None,
         "ip": VISITOR_IP,
+        "new_session": False,
     }
     assert calls.last("write") == {"user_email": VISITOR}
 
@@ -529,7 +541,7 @@ def test_swagger_query_example_and_security_schemes() -> None:
     ]["$ref"]
     schema = spec["components"]["schemas"][ref.rsplit("/", 1)[-1]]
     (example,) = schema["examples"]
-    assert set(example) == {"query", "session_id", "ip_address"}
+    assert set(example) == {"query", "session_id", "new_session", "ip_address"}
     assert example["session_id"] == ""  # null would be dropped from the spec
     assert "filters" in schema["properties"]
 

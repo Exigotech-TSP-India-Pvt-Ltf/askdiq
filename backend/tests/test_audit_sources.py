@@ -270,11 +270,26 @@ def _session(email: str, expired: bool) -> ChatSession:
     )
 
 
-async def test_expired_session_writes_expire_and_rotate(captured):
+async def test_expired_owned_session_resumes_and_writes_resumed(captured):
     old = _session("u@example.com", expired=True)
-    new = await sessions.resolve_session_for_query(
+    got = await sessions.resolve_session_for_query(
         _fake_db(old), "u@example.com", str(old.id), "10.0.0.9"
     )
+    assert got is old  # an opened old chat continues in place
+    await audit.flush_audit_events()
+    assert _actions(captured) == ["session_resumed"]
+    assert captured[0]["detail"] == {"session_id": str(old.id), "idle_minutes": 60}
+    assert captured[0]["actor"] == "u@example.com"
+
+
+async def test_implicit_resume_past_window_writes_expire_and_rotate(captured):
+    old = _session("u@example.com", expired=True)
+    db = _fake_db(None)
+    db.execute.return_value.scalar_one_or_none = MagicMock(return_value=old)
+    new = await sessions.resolve_session_for_query(
+        db, "u@example.com", None, "10.0.0.9"
+    )
+    assert new is not old
     await audit.flush_audit_events()
     assert _actions(captured) == ["session_expired", "session_rotated"]
     assert captured[0]["detail"]["session_id"] == str(old.id)

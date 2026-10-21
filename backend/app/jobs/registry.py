@@ -6,6 +6,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 STATE_CLEANUP_JOB = "state.cleanup"
+# Daily removal of chat sessions that never got a message (app.jobs.handlers).
+CHAT_PRUNE_EMPTY_SESSIONS_JOB = "chat.prune_empty_sessions"
 # Periodic alert evaluation (handler in app.alerts.jobs).
 ALERTS_EVALUATE_JOB = "alerts.evaluate"
 

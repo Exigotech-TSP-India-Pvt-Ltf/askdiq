@@ -53,6 +53,12 @@ interface ChatContextValue {
   setInput: (value: string) => void;
   sending: boolean;
   loadingMessages: boolean;
+  /**
+   * The open conversation is decided: the session list has loaded, the
+   * first-load resume (if any) has started, and no conversation is loading.
+   * Until then an empty `messages` must not be read as "new chat".
+   */
+  settled: boolean;
   /** `answers`: the text is the reply to the last clarification (all its answers at once). */
   sendQuery: (text: string, answers?: ClarificationAnswer[]) => Promise<void>;
   /** Upserts the rating; `details` carries thumbs-down reason chips and the corrected answer. */
@@ -64,6 +70,7 @@ interface ChatContextValue {
   selectSession: (sessionId: string) => Promise<void>;
   /** Warms a past conversation (hover / focus on its row) so opening it is instant. */
   prefetchSession: (sessionId: string) => void;
+  /** Local only: clears the conversation; the session is created with its first message. */
   startNewSession: () => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
   removeSession: (sessionId: string) => Promise<void>;
@@ -102,6 +109,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  // "New chat" was chosen: the next send starts a fresh server session and
+  // the first-load resume must not reopen the previous conversation.
+  const freshRef = useRef(false);
+  const [initialResolved, setInitialResolved] = useState(false);
 
   useEffect(() => {
     activeRef.current = activeSessionId;
@@ -147,8 +158,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         );
       } catch {
         if (activeRef.current !== sessionId) return;
-        // Session may have been deleted elsewhere — fall back to a blank slate.
+        // Session may have been deleted elsewhere — fall back to a blank slate
+        // that starts a NEW session (never the last same-IP one).
         shown.current.delete(sessionId);
+        freshRef.current = true;
         setActiveSessionId(null);
         setMessages([]);
       } finally {
@@ -162,6 +175,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (token) return;
     shown.current.clear();
+    freshRef.current = false;
     setActiveSessionId(null);
     setMessages([]);
   }, [token]);
@@ -171,12 +185,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!token) {
       resumed.current = false;
+      setInitialResolved(false);
       return;
     }
-    if (resumed.current || listQuery.data === undefined) return;
+    if (resumed.current) return;
+    if (listQuery.data === undefined) {
+      // The list failed: nothing to resume, show the new-chat state.
+      if (listQuery.error) {
+        resumed.current = true;
+        setInitialResolved(true);
+      }
+      return;
+    }
     resumed.current = true;
-    if (listQuery.data.length > 0 && activeRef.current === null) void loadSession(listQuery.data[0].id);
-  }, [token, listQuery.data, loadSession]);
+    const latest = listQuery.data.find((s) => s.message_count !== 0);
+    if (latest && activeRef.current === null && !freshRef.current) void loadSession(latest.id);
+    setInitialResolved(true);
+  }, [token, listQuery.data, listQuery.error, loadSession]);
+  const settled = Boolean(token) && initialResolved && !loadingMessages;
 
   async function refreshSessions() {
     if (!token) return;
@@ -216,7 +242,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     try {
       const response = await api.query(token, {
         query: trimmedText,
+        // An opened chat (however old) resumes in place by its id; a blank
+        // conversation always starts a fresh session.
         session_id: activeSessionId,
+        new_session: activeSessionId === null,
         ...(answers?.length ? { clarification_answers: answers } : {}),
       });
 
@@ -244,8 +273,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         })
       );
 
-      // The session may have just been created, or an expired one silently
-      // rotated to a new one — either way, sync the pointer + sidebar list.
+      // The session was just created (new_session), or an unknown id was
+      // replaced by a fresh one: sync the pointer + sidebar list.
+      if (response.session_id) freshRef.current = false;
       if (response.session_id && response.session_id !== activeSessionId) {
         activeRef.current = response.session_id;
         setActiveSessionId(response.session_id);
@@ -315,13 +345,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     await loadSession(sessionId);
   }
 
+  // No request: the session (and its list entry) is created by the first
+  // message, so an unused "New chat" never leaves an empty row behind.
   async function startNewSession() {
     if (!token) return;
-    const created = await api.createSession(token);
-    setSessions((prev) => [created, ...(prev ?? [])]);
-    activeRef.current = created.id;
-    setActiveSessionId(created.id);
+    freshRef.current = true;
+    activeRef.current = null;
+    setActiveSessionId(null);
     setMessages([]);
+    setLoadingMessages(false);
   }
 
   async function renameSession(sessionId: string, title: string) {
@@ -352,8 +384,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const submitFeedback = useCallback(
     async (messageId: string, rating: number, comment?: string, details?: FeedbackDetails) => {
       const target = messages.find((m) => m.id === messageId);
-      // Rate in the message's own session: an expired session rotates to a
-      // new one, and the older messages still live in the old session.
+      // Rate in the message's own session (a reply may have landed in a
+      // fresh session when the open one was deleted elsewhere).
       const sessionId = target?.sessionId ?? activeSessionId;
       // Never report "thanks" for a rating that was not sent.
       if (!token || !sessionId) throw new Error("Open a saved chat to rate its answers.");
@@ -384,6 +416,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setInput,
       sending,
       loadingMessages,
+      settled,
       sendQuery,
       submitFeedback,
       deleteExchange,
@@ -395,7 +428,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       removeSession,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessions, activeSessionId, messages, input, sending, loadingMessages, token, submitFeedback, prefetchSession]
+    [sessions, activeSessionId, messages, input, sending, loadingMessages, settled, token, submitFeedback, prefetchSession]
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

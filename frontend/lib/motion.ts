@@ -56,6 +56,9 @@ export const drawerLeft: Variants = {
   exit: { x: "-100%", transition: tween(duration.base) },
 };
 
+/** Chat composer moving from the centred new-chat stack to the bottom (shared `layoutId`). */
+export const composerMove: Transition = tween(duration.base);
+
 /** Shared-layout transition for `layoutId` indicators (active nav bar, tab pills). */
 export const layoutSpring: Transition = spring;
 

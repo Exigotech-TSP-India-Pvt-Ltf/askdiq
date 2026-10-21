@@ -13,7 +13,7 @@ export const chatTour: PageTour = {
       target: '[data-tour="chat-sessions"]',
       placement: "right",
       title: "Your chats",
-      body: "Every conversation you have had, newest activity first. Each row shows the title (your first question) and how long ago it was last used, marked expired after an hour idle. Hover a row to rename or delete it.",
+      body: "Every conversation you have had, newest activity first. Chats are grouped by when they were last used, and each row shows the title (your first question) and its last activity. Open any chat, however old, to continue it. Hover a row to rename or delete it.",
     },
     {
       target: '[data-tour="chat-new"]',
