@@ -50,9 +50,14 @@ export interface GovernanceLogItem {
   /** Deprecated legacy JSON string; use `summary` / `detail`. */
   message?: string;
   user_id: string | null;
+  /** Recorded IP, else a correlated real one (see `ip_source`); null when none exists. */
   ip_address: string | null;
+  /** Where `ip_address` comes from; null when no IP exists (e.g. system jobs). */
+  ip_source?: IpSource | null;
   request_id: string | null;
 }
+
+export type IpSource = "recorded" | "session" | "request";
 
 export interface CursorPage<T> {
   items: T[];

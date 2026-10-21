@@ -402,6 +402,13 @@ class Settings(BaseSettings):
     jobs_shutdown_timeout_seconds: float = 30.0
     jobs_retention_days: int = 7
     state_cleanup_interval_seconds: int = 60
+    # "Run full evaluation" (eval.full_run job): cases in flight at once,
+    # the hard time limit of one run, how often progress is stored/announced
+    # and the starts allowed per admin per minute.
+    eval_run_concurrency: int = Field(default=2, ge=1, le=8)
+    eval_run_timeout_seconds: int = Field(default=7_200, ge=60, le=86_400)
+    eval_run_progress_seconds: float = Field(default=2.0, gt=0, le=60)
+    eval_run_rate_limit_per_minute: int = Field(default=3, ge=1, le=60)
     # Feedback / RLHF loop (PR-11).
     feedback_trend_days: int = Field(default=30, ge=1, le=365)
     # Retrieval confidence below this marks a low-rated turn as a knowledge gap.

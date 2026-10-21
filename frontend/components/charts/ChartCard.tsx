@@ -51,8 +51,13 @@ export interface ChartCardProps {
   subtitle?: string;
   /** Time window shown after the subtitle, e.g. "Last 7 days". */
   window?: string;
-  /** Header slot (badges, range control, menus). */
+  /** Top-right header controls (links, menus, buttons), beside "View as table". */
   actions?: React.ReactNode;
+  /**
+   * Read-only header chips (forecast, budget, range, counts, status), shown
+   * in a row under the subtitle so they never squeeze the title.
+   */
+  meta?: React.ReactNode;
   /** Studio header: icon badge left of the title. */
   icon?: React.ComponentType<{ className?: string; strokeWidth?: string | number }>;
   /** Studio header: mono pill beside the title. */
@@ -165,6 +170,7 @@ export function ChartCard({
   subtitle,
   window: timeWindow,
   actions,
+  meta,
   icon,
   pill,
   tone = "brand",
@@ -215,20 +221,31 @@ export function ChartCard({
           className="pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-brand-400/10 blur-2xl dark:bg-brand-500/15"
         />
       )}
-      {/* One header row on every card (VA-52): the actions stay top-right next to
-          the title; in a narrow card the "View as table" label folds to its icon
-          (container query in globals.css), so it never drops under the subtitle. */}
+      {/* One header layout on every card (VA-52): the title stays on one line
+          (truncated, full text in its tooltip), the subtitle and then the
+          `meta` chips sit under it, and the actions stay top-right. In a narrow
+          card the "View as table" label folds to its icon (container query in
+          globals.css), so it never drops under the subtitle. */}
       <div className={`chart-card-header relative z-10 flex items-start justify-between gap-3 border-b pb-3 ${studioDivider}`}>
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {icon ? <StudioIconBadge icon={icon} tone={tone} /> : null}
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 id={titleId} className={TITLE[titleStyle]}>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 id={titleId} className={`min-w-0 truncate ${TITLE[titleStyle]}`} title={title}>
                 {title}
               </h2>
-              {pill ? <StudioPill tone={tone}>{pill}</StudioPill> : null}
+              {pill ? (
+                <span className="shrink-0">
+                  <StudioPill tone={tone}>{pill}</StudioPill>
+                </span>
+              ) : null}
             </div>
             {subtitleText && <p className={`mt-0.5 ${studioSubtitle}`}>{subtitleText}</p>}
+            {meta ? (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 empty:hidden" data-testid="chart-card-meta">
+                {meta}
+              </div>
+            ) : null}
           </div>
         </div>
         {(actions || canToggle) && (

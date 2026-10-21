@@ -62,10 +62,24 @@ const SCOPE_PREFIXES: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["azure.", ["admin/azure"]],
 ];
 
+/**
+ * Scopes that refresh only their own views (not their kind prefix's): a
+ * full evaluation run's progress ticks every few seconds and must not
+ * refetch the whole Evaluation page (its finish announces `evaluation.live`).
+ */
+const EXCLUSIVE_SCOPES: Readonly<Record<string, readonly string[]>> = {
+  "evaluation.runs": ["metrics/evaluation/runs"],
+};
+
 /** Query-key prefixes to refresh for the scopes of one `changed` frame. */
 export function prefixesForScopes(scopes: readonly string[]): string[] {
   const out = new Set<string>();
   for (const scope of scopes) {
+    const exclusive = EXCLUSIVE_SCOPES[scope];
+    if (exclusive) {
+      exclusive.forEach((p) => out.add(p));
+      continue;
+    }
     for (const [match, prefixes] of SCOPE_PREFIXES) {
       if (scope === match || (match.endsWith(".") && scope.startsWith(match))) {
         prefixes.forEach((p) => out.add(p));
