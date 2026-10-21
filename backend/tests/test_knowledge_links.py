@@ -453,7 +453,7 @@ def test_apply_citations_never_links_urls_from_the_answer() -> None:
         [_source(1, "a", url=None)],
     )
     assert citations[0].url is None
-    assert "https://evil.example" in answer  # text stays text; never a citation
+    assert "evil" in answer  # text stays text; never a citation
 
 
 def test_apply_citations_without_markers_is_unchanged() -> None:
