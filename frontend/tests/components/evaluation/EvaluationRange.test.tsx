@@ -26,7 +26,10 @@ describe("Evaluation header actions", () => {
     vi.spyOn(api, "evaluationLiveView").mockResolvedValue(REPORT);
     renderPage(<EvaluationLivePage />, { url: "/admin/evaluation-live" });
     const compare = await screen.findByRole("button", { name: /compare with benchmark/i });
-    expect(compare).toHaveTextContent("Compare with benchmark");
+    // Short visible text; the full name stays the accessible name and tooltip.
+    expect(compare).toHaveTextContent(/^Compare$/);
+    expect(compare).toHaveAttribute("aria-label", "Compare with benchmark");
+    expect(compare.parentElement?.querySelector("[data-tooltip]")).toHaveTextContent("Compare with benchmark");
     expect(compare).toHaveAttribute("aria-pressed", "false");
     const cluster = compare.closest("[data-toolbar-actions]");
     expect(cluster).toContainElement(screen.getByRole("button", { name: /date range: last 7 days/i }));
