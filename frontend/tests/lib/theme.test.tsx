@@ -114,28 +114,42 @@ describe("ThemeProvider (F0.3.5, T1/T4)", () => {
     expect(html()).not.toHaveClass("dark");
   });
 
-  it("has no System mode: a missing preference resolves once to the OS setting, is persisted, and never follows the OS afterwards", async () => {
+  it("System mode (the default for a missing preference) follows the OS live and writes nothing", async () => {
     const media = installMatchMedia(true);
     render(
       <ThemeProvider>
         <ChartProbe />
       </ThemeProvider>,
     );
-    expect(screen.getByTestId("mode")).toHaveTextContent("dark");
+    expect(screen.getByTestId("mode")).toHaveTextContent("system");
+    expect(screen.getByTestId("resolved")).toHaveTextContent("dark");
     expect(html()).toHaveClass("dark");
-    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
 
     act(() => media.setDark(false));
+    expect(html()).not.toHaveClass("dark");
+    expect(screen.getByTestId("resolved")).toHaveTextContent("light");
+    await waitFor(() => expect(screen.getByTestId("series").dataset.color).toBe(chartTheme.light.categorical[0]));
+  });
+
+  it("an explicit choice stops following the OS", () => {
+    const media = installMatchMedia(false);
+    render(
+      <ThemeProvider>
+        <ChartProbe />
+      </ThemeProvider>,
+    );
+    fireEvent.click(screen.getByText("dark"));
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    act(() => media.setDark(false));
     expect(html()).toHaveClass("dark");
-    expect(screen.getByTestId("resolved")).toHaveTextContent("dark");
-    await waitFor(() => expect(screen.getByTestId("series").dataset.color).toBe(chartTheme.dark.categorical[0]));
   });
 
   it.each([
     ["system", false, "light"],
     ["system", true, "dark"],
     ["bogus", false, "light"],
-  ])("migrates a legacy stored %s value (OS dark=%s) to an explicit %s", (stored, osDark, expected) => {
+  ])("treats a stored %s value (OS dark=%s) as System, showing %s", (stored, osDark, expected) => {
     installMatchMedia(osDark);
     window.localStorage.setItem(THEME_STORAGE_KEY, stored);
     render(
@@ -143,12 +157,13 @@ describe("ThemeProvider (F0.3.5, T1/T4)", () => {
         <ChartProbe />
       </ThemeProvider>,
     );
-    expect(screen.getByTestId("mode")).toHaveTextContent(expected);
-    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(expected);
+    expect(screen.getByTestId("mode")).toHaveTextContent("system");
+    expect(screen.getByTestId("resolved")).toHaveTextContent(expected);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(stored);
     expect(html().classList.contains("dark")).toBe(expected === "dark");
   });
 
-  it("ignores a cross-tab write of a value that is not light or dark", () => {
+  it("ignores a cross-tab write of an unknown value", () => {
     installMatchMedia(false);
     window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
     render(
@@ -157,7 +172,7 @@ describe("ThemeProvider (F0.3.5, T1/T4)", () => {
       </ThemeProvider>,
     );
     act(() => {
-      window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY, newValue: "system" }));
+      window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY, newValue: "bogus" }));
     });
     expect(screen.getByTestId("mode")).toHaveTextContent("dark");
     expect(html()).toHaveClass("dark");
@@ -221,20 +236,17 @@ describe("pre-paint theme script (T3)", () => {
     expect(html().style.colorScheme).toBe("dark");
   });
 
-  it("resolves a missing or legacy System preference once to the OS setting and persists it", () => {
+  it("follows the OS for a missing or System preference without writing it", () => {
     const media = installMatchMedia(true);
     run();
     expect(html()).toHaveClass("dark");
-    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
-    // Persisted: a later OS change no longer affects it.
-    media.setDark(false);
-    run();
-    expect(html()).toHaveClass("dark");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
 
+    media.setDark(false);
     window.localStorage.setItem(THEME_STORAGE_KEY, "system");
     run();
     expect(html()).not.toHaveClass("dark");
-    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("system");
     expect(html().style.colorScheme).toBe("light");
   });
 

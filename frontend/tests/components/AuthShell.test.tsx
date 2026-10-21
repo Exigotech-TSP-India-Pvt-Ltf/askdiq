@@ -96,14 +96,16 @@ describe("Account corner: role badge and notification bell", () => {
         </MotionProvider>
       </AuthProvider>,
     );
-    const bell = await screen.findByRole("button", { name: "Notifications (1 new)" });
-    fireEvent.click(bell);
-    const panel = await screen.findByRole("dialog", { name: "Notifications" });
-    const link = within(panel).getByRole("link", { name: /4 access requests waiting/i });
+    const trigger = await screen.findByRole("button", { name: /account menu \(1 new notification\)/i });
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu", { name: "Account" });
+    expect(within(menu).getByTestId("account-email")).toHaveTextContent("jane@contoso.example");
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /^Notifications/ }));
+    const panel = screen.getByRole("menu", { name: "Notifications" });
+    const link = within(panel).getByRole("menuitem", { name: /4 access requests waiting/i });
     expect(link).toHaveAttribute("href", "/admin/user-management?tab=requests");
 
     expect(screen.getByTestId("role-badge")).toHaveTextContent("Superadmin");
-    expect(screen.getByTestId("account-email")).toHaveTextContent("jane@contoso.example");
   });
 
   it("admin: no access-request fetch, empty bell, Admin badge", async () => {
@@ -116,7 +118,8 @@ describe("Account corner: role badge and notification bell", () => {
         </MotionProvider>
       </AuthProvider>,
     );
-    expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument();
+    // No unread notifications: the trigger names no count.
+    expect(screen.getByRole("button", { name: "Jane Doe, account menu" })).toBeInTheDocument();
     // Only the bell's active-alerts poll (dashboard:read); no access-request fetch.
     const urls = fetchSpy.mock.calls.map(([url]) => String(url));
     expect(urls.filter((url) => !url.includes("/admin/alerts"))).toEqual([]);
