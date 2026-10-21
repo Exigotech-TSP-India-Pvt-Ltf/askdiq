@@ -171,6 +171,16 @@ class SourceChunk(BaseModel):
     content: str
     score: float
     metadata: dict
+    url: str | None = Field(
+        default=None,
+        description=(
+            "The document's source link (plus the section anchor when the "
+            "document opts in); null when it has none or its host is not allowed."
+        ),
+    )
+    title: str | None = Field(
+        default=None, description="The document title (front matter), if any."
+    )
     # Embedding computed once at ingestion time, carried through retrieval so
     # the post-generation groundedness check (post_checks.check_groundedness)
     # can reuse it instead of paying for a fresh embedding API call per
@@ -178,9 +188,37 @@ class SourceChunk(BaseModel):
     embedding: list[float] | None = Field(default=None, exclude=True)
 
 
+class Citation(BaseModel):
+    """One source pill: what an inline marker ``[n]`` in the answer refers to."""
+
+    n: int = Field(description="The marker number used in the answer text.")
+    document_id: str
+    title: str = Field(description="The document title (or its file name).")
+    url: str | None = Field(
+        default=None,
+        description=(
+            "https link from the documents table (never from the answer text); "
+            "null when the document has no allowed link."
+        ),
+    )
+    label: str = Field(
+        description="Short source label, e.g. `deployiq` (host brand) or the file name."
+    )
+    host: str | None = None
+    # Persisted with the message so a section link can be rebuilt on reload.
+    anchor: str | None = Field(default=None, exclude=True)
+
+
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceChunk]
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description=(
+            "Sources cited inline by `[n]` markers in `answer` (additive; "
+            "empty when the answer has no markers)."
+        ),
+    )
     grounded: bool
     confidence: float
     request_id: str
