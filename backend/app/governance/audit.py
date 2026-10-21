@@ -64,7 +64,9 @@ async def record_audit_event(
         actor=actor,
         action=action,
         detail=detail,
-        ip_address=ip_address,
+        # Request-path writers that do not pass the IP still get the one
+        # LatencyMiddleware bound (from ``get_client_ip``); jobs have none.
+        ip_address=ip_address or current_client_ip(),
     )
     session.add(row)
     if is_incident(action, detail):
@@ -109,6 +111,12 @@ def mask_detail(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [mask_detail(v) for v in value]
     return value
+
+
+def current_client_ip() -> str | None:
+    """The client IP bound by LatencyMiddleware, or None outside a request."""
+    value = structlog.contextvars.get_contextvars().get("client_ip")
+    return str(value)[:64] if value else None
 
 
 def current_request_id() -> str:
@@ -187,7 +195,7 @@ def emit_audit_event(
             "actor": str(actor or ctx.get("actor") or "system")[:256],
             "action": action[:64],
             "detail": mask_detail(detail or {}),
-            "ip_address": ip_address or ctx.get("client_ip"),
+            "ip_address": ip_address or current_client_ip(),
         }
     )
     _ensure_flusher()
@@ -211,6 +219,7 @@ def record_server_error(
     path: str,
     status_code: int = 500,
     error_type: str | None = None,
+    ip_address: str | None = None,
 ) -> None:
     """Audit one 5xx as a ``server_error`` row (non-blocking).
 
@@ -221,4 +230,6 @@ def record_server_error(
     detail: dict[str, Any] = {"path": path, "status_code": status_code}
     if error_type:
         detail["error_type"] = error_type
-    emit_audit_event("server_error", detail, request_id=request_id)
+    emit_audit_event(
+        "server_error", detail, request_id=request_id, ip_address=ip_address
+    )

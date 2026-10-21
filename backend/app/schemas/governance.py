@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -77,7 +77,17 @@ class GovernanceLogItem(BaseModel):
         deprecated=True,
     )
     user_id: str | None = None
-    ip_address: str | None = None
+    ip_address: str | None = Field(
+        None,
+        description="Client IP: the one recorded on the row, else a correlated "
+        "real value (see `ip_source`); null when none was ever recorded.",
+    )
+    ip_source: Literal["recorded", "session", "request"] | None = Field(
+        None,
+        description="`recorded`: stored on this row. `session`: the auth "
+        "session this login opened. `request`: another audit row of the same "
+        "request. Null when no IP exists (e.g. system jobs).",
+    )
     request_id: str | None = None
 
 
