@@ -6,13 +6,14 @@ import {
   ChartEmpty,
   ChartFrame,
   TooltipBody,
+  integerTicks,
   niceMax,
   scaleLinear,
-  ticks,
+  textWidth,
   useChartMarks,
   type ChartSize,
 } from "@/components/charts/primitives";
-import { AXIS_TITLE_SPACE, AxisTitles, axisDescription } from "@/components/charts/cartesian";
+import { AXIS_TITLE_SPACE, AxisTitles, axisDescription, xTickIndices } from "@/components/charts/cartesian";
 import type { TrendDay } from "@/lib/insights-api";
 import { useInsightsPalette } from "./colors";
 import { dayLabel } from "./format";
@@ -125,7 +126,15 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
         const pts = days.map((d, i) => [x(i), y(d.questions)] as [number, number]);
         const line = monotonePath(pts);
         const area = `${line}L${x(days.length - 1)},${h - MARGIN.b}L${x(0)},${h - MARGIN.b}Z`;
-        const step = Math.max(1, Math.ceil(days.length / MAX_X_LABELS));
+        const labels = days.map((d) => dayLabel(d.day));
+        const shown = new Set(
+          xTickIndices(
+            days.length,
+            days.length > 1 ? x(1) - x(0) : width,
+            Math.max(0, ...labels.map((l) => textWidth(l))),
+            MAX_X_LABELS,
+          ),
+        );
         const barW = Math.max(1, Math.min(14, band * 0.6));
         return (
           <>
@@ -135,7 +144,7 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
                 <stop offset="100%" stopColor={ct.categorical[0]} stopOpacity={0} />
               </linearGradient>
             </defs>
-            {ticks(yMax, Y_TICKS).map((t) => (
+            {integerTicks(yMax, Y_TICKS + 1).map((t) => (
               <g key={t}>
                 <line x1={MARGIN.l} x2={width - MARGIN.r} y1={y(t)} y2={y(t)} stroke={ct.grid} />
                 <text x={MARGIN.l - 6} y={y(t) + 3} textAnchor="end" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
@@ -144,9 +153,9 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
               </g>
             ))}
             {days.map((d, i) =>
-              i % step === 0 || i === days.length - 1 ? (
+              shown.has(i) ? (
                 <text key={d.day} x={x(i)} y={h - MARGIN.b + 19} textAnchor="middle" fontSize={AXIS_FONT_SIZE} fill={ct.axis}>
-                  {dayLabel(d.day)}
+                  {labels[i]}
                 </text>
               ) : null,
             )}
