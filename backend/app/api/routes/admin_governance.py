@@ -32,6 +32,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.http_cache import encoded_response, weak_etag
 from app.core.logging_config import get_logger
+from app.core.request_meta import get_client_ip
 from app.core.serialization import sanitize_csv_cell
 from app.core.sse import event_stream
 from app.dashboard.snapshots import GatherRunner, get_snapshot, register
@@ -509,10 +510,10 @@ async def governance_logs(
                 {**_logs_params(filters, limit), **window},
                 runner.gather,
             )
-            ((rows, next_cursor),) = await runner.gather(
-                lambda s: logs.fetch_page(s, filters, position, limit)
+            ((items, next_cursor),) = await runner.gather(
+                lambda s: logs.fetch_items(s, filters, position, limit)
             )
-            return _with_page(first, [logs.to_item(row) for row in rows], next_cursor)
+            return _with_page(first, items, next_cursor)
 
         return await dashboard_cached(key, later_page)
     return await dashboard_cached(
@@ -597,12 +598,12 @@ async def _governance_logs_page(
     limit: int,
     cap: int,
 ) -> dict[str, Any]:
-    (rows, next_cursor), (counts, capped, total) = await runner.gather(
-        lambda s: logs.fetch_page(s, filters, position, limit),
+    (items, next_cursor), (counts, capped, total) = await runner.gather(
+        lambda s: logs.fetch_items(s, filters, position, limit),
         lambda s: logs.level_counts_and_total(s, filters, cap),
     )
     return {
-        "items": [logs.to_item(row) for row in rows],
+        "items": items,
         "total": total.value,
         "total_estimate": total.estimate,
         "total_is_estimate": total.is_estimate,
@@ -668,6 +669,7 @@ async def governance_logs_export(
         actor=user.email,
         action="governance_logs_export",
         detail={"filters": filters.as_audit_detail()},
+        ip_address=get_client_ip(request),
         commit=True,
     )
 

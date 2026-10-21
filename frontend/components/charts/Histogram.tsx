@@ -15,6 +15,9 @@ import {
 } from "./primitives";
 import { AxisTitles, XLabels, YGrid, axisDescription, plotArea, type AxisLabelProps } from "./cartesian";
 
+/** Bin ranges are long ("100-200 ms"): at most this many are labelled. */
+const MAX_BIN_LABELS = 6;
+
 export interface HistogramBin {
   /** Inclusive lower edge. */
   x0: number;
@@ -81,7 +84,7 @@ export function Histogram({
   if (data.length === 0) return <ChartEmpty height={height} />;
 
   const layout = ({ width, height: h }: ChartSize) => {
-    const area = plotArea(width, h, titles);
+    const area = plotArea(width, h, titles, { labels: data.map(binLabel), placement: "band", maxLabels: MAX_BIN_LABELS });
     const bw = (area.x1 - area.x0) / data.length;
     return { area, bw, y: scaleLinear([0, max], [area.y1, area.y0]) };
   };
@@ -110,7 +113,7 @@ export function Histogram({
         return (
           <>
             <YGrid area={area} max={max} ct={ct} integer />
-            <XLabels labels={data.map(binLabel)} xAt={(i) => area.x0 + bw * i + bw / 2} area={area} ct={ct} maxLabels={6} />
+            <XLabels labels={data.map(binLabel)} xAt={(i) => area.x0 + bw * i + bw / 2} area={area} ct={ct} maxLabels={MAX_BIN_LABELS} />
             <AxisTitles {...titles} area={area} height={size.height} ct={ct} />
             {data.map((b, i) => (
               <g key={i} {...getMarkProps(i)} opacity={opacityFor(i)}>

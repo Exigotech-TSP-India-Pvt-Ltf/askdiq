@@ -39,6 +39,7 @@ from app.core.config import get_settings
 from app.core.database import is_statement_timeout
 from app.core.errors import ApiHTTPException, ErrorCode, code_for_status
 from app.core.logging_config import get_logger
+from app.core.request_meta import get_client_ip
 from app.core.security_headers import apply_security_headers, build_security_headers
 from app.governance.audit import record_server_error
 from app.governance.pii import redact_pii
@@ -205,7 +206,13 @@ async def unhandled_exception_handler(
     )
     # Unhandled exceptions bypass LatencyMiddleware's 5xx-response hook,
     # so this is the single place they are audited.
-    record_server_error(request_id, request.url.path, 500, type(exc).__name__)
+    record_server_error(
+        request_id,
+        request.url.path,
+        500,
+        type(exc).__name__,
+        ip_address=getattr(request.state, "client_ip", None) or get_client_ip(request),
+    )
     response = problem_response(
         request,
         500,

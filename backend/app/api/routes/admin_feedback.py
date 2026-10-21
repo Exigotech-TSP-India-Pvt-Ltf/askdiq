@@ -37,6 +37,7 @@ from app.auth.principal import AuthUser
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
 from app.core.database import get_db, get_session_factory
+from app.core.request_meta import get_client_ip
 from app.dashboard.range_params import (
     day_params,
     optional_day_range,
@@ -357,6 +358,7 @@ async def preview_feedback_pairs(
     },
 )
 async def export_feedback_pairs(
+    request: Request,
     format: Literal["jsonl"] = Query("jsonl"),  # noqa: A002 - public query name
     triage_status: TriageStatus | None = None,
     include_dismissed: bool = False,
@@ -379,6 +381,7 @@ async def export_feedback_pairs(
             "include_dismissed": include_dismissed,
             "complete_only": complete_only,
         },
+        ip_address=get_client_ip(request),
         commit=True,
     )
     stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")

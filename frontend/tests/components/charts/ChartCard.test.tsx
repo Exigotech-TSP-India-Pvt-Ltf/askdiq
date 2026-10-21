@@ -28,6 +28,35 @@ describe("ChartCard", () => {
     expect(screen.getByTestId("chart")).toBeInTheDocument();
   });
 
+  it("keeps the title on one line and puts meta chips under the subtitle, not beside the title", () => {
+    const title = "Month-end forecast";
+    render(
+      <ChartCard title={title} subtitle="Cumulative cost" meta={<span>$4.14 forecast</span>} table={table}>
+        <div data-testid="chart" />
+      </ChartCard>,
+    );
+    const heading = screen.getByRole("heading", { name: title });
+    expect(heading).toHaveClass("truncate");
+    expect(heading).toHaveAttribute("title", title);
+    const meta = screen.getByTestId("chart-card-meta");
+    expect(meta).toHaveTextContent("$4.14 forecast");
+    // Subtitle, then meta, inside the title column; the toggle stays outside it (top right).
+    const subtitle = screen.getByText("Cumulative cost");
+    expect(subtitle.parentElement).toBe(meta.parentElement);
+    expect(subtitle.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.parentElement?.contains(meta)).toBe(false);
+    expect(meta.parentElement?.contains(screen.getByRole("button", { name: /view as table/i }))).toBe(false);
+  });
+
+  it("renders no meta row without meta", () => {
+    render(
+      <ChartCard title="Plain">
+        <div />
+      </ChartCard>,
+    );
+    expect(screen.queryByTestId("chart-card-meta")).not.toBeInTheDocument();
+  });
+
   it("toggles an accessible table fallback with aria-pressed and back", () => {
     render(
       <ChartCard title="Latency" table={table}>
