@@ -10,6 +10,7 @@ import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination } from "@/components/admin/Pagination";
 import { TableCard } from "@/components/admin/TableCard";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import { formatNumber } from "@/components/admin/TableFormatters";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { KpiTrendCard } from "@/components/charts/KpiTrendCard";
@@ -277,30 +278,27 @@ function VisitorDetailContent() {
         title={label}
         icon={User}
         showAudienceTabs={false}
-        showDateRange
         breadcrumb={[{ label: AUDIENCE_PAGE_LABEL, href: carry(AUDIENCE_PAGE) }, { label }]}
-        actions={
-          ip ? (
-            <>
-              <HeaderIconButton
-                href={carry(entityHref({ kind: "visitor", id: ip }))}
-                icon={ListTree}
-                label="Usage sessions"
-                tooltip="Sessions in Usage & Cost"
-              />
-              <HeaderIconButton
-                href={carry(conversationsHref({ ip }))}
-                icon={MessagesSquare}
-                label="Conversations"
-                tooltip="This visitor's conversations"
-              />
-              <HeaderIconButton href={entityHref({ kind: "analytics", visitor: id })} icon={ChartPie} label="Analytics" />
-            </>
-          ) : undefined
-        }
       />
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-4 sm:p-8">
+        <PageToolbar
+          dateRange
+          actions={
+            ip ? (
+              <>
+                <HeaderIconButton
+                  href={carry(entityHref({ kind: "visitor", id: ip }))}
+                  icon={ListTree}
+                  label="Usage sessions"
+                  showLabel
+                />
+                <HeaderIconButton href={carry(conversationsHref({ ip }))} icon={MessagesSquare} label="Conversations" showLabel />
+                <HeaderIconButton href={entityHref({ kind: "analytics", visitor: id })} icon={ChartPie} label="Analytics" showLabel />
+              </>
+            ) : undefined
+          }
+        />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5" data-testid="visitor-detail-kpis">
           <KpiTrendCard
             label="Sessions"

@@ -216,7 +216,7 @@ describe("Documents journey: upload -> standardize -> chunk -> inventory -> deta
     renderPage(<DocumentsPage />);
     await screen.findByRole("link", { name: /^about-us.md/ });
 
-    fireEvent.click(screen.getByRole("button", { name: "Upload Document" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
     const dialog = await screen.findByRole("dialog", { name: "Upload document" });
 
     // Client-side validation: nothing is sent for an unsupported type.
@@ -311,10 +311,24 @@ describe("Documents journey: upload -> standardize -> chunk -> inventory -> deta
       ["POST", /^\/ingest\/file$/, () => ({ status: 415, body: { detail: "Macro-enabled documents are not allowed" } })],
     ]);
     renderPage(<DocumentsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Upload Document" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Upload document" }));
     const dialog = await screen.findByRole("dialog", { name: "Upload document" });
     pick(new File(["x"], "evil.docx"));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Unsupported file type");
     expect(within(dialog).getByRole("button", { name: "Ingest document" })).toBeDisabled();
+  });
+});
+
+describe("Documents date filter on the toolbar row (OR-2)", () => {
+  it("opens the labelled filter, picks Last 30 days and updates the URL", async () => {
+    mockFetch(routes());
+    renderPage(<DocumentsPage />);
+    await screen.findByRole("link", { name: /about-us\.md/ });
+    const trigger = screen.getByRole("button", { name: "Date range: Last 7 days" });
+    expect(screen.getByRole("banner")).not.toContainElement(trigger);
+    fireEvent.click(trigger);
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Choose date range" })).getByRole("button", { name: "Last 30 days" }));
+    await waitFor(() => expect(history.current()).toContain("range=30d"));
+    expect(screen.getByRole("button", { name: "Date range: Last 30 days" })).toBeInTheDocument();
   });
 });

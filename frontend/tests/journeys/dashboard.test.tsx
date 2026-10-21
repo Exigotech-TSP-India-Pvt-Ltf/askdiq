@@ -257,3 +257,17 @@ describe("Dashboard: light and dark", () => {
     expect(card.querySelector(".bg-surface-card")).not.toBeNull();
   });
 });
+
+describe("Dashboard date filter on the toolbar row (OR-2)", () => {
+  it("opens the labelled filter, picks Last 30 days and updates the URL", async () => {
+    renderDashboard();
+    const trigger = screen.getByRole("button", { name: "Date range: Last 7 days" });
+    expect(trigger).toHaveTextContent("Last 7 days");
+    expect(screen.getByRole("banner")).not.toContainElement(trigger);
+    expect(trigger.closest('[data-tour="shell-date-range"]')).not.toBeNull();
+    fireEvent.click(trigger);
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Choose date range" })).getByRole("button", { name: "Last 30 days" }));
+    await waitFor(() => expect(nav.replace).toHaveBeenCalled());
+    expect(String(nav.replace.mock.calls.at(-1)?.[0])).toContain("range=30d");
+  });
+});

@@ -22,6 +22,7 @@ import { DataTable, type ColumnDef } from "@/components/admin/DataTable";
 import { TableToolbar } from "@/components/admin/TableToolbar";
 import { Pagination, type PageSize } from "@/components/admin/Pagination";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
+import { PageToolbar } from "@/components/admin/PageToolbar";
 import { TableCard } from "@/components/admin/TableCard";
 import { FormatBadge } from "@/components/documents/FormatBadge";
 import { UploadDialog } from "@/components/documents/UploadDialog";
@@ -488,23 +489,26 @@ function DocumentsContent() {
         subtitle="Every uploaded .md and .docx file, standardized to canonical Markdown, chunked and embedded"
         icon={FileText}
         showAudienceTabs={false}
-        showDateRange
-        actions={
-          canWrite ? (
-            <HeaderIconButton
-              icon={Upload}
-              label="Upload Document"
-              variant="primary"
-              data-tour="documents-upload"
-              aria-haspopup="dialog"
-              onClick={() => setUploadOpen(true)}
-            />
-          ) : undefined
-        }
       />
       </div>
 
       <div className="mx-auto w-full max-w-[1600px] flex-1 space-y-6 p-6 sm:p-8">
+        <PageToolbar
+          dateRange
+          actions={
+            canWrite ? (
+              <HeaderIconButton
+                icon={Upload}
+                label="Upload document"
+                variant="primary"
+                showLabel
+                data-tour="documents-upload"
+                aria-haspopup="dialog"
+                onClick={() => setUploadOpen(true)}
+              />
+            ) : undefined
+          }
+        />
         <m.div data-tour="documents-kpis" variants={gridVariants} initial="hidden" animate="visible" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Kpi
             icon={FileText}

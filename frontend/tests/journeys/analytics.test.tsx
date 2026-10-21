@@ -6,6 +6,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { pickFilter } from "../helpers/filter-chips";
 import userEvent from "@testing-library/user-event";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { queryCache } from "@/lib/query-cache";
@@ -99,9 +100,11 @@ describe("URL state", () => {
 describe("filter -> topic -> conversations journey", () => {
   it("filters, cross-filters by topic, and lands on a filtered Conversations table with row links", async () => {
     renderPage("?tab=topics");
-    const outcome = await screen.findByLabelText("Outcome");
-    fireEvent.change(outcome, { target: { value: "Not served" } });
+    await pickFilter("Outcome", "Not served");
     expect(currentParams().get("outcome")).toBe("Not served");
+    // The choice shows as an editable chip on the tab row.
+    expect(screen.getByRole("button", { name: "Not served, change filter" })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(api.last("topics")?.params.get("outcome")).toBe("Not served"));
 
     fireEvent.click(await screen.findByRole("button", { name: /^Services: 33/ }));
