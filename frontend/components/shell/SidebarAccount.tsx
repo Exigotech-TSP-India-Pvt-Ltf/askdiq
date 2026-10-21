@@ -160,7 +160,19 @@ export function SidebarAccount({ collapsed, surface = "sidebar", onBeforeAction 
       openSub(sub);
       return;
     }
-    menu.panelProps.onKeyDown(event);
+    moveWithin(mainRef.current, event);
+  }
+
+  /** Tab leaves (and closes) the menu; arrows, Home / End and typeahead move within `panel`. */
+  function moveWithin(panel: HTMLElement | null, event: React.KeyboardEvent) {
+    if (event.key === "Tab") {
+      close(false);
+      return;
+    }
+    if (moveMenuFocus(panel, event, typeaheadState.current)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   }
 
   function onSubKeyDown(event: React.KeyboardEvent) {
@@ -171,14 +183,7 @@ export function SidebarAccount({ collapsed, surface = "sidebar", onBeforeAction 
       backToMain();
       return;
     }
-    if (event.key === "Tab") {
-      close(false);
-      return;
-    }
-    if (moveMenuFocus(subRef.current, event, typeaheadState.current)) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
+    moveWithin(subRef.current, event);
   }
 
   const subItem = `${menuItem} min-h-9`;
