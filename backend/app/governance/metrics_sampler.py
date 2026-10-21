@@ -60,6 +60,8 @@ class MetricsSampler:
         sample["loop"] = self.lag.drain()
         sample["db_pool"] = pool_sample()
         sample["active_queries"] = active_queries()
+        # Each in-flight /query holds one LLM slot; capacity is per worker.
+        sample["query_capacity"] = self.cfg.llm_max_concurrency
         self.latest = sample
         return sample
 

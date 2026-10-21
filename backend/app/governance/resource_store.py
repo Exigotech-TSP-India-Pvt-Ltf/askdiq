@@ -116,6 +116,12 @@ def _pool_pct(samples: list[dict[str, Any]]) -> tuple[float | None, int, int]:
     return (round(used * 100 / cap, 1) if cap else None), used, cap
 
 
+def _queries_pct(samples: list[dict[str, Any]]) -> tuple[float | None, int, int]:
+    active = sum(int(s.get("active_queries") or 0) for s in samples)
+    cap = sum(int(s.get("query_capacity") or 0) for s in samples)
+    return (round(min(100.0, active * 100 / cap), 1) if cap else None), active, cap
+
+
 def _scope(samples: list[dict[str, Any]], key: str) -> str:
     scopes = {_get(s, "effective", key) for s in samples}
     return "container" if "container" in scopes else "host"
@@ -141,6 +147,7 @@ def aggregate(
     for _worker, hostname, _ts, sample in latest.values():
         by_host.setdefault(hostname, sample)
     pool_pct, pool_used, pool_cap = _pool_pct(live)
+    queries_pct, queries_active, queries_cap = _queries_pct(live)
     last_ts = max((r[2] for r in latest.values()), default=None)
     current = {
         "sampled_at": last_ts.isoformat() if last_ts else None,
@@ -197,6 +204,12 @@ def aggregate(
             "capacity": pool_cap,
         },
         "active_queries": int(_sum([s.get("active_queries") for s in live]) or 0),
+        "queries": {
+            "scope": "process",
+            "in_use_percent": queries_pct,
+            "active": queries_active,
+            "capacity": queries_cap,
+        },
         "workers": [
             {
                 "worker_id": worker_id,
@@ -226,6 +239,7 @@ def history(rows: list[Row], *, interval: float) -> list[dict[str, Any]]:
     for bucket in sorted(buckets):
         samples = list(buckets[bucket].values())
         pool_pct, _u, _c = _pool_pct(samples)
+        queries_pct, _a, _q = _queries_pct(samples)
         points.append(
             {
                 "ts": datetime.fromtimestamp(bucket * interval, tz=UTC).isoformat(),
@@ -238,6 +252,7 @@ def history(rows: list[Row], *, interval: float) -> list[dict[str, Any]]:
                 "rss_mb": _sum([_get(s, "process", "rss_mb") for s in samples]),
                 "loop_lag_p95_ms": _max([_get(s, "loop", "p95_ms") for s in samples]),
                 "db_pool_percent": pool_pct,
+                "queries_percent": queries_pct,
             }
         )
     return points

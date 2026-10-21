@@ -1,6 +1,6 @@
 <title>AskDIQ System Architecture</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Interactive architecture of the AskDIQ RAG platform: context, deployment, /query pipeline, dashboard data flow, ingestion, data model and OWASP overlay.">
+<meta name="description" content="Interactive architecture of the AskDIQ RAG platform: context, deployment, /query pipeline, dashboard data flow, ingestion, data model, OWASP overlay, and plain-language guides to feedback, evaluation and Azure Insights.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -255,6 +255,169 @@ svg text { fill: var(--ink); font-family: var(--f-body); }
 .pulse { fill: var(--brand); }
 .pulse-ring { fill: none; stroke: var(--brand); stroke-width: 2; opacity: .5; }
 
+/* ------------------------------------------------------------------ */
+/* Guide pages (feedback, evaluation, Azure): plain HTML, no canvas    */
+/* ------------------------------------------------------------------ */
+.guides { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; padding-top: 14px; }
+.g2 > *, .g3 > *, .cmap > *, .metrics > *, .mini, .stepbody > * { min-width: 0; }
+.guide { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; min-width: 0; animation: rise .28s var(--ease); }
+.g-hero { display: grid; gap: 6px; max-width: 86ch; }
+.g-hero h2 { font: 700 clamp(22px, 3vw, 30px)/1.1 var(--f-display); margin: 0; letter-spacing: -.015em; text-wrap: balance; }
+.g-hero p { margin: 0; color: var(--ink-2); font-size: 15px; }
+.g-toc { display: flex; flex-wrap: wrap; gap: 6px; }
+.g-toc a { font-size: 12.5px; color: var(--ink); text-decoration: none; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 10px; }
+.g-toc a:hover { border-color: var(--brand); }
+.gcard { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 12px; min-width: 0; box-shadow: var(--shadow); scroll-margin-top: 16px; }
+.gcard > h3 { font: 700 18px/1.2 var(--f-display); margin: 0; letter-spacing: -.01em; }
+.gcard > .lede { margin: 0; color: var(--ink-2); max-width: 90ch; }
+.gcard p { margin: 0; }
+.gcard ul, .gcard ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.src { font: 400 11px/1.45 var(--f-mono); color: var(--ink-2); border-top: 1px dashed var(--line); padding-top: 8px; overflow-wrap: anywhere; }
+.src b { font-weight: 500; color: var(--ink); }
+.ex-label { display: inline-block; font: 600 10px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--st-progress); border: 1px solid var(--st-progress); border-radius: 5px; padding: 1px 6px; }
+.g2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 14px; }
+.g3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 10px; }
+code, .k { font: 400 12px var(--f-mono); background: var(--surface-2); border-radius: 5px; padding: 1px 5px; overflow-wrap: anywhere; }
+.warn { border-left: 3px solid var(--sec); background: var(--sec-soft); padding: 8px 10px; border-radius: 0 8px 8px 0; font-size: 13px; }
+.okn { border-left: 3px solid var(--brand); background: var(--brand-soft); padding: 8px 10px; border-radius: 0 8px 8px 0; font-size: 13px; }
+
+/* Stepper (flow walk-through) */
+.gcard .steps { display: flex; gap: 6px; list-style: none; padding: 0 !important; margin: 0; overflow-x: auto; scrollbar-width: thin; padding-bottom: 4px !important; }
+.steps li { flex: 1 0 120px; display: block; }
+.steps button { width: 100%; height: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; padding: 8px 10px; cursor: pointer; display: grid; gap: 2px; transition: background .18s var(--ease), border-color .18s var(--ease); }
+.steps button .sn { font: 700 18px var(--f-display); color: var(--brand); line-height: 1; }
+.steps button .st { font-size: 12.5px; font-weight: 600; line-height: 1.25; }
+.steps button:hover { border-color: var(--brand); }
+.steps button.done { background: color-mix(in srgb, var(--brand) 12%, var(--surface)); }
+.steps button[aria-current="step"] { background: var(--brand); border-color: var(--brand); color: var(--surface); }
+.steps button[aria-current="step"] .sn { color: var(--surface); }
+.stepbody { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.stepbody .say { display: grid; gap: 8px; }
+.stepbody .say h4 { margin: 0; font: 700 16px/1.25 var(--f-display); }
+.stepbody .tech { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; font-size: 13px; }
+.stepbody .tech h5, .mini h5 { margin: 0; font: 500 10.5px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.stepnav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stepnav .count { font: 400 12px var(--f-mono); color: var(--ink-2); margin-left: auto; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.chip2 { font: 500 11.5px var(--f-mono); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 2px 8px; }
+.chip2.good { border-color: var(--st-live); color: var(--st-live); }
+.chip2.bad { border-color: var(--sec); color: var(--sec); }
+.chip2.mid { border-color: var(--st-progress); color: var(--st-progress); }
+
+/* Glossary */
+.terms { display: flex; flex-wrap: wrap; gap: 6px; }
+.term { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 5px 10px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.term:hover, .term[aria-expanded="true"] { border-color: var(--brand); background: var(--brand-soft); }
+.defbox { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; min-height: 64px; display: grid; gap: 4px; }
+.defbox b { font: 700 15px var(--f-display); }
+
+/* Worked example */
+.chat { display: grid; gap: 8px; }
+.bubble { border-radius: 12px; padding: 8px 12px; max-width: 70ch; font-size: 13.5px; }
+.bubble.u { background: var(--brand-soft); justify-self: end; }
+.bubble.a { background: var(--surface-2); border: 1px solid var(--line); }
+.timeline { list-style: none; padding: 0 !important; margin: 0; display: grid; gap: 0 !important; }
+.timeline li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding-bottom: 12px; position: relative; }
+.timeline li::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--brand); margin-top: 4px; margin-left: 5px; }
+.timeline li:not(:last-child)::after { content: ""; position: absolute; left: 10.5px; top: 18px; bottom: 0; width: 1px; background: var(--line); }
+
+/* Console map */
+.cmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 8px; }
+.mini { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; align-content: start; background: var(--surface); }
+.mini b { font-size: 13.5px; }
+.cmap .mini span { color: var(--ink-2); font-size: 12.5px; }
+.crumb { font: 500 11.5px var(--f-mono); color: var(--brand-strong); }
+
+/* Annotated record */
+.anno { width: 100%; border-collapse: collapse; font-size: 13px; }
+.anno th, .anno td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+.anno th { font: 500 11.5px var(--f-mono); color: var(--ink); white-space: nowrap; }
+.anno td.v { font: 400 12px var(--f-mono); overflow-wrap: anywhere; }
+.anno td.w { color: var(--ink-2); }
+.tscroll { overflow-x: auto; }
+
+/* Segmented toggle */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; background: var(--surface-2); gap: 3px; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 7px; cursor: pointer; font-weight: 500; font-size: 13px; color: var(--ink-2); }
+.seg button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.cmp { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cmp th, .cmp td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+.cmp th { width: 26%; font-weight: 600; color: var(--ink-2); font-size: 12.5px; }
+.cmp td.hl { background: var(--brand-soft); }
+
+/* Metric cards (details/summary) */
+.metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 10px; align-items: start; }
+details.mc { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+details.mc[open] { border-color: var(--brand); }
+details.mc summary { list-style: none; cursor: pointer; padding: 10px 12px; display: grid; gap: 3px; border-radius: 12px; }
+details.mc summary::-webkit-details-marker { display: none; }
+details.mc summary .mh { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+details.mc summary b { font-size: 14px; }
+details.mc summary .plain { color: var(--ink-2); font-size: 12.5px; }
+details.mc summary .more { font: 500 11px var(--f-mono); color: var(--brand-strong); }
+details.mc[open] summary .more::after { content: " ▲"; }
+details.mc:not([open]) summary .more::after { content: " ▼"; }
+details.mc .mb { padding: 0 12px 12px; display: grid; gap: 7px; font-size: 13px; }
+details.mc .mb dl { margin: 0; display: grid; grid-template-columns: 92px 1fr; gap: 4px 10px; }
+details.mc .mb dt { font: 500 10.5px var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); padding-top: 2px; }
+details.mc .mb dd { margin: 0; }
+.kind-j { color: var(--st-preview); border-color: var(--st-preview); }
+.kind-r { color: var(--st-live); border-color: var(--st-live); }
+.kind-h { color: var(--st-progress); border-color: var(--st-progress); }
+.kind-c { color: var(--st-planned); border-color: var(--st-planned); }
+.mfilter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* Score reader */
+.reader { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 16px; align-items: start; }
+.reader label { font-size: 12.5px; color: var(--ink-2); display: grid; gap: 4px; }
+.reader select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.reader input[type=range] { width: 100%; accent-color: var(--brand); }
+.band { height: 12px; border-radius: 6px; position: relative; overflow: hidden; display: flex; border: 1px solid var(--line); }
+.band span { height: 100%; }
+.verdict { border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border: 1px solid var(--line); background: var(--surface-2); }
+.verdict .big { font: 700 28px/1 var(--f-display); }
+.verdict.good { border-color: var(--st-live); }
+.verdict.mid { border-color: var(--st-progress); }
+.verdict.bad { border-color: var(--sec); }
+.verdict .tag2 { font: 600 11px var(--f-mono); letter-spacing: .08em; text-transform: uppercase; }
+.verdict.good .tag2 { color: var(--st-live); } .verdict.mid .tag2 { color: var(--st-progress); } .verdict.bad .tag2 { color: var(--sec); }
+
+/* Inline flow diagrams */
+.flow { width: 100%; height: auto; display: block; }
+.flow .fb { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.flow .fb.hot { fill: var(--brand-soft); stroke: var(--brand); stroke-width: 2; }
+.flow .fb.judge { fill: color-mix(in srgb, var(--st-preview) 14%, var(--surface)); stroke: var(--st-preview); stroke-width: 1.6; }
+.flow .ft { font: 600 13px var(--f-body); fill: var(--ink); }
+.flow .fs { font: 400 11px var(--f-body); fill: var(--ink-2); }
+.flow .fk { font: 500 9.5px var(--f-mono); letter-spacing: .08em; fill: var(--ink-2); }
+.flow .fl { fill: none; stroke: var(--edge); stroke-width: 1.5; }
+.flow .fl.d { stroke-dasharray: 5 4; }
+.flow .fl.j { stroke: var(--st-preview); stroke-dasharray: 4 3; }
+.flow .fz { fill: var(--surface-2); fill-opacity: .6; stroke: var(--line); stroke-dasharray: 2 4; }
+.flow .fzl { font: 500 10.5px var(--f-mono); letter-spacing: .08em; fill: var(--ink-2); }
+.flow g[tabindex] { cursor: pointer; }
+.flow g[tabindex]:focus { outline: none; }
+.flow g[tabindex]:focus-visible .fb, .flow g[tabindex]:hover .fb, .flow g.sel .fb { stroke: var(--brand); stroke-width: 2.4; }
+.flowcap { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: 13px; min-height: 52px; }
+.flowcap b { display: block; }
+
+/* Azure source table */
+.srcgrid { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.srclist { display: grid; gap: 6px; list-style: none; padding: 0 !important; margin: 0; }
+.srclist button { width: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; cursor: pointer; display: grid; gap: 2px; }
+.srclist button small { color: var(--ink-2); font-size: 11.5px; }
+.srclist button[aria-selected="true"] { border-color: var(--brand); background: var(--brand-soft); }
+.srcdetail { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; background: var(--surface); min-width: 0; }
+.srcdetail h4 { margin: 0; font: 700 17px var(--f-display); }
+.kv { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
+.kv dt { font: 500 10.5px var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); padding-top: 3px; }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.fresh { display: grid; gap: 8px; }
+.fresh .row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 280px; gap: 10px; align-items: center; font-size: 13px; }
+.fresh .bar2 { height: 10px; border-radius: 5px; background: var(--surface-2); position: relative; overflow: hidden; border: 1px solid var(--line); }
+.fresh .bar2 i { position: absolute; inset: 0 auto 0 0; background: var(--brand); border-radius: 5px; }
+.fresh .row small { color: var(--ink-2); font: 400 11.5px var(--f-mono); }
+
 footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex; gap: 6px 16px; flex-wrap: wrap; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
@@ -263,6 +426,15 @@ footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex
   aside.panel { position: static; max-height: none; }
   .canvas { height: 62vh; }
   header.top { position: static; }
+  .stepbody, .reader, .srcgrid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .fresh .row { grid-template-columns: 1fr; gap: 3px; }
+  .kv, details.mc .mb dl { grid-template-columns: 1fr; }
+  .cmp th { width: auto; }
+  .gcard { padding: 14px 12px; }
+  .anno tr { display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--line); padding: 4px 0; }
+  .anno th, .anno td { border-top: 0; padding: 2px 6px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
@@ -275,7 +447,7 @@ footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex
       <svg class="hex" viewBox="0 0 34 34" aria-hidden="true"><path d="M17 1.5 30.4 9.25v15.5L17 32.5 3.6 24.75V9.25Z"/><circle class="eye" cx="12.5" cy="16.5" r="2.4"/><circle class="eye" cx="21.5" cy="16.5" r="2.4"/></svg>
       <div>
         <h1>AskDIQ System Architecture</h1>
-        <div class="snap">Snapshot <b>20 Oct 2026</b> · production = <b>main</b> after PR #58 and #59</div>
+        <div class="snap">Snapshot <b>21 Oct 2026</b> · production = <b>main</b> after PR #62, #63 and #64</div>
       </div>
     </div>
     <div class="tools">
@@ -304,7 +476,7 @@ footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex
 </div>
 <div class="owasp-row" id="owaspRow" hidden aria-label="OWASP categories"></div>
 
-<main class="work">
+<main class="work" id="work">
   <section class="stage" aria-live="polite">
     <div class="intro"><h2 id="vTitle"></h2><p id="vBlurb"></p></div>
     <div class="player" id="player" hidden>
@@ -341,9 +513,499 @@ footer { margin-top: 18px; color: var(--ink-2); font-size: 12.5px; display: flex
   <aside class="panel" id="panel" aria-label="Details"></aside>
 </main>
 
+<!-- ================================================================== -->
+<!-- GUIDES: plain-language pages opened from the last three tabs.       -->
+<!-- Each claim cites its source file in a .src footnote.                -->
+<!-- ================================================================== -->
+<div class="guides" id="guides" hidden>
+
+<!-- ================================================================== -->
+<!-- GUIDE A: How feedback works                                         -->
+<!-- ================================================================== -->
+<section class="guide" id="guide-feedback" aria-labelledby="fb-h" hidden>
+  <div class="g-hero">
+    <div class="eyebrow">Guide · human feedback loop</div>
+    <h2 id="fb-h">How feedback works</h2>
+    <p>People rate the assistant's answers. Admins review the bad ones, then turn them into three things: regression tests (golden cases), training data (preference pairs), and a list of missing documents (knowledge gaps). AskDIQ does not retrain any model itself. It collects and exports the data.</p>
+    <nav class="g-toc" aria-label="On this page"><a href="#fb-flow">Step-through</a><a href="#fb-terms">Glossary</a><a href="#fb-example">Worked example</a><a href="#fb-map">Where to find it</a><a href="#fb-alert">Spike alert</a></nav>
+  </div>
+
+  <!-- A1. Step-through flow -->
+  <div class="gcard" id="fb-flow">
+    <h3>The loop, one step at a time</h3>
+    <p class="lede">Click a step, or use Back and Next. Each step says what happens in plain words, then what the code does.</p>
+    <div class="stepper" data-stepper>
+      <ol class="steps" aria-label="Feedback steps">
+        <li><button type="button" data-step="0"><span class="sn">1</span><span class="st">User rates an answer</span></button></li>
+        <li><button type="button" data-step="1"><span class="sn">2</span><span class="st">Stored with the message</span></button></li>
+        <li><button type="button" data-step="2"><span class="sn">3</span><span class="st">Lands in the Review Queue</span></button></li>
+        <li><button type="button" data-step="3"><span class="sn">4</span><span class="st">Admin decides</span></button></li>
+        <li><button type="button" data-step="4"><span class="sn">5</span><span class="st">Outputs</span></button></li>
+        <li><button type="button" data-step="5"><span class="sn">6</span><span class="st">Back into evaluation</span></button></li>
+      </ol>
+      <div aria-live="polite">
+        <div class="stepbody" data-panel="0">
+          <div class="say">
+            <h4>1 · The user clicks thumbs up or thumbs down</h4>
+            <p>Every assistant answer in the chat, and in the dashboard widget, has two buttons. Thumbs up stores a rating of <b>5</b>. Thumbs down stores <b>1</b> and opens a small panel: <i>What went wrong?</i> with reason chips, plus an optional box <i>What should it have said?</i>. After rating, the user can also add a short note.</p>
+            <div class="chips"><span class="chip2 good">👍 Helpful = 5</span><span class="chip2 bad">👎 Unhelpful = 1</span></div>
+            <p>The database accepts 1 to 5, and the admin pages show stars, but the chat only ever sends 1 or 5. Ratings of 2 to 4 only come from other clients or seeded data.</p>
+          </div>
+          <div class="tech">
+            <h5>In the code</h5>
+            <div>Reason chips: <span class="chip2">Wrong</span> <span class="chip2">Incomplete</span> <span class="chip2">Off topic</span> <span class="chip2">Unsafe</span> <span class="chip2">Too slow</span> <span class="chip2">Unclear</span></div>
+            <div>Request: <code>POST /sessions/{sid}/messages/{mid}/feedback</code> with <code>rating</code>, <code>comment</code> (≤ 1000 chars), <code>reason_tags</code>, <code>corrected_answer</code> (≤ 4000 chars). Rate limit 30 per minute.</div>
+            <div class="src">Source: <b>frontend/components/MessageBubble.tsx</b> (THUMBS_UP = 5, THUMBS_DOWN = 1), frontend/components/chat/FeedbackReasonPanel.tsx, frontend/lib/feedback-api.ts, backend/app/api/routes/sessions.py, backend/app/schemas/session.py</div>
+          </div>
+        </div>
+        <div class="stepbody" data-panel="1" hidden>
+          <div class="say">
+            <h4>2 · One row per answer and person</h4>
+            <p>The rating is saved in <code>message_feedback</code>, linked to the exact assistant message and its conversation. If the same person rates the same answer again, the row is updated, not duplicated. The comment and the suggested answer are PII-masked before they are stored.</p>
+            <p>The sources are not copied onto the rating. When an admin opens it, the page joins the sources the answer actually used (from that answer's evaluation record), so the reviewer sees the question, the answer and the cited passages side by side.</p>
+            <p>Right after saving, a check counts the last hour of ratings. More than 25% negative (with at least 5 ratings) writes a <code>negative_feedback_spike</code> audit event.</p>
+          </div>
+          <div class="tech">
+            <h5>Key columns of message_feedback</h5>
+            <table class="cols"><tbody>
+              <tr><td>message_id</td><td>the rated assistant turn (FK, cascade)</td></tr>
+              <tr><td>session_id</td><td>the conversation (FK, cascade)</td></tr>
+              <tr><td>actor</td><td>who rated; unique with message_id</td></tr>
+              <tr><td>rating</td><td>CHECK 1 to 5</td></tr>
+              <tr><td>reason_tags</td><td>JSONB list</td></tr>
+              <tr><td>comment / corrected_answer</td><td>PII-masked text</td></tr>
+              <tr><td>triage_status</td><td>new · reviewed · promoted · dismissed</td></tr>
+              <tr><td>review_note, reviewed_by/at</td><td>set by the admin</td></tr>
+              <tr><td>promoted_case_id</td><td>FK to the golden case</td></tr>
+              <tr><td>version</td><td>optimistic lock</td></tr>
+            </tbody></table>
+            <div class="src">Source: <b>backend/app/models/db_models.py</b> (MessageFeedback), backend/app/core/sessions.py (record_feedback, spike check), backend/app/feedback/repository.py (upsert_chat_feedback), backend/app/feedback/service.py (sources from retrieved_chunks)</div>
+          </div>
+        </div>
+        <div class="stepbody" data-panel="2" hidden>
+          <div class="say">
+            <h4>3 · It shows up as New in the Review Queue</h4>
+            <p>Every rating starts with the triage status <b>New</b>. The Review Queue shows New items by default, newest first, 25 per page, with filters for status, rating, outcome, grounded and comment. Click a row (or press Enter) to open the drawer: question, answer, labels and flags, sources, the user's feedback, a box for the correct answer and a reviewer note.</p>
+            <p>The queue is keyboard-first: <kbd class="k">j</kbd>/<kbd class="k">k</kbd> move, <kbd class="k">Enter</kbd> opens, <kbd class="k">x</kbd> selects, <kbd class="k">r</kbd> reviewed, <kbd class="k">d</kbd> dismiss, <kbd class="k">p</kbd> promote.</p>
+          </div>
+          <div class="tech">
+            <h5>Triage statuses</h5>
+            <div class="chips"><span class="chip2">new</span><span class="chip2">reviewed</span><span class="chip2 good">promoted</span><span class="chip2 mid">dismissed</span></div>
+            <div>Viewing needs <code>dashboard:read</code>; acting needs <code>feedback:triage</code> (admin, superadmin). Operators see the queue read-only.</div>
+            <div class="src">Source: <b>backend/app/schemas/feedback.py</b> (TriageStatus), frontend/components/admin/feedback/ReviewQueue.tsx, FeedbackDrawer.tsx, backend/app/api/routes/admin_feedback.py (GET /admin/feedback)</div>
+          </div>
+        </div>
+        <div class="stepbody" data-panel="3" hidden>
+          <div class="say">
+            <h4>4 · The admin picks one action</h4>
+            <ul>
+              <li><b>Dismiss</b> (<kbd class="k">d</kbd>): noise, or the answer was fine. It can be undone (back to New).</li>
+              <li><b>Mark reviewed</b> (<kbd class="k">r</kbd>): a real problem you handled, for example by fixing a document. Add a note saying what you fixed. There is no separate "mark fixed" status; reviewed plus a note is how it is recorded.</li>
+              <li><b>Promote to test</b> (<kbd class="k">p</kbd>): turn the question into a golden case so it is re-tested later. Final: a promoted rating cannot change again.</li>
+              <li><b>Write the correct answer</b> in the drawer: it becomes the "chosen" side of a preference pair and the golden case's reference answer.</li>
+              <li><b>Add document</b> (Knowledge Gaps tab): for questions the knowledge base does not cover. It opens the Documents page, where you upload the file.</li>
+            </ul>
+          </div>
+          <div class="tech">
+            <h5>Allowed moves (enforced on the server)</h5>
+            <table class="cols"><tbody>
+              <tr><td>new</td><td>→ reviewed, promoted, dismissed</td></tr>
+              <tr><td>reviewed</td><td>→ promoted, dismissed</td></tr>
+              <tr><td>dismissed</td><td>→ new (restore)</td></tr>
+              <tr><td>promoted</td><td>final, no moves</td></tr>
+            </tbody></table>
+            <div>A forbidden move returns 409. Bulk actions take up to 200 rows, all or nothing. Promoting a message also flips every other open rating of it to promoted.</div>
+            <div class="src">Source: <b>backend/app/feedback/service.py</b> (TRANSITIONS, _promote_message), backend/app/feedback/repository.py (mark_message_promoted), frontend/components/admin/feedback/triage.ts, KnowledgeGapsTab.tsx (ADD_DOCUMENT_HREF)</div>
+          </div>
+        </div>
+        <div class="stepbody" data-panel="4" hidden>
+          <div class="say">
+            <h4>5 · Four outputs</h4>
+            <ul>
+              <li><b>Golden set</b>: promoted questions stored in <code>eval_promoted_cases</code>, re-run on demand.</li>
+              <li><b>Preference pairs</b>: a JSONL download, one line per rating, with a <i>prompt</i>, a <i>chosen</i> (better) answer and a <i>rejected</i> (worse) answer. Ready for a later fine-tuning run (DPO or SFT) outside AskDIQ.</li>
+              <li><b>Knowledge-gap list</b>: questions with low ratings <i>and</i> weak retrieval, grouped, top 10.</li>
+              <li><b>Alerts</b>: the <i>Negative feedback spike</i> alert in the notification bell and by email.</li>
+            </ul>
+          </div>
+          <div class="tech">
+            <h5>How a pair is built</h5>
+            <table class="cols"><tbody>
+              <tr><td>has corrected answer</td><td>chosen = corrected, rejected = bot answer → <b>complete</b></td></tr>
+              <tr><td>rating 4–5, no correction</td><td>chosen = bot answer, rejected = missing</td></tr>
+              <tr><td>rating 1–3, no correction</td><td>chosen = missing, rejected = bot answer</td></tr>
+            </tbody></table>
+            <div>Line keys: <code>feedback_id, message_id, prompt, chosen, rejected, rating, reason_tags, source_ids, triage_status, created_at, complete, missing</code>. Dismissed ratings are left out by default. Needs <code>feedback:export</code>.</div>
+            <div class="src">Source: <b>backend/app/feedback/service.py</b> (build_pair), backend/app/api/routes/admin_feedback.py (GET /admin/feedback/export, /pairs), backend/app/feedback/analytics.py (_knowledge_gaps)</div>
+          </div>
+        </div>
+        <div class="stepbody" data-panel="5" hidden>
+          <div class="say">
+            <h4>6 · Golden cases are tested again</h4>
+            <p>On the Golden Cases tab, <b>Run now</b> queues a background job that sends the stored question through the real answer pipeline again. The chip next to the button goes <span class="chip2">Queued</span> → <span class="chip2">Running…</span> → <span class="chip2 good">Passed</span> or <span class="chip2 bad">Failed</span>.</p>
+            <p>The offline evaluation script also adds every golden case to its test set on each run. See <a href="#evaluation" data-goto="evaluation">How evaluation works</a>.</p>
+            <div class="warn">What "Passed" means today: the new answer's groundedness matches what was promoted, and there was no error. The stored correct answer is <b>not</b> compared with the new answer.</div>
+          </div>
+          <div class="tech">
+            <h5>In the code</h5>
+            <div><code>POST /admin/feedback/golden/{case_id}/run</code> (202) enqueues job <code>eval.golden_run</code>, deduplicated per case (a second click says "Already queued"). Results land on the case: <code>last_run_at</code>, <code>last_run_passed</code>, <code>last_run_detail</code>.</div>
+            <div>The UI polls every 3 s, up to 40 times, then shows "Still running".</div>
+            <div class="src">Source: <b>backend/app/api/routes/admin_feedback.py</b> (run golden case), backend/app/jobs/handlers.py, backend/app/evaluation/evaluator.py, frontend/components/admin/feedback/GoldenCasesTab.tsx (GOLDEN_POLL_MS = 3000, GOLDEN_MAX_POLLS = 40)</div>
+          </div>
+        </div>
+      </div>
+      <div class="stepnav">
+        <button class="btn" type="button" data-prev>&#8592; Back</button>
+        <button class="btn primary" type="button" data-next>Next &#8594;</button>
+        <span class="count" data-count></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- A2. Glossary -->
+  <div class="gcard" id="fb-terms">
+    <h3>Glossary</h3>
+    <p class="lede">Hover, focus or click a term.</p>
+    <div class="gloss" data-gloss>
+      <div class="terms" role="group" aria-label="Feedback terms">
+        <button type="button" class="term" data-def="One number per rating, 1 to 5. 4–5 counts as positive, 3 as neutral, 1–2 as negative. The chat sends only 5 (thumbs up) or 1 (thumbs down)." data-src="backend/app/feedback/analytics.py (POSITIVE_MIN = 4, NEGATIVE_MAX = 2), frontend/components/MessageBubble.tsx">Rating scale</button>
+        <button type="button" class="term" data-def="Why a thumbs-down was given, picked from a fixed list: wrong, incomplete, off_topic, unsafe, too_slow, unclear. Anything else is rejected by the API." data-src="backend/app/schemas/feedback.py (ReasonTag)">Reason tags</button>
+        <button type="button" class="term" data-def="Sorting incoming ratings into what to do with them. Each rating has a triage status: new, reviewed, promoted or dismissed." data-src="backend/app/schemas/feedback.py (TriageStatus), backend/app/feedback/service.py (TRANSITIONS)">Triage</button>
+        <button type="button" class="term" data-def="A saved question with what a correct answer should look like, kept so it can be re-tested after every change. AskDIQ stores them in eval_promoted_cases; the id is promoted_ plus the message id." data-src="backend/app/models/db_models.py (EvalPromotedCase)">Golden case</button>
+        <button type="button" class="term" data-def="Two answers to the same question, one marked better (chosen) and one worse (rejected). Training methods such as DPO learn from many such pairs. A pair is complete only when both sides exist, which in practice means someone wrote a corrected answer." data-src="backend/app/feedback/service.py (build_pair)">Preference pair</button>
+        <button type="button" class="term" data-def="Reinforcement Learning from Human Feedback: improving a model using people's judgements of its answers. AskDIQ does the human-feedback half (collect, triage, export pairs). It does not train or fine-tune a model itself; the export is meant for a later DPO / SFT run." data-src="frontend/components/admin/feedback/PreferenceDataTab.tsx (card description)">RLHF</button>
+        <button type="button" class="term" data-def="A question that got a 1–2 rating while retrieval looked weak: evaluation confidence under 0.5, the answer not grounded, or outcome ungrounded or llm_failed. Usually means a document is missing or out of date." data-src="backend/app/feedback/analytics.py (_knowledge_gaps), backend/app/core/config.py (FEEDBACK_GAP_CONFIDENCE_THRESHOLD = 0.5, FEEDBACK_GAP_LIMIT = 10)">Knowledge gap</button>
+        <button type="button" class="term" data-def="The share of assistant answers that received a rating: ratings ÷ assistant messages × 100. Low coverage means few people rate, so the other numbers rest on a small sample." data-src="backend/app/feedback/analytics.py (_coverage, feedback_rate)">Coverage</button>
+        <button type="button" class="term" data-def="Grounded means the answer is supported by the retrieved documents. The pipeline checks it on every answer by comparing the answer's embedding with the sources." data-src="backend/app/guardrails/post_checks.py (check_groundedness, GROUNDEDNESS_THRESHOLD = 0.45)">Grounded</button>
+      </div>
+      <div class="defbox" aria-live="polite" data-defbox><b>Pick a term</b><span>Its plain-language definition appears here.</span></div>
+    </div>
+  </div>
+
+  <!-- A3. Worked example -->
+  <div class="gcard" id="fb-example">
+    <h3>Worked example: one bad answer, end to end <span class="ex-label">example</span></h3>
+    <p class="lede">Made-up text to show the mechanics. The steps, statuses and fields are real.</p>
+    <div class="g2">
+      <div class="chat" aria-label="Example conversation">
+        <div class="bubble u"><span class="ex-label">example</span> How long do you keep backup snapshots for managed servers?</div>
+        <div class="bubble a"><span class="ex-label">example</span> Backup snapshots are kept for 7 days.</div>
+        <div class="chips"><span class="chip2 bad">👎 rating 1</span><span class="chip2">reason: wrong</span><span class="chip2">reason: incomplete</span></div>
+        <div class="bubble u" style="justify-self:start"><i>What should it have said?</i> <span class="ex-label">example</span> Daily snapshots are kept for 30 days and monthly ones for 12 months.</div>
+      </div>
+      <ol class="timeline">
+        <li><div><b>Stored.</b> A <code>message_feedback</code> row: rating 1, reason_tags ["wrong","incomplete"], corrected_answer (PII-masked), triage_status <code>new</code>.</div></li>
+        <li><div><b>Reviewed in the queue.</b> The admin opens the drawer and sees the answer cited an older backup document with a low score.</div></li>
+        <li><div><b>Fix the source.</b> The admin uploads the current backup policy on the Documents page (the gap fix).</div></li>
+        <li><div><b>Promote to test.</b> A golden case <code>promoted_&lt;message id&gt;</code> is created with the question, the corrected answer as reference, and the expectation taken from the old answer (grounded or not).</div></li>
+        <li><div><b>Run now.</b> The case is re-asked through the pipeline; the chip shows Passed or Failed.</div></li>
+        <li><div><b>Export.</b> The JSONL now has a <i>complete</i> line: prompt = the question, chosen = the corrected answer, rejected = "kept for 7 days".</div></li>
+      </ol>
+    </div>
+    <div class="src">Source: backend/app/feedback/service.py (_promote_message, build_pair), backend/app/models/db_models.py (MessageFeedback, EvalPromotedCase)</div>
+  </div>
+
+  <!-- A4. Console map -->
+  <div class="gcard" id="fb-map">
+    <h3>Where to find it in the console</h3>
+    <p class="lede">Sidebar <b>Feedback</b> (<code>/admin/feedback</code>). Tab names exactly as in the UI.</p>
+    <div class="cmap">
+      <div class="mini"><span class="crumb">Feedback › Overview</span><b>Overview</b><span>Total feedback, Positive (4-5 stars), Needs improvement (1-2 stars), Coverage; trend, rating distribution, top reasons, triage funnel, Human vs groundedness. Every chart mark filters the queue.</span></div>
+      <div class="mini"><span class="crumb">Feedback › Review Queue</span><b>Review Queue</b><span>Triage list and drawer. Badge = ratings still New.</span></div>
+      <div class="mini"><span class="crumb">Feedback › Golden Cases</span><b>Golden Cases</b><span>Promoted cases, last evaluation, Run now with job chip.</span></div>
+      <div class="mini"><span class="crumb">Feedback › Preference Data</span><b>Preference Data</b><span>Preview of the first 50 pairs, Complete pairs only, Download JSONL. Needs feedback:export.</span></div>
+      <div class="mini"><span class="crumb">Feedback › Knowledge Gaps</span><b>Knowledge Gaps</b><span>Show in queue, Open document, Add document.</span></div>
+      <div class="mini"><span class="crumb">Elsewhere</span><b>Also</b><span>Chat thumbs (AskDIQ page and widget); Promote to test on a conversation's detail page; the alert in the header bell.</span></div>
+    </div>
+    <div class="src">Source: <b>frontend/components/admin/feedback/FeedbackWorkspace.tsx</b> (tab labels), FeedbackOverview.tsx, frontend/components/Sidebar.tsx, frontend/app/(app)/admin/conversations/[id]/page.tsx</div>
+  </div>
+
+  <!-- A5. Spike alert -->
+  <div class="gcard" id="fb-alert">
+    <h3>The negative-feedback spike, in three places</h3>
+    <div class="g3">
+      <div class="mini"><h5>On every rating</h5><p>Last 1 hour: at least 5 ratings and more than 25% rated 1–2 → audit event <code>negative_feedback_spike</code>.</p><div class="src">Source: backend/app/core/sessions.py (_FEEDBACK_ALERT_MIN_SAMPLES = 5, _FEEDBACK_ALERT_NEGATIVE_RATE = 0.25)</div></div>
+      <div class="mini"><h5>Alert rule (bell + email)</h5><p>Rule <code>negative_feedback_spike</code>, severity warning: over a 60-minute window, at least 5 ratings and more than 25% negative. Links to /admin/feedback.</p><div class="src">Source: backend/app/alerts/catalogue.py, rules.py; config.py (ALERT_FEEDBACK_WINDOW_MINUTES = 60, ALERT_FEEDBACK_MIN_RATINGS = 5, ALERT_FEEDBACK_NEGATIVE_PCT = 25)</div></div>
+      <div class="mini"><h5>Overview banner</h5><p>Red banner when the selected date range has more than 25% negative and at least 5 ratings; button <i>Review negative feedback</i>.</p><div class="src">Source: frontend/components/admin/feedback/FeedbackOverview.tsx (SPIKE_NEGATIVE_RATIO = 25, SPIKE_MIN_TOTAL = 5)</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================== -->
+<!-- GUIDE B: How evaluation works                                       -->
+<!-- Metric cards and the score reader are rendered from EV_METRICS and  -->
+<!-- EV_READER in the script.                                            -->
+<!-- ================================================================== -->
+<section class="guide" id="guide-evaluation" aria-labelledby="ev-h" hidden>
+  <div class="g-hero">
+    <div class="eyebrow">Guide · answer quality</div>
+    <h2 id="ev-h">How evaluation works</h2>
+    <p>Evaluation means grading the assistant's answers, either on a fixed set of test questions (offline) or on real answers as they happen (online). Some grades are simple rules computed by code; some come from an AI "judge" that reads the answer and the sources. This page lists exactly which is which.</p>
+    <nav class="g-toc" aria-label="On this page"><a href="#ev-golden">Golden set</a><a href="#ev-modes">Offline vs online</a><a href="#ev-pipe">Where it hooks in</a><a href="#ev-metrics">Every metric</a><a href="#ev-reader">Score reader</a><a href="#ev-run">How to run it</a><a href="#ev-caveats">Read with care</a></nav>
+  </div>
+
+  <!-- B1. Golden set -->
+  <div class="gcard" id="ev-golden">
+    <h3>What a golden set is</h3>
+    <p class="lede">A golden set is a list of test questions with the behaviour we expect. Re-running it after any change (a new prompt, model, document or setting) shows whether something that used to work broke. That is regression testing.</p>
+    <div class="g2">
+      <div class="mini" style="display:grid;gap:8px">
+        <h5>Built-in case (backend/app/evaluation/dataset.py), real entry</h5>
+        <div class="tscroll"><table class="anno"><tbody>
+          <tr><th>id</th><td class="v">e8_control_list</td><td class="w">unique name</td></tr>
+          <tr><th>query</th><td class="v">What are the eight controls in the Essential Eight?</td><td class="w">the question asked</td></tr>
+          <tr><th>case_type</th><td class="v">answerable</td><td class="w">answerable, compound, followup, abstention, safety, robustness, spam, negative, unsafe, off_topic, conversational</td></tr>
+          <tr><th>expected_docs</th><td class="v">["e8-learn-more.md"]</td><td class="w">the expected source; at least min_expected_docs_hit (default 1) must be retrieved</td></tr>
+          <tr><th>expected_keywords</th><td class="v">["application control", "backup", "multi‑factor|multi-factor|mfa"]</td><td class="w">must appear in the answer (a|b = either)</td></tr>
+          <tr><th>expect_grounded</th><td class="v">true (default)</td><td class="w">must the answer be supported by sources?</td></tr>
+          <tr><th>also possible</th><td class="v">forbidden_keywords, expect_flags_any, expect_abstain, forbidden_docs, check_leakage, variant_of, known_issue</td><td class="w">for safety, refusal and robustness cases</td></tr>
+        </tbody></table></div>
+      </div>
+      <div class="mini" style="display:grid;gap:8px">
+        <h5>Promoted case (table eval_promoted_cases)</h5>
+        <div class="tscroll"><table class="anno"><tbody>
+          <tr><th>id</th><td class="v">promoted_&lt;message id hex&gt;</td><td class="w">one per rated message</td></tr>
+          <tr><th>query</th><td class="v">the user's question</td><td class="w">from the same turn</td></tr>
+          <tr><th>expect_grounded</th><td class="v">was the old answer grounded?</td><td class="w">the only expectation checked</td></tr>
+          <tr><th>case_type</th><td class="v">robustness | negative</td><td class="w">grounded → robustness, else negative</td></tr>
+          <tr><th>expected_outcome</th><td class="v">answered (default)</td><td class="w">stored, not checked</td></tr>
+          <tr><th>reference_answer</th><td class="v">the corrected answer</td><td class="w">stored, not graded</td></tr>
+          <tr><th>reason_tags</th><td class="v">["wrong", …]</td><td class="w">from the rating</td></tr>
+          <tr><th>last_run_*</th><td class="v">at, passed, detail</td><td class="w">result of Run now</td></tr>
+        </tbody></table></div>
+        <p><b>How cases get in:</b> built-in cases are written in code (104 at import, including 2 legacy promoted cases from backend/data/promoted_test_cases.json). New cases come only from <b>Promote to test</b> on a rating or a conversation turn. There is no "add case manually" screen or endpoint.</p>
+      </div>
+    </div>
+    <div class="src">Source: <b>backend/app/evaluation/dataset.py</b> (EvalCase, EVAL_CASES), dataset_extra.py (load_promoted_cases), backend/app/models/db_models.py (EvalPromotedCase), backend/app/feedback/service.py (_promote_message)</div>
+  </div>
+
+  <!-- B2. Offline vs online -->
+  <div class="gcard" id="ev-modes">
+    <h3>Offline vs online evaluation</h3>
+    <div class="seg" role="tablist" aria-label="Evaluation mode" data-seg="mode">
+      <button type="button" role="tab" data-val="off">Offline · golden set</button>
+      <button type="button" role="tab" data-val="on">Online · live traffic</button>
+      <button type="button" role="tab" data-val="both">Side by side</button>
+    </div>
+    <div data-seg-for="mode" data-seg-panel="off" class="okn"><b>Offline</b> asks the golden-set questions through the real pipeline on demand, then checks each answer against its expectations: the right document retrieved, keywords present, grounded as expected, safe, and (with <code>--judge</code>) a judge faithfulness of at least 4. It has right answers to compare with, so it can measure ranking quality (Recall@k, MRR, nDCG). Run by the script, or one case at a time with Run now.</div>
+    <div data-seg-for="mode" data-seg-panel="on" class="okn" hidden><b>Online</b> grades real answers right after they are sent, in the background, so users never wait for it. There is no right answer to compare with, so it uses rules (groundedness, word overlap with the sources, PII and secret scans) on every answer, and the AI judge on a 10% sample when it is switched on. Results go to <code>evaluation_records</code> and the Evaluation page's Users audience.</div>
+    <div data-seg-for="mode" data-seg-panel="both" hidden class="tscroll">
+      <table class="cmp"><thead><tr><th></th><th>Offline (golden set)</th><th>Online (live traffic)</th></tr></thead><tbody>
+        <tr><th>What is graded</th><td>104 built-in cases + promoted cases</td><td>every live answer except clarification turns</td></tr>
+        <tr><th>When</th><td>on demand: script, or Run now for one case</td><td>after each answer, in the background</td></tr>
+        <tr><th>Has right answers?</th><td>yes: expected docs, keywords, behaviour</td><td>no</td></tr>
+        <tr><th>AI judge</th><td>with <code>--judge</code>: judge + deep judge</td><td>only if ONLINE_EVAL_ENABLED=true (default false), on ONLINE_EVAL_SAMPLE_RATE = 0.10, and only with ≥ 15% chat TPM headroom</td></tr>
+        <tr><th>Pass rule</th><td>every gate holds; judge faithfulness ≥ 4 with --judge</td><td>grounded not false, safe, outcome not failed, faithfulness ≥ 3.0</td></tr>
+        <tr><th>Stored in</th><td>a JSON report file (backend/reports/, not in git); Run now writes last_run_* on the case</td><td>evaluation_records (one row per answer)</td></tr>
+        <tr><th>Seen on</th><td>Evaluation, audiences Overview and Testing; Compare with benchmark</td><td>Evaluation, audience Users</td></tr>
+      </tbody></table>
+    </div>
+    <div class="src">Source: <b>backend/app/evaluation/evaluator.py</b> (evaluate_case, EvalResult.passed), <b>backend/app/governance/online_eval.py</b> (_run_evaluation_task), backend/app/api/routes/query.py (schedule_online_evaluation), backend/app/api/routes/metrics.py (live_evaluation_report), config.py (ONLINE_EVAL_*)</div>
+  </div>
+
+  <!-- B3. Pipeline hook diagram -->
+  <div class="gcard" id="ev-pipe">
+    <h3>Where evaluation hooks into the answer pipeline</h3>
+    <p class="lede">Solid boxes run while the user waits; the purple box runs after the answer is sent. Click a box.</p>
+    <svg class="flow" viewBox="0 0 1000 250" role="group" aria-label="Evaluation hooks in the answer pipeline" data-flow="evflow">
+      <defs><marker id="ev-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0 10 5 0 10z"/></marker></defs>
+      <rect class="fz" x="4" y="8" width="992" height="128" rx="12"/><text class="fzl" x="16" y="28">REQUEST PATH · POST /query</text>
+      <rect class="fz" x="4" y="150" width="992" height="94" rx="12"/><text class="fzl" x="16" y="170">AFTER THE RESPONSE · BACKGROUND</text>
+      <g tabindex="0" role="button" data-k="0" aria-label="Pre-checks"><rect class="fb" x="20" y="44" width="170" height="78" rx="10"/><text class="fk" x="34" y="64">GUARDRAILS</text><text class="ft" x="34" y="86">Pre-checks</text><text class="fs" x="34" y="104">run_pre_checks</text></g>
+      <g tabindex="0" role="button" data-k="1" aria-label="Retrieval"><rect class="fb" x="215" y="44" width="170" height="78" rx="10"/><text class="fk" x="229" y="64">RETRIEVAL</text><text class="ft" x="229" y="86">Retrieve + rerank</text><text class="fs" x="229" y="104">relevance gate 0.15</text></g>
+      <g tabindex="0" role="button" data-k="2" aria-label="Generation"><rect class="fb" x="410" y="44" width="170" height="78" rx="10"/><text class="fk" x="424" y="64">GENERATION</text><text class="ft" x="424" y="86">LLM answer</text><text class="fs" x="424" y="104">gpt-5-mini</text></g>
+      <g tabindex="0" role="button" data-k="3" aria-label="Groundedness check"><rect class="fb hot" x="605" y="44" width="180" height="78" rx="10"/><text class="fk" x="619" y="64">GUARDRAILS · EVERY ANSWER</text><text class="ft" x="619" y="86">Groundedness</text><text class="fs" x="619" y="104">cosine ≥ 0.45</text></g>
+      <g tabindex="0" role="button" data-k="4" aria-label="Response"><rect class="fb" x="810" y="44" width="170" height="78" rx="10"/><text class="fk" x="824" y="64">RESPONSE</text><text class="ft" x="824" y="86">Answer sent</text><text class="fs" x="824" y="104">then exchange written</text></g>
+      <g tabindex="0" role="button" data-k="5" aria-label="Online evaluation and judge"><rect class="fb judge" x="560" y="180" width="420" height="54" rx="10"/><text class="ft" x="574" y="203">Online eval: rules on every answer + sampled AI judge</text><text class="fs" x="574" y="222">schedule_online_evaluation → evaluation_records · alerts</text></g>
+      <g tabindex="0" role="button" data-k="6" aria-label="Offline evaluator"><rect class="fb judge" x="20" y="180" width="420" height="54" rx="10"/><text class="ft" x="34" y="203">Offline evaluator calls the same pipeline</text><text class="fs" x="34" y="222">evaluate_case → run_query, then metrics + judge (--judge)</text></g>
+      <path class="fl" d="M190 83 H211" marker-end="url(#ev-arr)"/><path class="fl" d="M385 83 H406" marker-end="url(#ev-arr)"/><path class="fl" d="M580 83 H601" marker-end="url(#ev-arr)"/><path class="fl" d="M785 83 H806" marker-end="url(#ev-arr)"/>
+      <path class="fl j" d="M895 122 V176" marker-end="url(#ev-arr)"/>
+      <path class="fl j" d="M230 180 V140 Q230 130 220 130 H110 Q100 130 100 124" marker-end="url(#ev-arr)"/>
+    </svg>
+    <div class="flowcap" data-flowcap="evflow"><b>Select a box</b>Each box names the function and what it feeds into evaluation.</div>
+    <div class="src">Source: backend/app/harness/orchestrator.py (run_query), backend/app/guardrails/pre_checks.py, post_checks.py (check_groundedness, check_has_sources), backend/app/api/routes/query.py, backend/app/governance/online_eval.py, backend/app/evaluation/evaluator.py</div>
+  </div>
+
+  <!-- B4. Metric cards -->
+  <div class="gcard" id="ev-metrics">
+    <h3>Every metric we actually compute</h3>
+    <p class="lede">Click a card to open it. The chip says how it is computed: <span class="chip2 kind-j">AI judge</span> <span class="chip2 kind-r">rule</span> <span class="chip2 kind-h">heuristic</span> (an approximation with no right answer).</p>
+    <div class="mfilter" role="group" aria-label="Filter metrics">
+      <button class="btn primary" type="button" data-mf="all" aria-pressed="true">All</button>
+      <button class="btn primary" type="button" data-mf="on" aria-pressed="false">Used online</button>
+      <button class="btn primary" type="button" data-mf="off" aria-pressed="false">Offline only</button>
+      <button class="btn primary" type="button" data-mf="j" aria-pressed="false">AI judge</button>
+    </div>
+    <div class="metrics" id="evMetrics"></div>
+  </div>
+
+  <!-- B5. Score reader -->
+  <div class="gcard" id="ev-reader">
+    <h3>Score reader</h3>
+    <p class="lede">Pick a metric, drag the slider, read what the value means. Only thresholds that exist in the code are used.</p>
+    <div class="reader">
+      <div style="display:grid;gap:12px">
+        <label>Metric<select id="rdMetric"></select></label>
+        <label><span>Value: <b id="rdVal" class="mono"></b></span><input type="range" id="rdRange" aria-describedby="rdVerdict"></label>
+        <div class="band" id="rdBand" aria-hidden="true"></div>
+      </div>
+      <div class="verdict" id="rdVerdict" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <!-- B6. How to run -->
+  <div class="gcard" id="ev-run">
+    <h3>How to run an evaluation</h3>
+    <div class="g2">
+      <div class="mini" style="display:grid;gap:6px">
+        <h5>A · One golden case, from the console</h5>
+        <ol>
+          <li>Open <b>Feedback › Golden Cases</b>.</li>
+          <li>Click <b>Run now</b> on a case (needs feedback:triage). The job chip shows <span class="chip2">Queued</span> → <span class="chip2">Running…</span> → <span class="chip2 good">Passed</span> / <span class="chip2 bad">Failed</span>.</li>
+          <li>The result stays in the <b>Last evaluation</b> column (passed, confidence, error). It is not shown on the Evaluation page.</li>
+        </ol>
+        <div class="src">Source: frontend/components/admin/feedback/GoldenCasesTab.tsx, backend/app/feedback/jobs.py (eval.golden_run)</div>
+      </div>
+      <div class="mini" style="display:grid;gap:6px">
+        <h5>B · The full benchmark, from the server</h5>
+        <p>From <code>backend/</code> with the venv:</p>
+        <pre class="mono" style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface-2);padding:8px 10px;border-radius:8px;font-size:12px">.venv/bin/python scripts/run_evaluation.py --judge --json reports/eval_report.json</pre>
+        <p>Useful options: <code>--ids</code>, <code>--types</code>, <code>--min-pass-rate</code> (exit code 1 below it, for CI), <code>--repeat</code> (robustness), <code>--top-k</code> (default 6), <code>--judge-min-faithfulness</code> (default 4), <code>--kb</code> / <code>--kb-only</code> (knowledge-base checks), <code>--price-in</code> / <code>--price-out</code>. Golden cases from the database are merged in automatically. There is no API or button for the full run.</p>
+        <div class="src">Source: backend/scripts/run_evaluation.py</div>
+      </div>
+      <div class="mini" style="display:grid;gap:6px">
+        <h5>C · Read the results on the Evaluation page</h5>
+        <ol>
+          <li>Sidebar <b>Evaluation</b> (<code>/admin/evaluation-live</code>). The audience picks the data: <b>Overview</b> and <b>Testing</b> show the newest benchmark report file; <b>Users</b> shows live <code>evaluation_records</code>.</li>
+          <li><b>Quality &amp; Retrieval</b> tab: tiles, the radar, and <b>Pass-rate trend</b>, one marker per run (a report file, or one UTC day of live records; latest 30).</li>
+          <li><b>Compare with benchmark</b> (header button): live vs benchmark for pass rate, faithfulness, retrieval recall and citation precision, plus a dual radar.</li>
+          <li><b>Query &amp; Case Explorer</b> tab: filter Failed Only, then <b>Inspect</b> a row to open the case drawer: Interaction &amp; Audit, LLM Judge Breakdown, Sources &amp; Citations, Latency &amp; Ops.</li>
+        </ol>
+        <div class="src">Source: frontend/app/(app)/evaluation-live/page.tsx, frontend/components/admin/TabGroup.tsx (EVALUATION_LIVE_TABS), EvaluationCompareMatrix.tsx, EvaluationRecordDrawer.tsx, evaluation/EvaluationExplorer.tsx, backend/app/dashboard/eval_series.py (MAX_RUNS = 30)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B7. Caveats -->
+  <div class="gcard" id="ev-caveats">
+    <h3>Read with care: what the code does not do (yet)</h3>
+    <ul>
+      <li><b>The AI judge is off by default</b> (ONLINE_EVAL_ENABLED=false). Live faithfulness, relevance and completeness are then a formula (for example faithfulness = 3.8 + 1.2 × citation precision when grounded), even on tiles labelled "LLM Judge".</li>
+      <li><b>Live retrieval recall is not a real recall</b>: 1.0 whenever sources were found and the answer was not ungrounded.</li>
+      <li><b>Golden-case "Passed"</b> checks only groundedness and errors; the reference answer is not compared.</li>
+      <li><b>Benchmark defaults</b>: when a report file lacks a per-case value, the page fills faithfulness 4.8, relevance 4.9, citation precision 0.94, recall 0.98 and similar, so an unjudged report looks judged.</li>
+      <li><b>Static text in Compare</b>: the "Model Drift &amp; Alignment Assessment" figures are hardcoded, and its note about alerts below faithfulness 3.5 or safety 98% has no matching rule. The real alert fires on 3 or more online-eval violations in 60 minutes.</li>
+      <li><b>Prompt-injection in the live safety score</b> looks for a flag (injection_detected) no guardrail emits; blocked injections are flagged unsafe_input_detected and stopped before an answer exists.</li>
+      <li><b>Permission eval:run</b> exists but no route checks it; Run now uses feedback:triage.</li>
+    </ul>
+    <div class="src">Source: backend/app/governance/online_eval.py, backend/app/api/routes/metrics.py (benchmark normalisation, _LIVE_NOT_MEASURED), frontend/components/admin/EvaluationCompareMatrix.tsx, backend/app/alerts/rules.py (online_eval_rule), backend/app/auth/permissions.py</div>
+  </div>
+</section>
+
+<!-- ================================================================== -->
+<!-- GUIDE C: Microsoft Azure: what we call and what we get              -->
+<!-- Source cards are rendered by JS from AZ_SOURCES (see script).       -->
+<!-- ================================================================== -->
+<section class="guide" id="guide-azure" aria-labelledby="az-h" hidden>
+  <div class="g-hero">
+    <div class="eyebrow">Guide · Azure Insights (PR #62)</div>
+    <h2 id="az-h">Microsoft Azure: what we call and what we get</h2>
+    <p>Besides chat and embeddings, AskDIQ can read facts about its own Azure OpenAI resource from Microsoft: official prices, Azure's own token and request counts, the bill, real rate limits, health and Advisor notices. It is off by default, read-only, and uses free APIs. Background jobs fetch the data on a schedule and store it in Postgres. Console pages read only what is stored.</p>
+    <nav class="g-toc" aria-label="On this page"><a href="#az-sources">The seven sources</a><a href="#az-contract">How data flows</a><a href="#az-get">What you get</a><a href="#az-enable">How to switch it on</a><a href="#az-fresh">Is it real-time?</a></nav>
+  </div>
+
+  <!-- C1. Source explorer -->
+  <div class="gcard" id="az-sources">
+    <h3>The seven sources</h3>
+    <p class="lede">Pick a source to see the exact Microsoft endpoint, how we sign in, how often it runs, what we keep, where it shows and which alerts it feeds.</p>
+    <div class="srcgrid">
+      <ul class="srclist" id="azList" role="tablist" aria-label="Azure sources" aria-orientation="vertical"></ul>
+      <div class="srcdetail" id="azDetail" role="tabpanel" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <!-- C2. Owner contract flow -->
+  <div class="gcard" id="az-contract">
+    <h3>How data flows: poll, store, refresh, announce</h3>
+    <p class="lede">The rule from the module README: <i>poll on schedule → persist with history → refresh snapshots → announce live</i>. <b>A page view never calls Azure.</b> Click a box for details.</p>
+    <svg class="flow" viewBox="0 0 1000 200" role="group" aria-label="Azure Insights data flow" data-flow="azflow">
+      <defs><marker id="az-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0 10 5 0 10z"/></marker></defs>
+      <rect class="fz" x="4" y="8" width="200" height="184" rx="12"/><text class="fzl" x="16" y="28">MICROSOFT</text>
+      <rect class="fz" x="222" y="8" width="774" height="184" rx="12"/><text class="fzl" x="234" y="28">ASKDIQ-API (JOB WORKER)</text>
+      <g tabindex="0" role="button" data-k="0" aria-label="Azure APIs"><rect class="fb" x="20" y="60" width="168" height="90" rx="10"/><text class="fk" x="34" y="82">EXTERNAL</text><text class="ft" x="34" y="104">Azure APIs</text><text class="fs" x="34" y="122">Retail, Monitor, Cost Mgmt,</text><text class="fs" x="34" y="137">ARM, Health, Advisor</text></g>
+      <g tabindex="0" role="button" data-k="1" aria-label="1 Poll on schedule"><rect class="fb hot" x="240" y="60" width="168" height="90" rx="10"/><text class="fk" x="254" y="82">STEP 1</text><text class="ft" x="254" y="104">Poll on schedule</text><text class="fs" x="254" y="122">job azure.&lt;source&gt;</text><text class="fs" x="254" y="137">one replica per slot</text></g>
+      <g tabindex="0" role="button" data-k="2" aria-label="2 Persist with history"><rect class="fb" x="430" y="60" width="168" height="90" rx="10"/><text class="fk" x="444" y="82">STEP 2</text><text class="ft" x="444" y="104">Persist with history</text><text class="fs" x="444" y="122">azure_* tables (upsert)</text><text class="fs" x="444" y="137">+ azure_sync_status</text></g>
+      <g tabindex="0" role="button" data-k="3" aria-label="3 Refresh the snapshot"><rect class="fb" x="620" y="60" width="168" height="90" rx="10"/><text class="fk" x="634" y="82">STEP 3</text><text class="ft" x="634" y="104">Refresh snapshot</text><text class="fs" x="634" y="122">compute_and_store</text><text class="fs" x="634" y="137">dashboard_snapshots</text></g>
+      <g tabindex="0" role="button" data-k="4" aria-label="4 Announce on /admin/live"><rect class="fb" x="810" y="60" width="170" height="90" rx="10"/><text class="fk" x="824" y="82">STEP 4</text><text class="ft" x="824" y="104">Announce live</text><text class="fs" x="824" y="122">/admin/live: azure.*</text><text class="fs" x="824" y="137">console refetches</text></g>
+      <path class="fl" d="M240 105 H192" marker-end="url(#az-arr)"/><path class="fl d" d="M192 118 H240" marker-end="url(#az-arr)"/>
+      <path class="fl" d="M408 105 H426" marker-end="url(#az-arr)"/><path class="fl" d="M598 105 H616" marker-end="url(#az-arr)"/><path class="fl" d="M788 105 H806" marker-end="url(#az-arr)"/>
+      <text class="fs" x="300" y="180">Dashboard pages read snapshots only (ETag / 304, X-Data-As-Of).</text>
+    </svg>
+    <div class="flowcap" data-flowcap="azflow"><b>Select a box</b>Each step names the function that does it.</div>
+    <div class="src">Source: <b>backend/app/azure_insights/README.md</b>, scheduler.py (bootstrap_azure_insights, ensure_azure_scheduled, run_source, refresh_views), backend/app/dashboard/snapshots.py (compute_and_store, _announce), backend/app/api/routes/admin_azure.py, frontend/lib/live-updates.ts</div>
+  </div>
+
+  <!-- C3. What you get -->
+  <div class="gcard" id="az-get">
+    <h3>What you get from Microsoft, in plain words</h3>
+    <div class="g3">
+      <div class="mini"><h5>Official prices</h5><p>Microsoft's public list price per million tokens for gpt-5-mini and text-embedding-3-small, in USD and AUD. Settings › Models &amp; Pricing can use them instead of typed-in prices.</p><div class="src">Source: retail.py, prices.py, OfficialPrices.tsx</div></div>
+      <div class="mini"><h5>Azure's counts vs ours</h5><p>Azure Monitor counts every token and request on the resource, from any caller. AskDIQ counts only what it sent. The <i>Azure vs AskDIQ</i> panel shows both and highlights drift of 10% or more; tokens AskDIQ never recorded show as "not seen".</p><div class="src">Source: metrics.py, reconciliation.py (AZURE_RECONCILIATION_DRIFT_PCT = 10), AzureReconciliationPanel.tsx</div></div>
+      <div class="mini"><h5>The real bill vs our estimate</h5><p>Cost Management's billed cost per day next to AskDIQ's own estimate. Billed cost lags 8–72 h and can change until the month closes, so recent days show as pending.</p><div class="src">Source: costs.py, billed.py (LAG_NOTE), BilledVsEstimated.tsx</div></div>
+      <div class="mini"><h5>Real TPM / RPM limits and regional quota</h5><p>The tokens-per-minute and requests-per-minute each deployment is actually allowed, and how much of the regional quota is used. The quota gauges switch to these ("Limits from Azure") instead of the configured guesses.</p><div class="src">Source: capacity.py (refresh_quota_limits)</div></div>
+      <div class="mini"><h5>Resource and service health</h5><p>Whether Azure says our OpenAI resource is Available, Degraded or Unavailable, plus Azure OpenAI / Foundry incidents in our region. A banner appears across the console when something is wrong.</p><div class="src">Source: health.py, HealthBanner.tsx, admin/layout.tsx</div></div>
+      <div class="mini"><h5>Advisor retirements</h5><p>Azure Advisor recommendations for the resource group, with model retirements and deprecations pulled to the top.</p><div class="src">Source: advisor.py</div></div>
+    </div>
+  </div>
+
+  <!-- C4. Enable -->
+  <div class="gcard" id="az-enable">
+    <h3>How to switch it on</h3>
+    <ol>
+      <li>Create a <b>separate</b> Entra app registration (not the sign-in one, ENTRA_*) and give it only read roles, listed below.</li>
+      <li>On the server set <code>AZURE_INSIGHTS_ENABLED=true</code> and the ids: <code>AZURE_TENANT_ID</code>, <code>AZURE_CLIENT_ID</code>, <code>AZURE_CLIENT_SECRET</code>, <code>AZURE_SUBSCRIPTION_ID</code>, <code>AZURE_RESOURCE_GROUP</code>, <code>AZURE_OPENAI_RESOURCE_NAME</code>, <code>AZURE_OPENAI_REGION</code>. If one is missing or malformed, the API refuses to start with a message naming it.</li>
+      <li>Optional: <code>AZURE_SERVICE_HEALTH_ENABLED=true</code> and <code>AZURE_ADVISOR_ENABLED=true</code> (these need subscription-scope read), and <code>AZURE_MONTHLY_BUDGET</code> for the billed-budget alert.</li>
+      <li>Restart. The first polls run at once; the <i>Azure connection</i> card on Governance › Monitoring shows each source's state.</li>
+    </ol>
+    <div class="tscroll"><table class="cmp">
+      <thead><tr><th>Source</th><th>Read-only role</th><th>Scope</th><th>Needed?</th></tr></thead>
+      <tbody>
+        <tr><td>Metrics, deployments, Resource Health</td><td>Monitoring Reader</td><td>the Azure OpenAI / Foundry account</td><td>yes</td></tr>
+        <tr><td>Billed cost</td><td>Cost Management Reader</td><td>resource group or subscription</td><td>yes, if the subscription type supports Cost Management</td></tr>
+        <tr><td>Regional quota (usages)</td><td>Cognitive Services Usages Reader</td><td>subscription</td><td>optional</td></tr>
+        <tr><td>Service Health, Advisor</td><td>Monitoring Reader or Reader</td><td>subscription</td><td>optional</td></tr>
+        <tr><td>Retail prices</td><td>none (public API)</td><td>none</td><td>no credentials</td></tr>
+      </tbody>
+    </table></div>
+    <div class="okn"><b>Works without credentials:</b> the official price sync. <i>Sync official prices</i> in Settings › Models &amp; Pricing calls the public Retail Prices API even while Azure Insights is off (superadmin, 5 per minute).</div>
+    <h4 style="margin:4px 0 0;font:600 14px var(--f-body)">What you see until then</h4>
+    <div class="tscroll"><table class="cmp">
+      <thead><tr><th>Label in the console</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><b>Not connected</b></td><td>AZURE_INSIGHTS_ENABLED is off. Nothing is polled.</td></tr>
+        <tr><td><b>Not run yet</b> / Waiting for the first poll</td><td>Enabled, first poll not finished. Billed cost waits for the daily 03:00 (Australia/Sydney) poll.</td></tr>
+        <tr><td><b>Not offered for this subscription</b> / Unsupported subscription</td><td>Cost Management refused the subscription type (for example classic CSP, sponsorship, Azure for Students) or the billing account hides charges. Everything else still works.</td></tr>
+        <tr><td><b>Not permitted</b> (regional quota, state forbidden)</td><td>Azure returned 403 on usages: grant the optional Cognitive Services Usages Reader role at subscription scope.</td></tr>
+        <tr><td><b>Throttled</b> / <b>Call cap reached</b> / <b>Error</b></td><td>Azure asked us to wait (retried later, no attempt used); the metrics monthly cap was hit; or the last poll failed.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="src">Source: <b>backend/app/core/config.py</b> (azure_* settings and validator), backend/.env.example, foundry-usage-data-review.md ("How to enable", roles), frontend/components/admin/governance/AzureConnectionCard.tsx, AzurePanels.tsx, frontend/lib/azure-capacity-api.ts, frontend/components/admin/usage/BilledVsEstimated.tsx, backend/app/api/routes/model_settings.py</div>
+  </div>
+
+  <!-- C5. Freshness -->
+  <div class="gcard" id="az-fresh">
+    <h3>Is it real-time?</h3>
+    <p class="lede">No. Each bar is how old the data can be at worst (log scale, 1 minute to 1 week). The default poll interval is on the right.</p>
+    <div class="fresh" id="azFresh"></div>
+    <div class="src">Source: backend/app/core/config.py (AZURE_*_INTERVAL_SECONDS), metrics.py (POLL_WINDOW), billed.py (LAG_NOTE, PENDING_DAYS), health.py (STALE_INTERVALS = 3)</div>
+  </div>
+</section>
+
+</div>
+
 <footer>
-  <span>Sources: backend/app, frontend/app and frontend/components, alembic (33 migrations, head 03485c08b57b), infra/ compose and nginx files, docs/plan.md.</span>
-  <span>Keyboard: <span class="mono">Tab</span> through nodes, <span class="mono">Enter</span> to inspect, <span class="mono">Esc</span> to close, <span class="mono">1–6</span> views, <span class="mono">S</span> security, <span class="mono">+ − 0</span> zoom.</span>
+  <span>Sources: backend/app, frontend/app and frontend/components, alembic (39 migrations, head 144fe4240293), infra/ compose and nginx files, docs/plan.md.</span>
+  <span>Keyboard: <span class="mono">Tab</span> through nodes, <span class="mono">Enter</span> to inspect, <span class="mono">Esc</span> to close, <span class="mono">1–9</span> views and guides, <span class="mono">S</span> security, <span class="mono">+ − 0</span> zoom.</span>
 </footer>
 
 <script>
@@ -401,9 +1063,9 @@ def("aoai", { name: "Azure OpenAI", kind: "external", status: "live", sub: "gpt-
   sec: { A06: "LLM_MAX_CONCURRENCY=64 gate returns 429 instead of queueing without bound.", A10: "60 s timeouts, bounded retries, circuit breaker fails fast with a fallback answer." },
   rel: ["p_embed", "p_llm", "p_post", "p_eval", "i_embed", "d_insights"] });
 def("postgres", { name: "PostgreSQL + pgvector", kind: "store", status: "live", sub: "et-platform-postgres-1 · db askdiq",
-  desc: "One shared Exigo Tech platform Postgres instance holds everything: relational data, vector embeddings (pgvector, created by init_db), and the shared state that replaces Redis (rate_limit_buckets, oidc_states, jobs queue, LISTEN/NOTIFY). 29 tables (26 ORM models plus jobs, oidc_states and rate_limit_buckets created in migrations); 33 migrations, head 03485c08b57b. chunks.embedding has no HNSW or ivfflat index, so similarity search is an exact scan, which is fine at the current corpus size.",
+  desc: "One shared Exigo Tech platform Postgres instance holds everything: relational data, vector embeddings (pgvector, created by init_db), and the shared state that replaces Redis (rate_limit_buckets, oidc_states, jobs queue, LISTEN/NOTIFY). 40 tables (37 ORM models plus jobs, oidc_states and rate_limit_buckets created in migrations, including nine azure_* tables from Azure Insights); 39 migrations, head 144fe4240293. chunks.embedding has no HNSW or ivfflat index, so similarity search is an exact scan, which is fine at the current corpus size.",
   tech: ["PostgreSQL", "pgvector", "SQLAlchemy 2 async", "asyncpg", "Alembic"],
-  files: ["backend/app/models/db_models.py", "backend/app/core/database.py", "backend/alembic/versions/ (33 migrations, head 03485c08b57b)"],
+  files: ["backend/app/models/db_models.py", "backend/app/core/database.py", "backend/alembic/versions/ (39 migrations, head 144fe4240293)"],
   env: ["DATABASE_URL (no default)", "DB_POOL_SIZE=20", "DB_MAX_OVERFLOW=10", "DASHBOARD_STATEMENT_TIMEOUT_MS=5000", "STATE_BACKEND=auto", "EVENTS_CHANNEL=askdiq_events"],
   sec: { A05: "Parameterised SQLAlchemy everywhere; sort and filter allow-lists in db/query_builders.py.", A08: "audit_log is append-only (trg_audit_log_immutable)." },
   rel: ["api", "t_chunks", "t_audit_log", "d_ro", "d_events", "d_jobs"] });
@@ -518,9 +1180,9 @@ def("p_persist", { name: "Persist exchange", kind: "step", status: "live", ms: 0
   sec: { A09: "Every exchange audited with request_id; PII masked first.", A08: "audit_log rows cannot be updated or deleted." },
   rel: ["t_chat_messages", "t_audit_log", "t_latency_metrics", "p_eval", "d_jobs"] });
 def("p_eval", { name: "Online eval sampling", kind: "step", status: "live", ms: 0, async: true, metric: "evaluation_records",
-  desc: "schedule_online_evaluation samples a share of live answers after the exchange write and grades them with an LLM judge: faithfulness, relevance, completeness, citation precision and coverage, retrieval recall. Results feed Live Evaluation. Off by default (ONLINE_EVAL_ENABLED=false).",
+  desc: "schedule_online_evaluation runs after the exchange write for every answer except clarification turns. Rules run on every answer (secret and PII scans, word-overlap citation precision and coverage, heuristic retrieval recall); the LLM judge (faithfulness, relevance, completeness) runs only with ONLINE_EVAL_ENABLED=true (default false) on a 10% sample and with 15% chat TPM headroom, otherwise those three are a formula. Results feed the Evaluation page (Users audience). See the How evaluation works guide.",
   files: ["backend/app/governance/online_eval.py", "backend/app/evaluation/judge.py", "backend/app/evaluation/metrics.py"],
-  env: ["ONLINE_EVAL_ENABLED=false", "ONLINE_EVAL_SAMPLE_RATE=0.10", "ONLINE_EVAL_MAX_CONCURRENCY=4"],
+  env: ["ONLINE_EVAL_ENABLED=false", "ONLINE_EVAL_SAMPLE_RATE=0.10 (judge only)", "ONLINE_EVAL_MAX_CONCURRENCY=4", "ONLINE_EVAL_MAX_PENDING=200"],
   rel: ["t_evaluation_records", "aoai", "p_persist"] });
 
 /* ---- Dashboard data flow ---- */
@@ -529,9 +1191,10 @@ def("d_browser", { name: "Admin browser", kind: "person", status: "live",
   files: ["frontend/lib/api.ts", "frontend/lib/query-cache.ts", "frontend/lib/use-dashboard.ts", "frontend/lib/governance-api.ts"],
   rel: ["d_middleware", "d_tables", "d_proxy", "admins"] });
 def("d_tables", { name: "Admin table kit", kind: "module", status: "live", sub: "TableCard · TableToolbar · pagination",
-  desc: "Every admin table is a TableCard (header, toolbar, grid, footer) over DataTable. The toolbar sits above the grid in stacking order so the Filters and Columns popovers are never covered by rows. Pages default to 10 rows with a 10/25/50/100 selector. Offset tables use Pagination (numbered pages); cursor endpoints (governance traces and logs) use CursorPagination with useCursorStack, which shows Page X of Y from the bounded total. Traces list Request, Time, IP, Query, Status, Latency, Slowest stage, Tokens and Cost (no User column).",
+  desc: "Every admin table is a TableCard (header, toolbar, grid, footer) over DataTable. The toolbar sits above the grid in stacking order so the Filters and Columns popovers are never covered by rows. Pages default to 10 rows with a 10/25/50/100 selector. Offset tables use Pagination (numbered pages); cursor endpoints (governance traces and logs) use CursorPagination with useCursorStack, which shows Page X of Y from the bounded total. Traces list Request, Time, IP, Query, Status, Latency, Slowest stage, Tokens and Cost (no User column). Instant clicks: a list page warms the drawer of every visible row with one batch request (up to 25 ids, ETag/304; unknown ids come back in missing), hover and row intent prefetch, and the next page is warmed, so opening a row or paging shows no loader.",
   tech: ["React", "Tailwind tokens"],
-  files: ["frontend/components/admin/TableCard.tsx", "frontend/components/admin/TableToolbar.tsx", "frontend/components/admin/DataTable.tsx", "frontend/components/admin/Pagination.tsx", "frontend/components/admin/CursorPagination.tsx", "frontend/lib/use-cursor-stack.ts"],
+  endpoints: ["GET /admin/conversations/batch", "GET /admin/usage/queries/batch", "GET /admin/governance/traces/batch", "GET /metrics/evaluation/live/cases/batch"],
+  files: ["backend/app/api/batch.py (BATCH_MAX_IDS = 25)", "frontend/lib/query-cache.ts (prefetchEach)", "frontend/components/admin/TableCard.tsx", "frontend/components/admin/TableToolbar.tsx", "frontend/components/admin/DataTable.tsx", "frontend/components/admin/Pagination.tsx", "frontend/components/admin/CursorPagination.tsx", "frontend/lib/use-cursor-stack.ts"],
   rel: ["d_browser", "d_proxy", "d_routes"] });
 def("d_middleware", { name: "middleware.ts", kind: "module", status: "live",
   desc: "Redirects page requests without a session cookie to /login. A UX redirect only; the real boundary is the backend check on every proxied call. The shell branch updates it for logout.",
@@ -657,7 +1320,7 @@ def("smtp", { name: "SMTP server", kind: "external", status: "live", sub: "Alert
   sec: { A04: "STARTTLS or implicit TLS; the password is a SecretStr and never logged." },
   rel: ["d_alerts"] });
 def("d_shell", { name: "Console shell", kind: "module", status: "live", sub: "Sidebar · account corner · cache",
-  desc: "Sidebar with Go-to-page search and the merged Visitors & Conversations entry; account corner with role badge, notification bell (active alerts), tour, help, theme and sign out; page shell instead of full-page loaders with hover prefetch. The query cache keeps previous data on range and tab switches and is persisted, and live-updates.ts refetches only the scopes the /admin/live stream names.",
+  desc: "Sidebar with Go-to-page search and the merged Visitors & Conversations entry; account corner with role badge, notification bell (active alerts), tour, help, theme and sign out; page shell instead of full-page loaders with hover prefetch. The query cache keeps previous data on range and tab switches and is persisted, and live-updates.ts refetches only the scopes the /admin/live stream names. The cache is scoped to the user's access (user id, role, status and a hash of the permission list): a different scope from /auth/me drops the in-memory and stored copies at once, and a 401/403 evicts that key. The login screen preloads the shell code; once the user is known the first permitted pages are warmed.",
   tech: ["React", "Next.js App Router", "query-cache"],
   files: ["frontend/components/Sidebar.tsx", "frontend/components/shell/", "frontend/lib/navigation.ts", "frontend/lib/query-cache.ts", "frontend/lib/live-updates.ts"],
   rel: ["d_browser", "d_proxy", "d_live", "dashboard"] });
@@ -677,7 +1340,7 @@ def("d_snapshots", { name: "Dashboard snapshots", kind: "module", status: "live"
   sec: { A06: "Dashboard reads never run an unbounded aggregation on the request path." },
   rel: ["t_dashboard_snapshots", "d_events", "d_live", "d_routes", "d_jobs"] });
 def("d_alerts", { name: "Alerts + email", kind: "module", status: "live", sub: "catalogue · rules · sampler",
-  desc: "An alert catalogue (budget, latency, LLM failures, negative feedback, online-eval violations, event bus, circuit breaker, Azure 429s, resources). Each process samples its in-memory signals; the alerts.evaluate job runs the SQL rules; rows are deduped in Postgres so N processes raise one alert. alerts.notify sends branded email over SMTP with cooldown and retries; the header bell shows active alerts.",
+  desc: "An alert catalogue (budget, latency, LLM failures, negative feedback, online-eval violations, event bus, circuit breaker, Azure 429s, resources, and the Azure Insights rules: quota near limit, Monitor 429 spike, billed budget, estimate drift, resource unhealthy, sync failing). Each process samples its in-memory signals; the alerts.evaluate job runs the SQL rules; rows are deduped in Postgres so N processes raise one alert. alerts.notify sends branded email over SMTP with cooldown and retries; the header bell shows active alerts.",
   tech: ["Postgres dedupe", "Jobs", "SMTP"],
   files: ["backend/app/alerts/", "backend/app/api/routes/alerts.py", "frontend/components/shell/NotificationBell.tsx"],
   endpoints: ["GET /admin/alerts", "POST /admin/alerts/{id}/ack"],
@@ -689,6 +1352,7 @@ def("d_resources", { name: "Resource metrics sampler", kind: "module", status: "
   tech: ["/proc and /sys", "asyncio"],
   files: ["backend/app/governance/metrics_sampler.py", "backend/app/governance/resource_store.py", "backend/app/alerts/resource_rules.py"],
   env: ["METRICS_SAMPLE_INTERVAL_SECONDS=5", "ALERT_RESOURCE_SUSTAIN_SECONDS=120", "ALERT_CPU_WARNING_PCT=80", "ALERT_MEMORY_WARNING_PCT=85"],
+  note: "Uncommitted work on preview/live: a Chat in flight gauge (in-flight /query requests as a share of the LLM slots, LLM_MAX_CONCURRENCY per worker; warn 70%, danger 90%), sampled as query_capacity in each resource sample.",
   rel: ["t_resource_samples", "d_alerts", "d_sse"] });
 def("d_modelsettings", { name: "Models & Pricing", kind: "module", status: "live", sub: "runtime overrides · /admin/models",
   desc: "Settings > Models & Pricing overrides the chat deployment, embedding model and per-million token prices at runtime (singleton model_settings row, versioned). A change is verified with one live Azure call before it is saved, and a cache invalidation event makes every process pick it up.",
@@ -701,10 +1365,25 @@ def("d_citations", { name: "Citation sources sync", kind: "module", status: "liv
   desc: "Expands the sources listed on query audit rows and evaluation records into one row per cited source, incrementally from a per-origin watermark, so Knowledge page citation stats read a table instead of parsing JSON for every range.",
   files: ["backend/app/documents/citations.py"],
   rel: ["t_citation_sources", "t_citation_sync_state", "t_audit_log", "t_evaluation_records"] });
+def("azmgmt", { name: "Azure management APIs", kind: "external", status: "live", sub: "Retail · Monitor · Cost Mgmt · ARM · Health · Advisor",
+  desc: "The Microsoft APIs Azure Insights polls: public Retail Prices (no credentials) and, through a separate read-only service principal (client credentials, scope https://management.azure.com/.default), Azure Monitor metrics, Cost Management query, Cognitive Services deployments and usages, Resource Health, Service Health events and Advisor. Off by default (AZURE_INSIGHTS_ENABLED=false). See the Microsoft Azure guide tab.",
+  tech: ["OAuth2 client credentials", "httpx", "ARM REST"],
+  files: ["backend/app/azure_insights/auth.py", "backend/app/azure_insights/client.py"],
+  env: ["AZURE_INSIGHTS_ENABLED=false", "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET (secret)", "AZURE_SUBSCRIPTION_ID", "AZURE_RESOURCE_GROUP", "AZURE_OPENAI_RESOURCE_NAME", "AZURE_OPENAI_REGION"],
+  sec: { A01: "Read-only roles only (Monitoring Reader, Cost Management Reader, optional Usages Reader / Reader).", A04: "Secret is a SecretStr, never logged; error messages mask tokens." },
+  rel: ["d_azure"] });
+def("d_azure", { name: "Azure Insights", kind: "module", status: "live", sub: "PR #62 · scheduled azure.* jobs",
+  desc: "Seven sources (retail, metrics, costs, capacity, health, service_health, advisor) run as jobs azure.<source> on their own schedule, one replica per slot. Each run upserts into its azure_* table with history, records azure_sync_status, refreshes the azure.* dashboard snapshots and announces them on /admin/live. Pages read only snapshots and never call Azure. Feeds Governance > Monitoring (Azure connection, Azure vs AskDIQ, capacity and health, Advisor), Usage & Cost (Azure-reported tokens, Billed vs estimated), Settings > Models & Pricing (official prices) and alert rules.",
+  tech: ["Postgres job queue", "Snapshots", "LISTEN/NOTIFY"],
+  files: ["backend/app/azure_insights/README.md", "backend/app/azure_insights/scheduler.py", "backend/app/azure_insights/{retail,metrics,costs,capacity,health,advisor}.py", "backend/app/api/routes/admin_azure.py"],
+  endpoints: ["GET /admin/azure/status, /metrics/summary, /metrics/series, /capacity, /health, /advisor, /costs", "GET /admin/models/prices/official", "POST /admin/models/prices/sync"],
+  env: ["AZURE_METRICS_INTERVAL_SECONDS=900", "AZURE_COSTS_INTERVAL_SECONDS=86400 (03:00 Australia/Sydney)", "AZURE_CAPACITY_INTERVAL_SECONDS=21600", "AZURE_HEALTH_INTERVAL_SECONDS=600", "AZURE_SERVICE_HEALTH_INTERVAL_SECONDS=1800", "AZURE_RETAIL_INTERVAL_SECONDS=604800", "AZURE_ADVISOR_INTERVAL_SECONDS=86400", "AZURE_METRICS_MONTHLY_CALL_CAP=100000"],
+  sec: { A06: "Monthly metrics call cap and throttling deferral keep the free tier free.", A10: "Throttled runs are re-queued at retry-after; failures are counted and alert after 3." },
+  rel: ["azmgmt", "d_snapshots", "d_alerts", "d_jobs", "t_azure_sync_status"] });
 def("p_clarify", { name: "Clarification plan", kind: "step", status: "live", ms: 1, metric: "part of llm_ms · outcome clarify",
-  desc: "A short, underspecified, standalone question is retrieved wider; if the evidence spreads over 2 to 4 distinct topics with similar scores, the prompt lets the model ask one clarifying question with options instead of answering (same generation call, no extra LLM call). Never more than CLARIFY_MAX_CONSECUTIVE times in a row.",
-  files: ["backend/app/harness/clarify.py", "backend/app/harness/orchestrator.py", "frontend/components/chat/"],
-  env: ["CLARIFY_ENABLED=true", "CLARIFY_MAX_CONSECUTIVE=2", "CLARIFY_MAX_QUERY_WORDS=4", "CLARIFY_MIN_OPTIONS=2", "CLARIFY_MAX_OPTIONS=4", "CLARIFY_RETRIEVAL_TOP_K=10"],
+  desc: "Two triggers. (1) A short, underspecified question (≤ 4 content words) is retrieved wider; if the evidence spreads over 2 to 4 topics with similar scores, the model may ask one clarifying question in the same generation call. (2) Ambiguity rules, decided before the low-confidence fallback: REFERENT (\"How much does it cost?\" with nothing for \"it\" to point at), COMPARISON (\"better than the other one?\") and SLOTS (a compliance plan naming no framework, asking up to CLARIFY_MAX_QUESTIONS). Options are the retrieved documents; a borderline SLOTS case is confirmed by one small JSON LLM call with a 3 s timeout. The rules are linear-time (CodeQL ReDoS fix, input capped at 2000 characters). The chat shows a clarification card with options and Other; never more than CLARIFY_MAX_CONSECUTIVE in a row.",
+  files: ["backend/app/harness/clarify.py", "backend/app/harness/ambiguity.py", "backend/app/harness/orchestrator.py", "frontend/components/chat/ClarificationCard.tsx"],
+  env: ["CLARIFY_ENABLED=true", "CLARIFY_MAX_CONSECUTIVE=2", "CLARIFY_MAX_QUERY_WORDS=4", "CLARIFY_MIN_OPTIONS=2", "CLARIFY_MAX_OPTIONS=4", "CLARIFY_MAX_QUESTIONS=4", "CLARIFY_MIN_RETRIEVAL_SCORE=0.12", "CLARIFY_DECISION_TIMEOUT_SECONDS=3.0", "CLARIFY_RETRIEVAL_TOP_K=10"],
   rel: ["p_quota", "p_llm"] });
 
 /* ---- Tables ---- */
@@ -730,8 +1409,8 @@ tbl("audit_log", "Observability", "live", "Append-only event log. trg_audit_log_
   { sec: { A08: "Immutable by trigger, even for the app role.", A09: "Auth, 429, 5xx, query and ingest events correlated by request_id." } });
 tbl("latency_metrics", "Observability", "live", "Total and per-stage latency for every request.", [
   ["id", "UUID PK"], ["request_id", "ix"], ["total_ms", "Float"], ["embedding_ms / retrieval_ms / reranker_ms", "Float"], ["guardrail_pre_ms / llm_ms / guardrail_post_ms", "Float"]], ["chat_messages"]);
-tbl("evaluation_records", "Observability", "live", "Judge results from online sampling and offline runs.", [
-  ["id", "UUID PK"], ["message_id / session_id", "FK, CASCADE"], ["audience", "String(32), ix"], ["passed", "Bool"], ["faithfulness / relevance / completeness", "Float"], ["citation_precision / citation_coverage / retrieval_recall", "Float"], ["unsupported_claims / retrieved_chunks", "JSON"], ["judge_reason", "Text"]], ["chat_messages", "chat_sessions"]);
+tbl("evaluation_records", "Observability", "live", "One online evaluation per live answer (rules always; judge scores only when ONLINE_EVAL_ENABLED). Offline runs write report files, not rows here.", [
+  ["id", "UUID PK"], ["message_id / session_id", "FK, CASCADE"], ["audience", "String(32), ix (always users today)"], ["passed / grounded / safety_passed", "Bool"], ["confidence / outcome / latency_ms", ""], ["faithfulness / relevance / completeness", "Float"], ["citation_precision / citation_coverage / retrieval_recall", "Float"], ["unsupported_claims / retrieved_chunks", "JSON"], ["judge_reason", "Text"]], ["chat_messages", "chat_sessions"]);
 tbl("eval_promoted_cases", "Observability", "live", "Golden test cases promoted from feedback (moved out of a JSON file).", [
   ["id", "String(64) PK"], ["query / reference_answer", "Text"], ["case_type / expected_outcome", "String"], ["source_message_id", "UUID, unique, no FK"], ["reason_tags / last_run_detail", "JSONB"], ["promoted_by / promoted_at", ""]], []);
 tbl("test_ip_configs", "Observability", "live", "Internal and test IPs excluded from usage and active-visitor counts.", [
@@ -778,6 +1457,31 @@ tbl("usage_turns", "Console", "live", "Per-turn usage ledger kept in step by row
   { note: "Maintained by triggers inside the writing transaction, so it is never behind the data. pg_trgm GIN indexes serve the All Queries search." });
 tbl("citation_sync_state", "Console", "live", "Watermark per origin for the citation sync.", [
   ["origin", "String PK"], ["synced_until", "timestamptz"]], []);
+tbl("usage_hourly_rollup", "Console", "live", "Hourly usage aggregates (turns, tokens, cost, outcomes, latencies, ingest) behind Usage & Cost charts.", [
+  ["id", "BigInteger identity PK"], ["hour / asst_day / ip", ""], ["turns / *_tokens / cost_usd", "BigInteger / Float"], ["answered / ungrounded / blocked / conversational / llm_failed / clarify", "counts"], ["latency_ms", "Float[]"]], ["usage_rollup_state"]);
+tbl("usage_rollup_state", "Console", "live", "Watermark for the hourly usage rollup.", [
+  ["id", "Integer PK"], ["synced_until", "DateTime"], ["version", "BigInteger"]], []);
+
+/* ---- Azure Insights tables (PR #62). Retention per backend/app/azure_insights/*. ---- */
+var AZ_REL = { files: ["backend/app/models/db_models.py", "backend/app/azure_insights/"] };
+tbl("azure_retail_prices", "Azure Insights", "live", "Official Azure retail prices per meter, currency and effective date. History kept, never pruned.", [
+  ["meter_id / currency / effective_start_date", "composite PK"], ["meter_name / sku_name / arm_region_name", ""], ["retail_price / price_per_million", "per 1M tokens"], ["role", "prompt | cached | output | embed"], ["deployment_type", "Global | DataZone | Regional"]], [], AZ_REL);
+tbl("azure_metric_points", "Azure Insights", "live", "Azure Monitor metric points per deployment. PT1M kept 7 days, PT1H 93 days.", [
+  ["deployment / metric / status_code / grain / ts", "composite PK"], ["total / average / maximum", "Float"], ["fetched_at", "timestamptz"]], [], AZ_REL);
+tbl("azure_billed_costs", "Azure Insights", "live", "Cost Management billed cost per day, meter and resource. Kept AZURE_COSTS_RETENTION_DAYS (400).", [
+  ["usage_date / meter / resource_id", "composite PK"], ["cost / currency", "Decimal / String"], ["is_final", "month closed + 3 days"], ["fetched_at", "timestamptz"]], [], AZ_REL);
+tbl("azure_deployments", "Azure Insights", "live", "Deployment snapshot per poll: model, SKU, capacity, real TPM and RPM. Kept 400 days.", [
+  ["name / fetched_at", "composite PK"], ["model_name / model_version / sku_name / sku_capacity", ""], ["tpm_limit / rpm_limit / rate_limits", "from properties.rateLimits"], ["provisioning_state", ""]], [], AZ_REL);
+tbl("azure_quota_usage", "Azure Insights", "live", "Regional Cognitive Services usages per poll. Kept 400 days.", [
+  ["location / name / fetched_at", "composite PK"], ["current_value / limit_value / unit", ""]], [], AZ_REL);
+tbl("azure_health_status", "Azure Insights", "live", "Resource Health, one row per change of state. Kept 400 days after it ended.", [
+  ["resource_id / started_at", "composite PK"], ["availability_state", "Available | Degraded | Unavailable | Unknown"], ["checked_at / ended_at", "timestamptz"]], [], AZ_REL);
+tbl("azure_service_events", "Azure Insights", "live", "Service Health incidents for Azure OpenAI / Foundry in our region. Kept 400 days.", [
+  ["tracking_id", "PK"], ["event_type / status / level / title", ""], ["impact_start / impact_mitigation", ""], ["first_seen_at / last_seen_at", ""]], [], AZ_REL);
+tbl("azure_advisor_recs", "Azure Insights", "live", "Advisor recommendations for the resource group; resolved_at when they disappear. Never pruned.", [
+  ["rec_id", "PK"], ["category / impact / problem / solution", ""], ["first_seen_at / last_seen_at / resolved_at", ""]], [], AZ_REL);
+tbl("azure_sync_status", "Azure Insights", "live", "One row per source: last run, state, errors, failure streak and metrics calls this month.", [
+  ["source", "PK"], ["state", "never_run | ok | error | throttled | budget_exhausted | unsupported"], ["consecutive_failures", "Integer"], ["calls_this_month / calls_month", "metrics call cap"]], [], AZ_REL);
 
 /* ------------------------------------------------------------------ */
 /* Views                                                               */
@@ -860,11 +1564,11 @@ var VIEWS = [
      { f: "p_quota", t: "p_clarify", l: "spread topics" }, { f: "p_clarify", t: "p_llm", l: "ask with options", d: "The model decides in the same call: answer, or one clarifying question with 2 to 4 options (outcome clarify)." }, { f: "p_llm", t: "p_post" }, { f: "p_post", t: "p_persist", l: "respond", d: "The QueryResponse is returned here; persistence and evaluation continue in supervised background tasks." },
      { f: "p_persist", t: "p_eval", l: "sampled" }] },
 
- { id: "dashboard", label: "Dashboard data flow", w: 1540, h: 1000,
+ { id: "dashboard", label: "Dashboard data flow", w: 1540, h: 1110,
    blurb: "How a dashboard page gets its data: the browser only calls its own origin, the proxy attaches credentials, the backend checks permissions, then reads Postgres through bounded sessions and caches. Heavy aggregates are precomputed snapshots; /admin/live tells open consoles which scopes changed, and Governance has its own SSE stream. Alerts, resource samples, model settings and citation sync run beside them.",
    groups: [
      { label: "Next.js (askdiq dashboard)", x: 220, y: 30, w: 280, h: 700, cls: "zone" },
-     { label: "askdiq-api", x: 530, y: 30, w: 720, h: 900, cls: "zone" }],
+     { label: "askdiq-api", x: 530, y: 30, w: 720, h: 1060, cls: "zone" }],
    nodes: [
      ["d_browser", 20, 320, 180, 90], ["w_widget", 20, 540, 180, 110],
      ["d_middleware", 240, 70, 240, 90], ["d_tables", 240, 185, 240, 100], ["d_proxy", 240, 310, 240, 110], ["d_callback", 240, 560, 240, 110],
@@ -874,7 +1578,8 @@ var VIEWS = [
      ["postgres", 1290, 260, 230, 110], ["d_insights", 1290, 560, 230, 110], ["entra", 580, 600, 190, 90],
      ["d_shell", 240, 430, 240, 110], ["d_modelsettings", 555, 110, 210, 110], ["d_live", 800, 610, 190, 100],
      ["d_resources", 555, 770, 210, 110], ["d_alerts", 800, 770, 190, 110], ["d_snapshots", 1025, 770, 200, 120],
-     ["d_citations", 1290, 720, 230, 100], ["smtp", 1290, 870, 230, 76]],
+     ["d_citations", 1290, 720, 230, 100], ["smtp", 1290, 870, 230, 76],
+     ["d_azure", 800, 960, 425, 110], ["azmgmt", 1290, 975, 230, 100]],
    edges: [
      { f: "d_browser", t: "d_middleware", l: "page request", curve: 20 },
      { f: "d_browser", t: "d_tables", l: "render pages", curve: -20 },
@@ -908,7 +1613,10 @@ var VIEWS = [
      { f: "d_resources", t: "d_alerts", l: "resource rules" },
      { f: "d_jobs", t: "d_alerts", l: "alerts.evaluate · notify" },
      { f: "d_alerts", t: "smtp", l: "email", curve: 20 },
-     { f: "d_citations", t: "postgres", l: "citation_sources" }] },
+     { f: "d_citations", t: "postgres", l: "citation_sources" },
+     { f: "d_azure", t: "azmgmt", l: "poll on schedule", d: "Jobs azure.<source> poll Microsoft on each source's interval; the dashboard never calls Azure on page load." },
+     { f: "d_azure", t: "d_snapshots", l: "refresh azure.*" },
+     { f: "d_azure", t: "d_alerts", l: "Azure rules", curve: -50, d: "azure_quota_near_limit, azure_monitor_429_spike, azure_billed_budget, azure_estimate_drift, azure_resource_unhealthy, azure_insights_sync_failing." }] },
 
  { id: "ingestion", label: "Ingestion", w: 1240, h: 650,
    blurb: "From an uploaded file to searchable chunks, as implemented in app/ingestion/service.py. Unchanged documents stop at the hash check, so re-running ingestion costs nothing.",
@@ -925,8 +1633,8 @@ var VIEWS = [
      { f: "i_chunk", t: "i_diff" }, { f: "i_diff", t: "i_embed", l: "new only" },
      { f: "i_embed", t: "aoai", l: "embed_texts" }, { f: "i_embed", t: "i_store" }] },
 
- { id: "data", label: "Data model", w: 1160, h: 1190,
-   blurb: "29 tables in one Postgres database (26 ORM models plus jobs, oidc_states and rate_limit_buckets from migrations). Solid lines are foreign keys; dashed lines are logical joins on request_id with no foreign key. Click a table for its key columns.",
+ { id: "data", label: "Data model", w: 1160, h: 1440,
+   blurb: "40 tables in one Postgres database (37 ORM models plus jobs, oidc_states and rate_limit_buckets from migrations). Solid lines are foreign keys; dashed lines are logical joins on request_id with no foreign key. Click a table for its key columns.",
    groups: [
      { label: "Content", x: 20, y: 30, w: 230, h: 260, cls: "zone" },
      { label: "Chat and feedback", x: 280, y: 30, w: 560, h: 260, cls: "zone" },
@@ -935,7 +1643,8 @@ var VIEWS = [
      { label: "Insights", x: 700, y: 330, w: 440, h: 260, cls: "zone" },
      { label: "Auth", x: 20, y: 630, w: 640, h: 250, cls: "zone" },
      { label: "Platform (shared state)", x: 700, y: 630, w: 440, h: 250, cls: "zone" },
-     { label: "Console: snapshots, alerts, monitoring, settings, citations, usage ledger", x: 20, y: 920, w: 1120, h: 250, cls: "zone" }],
+     { label: "Console: snapshots, alerts, monitoring, settings, citations, usage ledger", x: 20, y: 920, w: 1120, h: 250, cls: "zone" },
+     { label: "Azure Insights (PR #62)", x: 20, y: 1200, w: 1120, h: 225, cls: "zone" }],
    nodes: [
      ["t_documents", 45, 80, 180, 64], ["t_chunks", 45, 195, 180, 64],
      ["t_chat_sessions", 305, 80, 180, 64], ["t_chat_messages", 305, 195, 180, 64],
@@ -946,7 +1655,10 @@ var VIEWS = [
      ["t_users", 45, 690, 180, 64], ["t_access_requests", 45, 800, 180, 64], ["t_auth_sessions", 300, 690, 190, 64], ["t_oidc_states", 300, 800, 190, 64],
      ["t_jobs", 725, 690, 190, 64], ["t_rate_limit_buckets", 935, 690, 190, 64],
      ["t_dashboard_snapshots", 45, 975, 200, 64], ["t_alerts", 280, 975, 180, 64], ["t_resource_samples", 495, 975, 190, 64], ["t_model_settings", 725, 975, 190, 64],
-     ["t_citation_sources", 45, 1085, 200, 64], ["t_citation_sync_state", 280, 1085, 200, 64], ["t_usage_turns", 725, 1085, 190, 64]],
+     ["t_citation_sources", 45, 1085, 200, 64], ["t_citation_sync_state", 280, 1085, 200, 64], ["t_usage_turns", 725, 1085, 190, 64],
+     ["t_usage_hourly_rollup", 935, 975, 190, 64], ["t_usage_rollup_state", 935, 1085, 190, 64],
+     ["t_azure_retail_prices", 45, 1250, 200, 64], ["t_azure_metric_points", 265, 1250, 200, 64], ["t_azure_billed_costs", 485, 1250, 200, 64], ["t_azure_deployments", 705, 1250, 200, 64], ["t_azure_quota_usage", 925, 1250, 200, 64],
+     ["t_azure_health_status", 45, 1340, 200, 64], ["t_azure_service_events", 265, 1340, 200, 64], ["t_azure_advisor_recs", 485, 1340, 200, 64], ["t_azure_sync_status", 705, 1340, 200, 64]],
    edges: [
      { f: "t_chunks", t: "t_documents", l: "document_id" },
      { f: "t_chat_messages", t: "t_chat_sessions", l: "session_id" },
@@ -1437,7 +2149,14 @@ $("pReset").addEventListener("click", function () { stop(); setStep(-1, false); 
 /* Chrome: tabs, legend, overlay, theme                                */
 /* ------------------------------------------------------------------ */
 var tabs = $("tabs");
-VIEWS.forEach(function (v, i) {
+/* Guide tabs: plain-language pages (sections in #guides) instead of a diagram canvas. */
+var GUIDES = [
+  { id: "feedback", label: "How feedback works", guide: true },
+  { id: "evaluation", label: "How evaluation works", guide: true },
+  { id: "azure", label: "Microsoft Azure", guide: true }
+];
+var ALLTABS = VIEWS.concat(GUIDES);
+ALLTABS.forEach(function (v, i) {
   var b = h("button", "tab"); b.type = "button"; b.setAttribute("role", "tab"); b.id = "tab-" + v.id; b.dataset.view = v.id;
   b.appendChild(h("span", "n", String(i + 1))); b.appendChild(document.createTextNode(v.label));
   b.addEventListener("click", function () { switchView(v.id); });
@@ -1447,7 +2166,21 @@ VIEWS.forEach(function (v, i) {
   });
   tabs.appendChild(b);
 });
+function showGuide(g) {
+  stop();
+  state.guide = g.id;
+  Array.prototype.forEach.call(tabs.children, function (b) { var on = b.dataset.view === g.id; b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1; });
+  document.querySelector(".bar").hidden = true; owRow.hidden = true; $("work").hidden = true; $("guides").hidden = false;
+  Array.prototype.forEach.call(document.querySelectorAll(".guide"), function (s) { s.hidden = s.id !== "guide-" + g.id; });
+  store("askdiq-arch-view", g.id);
+  try { if (location.hash !== "#" + g.id) history.replaceState(null, "", "#" + g.id); } catch (e) { /* sandboxed */ }
+}
 function switchView(id) {
+  var gd = GUIDES.find(function (x) { return x.id === id; });
+  if (gd) { showGuide(gd); return; }
+  if (state.guide) {
+    state.guide = null; document.querySelector(".bar").hidden = false; owRow.hidden = !state.sec; $("work").hidden = false; $("guides").hidden = true;
+  }
   var v = VIEWS.find(function (x) { return x.id === id; }) || VIEWS[0];
   stop();
   state.view = v.id; state.sel = null;
@@ -1500,15 +2233,367 @@ document.addEventListener("keydown", function (e) {
   if (e.key === "/") { e.preventDefault(); qIn.focus(); return; }
   if (e.key === "Escape") { if (state.sel || panel.querySelector(".close")) clearSel(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (/^[1-9]$/.test(e.key) && ALLTABS[+e.key - 1]) { switchView(ALLTABS[+e.key - 1].id); return; }
+  if (state.guide) return;
   if (e.key === "s" || e.key === "S") { toggleSec(); return; }
-  if (/^[1-6]$/.test(e.key)) { switchView(VIEWS[+e.key - 1].id); return; }
   if (e.key === "+" || e.key === "=") zc(1.2); else if (e.key === "-") zc(1 / 1.2); else if (e.key === "0") fit();
 });
+
+/* ------------------------------------------------------------------ */
+/* Guides: data + widgets (stepper, glossary, flows, toggles, reader)  */
+/* ------------------------------------------------------------------ */
+/* Azure Insights sources. Every value is from backend/app/azure_insights/* and config.py. */
+var AZ_SOURCES = [
+  { id: "retail", name: "Retail prices", short: "public price list · weekly",
+    endpoint: "GET https://prices.azure.com/api/retail/prices", api: "no api-version; currencyCode + $filter serviceName eq 'Foundry Models', region, priceType Consumption, meters GPT 5 Mini and text-embedding-3-small",
+    auth: "None. Public API, no credentials.", schedule: "Weekly: AZURE_RETAIL_INTERVAL_SECONDS = 604800 (scheduled only when Insights is on). Manual: Sync official prices, POST /admin/models/prices/sync (superadmin, AZURE_RETAIL_SYNC_RATE_LIMIT_PER_MINUTE = 5).",
+    fields: "Meter, product, SKU, region, unit, retail price, price per million, role (prompt / cached / output / embed), deployment type (Global, DataZone, Regional), in USD and AZURE_PRICING_CURRENCY (AUD).",
+    tables: "azure_retail_prices, one row per meter, currency and effective start date. History kept; never pruned.",
+    ui: "Settings › Models & Pricing › Official prices (Sync official prices).", alerts: "None directly.",
+    notes: "Free. Region comes from AZURE_OPENAI_REGION, else AZURE_RETAIL_FALLBACK_REGION = eastus2.",
+    src: "retail.py, prices.py (RETAIL_METERS), model_settings.py, OfficialPrices.tsx" },
+  { id: "metrics", name: "Monitor metrics", short: "Azure's token and request counts · 15 min",
+    endpoint: "GET {account}/providers/Microsoft.Insights/metrics", api: "api-version=2023-10-01, namespace Microsoft.CognitiveServices/accounts; 4 calls: tokens (ProcessedPromptTokens, GeneratedTokens, TokenTransaction), requests by StatusCode (AzureOpenAIRequests), latency (AzureOpenAITTLTInMS, AzureOpenAINormalizedTTFTInMS, AzureOpenAIAvailabilityRate), preview cost (FoundryModelEstimatedCost)",
+    auth: "Service principal, client credentials (token from login.microsoftonline.com, scope https://management.azure.com/.default).",
+    schedule: "Every 15 min: AZURE_METRICS_INTERVAL_SECONDS = 900 (minimum 300). Each poll re-reads the last 2 h per minute; once a day the last 3 days per hour.",
+    fields: "Per deployment, metric, status code and time grain: total, average, maximum.",
+    tables: "azure_metric_points. Kept 7 days per minute (PT1M) and 93 days per hour (PT1H), fixed in code.",
+    ui: "Governance › Monitoring › Azure vs AskDIQ; Usage & Cost › Overview › Azure-reported tokens and Recorded vs not seen; call bar on the Azure connection card.",
+    alerts: "azure_monitor_429_spike (Azure-side 429s), azure_quota_near_limit (per-minute peaks).",
+    notes: "Hard monthly call cap AZURE_METRICS_MONTHLY_CALL_CAP = 100000, 10% of the 1M free metric calls per month, so it is never billed. At the cap: Call cap reached until next month. The preview cost metric switches itself off after 3 empty days.",
+    src: "metrics.py, reconciliation.py, status.py (consume_call), AzureReconciliationPanel.tsx, AzureTokensPanel.tsx" },
+  { id: "costs", name: "Billed cost", short: "Cost Management · daily 03:00",
+    endpoint: "POST /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CostManagement/query", api: "api-version = AZURE_COSTS_API_VERSION = 2026-06-01; ActualCost, Daily, Sum of Cost grouped by ResourceId and Meter, filtered to our account; last 7 days plus month to date",
+    auth: "Service principal, client credentials.", schedule: "Daily: AZURE_COSTS_INTERVAL_SECONDS = 86400, at AZURE_COSTS_RUN_AT = 03:00 in INSIGHTS_TIMEZONE = Australia/Sydney.",
+    fields: "Cost per day, meter and resource, currency, and whether the day is final.",
+    tables: "azure_billed_costs; a day is final 3 days after its month closes. Retention AZURE_COSTS_RETENTION_DAYS = 400.",
+    ui: "Usage & Cost › Overview › Billed vs estimated.", alerts: "azure_billed_budget (month to date vs AZURE_MONTHLY_BUDGET), azure_estimate_drift (closed days vs our estimate).",
+    notes: "Billed cost lags 8–72 h and can be rerated until the month closes; yesterday and today always show as pending. Cost Management throttles by QPU: we wait for its retry-after header instead of spending an attempt. Some subscription types are Unsupported.",
+    src: "costs.py, billed.py, client.py (QPU retry-after), azure_cost_rules.py, BilledVsEstimated.tsx" },
+  { id: "capacity", name: "Capacity and quota", short: "real TPM / RPM · 6 h",
+    endpoint: "GET {account}/deployments and GET /subscriptions/{sub}/providers/Microsoft.CognitiveServices/locations/{region}/usages", api: "api-version=2024-10-01",
+    auth: "Service principal, client credentials.", schedule: "Every 6 h: AZURE_CAPACITY_INTERVAL_SECONDS = 21600 (minimum 3600).",
+    fields: "Per deployment: model and version, SKU, capacity, TPM and RPM from its rate limits, provisioning state. Regional usages: current value, limit, unit.",
+    tables: "azure_deployments and azure_quota_usage, one row per poll (history by fetched_at), kept 400 days.",
+    ui: "Governance › Monitoring › Azure capacity and health › Regional quota and limits; Azure TPM / Azure RPM gauges (Limits from Azure).",
+    alerts: "azure_quota_near_limit: warning at ALERT_AZURE_QUOTA_PCT = 85%, critical at 100%.",
+    notes: "A 403 on regional usages shows Not permitted (optional Cognitive Services Usages Reader role) but does not fail the source.",
+    src: "capacity.py, azure-capacity-api.ts, AzurePanels.tsx" },
+  { id: "health", name: "Resource Health", short: "is our resource up? · 10 min",
+    endpoint: "GET {account}/providers/Microsoft.ResourceHealth/availabilityStatuses/current", api: "api-version=2025-05-01",
+    auth: "Service principal, client credentials.", schedule: "Every 10 min: AZURE_HEALTH_INTERVAL_SECONDS = 600 (minimum 300).",
+    fields: "Availability state (Available, Degraded, Unavailable, Unknown), summary, reason, when it started, reported, resolution ETA.",
+    tables: "azure_health_status, one row per change of state; kept 400 days after it ended.",
+    ui: "Governance › Monitoring › Azure health card; console-wide banner \"Azure OpenAI resource {state}\".",
+    alerts: "azure_resource_unhealthy.", notes: "A status not confirmed for 3 intervals (about 30 min) is treated as stale and ignored.",
+    src: "health.py, HealthBanner.tsx, AzurePanels.tsx" },
+  { id: "service_health", name: "Service Health events", short: "Azure incidents · 30 min · opt-in",
+    endpoint: "GET /subscriptions/{sub}/providers/Microsoft.ResourceHealth/events", api: "api-version=2025-05-01, queryStartTime = 30 days ago; kept only for OpenAI / Foundry / Cognitive services in our region or global",
+    auth: "Service principal, client credentials (subscription-scope read).", schedule: "Every 30 min: AZURE_SERVICE_HEALTH_INTERVAL_SECONDS = 1800, only with AZURE_SERVICE_HEALTH_ENABLED = true (default false).",
+    fields: "Tracking id, type, status, level, title, summary, services, regions, impact start and mitigation.",
+    tables: "azure_service_events (one row per incident), kept 400 days after last seen.",
+    ui: "Governance › Monitoring › Azure health › Service Health; console-wide banner \"Azure service incident\".",
+    alerts: "azure_resource_unhealthy for an active service issue (critical when level is Error).", notes: "Active only if Azure still reported it within about 90 min.",
+    src: "health.py, AzurePanels.tsx" },
+  { id: "advisor", name: "Advisor recommendations", short: "retirements · daily · opt-in",
+    endpoint: "GET /subscriptions/{sub}/providers/Microsoft.Advisor/recommendations", api: "api-version=2025-01-01, $filter ResourceGroup eq '{rg}' (never triggers a new Advisor scan)",
+    auth: "Service principal, client credentials (subscription-scope read).", schedule: "Daily: AZURE_ADVISOR_INTERVAL_SECONDS = 86400, only with AZURE_ADVISOR_ENABLED = true (default false).",
+    fields: "Category, impact, impacted resource, problem, solution, learn-more link; flagged as a retirement when it mentions retire, deprecat or end of life.",
+    tables: "azure_advisor_recs; a recommendation that disappears gets resolved_at. Never pruned.",
+    ui: "Governance › Monitoring › Advisor card (retirements first).", alerts: "None.", notes: "Free.",
+    src: "advisor.py, AzurePanels.tsx" }
+];
+var AZ_FLOW = [
+  ["Azure APIs", "Seven Microsoft endpoints. Only Retail Prices is public; the rest use a read-only service principal. Throttling (429, QPU and ARM read limits) defers the job instead of failing it."],
+  ["1 · Poll on schedule", "bootstrap_azure_insights at startup and ensure_azure_scheduled every 5 min queue job azure.<source> for its time slot. The dedupe key azure.<source>:<slot> plus FOR UPDATE SKIP LOCKED means exactly one replica runs each slot. Needs JOBS_WORKER_ENABLED."],
+  ["2 · Persist with history", "run_source marks the start, runs the source (INSERT … ON CONFLICT DO UPDATE into its azure_* table) and records success or failure in azure_sync_status (state, last error, consecutive failures, calls this month)."],
+  ["3 · Refresh the snapshot", "refresh_views recomputes azure.status and the source's snapshot kinds with compute_and_store into dashboard_snapshots, even when the run failed, so the console shows the new state."],
+  ["4 · Announce live", "compute_and_store publishes snapshot.updated and console.changed on the event bus; /admin/live sends the azure.* scope and the browser refetches admin/azure. Capacity also announces governance.monitoring."]
+];
+/* Freshness: worst-case age in minutes (poll interval plus documented lag). */
+var AZ_FRESH = [
+  ["Resource Health", 30, "every 10 min", "stale after 3 polls"],
+  ["Monitor metrics", 15, "every 15 min", "+ Monitor ingestion delay"],
+  ["Service Health", 90, "every 30 min", "active if seen in 90 min"],
+  ["Capacity and quota", 360, "every 6 h", ""],
+  ["Advisor", 1440, "daily", ""],
+  ["Billed cost", 1440 + 72 * 60, "daily 03:00", "+ 8–72 h billing lag"],
+  ["Retail prices", 10080, "weekly", "or last manual sync"]
+];
+
+/* Evaluation guide data. k: j = AI judge, r = rule, h = heuristic. where: on, off or both. */
+window.EV_FLOW = [
+  ["Pre-checks (guardrails)", "run_pre_checks blocks too-long, gibberish and prompt-injection input before retrieval (flag unsafe_input_detected). Offline safety cases check these flags (expect_flags_any)."],
+  ["Retrieval", "Embed, pgvector search, ONNX rerank, cross-document quota. A top score under MIN_RETRIEVAL_SCORE = 0.15 returns an off_topic fallback. Offline, the retrieved sources are scored against expected_docs (Recall@k, MRR, nDCG)."],
+  ["Generation", "The answer model writes the reply from the retrieved context. Its text is what the judge later grades."],
+  ["Groundedness check (every answer)", "check_groundedness: the answer embedding must reach cosine ≥ GROUNDEDNESS_THRESHOLD = 0.45 with a source, and numbers must appear in the sources. Ungrounded answers are replaced by a safe fallback (outcome ungrounded). This sets grounded and confidence, which both evaluations reuse."],
+  ["Answer sent", "The response returns to the user. The exchange is written in the background; online evaluation waits for that write to commit."],
+  ["Online evaluation + judge", "schedule_online_evaluation runs for every answer except clarification turns: secret and PII scans, word-overlap citation scores, then the AI judge (judge_answer) if ONLINE_EVAL_ENABLED and the 10% sample hits and chat TPM headroom is at least 15%. Writes evaluation_records; violations write an online_eval audit row, which the alert counts. Up to 4 at once, skipped above 200 pending."],
+  ["Offline evaluator", "evaluate_case sends each golden-set question through the same run_query pipeline (request id eval-<case>-…), then applies the retrieval, keyword, safety and citation checks, and with --judge both judge_answer and deep_judge."]
+];
+var EV_METRICS = [
+  { n: "Groundedness", k: "r", where: "both", plain: "Is the answer backed by the documents it found?",
+    how: "Embedding similarity: the highest cosine similarity between the answer and any retrieved chunk. Numbers in the answer must also appear in the sources. Refusal-style answers count as grounded.",
+    th: "grounded when similarity ≥ GROUNDEDNESS_THRESHOLD = 0.45. Offline: grounded must equal the case's expect_grounded (groundedness_accuracy).",
+    fix: "Ungrounded with poor sources → retrieval or knowledge base. Ungrounded with good sources → prompt (the model added things).",
+    src: "backend/app/guardrails/post_checks.py (check_groundedness), config.py" },
+  { n: "Faithfulness (1–5)", k: "j", where: "both", plain: "Does every claim in the answer come from the sources?",
+    how: "AI judge (judge_answer, same Azure deployment as the chat, reasoning effort minimal) gives an integer 1–5 against the retrieved context only. Online without the judge: grounded → 3.8 + 1.2 × citation precision; ungrounded → 2.0; unknown → 4.5.",
+    th: "Online pass needs ≥ 3.0; ≤ 2 adds flag online_unfaithful. Offline with --judge: ≥ 4 (--judge-min-faithfulness).",
+    fix: "Low with good sources → prompt or model (hallucination). Low with thin sources → knowledge base.",
+    src: "backend/app/evaluation/judge.py, backend/app/governance/online_eval.py, backend/scripts/run_evaluation.py" },
+  { n: "Answer relevance (1–5)", k: "j", where: "both", plain: "Does it answer the question that was asked?",
+    how: "AI judge, 1–5. Without the judge online: 4.8 (4.2 if the answer is 40 characters or fewer) when grounded, 3.5 when ungrounded.",
+    th: "No pass threshold; reported as a mean.",
+    fix: "Prompt, query rewriting, or clarification for vague questions.",
+    src: "backend/app/evaluation/judge.py, online_eval.py" },
+  { n: "Completeness (1–5)", k: "j", where: "both", plain: "Does it cover all the facts the question needs?",
+    how: "AI judge, 1–5. Without the judge online: 4.6 grounded, 3.0 ungrounded.",
+    th: "No pass threshold; reported as a mean.",
+    fix: "Retrieval (top-k, cross-document quota) or a missing section in the knowledge base.",
+    src: "backend/app/evaluation/judge.py, online_eval.py" },
+  { n: "Citation precision", k: "h", where: "both", plain: "How much of what was cited is actually relevant?",
+    how: "Online: share of answer sentences (over 15 characters) where at least 40% of the 4+ letter words appear in the sources (word overlap). Offline: correct sources ÷ all cited sources, using expected_docs.",
+    th: "No gate. Evaluation tiles colour ≥ 80% green, ≥ 50% amber, else red.",
+    fix: "Low offline → retrieval ranking (noise). Low online → answer paraphrases or adds beyond the sources (prompt).",
+    src: "backend/app/governance/online_eval.py (compute_attribution_metrics), backend/app/evaluation/quality.py" },
+  { n: "Citation coverage", k: "h", where: "both", plain: "How many of the retrieved passages were used?",
+    how: "Online: share of chunks with at least 2 words of 5+ letters (from their first 300 characters) appearing in the answer. Offline: share of the key facts stated that are found in some source.",
+    th: "No gate.", fix: "Very low → retrieval brings unused noise; tune top-k or the reranker.",
+    src: "online_eval.py, quality.py" },
+  { n: "Retrieval recall", k: "h", where: "both", plain: "Did retrieval find the right document?",
+    how: "Offline (rule): share of cases where at least min_expected_docs_hit expected documents were retrieved. Online (heuristic, no right answer): 1.0 if any sources were found and the answer was not ungrounded, else 0.0.",
+    th: "Offline: a miss fails the case (retrieval_ok).",
+    fix: "Retrieval (embedding, filters, reranker) or document naming and chunking.",
+    src: "backend/app/evaluation/evaluator.py, online_eval.py" },
+  { n: "Ranking: Recall@1/3/k, Precision@k, MRR, nDCG@k, noise ratio, context coverage", k: "r", where: "off", plain: "How high up the right document ranks.",
+    how: "From the case's expected_docs: recall@k = expected docs in the top k; precision@k = relevant ÷ retrieved in top k; MRR = 1 ÷ rank of the first relevant chunk; nDCG@k with binary relevance; noise ratio = 1 − precision@k; context coverage = expected keywords found in the context.",
+    th: "No gate; the live view shows \"Not measured\".", fix: "Reranker, candidate pool size, chunking.",
+    src: "backend/app/evaluation/metrics.py, evaluator.py (_retrieval_metrics), backend/app/api/routes/metrics.py (_LIVE_NOT_MEASURED)" },
+  { n: "Safety passed, PII leakage rate, secret exposure rate", k: "r", where: "both", plain: "Did the answer leak personal data or secrets?",
+    how: "Regex scans: PII types in the answer that were not in the question (email, phone, ssn_like, credit_card, medicare, abn, tfn); secret patterns (api_key, aws_access_key, bearer_token, private_key, credential_assignment, connection_string). Offline also checks forbidden or restricted sources.",
+    th: "Any hit fails safety and the case. Alert online_eval: ≥ 3 violations in 60 min (critical if a secret).",
+    fix: "Knowledge base content (remove PII or secrets from documents) and ingestion redaction.",
+    src: "backend/app/evaluation/quality.py, backend/app/governance/pii.py, online_eval.py, backend/app/alerts/rules.py (online_eval_rule)" },
+  { n: "Injection compliance", k: "r", where: "off", plain: "Did the bot obey instructions hidden in a question or document?",
+    how: "Offline safety cases: forbidden keywords appearing in the raw answer count as injection followed; chunks carrying injection text are counted.",
+    th: "Any hit fails the case. Live: \"Not measured\".", fix: "Guardrail patterns and the prompt's data delimiting.",
+    src: "backend/app/evaluation/quality.py (INJECTION_PATTERNS)" },
+  { n: "Abstention and false abstention (refusal correctness)", k: "r", where: "both", plain: "Does it say \"I don't know\" when it should, and only then?",
+    how: "Offline: abstained = not grounded or one of 26 refusal phrases; abstention cases must abstain; false abstention = answerable cases that abstained. Live: abstention rate = share with outcome ungrounded.",
+    th: "Offline: wrong abstention fails the case. False abstention is offline only.",
+    fix: "Too many false abstentions → retrieval or MIN_RETRIEVAL_SCORE; too few → prompt.",
+    src: "backend/app/evaluation/quality.py (ABSTAIN_PHRASES, abstention_summary), metrics.py" },
+  { n: "Pass rate", k: "r", where: "both", plain: "Share of answers or cases that passed all their checks.",
+    how: "Offline: passed ÷ scored cases (known_issue cases excluded). Online: passed ÷ records (latest 300 for the Users view), where passed = grounded not false, safe, outcome not llm_failed / empty_llm_output, faithfulness ≥ 3.0.",
+    th: "Script: --min-pass-rate makes it exit 1 below your bar. Tiles colour ≥ 80% green, ≥ 50% amber.",
+    fix: "Open Failed Only in the explorer and read the failing gate.",
+    src: "backend/app/evaluation/evaluator.py (summary), online_eval.py, frontend/app/(app)/evaluation-live/page.tsx (statusColor)" },
+  { n: "Latency p50 / p95 / p99", k: "r", where: "both", plain: "How long answers take, typical and worst.",
+    how: "Measured. Online: stage timings from latency_metrics joined by request id. Offline: per stage (retrieval, reranking, LLM, end to end) from the run.",
+    th: "No evaluation gate.", fix: "Slowest stage: usually the LLM; then the reranker.",
+    src: "backend/app/api/routes/metrics.py (_live_stage_latencies), evaluator.py (operational)" },
+  { n: "Deep judge: groundedness ratio, correctness and helpfulness axes", k: "j", where: "off", plain: "A finer AI grading of facts, numbers, dates, conclusions, tone and structure.",
+    how: "deep_judge with --judge: groundedness = supported claims ÷ all claims (counted in code); correctness axes (factual, numerical, dates and names, conditions, conclusions, no contradictions) and helpfulness axes (conciseness, readability, detail, structure, actionability, tone, no repetition), each 1–5.",
+    th: "Reported only; no gate.", fix: "Correctness → retrieval or knowledge base; helpfulness → prompt.",
+    src: "backend/app/evaluation/judge_extra.py" },
+  { n: "Robustness: retrieval stability, answer consistency", k: "h", where: "off", plain: "Same answer when the question is reworded or asked again?",
+    how: "With --repeat or variant cases: Jaccard overlap of retrieved documents and of answer words between a case and its variants; pass rate clean vs perturbed.",
+    th: "Reported only. Live: \"Not measured\".", fix: "Query rewriting, retrieval filters.",
+    src: "backend/app/evaluation/quality.py (robustness_summary)" },
+  { n: "Knowledge-base checks (--kb)", k: "r", where: "off", plain: "Was each document converted and chunked without losing content?",
+    how: "kb_eval: parsing word coverage, heading/table/list preservation, near-duplicates (5-word shingles, Jaccard 0.85), split facts, access-level coverage, stale or duplicate live versions.",
+    th: "word_coverage 0.95, structure 0.95, duplicate_rate 0.0, split_rate 0.1, access_coverage 1.0.",
+    fix: "Ingestion: converter, chunking strategy, document metadata.",
+    src: "backend/app/evaluation/kb_eval.py (THRESHOLDS)" }
+];
+/* Score reader: bands come only from thresholds in the code. */
+var EV_READER = [
+  { n: "Faithfulness (1–5)", min: 1, max: 5, step: 1, v: 3, fmt: function (x) { return x + " / 5"; },
+    bands: [[1, 2, "bad", "Unfaithful", "Flagged online_unfaithful and an online_eval audit row; fails online and offline.", "Compare the answer with its sources in the case drawer. Good sources → tighten the prompt; thin sources → add or fix the document."],
+            [3, 3, "mid", "Borderline", "Passes online (≥ 3.0) but fails an offline --judge run (needs ≥ 4).", "Read the judge's unsupported claims; usually a detail the sources do not state."],
+            [4, 5, "good", "Faithful", "Passes online and offline.", "Nothing to do."]],
+    src: "online_eval.py, run_evaluation.py (--judge-min-faithfulness 4)" },
+  { n: "Groundedness similarity (0–1)", min: 0, max: 1, step: 0.01, v: 0.5, fmt: function (x) { return x.toFixed(2); },
+    bands: [[0, 0.4499, "bad", "Ungrounded", "Below GROUNDEDNESS_THRESHOLD 0.45: the answer is replaced by a safe fallback (outcome ungrounded).", "Check retrieval first (are the right chunks there?), then the knowledge base."],
+            [0.45, 1, "good", "Grounded", "At or above 0.45: the answer is kept.", "Nothing to do; the judge can still catch unsupported details."]],
+    src: "backend/app/guardrails/post_checks.py, config.py" },
+  { n: "Top retrieval score (0–1)", min: 0, max: 1, step: 0.01, v: 0.3, fmt: function (x) { return x.toFixed(2); },
+    bands: [[0, 0.1199, "bad", "Off topic", "Under MIN_RETRIEVAL_SCORE 0.15 and the clarification floor 0.12: off_topic fallback.", "If the question is in scope, the knowledge base is missing it: add a document."],
+            [0.12, 0.1499, "mid", "Off topic, unless ambiguous", "Under 0.15 answers fall back as off_topic, but a rule-detected ambiguous question may still ask a clarifying question (floor CLARIFY_MIN_RETRIEVAL_SCORE 0.12).", "Look for vague questions; a document with clearer titles helps."],
+            [0.15, 1, "good", "Passes the relevance gate", "The answer is generated from the retrieved context.", "Nothing to do here; check groundedness next."]],
+    src: "backend/app/harness/orchestrator.py, config.py (MIN_RETRIEVAL_SCORE, CLARIFY_MIN_RETRIEVAL_SCORE)" },
+  { n: "Percentage tile (pass rate, recall, citation precision)", min: 0, max: 100, step: 1, v: 70, fmt: function (x) { return x + "%"; },
+    bands: [[0, 49, "bad", "Red", "Under 50%: shown red on the Evaluation page.", "Open Failed Only in the explorer and group failures by gate."],
+            [50, 79, "mid", "Amber", "50–79%: shown amber.", "Look at the weakest case type in Pass rate by query type."],
+            [80, 100, "good", "Green", "80% or more: shown green.", "Keep running the golden set after changes."]],
+    src: "frontend/app/(app)/evaluation-live/page.tsx (statusColor)" },
+  { n: "Negative feedback share (%)", min: 0, max: 100, step: 1, v: 20, fmt: function (x) { return x + "%"; },
+    bands: [[0, 25, "good", "Normal", "At or below 25%: no spike.", "Triage the Review Queue as usual."],
+            [26, 100, "bad", "Spike", "Over 25% with at least 5 ratings: the Overview banner shows and, within 60 minutes, the Negative feedback spike alert fires.", "Review negative feedback; promote failing turns to golden cases."]],
+    src: "backend/app/alerts/rules.py, config.py (ALERT_FEEDBACK_NEGATIVE_PCT 25), FeedbackOverview.tsx" },
+  { n: "KB parsing word coverage (0–1)", min: 0.5, max: 1, step: 0.01, v: 0.97, fmt: function (x) { return x.toFixed(2); },
+    bands: [[0.5, 0.9499, "bad", "Below threshold", "Under 0.95: kb_eval reports \"parsing word coverage below threshold\".", "Check the converter output (mammoth+gfm) for the document."],
+            [0.95, 1, "good", "OK", "0.95 or more of the source words survived conversion.", "Nothing to do."]],
+    src: "backend/app/evaluation/kb_eval.py (THRESHOLDS)" }
+];
+window.initEval = function () {
+  var box = $("evMetrics"); if (!box) return;
+  var KN = { j: "AI judge", r: "rule", h: "heuristic" }, WH = { on: "online", off: "offline only", both: "offline + online" };
+  EV_METRICS.forEach(function (m) {
+    var d = h("details", "mc"); d.dataset.k = m.k; d.dataset.where = m.where;
+    var s = h("summary"), mh = h("span", "mh");
+    mh.appendChild(h("b", "", m.n));
+    var cs = h("span", "chips"); cs.appendChild(h("span", "chip2 kind-" + m.k, KN[m.k])); cs.appendChild(h("span", "chip2", WH[m.where])); mh.appendChild(cs);
+    s.appendChild(mh); s.appendChild(h("span", "plain", m.plain)); s.appendChild(h("span", "more", "details"));
+    d.appendChild(s);
+    var b = h("div", "mb"), dl = h("dl");
+    [["How", m.how], ["Pass / target", m.th], ["If bad", m.fix]].forEach(function (r) { dl.appendChild(h("dt", "", r[0])); dl.appendChild(h("dd", "", r[1])); });
+    b.appendChild(dl); b.appendChild(h("div", "src", "Source: " + m.src)); d.appendChild(b); box.appendChild(d);
+  });
+  var fbs = document.querySelectorAll("[data-mf]");
+  Array.prototype.forEach.call(fbs, function (btn) {
+    btn.addEventListener("click", function () {
+      var f = btn.dataset.mf;
+      Array.prototype.forEach.call(fbs, function (x) { x.setAttribute("aria-pressed", x === btn ? "true" : "false"); });
+      Array.prototype.forEach.call(box.children, function (d) {
+        var ok = f === "all" || (f === "j" ? d.dataset.k === "j" : f === "off" ? d.dataset.where === "off" : d.dataset.where !== "off");
+        d.hidden = !ok;
+      });
+    });
+  });
+  /* Score reader */
+  var sel = $("rdMetric"), rg = $("rdRange"), out = $("rdVal"), vd = $("rdVerdict"), band = $("rdBand");
+  EV_READER.forEach(function (r, i) { var o = h("option", "", r.n); o.value = i; sel.appendChild(o); });
+  var COL = { good: "var(--st-live)", mid: "var(--st-progress)", bad: "var(--sec)" };
+  function paintBand(r) {
+    band.innerHTML = "";
+    r.bands.forEach(function (b) { var sp = h("span"); sp.style.flex = String(Math.max(r.step, b[1] - b[0] + r.step)); sp.style.background = COL[b[2]]; sp.style.opacity = ".75"; band.appendChild(sp); });
+  }
+  function read() {
+    var r = EV_READER[+sel.value], x = parseFloat(rg.value);
+    out.textContent = r.fmt(x); rg.setAttribute("aria-valuetext", r.fmt(x));
+    var b = r.bands.find(function (q) { return x >= q[0] - 1e-9 && x <= q[1] + 1e-9; }) || r.bands[r.bands.length - 1];
+    vd.className = "verdict " + b[2]; vd.innerHTML = "";
+    vd.appendChild(h("span", "tag2", b[3])); vd.appendChild(h("span", "big", r.fmt(x)));
+    vd.appendChild(h("p", "", b[4])); var p = h("p"); p.appendChild(h("b", "", "Suggested action: ")); p.appendChild(document.createTextNode(b[5])); vd.appendChild(p);
+    vd.appendChild(h("div", "src", "Source: " + r.src));
+  }
+  function load() { var r = EV_READER[+sel.value]; rg.min = r.min; rg.max = r.max; rg.step = r.step; rg.value = r.v; paintBand(r); read(); }
+  sel.addEventListener("change", load); rg.addEventListener("input", read); load();
+};
+
+function initStepper(root) {
+  var btns = root.querySelectorAll("[data-step]"), panels = root.querySelectorAll("[data-panel]"), i = 0;
+  function go(n) {
+    i = Math.max(0, Math.min(btns.length - 1, n));
+    Array.prototype.forEach.call(btns, function (b, k) { if (k === i) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current"); b.classList.toggle("done", k < i); });
+    Array.prototype.forEach.call(panels, function (p, k) { p.hidden = k !== i; });
+    root.querySelector("[data-prev]").disabled = i === 0; root.querySelector("[data-next]").disabled = i === btns.length - 1;
+    root.querySelector("[data-count]").textContent = "Step " + (i + 1) + " of " + btns.length;
+  }
+  Array.prototype.forEach.call(btns, function (b, k) { b.addEventListener("click", function () { go(k); }); });
+  root.querySelector("[data-prev]").addEventListener("click", function () { go(i - 1); });
+  root.querySelector("[data-next]").addEventListener("click", function () { go(i + 1); });
+  go(0);
+}
+function initGloss(root) {
+  var box = root.querySelector("[data-defbox]"), terms = root.querySelectorAll(".term"), pinned = null;
+  function show(t) {
+    box.innerHTML = ""; box.appendChild(h("b", "", t.textContent)); box.appendChild(h("span", "", t.dataset.def));
+    if (t.dataset.src) box.appendChild(h("div", "src", "Source: " + t.dataset.src));
+  }
+  Array.prototype.forEach.call(terms, function (t) {
+    t.setAttribute("aria-expanded", "false");
+    t.addEventListener("click", function () { pinned = t; Array.prototype.forEach.call(terms, function (x) { x.setAttribute("aria-expanded", x === t ? "true" : "false"); }); show(t); });
+    t.addEventListener("mouseenter", function () { show(t); });
+    t.addEventListener("focus", function () { show(t); });
+    t.addEventListener("mouseleave", function () { if (pinned) show(pinned); });
+  });
+}
+function initFlow(svgEl, data) {
+  var cap = document.querySelector('[data-flowcap="' + svgEl.dataset.flow + '"]');
+  var gs = svgEl.querySelectorAll("g[data-k]");
+  function pick(g) {
+    Array.prototype.forEach.call(gs, function (x) { x.classList.toggle("sel", x === g); });
+    var d = data[+g.dataset.k]; cap.innerHTML = ""; cap.appendChild(h("b", "", d[0])); cap.appendChild(document.createTextNode(d[1]));
+  }
+  Array.prototype.forEach.call(gs, function (g) {
+    g.addEventListener("click", function () { pick(g); });
+    g.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(g); } });
+  });
+}
+/* Accessible tab-like toggle: buttons[role=tab] inside [data-seg], panels by data-seg-panel. */
+function initSeg(root) {
+  var bs = root.querySelectorAll("[role=tab]");
+  function sel(b) {
+    Array.prototype.forEach.call(bs, function (x) { var on = x === b; x.setAttribute("aria-selected", on ? "true" : "false"); x.tabIndex = on ? 0 : -1; });
+    var name = root.dataset.seg;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-seg-for="' + name + '"]'), function (p) { p.hidden = p.dataset.segPanel !== b.dataset.val; });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-seg-col="' + name + '"]'), function (c) { c.classList.toggle("hl", c.dataset.val === b.dataset.val); });
+  }
+  Array.prototype.forEach.call(bs, function (b, k) {
+    b.addEventListener("click", function () { sel(b); });
+    b.addEventListener("keydown", function (e) {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.preventDefault();
+      var n = bs[(k + (e.key === "ArrowRight" ? 1 : -1) + bs.length) % bs.length]; n.focus(); sel(n);
+    });
+  });
+  sel(bs[0]);
+}
+function initAzure() {
+  var list = $("azList"), det = $("azDetail"); if (!list) return;
+  function show(s, btn) {
+    Array.prototype.forEach.call(list.querySelectorAll("button"), function (b) { var on = b === btn; b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1; });
+    det.innerHTML = ""; det.setAttribute("aria-labelledby", btn.id);
+    det.appendChild(h("h4", "", s.name));
+    var dl = h("dl", "kv");
+    [["Endpoint", s.endpoint, true], ["Parameters", s.api], ["Sign-in", s.auth], ["Schedule", s.schedule], ["What we get", s.fields], ["Stored in", s.tables], ["Shown on", s.ui], ["Alerts", s.alerts], ["Cost notes", s.notes]].forEach(function (r) {
+      dl.appendChild(h("dt", "", r[0])); var dd = h("dd"); if (r[2]) dd.appendChild(h("code", "", r[1])); else dd.textContent = r[1]; dl.appendChild(dd);
+    });
+    det.appendChild(dl);
+    det.appendChild(h("div", "src", "Source: backend/app/azure_insights/" + s.src.split(", ")[0] + (s.src.indexOf(", ") > 0 ? ", " + s.src.split(", ").slice(1).join(", ") : "") + "; backend/app/core/config.py"));
+  }
+  AZ_SOURCES.forEach(function (s, k) {
+    var li = h("li"), b = h("button"); b.type = "button"; b.id = "az-tab-" + s.id; b.setAttribute("role", "tab");
+    b.appendChild(h("b", "", s.name)); b.appendChild(h("small", "", s.short));
+    b.addEventListener("click", function () { show(s, b); });
+    b.addEventListener("keydown", function (e) {
+      if (["ArrowDown", "ArrowUp"].indexOf(e.key) < 0) return; e.preventDefault();
+      var all = list.querySelectorAll("button"), n = all[(k + (e.key === "ArrowDown" ? 1 : -1) + all.length) % all.length]; n.focus(); n.click();
+    });
+    li.appendChild(b); list.appendChild(li);
+  });
+  show(AZ_SOURCES[0], list.querySelector("button"));
+  var fr = $("azFresh"), max = Math.log(10080);
+  AZ_FRESH.forEach(function (r) {
+    var row = h("div", "row"); row.appendChild(h("b", "", r[0]));
+    var bar = h("div", "bar2"); bar.setAttribute("role", "img");
+    var age = r[1] < 60 ? r[1] + " min" : r[1] < 1440 ? (r[1] / 60) + " h" : r[1] >= 10080 ? "7 days" : Math.round(r[1] / 60) + " h";
+    bar.setAttribute("aria-label", r[0] + ": up to " + age + " old");
+    var i = h("i"); i.style.width = Math.max(4, Math.log(r[1]) / max * 100) + "%"; bar.appendChild(i); row.appendChild(bar);
+    row.appendChild(h("small", "", "≤ " + age + " · " + r[2] + (r[3] ? " · " + r[3] : ""))); fr.appendChild(row);
+  });
+}
+function initGuides() {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-stepper]"), initStepper);
+  Array.prototype.forEach.call(document.querySelectorAll("[data-gloss]"), initGloss);
+  Array.prototype.forEach.call(document.querySelectorAll("[data-seg]"), initSeg);
+  var az = document.querySelector('[data-flow="azflow"]'); if (az) initFlow(az, AZ_FLOW);
+  var ev = document.querySelector('[data-flow="evflow"]'); if (ev && window.EV_FLOW) initFlow(ev, window.EV_FLOW);
+  initAzure();
+  if (window.initEval) window.initEval();
+  Array.prototype.forEach.call(document.querySelectorAll("[data-goto]"), function (a) { a.addEventListener("click", function (e) { e.preventDefault(); switchView(a.dataset.goto); window.scrollTo(0, 0); }); });
+}
 
 /* Boot */
 buildTimeline();
 var startView = (location.hash || "").replace("#", "");
-if (!VIEWS.some(function (v) { return v.id === startView; })) startView = store("askdiq-arch-view") || "context";
-switchView(startView);
+if (!ALLTABS.some(function (v) { return v.id === startView; })) startView = store("askdiq-arch-view") || "context";
+if (!ALLTABS.some(function (v) { return v.id === startView; })) startView = "context";
+/* Render the first diagram once so the canvas state exists, then open the requested tab. */
+switchView(GUIDES.some(function (g) { return g.id === startView; }) ? "context" : startView);
+if (startView !== state.view) switchView(startView);
+initGuides();
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (!current) return; var keep = state.sel; render(current); if (current.player && step >= 0) setStep(step, false); if (keep && nodeEls[keep]) selectNode(keep); });
 </script>

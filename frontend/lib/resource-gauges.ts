@@ -78,6 +78,7 @@ export function resourceGauges(r: Partial<ResourcesSnapshot> | undefined, nowMs 
   const lag = num(r?.event_loop?.lag_p95_ms);
   const workers = num(r?.workers_live) ?? 0;
   const pool = r?.db_pool;
+  const queries = r?.queries;
   return [
     {
       key: "cpu",
@@ -135,6 +136,16 @@ export function resourceGauges(r: Partial<ResourcesSnapshot> | undefined, nowMs 
       caption: pool ? `DB pool · ${pool.checked_out}/${pool.capacity} in use` : "DB pool",
       bands: { warn: 70, danger: 90 },
       trend: series(history, (p) => num(p.db_pool_percent)),
+    },
+    {
+      key: "queries",
+      label: "Chat in flight",
+      value: num(queries?.in_use_percent),
+      caption: queries?.capacity
+        ? `Chat in flight · ${queries.active}/${queries.capacity} LLM slots`
+        : "Chat in flight",
+      bands: { warn: 70, danger: 90 },
+      trend: series(history, (p) => num(p.queries_percent)),
     },
   ];
 }
