@@ -257,18 +257,18 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
   }
 }
 
-export async function GET(req: NextRequest, { params }: { params: { path: string[] } }) {
-  return forward(req, params.path);
+export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return forward(req, (await params).path);
 }
-export async function POST(req: NextRequest, { params }: { params: { path: string[] } }) {
-  return forward(req, params.path);
+export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return forward(req, (await params).path);
 }
-export async function PUT(req: NextRequest, { params }: { params: { path: string[] } }) {
-  return forward(req, params.path);
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return forward(req, (await params).path);
 }
-export async function PATCH(req: NextRequest, { params }: { params: { path: string[] } }) {
-  return forward(req, params.path);
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return forward(req, (await params).path);
 }
-export async function DELETE(req: NextRequest, { params }: { params: { path: string[] } }) {
-  return forward(req, params.path);
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return forward(req, (await params).path);
 }

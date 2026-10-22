@@ -16,7 +16,7 @@ function request(path: string, init: { method?: string; cookie?: string; origin?
   });
 }
 
-const params = (path: string) => ({ params: { path: path.split("?")[0].split("/") } });
+const params = (path: string) => ({ params: Promise.resolve({ path: path.split("?")[0].split("/") }) });
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -166,7 +166,7 @@ describe("proxy identifies the dashboard user's IP", () => {
 
 describe("proxy path hygiene (existing behaviour kept)", () => {
   it.each([["..", "admin"], ["a\\b"], ["a/b"]])("rejects traversal segments %j", async (...segments) => {
-    const res = await GET(request("x"), { params: { path: segments } });
+    const res = await GET(request("x"), { params: Promise.resolve({ path: segments }) });
     expect(res.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
   });
