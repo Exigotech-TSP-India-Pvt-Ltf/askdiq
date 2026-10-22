@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
 
 from app.core.config import get_settings
@@ -20,6 +19,7 @@ from app.core.security_headers import (
     build_security_headers,
 )
 from main import api_docs_enabled, app, docs_urls
+from tests.route_helpers import flat_routes, is_api_route
 
 settings = get_settings()
 ORIGIN = settings.cors_allowed_origins[0]
@@ -96,8 +96,8 @@ async def test_every_route_carries_security_headers(
     """Route walk: every registered route, authenticated or not, success or
     error, returns the headers (HSTS absent outside production)."""
     walked = 0
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
+    for route in flat_routes(app):
+        if not is_api_route(route):
             continue
         path = _concrete_path(route.path)
         for method in sorted(route.methods - {"HEAD"}):
