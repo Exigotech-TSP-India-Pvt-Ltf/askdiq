@@ -23,7 +23,7 @@ vi.mock("@/lib/audience-context", () => ({
 
 const mockSummary: UsageSummary = {
   audience: "overview",
-  as_of: new Date().toISOString(),
+  as_of: "2020-01-01T00:00:00.000Z",
   financial: {
     total_cost_usd: 0.045,
     llm_cost_usd: 0.0076,
