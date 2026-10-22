@@ -10,11 +10,12 @@ const first = (value: string | string[] | undefined): string | null =>
   (Array.isArray(value) ? value[0] : value) ?? null;
 
 /** `/login`. `?error=` maps to allow-listed messages only; `?next=` must be same-origin. */
-export default function LoginPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const query = await searchParams;
   return (
     <LoginView
-      errorCode={first(searchParams.error)}
-      next={safeNextPath(first(searchParams.next))}
+      errorCode={first(query.error)}
+      next={safeNextPath(first(query.next))}
       contactEmail={accessContactEmail()}
       year={new Date().getFullYear()}
     />

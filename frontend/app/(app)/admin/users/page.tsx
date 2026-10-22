@@ -6,10 +6,10 @@ export const dynamic = "force-dynamic";
 
 // Visitors and Conversation Logs are one page now: old links and bookmarks
 // land on its Visitors tab with their filters (next.config.js redirects first).
-export default function LegacyUsersPage({
+export default async function LegacyUsersPage({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
-}): never {
-  redirect(audiencePageHref("visitors", searchParams ?? {}));
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<never> {
+  redirect(audiencePageHref("visitors", (await searchParams) ?? {}));
 }

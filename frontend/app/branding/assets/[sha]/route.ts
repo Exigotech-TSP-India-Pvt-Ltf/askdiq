@@ -22,8 +22,8 @@ const PASSTHROUGH_HEADERS = [
 ] as const;
 const UPSTREAM_TIMEOUT_MS = 5000;
 
-export async function GET(req: NextRequest, { params }: { params: { sha: string } }): Promise<Response> {
-  const { sha } = params;
+export async function GET(req: NextRequest, { params }: { params: Promise<{ sha: string }> }): Promise<Response> {
+  const { sha } = await params;
   if (!SHA256_RE.test(sha)) {
     return NextResponse.json({ detail: "Brand asset not found." }, { status: 404 });
   }

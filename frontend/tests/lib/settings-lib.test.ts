@@ -183,7 +183,7 @@ describe("GET /branding/assets/[sha] passthrough", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     for (const sha of ["..", "abc", `${SHA_A}/x`, SHA_A.toUpperCase(), "%2e%2e"]) {
-      const res = await getBrandAsset(request(), { params: { sha } });
+      const res = await getBrandAsset(request(), { params: Promise.resolve({ sha }) });
       expect(res.status).toBe(404);
     }
     expect(fetchMock).not.toHaveBeenCalled();
@@ -203,7 +203,7 @@ describe("GET /branding/assets/[sha] passthrough", () => {
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const res = await getBrandAsset(request({ "if-none-match": '"old"', authorization: "Bearer x" }), { params: { sha: SHA_A } });
+    const res = await getBrandAsset(request({ "if-none-match": '"old"', authorization: "Bearer x" }), { params: Promise.resolve({ sha: SHA_A }) });
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
     expect(res.headers.get("content-security-policy")).toContain("default-src 'none'");
@@ -219,12 +219,12 @@ describe("GET /branding/assets/[sha] passthrough", () => {
 
   it("passes 304 and 404 through and maps other failures to 502", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 304, headers: { ETag: `"${SHA_A}"` } })));
-    expect((await getBrandAsset(request(), { params: { sha: SHA_A } })).status).toBe(304);
+    expect((await getBrandAsset(request(), { params: Promise.resolve({ sha: SHA_A }) })).status).toBe(304);
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
-    expect((await getBrandAsset(request(), { params: { sha: SHA_A } })).status).toBe(404);
+    expect((await getBrandAsset(request(), { params: Promise.resolve({ sha: SHA_A }) })).status).toBe(404);
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 500 })));
-    expect((await getBrandAsset(request(), { params: { sha: SHA_A } })).status).toBe(502);
+    expect((await getBrandAsset(request(), { params: Promise.resolve({ sha: SHA_A }) })).status).toBe(502);
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new Error("ECONNREFUSED"))));
-    expect((await getBrandAsset(request(), { params: { sha: SHA_A } })).status).toBe(502);
+    expect((await getBrandAsset(request(), { params: Promise.resolve({ sha: SHA_A }) })).status).toBe(502);
   });
 });

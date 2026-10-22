@@ -25,7 +25,7 @@ export const DEFAULT_CHART_HEIGHT = 240;
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 /** Measures an element; falls back to a default size where layout is unavailable (SSR, jsdom). */
-export function useElementSize<E extends HTMLElement>(fallback: ChartSize): [React.RefObject<E>, ChartSize] {
+export function useElementSize<E extends HTMLElement>(fallback: ChartSize): [React.RefObject<E | null>, ChartSize] {
   const ref = useRef<E>(null);
   const [size, setSize] = useState<ChartSize>(fallback);
 

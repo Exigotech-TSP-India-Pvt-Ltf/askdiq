@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
  * scroll container as `data-scroll-under`; the shared sticky-cell style shows
  * its divider only then.
  */
-export function useScrollUnder<E extends HTMLElement>(): [RefObject<E>, boolean] {
+export function useScrollUnder<E extends HTMLElement>(): [RefObject<E | null>, boolean] {
   const ref = useRef<E>(null);
   const [under, setUnder] = useState(false);
 

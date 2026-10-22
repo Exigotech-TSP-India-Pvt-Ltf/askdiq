@@ -81,7 +81,7 @@ export function useTourChoices(): { pageId: TourId | null; choices: TourChoice[]
  * auto-opens the tour). Only a rendered anchor claims the hint, so a hidden
  * mobile / desktop twin doesn't swallow it.
  */
-export function useTourHint(pageId: TourId | null, anchorRef: React.RefObject<HTMLElement>, recheck: unknown) {
+export function useTourHint(pageId: TourId | null, anchorRef: React.RefObject<HTMLElement | null>, recheck: unknown) {
   const [hint, setHint] = useState(false);
   useEffect(() => {
     setHint(false);

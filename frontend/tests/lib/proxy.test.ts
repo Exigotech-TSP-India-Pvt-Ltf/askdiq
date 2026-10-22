@@ -16,7 +16,7 @@ function request(path: string, init: { method?: string; cookie?: string; origin?
   });
 }
 
-const params = (path: string) => ({ params: { path: path.split("?")[0].split("/") } });
+const params = (path: string) => ({ params: Promise.resolve({ path: path.split("?")[0].split("/") }) });
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -166,18 +166,28 @@ describe("proxy identifies the dashboard user's IP", () => {
 
 describe("proxy path hygiene (existing behaviour kept)", () => {
   it.each([["..", "admin"], ["a\\b"], ["a/b"]])("rejects traversal segments %j", async (...segments) => {
-    const res = await GET(request("x"), { params: { path: segments } });
+    const res = await GET(request("x"), { params: Promise.resolve({ path: segments }) });
     expect(res.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
 describe("proxy bounds the wait for the backend (no 300 s HeadersTimeoutError hang)", () => {
-  /** Backend that never sends headers: settles only when the proxy aborts it. */
+  /**
+   * Backend that never sends headers: settles only when the proxy aborts it.
+   * Mirrors real `fetch`'s contract (an already-aborted signal rejects at
+   * once, not only on a future "abort" event) so a signal the proxy aborts
+   * before calling `fetch` — the browser-disconnect race — is handled the
+   * same way a live backend call would be.
+   */
   function backendHangs() {
     fetchMock.mockImplementation(
       (_url: string, init: RequestInit) =>
         new Promise((_resolve, reject) => {
+          if (init.signal?.aborted) {
+            reject(init.signal.reason);
+            return;
+          }
           init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
         }),
     );

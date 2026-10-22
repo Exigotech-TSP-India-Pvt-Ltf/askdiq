@@ -35,8 +35,12 @@ describe("Visitors & Conversations routes", () => {
   it("the old list pages redirect into the right tab with their filters", async () => {
     const users = (await import("@/app/(app)/admin/users/page")).default;
     const convs = (await import("@/app/(app)/admin/conversations/page")).default;
-    expect(() => users({ searchParams: { weekday: "2" } })).toThrow("REDIRECT /admin/visitors?weekday=2");
-    expect(() => convs({ searchParams: { ip: "1.2.3.4" } })).toThrow("REDIRECT /admin/visitors?ip=1.2.3.4&tab=conversations");
+    await expect(users({ searchParams: Promise.resolve({ weekday: "2" }) })).rejects.toThrow(
+      "REDIRECT /admin/visitors?weekday=2",
+    );
+    await expect(convs({ searchParams: Promise.resolve({ ip: "1.2.3.4" }) })).rejects.toThrow(
+      "REDIRECT /admin/visitors?ip=1.2.3.4&tab=conversations",
+    );
   });
 
   it("the page tour follows the open tab; detail pages keep theirs", () => {
