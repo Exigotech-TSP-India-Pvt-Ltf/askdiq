@@ -36,7 +36,7 @@ from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
-from app.core.database import get_db, get_session_factory
+from app.core.database import get_db, get_session_factory, unbounded_session
 from app.core.request_meta import get_client_ip
 from app.dashboard.range_params import (
     day_params,
@@ -364,7 +364,7 @@ async def export_feedback_pairs(
     include_dismissed: bool = False,
     complete_only: bool = False,
     days: DayRange | None = Depends(optional_day_range),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(unbounded_session),  # long streamed export: no API cap
     user: AuthUser = Depends(require_permission(Permission.FEEDBACK_EXPORT)),
 ) -> StreamingResponse:
     """Pairs are streamed off a server-side cursor (flat memory). Prompt and

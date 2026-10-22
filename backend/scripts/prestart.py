@@ -5,7 +5,10 @@ Run by docker-entrypoint.sh before uvicorn (never by the job worker):
 1. Wait for the database (bounded retries).
 2. ``alembic upgrade head`` under a Postgres advisory lock, so replicas
    starting together never race. Any failure exits non-zero and the
-   entrypoint does NOT start the app.
+   entrypoint does NOT start the app. Inside the upgrade, alembic/env.py
+   sets ``lock_timeout`` (MIGRATION_LOCK_TIMEOUT_MS) and retries on lock
+   contention (MIGRATION_LOCK_RETRIES), all while this advisory lock is held;
+   keep MIGRATION_LOCK_TIMEOUT_SECONDS above the total retry time.
 3. Knowledge-base ingestion (``scripts/ingest_real_docs.py``) under its own
    advisory lock, taken with try-lock: if another replica is already
    ingesting, this one skips. Unchanged documents are skipped by content

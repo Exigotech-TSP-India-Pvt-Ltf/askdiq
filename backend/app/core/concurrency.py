@@ -161,8 +161,11 @@ class ScopedRunner:
 
 
 def get_scoped_runner() -> ScopedRunner:
-    """FastAPI dependency: the default runner (one pooled session per task)."""
-    return ScopedRunner()
+    """FastAPI dependency: the default runner (one pooled session per task).
+
+    Request-scoped, so its sessions carry ``DB_STATEMENT_TIMEOUT_MS``.
+    """
+    return ScopedRunner(session_factory=database.RequestSessionLocal)
 
 
 class LLMGate:

@@ -136,8 +136,13 @@ async def test_slow_dashboard_query_is_cancelled_with_clean_503(monkeypatch):
     await require_postgres(engine)
     monkeypatch.setattr(
         database,
-        "AsyncSessionLocal",
-        async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession),
+        "RequestSessionLocal",
+        async_sessionmaker(
+            engine,
+            expire_on_commit=False,
+            class_=AsyncSession,
+            sync_session_class=database.RequestSession,
+        ),
     )
     monkeypatch.setattr(settings, "dashboard_statement_timeout_ms", 200)
 

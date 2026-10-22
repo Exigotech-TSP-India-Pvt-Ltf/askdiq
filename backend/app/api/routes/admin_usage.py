@@ -43,7 +43,7 @@ from app.core.cache import (
 )
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import Settings, get_settings
-from app.core.database import get_db
+from app.core.database import get_db, unbounded_session
 from app.core.http_cache import cached_response
 from app.core.request_meta import get_client_ip
 from app.core.serialization import sanitize_csv_cell
@@ -1220,7 +1220,7 @@ async def export_usage_csv(
     user_type: str | None = Query(None, alias="type"),
     from_date: str | None = None,
     to_date: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(unbounded_session),  # long streamed export: no API cap
     user: AuthUser = Depends(require_permission(Permission.USAGE_EXPORT)),
 ):
     """Stream CSV export with formula injection defense and cap truncation (Task 3.4)."""

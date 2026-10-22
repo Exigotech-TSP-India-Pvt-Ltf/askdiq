@@ -29,7 +29,7 @@ from app.auth.principal import AuthUser
 from app.core.cache import dashboard_cached
 from app.core.concurrency import ScopedRunner, get_scoped_runner
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import disable_statement_timeout, get_db
 from app.core.http_cache import encoded_response, weak_etag
 from app.core.logging_config import get_logger
 from app.core.request_meta import get_client_ip
@@ -677,6 +677,8 @@ async def governance_logs_export(
         yield "﻿"
         yield _csv_line([title for title, _ in _CSV_COLUMNS] + ["Detail"])
         async with runner.session() as session:
+            # Long streamed export: not capped by DB_STATEMENT_TIMEOUT_MS.
+            await disable_statement_timeout(session)
             async for item in logs.stream_rows(
                 session, filters, settings.governance_export_max_rows
             ):

@@ -29,7 +29,7 @@ from app.auth.deps import require_permission
 from app.auth.permissions import Permission
 from app.auth.principal import AuthUser
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import unbounded_session
 from app.core.errors import ApiHTTPException
 from app.core.request_meta import get_client_ip
 from app.ingestion.docx_converter import convert_docx, screen_markdown
@@ -95,7 +95,8 @@ async def ingest_json(
     body: IngestRequest,
     dry_run: bool = False,
     force: bool = False,
-    db: AsyncSession = Depends(get_db),
+    # Ingestion may write many chunks: not capped by DB_STATEMENT_TIMEOUT_MS.
+    db: AsyncSession = Depends(unbounded_session),
     user: AuthUser = Depends(require_permission(Permission.DOCUMENTS_WRITE)),
 ) -> IngestResponse:
     """JSON-based text ingestion endpoint (backwards compatible with CLI/scripts)."""
@@ -164,7 +165,8 @@ async def ingest_file(
     ),
     force_query: bool = Query(False, alias="force"),
     dry_run_query: bool = Query(False, alias="dry_run"),
-    db: AsyncSession = Depends(get_db),
+    # Ingestion may write many chunks: not capped by DB_STATEMENT_TIMEOUT_MS.
+    db: AsyncSession = Depends(unbounded_session),
     user: AuthUser = Depends(require_permission(Permission.DOCUMENTS_WRITE)),
 ) -> IngestResponse:
     """Server-side file ingestion endpoint supporting .md, .markdown, and .docx formats.
