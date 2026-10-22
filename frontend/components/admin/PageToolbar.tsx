@@ -26,7 +26,7 @@ const FADE = "1.5rem";
  * Which edges of a horizontally scrolling element have more content past
  * them (for the fade masks). Re-measured on scroll and resize.
  */
-function useScrollEdges(ref: React.RefObject<HTMLElement>): { start: boolean; end: boolean } {
+function useScrollEdges(ref: React.RefObject<HTMLElement | null>): { start: boolean; end: boolean } {
   const [edges, setEdges] = useState({ start: false, end: false });
   useEffect(() => {
     const el = ref.current;
