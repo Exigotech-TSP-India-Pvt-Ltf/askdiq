@@ -111,7 +111,9 @@ describe("Dashboard: KPI cards", { timeout: 15_000 }, () => {
   it("shows the value, delta, window label and a sparkline from the contract", async () => {
     renderDashboard();
     const queries = await screen.findByTestId("kpi-queries");
-    expect(within(queries).getByText("1,200")).toBeInTheDocument();
+    // The visible CountUp span and its accessible sr-only duplicate both
+    // show "1,200" once reduced motion skips the animated count.
+    expect(within(queries).getAllByText("1,200").length).toBeGreaterThan(0);
     expect(within(queries).getByText("Last 7 days")).toBeInTheDocument();
     expect(within(queries).getByText("(improving)")).toBeInTheDocument();
     expect(within(queries).getByTestId("spark-line")).toBeInTheDocument();

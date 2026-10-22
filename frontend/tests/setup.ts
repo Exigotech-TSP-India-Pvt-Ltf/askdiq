@@ -34,6 +34,34 @@ import { queryCache } from "@/lib/query-cache";
 // itself) is untouched.
 import "@/lib/motion-features";
 
+// The preload above narrows the race but does not close it: PR #89's CI
+// still intermittently lost the same class of exit-animation completion
+// (confirmed on a real run after the preload fix shipped -- a different
+// AnimatePresence-using dialog each time, same as before). `MotionProvider`
+// already sets `<MotionConfig reducedMotion="user">`, which is Framer
+// Motion's own supported mechanism for shortening/skipping its animations
+// when `prefers-reduced-motion: reduce` is reported -- independent of this
+// app's own `reduceVariants` transform-stripping. Defaulting jsdom's
+// `matchMedia` to report that preference removes animation duration from
+// the equation entirely for every test that doesn't stub its own
+// `matchMedia` (several already do, per-test, and those overrides still
+// win), using Motion's real, documented lifecycle rather than replacing it
+// with a mock -- so focus-trap timing, fake-timer tests and infinite-repeat
+// animations keep behaving exactly as they do under a real "reduce motion"
+// browser setting, not as they would under code that merely resembles one.
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  window.matchMedia = ((query: string) => ({
+    matches: query.includes("prefers-reduced-motion"),
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
+}
+
 // findBy*/waitFor default to 1 s, which full-suite load (and slower CI
 // runners) can exceed for a mocked fetch -> render; passing tests still
 // resolve on the first successful poll, so this only adds headroom.
