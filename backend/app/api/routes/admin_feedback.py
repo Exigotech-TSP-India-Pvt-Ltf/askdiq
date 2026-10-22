@@ -144,7 +144,7 @@ async def list_feedback(
     date_from, date_to = _naive_utc(date_from), _naive_utc(date_to)
     if date_from and date_to and date_from > date_to:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "date_from must be before date_to"
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "date_from must be before date_to"
         )
     cursor_values = None
     if cursor:
@@ -152,7 +152,7 @@ async def list_feedback(
             cursor_values = repo.decode_cursor(sort, cursor)
         except repo.InvalidCursorError as exc:
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY, f"Invalid cursor: {exc}"
+                status.HTTP_422_UNPROCESSABLE_CONTENT, f"Invalid cursor: {exc}"
             ) from None
     aud_cond = await build_audience_filter(db, repo.CLIENT_IP, audience_scope(audience))
     filters = repo.FeedbackFilters(
