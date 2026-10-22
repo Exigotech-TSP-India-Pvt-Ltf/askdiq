@@ -173,11 +173,21 @@ describe("proxy path hygiene (existing behaviour kept)", () => {
 });
 
 describe("proxy bounds the wait for the backend (no 300 s HeadersTimeoutError hang)", () => {
-  /** Backend that never sends headers: settles only when the proxy aborts it. */
+  /**
+   * Backend that never sends headers: settles only when the proxy aborts it.
+   * Mirrors real `fetch`'s contract (an already-aborted signal rejects at
+   * once, not only on a future "abort" event) so a signal the proxy aborts
+   * before calling `fetch` — the browser-disconnect race — is handled the
+   * same way a live backend call would be.
+   */
   function backendHangs() {
     fetchMock.mockImplementation(
       (_url: string, init: RequestInit) =>
         new Promise((_resolve, reject) => {
+          if (init.signal?.aborted) {
+            reject(init.signal.reason);
+            return;
+          }
           init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
         }),
     );

@@ -100,6 +100,12 @@ async function ssoLoginResponse(res: Response, headers: Headers): Promise<NextRe
  * response headers within `timeoutMs` (call `headersReceived()` once they
  * arrive, so a streamed body such as SSE is never cut off) or when the
  * browser goes away (so the backend sees the disconnect).
+ *
+ * `req.signal` may already be aborted by the time this runs (the route
+ * handler awaits `params` — and, for a body, `req.arrayBuffer()` — before
+ * calling this, so the browser can disconnect in that gap). `addEventListener`
+ * never fires for an event that already happened, so that case is checked
+ * explicitly instead of relying only on a future "abort" event.
  */
 function upstreamSignal(req: NextRequest, timeoutMs: number) {
   const controller = new AbortController();
@@ -108,7 +114,11 @@ function upstreamSignal(req: NextRequest, timeoutMs: number) {
     timedOut = true;
     controller.abort(new DOMException(`No response headers within ${timeoutMs} ms`, "TimeoutError"));
   }, timeoutMs);
-  req.signal?.addEventListener("abort", () => controller.abort(req.signal.reason), { once: true });
+  if (req.signal?.aborted) {
+    controller.abort(req.signal.reason);
+  } else {
+    req.signal?.addEventListener("abort", () => controller.abort(req.signal.reason), { once: true });
+  }
   return {
     signal: controller.signal,
     headersReceived: () => clearTimeout(timer),
@@ -129,6 +139,10 @@ function retryDelayMs(attempt: number): number {
 
 function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
     const timer = setTimeout(resolve, ms);
     signal?.addEventListener(
       "abort",
