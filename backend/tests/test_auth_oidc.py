@@ -36,6 +36,7 @@ from app.auth.oidc import (
 )
 from app.core.config import Settings, get_settings
 from app.core.state import MemoryState
+from tests.route_helpers import flat_routes, routes_with_path_containing
 
 FIXTURE = Path(__file__).parent / "fixtures" / "entra_discovery_v2.json"
 
@@ -581,8 +582,8 @@ def test_mock_router_is_absent_when_flag_is_off(settings: Settings) -> None:
     app = FastAPI()
     off = settings.model_copy(update={"auth_dev_mock": False})
     assert mount_mock_idp(app, off) is False
-    assert not [r for r in app.routes if "mock-idp" in getattr(r, "path", "")]
+    assert not routes_with_path_containing(flat_routes(app), "mock-idp")
 
     on_app = FastAPI()
     assert mount_mock_idp(on_app, settings) is True
-    assert [r for r in on_app.routes if "mock-idp" in getattr(r, "path", "")]
+    assert routes_with_path_containing(flat_routes(on_app), "mock-idp")

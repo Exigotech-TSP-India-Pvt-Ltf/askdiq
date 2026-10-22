@@ -204,14 +204,13 @@ async def raw_client():
 
 
 def test_query_inspector_route_is_declared_once() -> None:
-    from fastapi.routing import APIRoute
-
     from main import app
+    from tests.route_helpers import flat_routes, is_api_route
 
     matches = [
         r
-        for r in app.routes
-        if isinstance(r, APIRoute)
+        for r in flat_routes(app)
+        if is_api_route(r)
         and r.path == "/admin/usage/queries/{request_id}"
         and "GET" in r.methods
     ]

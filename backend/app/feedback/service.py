@@ -233,7 +233,7 @@ async def triage(
     sent = body.model_fields_set
     if target is None and not sent & {"review_note", "corrected_answer"}:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             "Provide triage_status, review_note and/or corrected_answer",
         )
     if target is not None and not can_transition(current, target):

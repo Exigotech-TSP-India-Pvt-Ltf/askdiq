@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Callable, Iterator
 import httpx
 import pytest
 from fastapi.dependencies.models import Dependant
-from fastapi.routing import APIRoute
+from fastapi.routing import RouteContext
 
 from app.auth.deps import (
     PERMISSION_ATTR,
@@ -30,6 +30,7 @@ from app.auth.permissions import Permission, Role, UserStatus
 from app.auth.principal import AuthUser
 from app.core.config import get_settings
 from main import app
+from tests.route_helpers import flat_routes, is_api_route
 
 pytestmark = pytest.mark.real_auth
 
@@ -154,7 +155,7 @@ def dependency_calls(dependant: Dependant) -> Iterator[Callable[..., object]]:
         yield from dependency_calls(sub)
 
 
-def requirement(route: APIRoute) -> str | None:
+def requirement(route: RouteContext) -> str | None:
     """The strongest guard on ``route``: a permission, "chat", or None."""
     calls = list(dependency_calls(route.dependant))
     for call in calls:
@@ -172,8 +173,8 @@ def requirement(route: APIRoute) -> str | None:
     return None
 
 
-def api_routes() -> list[APIRoute]:
-    return [r for r in app.routes if isinstance(r, APIRoute)]
+def api_routes() -> list[RouteContext]:
+    return [r for r in flat_routes(app) if is_api_route(r)]
 
 
 def guarded_endpoints() -> list[tuple[str, str, str]]:
@@ -198,8 +199,8 @@ def concrete(path: str) -> str:
 
 def test_every_non_public_route_has_a_guard() -> None:
     unguarded = []
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
+    for route in flat_routes(app):
+        if not is_api_route(route):
             assert route.path in DOCS_PATHS, f"unexpected non-API route {route.path}"
             continue
         if is_public(route.path):

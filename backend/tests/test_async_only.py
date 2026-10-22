@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import inspect
 
-from fastapi.routing import APIRoute
+from fastapi.routing import RouteContext
 
 from app.retrieval import embeddings
 from main import app
+from tests.route_helpers import flat_routes, is_api_route
 
 
-def _endpoint_routes() -> list[APIRoute]:
-    return [route for route in app.routes if isinstance(route, APIRoute)]
+def _endpoint_routes() -> list[RouteContext]:
+    return [route for route in flat_routes(app) if is_api_route(route)]
 
 
 def test_app_exposes_routes():

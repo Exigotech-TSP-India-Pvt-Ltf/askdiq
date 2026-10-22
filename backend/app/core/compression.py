@@ -15,15 +15,16 @@ SSE_MEDIA_TYPE = "text/event-stream"
 
 
 class _SSEAwareGZipResponder(GZipResponder):
-    async def send_with_gzip(self, message: Message) -> None:
+    async def send_with_compression(self, message: Message) -> None:
         if message["type"] == "http.response.start":
             content_type = Headers(raw=message["headers"]).get("content-type", "")
             if content_type.startswith(SSE_MEDIA_TYPE):
                 self.initial_message = message
                 # Same path Starlette takes for pre-encoded bodies: pass through.
                 self.content_encoding_set = True
+                await self.send(self.initial_message)
                 return
-        await super().send_with_gzip(message)
+        await super().send_with_compression(message)
 
 
 class SSEAwareGZipMiddleware(GZipMiddleware):

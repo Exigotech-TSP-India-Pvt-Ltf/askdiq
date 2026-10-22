@@ -150,7 +150,7 @@ async def get_azure_metrics_series(  # pylint: disable=too-many-arguments,too-ma
     del user
     if grain == GRAIN_MINUTE and range_ not in reconciliation.MINUTE_RANGES:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="`grain=PT1M` is served for `range` 1h or 6h; use PT1H.",
         )
     params = reconciliation.series_params(metric, deployment, range_, grain)

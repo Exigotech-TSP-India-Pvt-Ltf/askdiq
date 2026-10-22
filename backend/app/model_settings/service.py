@@ -216,7 +216,7 @@ async def _price_provenance(
             )
         ):
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=DETAIL_NOT_OFFICIAL.format(field=field),
             )
     used = [official[field] for field in changed]

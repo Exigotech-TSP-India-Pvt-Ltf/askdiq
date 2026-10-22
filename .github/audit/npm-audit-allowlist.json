@@ -80,6 +80,22 @@
       "severity": "critical",
       "reason": "Unauthenticated RCE in Image Optimization API with AVIF. Fixed only in next >= 15.5.24 / 16.x (major upgrade); deferred because parallel PRs (PR-15) target Next 14. Follow-up: upgrade to next 16.x in a dedicated PR (owner decision).",
       "expires": "2026-12-31"
+    },
+    {
+      "id": "GHSA-2464-fhr4-w9xw",
+      "url": "https://github.com/advisories/GHSA-2464-fhr4-w9xw",
+      "package": "next",
+      "severity": "critical",
+      "reason": "Unauthenticated RCE in Image Optimization API via SVG. Newly published advisory, surfaced blocking every open PR's audit gate. Fixed only in next >= 15.5.24 / 16.x (major upgrade, already in flight on PR #89). Follow-up: resolved once #89 merges.",
+      "expires": "2026-12-31"
+    },
+    {
+      "id": "GHSA-p3m5-59mp-jv5r",
+      "url": "https://github.com/advisories/GHSA-p3m5-59mp-jv5r",
+      "package": "next",
+      "severity": "high",
+      "reason": "DoS in App Router Server Actions. Newly published advisory, surfaced blocking every open PR's audit gate. Fixed only in next >= 15.5.24 / 16.x (major upgrade, already in flight on PR #89). Follow-up: resolved once #89 merges.",
+      "expires": "2026-12-31"
     }
   ]
 }

@@ -49,12 +49,12 @@ def batch_ids(
     unique = list(dict.fromkeys(i.strip() for i in ids if i and i.strip()))
     if not unique or len(unique) > BATCH_MAX_IDS:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Pass between 1 and {BATCH_MAX_IDS} ids.",
         )
     if any(len(i) > BATCH_ID_MAX_LENGTH for i in unique):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"An id is longer than {BATCH_ID_MAX_LENGTH} characters.",
         )
     return unique

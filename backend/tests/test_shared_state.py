@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.core.events import TOPIC_CACHE_INVALIDATE, Event, EventBus, asyncpg_dsn
 from app.core.state import MemoryState, PostgresState, StateBackend
 from tests.pg_helpers import new_engine, require_postgres
+from tests.route_helpers import flat_routes
 
 settings = get_settings()
 
@@ -181,7 +182,7 @@ def test_llm_gate_limit_follows_config(monkeypatch):
 def test_query_route_holds_an_llm_slot():
     from main import app
 
-    route = next(r for r in app.routes if getattr(r, "path", None) == "/query")
+    route = next(r for r in flat_routes(app) if getattr(r, "path", None) == "/query")
     calls = [d.call for d in route.dependant.dependencies]
     assert concurrency.llm_capacity in calls
 

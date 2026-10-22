@@ -1,9 +1,9 @@
 """STEP 5 reranker over the broad cosine-recall candidate pool.
 
 Chosen algorithm: cross-encoder reranking, scoring (query, chunk) pairs with
-`Xenova/ms-marco-MiniLM-L-6-v2` via `fastembed`'s ONNX runtime. This is the
+`Xenova/ms-marco-MiniLM-L-6-v2` via `onnxruntime` (app/retrieval/cross_encoder.py). This is the
 PREFERRED option for a small local corpus (per the task spec) without adding
-a torch/sentence-transformers dependency — `fastembed` + `onnxruntime` are
+a torch/sentence-transformers dependency — `onnxruntime` + `tokenizers` are
 already in requirements.txt. MMR is intentionally not layered on top: dedupe
 by chunk id (STEP 2) plus cross-document quota (STEP 3) already provide the
 diversity MMR would add, on a corpus this small.
@@ -41,7 +41,7 @@ _encoder_lock = threading.Lock()
 
 @lru_cache(maxsize=1)
 def _load_encoder():
-    from fastembed.rerank.cross_encoder import TextCrossEncoder  # noqa: PLC0415 - heavy model dependency, loaded on first use
+    from app.retrieval.cross_encoder import TextCrossEncoder  # noqa: PLC0415 - heavy model dependency, loaded on first use
 
     return TextCrossEncoder(model_name=settings.reranker_model)
 

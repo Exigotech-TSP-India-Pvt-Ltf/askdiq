@@ -24,7 +24,7 @@ COPY . .
 
 EXPOSE 8000
 
-# fastembed's cross-encoder reranker downloads its ONNX model from Hugging
+# The ONNX cross-encoder reranker downloads its ONNX model from Hugging
 # Face on first use — the container needs outbound network access at least
 # once (or a pre-warmed model cache volume) for reranking to work.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

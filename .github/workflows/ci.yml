@@ -29,6 +29,12 @@ env:
   ENTRA_TENANT_ID: 00000000-0000-4000-8000-00000000a51d
   ENTRA_CLIENT_ID: 00000000-0000-4000-8000-0000000c11e7
   API_KEY_NAME: ci-test-key
+  # The reranker's preload (app startup) downloads ~90 MB from Hugging Face
+  # Hub with no timeout; a slow/blocked network to huggingface.co from the
+  # runner hangs the whole job indefinitely instead of failing fast. Tests
+  # that exercise reranking already mock the encoder directly (test_reranker.py);
+  # no test asserts the real network path, so this is pure CI hardening.
+  ENABLE_RERANKER: "false"
   ENV: development
   PYTHON_VERSION: "3.14"
   NODE_VERSION: "20"

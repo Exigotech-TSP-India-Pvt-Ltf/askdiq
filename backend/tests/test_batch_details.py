@@ -13,13 +13,13 @@ from datetime import timedelta
 
 import pytest
 from fastapi import HTTPException
-from fastapi.routing import APIRoute
 
 from app.api import batch
 from app.api.routes import metrics
 from app.entities import conversations as conversation_stats
 from main import app
 from tests.dashboard_helpers import exchange, session_at, unique_day, unique_ip
+from tests.route_helpers import flat_routes, is_api_route
 
 BATCH_ROUTES = {
     "/admin/conversations/batch": "/admin/conversations/{conversation_id}",
@@ -68,9 +68,7 @@ async def test_collect_marks_none_and_404_missing_and_reraises_others() -> None:
 
 
 def test_batch_routes_precede_their_item_routes() -> None:
-    order = [
-        r.path for r in app.routes if isinstance(r, APIRoute) and "GET" in r.methods
-    ]
+    order = [r.path for r in flat_routes(app) if is_api_route(r) and "GET" in r.methods]
     for batch_path, item_path in BATCH_ROUTES.items():
         assert order.index(batch_path) < order.index(item_path), batch_path
 

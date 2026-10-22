@@ -75,7 +75,7 @@ def bucket_starts(start: datetime, end: datetime, bucket: Bucket) -> list[dateti
 
 def unprocessable(detail: str) -> HTTPException:
     return HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail
     )
 
 
