@@ -233,6 +233,23 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     expect(screen.queryByRole("tab", { name: /live telemetry studio/i })).not.toBeInTheDocument();
   });
 
+  it("syncs the overview telemetry summary and query feed when requested", async () => {
+    render(<UsageCostPage />);
+    const button = await screen.findByRole("button", { name: "Sync Telemetry" });
+    const lastSync = screen.getByTestId("last-telemetry-sync");
+    const initialSyncTime = lastSync.textContent;
+    const summaryCallsBeforeSync = vi.mocked(api.getUsageSummary).mock.calls.length;
+    const queryCallsBeforeSync = vi.mocked(api.getUsageQueries).mock.calls.length;
+
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(vi.mocked(api.getUsageSummary).mock.calls.length).toBeGreaterThan(summaryCallsBeforeSync);
+      expect(vi.mocked(api.getUsageQueries).mock.calls.length).toBeGreaterThan(queryCallsBeforeSync);
+      expect(lastSync).not.toHaveTextContent(initialSyncTime ?? "");
+    });
+  });
+
   it("Test IPs is a labelled tab-row action (icon + text), right-aligned with the tabs (OR-2)", async () => {
     render(<UsageCostPage />);
     const button = await screen.findByRole("button", { name: "Test IPs" });
