@@ -119,7 +119,9 @@ describe("Dashboard: KPI cards", { timeout: 15_000 }, () => {
     expect(within(queries).getByTestId("spark-line")).toBeInTheDocument();
     const errors = screen.getByTestId("kpi-error_rate");
     expect(within(errors).getByText("(worsening)")).toBeInTheDocument();
-    expect(within(screen.getByTestId("kpi-cost_usd")).getByText("$41.50")).toBeInTheDocument();
+    // Visible CountUp span and its accessible sr-only duplicate both show
+    // "$41.50" once reduced motion skips the animated count.
+    expect(within(screen.getByTestId("kpi-cost_usd")).getAllByText("$41.50").length).toBeGreaterThan(0);
   });
 
   it("prefetches the target page's first query after a 120 ms dwell, not on a quick pass", async () => {

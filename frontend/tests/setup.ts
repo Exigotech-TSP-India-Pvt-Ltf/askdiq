@@ -1,54 +1,58 @@
 import "@testing-library/jest-dom/vitest";
 import { configure } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { afterEach, vi } from "vitest";
+import React from "react";
+import { LazyMotion, MotionConfig, domMax } from "motion/react";
 import { queryCache } from "@/lib/query-cache";
-// `MotionProvider` (components/providers/MotionProvider.tsx) only lets
-// `AnimatePresence` run an exit animation to completion once Motion's
-// feature bundle has loaded via `<LazyMotion features={() => import(...)}>`
-// -- a dynamic `import()` resolved inside a `useEffect` that fires after
-// mount (framer-motion's `LazyMotion`, `isLazyBundle` branch). Locally that
-// import resolves in well under a millisecond (module already compiled from
-// earlier test files), so every one of 1429 tests passes every time. Under
-// GitHub's CPU-constrained, highly parallel CI runners, the *first* time
-// this module needs transforming/compiling, that one-time cost competes
-// with every other worker's test file for the same few vCPUs; if a
-// dialog/drawer's exit animation starts before it resolves, the
-// exit-complete callback can be lost entirely, and the dialog never leaves
-// the DOM -- `waitFor(() => ...not.toBeInTheDocument())` then hangs until
-// the test times out. That matches every observed symptom: a different
-// random subset of AnimatePresence-using tests fails each CI run, it is
-// unreproducible locally at any load, and raising `testTimeout` from 5s to
-// 15s (444a3a1) did not help, because this is a dropped callback, not a
-// slow one.
-//
-// The fix is not to change *how* or *when* Motion loads (an earlier attempt
-// to force synchronous loading broke `useFocusTrap` tests that rely on real
-// mount/animation timing, and broke `MascotLoader`/`ToastProvider` tests
-// that rely on the original async timing lining up with their
-// `vi.useFakeTimers()` windows and infinite-repeat animations) -- it's to
-// make sure the one-time compile for this module has already happened,
-// every time, before any test's dynamic `import()` needs it, so that
-// `import()` always resolves from Vitest's module cache instead of racing a
-// fresh compile under CI contention. Every other Motion behaviour
-// (AnimatePresence, variants, durations, the lazy-loading control flow
-// itself) is untouched.
-import "@/lib/motion-features";
 
-// The preload above narrows the race but does not close it: PR #89's CI
-// still intermittently lost the same class of exit-animation completion
-// (confirmed on a real run after the preload fix shipped -- a different
-// AnimatePresence-using dialog each time, same as before). `MotionProvider`
-// already sets `<MotionConfig reducedMotion="user">`, which is Framer
-// Motion's own supported mechanism for shortening/skipping its animations
-// when `prefers-reduced-motion: reduce` is reported -- independent of this
-// app's own `reduceVariants` transform-stripping. Defaulting jsdom's
-// `matchMedia` to report that preference removes animation duration from
-// the equation entirely for every test that doesn't stub its own
-// `matchMedia` (several already do, per-test, and those overrides still
-// win), using Motion's real, documented lifecycle rather than replacing it
-// with a mock -- so focus-trap timing, fake-timer tests and infinite-repeat
-// animations keep behaving exactly as they do under a real "reduce motion"
-// browser setting, not as they would under code that merely resembles one.
+// `MotionProvider` (components/providers/MotionProvider.tsx) uses
+// `<LazyMotion features={() => import("@/lib/motion-features")...}>`: on
+// *every* mount, `LazyMotion` starts in an "unloaded" state and only
+// switches to the real animation engine once that import's promise settles
+// via its own effect -- a genuine async gap on every single render, not
+// something a warmed module cache can remove (two earlier attempts here,
+// 444a3a1 and 6aca716, both assumed preloading the module was enough; it
+// wasn't -- confirmed by a real CI run still losing exit-animation
+// completion afterwards). If a dialog's exit starts in that window, the
+// exit-complete callback that AnimatePresence needs to actually unmount it
+// can be dropped entirely, not just delayed -- matching every symptom seen
+// on CI: a different AnimatePresence-using dialog fails each run, it never
+// reproduces locally, and raising `testTimeout` (444a3a1) didn't help.
+//
+// The fix: give `LazyMotion` the real feature bundle directly
+// (`features={domMax}`, not a function) so it is synchronously "loaded" on
+// first render -- no promise, no effect, no async gap, ever. This is
+// Framer Motion's own supported non-code-split form (bundle size doesn't
+// matter in tests); everything else (`AnimatePresence`, variants,
+// `MotionConfig`, durations) is the real library, unmocked.
+//
+// The mock factory itself must stay synchronous (no `await import(...)`
+// inside it): an async factory adds one more microtask before React mounts
+// the real children, which is enough to desync tests that advance fake
+// timers immediately after `render()` (an effect that hasn't committed yet
+// never sees that advance) -- `MascotLoader`'s rotating-status test hit
+// exactly this.
+vi.mock("@/components/providers/MotionProvider", () => ({
+  MotionProvider({ children }: { children: React.ReactNode }) {
+    return React.createElement(
+      LazyMotion,
+      { features: domMax, strict: true },
+      React.createElement(MotionConfig, { reducedMotion: "user" }, children),
+    );
+  },
+}));
+
+// `MotionConfig reducedMotion="user"` (set above) is Framer Motion's own
+// mechanism for honouring `prefers-reduced-motion: reduce` -- independent
+// of this app's own `reduceVariants` transform-stripping (lib/motion.ts).
+// Defaulting jsdom's `matchMedia` to report that preference (tests that
+// stub their own `matchMedia` are unaffected; their override wins) removes
+// one more source of animation-timing dependence from tests that don't
+// care about it either way. Note it only strips *transforms*: an
+// opacity-based crossfade's `transition` duration is untouched, so a test
+// that waits on one (MascotLoader, ToastProvider) still needs real
+// wall-clock headroom, not a shorter animation -- see their widened
+// `waitFor` timeouts.
 if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
   window.matchMedia = ((query: string) => ({
     matches: query.includes("prefers-reduced-motion"),
