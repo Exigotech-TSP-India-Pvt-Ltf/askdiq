@@ -1,10 +1,3 @@
 # Reviewed pip-audit allow-list. One advisory per line:
 #   VULN_ID  # package, reason, expires YYYY-MM-DD, follow-up: upgrade to X
 # Expired entries fail the backend-lint job. Remove an entry once the fix ships.
-PYSEC-2026-1943  # starlette 0.38.6 (GHSA-f96h-pmfr-66vw, multipart part DoS), fix needs starlette>=0.40.0 which fastapi 0.115.0 does not allow (<0.39); deferred framework upgrade, expires 2026-12-31, follow-up: upgrade to fastapi>=0.133 + starlette>=1.3.1
-PYSEC-2026-1941  # starlette 0.38.6 (GHSA-2c2j-9gv5-cj73, large multipart file blocks event loop), fix needs starlette>=0.47.2; deferred framework upgrade, expires 2026-12-31, follow-up: upgrade to fastapi>=0.133 + starlette>=1.3.1
-PYSEC-2026-161  # starlette 0.38.6 (GHSA-86qp-5c8j-p5mr, URL reconstructed from Host header), fix needs starlette>=1.0.1; deferred framework upgrade, expires 2026-12-31, follow-up: upgrade to fastapi>=0.133 + starlette>=1.3.1
-PYSEC-2026-2281  # starlette 0.38.6 (GHSA-wqp7-x3pw-xc5r, StaticFiles path on Windows; app does not mount StaticFiles), fix needs starlette>=1.1.0; deferred framework upgrade, expires 2026-12-31, follow-up: upgrade to fastapi>=0.133 + starlette>=1.3.1
-PYSEC-2026-2280  # starlette 0.38.6 (GHSA-x746-7m8f-x49c, HTTPEndpoint method dispatch), fix needs starlette>=1.1.0; deferred framework upgrade, expires 2026-12-31, follow-up: upgrade to fastapi>=0.133 + starlette>=1.3.1
-PYSEC-2026-249  # starlette 0.38.6 (GHSA-82w8-qh3p-5jfq, form max_fields/max_part_size bypass), fix needs starlette>=1.3.1; deferred framework upgrade, expires 2026-12-31, follow-up: upgrade to fastapi>=0.133 + starlette>=1.3.1
-PYSEC-2026-248  # starlette 0.38.6 (GHSA-jp82-jpqv-5vv3, request path not validated), fix needs starlette>=1.3.0; deferred framework upgrade, expires 2026-12-31, follow-up: upgrade to fastapi>=0.133 + starlette>=1.3.1
