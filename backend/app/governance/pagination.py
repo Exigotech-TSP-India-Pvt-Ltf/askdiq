@@ -57,7 +57,7 @@ class Cursor:
             return cls(created_at=created_at, id=uuid.UUID(str(data["id"])))
         except (ValueError, KeyError, TypeError, binascii.Error) as exc:
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid cursor."
+                status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid cursor."
             ) from exc
 
 

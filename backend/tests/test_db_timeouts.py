@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi import Depends, FastAPI
-from fastapi.routing import APIRoute
+from fastapi.routing import RouteContext
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -35,6 +35,7 @@ from app.core.migration_guard import (
     run_with_lock_retries,
 )
 from tests.pg_helpers import new_engine, require_postgres
+from tests.route_helpers import flat_routes, is_api_route
 
 settings = get_settings()
 
@@ -343,7 +344,7 @@ async def test_disabled_api_timeout_sets_nothing(timeout_client, monkeypatch) ->
 # ---------------------------------------------------------------------------
 
 
-def _dependency_calls(route: APIRoute) -> set[object]:
+def _dependency_calls(route: RouteContext) -> set[object]:
     calls: set[object] = set()
     stack = list(route.dependant.dependencies)
     while stack:
@@ -360,7 +361,7 @@ def _dependency_calls(route: APIRoute) -> set[object]:
 def test_long_running_endpoints_use_unbounded_session(endpoint: str) -> None:
     from main import app  # noqa: PLC0415 - app import is heavy; keep it local
 
-    routes = [r for r in app.routes if isinstance(r, APIRoute) and r.name == endpoint]
+    routes = [r for r in flat_routes(app) if is_api_route(r) and r.name == endpoint]
     assert routes, endpoint
     for route in routes:
         assert database.unbounded_session in _dependency_calls(route), endpoint
