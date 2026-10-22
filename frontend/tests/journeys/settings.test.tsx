@@ -204,16 +204,37 @@ describe("Phase F7 Settings journey", { timeout: 20_000 }, () => {
     expect(screen.getByRole("tab", { name: /Intents/ })).toHaveTextContent("2");
   });
 
-  it("admin (non-superadmin): no Settings nav item and the page refuses access", () => {
+  it("admin can access Test IP settings but not superadmin-only settings", () => {
     auth.role = "admin";
     const { calls } = installFetch(() => undefined);
     renderApp();
-    expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/settings");
     expect(screen.getByRole("link", { name: "Feedback" })).toBeInTheDocument();
-    expect(screen.getByText("Superadmin only")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Test IPs/ })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Branding/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Branding settings" })).not.toBeInTheDocument();
     // Nothing but the header bell's active-alerts poll.
     expect(calls.filter((c) => !c.url.includes("/admin/alerts"))).toHaveLength(0);
+  });
+
+  it("opens the Test IP manager from Settings", async () => {
+    auth.role = "admin";
+    installFetch(({ method, url }) => {
+      if (method === "GET" && url === "/api/proxy/admin/usage/test-ips") {
+        return json({
+          default_ips: ["127.0.0.1"],
+          custom_ips: [],
+          effective_ips: ["127.0.0.1"],
+          classification_note: "Test IPs are excluded from production visitor metrics.",
+        });
+      }
+      return undefined;
+    });
+    renderApp();
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage Test IPs" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(await screen.findByText("Manage Test IP Rules & Audience Segmentation")).toBeInTheDocument();
   });
 
   it("operator and role-less users have no Settings item either", () => {

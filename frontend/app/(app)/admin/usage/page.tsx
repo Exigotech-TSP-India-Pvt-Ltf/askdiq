@@ -11,7 +11,6 @@ import { InteractiveOverviewTab } from "@/components/admin/usage/InteractiveOver
 import { UsersTab } from "@/components/admin/usage/UsersTab";
 import { SessionsTab } from "@/components/admin/usage/SessionsTab";
 import { QueriesTab } from "@/components/admin/usage/QueriesTab";
-import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { CostInsights } from "@/components/admin/usage/CostInsights";
 import { AzureTokensPanel } from "@/components/admin/azure/AzureTokensPanel";
 import { BilledVsEstimated } from "@/components/admin/usage/BilledVsEstimated";
@@ -25,10 +24,8 @@ import {
   parseUsageTab,
   type UsageTabId,
 } from "@/lib/usage-tabs";
-import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import {
   CircleDollarSign,
-  Network,
   Sparkles,
   Users,
   MessageSquare,
@@ -58,7 +55,6 @@ function UsageCostContent() {
   const [activeTab, setActiveTab] = useState<TabId>(DEFAULT_USAGE_TAB);
   const [selectedIp, setSelectedIp] = useState<string>("");
   const [selectedSession, setSelectedSession] = useState<string>("");
-  const [isConfigOpen, setIsConfigOpen] = useState(false);
   // Re-read the URL on every client navigation, not only on mount, so a link
   // to /admin/usage?tab=... while already here switches tab and filters.
   const searchKey = useSearchParams()?.toString() ?? "";
@@ -177,17 +173,6 @@ function UsageCostContent() {
               ariaLabel="Usage console navigation"
             />
           }
-          actions={
-            <HeaderIconButton
-              icon={Network}
-              label="Test IPs"
-              tooltip="Configure test IPs"
-              showLabel
-              data-tour="usage-test-ips"
-              aria-haspopup="dialog"
-              onClick={() => setIsConfigOpen(true)}
-            />
-          }
           dateRange
         />
 
@@ -257,14 +242,6 @@ function UsageCostContent() {
           )}
         </div>
       </div>
-
-      {/* Test IP Configuration Modal */}
-      <TestIpManager
-        token={token || ""}
-        isOpen={isConfigOpen}
-        onClose={() => setIsConfigOpen(false)}
-        onConfigChanged={refresh}
-      />
     </div>
   );
 }
