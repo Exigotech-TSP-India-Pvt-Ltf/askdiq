@@ -110,6 +110,10 @@ describe("Dashboard: KPI cards", { timeout: 15_000 }, () => {
 
   it("shows the value, delta, window label and a sparkline from the contract", async () => {
     renderDashboard();
+    for (const key of ["users", "active_users"]) {
+      const visitors = await screen.findByTestId(`kpi-${key}`);
+      expect(within(visitors).queryByRole("button", { name: "About Active visitors" })).not.toBeInTheDocument();
+    }
     const queries = await screen.findByTestId("kpi-queries");
     expect(within(queries).getByText("1,200")).toBeInTheDocument();
     expect(within(queries).getByText("Last 7 days")).toBeInTheDocument();
