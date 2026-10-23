@@ -86,7 +86,6 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { stageLabel } from "@/components/admin/governance/TraceDrawer";
 import { LiveIndicator } from "@/components/admin/governance/badges";
-import { ActiveVisitorsInfo } from "@/components/admin/ActiveVisitorsPanel";
 import { AzureReconciliationPanel } from "@/components/admin/azure/AzureReconciliationPanel";
 import { ACTIVE_VISITORS_LABEL } from "@/lib/active-visitors";
 
@@ -658,7 +657,7 @@ export default function MonitoringView() {
         {[
           <StatTile key="api" label="API requests" href={logsHref()} icon={Activity} value={formatCount(countValue("api_requests", m?.api_requests))} exact={exactTitle(countValue("api_requests", m?.api_requests))} caption={countCaption(counts.api_requests)} />,
           <StatTile key="queries" label="Queries" href={tabHref("Traces")} icon={Search} value={formatCount(countValue("queries_24h", m?.queries_24h))} exact={exactTitle(countValue("queries_24h", m?.queries_24h))} caption={countCaption(counts.queries_24h)} />,
-          <StatTile key="visitors" label={ACTIVE_VISITORS_LABEL} info={<ActiveVisitorsInfo />} href="/admin/usage?tab=users" icon={Users} value={formatCount(countValue("active_users", m?.active_users))} caption={countCaption(counts.active_users)} />,
+          <StatTile key="visitors" label={ACTIVE_VISITORS_LABEL} href="/admin/usage?tab=users" icon={Users} value={formatCount(countValue("active_users", m?.active_users))} caption={countCaption(counts.active_users)} />,
           <StatTile key="traces" label="Traces" href={tabHref("Traces")} icon={FileSearch} value={formatCount(countValue("traces_total", m?.traces_total))} exact={exactTitle(countValue("traces_total", m?.traces_total))} caption={countCaption(counts.traces_total)} />,
           <StatTile
             key="errors"

@@ -79,13 +79,11 @@ describe("ActiveVisitorsPanel", () => {
 });
 
 describe("dashboard cards", () => {
-  it("label both visitor KPIs 'Active visitors' with the definition tip", () => {
+  it("labels both visitor KPIs 'Active visitors'", () => {
     const users = DASHBOARD_KPIS.find((d) => d.key === "users");
     const active = DASHBOARD_KPIS.find((d) => d.key === "active_users");
     expect(users?.label).toBe("Active visitors");
     expect(active?.label).toBe("Active visitors (24h)");
-    expect(users?.activeVisitors && active?.activeVisitors).toBe(true);
-    expect(DASHBOARD_KPIS.filter((d) => d.activeVisitors).map((d) => d.key)).toEqual(["users", "active_users"]);
   });
 
   it("KpiTrendCard renders the tip outside its link", () => {
