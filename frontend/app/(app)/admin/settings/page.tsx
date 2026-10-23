@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, type JSX } from "react";
 import { BrainCircuit, Link2, Network, Palette, Settings2, ShieldAlert, Tags } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";

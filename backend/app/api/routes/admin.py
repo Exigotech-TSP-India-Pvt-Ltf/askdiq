@@ -186,7 +186,7 @@ async def list_users(
     """
     if (weekday is None) != (hour is None):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="`weekday` and `hour` must be sent together.",
         )
     slot_ips: set[str] | None = None
@@ -593,12 +593,12 @@ async def list_conversations(
     """
     if min_turns is not None and max_turns is not None and min_turns > max_turns:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="`min_turns` must not exceed `max_turns`.",
         )
     if day is not None and outcome is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="`day` requires `outcome`.",
         )
     aud_scope = audience_scope(audience)
