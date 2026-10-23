@@ -29,12 +29,10 @@ import {
   RefreshCw,
   Search,
   Eye,
-  SlidersHorizontal,
   ChevronDown,
   ExternalLink,
 } from "lucide-react";
 import { useChartTheme, useResolvedThemeClass } from "@/lib/use-chart-theme";
-import { usePrefersReducedMotion } from "@/lib/motion";
 import { Collapse } from "@/components/ui/Collapse";
 import { SkeletonCard, SkeletonGroup, Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -59,7 +57,7 @@ interface InteractiveOverviewTabProps {
   summary: UsageSummary | null;
   isLoading: boolean;
   error?: string | null;
-  onRetry?: () => void;
+  onRetry?: () => void | Promise<unknown>;
   token?: string;
   audience?: string;
   /** Global date range, inclusive UTC days (YYYY-MM-DD); "" = all time. */
@@ -89,24 +87,13 @@ export function InteractiveOverviewTab({
   const dot = (color: string, blur = 6) =>
     isDark ? { backgroundColor: color, boxShadow: `0 0 ${blur}px ${color}` } : { backgroundColor: color };
   const glow = (color: string) => (isDark ? { filter: `drop-shadow(0 0 4px ${color})` } : {});
-  // Navigation & Drilldown State
-  const [activeDomainFilter, setActiveDomainFilter] = useState<"all" | "costs" | "tokens" | "quality">("all");
-  const reducedMotion = usePrefersReducedMotion();
-  /** Telemetry Focus: highlight one card, dim the others and bring it into view. */
-  const focusDomain = (id: "all" | "costs" | "tokens" | "quality") => {
-    setActiveDomainFilter(id);
-    if (id !== "all") {
-      document
-        .getElementById(`telemetry-${id}`)
-        ?.scrollIntoView?.({ behavior: reducedMotion ? "auto" : "smooth", block: "nearest" });
-    }
-  };
-  const dimUnless = (id: "costs" | "tokens" | "quality") =>
-    activeDomainFilter !== "all" && activeDomainFilter !== id ? "opacity-60" : "";
+  // Drilldown State
   const [selectedOutcome, setSelectedOutcome] = useState<string>("all");
   const [selectedStageDetail, setSelectedStageDetail] = useState<"llm" | "embed" | "savings" | null>(null);
   const [tokenViewMode, setTokenViewMode] = useState<"absolute" | "percentage">("absolute");
   const [inspectRequestId, setInspectRequestId] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
 
   // Live query feed: cached per filter set (the backend serves the default
   // feed from a snapshot), previous rows stay while another filter loads.
@@ -126,6 +113,16 @@ export function InteractiveOverviewTab({
   const feedRowIntent = useRowIntentHandlers((q: UsageQueryRow) => prefetchQueryDetail(token, q.request_id));
   const loadingQueries = feed.isLoading;
   const queriesError = queryErrorMessage(feed.error, "Failed to load real chatbot query feed.");
+  const syncTelemetry = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      await Promise.all([onRetry?.(), feed.refetch()]);
+      setLastSyncAt(new Date());
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   if (isLoading && !summary) {
     return (
@@ -217,22 +214,21 @@ export function InteractiveOverviewTab({
             <div className="flex items-center gap-3">
               <div className="text-[11px] text-teal-200 hidden sm:block">
                 <span>Last Telemetry Sync: </span>
-                <span className="font-mono font-bold text-white">
-                  {as_of ? new Date(as_of).toLocaleTimeString() : "Live"}
+                <span className="font-mono font-bold text-white" data-testid="last-telemetry-sync">
+                  {lastSyncAt?.toLocaleTimeString() ?? (as_of ? new Date(as_of).toLocaleTimeString() : "Live")}
                 </span>
               </div>
               {onRetry && (
                 <button
                   type="button"
-                  onClick={() => {
-                    onRetry();
-                    void feed.refetch();
-                  }}
+                  onClick={() => void syncTelemetry()}
+                  disabled={isSyncing}
+                  aria-busy={isSyncing}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white border border-white/20 hover:bg-white/25 transition shadow-sm"
                   title="Synchronize live backend telemetry"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Sync Telemetry</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+                  <span>{isSyncing ? "Syncing Telemetry…" : "Sync Telemetry"}</span>
                 </button>
               )}
             </div>
@@ -295,37 +291,6 @@ export function InteractiveOverviewTab({
               </div>
             </div>
           </div>
-
-          {/* Quick Domain Filter Selector */}
-          <div data-tour="usage-focus" className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/15">
-            <span className="text-xs text-teal-200 font-medium flex items-center gap-1.5">
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Telemetry Focus:</span>
-            </span>
-
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {[
-                { id: "all", label: "Full Studio View" },
-                { id: "costs", label: "Economic Waterfall" },
-                { id: "tokens", label: "Cognitive Thinking Pipeline" },
-                { id: "quality", label: "Performance Cockpit" },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  aria-pressed={activeDomainFilter === tab.id}
-                  onClick={() => focusDomain(tab.id as "all" | "costs" | "tokens" | "quality")}
-                  className={`px-3 py-1 text-xs rounded-lg font-medium transition ${
-                    activeDomainFilter === tab.id
-                      ? "bg-brand-50 text-brand-950 font-bold shadow-sm"
-                      : "text-teal-200 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -338,12 +303,7 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 1: FINANCIAL COST ECONOMICS — LIVE FINANCIAL ACCOUNTING */}
         {/* ----------------------------------------------------------------------- */}
         <div data-tour="usage-waterfall"
-          id="telemetry-costs"
-          className={`${dimUnless("costs")} relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white p-6 text-slate-900 shadow-card dark:bg-surface-card dark:text-white dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
-            activeDomainFilter === "costs"
-              ? "ring-2 ring-teal-500 border-teal-500 dark:ring-teal-400/80 dark:border-teal-400/60"
-              : ""
-          }`}
+          className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-white p-6 text-slate-900 shadow-card dark:bg-surface-card dark:text-white dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60"
         >
           {/* Ambient Corner Glow in top right */}
           <div className="absolute -top-12 -right-12 w-36 h-36 bg-emerald-400/10 dark:bg-emerald-500/15 rounded-full blur-2xl pointer-events-none" />
@@ -519,12 +479,7 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 2: TOKEN VOLUME TELEMETRY — COGNITIVE PIPELINE */}
         {/* ----------------------------------------------------------------------- */}
         <div data-tour="usage-token-rings"
-          id="telemetry-tokens"
-          className={`${dimUnless("tokens")} relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 shadow-card dark:border-teal-500/25 dark:bg-gradient-to-br dark:from-brand-950/95 dark:via-surface-muted/98 dark:to-surface-page dark:text-white dark:shadow-2xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
-            activeDomainFilter === "tokens"
-              ? "ring-2 ring-teal-500 border-teal-500 dark:ring-teal-400/80 dark:border-teal-400/60"
-              : "dark:shadow-[0_0_30px_rgba(20,184,166,0.12),inset_0_1px_0_0_rgba(45,212,191,0.25)]"
-          }`}
+          className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 shadow-card dark:border-teal-500/25 dark:bg-gradient-to-br dark:from-brand-950/95 dark:via-surface-muted/98 dark:to-surface-page dark:text-white dark:shadow-2xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 dark:shadow-[0_0_30px_rgba(20,184,166,0.12),inset_0_1px_0_0_rgba(45,212,191,0.25)]"
         >
           {/* Luminous ambient teal glow in the corner */}
           <div className="absolute -top-12 -right-12 w-36 h-36 bg-teal-400/10 dark:bg-teal-500/15 rounded-full blur-2xl pointer-events-none" />
@@ -690,12 +645,7 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 3: GENERATION QUALITY & LATENCY — TELEMETRY COCKPIT */}
         {/* ----------------------------------------------------------------------- */}
         <div data-tour="usage-latency-cockpit"
-          id="telemetry-quality"
-          className={`${dimUnless("quality")} relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 dark:text-white shadow-card dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 ${
-            activeDomainFilter === "quality"
-              ? "ring-2 ring-cyan-500 border-cyan-500 dark:ring-cyan-400/80 dark:border-cyan-400/60"
-              : ""
-          }`}
+          className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 dark:text-white shadow-card dark:shadow-xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60"
         >
           {/* Ambient Corner Glow in top right */}
           <div className="absolute -top-12 -right-12 w-36 h-36 bg-cyan-400/10 dark:bg-cyan-500/15 rounded-full blur-2xl pointer-events-none" />
@@ -949,7 +899,7 @@ export function InteractiveOverviewTab({
                   <th className="px-3 py-2.5 text-right">Output Tokens</th>
                   <th className="px-3 py-2.5 text-right">Speed</th>
                   <th className="px-3 py-2.5 text-right">Cost (USD)</th>
-                  <th className="px-4 py-2.5 text-right">Action</th>
+                  <th className="px-4 py-2.5 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06] text-slate-700 dark:text-fg">

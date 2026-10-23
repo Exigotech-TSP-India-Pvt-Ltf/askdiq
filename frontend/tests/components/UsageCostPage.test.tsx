@@ -23,7 +23,7 @@ vi.mock("@/lib/audience-context", () => ({
 
 const mockSummary: UsageSummary = {
   audience: "overview",
-  as_of: new Date().toISOString(),
+  as_of: "2020-01-01T00:00:00.000Z",
   financial: {
     total_cost_usd: 0.045,
     llm_cost_usd: 0.0076,
@@ -233,6 +233,25 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     expect(screen.queryByRole("tab", { name: /live telemetry studio/i })).not.toBeInTheDocument();
   });
 
+  it("syncs the overview telemetry summary and query feed when requested", async () => {
+    render(<UsageCostPage />);
+    const button = await screen.findByRole("button", { name: "Sync Telemetry" });
+    const lastSync = screen.getByTestId("last-telemetry-sync");
+    const initialSyncTime = lastSync.textContent;
+    const summaryCallsBeforeSync = vi.mocked(api.getUsageSummary).mock.calls.length;
+    const queryCallsBeforeSync = vi.mocked(api.getUsageQueries).mock.calls.length;
+
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(vi.mocked(api.getUsageSummary).mock.calls.length).toBeGreaterThan(summaryCallsBeforeSync);
+      expect(vi.mocked(api.getUsageQueries).mock.calls.length).toBeGreaterThan(queryCallsBeforeSync);
+      expect(lastSync).not.toHaveTextContent(initialSyncTime ?? "");
+    });
+  });
+
+  // Test IPs management moved to Settings (frontend/components/admin/settings/TestIpsTab.tsx);
+  // the old "Test IPs is a labelled tab-row action... (OR-2)" toolbar-button test is superseded.
   it("keeps Test IP configuration out of the Usage toolbar", async () => {
     render(<UsageCostPage />);
     await screen.findByRole("tablist", { name: "Usage console navigation" });
