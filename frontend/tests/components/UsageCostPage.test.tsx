@@ -250,21 +250,13 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     });
   });
 
-  it("Test IPs is a labelled tab-row action (icon + text), right-aligned with the tabs (OR-2)", async () => {
+  // Test IPs management moved to Settings (frontend/components/admin/settings/TestIpsTab.tsx);
+  // the old "Test IPs is a labelled tab-row action... (OR-2)" toolbar-button test is superseded.
+  it("keeps Test IP configuration out of the Usage toolbar", async () => {
     render(<UsageCostPage />);
-    const button = await screen.findByRole("button", { name: "Test IPs" });
-    expect(button).toHaveTextContent("Test IPs");
-    expect(button).toHaveAttribute("data-tour", "usage-test-ips");
-    expect(button).toHaveAttribute("aria-haspopup", "dialog");
-    expect(screen.getByRole("banner")).not.toContainElement(button);
-    const row = button.closest("[data-page-toolbar]");
-    expect(row).not.toBeNull();
-    expect(row).toContainElement(screen.getByRole("tablist", { name: "Usage console navigation" }));
-    // The date filter sits last on the same row (its anchor; the control needs a RangeProvider).
-    expect(row?.querySelector("[data-toolbar-actions]")?.lastElementChild).toHaveAttribute("data-tour", "shell-date-range");
-    // Keeps today's behaviour (OR-11 will turn it into a Settings link): it opens the manager.
-    fireEvent.click(button);
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await screen.findByRole("tablist", { name: "Usage console navigation" });
+    expect(screen.queryByRole("button", { name: "Test IPs" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Manage Test IPs" })).not.toBeInTheDocument();
   });
 
   it.each([
