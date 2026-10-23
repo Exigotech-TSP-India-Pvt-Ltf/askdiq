@@ -140,10 +140,14 @@ describe("Documents inventory", () => {
     expect(within(quarantined).getByText("Quarantined")).toBeInTheDocument();
     expect(within(quarantined).getAllByText("—").length).toBeGreaterThan(0);
 
-    // KPIs come from the same rows (no invented numbers).
+    // KPIs come from the same rows (no invented numbers). The visible
+    // CountUp span and its accessible sr-only duplicate (data-testid
+    // "count-final") show the same text once reduced motion skips the
+    // animated count -- getAllByText covers both instead of assuming
+    // exactly one match.
     expect(screen.getByText("Total Canonical Documents")).toBeInTheDocument();
     expect(screen.getByText("1 standardized from .docx")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("44")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText("44").length).toBeGreaterThan(0));
   });
 
   it("filters by original format and status from the URL", async () => {

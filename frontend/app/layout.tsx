@@ -30,7 +30,8 @@ export default async function RootLayout({
 }) {
   // Per-request CSP nonce from middleware.ts (reading headers() renders the
   // shell per request, which a nonce needs; /branding stays in the data cache).
-  const requestHeaders = headers();
+  const requestHeaders = await headers();
+  const cookieStore = await cookies();
   const nonce = requestHeaders.get("x-nonce") ?? undefined;
   // Branding and the signed-in user load in parallel; with the user known on
   // the server the first HTML already holds the shell and page skeletons
@@ -38,14 +39,14 @@ export default async function RootLayout({
   const [brand, initialMe] = await Promise.all([
     getBrand(),
     preloadMe({
-      session: cookies().get(sessionCookieName())?.value,
+      session: cookieStore.get(sessionCookieName())?.value,
       forwardedFor: requestHeaders.get("x-forwarded-for"),
       userAgent: requestHeaders.get("user-agent"),
     }),
   ]);
   const brandCss = brandCssText(brand);
   // One starting audience for the server render and the first client render (VA-54).
-  const initialAudience = resolveInitialAudience(requestHeaders.get(AUDIENCE_HEADER), cookies().get(AUDIENCE_COOKIE)?.value);
+  const initialAudience = resolveInitialAudience(requestHeaders.get(AUDIENCE_HEADER), cookieStore.get(AUDIENCE_COOKIE)?.value);
 
   return (
     // suppressHydrationWarning: the pre-paint script below changes the <html>
