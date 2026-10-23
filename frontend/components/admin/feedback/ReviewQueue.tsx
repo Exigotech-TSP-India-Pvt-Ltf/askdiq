@@ -525,7 +525,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
             <th scope="col" className="px-3 py-2.5">Outcome</th>
             <th scope="col" className="px-3 py-2.5">Status</th>
             <th scope="col" className="px-3 py-2.5">Submitted</th>
-            {canTriage ? <th scope="col" className="px-4 py-2.5 text-right">Actions</th> : null}
+            {canTriage ? <th scope="col" className="px-4 py-2.5 text-center">Actions</th> : null}
           </tr>
         </thead>
         <tbody>

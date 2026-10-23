@@ -219,6 +219,7 @@ export function SessionsTab({
       key: "actions",
       header: "Inspect",
       align: "right",
+      headerAlign: "center",
       render: (r) => (
         <button
           type="button"

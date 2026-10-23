@@ -278,6 +278,7 @@ export function VisitorsPanel() {
       key: "actions",
       header: "Actions",
       align: "right",
+      headerAlign: "center",
       render: (u) => (
         <div className="flex items-center justify-end gap-1">
           <Link
