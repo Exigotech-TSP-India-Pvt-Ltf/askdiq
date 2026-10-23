@@ -23,7 +23,7 @@ vi.mock("@/lib/audience-context", () => ({
 
 const mockSummary: UsageSummary = {
   audience: "overview",
-  as_of: new Date().toISOString(),
+  as_of: "2020-01-01T00:00:00.000Z",
   financial: {
     total_cost_usd: 0.045,
     llm_cost_usd: 0.0076,
@@ -231,6 +231,23 @@ describe("UsageCostPage Enterprise Intelligence Console", () => {
     expect(tabs.map((t) => t.textContent)).toEqual(["OverviewLive", "All Users", "All Sessions", "All Queries"]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("tab", { name: /live telemetry studio/i })).not.toBeInTheDocument();
+  });
+
+  it("syncs the overview telemetry summary and query feed when requested", async () => {
+    render(<UsageCostPage />);
+    const button = await screen.findByRole("button", { name: "Sync Telemetry" });
+    const lastSync = screen.getByTestId("last-telemetry-sync");
+    const initialSyncTime = lastSync.textContent;
+    const summaryCallsBeforeSync = vi.mocked(api.getUsageSummary).mock.calls.length;
+    const queryCallsBeforeSync = vi.mocked(api.getUsageQueries).mock.calls.length;
+
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(vi.mocked(api.getUsageSummary).mock.calls.length).toBeGreaterThan(summaryCallsBeforeSync);
+      expect(vi.mocked(api.getUsageQueries).mock.calls.length).toBeGreaterThan(queryCallsBeforeSync);
+      expect(lastSync).not.toHaveTextContent(initialSyncTime ?? "");
+    });
   });
 
   it("Test IPs is a labelled tab-row action (icon + text), right-aligned with the tabs (OR-2)", async () => {
