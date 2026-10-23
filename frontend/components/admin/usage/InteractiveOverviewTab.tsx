@@ -899,7 +899,7 @@ export function InteractiveOverviewTab({
                   <th className="px-3 py-2.5 text-right">Output Tokens</th>
                   <th className="px-3 py-2.5 text-right">Speed</th>
                   <th className="px-3 py-2.5 text-right">Cost (USD)</th>
-                  <th className="px-4 py-2.5 text-right">Action</th>
+                  <th className="px-4 py-2.5 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06] text-slate-700 dark:text-fg">

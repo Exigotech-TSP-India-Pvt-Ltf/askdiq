@@ -179,7 +179,7 @@ export function EvaluationExplorer({ token, audience, range, state, onStateChang
               <th scope="col" className="hidden min-[1440px]:table-cell px-3.5 py-2.5 text-right" title="Citation precision">Cit. prec.</th>
               <th scope="col" className="hidden px-3.5 py-2.5 text-right md:table-cell">Faithfulness</th>
               <th scope="col" className="hidden px-3.5 py-2.5 text-right sm:table-cell">Latency</th>
-              <th scope="col" className={`${stickyHeadCell} px-3.5 py-2.5 text-right`}>Action</th>
+              <th scope="col" className={`${stickyHeadCell} px-3.5 py-2.5 text-center`}>Action</th>
             </tr>
           </thead>
           <tbody>

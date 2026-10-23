@@ -199,22 +199,22 @@ export function RegionalQuotaCard({ capacity }: { capacity: AzureCapacity | unde
               <table className="w-full text-xs">
                 <thead className="text-left text-[11px] text-fg-subtle">
                   <tr>
-                    <th className="py-1 font-medium">Deployment</th>
-                    <th className="py-1 text-right font-medium">TPM</th>
-                    <th className="py-1 text-right font-medium">RPM</th>
+                    <th className="px-2 py-1 font-medium">Deployment</th>
+                    <th className="px-2 py-1 text-right font-medium">TPM</th>
+                    <th className="px-2 py-1 text-right font-medium">RPM</th>
                   </tr>
                 </thead>
                 <tbody>
                   {deployments.map((d) => (
                     <tr key={d.name} className="border-t border-line">
-                      <td className="py-1.5">
+                      <td className="px-2 py-1.5">
                         <span className="text-fg">{d.name}</span>
                         <span className="block text-[11px] text-fg-subtle">
                           {[d.role, d.sku_name, d.model_version].filter(Boolean).join(" · ")}
                         </span>
                       </td>
-                      <td className="py-1.5 text-right tabular-nums">{compactLimit(d.tpm_limit)}</td>
-                      <td className="py-1.5 text-right tabular-nums">{compactLimit(d.rpm_limit)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{compactLimit(d.tpm_limit)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{compactLimit(d.rpm_limit)}</td>
                     </tr>
                   ))}
                 </tbody>

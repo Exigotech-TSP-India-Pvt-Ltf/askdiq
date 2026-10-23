@@ -23,6 +23,44 @@ describe("DataTable column headers and phone layout", () => {
     expect(within(screen.getByRole("columnheader", { name: "Question" })).getByText("Question")).not.toHaveClass("sr-only");
   });
 
+  it("aligns header content across the full cell and keeps header and row spacing matched", () => {
+    const columns: ColumnDef<Row>[] = [
+      { key: "question", header: "Question", align: "right" },
+      { key: "details", header: "Details", align: "center" },
+    ];
+    render(<DataTable columns={columns} data={DATA} density="compact" />);
+
+    const questionHeader = screen.getByRole("columnheader", { name: "Question" });
+    const questionContent = questionHeader.firstElementChild;
+    const questionCell = screen.getByRole("cell", { name: DATA[0].question });
+    const detailsHeader = screen.getByRole("columnheader", { name: "Details" });
+
+    expect(questionContent).toHaveClass("flex", "w-full", "justify-end");
+    expect(questionHeader).toHaveClass("px-3", "py-1.5", "text-right");
+    expect(questionCell).toHaveClass("px-3", "py-1.5", "text-right");
+    expect(detailsHeader.firstElementChild).toHaveClass("w-full", "justify-center");
+  });
+
+  it("centers an action header without changing the action cell alignment", () => {
+    const columns: ColumnDef<Row>[] = [
+      {
+        key: "actions",
+        header: "Inspect",
+        align: "right",
+        headerAlign: "center",
+        render: () => <button type="button">Inspect</button>,
+      },
+    ];
+    render(<DataTable columns={columns} data={DATA} />);
+
+    const header = screen.getByRole("columnheader", { name: "Inspect" });
+    const cell = screen.getByRole("cell", { name: "Inspect" });
+
+    expect(header).toHaveClass("text-center");
+    expect(header.firstElementChild).toHaveClass("justify-center");
+    expect(cell).toHaveClass("text-right");
+  });
+
   it("VA-34: below sm rows stack as cards, each cell labelled with its column (none for a hidden header)", () => {
     const { container } = render(<DataTable columns={COLUMNS} data={DATA} />);
     expect(container.querySelector("table")).toHaveClass("max-sm:block");

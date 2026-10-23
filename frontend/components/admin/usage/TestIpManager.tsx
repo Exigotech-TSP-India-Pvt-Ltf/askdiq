@@ -173,6 +173,7 @@ export function TestIpManager({
       key: "actions",
       header: "Action",
       align: "right",
+      headerAlign: "center",
       render: (r) => (
         <button
           type="button"

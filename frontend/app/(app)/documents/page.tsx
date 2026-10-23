@@ -423,6 +423,7 @@ function DocumentsContent() {
       key: "actions",
       header: "Actions",
       align: "right",
+      headerAlign: "center",
       sticky: "right",
       // OR-12: every mutating row action lives here, each gated by its own permission.
       render: (doc) => {

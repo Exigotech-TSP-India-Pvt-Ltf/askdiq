@@ -35,6 +35,7 @@ export interface ColumnDef<T> {
   accessor?: (row: T) => any;
   sortable?: boolean;
   align?: "left" | "center" | "right";
+  headerAlign?: "left" | "center" | "right";
   width?: string;
   /** Pin the column to the right edge while the table scrolls sideways (row actions). */
   sticky?: "right";
@@ -181,10 +182,11 @@ export function DataTable<T extends Record<string, any>>({
             <tr>
               {columns.map((col) => {
                 const Icon = col.icon;
+                const headerAlign = col.headerAlign ?? col.align;
                 const alignClass =
-                  col.align === "right"
+                  headerAlign === "right"
                     ? "text-right"
-                    : col.align === "center"
+                    : headerAlign === "center"
                     ? "text-center"
                     : "text-left";
 
@@ -200,10 +202,10 @@ export function DataTable<T extends Record<string, any>>({
                     }`}
                   >
                     <div
-                      className={`inline-flex items-center gap-1.5 ${
-                        col.align === "right"
+                      className={`flex w-full items-center gap-1.5 ${
+                        headerAlign === "right"
                           ? "justify-end"
-                          : col.align === "center"
+                          : headerAlign === "center"
                           ? "justify-center"
                           : "justify-start"
                       }`}

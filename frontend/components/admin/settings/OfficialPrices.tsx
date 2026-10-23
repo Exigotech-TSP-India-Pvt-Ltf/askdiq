@@ -67,10 +67,10 @@ function PreviewTable({ server, official }: { server: ModelSettingsRead; officia
         <caption className="sr-only">Official Azure retail prices compared with the saved prices</caption>
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wide text-fg-subtle">
-            <th scope="col" className="pb-1 pr-3 font-medium">Rate (per 1M)</th>
-            <th scope="col" className="pb-1 pr-3 font-medium">Saved</th>
-            <th scope="col" className="pb-1 pr-3 font-medium">Official (USD)</th>
-            <th scope="col" className="pb-1 font-medium">{official.local_currency} (reference)</th>
+            <th scope="col" className="pb-1 pl-2 pr-3 font-medium">Rate (per 1M)</th>
+            <th scope="col" className="pb-1 pl-2 pr-3 font-medium">Saved</th>
+            <th scope="col" className="pb-1 pl-2 pr-3 font-medium">Official (USD)</th>
+            <th scope="col" className="pb-1 pl-2 font-medium">{official.local_currency} (reference)</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
@@ -79,14 +79,14 @@ function PreviewTable({ server, official }: { server: ModelSettingsRead; officia
             const drift = p.found && hasDrift(saved, p.usd_per_million);
             return (
               <tr key={p.role}>
-                <th scope="row" className="py-1.5 pr-3 text-left font-medium text-fg">
+                <th scope="row" className="py-1.5 pl-2 pr-3 text-left font-medium text-fg">
                   {ROLE_LABELS[p.role]}
                 </th>
-                <td className={`py-1.5 pr-3 tabular-nums ${drift ? "text-status-warn-fg" : "text-fg-muted"}`}>{usd(saved)}</td>
-                <td className="py-1.5 pr-3 tabular-nums text-fg">
+                <td className={`py-1.5 pl-2 pr-3 tabular-nums ${drift ? "text-status-warn-fg" : "text-fg-muted"}`}>{usd(saved)}</td>
+                <td className="py-1.5 pl-2 pr-3 tabular-nums text-fg">
                   {p.found && p.usd_per_million !== null ? usd(p.usd_per_million) : "No official price found"}
                 </td>
-                <td className="py-1.5 tabular-nums text-fg-muted">
+                <td className="py-1.5 pl-2 tabular-nums text-fg-muted">
                   {p.local_per_million ? money(p.local_per_million, official.local_currency) : "—"}
                 </td>
               </tr>

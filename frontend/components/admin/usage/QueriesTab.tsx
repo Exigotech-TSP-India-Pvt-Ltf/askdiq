@@ -314,6 +314,7 @@ export function QueriesTab({
       key: "actions",
       header: "Inspect",
       align: "right",
+      headerAlign: "center",
       render: (r) => (
         <button
           type="button"
