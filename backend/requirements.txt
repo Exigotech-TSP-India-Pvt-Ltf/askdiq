@@ -27,7 +27,7 @@ httpx2==2.13.1
 huggingface_hub==1.32.0
 idna==3.20
 jiter==0.17.0
-Mako==1.4.2
+Mako==1.4.3
 MarkupSafe==3.0.3
 numpy==2.5.3
 onnxruntime==1.30.0
