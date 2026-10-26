@@ -1,19 +1,14 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
-import { MessagesSquare, Network, Users as UsersIcon } from "lucide-react";
+import React, { useCallback } from "react";
+import { MessagesSquare, Users as UsersIcon } from "lucide-react";
 import { DashboardHeader } from "@/components/admin/DashboardHeader";
 import { PageToolbar } from "@/components/admin/PageToolbar";
 import { TabGroup, type TabItem } from "@/components/admin/TabGroup";
-import { TestIpManager } from "@/components/admin/usage/TestIpManager";
 import { VisitorsPanel } from "@/components/admin/audience/VisitorsPanel";
 import { ConversationsPanel } from "@/components/admin/audience/ConversationsPanel";
-import { HeaderIconButton } from "@/components/ui/HeaderIconButton";
 import { AUDIENCE_PAGE_LABEL, parseAudienceTab, type AudienceTab } from "@/lib/entity-routes";
-import { useAuth } from "@/lib/auth-context";
-import { useCan } from "@/lib/use-can";
 import { useDeepLink } from "@/lib/use-deep-link";
-import { invalidate } from "@/lib/query-cache";
 
 const TABS: TabItem<AudienceTab>[] = [
   { id: "visitors", label: "Visitors", icon: UsersIcon, description: "Who uses the assistant: visitors by client IP" },
@@ -32,11 +27,8 @@ const TAB_PARAMS: Record<AudienceTab, readonly string[]> = {
 };
 
 function AudienceContent() {
-  const { token } = useAuth();
-  const canWriteTestIp = useCan("testip:write");
   const { get, set } = useDeepLink();
   const tab = parseAudienceTab(get("tab"));
-  const [configOpen, setConfigOpen] = useState(false);
 
   const changeTab = useCallback(
     (next: AudienceTab) => {
@@ -62,19 +54,6 @@ function AudienceContent() {
         <PageToolbar
           tabsTour="audience-tabs"
           tabs={<TabGroup tabs={TABS} activeTab={tab} onChange={changeTab} ariaLabel="Visitors and conversations" />}
-          actions={
-            canWriteTestIp ? (
-              <HeaderIconButton
-                icon={Network}
-                label="Test IPs"
-                tooltip="Manage test IPs (excluded from Users)"
-                showLabel
-                data-tour="visitors-manage-test-ips"
-                aria-haspopup="dialog"
-                onClick={() => setConfigOpen(true)}
-              />
-            ) : undefined
-          }
           dateRange
         />
 
@@ -82,18 +61,6 @@ function AudienceContent() {
           {tab === "visitors" ? <VisitorsPanel /> : <ConversationsPanel />}
         </div>
       </div>
-
-      {configOpen && token ? (
-        <TestIpManager
-          token={token}
-          isOpen={configOpen}
-          onClose={() => setConfigOpen(false)}
-          onConfigChanged={() => {
-            invalidate("visitors/");
-            invalidate("conversations/");
-          }}
-        />
-      ) : null}
     </div>
   );
 }
