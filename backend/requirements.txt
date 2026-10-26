@@ -13,7 +13,6 @@ cryptography==50.0.1
 dnspython==2.8.0
 email-validator==2.3.0
 fastapi==0.159.1
-fastembed==0.8.1
 filelock==4.2.1
 flatbuffers==25.12.19
 fsspec==2026.9.0
