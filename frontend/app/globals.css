@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 /*
  * Theme tokens. Values mirror lib/theme-tokens.ts (single source of truth);
