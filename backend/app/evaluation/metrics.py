@@ -146,9 +146,7 @@ def noise_ratio(flags: Sequence[bool], k: int) -> float:
 def _matches(text: str, spec: str) -> bool:
     """``spec`` may hold alternatives separated by ``|`` (any one matches)."""
 
-    normalize = str.maketrans(
-        {"\u2019": "'", "\u2018": "'", "\u02bc": "'"}
-    )
+    normalize = str.maketrans({"\u2019": "'", "\u2018": "'", "\u02bc": "'"})
     lowered = text.lower().translate(normalize)
     return any(
         alt.strip().lower().translate(normalize) in lowered

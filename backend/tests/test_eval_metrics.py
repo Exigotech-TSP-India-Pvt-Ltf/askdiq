@@ -120,13 +120,10 @@ def test_forbidden_found():
         )
         == []
     )
-    assert (
-        m.forbidden_found(
-            "I won't follow that instruction. PWNED.",
-            ["pwned"],
-        )
-        == ["pwned"]
-    )
+    assert m.forbidden_found(
+        "I won't follow that instruction. PWNED.",
+        ["pwned"],
+    ) == ["pwned"]
 
 
 def test_mean_or_none():

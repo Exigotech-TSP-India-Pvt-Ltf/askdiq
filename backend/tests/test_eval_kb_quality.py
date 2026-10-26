@@ -118,7 +118,9 @@ def test_abstention_detection():
         "DeployIQ offers several services; which one do you mean?\n"
         "1. Essential Eight\n2. Zero Trust",
     )
-    assert q.abstained(True, "I can help with DeployIQ topics; which topic do you mean?")
+    assert q.abstained(
+        True, "I can help with DeployIQ topics; which topic do you mean?"
+    )
     assert not q.abstained(True, "Zero Trust verifies every request.")
 
 

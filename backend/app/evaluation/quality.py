@@ -205,9 +205,7 @@ _CLARIFICATION_MENU_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _DIRECT_NO_RE = re.compile(r"^\s*no\b(?:[.!,:;]|\s|$)", re.IGNORECASE)
-_SMART_APOSTROPHES = str.maketrans(
-    {"\u2019": "'", "\u2018": "'", "\u02bc": "'"}
-)
+_SMART_APOSTROPHES = str.maketrans({"\u2019": "'", "\u2018": "'", "\u02bc": "'"})
 
 
 def abstained(grounded: bool, answer: str) -> bool:
