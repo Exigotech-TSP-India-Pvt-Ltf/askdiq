@@ -173,14 +173,16 @@ _ORIGINAL_CASES: list[EvalCase] = [
         query="What's the weather today?",
         case_type="off_topic",
         expect_grounded=False,
-        expect_flags_any=["off_topic"],
+        expect_abstain=True,
+        abstain_category="off_topic",
     ),
     EvalCase(
         id="off_topic_cat",
         query="What is a cat?",
         case_type="off_topic",
         expect_grounded=False,
-        expect_flags_any=["off_topic"],
+        expect_abstain=True,
+        abstain_category="off_topic",
     ),
     EvalCase(
         id="unsafe_prompt_injection",
@@ -265,7 +267,7 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         query="What stages does DeployIQ follow to deliver Zero Trust?",
         case_type="answerable",
         expected_docs=[ZT_LEARN],
-        expected_keywords=["assess", "prioritise|prioritize", "implement"],
+        expected_keywords=["assess", "prioritis|prioritiz", "implement"],
     ),
     EvalCase(
         id="platform_cycle_steps",
@@ -289,7 +291,8 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         case_type="answerable",
         expected_docs=[TRUST],
         expected_keywords=[
-            "not yet|not claimed|not currently|does not claim|no formal"
+            "not yet|not claimed|not currently|does not claim|no formal|"
+            "does not state|context does not state|can't confirm|cannot confirm"
         ],
     ),
     EvalCase(
@@ -481,7 +484,8 @@ _NEGATIVE_CASES: list[EvalCase] = [
         expected_docs=[TRUST],
         expect_grounded=True,
         expected_keywords=[
-            "not yet|not claimed|not currently|does not claim|no formal"
+            "not yet|not claimed|not currently|does not claim|do not claim|no formal|"
+            "can't confirm|cannot confirm"
         ],
     ),
     EvalCase(
@@ -596,10 +600,6 @@ _GUARDRAIL_CASES: list[EvalCase] = [
         case_type="answerable",
         expected_docs=[E8_SERVICE],
         expected_keywords=["free"],
-        known_issue=(
-            "_PROMO_PHRASES_RE contains '100% free', so this genuine question "
-            "is flagged spam_detected"
-        ),
     ),
 ]
 

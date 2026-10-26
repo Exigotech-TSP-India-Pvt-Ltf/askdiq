@@ -172,6 +172,12 @@ def test_eval_clear_queries_never_clarify(query: str) -> None:
     assert plan_clarification(query, _spread_sources(), None, follow_up=False) == []
 
 
+def test_direct_headquarters_question_is_not_clarified() -> None:
+    query = "Where is Exigo Tech headquartered?"
+    assert not clarify_eligible(query, None, follow_up=False)
+    assert plan_clarification(query, _spread_sources(), None, follow_up=False) == []
+
+
 def test_eval_sets_have_the_agreed_size() -> None:
     assert 15 <= len(AMBIGUOUS_QUERIES) <= 20
     assert len(CLEAR_QUERIES) >= 10

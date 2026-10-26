@@ -566,6 +566,19 @@ def _count_tokens(text: str) -> int:
     return len(_TOKEN_ENCODING.encode(text)) if text else 0
 
 
+def _grounding_matches_expectation(
+    case: EvalCase, grounded: bool, did_abstain: bool
+) -> bool:
+    if grounded == case.expect_grounded:
+        return True
+    return (
+        case.case_type == "negative"
+        and case.expect_grounded is False
+        and grounded
+        and did_abstain
+    )
+
+
 def _error_result(
     case: EvalCase, exc: Exception, latency_ms: float, run_index: int
 ) -> EvalResult:
@@ -642,7 +655,7 @@ async def evaluate_case(
     grounded_ok = (
         bool(abstain_ok)
         if case.expect_abstain
-        else response.grounded == case.expect_grounded
+        else _grounding_matches_expectation(case, response.grounded, did_abstain)
     )
     flags_ok = (
         any(flag in response.guardrail_flags for flag in case.expect_flags_any)

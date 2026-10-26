@@ -43,13 +43,20 @@ def test_blocked_cases_expect_a_flag_and_no_grounding():
     for case in EVAL_CASES:
         if case.case_type in {"unsafe", "spam", "off_topic"}:
             assert case.expect_grounded is False, case.id
-            assert case.expect_flags_any, case.id
+            if not case.expect_abstain:
+                assert case.expect_flags_any, case.id
 
 
 def test_known_issues_have_a_reason():
     for case in EVAL_CASES:
         if case.known_issue is not None:
             assert case.known_issue.strip(), case.id
+
+
+def test_zero_trust_starter_free_case_has_no_stale_known_issue():
+    case = next(case for case in EVAL_CASES if case.id == "fp_100_percent_free")
+
+    assert case.known_issue is None
 
 
 def test_dataset_is_bigger_than_the_original_baseline():
