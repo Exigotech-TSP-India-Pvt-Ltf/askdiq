@@ -31,11 +31,11 @@ function SourceRow({ source }: { source: AzureSourceStatus }) {
   const error = source.state !== "ok" && source.last_error_code;
   return (
     <tr className="align-top">
-      <th scope="row" className="py-2 pr-3 text-left font-medium text-fg">
+      <th scope="row" className="py-2 pl-2 pr-3 text-left font-medium text-fg">
         {source.label}
         {source.needs_credentials ? null : <span className="ml-1 text-[11px] font-normal text-fg-subtle">(public)</span>}
       </th>
-      <td className="py-2 pr-3">
+      <td className="py-2 pl-2 pr-3">
         <span className={`${PILL} ${TONE[source.state] ?? TONE.never_run}`}>{STATE_LABEL[source.state] ?? source.state}</span>
         {error ? (
           <p className="mt-1 max-w-xs break-words text-[11px] text-status-danger-fg" title={source.last_error_message ?? undefined}>
@@ -44,10 +44,10 @@ function SourceRow({ source }: { source: AzureSourceStatus }) {
           </p>
         ) : null}
       </td>
-      <td className="py-2 pr-3 text-fg-muted">
+      <td className="py-2 pl-2 pr-3 text-fg-muted">
         <RelativeTime value={source.last_success_at} fallback="Never" />
       </td>
-      <td className="py-2 text-fg-muted">
+      <td className="py-2 pl-2 text-fg-muted">
         {source.scheduled ? <RelativeTime value={source.next_run_at} fallback="Pending" /> : "Not scheduled"}
       </td>
     </tr>
@@ -90,10 +90,10 @@ export function AzureConnectionBody({ status }: { status: AzureStatus }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide text-fg-subtle">
-                <th scope="col" className="pb-1 pr-3 font-medium">Source</th>
-                <th scope="col" className="pb-1 pr-3 font-medium">Status</th>
-                <th scope="col" className="pb-1 pr-3 font-medium">Last success</th>
-                <th scope="col" className="pb-1 font-medium">Next run</th>
+                <th scope="col" className="pb-1 pl-2 pr-3 font-medium">Source</th>
+                <th scope="col" className="pb-1 pl-2 pr-3 font-medium">Status</th>
+                <th scope="col" className="pb-1 pl-2 pr-3 font-medium">Last success</th>
+                <th scope="col" className="pb-1 pl-2 font-medium">Next run</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">

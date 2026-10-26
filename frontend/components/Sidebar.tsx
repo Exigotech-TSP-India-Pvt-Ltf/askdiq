@@ -101,9 +101,9 @@ const PLANNED_ITEMS: NavItem[] = [
     href: "/admin/settings",
     label: "Settings",
     icon: Settings2,
-    // The page opens with any of these (Branding, Taxonomy, Models or Knowledge links tab).
-    anyPermission: ["branding:write", "taxonomy:write", "models:write", "knowledge:links"],
-    keywords: ["branding", "taxonomy", "white-label", "models", "llm", "embeddings", "pricing", "cost"],
+    // The page opens with any permitted Settings section.
+    anyPermission: ["branding:write", "taxonomy:write", "models:write", "knowledge:links", "testip:write"],
+    keywords: ["branding", "taxonomy", "white-label", "models", "llm", "embeddings", "pricing", "cost", "test ip"],
   },
 ];
 

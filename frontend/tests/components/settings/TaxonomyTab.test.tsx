@@ -131,11 +131,16 @@ describe("Settings → Insights Taxonomy", { timeout: 15_000 }, () => {
     expect(await screen.findByTestId("taxonomy-add-error")).toHaveTextContent("LEGACY already exists");
     expect(calls.some((c) => c.method === "POST")).toBe(false);
 
-    // A code created elsewhere meanwhile: the server answers 409.
+    // A code created elsewhere meanwhile: the server answers 409. The error
+    // testid is already present from the LEGACY check above, so findByTestId
+    // alone resolves on that existing element before its text updates;
+    // waitFor polls until the content actually reflects this submission.
     const { calls: later } = fakeBackend([...taxonomyFixture(), entry({ kind: "intent", code: "NEW", label: "x" })]);
     fireEvent.change(code, { target: { value: "NEW" } });
     fireEvent.click(within(form).getByRole("button", { name: "Add" }));
-    expect(await screen.findByTestId("taxonomy-add-error")).toHaveTextContent("NEW already exists for this kind");
+    await waitFor(() =>
+      expect(screen.getByTestId("taxonomy-add-error")).toHaveTextContent("NEW already exists for this kind"),
+    );
     expect(later.filter((c) => c.method === "POST")).toHaveLength(1);
   });
 

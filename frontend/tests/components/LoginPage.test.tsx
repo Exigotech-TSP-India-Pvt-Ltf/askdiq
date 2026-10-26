@@ -194,10 +194,11 @@ describe("Login page", () => {
 });
 
 describe("/login page wrapper", () => {
-  it("passes only a validated same-origin next to the button", () => {
+  it("passes only a validated same-origin next to the button", async () => {
+    const page = await LoginPage({ searchParams: Promise.resolve({ next: "https://evil.example", error: "expired" }) });
     render(
       <MotionProvider>
-        {LoginPage({ searchParams: { next: "https://evil.example", error: "expired" } })}
+        {page}
       </MotionProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Sign in with Microsoft" }));

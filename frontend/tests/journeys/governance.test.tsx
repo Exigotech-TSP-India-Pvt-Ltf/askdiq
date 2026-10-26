@@ -539,6 +539,7 @@ describe("Governance journey", { timeout: 15_000 }, () => {
     expect(labels).toContain("Last 24h · latency records");
     expect(labels).toContain("all time · latency records");
     expect(screen.getByText(/No data: Embedding, Reranker/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "About Active visitors" })).not.toBeInTheDocument();
     expect(FakeEventSource.instances).toHaveLength(1);
 
     const before = callsTo("monitoring").length;
