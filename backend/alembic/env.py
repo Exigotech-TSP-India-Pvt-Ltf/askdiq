@@ -23,7 +23,7 @@ def get_sync_database_url() -> str:
     """Convert the application's async DB URL to a sync URL for Alembic."""
     return settings.database_url.replace(
         "postgresql+asyncpg://",
-        "postgresql://",
+        "postgresql+psycopg2://",
         1,
     )
 

@@ -146,7 +146,9 @@ def test_backoff_is_capped() -> None:
 
 @pytest.fixture
 def sync_engine() -> Iterator[Engine]:
-    url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    url = settings.database_url.replace(
+        "postgresql+asyncpg://", "postgresql+psycopg2://", 1
+    )
     engine = create_engine(url, poolclass=NullPool)
     try:
         with engine.connect() as conn:
