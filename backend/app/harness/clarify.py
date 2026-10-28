@@ -142,6 +142,16 @@ GOAL_QUERIES: dict[str, str] = {
         "model, timelines, contact?"
     ),
 }
+
+
+def is_pricing_pick(query: str) -> bool:
+    """The folded query of the Goal card's pricing pick (context may follow).
+
+    Answered by a fixed reply (the knowledge base publishes no prices).
+    """
+    return query.startswith(GOAL_QUERIES[GOAL_PRICING])
+
+
 # Words of a vague opener that carry no context worth keeping next to a pick.
 _VAGUE_WORDS = frozenset(
     [
