@@ -265,7 +265,7 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         query="What stages does DeployIQ follow to deliver Zero Trust?",
         case_type="answerable",
         expected_docs=[ZT_LEARN],
-        expected_keywords=["assess", "prioritise|prioritize", "implement"],
+        expected_keywords=["assess", "prioritis|prioritiz", "implement"],
     ),
     EvalCase(
         id="platform_cycle_steps",
