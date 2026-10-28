@@ -222,10 +222,26 @@ def test_unnamed_short_questions_are_still_follow_ups(query: str) -> None:
         "tell me about the one you mentioned",
         "the second one",
         "that one",
+        "what does the above mean for our rollout plan",
+        "tell me more about the previous one please",
+        "compare it with the one above for our rollout",
+        "as mentioned earlier, which controls apply to our team",
     ],
 )
 def test_back_reference_phrases_are_follow_ups(query: str) -> None:
     assert needs_conversation_context(query) is True
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "What changed in the previous Essential Eight version?",
+        "Show earlier maturity level definitions for our offering",
+        "Which controls appear above the baseline in a typical rollout?",
+    ],
+)
+def test_bare_previous_above_earlier_are_not_follow_ups(query: str) -> None:
+    assert needs_conversation_context(query) is False
 
 
 # ---------------------------------------------------------------------------

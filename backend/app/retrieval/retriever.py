@@ -34,7 +34,9 @@ _AND_SPLIT_RE = re.compile(r"\band\b", re.IGNORECASE)
 # conversation turns (e.g. "what about ITS pricing?", "does IT support SSO?").
 _REFERENTIAL_RE = re.compile(
     r"\b(it|its|this|that|these|those|they|them|their|the same|"
-    r"what about|how about|and (?:the|its|their)|above|previous|earlier|"
+    r"what about|how about|and (?:the|its|their)|the above|the previous one|"
+    r"mentioned\s{1,3}(?:above|earlier|previously)|"
+    r"the one\s{1,3}(?:above|you mentioned|from earlier)|"
     r"the (?:first|second|third|last) one|the one you mentioned)\b",
     re.IGNORECASE,
 )

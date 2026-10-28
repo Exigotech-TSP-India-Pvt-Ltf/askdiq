@@ -217,3 +217,34 @@ async def test_post_checks_use_the_retrieval_gate_minimum(monkeypatch):
 
     assert response.grounded is True
     assert seen["min_score"] == orchestrator.settings.min_retrieval_score
+
+
+async def test_declined_answer_is_not_grounded_and_has_no_sources(monkeypatch):
+    response = await _run(
+        monkeypatch,
+        llm_side_effect=[
+            "We don't have details on that here. Talk to one of our specialists."
+        ],
+        post_checks_side_effect=[(True, 1.0, [])],
+    )
+
+    assert response.grounded is False
+    assert response.outcome == "ungrounded"
+    assert response.token_details["declined"] is True
+    assert response.sources == []
+    assert response.citations == []
+
+
+async def test_short_positive_answer_with_handoff_keeps_sources(monkeypatch):
+    response = await _run(
+        monkeypatch,
+        llm_side_effect=[
+            "DeployIQ maps your controls to Essential Eight and tracks maturity. "
+            "Talk to one of our specialists to get started."
+        ],
+        post_checks_side_effect=[(True, 0.85, [])],
+    )
+
+    assert response.grounded is True
+    assert response.outcome == "answered"
+    assert len(response.sources) == 1

@@ -66,16 +66,74 @@ def _unwrap_bracket(match: re.Match[str]) -> str:
     return inner
 
 
+_TICK = "`"
+
+
+def _tick_runs(text: str) -> list[tuple[int, int]]:
+    """``(start, length)`` of each run of backticks (one linear pass)."""
+    runs: list[tuple[int, int]] = []
+    index = text.find(_TICK)
+    while index >= 0:
+        end = index
+        while end < len(text) and text[end] == _TICK:
+            end += 1
+        runs.append((index, end - index))
+        index = text.find(_TICK, end)
+    return runs
+
+
+def _code_span_bounds(text: str) -> list[tuple[int, int]]:
+    """``(start, end)`` of each inline code span, backticks included.
+
+    A span opens with a run of N backticks and closes at the next run of
+    exactly N; an unmatched run is literal text (CommonMark). A length that
+    found no closer is remembered, so the scan stays near-linear.
+    """
+    runs = _tick_runs(text)
+    spans: list[tuple[int, int]] = []
+    unmatched: set[int] = set()
+    index = 0
+    while index < len(runs):
+        start, length = runs[index]
+        close = -1
+        if length not in unmatched:
+            for later in range(index + 1, len(runs)):
+                if runs[later][1] == length:
+                    close = later
+                    break
+            if close < 0:
+                unmatched.add(length)
+        if close < 0:
+            index += 1
+            continue
+        spans.append((start, runs[close][0] + length))
+        index = close + 1
+    return spans
+
+
+def _strip_outside_code(text: str) -> str:
+    """Strip free brackets from ``text`` except inside inline code spans."""
+    out: list[str] = []
+    last = 0
+    for start, end in _code_span_bounds(text):
+        out.append(_FREE_BRACKET_RE.sub(_unwrap_bracket, text[last:start]))
+        out.append(text[start:end])
+        last = end
+    out.append(_FREE_BRACKET_RE.sub(_unwrap_bracket, text[last:]))
+    return "".join(out)
+
+
 def strip_free_brackets(text: str) -> str:
     """``text`` without free-text ``[...]`` (valid ``[n]`` markers are kept).
 
-    Markdown links ``[label](url)`` and fenced code blocks are left alone.
+    Markdown links ``[label](url)``, fenced code blocks and inline code spans
+    are left alone.
     """
     if "[" not in text:
         return text
     parts = text.split(_FENCE)
     for index in range(0, len(parts), 2):  # even parts are outside code fences
-        parts[index] = _FREE_BRACKET_RE.sub(_unwrap_bracket, parts[index])
+        parts[index] = _strip_outside_code(parts[index])
     return _FENCE.join(parts)
 
 

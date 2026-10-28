@@ -6,8 +6,10 @@ boilerplate is dropped. Middle sentences are never rewritten (that would risk
 the grounding), and a closer that carries anything fact-like (a digit, an
 address, a link or a citation marker) is kept.
 
-The one exception is internal wording ("the documents", "knowledge base",
-...): a sentence that names how the answer was built is replaced or dropped,
+The one exception is internal wording (first-person source references such
+as "the supplied context" or "the documents do not ..."; never the bare
+words "documents" or "knowledge base", which are product terms): a sentence
+that names how the answer was built is replaced or dropped,
 and a stray square-bracket wrapper around a sentence is removed.
 
 Matching is ``str.startswith`` against fixed literals and ``str.rfind``
@@ -18,7 +20,6 @@ from __future__ import annotations
 
 from app.core.logging_config import get_logger
 from app.harness.style import (
-    INTERNAL_WORDING,
     NOT_COVERED_REPLY,
     NOT_COVERED_SENTENCE,
     ResponseStyle,
@@ -155,11 +156,17 @@ def paragraph_guard(answer: str) -> bool:
 # Internal wording and stray brackets
 # ---------------------------------------------------------------------------
 
-# Words that give away how the answer was built; a customer never sees them.
-# "materials" alone is left out on purpose: it is also ordinary product copy.
-_INTERNAL_TERMS: tuple[str, ...] = (
-    *INTERNAL_WORDING,
+# First-person source references that give away how the answer was built; a
+# customer never sees them. Bare "the documents", "the context" and
+# "knowledge base" are NOT here: they are ordinary product words ("the
+# Documents page", "a knowledge base feature").
+_SOURCE_NOUNS: tuple[str, ...] = ("documents", "knowledge base", "context")
+_LEAK_PHRASES: tuple[str, ...] = (
+    "supplied context",
+    "provided context",
+    "the context provided",
     "supplied information",
+    "provided information",
     "information provided",
     "supplied materials",
     "provided materials",
@@ -169,9 +176,48 @@ _INTERNAL_TERMS: tuple[str, ...] = (
     "documents provided",
     "sources provided",
     "provided sources",
+    "the documents do not",
+    "the documents don't",
+    *(
+        f"the documents {verb}"
+        for verb in (
+            "state",
+            "say",
+            "mention",
+            "define",
+            "include",
+            "specify",
+            "describe",
+            "contain",
+        )
+    ),
+    *(f"based on the {noun}" for noun in _SOURCE_NOUNS),
+    *(f"based on the provided {noun}" for noun in _SOURCE_NOUNS[:2]),
+    *(f"according to the {noun}" for noun in _SOURCE_NOUNS[:2]),
+    *(f"according to the provided {noun}" for noun in _SOURCE_NOUNS[:2]),
 )
-# "the context of ..." is ordinary English, not a leak.
-_BENIGN_AFTER = {"the context": " of "}
+# "in the knowledge base" is a leak only when it reports an absence.
+_KB_LOCATION = "in the knowledge base"
+_ABSENCE_CUES: tuple[str, ...] = (
+    "not found",
+    "couldn't find",
+    "could not find",
+    "can't find",
+    "cannot find",
+    "isn't",
+    "is not",
+    "aren't",
+    "are not",
+    "wasn't",
+    "was not",
+    "not in",
+    "not present",
+    "not listed",
+    "not covered",
+    "no information",
+    "no mention",
+)
+_CUE_WINDOW = 40
 _NEGATIONS: tuple[str, ...] = (
     "not ",
     "n't",
@@ -192,15 +238,20 @@ _SENTENCE_PUNCT = ".!?"
 _PREFIXES: tuple[str, ...] = ("- ", "* ", "• ")
 
 
-def _has_internal_wording(lowered: str) -> bool:
-    for term in _INTERNAL_TERMS:
-        start = lowered.find(term)
-        while start >= 0:
-            after = lowered[start + len(term) : start + len(term) + 4]
-            if after != _BENIGN_AFTER.get(term):
-                return True
-            start = lowered.find(term, start + 1)
+def _kb_absence(lowered: str) -> bool:
+    """True when "in the knowledge base" is preceded by an absence cue."""
+    start = lowered.find(_KB_LOCATION)
+    while start >= 0:
+        window = lowered[max(0, start - _CUE_WINDOW) : start + len(_KB_LOCATION)]
+        if any(cue in window for cue in _ABSENCE_CUES):
+            return True
+        start = lowered.find(_KB_LOCATION, start + 1)
     return False
+
+
+def _has_internal_wording(lowered: str) -> bool:
+    lowered = lowered.replace("\N{RIGHT SINGLE QUOTATION MARK}", "'")
+    return any(phrase in lowered for phrase in _LEAK_PHRASES) or _kb_absence(lowered)
 
 
 def _is_negative(lowered: str) -> bool:

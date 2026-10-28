@@ -433,10 +433,11 @@ async def run_query(
             )
 
     if max_retrieval_score < settings.min_retrieval_score or is_off_topic_by_overlap(
-        query,
+        effective_query,
         (s.content for s in sources),
         max_retrieval_score,
         settings.offtopic_overlap_max_score,
+        follow_up=follow_up_detected or bool(history),
     ):
         latency_ms = (time.perf_counter() - start) * 1000
         logger.info(
@@ -763,8 +764,9 @@ async def run_query(
     plain_answer = strip_markers(answer)
     if is_refusal(plain_answer):
         # A decline ("not covered", "talk to a specialist") is not a grounded
-        # answer: label it like other unanswered turns, and never attach the
-        # retrieved chunks as sources or citation markers.
+        # answer: label it like other unanswered turns (grounded=False), and
+        # never attach the retrieved chunks as sources or citation markers.
+        grounded = False
         outcome = "ungrounded"
         token_details["outcome"] = outcome
         token_details["declined"] = True

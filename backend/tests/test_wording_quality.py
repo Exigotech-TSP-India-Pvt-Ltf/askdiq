@@ -205,6 +205,48 @@ def test_polish_leaves_benign_context_phrase_alone() -> None:
     assert remove_internal_wording(raw) == raw
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Upload your files on the Documents page. "
+        "You can manage the documents you uploaded there.",
+        "DeployIQ includes a knowledge base feature for runbooks. It links to Entra.",
+        "## Knowledge base\n- Runbooks sync nightly.",
+        "We don't have a knowledge base connector for SharePoint.",
+        "Search the knowledge base from the sidebar.",
+    ],
+)
+def test_product_words_are_not_treated_as_leaks(text: str) -> None:
+    assert remove_internal_wording(text) == text
+    assert polish_answer(text, ResponseStyle.ADAPTIVE) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The documents do not define X.",
+        "The documents don't define X.",
+        "The documents state a limit.",
+        "Based on the provided context, we pilot first.",
+        "Based on the knowledge base, we pilot first.",
+        "According to the knowledge base, we pilot first.",
+        "That topic was not found in the knowledge base.",
+        "I couldn't find it in the knowledge base.",
+        "It isn't in the knowledge base.",
+        "It isn\N{RIGHT SINGLE QUOTATION MARK}t in the knowledge base.",
+    ],
+)
+def test_first_person_source_references_are_still_handled(text: str) -> None:
+    assert remove_internal_wording(text) == NOT_COVERED_REPLY
+
+
+def test_leak_sentence_is_dropped_but_product_sentence_kept() -> None:
+    raw = "Runbooks live in the knowledge base feature [1]. The documents say nothing."
+    out = remove_internal_wording(raw)
+    assert out.startswith("Runbooks live in the knowledge base feature [1].")
+    assert "documents say" not in out
+
+
 def test_polish_is_off_under_the_current_style() -> None:
     raw = "The documents do not define pricing."
     assert polish_answer(raw, ResponseStyle.CURRENT) == raw
@@ -214,12 +256,13 @@ def test_polish_is_off_under_the_current_style() -> None:
     "text",
     [
         "The documents " * 20_000,
+        "in the knowledge base " * 20_000,
         "[" * 100_000,
         "[" * 50_000 + "]" * 50_000,
         "a. " * 50_000,
         "[1]" * 30_000,
     ],
-    ids=["docs", "open", "nested", "sentences", "markers"],
+    ids=["docs", "kb", "open", "nested", "sentences", "markers"],
 )
 def test_internal_wording_filter_is_linear(text: str) -> None:
     started = time.perf_counter()
