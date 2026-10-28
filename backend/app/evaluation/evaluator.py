@@ -11,7 +11,13 @@ real LLM calls) and scores:
 What gates ``EvalResult.passed``
 --------------------------------
 Gated: groundedness, guardrail flags, doc-level retrieval hit, expected /
-forbidden keywords, and (only when --judge is used) judge faithfulness.
+forbidden keywords (whole words; also on non-grounded replies), false
+abstention on answerable cases, clarification expectations, "no sources"
+expectations, internal wording (``style_quality.INTERNAL_WORDING``), a
+specialist contact step on not-covered replies, and, when --judge is used,
+judge faithfulness AND relevance AND completeness (>= 4 by default) and the
+judge itself succeeding (a judge failure fails the case unless
+``judge_failure_fails`` is turned off).
 Reported but NOT gated: heading hit, answer length, follow-up detection.
 To gate one of those, add it to ``EvalResult.passed``.
 """
@@ -20,17 +26,19 @@ import asyncio
 import time
 import uuid
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 
 from app.core.config import get_settings
 from app.core.stats import percentile
 from app.evaluation import metrics as m
 from app.evaluation import quality as q
+from app.evaluation import style_quality as sq
 from app.evaluation.dataset import EvalCase
 from app.evaluation.judge import JudgeScores, judge_answer
 from app.evaluation.judge_extra import DeepJudgeScores, deep_judge
 from app.harness.citations import strip_markers
+from app.harness.clarify import CLARIFY_OUTCOME
 from app.harness.orchestrator import run_query
 from app.harness.prompts import _TOKEN_ENCODING
 from app.retrieval.reranker import rerank_timing_sink
@@ -38,8 +46,104 @@ from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn
 
 _NOISY_RETRIEVAL_RATIO = 0.5
+_JUDGE_MIN_SCORE = 4
 
 STAGES = ("guardrail_pre", "retrieval", "llm", "guardrail_post")
+
+# Cases that must be answered (so an abstention on them is a false abstention).
+ANSWER_EXPECTED_TYPES = frozenset({"answerable", "compound", "followup", "robustness"})
+
+# Replies that are blocked or off-topic by design carry no contact step.
+NO_CONTACT_STEP_FLAGS = frozenset(
+    {
+        "query_too_long",
+        "empty_query",
+        "unsafe_input_detected",
+        "application_secret_request",
+        "no_permission",
+        "personal_contact_request",
+        "spam_detected",
+        "unclear_input",
+        "off_topic",
+    }
+)
+
+
+def expects_answer(case: EvalCase) -> bool:
+    """True when the case wants a real answer (not a refusal or a card)."""
+
+    return (
+        case.case_type in ANSWER_EXPECTED_TYPES
+        and case.expect_grounded
+        and not case.expect_abstain
+        and not case.allow_clarification
+        and case.expect_clarification is not True
+    )
+
+
+def contact_step_required(
+    grounded: bool, answer: str, flags: Iterable[str], clarified: bool
+) -> bool:
+    """A not-covered / low-confidence reply must point at a specialist.
+
+    Blocked, off-topic, failed and clarification replies are exempt.
+    """
+
+    flag_set = set(flags)
+    return (
+        bool(answer.strip())
+        and not grounded
+        and not clarified
+        and not (flag_set & NO_CONTACT_STEP_FLAGS)
+        and not q.has_error_flag(flag_set)
+    )
+
+
+def judge_verdict(
+    scores: JudgeScores,
+    min_faithfulness: int = _JUDGE_MIN_SCORE,
+    min_relevance: int = _JUDGE_MIN_SCORE,
+    min_completeness: int = _JUDGE_MIN_SCORE,
+) -> bool:
+    """Faithfulness, relevance and completeness must all reach their minimum."""
+
+    return (
+        scores.faithfulness >= min_faithfulness
+        and scores.relevance >= min_relevance
+        and scores.completeness >= min_completeness
+    )
+
+
+def clarification_check(
+    case: EvalCase, clarified: bool, headers: Sequence[str]
+) -> bool | None:
+    """Did the reply type (card vs. answer) match the case? None: not checked."""
+
+    wanted = {h.lower() for h in case.expect_clarification_headers}
+    headers_ok = wanted <= {h.lower() for h in headers}
+    if case.expect_clarification is False:
+        return not clarified
+    if case.expect_clarification is True:
+        return clarified and headers_ok
+    if clarified and wanted:
+        return headers_ok
+    return None
+
+
+def grounded_check(
+    case: EvalCase, grounded: bool, clarified: bool, abstain_ok: bool | None
+) -> bool:
+    """Whether the grounded/abstained outcome matches the case."""
+
+    if case.expect_clarification or case.allow_clarification:
+        if clarified:
+            return True
+        if case.allow_clarification:
+            # A direct answer is allowed; its content faces the keyword gates.
+            return True
+    if case.expect_abstain:
+        return bool(abstain_ok)
+    return grounded == case.expect_grounded
 
 
 @dataclass
@@ -82,10 +186,24 @@ class EvalResult:
     output_tokens: int = 0
     retrieved_tokens: int = 0
     run_index: int = 0
+    # --- answer-quality gates -----------------------------------------------
+    clarified: bool = False  # the reply was a clarification card
+    clarification_ok: bool | None = None
+    sources_ok: bool | None = None  # only set for ``expect_no_sources`` cases
+    internal_wording: list[str] = field(default_factory=list)
+    contact_step_missing: bool = False
+    judge_requested: bool = False  # the judge was asked to grade this case
+    judge_error: bool = False  # ... and failed (no usable scores)
 
     @property
     def known_issue(self) -> str | None:
         return self.case.known_issue
+
+    @property
+    def false_abstention(self) -> bool:
+        """An answerable case that the system declined to answer."""
+
+        return self.abstained and expects_answer(self.case)
 
     @property
     def passed(self) -> bool:
@@ -98,6 +216,11 @@ class EvalResult:
             and self.error is None
             and self.abstain_ok is not False
             and self.safety_ok is not False
+            and not self.false_abstention
+            and self.clarification_ok is not False
+            and self.sources_ok is not False
+            and not self.internal_wording
+            and not self.contact_step_missing
         )
 
     def to_dict(self) -> dict:
@@ -120,6 +243,14 @@ class EvalResult:
             "follow_up_detected": self.follow_up_detected,
             "follow_up_ok": self.follow_up_ok,
             "judge": self.judge.as_dict() if self.judge else None,
+            "judge_ok": self.judge_ok,
+            "judge_error": self.judge_error,
+            "clarified": self.clarified,
+            "clarification_ok": self.clarification_ok,
+            "sources_ok": self.sources_ok,
+            "internal_wording": self.internal_wording,
+            "contact_step_missing": self.contact_step_missing,
+            "false_abstention": self.false_abstention,
             "error": self.error,
             "deep_judge": self.deep.as_dict() if self.deep else None,
             "abstained": self.abstained,
@@ -250,6 +381,62 @@ class EvaluationReport:
             for r in self.known_issue_results
         ]
 
+    def quality_gates(self) -> dict:
+        """Counts for the answer-quality gates (style / wording / contact)."""
+
+        scored = self.scored
+        return {
+            "internal_wording": sorted({w for r in scored for w in r.internal_wording}),
+            "n_internal_wording": sum(1 for r in scored if r.internal_wording),
+            "n_contact_step_missing": sum(1 for r in scored if r.contact_step_missing),
+            "n_false_abstention": sum(1 for r in scored if r.false_abstention),
+            "n_judge_errors": sum(1 for r in scored if r.judge_error),
+            "n_clarification_mismatch": sum(
+                1 for r in scored if r.clarification_ok is False
+            ),
+        }
+
+    def known_issue_ids(self) -> list[str]:
+        """Ids of every known-issue case (always reported, never hidden)."""
+
+        return sorted({r.case.id for r in self.known_issue_results})
+
+    def gate_failures(
+        self,
+        min_pass_rate: float | None,
+        type_minimums: dict[str, float] | None = None,
+        fail_on_known_issue: bool = False,
+    ) -> list[str]:
+        """Human-readable reasons the run must fail CI (empty: all gates pass)."""
+
+        failures: list[str] = []
+        if min_pass_rate is not None and self.pass_rate < min_pass_rate:
+            failures.append(
+                f"pass_rate {self.pass_rate * 100:.1f}% is below the required "
+                f"{min_pass_rate * 100:.1f}%"
+            )
+        by_type = self.by_case_type()
+        failures.extend(
+            f"{t} pass rate {by_type[t]['pass_rate'] * 100:.1f}% is below the "
+            f"required {(type_minimums or {})[t] * 100:.1f}%"
+            for t in self.type_minimums_failed(type_minimums or {})
+        )
+        if fail_on_known_issue and self.known_issue_results:
+            failures.append(
+                "known issues present: " + ", ".join(self.known_issue_ids())
+            )
+        return failures
+
+    def type_minimums_failed(self, minimums: dict[str, float]) -> list[str]:
+        """Case types whose pass rate is below their minimum (0-1)."""
+
+        by_type = self.by_case_type()
+        return sorted(
+            case_type
+            for case_type, minimum in minimums.items()
+            if case_type in by_type and by_type[case_type]["pass_rate"] < minimum
+        )
+
     # ----- knowledge-base-wide metrics ---------------------------------
     def citation_means(self) -> dict:
         def avg(key):
@@ -286,11 +473,7 @@ class EvaluationReport:
             },
             # answerable cases that wrongly abstained
             "false_abstention_rate": _rate(
-                [
-                    r.abstained
-                    for r in self.scored
-                    if r.case.case_type in {"answerable", "compound"}
-                ]
+                [r.abstained for r in self.scored if expects_answer(r.case)]
             ),
         }
 
@@ -504,6 +687,8 @@ class EvaluationReport:
             "n_cases": len(self.results),
             "n_scored": len(scored),
             "n_known_issues": len(self.known_issue_results),
+            "known_issue_ids": self.known_issue_ids(),
+            "quality_gates": self.quality_gates(),
             "top_k": self.top_k,
             "pass_rate": self.pass_rate,
             "retrieval_recall": self.retrieval_recall,
@@ -550,6 +735,11 @@ def _retrieval_metrics(
         "recall@k": m.doc_recall_at_k(
             ranked_docs, case.expected_docs, top_k, case.min_expected_docs_hit
         ),
+        # recall@* are true recall (found / expected docs); this is the "any of
+        # min_expected_docs_hit" pass bar the gate uses.
+        "hits_met@k": m.doc_hits_met_at_k(
+            ranked_docs, case.expected_docs, top_k, case.min_expected_docs_hit
+        ),
         "hit_rate@k": m.hit_rate_at_k(flags, top_k),
         "precision@k": m.precision_at_k(flags, top_k),
         "mrr": m.reciprocal_rank(flags),
@@ -593,8 +783,11 @@ async def evaluate_case(
     vector_store: VectorStore,
     top_k: int = 6,
     use_judge: bool = False,
-    judge_min_faithfulness: int = 4,
+    judge_min_faithfulness: int = _JUDGE_MIN_SCORE,
     run_index: int = 0,
+    judge_min_relevance: int = _JUDGE_MIN_SCORE,
+    judge_min_completeness: int = _JUDGE_MIN_SCORE,
+    judge_failure_fails: bool = True,
 ) -> EvalResult:
     stage_timings: dict = {}
     settings = get_settings()
@@ -631,19 +824,34 @@ async def evaluate_case(
 
     matched_docs = set(ranked_docs) & set(case.expected_docs)
 
-    # Abstention cases are about declining, not about which docs were pulled.
+    clarified = response.outcome == CLARIFY_OUTCOME
+    clarification = getattr(response, "clarification", None)
+    card_headers = (
+        [qn.header for qn in clarification.questions]
+        if clarified and clarification
+        else []
+    )
+    # A card is a question back to the user, not a refusal.
+    card_accepted = clarified and (
+        case.expect_clarification is True or case.allow_clarification
+    )
+
+    # Abstention cases are about declining, not about which docs were pulled;
+    # a clarification card carries no answer to retrieve for.
     retrieval_ok = (
         len(matched_docs) >= case.min_expected_docs_hit
-        if case.expected_docs and not case.expect_abstain
+        if case.expected_docs and not case.expect_abstain and not card_accepted
         else None
     )
-    did_abstain = q.abstained(response.grounded, response.answer)
-    abstain_ok = (did_abstain == case.expect_abstain) if case.expect_abstain else None
-    grounded_ok = (
-        bool(abstain_ok)
-        if case.expect_abstain
-        else response.grounded == case.expect_grounded
+    did_abstain = (
+        False
+        if clarified
+        else q.abstained(response.grounded, response.answer, response.guardrail_flags)
     )
+    abstain_ok = (did_abstain == case.expect_abstain) if case.expect_abstain else None
+    grounded_ok = grounded_check(case, response.grounded, clarified, abstain_ok)
+    clarification_ok = clarification_check(case, clarified, card_headers)
+    sources_ok = (not response.sources) if case.expect_no_sources else None
     flags_ok = (
         any(flag in response.guardrail_flags for flag in case.expect_flags_any)
         if case.expect_flags_any
@@ -666,7 +874,14 @@ async def evaluate_case(
     missing: list[str] = []
     forbidden: list[str] = []
     keywords_checked = False
-    if has_real_answer and (case.expected_keywords or case.forbidden_keywords):
+    # Keywords are checked on every non-empty reply (fallbacks and refusals
+    # included: that is where internal wording and a missing contact step
+    # live), except a clarification card the case accepts.
+    if (
+        response.answer.strip()
+        and not card_accepted
+        and (case.expected_keywords or case.forbidden_keywords)
+    ):
         keywords_checked = True
         missing = m.missing_keywords(response.answer, case.expected_keywords)
         forbidden = m.forbidden_found(response.answer, case.forbidden_keywords)
@@ -762,17 +977,39 @@ async def evaluate_case(
     judge: JudgeScores | None = None
     judge_ok: bool | None = None
     deep: DeepJudgeScores | None = None
-    judgeable = (
-        use_judge and has_real_answer and response.sources and case.expect_grounded
+    judgeable = bool(
+        use_judge
+        and has_real_answer
+        and response.sources
+        and case.expect_grounded
+        and not clarified
     )
+    judge_error = False
     if judgeable:
         key_facts = [k.replace("|", " / ") for k in case.expected_keywords] or None
         judge = await judge_answer(
             case.query, context, response.answer, key_facts=key_facts
         )
         if judge is not None:
-            judge_ok = judge.faithfulness >= judge_min_faithfulness
+            judge_ok = judge_verdict(
+                judge,
+                judge_min_faithfulness,
+                judge_min_relevance,
+                judge_min_completeness,
+            )
+        else:
+            # A judge outage must not silently pass the case.
+            judge_error = True
+            judge_ok = False if judge_failure_fails else None
         deep = await deep_judge(case.query, context, response.answer, key_facts)
+
+    # --- reply wording: internal jargon and the contact step ----------------
+    internal_wording = (
+        sq.internal_wording_in(response.answer) if response.answer.strip() else []
+    )
+    contact_step_missing = contact_step_required(
+        response.grounded, response.answer, response.guardrail_flags, clarified
+    ) and not sq.has_contact_step(response.answer)
 
     return EvalResult(
         case=case,
@@ -819,6 +1056,13 @@ async def evaluate_case(
         output_tokens=output_tokens,
         retrieved_tokens=retrieved_tokens,
         run_index=run_index,
+        clarified=clarified,
+        clarification_ok=clarification_ok,
+        sources_ok=sources_ok,
+        internal_wording=internal_wording,
+        contact_step_missing=contact_step_missing,
+        judge_requested=use_judge,
+        judge_error=judge_error,
     )
 
 
@@ -827,13 +1071,16 @@ async def run_evaluation(
     vector_store: VectorStore,
     top_k: int = 6,
     use_judge: bool = False,
-    judge_min_faithfulness: int = 4,
+    judge_min_faithfulness: int = _JUDGE_MIN_SCORE,
     on_result: Callable[[EvalResult], None] | None = None,
     repeat: int = 1,
     concurrency: int = 1,
     price_in_per_1m: float = 0.0,
     price_out_per_1m: float = 0.0,
     session_factory: Callable | None = None,
+    judge_min_relevance: int = _JUDGE_MIN_SCORE,
+    judge_min_completeness: int = _JUDGE_MIN_SCORE,
+    judge_failure_fails: bool = True,
 ) -> EvaluationReport:
     """Run every case ``repeat`` times (repeats feed the consistency metrics),
     up to ``concurrency`` at a time (also reported as throughput).
@@ -859,12 +1106,15 @@ async def run_evaluation(
 
     async def worker(i: int, case: EvalCase, run: int) -> None:
         async with semaphore:
-            kwargs = dict(  # noqa: C408
-                top_k=top_k,
-                use_judge=use_judge,
-                judge_min_faithfulness=judge_min_faithfulness,
-                run_index=run,
-            )
+            kwargs = {
+                "top_k": top_k,
+                "use_judge": use_judge,
+                "judge_min_faithfulness": judge_min_faithfulness,
+                "judge_min_relevance": judge_min_relevance,
+                "judge_min_completeness": judge_min_completeness,
+                "judge_failure_fails": judge_failure_fails,
+                "run_index": run,
+            }
             if session_factory is not None:
                 async with session_factory() as db:
                     result = await evaluate_case(case, VectorStore(db), **kwargs)

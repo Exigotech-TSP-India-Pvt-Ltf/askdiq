@@ -127,8 +127,8 @@ address for every visitor. Send the visitor's real IP in the JSON body:
 | `prompt_tokens`, `completion_tokens`, `total_tokens`, `reasoning_tokens`, `embedding_tokens`, `guardrail_tokens`, `cost_usd`, `token_details` | numbers/object | Usage accounting; can be ignored by the widget |
 
 A blocked, off-topic or failed generation still returns **200** with a
-helpful fallback `answer` (for example "I couldn't find relevant information
-in the knowledge base... I can help with questions about..."). Show the
+helpful fallback `answer` (for example "That's a bit outside what I can help
+with here... our specialists are happy to help"). Show the
 `answer`; use `outcome`/`guardrail_flags` only for analytics.
 
 ## 4. Sessions

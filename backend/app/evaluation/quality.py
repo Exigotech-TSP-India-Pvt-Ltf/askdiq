@@ -158,16 +158,51 @@ ABSTAIN_PHRASES = (
     "not permitted",
     "don't have access",
     "do not have access",
+    # Friendly fallback wordings.
+    "don't have details",
+    "do not have details",
+    "outside what i can help with",
+    "not certain",
+    "talk to one of our specialists",
+)
+
+# A contact referral on its own is only a refusal when the reply is short: a
+# full answer that ends with "talk to a specialist" is not an abstention.
+CONTACT_PHRASES = ("specialist",)
+_CURLY_APOSTROPHE = chr(0x2019)
+_MAX_CONTACT_REFUSAL_WORDS = 60
+
+# Flags that mean the pipeline failed rather than chose to decline.
+ERROR_FLAGS = frozenset(
+    {"llm_call_failed", "pipeline_error", "retrieval_failed", "embedding_failed"}
 )
 
 
-def abstained(grounded: bool, answer: str) -> bool:
-    """The system declined: the fallback reply, or a grounded 'not in the docs' answer."""
+def has_error_flag(flags: Iterable[str]) -> bool:
+    """True when any guardrail flag marks a pipeline/model failure."""
 
+    return any(f in ERROR_FLAGS or f.endswith(("_failed", "_error")) for f in flags)
+
+
+def abstained(grounded: bool, answer: str, flags: Iterable[str] = ()) -> bool:
+    """The system genuinely declined (not-covered / friendly refusal).
+
+    A failed call is not an abstention: with an error flag this is always
+    False, so a model outage cannot pass an abstention case (nor hide as a
+    "correct" refusal). Otherwise an ungrounded reply, a "not in the docs"
+    wording, or a short contact-a-specialist reply counts.
+    """
+
+    if has_error_flag(flags):
+        return False
     if not grounded:
         return True
-    lowered = answer.lower()
-    return any(p in lowered for p in ABSTAIN_PHRASES)
+    lowered = answer.lower().replace(_CURLY_APOSTROPHE, "'")
+    if any(p in lowered for p in ABSTAIN_PHRASES):
+        return True
+    return len(lowered.split()) <= _MAX_CONTACT_REFUSAL_WORDS and any(
+        p in lowered for p in CONTACT_PHRASES
+    )
 
 
 # ---------------------------------------------------------------------------

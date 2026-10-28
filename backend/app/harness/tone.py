@@ -6,6 +6,10 @@ boilerplate is dropped. Middle sentences are never rewritten (that would risk
 the grounding), and a closer that carries anything fact-like (a digit, an
 address, a link or a citation marker) is kept.
 
+The one exception is internal wording ("the documents", "knowledge base",
+...): a sentence that names how the answer was built is replaced or dropped,
+and a stray square-bracket wrapper around a sentence is removed.
+
 Matching is ``str.startswith`` against fixed literals and ``str.rfind``
 scans, so the filter is linear-time on any input (no regex).
 """
@@ -13,7 +17,12 @@ scans, so the filter is linear-time on any input (no regex).
 from __future__ import annotations
 
 from app.core.logging_config import get_logger
-from app.harness.style import ResponseStyle
+from app.harness.style import (
+    INTERNAL_WORDING,
+    NOT_COVERED_REPLY,
+    NOT_COVERED_SENTENCE,
+    ResponseStyle,
+)
 
 logger = get_logger(__name__)
 
@@ -142,6 +151,208 @@ def paragraph_guard(answer: str) -> bool:
     return longest_prose_run(answer) > _MAX_PROSE_SENTENCES
 
 
+# ---------------------------------------------------------------------------
+# Internal wording and stray brackets
+# ---------------------------------------------------------------------------
+
+# Words that give away how the answer was built; a customer never sees them.
+# "materials" alone is left out on purpose: it is also ordinary product copy.
+_INTERNAL_TERMS: tuple[str, ...] = (
+    *INTERNAL_WORDING,
+    "supplied information",
+    "information provided",
+    "supplied materials",
+    "provided materials",
+    "materials provided",
+    "provided documents",
+    "supplied documents",
+    "documents provided",
+    "sources provided",
+    "provided sources",
+)
+# "the context of ..." is ordinary English, not a leak.
+_BENIGN_AFTER = {"the context": " of "}
+_NEGATIONS: tuple[str, ...] = (
+    "not ",
+    "n't",
+    "n\N{RIGHT SINGLE QUOTATION MARK}t",
+    " no ",
+    "cannot",
+    "unable",
+    "lack",
+    "absent",
+    "nothing",
+    "none ",
+)
+_SPECIALIST = "specialist"
+_NEXT_STEP_LINE = "\n\nNext step: talk to one of our specialists."
+_MAX_MARKER_LEN = 12
+_MIN_WRAPPED_LEN = 3
+_SENTENCE_PUNCT = ".!?"
+_PREFIXES: tuple[str, ...] = ("- ", "* ", "• ")
+
+
+def _has_internal_wording(lowered: str) -> bool:
+    for term in _INTERNAL_TERMS:
+        start = lowered.find(term)
+        while start >= 0:
+            after = lowered[start + len(term) : start + len(term) + 4]
+            if after != _BENIGN_AFTER.get(term):
+                return True
+            start = lowered.find(term, start + 1)
+    return False
+
+
+def _is_negative(lowered: str) -> bool:
+    padded = f" {lowered} "
+    return any(neg in padded for neg in _NEGATIONS)
+
+
+def _marker_end(text: str, index: int) -> int:
+    """Index after any citation markers (``[1]``, ``[2]``) starting at ``index``."""
+
+    while index < len(text) and text[index] == "[":
+        close = text.find("]", index, index + _MAX_MARKER_LEN)
+        inner = text[index + 1 : close] if close > 0 else ""
+        if not inner or not inner.isdigit():
+            break
+        index = close + 1
+        while index < len(text) and text[index] == " ":
+            index += 1
+    return index
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Sentences with their trailing spaces and citation markers (linear scan)."""
+
+    pieces: list[str] = []
+    start = 0
+    length = len(text)
+    index = 0
+    while index < length:
+        if text[index] in _SENTENCE_PUNCT and (
+            index + 1 == length or text[index + 1] in " ["
+        ):
+            end = index + 1
+            while end < length and text[end] == " ":
+                end += 1
+            end = _marker_end(text, end)
+            pieces.append(text[start:end])
+            start = end
+            index = end
+            continue
+        index += 1
+    if start < length:
+        pieces.append(text[start:])
+    return pieces
+
+
+def _wrapped_inner(body: str) -> str | None:
+    """The text inside ``[...]`` when one pair of brackets wraps all of ``body``."""
+
+    if len(body) < _MIN_WRAPPED_LEN or body[0] != "[" or body[-1] != "]":
+        return None
+    depth = 0
+    for position, char in enumerate(body):
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0 and position != len(body) - 1:
+                return None
+    inner = body[1:-1].strip()
+    if not inner or inner.replace(",", "").replace(" ", "").isdigit():
+        return None
+    return inner
+
+
+def _unwrap_line(line: str) -> str:
+    """Drop square brackets wrapped around a whole line (never a citation marker)."""
+
+    stripped = line.strip()
+    prefix = next((p for p in _PREFIXES if stripped.startswith(p)), "")
+    body = stripped[len(prefix) :]
+    tail = "." if body.endswith("].") else ""
+    inner = _wrapped_inner(body[: len(body) - len(tail)] if tail else body)
+    if inner is None:
+        return line
+    indent = line[: len(line) - len(line.lstrip())]
+    closing = "" if inner[-1] in _SENTENCE_PUNCT else tail
+    return f"{indent}{prefix}{inner}{closing}"
+
+
+def _rewrite_line(line: str) -> tuple[str, int, int]:
+    """(new line, internal sentences replaced, sentences kept) for one line."""
+
+    if line.lstrip().startswith("|"):
+        return line, 0, 1
+    prefix = next((p for p in _PREFIXES if line.lstrip().startswith(p)), "")
+    indent = line[: len(line) - len(line.lstrip())]
+    body = line.lstrip()[len(prefix) :]
+    out: list[str] = []
+    replaced = kept = 0
+    for piece in _split_sentences(body):
+        content = piece.strip()
+        if not content:
+            out.append(piece)
+        elif not _has_internal_wording(content.lower()):
+            out.append(piece)
+            kept += 1
+        else:
+            replaced += 1
+            if _is_negative(content.lower()):
+                out.append(NOT_COVERED_SENTENCE + piece[len(piece.rstrip()) :])
+    text = "".join(out).rstrip()
+    return (f"{indent}{prefix}{text}" if text.strip() else ""), replaced, kept
+
+
+def _drop_repeats(lines: list[str]) -> list[str]:
+    """Collapse repeated not-covered sentences into one."""
+
+    seen = False
+    result: list[str] = []
+    for raw in lines:
+        line = raw
+        if NOT_COVERED_SENTENCE in raw:
+            if seen:
+                line = raw.replace(NOT_COVERED_SENTENCE, "").strip()
+            seen = True
+        if line.strip() or not result or result[-1].strip():
+            result.append(line)
+    return result
+
+
+def remove_internal_wording(answer: str) -> str:
+    """Hide how the answer was built from the customer.
+
+    A sentence naming the supplied context, documents, knowledge base or
+    materials is replaced by a plain not-covered sentence when it states an
+    absence, and dropped otherwise; an answer with nothing else left becomes
+    the friendly not-covered reply. A whole sentence wrapped in square
+    brackets is unwrapped (citation markers are never touched). Linear time:
+    ``str`` methods and one scan per line, no regex.
+    """
+
+    if not answer.strip():
+        return answer
+    lines = [_unwrap_line(line) for line in answer.split("\n")]
+    rewritten: list[str] = []
+    replaced = kept = 0
+    for line in lines:
+        new_line, line_replaced, line_kept = _rewrite_line(line)
+        rewritten.append(new_line)
+        replaced += line_replaced
+        kept += line_kept
+    if not replaced:
+        return "\n".join(lines)
+    if not kept:
+        return NOT_COVERED_REPLY
+    text = "\n".join(_drop_repeats(rewritten)).strip()
+    if _SPECIALIST not in text.lower():
+        text += _NEXT_STEP_LINE
+    return text
+
+
 def polish_answer(answer: str, style: ResponseStyle | str | None) -> str:
     """Apply the filter under ``adaptive`` only (``current`` stays the baseline).
 
@@ -150,7 +361,7 @@ def polish_answer(answer: str, style: ResponseStyle | str | None) -> str:
 
     if style != ResponseStyle.ADAPTIVE:
         return answer
-    polished = strip_stock_phrases(answer)
+    polished = remove_internal_wording(strip_stock_phrases(answer))
     if paragraph_guard(polished):
         logger.info("answer_paragraph_guard", prose_run=longest_prose_run(polished))
     return polished

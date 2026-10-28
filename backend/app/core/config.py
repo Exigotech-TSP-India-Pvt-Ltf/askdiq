@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     # Guardrails
     # Semantic cosine-similarity threshold (STEP 7), not lexical overlap.
     groundedness_threshold: float = 0.45
+    # Multi-sentence answers: share of claims (sentences/bullets) whose best
+    # chunk similarity reaches groundedness_threshold. Below it -> ungrounded.
+    groundedness_min_supported_ratio: float = 0.6
     max_query_length: int = 2000
 
     # Retrieval
@@ -131,6 +134,10 @@ class Settings(BaseSettings):
     # weather?" ~0.10) — gating too high silently blocks on-topic questions
     # before the LLM+groundedness check (the real safety net) ever sees them.
     min_retrieval_score: float = 0.15
+    # Extra off-topic rule: when the best retrieval score is below this AND none
+    # of the query's content words occur in any retrieved chunk, the question is
+    # treated as off-topic (pronounceable nonsense still retrieves generic chunks).
+    offtopic_overlap_max_score: float = 0.30
     # Metadata keys a /query `filters` object may use. Unknown keys and non-scalar
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).
@@ -147,6 +154,11 @@ class Settings(BaseSettings):
     clarify_max_query_words: int = 4
     # Topics whose best score is within this margin of the top score compete.
     clarify_score_margin: float = 0.06
+    # The best topic must score at least this for the model to be offered the
+    # choice to clarify: low, flat scores mean the evidence is irrelevant to
+    # the question (an off-topic "What is a cat?"), so asking "which one?"
+    # would only invent options. Override with CLARIFY_MIN_GATE_SCORE.
+    clarify_min_gate_score: float = Field(default=0.30, ge=0.0, le=1.0)
     # Topics needed before a clarification is offered, and the most shown.
     clarify_min_options: int = 2
     clarify_max_options: int = 4

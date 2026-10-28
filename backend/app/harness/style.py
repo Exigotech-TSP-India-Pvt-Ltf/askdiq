@@ -31,6 +31,16 @@ class ResponseStyle(StrEnum):
     ADAPTIVE = "adaptive"
 
 
+# Words that reveal how an answer was built; customers never see them.
+INTERNAL_WORDING: tuple[str, ...] = (
+    "supplied context",
+    "provided context",
+    "the context",
+    "the documents",
+    "knowledge base",
+    "provided information",
+)
+
 # Stock AI phrases the answer must never contain (owner's banned list).
 BANNED_PHRASES: tuple[str, ...] = (
     "As an AI",
@@ -49,6 +59,16 @@ BANNED_PHRASES: tuple[str, ...] = (
     "In today's evolving landscape",
     "I'm sorry, but I cannot",
     "Certainly!",
+    *INTERNAL_WORDING,
+    "materials",
+)
+
+# What a customer is told when something is not covered: said once, plainly,
+# then a human next step. Used by the tone post-filter.
+NOT_COVERED_SENTENCE = "We don't have details on that here."
+NOT_COVERED_REPLY = (
+    f"{NOT_COVERED_SENTENCE}\n\n"
+    "Next step: talk to one of our specialists, who will be happy to help."
 )
 
 _TONE_BLOCK = (
@@ -59,12 +79,13 @@ _TONE_BLOCK = (
     "paragraphs: more than 2 sentences of unbroken prose must become "
     "bullets. Format with Markdown only: ## headings, - bullets, 1. steps, "
     "**bold**, and a pipe table only when the format below asks for one; no "
-    "raw HTML, no links, no code fences unless the context quotes code. Keep "
+    "raw HTML, no links, no code fences unless the facts quote code. Keep "
     "any citation marker at the end of the claim it supports, including "
     "inside bullets and table cells. If part of the question isn't covered, "
-    "say so once, plainly, without mentioning the context, documents or "
-    "information provided, and never borrow a fact from a neighbouring "
-    "service. Never use these phrases: {banned}."
+    "say so once, plainly (for example \"We don't have details on that "
+    'here"), never say where your facts come from, offer to connect the '
+    "reader with one of our specialists, and never borrow a fact from a "
+    "neighbouring service. Never use these phrases: {banned}."
 )
 
 # One format instruction per AnswerShape value; only the detected one is sent.
@@ -81,21 +102,25 @@ _SHAPE_BLOCKS: dict[str, str] = {
         "Format: one lead sentence with the main difference, then a Markdown "
         "pipe table with a header row, a separator row (| --- |), one row per "
         "aspect and one column per option, at most 5 columns, short cells. "
-        "Leave out any aspect the context doesn't cover."
+        "Leave out any aspect the facts don't cover."
     ),
     "quick_fact": (
         "Format: a one-line direct answer (yes, no, or the fact) of at most "
-        "25 words, then 2-3 bullets with the supporting detail."
+        "25 words, only if the facts state it; otherwise state what we do "
+        "and point to a specialist. Then 2-3 bullets with the supporting "
+        "detail."
     ),
     "partial": (
-        "Format: one line stating plainly what we can't confirm, then "
-        '"Here\'s what we can confirm:" with 2-4 bullets, then a last line '
-        'starting "Next step:" with one action from the context.'
+        "Format: lead with what we do (1-2 sentences or bullets), then one "
+        'short scope note if needed ("X stays with your Y"), then a last '
+        'line starting "Next step:" with a contact action (talk to one of '
+        "our specialists to scope this for you). Never open with what we "
+        "can't confirm."
     ),
     "out_of_scope": (
-        "Format: one human line saying we don't cover that here, then a line "
-        'starting "Next step:" with one real action from the context (such '
-        "as talking to our team). Nothing else."
+        "Format: one warm line saying that is outside what we cover here, "
+        'then a line starting "Next step:" to talk to one of our '
+        "specialists. Nothing else."
     ),
     "general": (
         "Format: a 1-2 sentence lead, then a ## heading with 2-4 bullets; "
@@ -137,7 +162,8 @@ def style_instructions(
     style: ResponseStyle | str | None, shape: AnswerShape | str | None
 ) -> str:
     """System-prompt suffix: the tone block plus the one format block for
-    ``shape``, with a leading space ("" for ``current``)."""
+    ``shape``, with a leading space ("" for ``current``). A Next step is
+    always a contact action, never an internal one."""
 
     profile = profile_for(style)
     if not profile.structured:

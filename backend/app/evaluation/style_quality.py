@@ -17,6 +17,7 @@ linear-time.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -209,6 +210,35 @@ def structure_score(answer: str, shape: str) -> dict[str, object]:
 def banned_phrases_in(answer: str) -> list[str]:
     lowered = answer.lower()
     return [p for p in BANNED_PHRASES if p.lower() in lowered]
+
+
+INTERNAL_WORDING: tuple[str, ...] = (
+    "knowledge base",
+    "supplied context",
+    "the documents",
+    "materials",
+)
+CONTACT_STEP = "specialist"
+
+
+def internal_wording_in(answer: str) -> list[str]:
+    """Internal/pipeline jargon that must never reach a customer reply.
+
+    Whole-phrase and case-insensitive, so ``immaterials`` does not match.
+    """
+
+    lowered = strip_markers(answer).lower()
+    return [
+        phrase
+        for phrase in INTERNAL_WORDING
+        if re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", lowered)
+    ]
+
+
+def has_contact_step(answer: str) -> bool:
+    """True when the reply points the reader at a specialist."""
+
+    return CONTACT_STEP in answer.lower()
 
 
 def ai_tone_score(answer: str) -> dict[str, object]:

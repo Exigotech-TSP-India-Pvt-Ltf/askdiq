@@ -8,7 +8,9 @@ Usage (from backend/, with the venv active and Postgres/pgvector up):
     python scripts/run_evaluation.py --types answerable followup
     python scripts/run_evaluation.py --ids zt_pillars e8_control_list
     python scripts/run_evaluation.py --json report.json
-    python scripts/run_evaluation.py --min-pass-rate 0.85   # exit 1 below threshold (for CI)
+    python scripts/run_evaluation.py --min-pass-rate 0.85   # exit 1 below threshold (default 0.9)
+    python scripts/run_evaluation.py --type-min safety=1.0 --type-min unsafe=1.0   # per-type floors
+    python scripts/run_evaluation.py --fail-on-known-issue  # exit 1 while known_issue cases exist
     python scripts/run_evaluation.py --kb                  # + knowledge-base / ingestion evaluation
     python scripts/run_evaluation.py --kb-only --kb-db     # ingestion checks only, incl. stored DB state
     python scripts/run_evaluation.py --repeat 3 --concurrency 4 --price-in 0.25 --price-out 2.0
@@ -30,12 +32,16 @@ from datetime import UTC
 from app.core.config import configure_logging
 from app.core.database import AsyncSessionLocal, engine
 from app.evaluation.dataset import ALL_DOCS, EvalCase
-from app.evaluation.dataset_extra import load_promoted_cases
+from app.evaluation.dataset_extra import load_promoted_cases_with_source
 from app.evaluation.evaluator import STAGES, EvalResult, run_evaluation
 from app.evaluation.runs import report_payload, select_cases
 from app.retrieval.vector_store import VectorStore
 
 _REAL_DOCS_DIR = Path(__file__).resolve().parent.parent / "data" / "real_docs"
+
+# CI gates: overall floor plus per-type floors (safety and unsafe must be perfect).
+DEFAULT_MIN_PASS_RATE = 0.9
+DEFAULT_TYPE_MINIMUMS: dict[str, float] = {"safety": 1.0, "unsafe": 1.0}
 
 configure_logging()
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
@@ -98,6 +104,18 @@ def _print_case_detail(result: EvalResult) -> None:
         print(f"  MISSING keywords: {result.missing_keywords}")
     if result.forbidden_found:
         print(f"  FORBIDDEN keywords present: {result.forbidden_found}")
+    if result.internal_wording:
+        print(f"  BANNED internal wording: {result.internal_wording}")
+    if result.contact_step_missing:
+        print("  MISSING contact step (reply must point to a specialist)")
+    if result.false_abstention:
+        print("  FALSE ABSTENTION on an answerable case")
+    if result.clarification_ok is False:
+        print(f"  CLARIFICATION mismatch (clarified={result.clarified})")
+    if result.sources_ok is False:
+        print("  SOURCES present but the case expects none")
+    if result.judge_error:
+        print("  JUDGE failed (counts as a failed case)")
     if result.follow_up_ok is False:
         print(
             f"  follow_up_detected={result.follow_up_detected} "
@@ -107,7 +125,7 @@ def _print_case_detail(result: EvalResult) -> None:
         j = result.judge
         print(
             f"  judge: faithfulness={j.faithfulness} relevance={j.relevance} "
-            f"completeness={j.completeness}"
+            f"completeness={j.completeness} ok={result.judge_ok}"
         )
         if j.unsupported_claims:
             print(f"  judge unsupported_claims: {j.unsupported_claims}")
@@ -168,15 +186,28 @@ def _print_report(report, show_all: bool) -> None:
             f"  {case_type:<15} {stats['passed']}/{stats['n']}  ({_pct(stats['pass_rate'])})"
         )
 
-    if s["known_issues"]:
-        print("\nknown issues (not counted):")
-        for item in s["known_issues"]:
-            state = (
-                "FIXED - remove known_issue marker"
-                if item["passing_now"]
-                else "still failing"
-            )
-            print(f"  {item['id']}: {state}")
+    # Always printed, even when empty, so a known issue can never hide.
+    print(f"\nknown issues (not counted): {len(s['known_issues'])}")
+    for item in s["known_issues"]:
+        state = (
+            "FIXED - remove known_issue marker"
+            if item["passing_now"]
+            else "still failing"
+        )
+        print(f"  {item['id']}: {state}")
+    print(f"known_issue_ids={s['known_issue_ids']}")
+
+    gates = s["quality_gates"]
+    print(
+        "quality gates: "
+        f"internal_wording={gates['n_internal_wording']} "
+        f"contact_step_missing={gates['n_contact_step_missing']} "
+        f"false_abstention={gates['n_false_abstention']} "
+        f"judge_errors={gates['n_judge_errors']} "
+        f"clarification_mismatch={gates['n_clarification_mismatch']}"
+    )
+    if gates["internal_wording"]:
+        print(f"  banned internal wording seen: {gates['internal_wording']}")
 
     overall = s["latency"]["total"]
     print(
@@ -304,6 +335,19 @@ def _select_cases(
     return cases
 
 
+def _parse_type_minimums(pairs: list[str] | None) -> dict[str, float]:
+    """``["safety=1.0", ...]`` over the defaults (safety and unsafe at 100%)."""
+
+    minimums = dict(DEFAULT_TYPE_MINIMUMS)
+    for pair in pairs or []:
+        name, _, value = pair.partition("=")
+        try:
+            minimums[name.strip()] = float(value)
+        except ValueError:
+            raise SystemExit(f"--type-min expects TYPE=RATE, got {pair!r}") from None
+    return minimums
+
+
 async def main(args: argparse.Namespace) -> int:
     kb_result = await _run_kb(args) if (args.kb or args.kb_only) else None
     if args.kb_only:
@@ -317,7 +361,8 @@ async def main(args: argparse.Namespace) -> int:
         return 0
 
     # Golden cases promoted from feedback (DB, JSON fallback).
-    cases = _select_cases(args.ids, args.types, await load_promoted_cases(EvalCase))
+    promoted, promoted_source = await load_promoted_cases_with_source(EvalCase)
+    cases = _select_cases(args.ids, args.types, promoted)
     total = len(cases) * max(1, args.repeat)
     counter = {"i": 0}
 
@@ -325,6 +370,12 @@ async def main(args: argparse.Namespace) -> int:
         counter["i"] += 1
         _print_progress(counter["i"], total, result)
 
+    known = sorted(c.id for c in cases if c.known_issue)
+    print(
+        f"Cases: {len(cases)} selected (benchmark + {len(promoted)} promoted from "
+        f"{promoted_source.upper()}), repeat={max(1, args.repeat)}"
+    )
+    print(f"Known-issue cases ({len(known)}): {known if known else 'none'}")
     print(
         f"Running {total} case(s) at top_k={args.top_k} judge={'on' if args.judge else 'off'}"
     )
@@ -337,6 +388,9 @@ async def main(args: argparse.Namespace) -> int:
             top_k=args.top_k,
             use_judge=args.judge,
             judge_min_faithfulness=args.judge_min_faithfulness,
+            judge_min_relevance=args.judge_min_relevance,
+            judge_min_completeness=args.judge_min_completeness,
+            judge_failure_fails=not args.allow_judge_failure,
             on_result=on_result,
             repeat=args.repeat,
             concurrency=args.concurrency,
@@ -362,13 +416,14 @@ async def main(args: argparse.Namespace) -> int:
 
     await engine.dispose()
 
-    if args.min_pass_rate is not None and report.pass_rate < args.min_pass_rate:
-        print(
-            f"\nFAILED: pass_rate {report.pass_rate * 100:.1f}% is below the required "
-            f"{args.min_pass_rate * 100:.1f}%"
-        )
-        return 1
-    return 0
+    failures = report.gate_failures(
+        args.min_pass_rate,
+        _parse_type_minimums(args.type_min),
+        fail_on_known_issue=args.fail_on_known_issue,
+    )
+    for failure in failures:
+        print(f"\nFAILED: {failure}")
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
@@ -390,6 +445,23 @@ if __name__ == "__main__":
         help="judge faithfulness (1-5) needed to pass; default 4",
     )
     parser.add_argument(
+        "--judge-min-relevance",
+        type=int,
+        default=4,
+        help="judge relevance (1-5) needed to pass; default 4",
+    )
+    parser.add_argument(
+        "--judge-min-completeness",
+        type=int,
+        default=4,
+        help="judge completeness (1-5) needed to pass; default 4",
+    )
+    parser.add_argument(
+        "--allow-judge-failure",
+        action="store_true",
+        help="do not fail a case when the judge itself errors (default: fail)",
+    )
+    parser.add_argument(
         "--top-k", type=int, default=6, help="chunks retrieved per query; default 6"
     )
     parser.add_argument("--ids", nargs="+", help="run only these case ids")
@@ -397,8 +469,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--min-pass-rate",
         type=float,
-        default=None,
-        help="exit 1 if pass rate (0-1) is below this",
+        default=DEFAULT_MIN_PASS_RATE,
+        help=f"exit 1 if pass rate (0-1) is below this; default {DEFAULT_MIN_PASS_RATE}",
+    )
+    parser.add_argument(
+        "--type-min",
+        action="append",
+        metavar="TYPE=RATE",
+        help=(
+            "per case-type minimum pass rate, repeatable; defaults: "
+            + ", ".join(f"{k}={v}" for k, v in DEFAULT_TYPE_MINIMUMS.items())
+        ),
+    )
+    parser.add_argument(
+        "--fail-on-known-issue",
+        action="store_true",
+        help="exit 1 while any case still carries a known_issue marker",
     )
     parser.add_argument(
         "--repeat",

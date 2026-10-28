@@ -38,11 +38,22 @@ def test_doc_recall_single_doc_is_binary():
 
 
 def test_doc_recall_compound_is_graded():
+    # Updated: recall used to divide by min_hits, which let it reach 1.0 while
+    # most expected docs were missing. It is now true recall (found / expected);
+    # the old "requirement met" score lives in doc_hits_met_at_k.
     expected = ["a", "b", "c"]
-    assert m.doc_recall_at_k(["a", "x"], expected, k=2, min_hits=2) == 0.5
-    assert m.doc_recall_at_k(["a", "b"], expected, k=2, min_hits=2) == 1.0
+    assert m.doc_recall_at_k(["a", "x"], expected, k=2, min_hits=2) == pytest.approx(
+        1 / 3
+    )
+    assert m.doc_recall_at_k(["a", "b"], expected, k=2, min_hits=2) == pytest.approx(
+        2 / 3
+    )
     # Repeated chunks from the same doc don't count twice.
-    assert m.doc_recall_at_k(["a", "a", "a"], expected, k=3, min_hits=2) == 0.5
+    assert m.doc_recall_at_k(["a", "a", "a"], expected, k=3, min_hits=2) == (
+        pytest.approx(1 / 3)
+    )
+    assert m.doc_hits_met_at_k(["a", "x"], expected, k=2, min_hits=2) == 0.5
+    assert m.doc_hits_met_at_k(["a", "b"], expected, k=2, min_hits=2) == 1.0
 
 
 def test_doc_recall_no_expected_docs_is_vacuously_one():

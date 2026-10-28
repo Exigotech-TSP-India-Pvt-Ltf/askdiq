@@ -25,6 +25,13 @@ _MAX_SCAN_CHARS = 400
 # Per-source text scanned for subject coverage.
 _MAX_SOURCE_CHARS = 4000
 _MIN_SUBJECTS = 2
+# Folded clarification answers: "(Framework: ISO 27001; Maturity: Partly ...)".
+_MAX_ANSWERS_CHARS = 600
+_MAX_LABEL_CHARS = 30
+# Generic label/value words that are never subjects the documents must name.
+_LABEL_WORDS = frozenset(
+    {"framework", "maturity", "deadline", "environment", "partly", "mostly"}
+)
 
 
 class AnswerShape(StrEnum):
@@ -154,7 +161,7 @@ def _is_comparison(query: str, text: str, assessment: Assessment | None) -> bool
     bounded = query[:_MAX_SCAN_CHARS]
     return (
         _COMPARISON_RE.search(bounded) is not None
-        and len(_subjects(bounded)) >= _MIN_SUBJECTS
+        and len(_subjects(bounded, brand=False)) >= _MIN_SUBJECTS
     )
 
 
@@ -189,6 +196,25 @@ def _source_text(source: SourceChunk) -> str:
     return f"{names} {source.content[:_MAX_SOURCE_CHARS]}".lower()
 
 
+def strip_answers(query: str) -> str:
+    """Drop a trailing "(Label: value; Label: value)" clarification suffix.
+
+    A folded reply is "original question (Framework: ISO 27001; Maturity:
+    Partly implemented)": the labels and chosen values are not subjects the
+    documents must name. Linear: one ``rfind``, no backtracking pattern.
+    """
+    text = query.rstrip()
+    if not text.endswith(")"):
+        return query
+    start = text.rfind("(")
+    if start < 0 or len(text) - start > _MAX_ANSWERS_CHARS:
+        return query
+    inner = text[start + 1 : -1]
+    parts = [p for p in inner.split(";") if p.strip()]
+    labelled = bool(parts) and all(0 < p.find(":") <= _MAX_LABEL_CHARS for p in parts)
+    return text[:start].rstrip() if labelled else query
+
+
 def _covered(subject: str, texts: Sequence[str]) -> bool:
     needle = subject.lower()
     return any(needle in text for text in texts)
@@ -206,7 +232,8 @@ def refine_shape(
     usable = [s for s in sources if min_score is None or float(s.score) >= min_score]
     if not usable:
         return AnswerShape.OUT_OF_SCOPE
-    asked = _subjects(query[:_MAX_SCAN_CHARS])
+    asked = _subjects(strip_answers(query[:_MAX_SCAN_CHARS]), brand=False)
+    asked -= _LABEL_WORDS
     if len(asked) < _MIN_SUBJECTS:
         return shape
     texts = [_source_text(s) for s in usable]

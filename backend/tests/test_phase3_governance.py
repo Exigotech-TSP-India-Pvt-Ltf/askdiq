@@ -303,7 +303,12 @@ def test_branding_system_prompt_and_fallback_replies():
         flags=["unclear_input"],
         latency_ms=10.0,
     )
-    assert f"ask a specific question about {brand}?" in fallback.answer
+    assert "add a little more detail" in fallback.answer
+
+    spam = _fallback_response(
+        request_id="test-req-fb2", flags=["spam_detected"], latency_ms=10.0
+    )
+    assert f"help with {brand}," in spam.answer
 
 
 @pytest.mark.asyncio

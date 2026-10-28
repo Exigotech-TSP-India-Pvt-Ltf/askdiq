@@ -162,6 +162,8 @@ def _no_decision_call(monkeypatch) -> None:
 
 def _assert_grounded(question) -> None:
     for option in question.options:
+        if option.label == "Not sure, help me choose":
+            continue  # a deliberate no-document escape hatch
         assert option.document_ids
         assert set(option.document_ids) <= _RETRIEVED
 
@@ -286,10 +288,12 @@ async def test_audit_request_asks_a_grounded_series(monkeypatch) -> None:
     ]
     assert [q.id for q in questions] == ["Q1", "Q2", "Q3", "Q4"]
     assert questions[0].question == "Which framework is the audit against?"
+    # Built from the whole catalogue (3 shown + "Not sure": the card holds 4).
     assert [o.label for o in questions[0].options] == [
         "Essential Eight",
         "CIS Benchmark",
         "ISO 27001",
+        "Not sure, help me choose",
     ]
     environment = questions[3]
     assert environment.multi_select is True
@@ -300,7 +304,12 @@ async def test_audit_request_asks_a_grounded_series(monkeypatch) -> None:
     ]
     for question in questions:
         _assert_grounded(question)
-    assert "Essential Eight, CIS Benchmark, ISO 27001" in clarification.preamble
+    # The preamble lists the whole catalogue and never claims it is all.
+    assert "DeployIQ helps with Essential Eight, ISO 27001, CIS Benchmark" in (
+        clarification.preamble
+    )
+    assert "Security Baseline" in clarification.preamble
+    assert "covers" not in clarification.preamble
     # Plain-text clients get every question.
     assert "4. Which environment is in scope?" in response.answer
 
@@ -380,12 +389,14 @@ async def test_vague_short_ungrounded_answer_asks_instead(monkeypatch) -> None:
     reply = json.dumps(
         {"action": "answer", "answer": "Plans vary.", "preamble": "", "questions": []}
     )
-    response, calls, _ = await _run(monkeypatch, "pricing?", [reply], grounded=False)
+    # ("pricing?" is now a rule-path question; a non-cost bare topic still
+    # goes through the model gate and falls back to the service question.)
+    response, calls, _ = await _run(monkeypatch, "plans?", [reply], grounded=False)
     assert len(calls) == 1
     assert response.outcome == CLARIFY_OUTCOME
     assert response.clarification is not None
     assert response.clarification.questions[0].question == (
-        "Which service would you like pricing for?"
+        "Which DeployIQ service do you mean?"
     )
     assert response.prompt_tokens == USAGE["prompt_tokens"]
 

@@ -102,7 +102,11 @@ def test_check_spam_allows_genuine_question():
 
 
 def test_check_spam_detects_url():
-    ok, flag = check_spam("Check out https://totally-legit-deals.example.com now")
+    # A single link is no longer spam (guardrails-quality fix); 2+ links are.
+    ok, flag = check_spam(
+        "Check out https://totally-legit-deals.example.com "
+        "and https://more-deals.example.net now"
+    )
     assert ok is False
     assert flag == "spam_detected"
 

@@ -33,9 +33,11 @@ def test_headings_and_keywords_need_expected_docs_or_a_real_answer():
     for case in EVAL_CASES:
         if case.expected_headings:
             assert case.expected_docs, f"{case.id}: headings without expected_docs"
-        if case.expected_keywords or case.forbidden_keywords:
-            assert case.expect_grounded or case.expect_abstain, (
-                f"{case.id}: keyword checks only run on grounded answers"
+        # Updated: keywords are now checked on every non-empty reply (fallbacks
+        # and refusals included), so only blocked cases are exempt.
+        if case.case_type in {"unsafe", "spam"}:
+            assert not case.expected_keywords, (
+                f"{case.id}: blocked cases return a canned reply"
             )
 
 
@@ -73,7 +75,9 @@ def test_variants_point_at_existing_cases_and_abstentions_are_ungrounded():
 
 
 def test_extended_categories_are_covered():
-    cats = {c.abstain_category for c in EVAL_CASES if c.expect_abstain}
+    # Updated: partial / ambiguous / contradictory cases no longer expect a
+    # refusal, so the category is read from every case that carries one.
+    cats = {c.abstain_category for c in EVAL_CASES if c.abstain_category}
     assert {
         "not_in_corpus",
         "partially_answerable",
@@ -90,6 +94,8 @@ def test_extended_categories_are_covered():
         "very_long",
         "acronym",
         "synonym",
-        "repeated_question",
         "long_conversation_history",
     } <= perts
+    # "repeated_question" variants were identical to their base case and are
+    # gone; repeat consistency comes from run_evaluation.py --repeat.
+    assert "repeated_question" not in perts

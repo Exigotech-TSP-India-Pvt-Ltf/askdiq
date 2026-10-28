@@ -11,7 +11,7 @@ AMBIGUOUS_QUERIES: tuple[str, ...] = (
     "do you buy?",
     "pricing?",
     "how long?",
-    "is it safe?",
+    "how much?",
     "zero trust?",
     "E8?",
     "do you support Azure?",
@@ -26,6 +26,8 @@ AMBIGUOUS_QUERIES: tuple[str, ...] = (
     "certifications?",
     "trial?",
     "partners",
+    "price",
+    "what are your prices?",
 )
 
 CLEAR_QUERIES: tuple[str, ...] = (
@@ -40,4 +42,50 @@ CLEAR_QUERIES: tuple[str, ...] = (
     "Can partners resell DeployIQ services under their own brand to customers?",
     "What happens to our data when we cancel the DeployIQ subscription contract?",
     "pricing? and support?",
+)
+
+# Company facts and named entities: answered from the knowledge base, never
+# turned into a "which DeployIQ service do you mean?" card.
+COMPANY_FACT_QUERIES: tuple[str, ...] = (
+    "Where is Exigo Tech headquartered?",
+    "who is exigo?",
+    "Who is the CEO of Exigo Tech?",
+    "What is Exigo Tech's phone number?",
+    "contact",
+    "Where are you located?",
+    "When was Exigo Tech founded?",
+    "what is your address?",
+    "How do I contact DeployIQ?",
+    "DeployIQ pricing",
+)
+
+# One-product assistant, no history: answered generally about DeployIQ.
+GENERIC_PRODUCT_QUERIES: tuple[str, ...] = (
+    "how does it work",
+    "What does it do?",
+    "Is it safe?",
+    "is it free?",
+)
+
+# Pointers back at the previous answer (ask which one unless it named one).
+BACK_REFERENCE_QUERIES: tuple[str, ...] = (
+    "Tell me more about the one you mentioned above",
+    "What about the previous one?",
+    "How much is the second one?",
+    "How much does that product cost?",
+    "and the one above?",
+    "What did you say earlier?",
+)
+
+# Vague goals with no framework named: ask Framework (+ Maturity) questions.
+VAGUE_GOAL_QUERIES: tuple[str, ...] = (
+    "I need compliance",
+    "we need to improve our security posture, where do we start",
+    "we want to get certified",
+    "how do I secure my company",
+    "We have an audit coming up",
+    "help us get ready for our audit",
+    "We need to get complience fast, what should we do?",
+    "we need to be complaint, where do we start",
+    "we have an audti coming up",
 )

@@ -94,7 +94,7 @@ async def test_no_sources_flag_when_nothing_retrieved(monkeypatch):
     assert response.grounded is False
     assert response.guardrail_flags == ["no_sources"]
     assert response.sources == []
-    assert "knowledge base" in response.answer
+    assert "specialists" in response.answer
 
 
 async def test_off_topic_when_retrieval_score_below_minimum(monkeypatch):
@@ -201,7 +201,8 @@ async def test_ungrounded_fallback_does_not_mention_typo(monkeypatch):
     )
 
     assert "typo" not in response.answer.lower()
-    assert "knowledge base" in response.answer
+    assert "knowledge base" not in response.answer
+    assert "specialists" in response.answer
 
 
 async def test_post_checks_use_the_retrieval_gate_minimum(monkeypatch):

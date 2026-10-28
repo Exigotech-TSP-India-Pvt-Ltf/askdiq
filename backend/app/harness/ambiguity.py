@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Rule-detected ambiguity: questions that cannot be answered well as asked.
 
 Complements the short-question gate in app.harness.clarify (where the answer
@@ -40,7 +41,12 @@ from app.core.circuit import get_llm_breaker
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.evaluation.quality import injection_in_chunks
+from app.guardrails.conversational import detect_conversational_intent
 from app.harness.clarify import (
+    BRAND_RE,
+    COMPANY_FACT_RE,
+    GENERIC_PRODUCT_RE,
+    NOT_SURE_LABEL,
     clarification_streak,
     humanize_source_name,
     metadata_text,
@@ -106,6 +112,8 @@ class CatalogueEntry:
     framework: bool = False
     # Breaks a recommendation tie between close options (see recommend_option).
     default: bool = False
+    # A real service/framework (not the generic "platform" entry).
+    offering: bool = True
 
 
 def _re(pattern: str) -> re.Pattern[str]:
@@ -162,8 +170,23 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
         "DeployIQ platform",
         _re(r"\bdeploy[ _-]{0,3}iq[ _-]{0,3}platform\b|\bplatform\b"),
         "The DeployIQ orchestration platform",
+        offering=False,
     ),
 )
+
+
+def offering_labels() -> list[str]:
+    """Labels of every service/framework in the catalogue, in catalogue order."""
+    return [e.label for e in CATALOGUE if e.offering]
+
+
+def strip_offerings(text: str) -> str:
+    """``text`` with every named service/framework removed (bounded first)."""
+    text = _scan_text(text)
+    for entry in CATALOGUE:
+        if entry.offering:
+            text = _strip(entry.pattern, text)
+    return " ".join(text.split())
 
 
 def _entry_for(source: SourceChunk) -> CatalogueEntry | None:
@@ -238,6 +261,46 @@ def service_options(
     )
 
 
+def framework_options(sources: list[SourceChunk]) -> list[ClarificationOption]:
+    """Every catalogue service/framework (retrieved first), then "Not sure".
+
+    Built from the whole catalogue, not only the retrieved subset, so a
+    visitor sees all of what DeployIQ covers; the retrieved ones lead and carry
+    their documents. The question card shows at most ``clarify_max_options``
+    options, the last one always being "Not sure, help me choose".
+    """
+    settings = get_settings()
+    ranked = sorted(sources, key=lambda s: s.score, reverse=True)
+    grouped: dict[str, list[SourceChunk]] = {}
+    for source in ranked:
+        entry = _entry_for(source)
+        if entry is not None and entry.offering:
+            grouped.setdefault(entry.label, []).append(source)
+    if not grouped:
+        # No catalogue document retrieved: fall back to the document titles.
+        base = service_options(sources, frameworks_only=True)
+    else:
+        entries = {e.label: e for e in CATALOGUE if e.offering}
+        order = [*grouped, *(label for label in entries if label not in grouped)]
+        shown = order[: max(settings.clarify_max_options - 1, 1)]
+        built = [
+            _option(i, label, entries[label].description, grouped.get(label, []))
+            for i, label in enumerate(shown, 1)
+        ]
+        base = recommend_option(
+            built,
+            [_best_score(grouped.get(label, [])) for label in shown],
+            [entries[label].default for label in shown],
+        )
+    base = base[: max(settings.clarify_max_options - 1, 1)]
+    not_sure = ClarificationOption(
+        id=f"O{len(base) + 1}",
+        label=NOT_SURE_LABEL,
+        description="Get a recommendation based on your goal and where you are today",
+    )
+    return [*base, not_sure]
+
+
 # ---------------------------------------------------------------------------
 # Detail slots of an underspecified compliance request
 # ---------------------------------------------------------------------------
@@ -267,14 +330,29 @@ FRAMEWORK_SLOT = "framework"
 _PLANNING_RE = _re(
     r"\b(what should (we|i) do|what do (we|i) need( to do)?|where (do|should) (we|i) "
     r"start|how (do|can|should) (we|i) (get|become|achieve|prepare|pass)|"
-    r"(get|become|be) compliant|pass (the|an|our) audit|prepare for (the |an |our )?"
-    r"audit|how long (will|would|does) it take|roadmap|plan of action)\b"
+    r"(get|become|be) (compliant|complaint)|pass (the|an|our) audit|"
+    r"prepare for (the |an |our )?(audit|audti)|"
+    r"how long (will|would|does) it take|roadmap|plan of action)\b"
 )
+# "complience" / "complaince" / "audti" typos are tolerated (bounded literals).
 _COMPLIANCE_RE = _re(
-    r"\b(audit\w*|complian\w*|certif\w*|accredit\w*|maturity|framework|uplift|"
-    r"regulat\w*|assessment)\b"
+    r"\b(audit\w*|audti\w*|complian\w*|complience\w*|complaince\w*|certif\w*|"
+    r"accredit\w*|maturity|framework|uplift|regulat\w*|assessment|"
+    r"(get|become|be) complaint)\b"
 )
-_AUDIT_RE = _re(r"\baudit\w*\b")
+# Vague goals with no framework named ("I need compliance", "we want to get
+# certified", "how do I secure my company", "help us get ready for our audit").
+_GOAL_RE = _re(
+    r"\b((we|i) (need|want|have|must)( to)? (get |be |become |achieve |meet )?"
+    r"(compliance|compliant|complience|certified|certification|accredited)|"
+    r"(improve|strengthen|lift|uplift|harden) (our|my|the) (security|cyber|posture)|"
+    r"how (do|can|should) (i|we) (secure|protect|harden) (my|our|the) "
+    r"(company|business|organi[sz]ation|tenant|environment|data)|"
+    r"(we|i)( have| 've| got)? an? (upcoming |external |internal )?(audit|audti)( coming up| soon| next \w{1,10})?|"
+    r"help (us|me) (to )?(get ready|prepare|be ready)|"
+    r"(get|be) ready for (the |an? |our |my )?(audit|audti))\b"
+)
+_AUDIT_RE = _re(r"\b(audit|audti)\w*\b")
 
 SLOTS: tuple[SlotSpec, ...] = (
     SlotSpec(
@@ -359,7 +437,8 @@ _SLOTS_BY_ID = {s.id: s for s in SLOTS}
 def _missing_slots(query: str) -> tuple[str, ...]:
     """Open details of a compliance planning request; () when it is not one."""
     query = _scan_text(query)
-    if not (_PLANNING_RE.search(query) and _COMPLIANCE_RE.search(query)):
+    planning = _PLANNING_RE.search(query) and _COMPLIANCE_RE.search(query)
+    if not (planning or _GOAL_RE.search(query)):
         return ()
     if any(_hit(e.pattern, query) for e in CATALOGUE):
         return ()
@@ -426,34 +505,130 @@ _COMPARISON_RE = _re(
     r"than (it|that|this|them|those)|compared? (to|with) (it|that|this|them)|"
     r"which one|both of them)\b"
 )
+# "The one you mentioned above", "the previous one", "the second one", "that
+# product", "earlier": a pointer back at the previous answer (literals only).
+_BACKREF_RE = _re(
+    r"\b(the one (you )?(mentioned|above|before|earlier)|"
+    r"the (previous|last|former|latter|first|second|third) "
+    r"(one|option|service|product|framework)|"
+    r"that (product|service|framework|option)|"
+    r"the (product|service|framework|option) (above|you mentioned)|"
+    r"(mentioned|said|discussed) (above|earlier|before)|earlier|above)\b"
+)
 # Capitalised word of 2+ characters (acronyms, product names, Titlecase).
 _PROPER_RE = re.compile(r"\b[A-Z][A-Za-z0-9]+\b")
 
 
-_COMMON = _SCAFFOLD | {"i", "we", "our", "you", "your", "my", "hi", "hello", "please"}
+_COMMON = (
+    _SCAFFOLD
+    | _REFERENTS
+    | {
+        "i",
+        "we",
+        "our",
+        "you",
+        "your",
+        "my",
+        "hi",
+        "hello",
+        "please",
+        "he",
+        "she",
+        "his",
+        "her",
+        "there",
+        "here",
+        "yes",
+        "no",
+        "sure",
+        "thanks",
+        "thank",
+        "cheers",
+        "great",
+        "good",
+        "if",
+        "or",
+        "not",
+        "for",
+        "to",
+        "of",
+        "in",
+        "on",
+        "with",
+        "any",
+        "some",
+        "all",
+        "hey",
+    }
+)
 
 
-def _subjects(text: str) -> set[str]:
-    """Named subjects: catalogue services/frameworks and proper nouns."""
+def _brand_subjects(text: str) -> tuple[set[str], str]:
+    """Brand names found (case-insensitive) and ``text`` with them removed."""
+    found = {
+        "exigo" if m.group(0).lower().startswith("exigo") else "deployiq"
+        for m in BRAND_RE.finditer(text)
+    }
+    return found, BRAND_RE.sub(" ", text)
+
+
+def _subjects(text: str, *, brand: bool = True) -> set[str]:
+    """Named subjects: catalogue services/frameworks, brands and proper nouns.
+
+    Catalogue and brand terms match case-insensitively ("exigo", "e8", "iso").
+    ``brand=False`` leaves brand names to the proper-noun rule (answer shape).
+    """
     text = _scan_text(text)
     found: set[str] = set()
     for entry in CATALOGUE:
         if _hit(entry.pattern, text):
             found.add(entry.label)
             text = _strip(entry.pattern, text)
+    if brand:
+        brands, text = _brand_subjects(text)
+        found |= brands
     # Proper nouns after the first word (sentence case is not a name).
     rest = " ".join(text.split()[1:])
     found |= {m.lower() for m in _PROPER_RE.findall(rest) if m.lower() not in _COMMON}
     return found
 
 
+def _catalogue_subjects(text: str) -> set[str]:
+    """Services/frameworks and brand names only (no capitalised-word guesses)."""
+    text = _scan_text(text)
+    found = {e.label for e in CATALOGUE if e.offering and _hit(e.pattern, text)}
+    return found | _brand_subjects(text)[0]
+
+
 def _history_subjects(history: list[ChatTurn] | None) -> set[str]:
-    """Subjects of the visitor's turns and of real answers (not fallbacks)."""
+    """Subjects of the visitor's turns and of real answers (not fallbacks).
+
+    Only catalogue services and brand names count: capitalised sentence-initial
+    words ("It", "Thanks") are not subjects, and greetings name nothing.
+    """
     found: set[str] = set()
+    greeted = False  # the canned reply to a greeting lists topics, not subjects
     for turn in history or []:
-        if turn.role == "user" or turn.outcome == _ANSWERED:
-            found |= _subjects(turn.content)
+        if turn.role == "user":
+            greeted = (
+                detect_conversational_intent(turn.content[:_MAX_SCAN_CHARS]) is not None
+            )
+        if greeted or (turn.role != "user" and turn.outcome != _ANSWERED):
+            continue
+        found |= _catalogue_subjects(turn.content)
     return found
+
+
+def _last_answer_subject_count(history: list[ChatTurn] | None) -> int:
+    """Distinct catalogue services in the last assistant answer (0 if none)."""
+    for turn in reversed(history or []):
+        if turn.role != "assistant":
+            continue
+        if turn.outcome not in (None, _ANSWERED):
+            return 0
+        text = _scan_text(turn.content)
+        return sum(1 for e in CATALOGUE if e.offering and _hit(e.pattern, text))
+    return 0
 
 
 def _dangling_pronoun(query: str) -> bool:
@@ -466,6 +641,53 @@ def _dangling_pronoun(query: str) -> bool:
         if word not in _SCAFFOLD:
             return False
     return False
+
+
+# A cost/time question that names nothing at all ("pricing?", "how much?").
+_COST_TIME_RE = _re(
+    r"\b(cost\w*|price\w*|pricing|fees?|quotes?|charge\w*|pay|expensive|cheap|"
+    r"how long|how much|timeline|how (quickly|fast)|duration)\b"
+)
+_COST_TIME_WORDS = frozenset(
+    {
+        "cost",
+        "costs",
+        "price",
+        "prices",
+        "pricing",
+        "fee",
+        "fees",
+        "quote",
+        "quotes",
+        "charge",
+        "charges",
+        "pay",
+        "take",
+        "takes",
+        "timeline",
+        "duration",
+        "expensive",
+        "cheap",
+        "quickly",
+        "fast",
+        "you",
+        "your",
+        "there",
+        "any",
+        "per",
+        "for",
+        "to",
+    }
+)
+
+
+def _bare_cost_or_time(query: str) -> bool:
+    """Only cost/time words and scaffolding: nothing says what it is about."""
+    scan = _scan_text(query)
+    if not _COST_TIME_RE.search(scan):
+        return False
+    words = (w.lower() for w in _WORD_RE.findall(scan))
+    return all(w in _SCAFFOLD or w in _COST_TIME_WORDS for w in words)
 
 
 def assess(
@@ -486,12 +708,27 @@ def assess(
     missing = _missing_slots(query)
     if missing:
         return Assessment(AmbiguityKind.SLOTS, missing)
-    known = _subjects(query) | _history_subjects(history)
+    # Company facts ("where are they located?") and generic one-product
+    # questions ("how does it work?") are answered, not asked back.
+    if COMPANY_FACT_RE.search(query) or GENERIC_PRODUCT_RE.match(query):
+        return Assessment()
+    return Assessment(_reference_kind(query, history))
+
+
+def _reference_kind(query: str, history: list[ChatTurn] | None) -> AmbiguityKind:
+    """Referent / comparison ambiguity of a question that names no framework."""
+    named = _subjects(query)
+    if _BACKREF_RE.search(query) and not named:
+        # "the one you mentioned above": resolved only when the last answer
+        # named exactly one service; otherwise ask which one is meant.
+        one = _last_answer_subject_count(history) == 1
+        return AmbiguityKind.NONE if one else AmbiguityKind.REFERENT
+    known = named | _history_subjects(history)
     if _COMPARISON_RE.search(query) and len(known) < _MIN_COMPARED:
-        return Assessment(AmbiguityKind.COMPARISON)
-    if _dangling_pronoun(query) and not known:
-        return Assessment(AmbiguityKind.REFERENT)
-    return Assessment()
+        return AmbiguityKind.COMPARISON
+    if (_dangling_pronoun(query) or _bare_cost_or_time(query)) and not known:
+        return AmbiguityKind.REFERENT
+    return AmbiguityKind.NONE
 
 
 # ---------------------------------------------------------------------------
@@ -520,6 +757,18 @@ def _service_question(
             ),
         )
     scan = _scan_text(query)
+    if _COST_RE.search(scan) and _TIME_RE.search(scan):
+        # Cost AND time in one message: one combined, multi-select question.
+        return (
+            f"{brand} offers several services; let's pin down which ones you mean.",
+            ClarificationQuestion(
+                id="Q1",
+                header="Service",
+                question="Which services would you like pricing and timelines for?",
+                multi_select=True,
+                options=options,
+            ),
+        )
     if _COST_RE.search(scan):
         text = "Which service would you like pricing for?"
     elif _TIME_RE.search(scan):
@@ -577,6 +826,13 @@ def _slot_question(
     )
 
 
+def _join_labels(labels: list[str]) -> str:
+    """ "A, B and C": never implies the list is everything DeployIQ does."""
+    if len(labels) < _MIN_COMPARED:
+        return "".join(labels)
+    return f"{', '.join(labels[:-1])} and {labels[-1]}"
+
+
 def slot_clarification(
     query: str, slot_ids: tuple[str, ...], sources: list[SourceChunk]
 ) -> Clarification | None:
@@ -585,9 +841,10 @@ def slot_clarification(
     questions: list[ClarificationQuestion] = []
     labels: list[str] = []
     if FRAMEWORK_SLOT in slot_ids:
-        options = service_options(sources, frameworks_only=True)
-        if len(options) >= settings.clarify_min_options:
-            labels = [o.label for o in options]
+        options = framework_options(sources)
+        # At least ``clarify_min_options`` real options besides "Not sure".
+        if len(options) > settings.clarify_min_options:
+            labels = offering_labels()
             questions.append(
                 ClarificationQuestion(
                     id="Q1",
@@ -610,7 +867,7 @@ def slot_clarification(
     if not questions:
         return None
     brand = settings.brand_name
-    covers = f" {brand} covers {', '.join(labels)}." if labels else ""
+    covers = f" {brand} helps with {_join_labels(labels)}." if labels else ""
     return Clarification(
         preamble=(
             f"Happy to help you get ready.{covers} A few quick details will let me "

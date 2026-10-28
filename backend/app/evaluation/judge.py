@@ -16,7 +16,9 @@ Notes
   stronger) model, add ``azure_judge_deployment_name`` to Settings - it is
   picked up automatically via ``getattr`` below; no other change needed.
 * Each judged case costs one extra LLM call, so this is off by default.
-* A judge failure returns ``None`` and never fails a case on its own.
+* A judge failure returns ``None``. The evaluator treats that as a failed case
+  (``judge_error``) unless ``judge_failure_fails`` is turned off, so an outage
+  cannot silently pass a judged run.
 """
 
 from __future__ import annotations
