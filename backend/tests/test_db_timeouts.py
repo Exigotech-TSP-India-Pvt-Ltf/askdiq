@@ -8,20 +8,18 @@ table behind it, and request sessions had no statement cap.
 from __future__ import annotations
 
 import functools
-import os
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.routing import RouteContext
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import DBAPIError, OperationalError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from app.core import database
 from app.core.concurrency import ScopedRunner, get_scoped_runner
@@ -145,57 +143,72 @@ def test_backoff_is_capped() -> None:
 
 
 @pytest.fixture
-def sync_engine() -> Iterator[Engine]:
-    url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
-    engine = create_engine(url, poolclass=NullPool)
+async def lock_engine() -> AsyncIterator[AsyncEngine]:
+    engine = new_engine()
+    await require_postgres(engine)
     try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-    except Exception as exc:
-        engine.dispose()
-        if os.environ.get("CI"):
-            raise
-        pytest.skip(f"Postgres not reachable locally: {type(exc).__name__}")
-    yield engine
-    engine.dispose()
+        yield engine
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture
-def locked_table(sync_engine: Engine) -> Iterator[tuple[str, Callable[[], None]]]:
+async def locked_table(
+    lock_engine: AsyncEngine,
+) -> AsyncIterator[tuple[str, AsyncConnection]]:
     """A table another session holds ACCESS SHARE on (blocks any ALTER)."""
     table = f"lock_probe_{uuid.uuid4().hex[:12]}"
-    with sync_engine.begin() as conn:
-        conn.execute(text(f"CREATE TABLE {table} (id int)"))
-    holder = sync_engine.connect()
-    holder.execute(text(f"LOCK TABLE {table} IN ACCESS SHARE MODE"))
+    async with lock_engine.begin() as conn:
+        await conn.execute(text(f"CREATE TABLE {table} (id int)"))
+    holder = await lock_engine.connect()
+    await holder.execute(text(f"LOCK TABLE {table} IN ACCESS SHARE MODE"))
     try:
-        yield table, holder.rollback
+        yield table, holder
     finally:
-        holder.close()
-        with sync_engine.begin() as conn:
-            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+        await holder.close()
+        async with lock_engine.begin() as conn:
+            await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+
+
+def _alter_attempt(
+    conn: Connection, table: str, on_attempt: Callable[[Connection], None]
+) -> None:
+    """One migration attempt on ``conn`` (rolled back when it fails)."""
+    try:
+        apply_migration_timeouts(conn, lock_timeout_ms=200, statement_timeout_ms=0)
+        on_attempt(conn)
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN extra int"))
+        conn.commit()
+    finally:
+        conn.rollback()
 
 
 @pytest.mark.db
-def test_blocked_migration_fails_fast_and_retries(
-    sync_engine: Engine, locked_table: tuple[str, Callable[[], None]]
+async def test_blocked_migration_fails_fast_and_retries(
+    lock_engine: AsyncEngine, locked_table: tuple[str, AsyncConnection]
 ) -> None:
-    table, _release = locked_table
+    table, _holder = locked_table
     attempts: list[str] = []
     sleeps: list[float] = []
 
-    def upgrade() -> None:
-        with sync_engine.connect() as conn:
-            apply_migration_timeouts(conn, lock_timeout_ms=200, statement_timeout_ms=0)
-            attempts.append(conn.execute(text("SHOW lock_timeout")).scalar_one())
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN extra int"))
-            conn.commit()
+    def body(conn: Connection) -> None:
+        run_with_lock_retries(
+            lambda: _alter_attempt(
+                conn,
+                table,
+                lambda c: attempts.append(
+                    c.execute(text("SHOW lock_timeout")).scalar_one()
+                ),
+            ),
+            retries=2,
+            base_backoff_seconds=0.01,
+            sleep=sleeps.append,
+        )
 
     started = time.monotonic()
-    with pytest.raises(OperationalError) as info:
-        run_with_lock_retries(
-            upgrade, retries=2, base_backoff_seconds=0.01, sleep=sleeps.append
-        )
+    async with lock_engine.connect() as conn:
+        with pytest.raises(DBAPIError) as info:
+            await conn.run_sync(body)
     elapsed = time.monotonic() - started
 
     assert is_lock_timeout(info.value)
@@ -205,22 +218,22 @@ def test_blocked_migration_fails_fast_and_retries(
 
 
 @pytest.mark.db
-def test_blocked_migration_succeeds_once_the_lock_is_released(
-    sync_engine: Engine, locked_table: tuple[str, Callable[[], None]]
+async def test_blocked_migration_succeeds_once_the_lock_is_released(
+    lock_engine: AsyncEngine, locked_table: tuple[str, AsyncConnection]
 ) -> None:
-    table, release = locked_table
+    table, holder = locked_table
     attempts: list[int] = []
 
-    def upgrade() -> None:
-        attempts.append(1)
-        with sync_engine.connect() as conn:
-            apply_migration_timeouts(conn, lock_timeout_ms=200, statement_timeout_ms=0)
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN extra int"))
-            conn.commit()
+    def body(conn: Connection) -> None:
+        run_with_lock_retries(
+            lambda: _alter_attempt(conn, table, lambda _c: attempts.append(1)),
+            retries=3,
+            base_backoff_seconds=0,
+            sleep=lambda _s: holder.sync_connection.rollback(),
+        )
 
-    run_with_lock_retries(
-        upgrade, retries=3, base_backoff_seconds=0, sleep=lambda _s: release()
-    )
+    async with lock_engine.connect() as conn:
+        await conn.run_sync(body)
     assert len(attempts) == 2
 
 
