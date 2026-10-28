@@ -59,7 +59,6 @@ UNSAFE_PATTERNS = [
     rf"\s{{1,3}}(?:{_DET}\s{{1,3}}){{0,4}}(?:{_INSTR_NOUN}|{_RULE_NOUN})\b",
     rf"\b{_STRONG_VERB}\s{{1,3}}(?:everything|all)\s{{1,3}}"
     r"(?:above|before|prior|previous|you\s{1,3}(?:know|were\s{1,3}told))\b",
-    r"\bsystem\s{1,3}prompt\b",
 ]
 
 # Multilingual "ignore previous instructions" (es, fr, de).
@@ -82,14 +81,25 @@ _LEAK_VERB = (
     r"(?:print|repeat|show|dump|display|reveal|output|translate|summari[sz]e|"
     r"recite|paste|leak|disclose|tell\s{1,3}me|give\s{1,3}me|share|copy|read|list)"
 )
-_LEAK_PATTERNS = [
-    rf"\b{_LEAK_VERB}\b.{{0,30}}\b(?:your|ur)\s{{1,3}}"
+# The assistant's own: "your", "ur", "the assistant's", "the bot's".
+_OWN = r"(?:your|ur|(?:the\s{1,3})?(?:assistant|bot|chatbot|ai)'?s)"
+_LEAK_ADJ = (
     r"(?:(?:initial|original|full|entire|exact|hidden|secret|system|internal|"
-    r"developer)\s{1,3}){0,2}(?:instructions|prompt|system\s{1,3}message|"
-    r"context\s{1,3}window)\b",
-    rf"\b{_LEAK_VERB}\b.{{0,30}}\b(?:system|hidden|secret|internal|developer|"
-    r"initial)\s{1,3}(?:instructions|prompt|message|rules|config|configuration|"
-    r"guidelines|context)\b",
+    r"developer)\s{1,3}){0,2}"
+)
+_LEAK_PATTERNS = [
+    # Generic nouns (config, rules, context...) only count when owned.
+    rf"\b{_LEAK_VERB}\b.{{0,30}}\b{_OWN}\s{{1,3}}{_LEAK_ADJ}"
+    r"(?:instructions|prompt|system\s{1,3}message|context\s{1,3}window|"
+    r"config|configuration|rules|guidelines|context|message)\b",
+    # Unambiguous leak nouns, whether or not owned.
+    rf"\b{_LEAK_VERB}\b.{{0,30}}\b(?:system|hidden|secret|developer)\s{{1,3}}"
+    r"(?:instructions|prompt|message)\b",
+    # "what is your system prompt" (no verb).
+    rf"\b{_OWN}\s{{1,3}}(?:(?:initial|original|hidden|secret|system|internal|"
+    r"developer)\s{1,3}){1,2}(?:instructions|prompt|message|rules|guidelines)\b",
+    r"\bwhat\s{1,3}(?:were|are)\s{1,3}you\s{1,3}(?:told|instructed|programmed|"
+    r"given)\b.{0,30}\b(?:before|earlier|initially|at\s{1,3}the\s{1,3}start)\b",
     r"\b(?:repeat|print|show|output|copy|paste|recite|dump|display|echo|write)\b"
     r".{0,25}\b(?:everything|all|text|words|content|messages?)\s{1,3}"
     r"(?:above|before\s{1,3}this|prior|preceding|so\s{1,3}far)\b",
