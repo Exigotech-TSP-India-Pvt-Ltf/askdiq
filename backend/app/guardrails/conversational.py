@@ -22,8 +22,18 @@ _GREETING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Conversational fillers are short; anything longer is a real question. Every
+# pattern below is matched only after a length cap and uses bounded quantifiers.
+_MAX_CONVERSATIONAL_CHARS = 80
+
 _THANKS_RE = re.compile(
-    r"^\s*(thanks?|thank\s*you|thx|ty|cheers|appreciate\s*it)[\s!.,]*$",
+    r"^\s{0,3}(?:(?:ok(?:ay)?|great|cool|perfect|awesome|nice|brilliant|"
+    r"got\s{0,2}it|good|alright)[\s!.,]{1,4})?"
+    r"(?:thanks?|thank\s{0,2}(?:you|u)|thx|ty|cheers|appreciate\s{0,2}it)"
+    r"(?:\s{1,3}(?:a\s{1,3}lot|so\s{1,3}much|very\s{1,3}much|heaps|a\s{1,3}ton|"
+    r"again|mate|team|guys|everyone|"
+    r"for\s{1,3}(?:your\s{1,3})?(?:the\s{1,3})?(?:help|that|info(?:rmation)?)))?"
+    r"[\s!.,]{0,6}$",
     re.IGNORECASE,
 )
 
@@ -33,9 +43,13 @@ _FAREWELL_RE = re.compile(
 )
 
 _CAPABILITY_RE = re.compile(
-    r"^\s*(what\s*can\s*you\s*do|how\s*can\s*you\s*help(\s*me)?|"
-    r"what\s*do\s*you\s*do|who\s*are\s*you|what\s*are\s*you|"
-    r"help(\s*me)?|what\s*is\s*this)[\s?!.,]*$",
+    r"^\s{0,3}(?:what\s{0,2}can\s{0,2}(?:you|u)\s{0,2}do|"
+    r"how\s{0,2}can\s{0,2}(?:you|u)\s{0,2}help(?:\s{1,3}me)?|"
+    r"what\s{0,2}do\s{0,2}(?:you|u)\s{0,2}do|who\s{0,2}are\s{0,2}(?:you|u)|"
+    r"what\s{0,2}are\s{0,2}(?:you|u)(?:\s{1,3}able\s{1,3}to\s{1,3}do)?|"
+    r"what\s{0,2}can\s{0,2}(?:you|u)\s{0,2}help(?:\s{1,3}me)?\s{1,3}with|"
+    r"(?:can|could)\s{0,2}(?:you|u)\s{0,2}help(?:\s{1,3}me)?|"
+    r"help(?:\s{1,3}me)?|what\s{0,2}is\s{0,2}this)[\s?!.,]{0,6}$",
     re.IGNORECASE,
 )
 
@@ -50,12 +64,12 @@ def get_greeting_response() -> str:
 
 def get_thanks_response() -> str:
     brand = get_settings().brand_name
-    return f"You're welcome! Let me know if you have any other questions about {brand}."
+    return f"You're welcome! Glad I could help with {brand}."
 
 
 def get_farewell_response() -> str:
     brand = get_settings().brand_name
-    return f"Goodbye! Feel free to come back anytime you have questions about {brand}."
+    return f"Goodbye, and thanks for stopping by {brand}. Take care!"
 
 
 def get_capability_response() -> str:
@@ -80,7 +94,7 @@ def detect_conversational_intent(query: str) -> str | None:
 
     text = query.strip()
 
-    if not text:
+    if not text or len(text) > _MAX_CONVERSATIONAL_CHARS:
         return None
 
     if _GREETING_RE.match(text):
