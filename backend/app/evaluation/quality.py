@@ -13,8 +13,10 @@ import re
 from collections.abc import Iterable, Sequence
 
 from app.core.stats import percentile
+from app.evaluation import style_quality as sq
 from app.evaluation.metrics import _matches
 from app.governance.pii import PATTERNS as PII_PATTERNS
+from app.guardrails.post_checks import is_decline_sentence
 
 # ---------------------------------------------------------------------------
 # Citation and attribution
@@ -335,3 +337,125 @@ def cost_usd(
     output_per_1m: float,
 ) -> float:
     return (input_tokens * input_per_1m + output_tokens * output_per_1m) / 1_000_000
+
+
+# ---------------------------------------------------------------------------
+# Human voice and citation discipline (both gated by ``EvalResult.passed``)
+# ---------------------------------------------------------------------------
+
+_DASHES = {"\u2014": "em dash", "\u2013": "en dash"}
+_VOICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (label, re.compile(pattern, re.IGNORECASE))
+    for label, pattern in (
+        ("next step label", r"\bnext\s{1,3}step\s{0,3}:"),
+        ("key points label", r"\bkey\s{1,3}points\b"),
+        ("based on", r"\bbased\s{1,3}on\b"),
+        ("feel free", r"\bfeel\s{1,3}free\b"),
+        ("marketing word", r"\b(?:comprehensive|robust|seamless|leverag\w{1,6})\b"),
+    )
+)
+# One hand-over line is natural; a second one is a pitch. ("Contact page" is
+# the fixed pointer inside the single canned line, so it is not counted.)
+_CONTACT_LINE_RE = re.compile(
+    r"\bspecialists?\b|\bget\s{1,3}in\s{1,3}touch\b|\breach\s{1,3}out\b|"
+    r"\bcontact\s{1,3}(?:us|one\s{1,3}of|our)\b",
+    re.IGNORECASE,
+)
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+_MARKER_ONLY_RE = re.compile(r"(?:\s{0,3}\[\d{1,2}\]){1,6}\s{0,3}[.!?]?")
+_MARKER_RE = re.compile(r"\[(\d{1,2})\]")
+
+
+def reply_sentences(answer: str) -> list[str]:
+    """Sentences of a reply; a marker split off by "claim. [1]" rejoins it."""
+
+    sentences: list[str] = []
+    for raw in _SENTENCE_RE.split(answer.strip()):
+        part = raw.strip()
+        if not part:
+            continue
+        if sentences and _MARKER_ONLY_RE.fullmatch(part):
+            sentences[-1] += " " + part
+        else:
+            sentences.append(part)
+    return sentences
+
+
+def contact_line_count(answer: str) -> int:
+    """Sentences that hand the reader over to a specialist / contact."""
+
+    return sum(1 for s in reply_sentences(answer) if _CONTACT_LINE_RE.search(s))
+
+
+def is_pure_decline(answer: str) -> bool:
+    """Every sentence of a non-empty reply declines (it asserts no fact)."""
+
+    sentences = reply_sentences(answer)
+    return bool(sentences) and all(is_decline_sentence(s) for s in sentences)
+
+
+def voice_violations(answer: str, source_count: int = 0) -> list[str]:
+    """Why a reply does not sound like a person (empty list: it does).
+
+    Flags dashes, form-style labels, stock-AI phrases, marketing words,
+    internal jargon, more than one specialist line, a decline sentence that
+    still carries a ``[n]`` marker, and a wholly-declining reply that still
+    returns sources.
+    """
+
+    if not answer.strip():
+        return []
+    found = [f"{name} ({ch!r})" for ch, name in _DASHES.items() if ch in answer]
+    found += [label for label, rx in _VOICE_PATTERNS if rx.search(answer)]
+    covered = {*sq.INTERNAL_WORDING, "comprehensive", "leverage", "robust", "seamless"}
+    found += [
+        f"stock phrase: {p}"
+        for p in sq.banned_phrases_in(answer)
+        if p.lower() not in covered
+    ]
+    found += [f"internal wording: {w}" for w in sq.internal_wording_in(answer)]
+    if contact_line_count(answer) > 1:
+        found.append("more than one specialist/contact line")
+    sentences = reply_sentences(answer)
+    if any(_MARKER_RE.search(s) and is_decline_sentence(s) for s in sentences):
+        found.append("decline sentence carries a [n] marker")
+    if source_count and is_pure_decline(answer):
+        found.append("decline reply returns sources")
+    return found
+
+
+def uncited_documents(
+    answer: str,
+    source_documents: Iterable[str],
+    citations: Iterable[tuple[int, str]],
+) -> list[str]:
+    """Returned source documents that no inline ``[n]`` marker cites.
+
+    ``citations`` are ``(n, document_id)`` pairs; a marker cites a document
+    when its number resolves to a citation of that document.
+    """
+
+    numbers = {int(n) for n in _MARKER_RE.findall(answer)}
+    cited = {doc for n, doc in citations if n in numbers}
+    return sorted({d for d in source_documents if d not in cited})
+
+
+def citation_problems(
+    answer: str,
+    source_documents: Sequence[str],
+    citations: Iterable[tuple[int, str]],
+    *,
+    declined: bool,
+) -> list[str]:
+    """Citation discipline of one reply (empty list: clean).
+
+    A decline, fallback or clarification carries zero sources; any other reply
+    that returns sources must cite every one of their documents by marker.
+    """
+
+    if not source_documents:
+        return []
+    if declined:
+        return ["decline/fallback/clarification reply returns sources"]
+    uncited = uncited_documents(answer, source_documents, citations)
+    return [f"source not cited by a marker: {d}" for d in uncited]

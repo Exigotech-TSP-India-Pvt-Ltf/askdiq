@@ -38,6 +38,11 @@ allow_clarification        a clarification card OR a direct answer both satisfy
                            the case (direct answers still face the keywords)
 expect_clarification_headers  header labels the clarification card must include
 expect_no_sources          the reply must carry no sources/citations
+expect_http_status         the API rejects the request before the pipeline (422
+                           for an over-length query): the evaluator checks the
+                           request schema plus the pure ``check_length`` flag
+                           instead of running the pipeline, and a live run
+                           must expect that status, not a guardrail answer.
 known_issue                a real, currently-failing behaviour. The case still
                            runs and is reported, but is excluded from the
                            pass-rate so CI isn't red for an already-known bug.
@@ -55,7 +60,11 @@ from app.evaluation.dataset_extra import (
 from app.evaluation.dataset_extra import (
     NO_PRICE_FIGURES as _NO_PRICE_FIGURES,
 )
-from app.evaluation.dataset_extra import build_extra_cases, build_v2_cases
+from app.evaluation.dataset_extra import (
+    build_extra_cases,
+    build_v2_cases,
+    build_v3_cases,
+)
 
 CaseType = Literal[
     "clarification",
@@ -108,6 +117,9 @@ class EvalCase:
     # Tab labels (``ClarificationQuestion.header``) the card must include.
     expect_clarification_headers: list[str] = field(default_factory=list)
     expect_no_sources: bool = False
+    # The API refuses the request itself with this HTTP status (e.g. 422 for a
+    # query over ``max_query_length``), so the pipeline is never reached.
+    expect_http_status: int | None = None
 
     def replay_turns(self) -> list[str]:
         """User turns a live run sends first, in order, to rebuild ``history``."""
@@ -660,6 +672,9 @@ _GUARDRAIL_CASES: list[EvalCase] = [
         case_type="spam",
         expect_grounded=False,
         expect_flags_any=["query_too_long"],
+        # POST /query rejects > max_query_length with 422 (request schema), so
+        # no guardrail reply exists to inspect; check_length still flags it.
+        expect_http_status=422,
     ),
     # --- genuine questions that must NOT be blocked ------------------------
     EvalCase(
@@ -812,4 +827,5 @@ EVAL_CASES: list[EvalCase] = [
     *_FOLLOWUP_CASES,
     *build_extra_cases(EvalCase),
     *build_v2_cases(EvalCase),
+    *build_v3_cases(EvalCase),
 ]

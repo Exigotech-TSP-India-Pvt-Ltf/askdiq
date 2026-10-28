@@ -14,7 +14,13 @@ Gated: groundedness, guardrail flags, doc-level retrieval hit, expected /
 forbidden keywords (whole words; also on non-grounded replies), false
 abstention on answerable cases, clarification expectations, "no sources"
 expectations, internal wording (``style_quality.INTERNAL_WORDING``), a
-specialist contact step on not-covered replies, and, when --judge is used,
+specialist contact step on not-covered replies, human voice
+(``quality.voice_violations``: dashes, form labels, stock-AI / marketing
+words, jargon, a second contact line, a decline that cites), citation
+discipline (``quality.citation_problems``: every returned source cited by a
+marker; declines, fallbacks and clarification cards return no sources), an
+over-length query being rejected by the API schema (HTTP 422) and, when
+--judge is used,
 judge faithfulness AND relevance AND completeness (>= 4 by default) and the
 judge itself succeeding (a judge failure fails the case unless
 ``judge_failure_fails`` is turned off).
@@ -29,6 +35,8 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 
+from pydantic import ValidationError
+
 from app.core.config import get_settings
 from app.core.stats import percentile
 from app.evaluation import metrics as m
@@ -37,13 +45,14 @@ from app.evaluation import style_quality as sq
 from app.evaluation.dataset import EvalCase
 from app.evaluation.judge import JudgeScores, judge_answer
 from app.evaluation.judge_extra import DeepJudgeScores, deep_judge
+from app.guardrails.pre_checks import check_length
 from app.harness.citations import strip_markers
 from app.harness.clarify import CLARIFY_OUTCOME
 from app.harness.orchestrator import run_query
 from app.harness.prompts import _TOKEN_ENCODING
 from app.retrieval.reranker import rerank_timing_sink
 from app.retrieval.vector_store import VectorStore
-from app.schemas.query import ChatTurn
+from app.schemas.query import ChatTurn, QueryRequest
 
 _NOISY_RETRIEVAL_RATIO = 0.5
 _JUDGE_MIN_SCORE = 4
@@ -194,6 +203,9 @@ class EvalResult:
     contact_step_missing: bool = False
     judge_requested: bool = False  # the judge was asked to grade this case
     judge_error: bool = False  # ... and failed (no usable scores)
+    voice_violations: list[str] = field(default_factory=list)
+    citation_problems: list[str] = field(default_factory=list)
+    citation_ok: bool | None = None  # None: no sources to check
 
     @property
     def known_issue(self) -> str | None:
@@ -221,6 +233,8 @@ class EvalResult:
             and self.sources_ok is not False
             and not self.internal_wording
             and not self.contact_step_missing
+            and not self.voice_violations
+            and self.citation_ok is not False
         )
 
     def to_dict(self) -> dict:
@@ -250,6 +264,9 @@ class EvalResult:
             "sources_ok": self.sources_ok,
             "internal_wording": self.internal_wording,
             "contact_step_missing": self.contact_step_missing,
+            "voice_violations": self.voice_violations,
+            "citation_problems": self.citation_problems,
+            "citation_ok": self.citation_ok,
             "false_abstention": self.false_abstention,
             "error": self.error,
             "deep_judge": self.deep.as_dict() if self.deep else None,
@@ -389,12 +406,54 @@ class EvaluationReport:
             "internal_wording": sorted({w for r in scored for w in r.internal_wording}),
             "n_internal_wording": sum(1 for r in scored if r.internal_wording),
             "n_contact_step_missing": sum(1 for r in scored if r.contact_step_missing),
+            "n_voice_violations": sum(1 for r in scored if r.voice_violations),
+            "n_citation_problems": sum(1 for r in scored if r.citation_ok is False),
             "n_false_abstention": sum(1 for r in scored if r.false_abstention),
             "n_judge_errors": sum(1 for r in scored if r.judge_error),
             "n_clarification_mismatch": sum(
                 1 for r in scored if r.clarification_ok is False
             ),
         }
+
+    def gate_summary(self) -> dict[str, dict]:
+        """Pass counts per gate: retrieval, grounding, citations, voice,
+        clarification and safety (``n`` checked, ``passed``, ``rate``)."""
+
+        scored = self.scored
+        checks: dict[str, list[bool]] = {
+            "retrieval": [r.retrieval_ok for r in scored if r.retrieval_ok is not None],
+            "grounding": [r.grounded_ok for r in scored],
+            "citations": [
+                r.citation_ok is not False and r.sources_ok is not False
+                for r in scored
+                if r.citation_ok is not None or r.sources_ok is not None
+            ],
+            "voice": [not r.voice_violations for r in scored if r.answer.strip()],
+            "clarification": [
+                r.clarification_ok for r in scored if r.clarification_ok is not None
+            ],
+            "safety": [r.safety_ok for r in scored if r.safety_ok is not None],
+        }
+        return {
+            gate: {
+                "n": len(values),
+                "passed": sum(1 for v in values if v),
+                "rate": _rate(values),
+            }
+            for gate, values in checks.items()
+        }
+
+    def gate_minimums_failed(self, minimums: dict[str, float]) -> list[str]:
+        """Gates whose pass rate is below their minimum (0-1)."""
+
+        summary = self.gate_summary()
+        return sorted(
+            gate
+            for gate, minimum in minimums.items()
+            if gate in summary
+            and summary[gate]["rate"] is not None
+            and summary[gate]["rate"] < minimum
+        )
 
     def known_issue_ids(self) -> list[str]:
         """Ids of every known-issue case (always reported, never hidden)."""
@@ -406,6 +465,7 @@ class EvaluationReport:
         min_pass_rate: float | None,
         type_minimums: dict[str, float] | None = None,
         fail_on_known_issue: bool = False,
+        gate_minimums: dict[str, float] | None = None,
     ) -> list[str]:
         """Human-readable reasons the run must fail CI (empty: all gates pass)."""
 
@@ -420,6 +480,13 @@ class EvaluationReport:
             f"{t} pass rate {by_type[t]['pass_rate'] * 100:.1f}% is below the "
             f"required {(type_minimums or {})[t] * 100:.1f}%"
             for t in self.type_minimums_failed(type_minimums or {})
+        )
+        summary = self.gate_summary()
+        failures.extend(
+            f"{g} gate {summary[g]['passed']}/{summary[g]['n']} "
+            f"({summary[g]['rate'] * 100:.1f}%) is below the required "
+            f"{(gate_minimums or {})[g] * 100:.1f}%"
+            for g in self.gate_minimums_failed(gate_minimums or {})
         )
         if fail_on_known_issue and self.known_issue_results:
             failures.append(
@@ -689,6 +756,7 @@ class EvaluationReport:
             "n_known_issues": len(self.known_issue_results),
             "known_issue_ids": self.known_issue_ids(),
             "quality_gates": self.quality_gates(),
+            "gates": self.gate_summary(),
             "top_k": self.top_k,
             "pass_rate": self.pass_rate,
             "retrieval_recall": self.retrieval_recall,
@@ -778,6 +846,48 @@ def _error_result(
     )
 
 
+def schema_rejects(query: str) -> bool:
+    """True when the API's request schema refuses ``query`` (HTTP 422)."""
+
+    try:
+        QueryRequest(query=query)
+    except ValidationError:
+        return True
+    return False
+
+
+def _api_rejected_result(case: EvalCase, run_index: int) -> EvalResult:
+    """A case whose request the API rejects (HTTP 422) before any pipeline code.
+
+    The over-length guardrail flag is therefore unreachable through the API, so
+    the case passes when the schema rejects the query AND the pure length check
+    still flags it (defence in depth for callers that bypass the schema).
+    """
+
+    rejected = schema_rejects(case.query)
+    ok, flag = check_length(case.query, get_settings().max_query_length)
+    flags = [] if ok or flag is None else [flag]
+    return EvalResult(
+        case=case,
+        grounded=False,
+        confidence=0.0,
+        guardrail_flags=flags,
+        matched_docs=set(),
+        latency_ms=0.0,
+        stage_timings={},
+        answer_word_count=0,
+        answer="",
+        retrieval_ok=None,
+        grounded_ok=rejected and not case.expect_grounded,
+        flags_ok=(
+            any(f in flags for f in case.expect_flags_any)
+            if case.expect_flags_any
+            else True
+        ),
+        run_index=run_index,
+    )
+
+
 async def evaluate_case(
     case: EvalCase,
     vector_store: VectorStore,
@@ -789,6 +899,9 @@ async def evaluate_case(
     judge_min_completeness: int = _JUDGE_MIN_SCORE,
     judge_failure_fails: bool = True,
 ) -> EvalResult:
+    if case.expect_http_status is not None:
+        return _api_rejected_result(case, run_index)
+
     stage_timings: dict = {}
     settings = get_settings()
 
@@ -1011,6 +1124,25 @@ async def evaluate_case(
         response.grounded, response.answer, response.guardrail_flags, clarified
     ) and not sq.has_contact_step(response.answer)
 
+    # --- human voice and citation discipline --------------------------------
+    voice = q.voice_violations(response.answer, len(response.sources))
+    declined = (
+        clarified
+        or not response.grounded
+        or (did_abstain and q.is_pure_decline(response.answer))
+    )
+    citation_problems = (
+        q.citation_problems(
+            response.answer,
+            [s.document_id for s in response.sources],
+            [(c.n, c.document_id) for c in response.citations],
+            declined=declined,
+        )
+        if response.sources
+        else []
+    )
+    citation_ok = (not citation_problems) if response.sources else None
+
     return EvalResult(
         case=case,
         grounded=response.grounded,
@@ -1061,6 +1193,9 @@ async def evaluate_case(
         sources_ok=sources_ok,
         internal_wording=internal_wording,
         contact_step_missing=contact_step_missing,
+        voice_violations=voice,
+        citation_problems=citation_problems,
+        citation_ok=citation_ok,
         judge_requested=use_judge,
         judge_error=judge_error,
     )
