@@ -52,6 +52,7 @@ from app.harness.clarify import (
     plan_clarification,
     render_clarification_text,
 )
+from app.harness.decline import clean_declines
 from app.harness.prompts import _MAX_HISTORY_TURNS, call_llm
 from app.harness.style import resolve_style, use_style
 from app.harness.tone import polish_answer
@@ -175,7 +176,7 @@ def _clarification_response(
     *,
     request_id: str,
     latency_ms: float,
-    sources: list[SourceChunk],
+    sources: list[SourceChunk],  # noqa: ARG001 - kept for callers; cards carry none
     confidence: float,
     follow_up_detected: bool,
     history_turns_sent: int,
@@ -203,9 +204,9 @@ def _clarification_response(
     )
     return QueryResponse(
         answer=render_clarification_text(clarification),
-        # Kept for the trace (which evidence was ambiguous); the UI shows no
-        # citation chips for a non-answer.
-        sources=sources,
+        # A question is not an answer: no sources or citation chips. The
+        # options keep their document ids inside the clarification payload.
+        sources=[],
         # The options come straight from retrieved documents, nothing invented.
         grounded=True,
         confidence=round(confidence, 4),
@@ -783,8 +784,9 @@ async def run_query(
             token_details=token_details or None,
         )
 
+    answer, declined = clean_declines(answer, query)
     plain_answer = strip_markers(answer)
-    if is_refusal(plain_answer):
+    if declined or is_refusal(plain_answer):
         # A decline ("not covered", "talk to a specialist") is not a grounded
         # answer: label it like other unanswered turns (grounded=False), and
         # never attach the retrieved chunks as sources or citation markers.
