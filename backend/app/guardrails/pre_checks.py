@@ -285,6 +285,13 @@ _PROMO_PHRASES_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Promo/deal wording that makes a single link spam ("cheap pills", "great deals").
+_URL_PROMO_RE = re.compile(
+    r"\b(?:great\s{1,3}deals?|cheap|pills?|buy\s{1,3}now|free\s{1,3}money|"
+    r"click\s{1,3}here|limited\s{1,3}offer|discount(?:s|ed)?)\b",
+    re.IGNORECASE,
+)
+
 _RUN_RE = re.compile(r"(.)\1{2,}")  # 3+ identical chars in a row
 _VOWEL_RE = re.compile(r"[aeiouy]", re.IGNORECASE)
 _CONSONANT_CLUSTER_RE = re.compile(r"[bcdfghjklmnpqrstvwxz]{5,}", re.IGNORECASE)
@@ -301,7 +308,7 @@ ALLOWED_ACRONYMS = {
     "sdk", "iam", "siem", "edr", "ml6", "llm", "rag", "ai", "db", "ip", "url",
     "id", "os", "vm", "gdpr", "asd", "hipaa", "ism", "nist", "pci", "nis2",
     "dss", "iso", "cis", "dora", "ccpa", "fedramp", "irap", "pspf", "essential8",
-    "cmmc", "sox", "vpn", "dns", "tls", "ssl", "ssh", "pam", "dlp", "mdm",
+    "cmmc", "sox", "mtls", "vpn", "dns", "tls", "ssl", "ssh", "pam", "dlp", "mdm",
     "xdr", "mdr", "soar", "grc", "cve", "oidc", "ldap", "scim", "kms", "hsm",
     "ztna", "casb", "waf", "sla", "kpi", "roi", "saas", "paas", "iaas", "csp",
     "cspm", "ciem", "sbom", "ssdlc", "tcp", "udp", "http", "https", "rest",
@@ -585,8 +592,14 @@ def check_spam(
     if not text:
         return True, None
 
-    # Scam wording alone, or 2+ links, is spam; a single link is not.
-    if _PROMO_PHRASES_RE.search(text) or len(_URL_RE.findall(text)) >= 2:
+    # Scam wording alone, 2+ links, or a link plus promo wording is spam; a bare
+    # single link is not.
+    urls = _URL_RE.findall(text)
+    if (
+        _PROMO_PHRASES_RE.search(text)
+        or len(urls) >= 2
+        or (urls and _URL_PROMO_RE.search(text))
+    ):
         return False, "spam_detected"
 
     # Punctuation or symbols only (e.g. "???", "---", "!?!?")
@@ -639,12 +652,64 @@ def check_spam(
     return True, None
 
 
+_SANITIZE_MIN_VALID_WORDS = 2
+_FUZZY_MIN_WORD_LEN = 4
+_FUZZY_LONG_TOKEN_LEN = 5
+_FUZZY_MAX_TOKEN_LEN = 40
+
+
+def _edit_distance_within(a: str, b: str, limit: int) -> bool:
+    """True when the Levenshtein distance of a and b is at most limit."""
+    if abs(len(a) - len(b)) > limit:
+        return False
+    previous = list(range(len(b) + 1))
+    for i, ch_a in enumerate(a, start=1):
+        current = [i]
+        for j, ch_b in enumerate(b, start=1):
+            current.append(
+                min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + (ch_a != ch_b),
+                )
+            )
+        previous = current
+    return previous[-1] <= limit
+
+
+def _is_near_catalogue_word(letters: str) -> bool:
+    """A typo of a real word ('trst' -> 'trust') is kept, never stripped."""
+    if len(letters) > _FUZZY_MAX_TOKEN_LEN:
+        return False
+    limit = 2 if len(letters) >= _FUZZY_LONG_TOKEN_LEN else 1
+    vocabulary = _COMMON_WORDS | _KNOWN_TERMS | ALLOWED_ACRONYMS
+    return any(
+        len(word) >= _FUZZY_MIN_WORD_LEN and _edit_distance_within(letters, word, limit)
+        for word in vocabulary
+    )
+
+
+def _is_strippable_junk(token: str) -> bool:
+    """True only for tokens that are clearly junk, not words, acronyms or typos."""
+    original = _clean_token(token)
+    if not is_gibberish_token(original):
+        return False
+    # Acronym/technical casing: mTLS, GDPR, SIEM, DeployIQ.
+    if any(ch.isupper() for ch in original[1:]):
+        return False
+    letters = _collapse_runs(re.sub(r"[^a-z]", "", original.lower()))
+    # English-plausible spelling ('owns'): vowel present, no impossible pairs.
+    if _VOWEL_RE.search(letters) and _rare_pair_count(letters) == 0:
+        return False
+    return not _is_near_catalogue_word(letters)
+
+
 def sanitize_query(query: str) -> tuple[str, list[str]]:
     """Strip stray junk tokens when valid question content exists.
 
-    Only tokens that are clearly junk (keyboard mash, impossible letter
-    combinations) are removed; real words and acronyms are always kept and an
-    unchanged query is returned verbatim.
+    Conservative: a token is removed only when it is clearly junk (not an
+    English-plausible word, acronym/brand term, or near-typo of a known word)
+    and at least two other words remain. Otherwise the query is kept as typed.
 
     Returns (sanitized_query, pre_flags).
     """
@@ -654,9 +719,9 @@ def sanitize_query(query: str) -> tuple[str, list[str]]:
 
     # e.g. "what is deployiq? akjj" -> "what is deployiq?"
     words = query.strip().split()
-    valid_words = [w for w in words if not is_gibberish_token(w)]
+    valid_words = [w for w in words if not _is_strippable_junk(w)]
 
-    if len(valid_words) >= 2 and len(valid_words) < len(words):
+    if _SANITIZE_MIN_VALID_WORDS <= len(valid_words) < len(words):
         return " ".join(valid_words).strip(), []
 
     return query.strip(), []
