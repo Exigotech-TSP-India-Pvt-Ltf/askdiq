@@ -9,10 +9,14 @@ import asyncio
 import re
 import time
 import uuid
+from collections.abc import Iterable
+from contextvars import ContextVar
+from dataclasses import dataclass
 from functools import lru_cache
 
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
+from app.guardrails.post_checks import is_off_topic_by_overlap
 from app.guardrails.pre_checks import is_gibberish_token
 from app.knowledge.links import citation_url
 from app.knowledge.settings_service import current_knowledge_settings
@@ -25,6 +29,7 @@ _MAX_SHORT_INPUT_CHARS = 2
 _SHORT_DOMAIN_TERMS = {"e8", "ai", "ip", "db"}
 _MIN_SUBQUESTIONS = 2
 _MIN_CLAUSE_WORDS = 3
+_MAX_PARTS = 3
 
 logger = get_logger(__name__)
 
@@ -150,6 +155,140 @@ def contextualize_query(query: str, history: list[ChatTurn] | None) -> str:
     return " ".join(parts) + " " + query
 
 
+_HAS_WORD_RE = re.compile(r"[A-Za-z0-9]")
+# A clause that opens like its own question or request.
+_ASK_START_RE = re.compile(
+    r"^(?:what|who|whom|whose|where|when|why|how|which|can|could|do|does|is|are|"
+    r"will|would|should|tell|explain)\b",
+    re.IGNORECASE,
+)
+_ALSO_SPLIT_RE = re.compile(r"\s*,?\s*\b(?:and\s+also|plus)\b\s+", re.IGNORECASE)
+_BARE_AND_SPLIT_RE = re.compile(r"\s*,?\s*\band\b\s+", re.IGNORECASE)
+
+
+def _cap_parts(parts: list[str]) -> list[str]:
+    """At most _MAX_PARTS parts: the overflow is folded into the last one."""
+    if len(parts) <= _MAX_PARTS:
+        return parts
+    return [*parts[: _MAX_PARTS - 1], " ".join(parts[_MAX_PARTS - 1 :])]
+
+
+def _split_unpunctuated(text: str) -> list[str]:
+    """Split a mixed ask that has no '?': "<ask> and also <anything>" or
+    "<ask> and <clause that opens like a question>".
+    """
+    pieces = _ALSO_SPLIT_RE.split(text)
+    if len(pieces) == 1:
+        pieces = _split_on_bare_and(text)
+    parts = [p.strip(" ,.;") for p in pieces if _HAS_WORD_RE.search(p)]
+    if len(parts) < _MIN_SUBQUESTIONS or len(parts[0].split()) < _MIN_CLAUSE_WORDS:
+        return [text]
+    return _cap_parts(parts)
+
+
+def _split_on_bare_and(text: str) -> list[str]:
+    """Split at each "and" whose right side opens like its own question."""
+    pieces: list[str] = []
+    start = 0
+    for match in _BARE_AND_SPLIT_RE.finditer(text):
+        rest = text[match.end() :]
+        left = text[start : match.start()]
+        if (
+            _ASK_START_RE.match(rest)
+            and len(rest.split()) >= _MIN_CLAUSE_WORDS
+            and len(left.split()) >= _MIN_CLAUSE_WORDS
+        ):
+            pieces.append(left)
+            start = match.end()
+    pieces.append(text[start:])
+    return pieces
+
+
+_E8_RE = re.compile(r"\be8\b", re.IGNORECASE)
+_E8_FULL_RE = re.compile(r"\bessential[\s_-]{0,3}(?:eight|8)\b", re.IGNORECASE)
+_ML_RE = re.compile(r"\b(?:ml|maturity\s+level)\s*([1-3])\b", re.IGNORECASE)
+_LEVEL_WORDS = {"1": "one", "2": "two", "3": "three"}
+_LOCATION_RE = re.compile(
+    r"\bwhere\b[^?.]{0,30}\b(?:based|located|headquartered|headquarters)\b"
+    r"|\b(?:head\s*office|headquarters|hq)\b|\b(?:your|the)\s+(?:office|location)s?\b",
+    re.IGNORECASE,
+)
+_LOCATION_TERMS = "Exigo Tech company headquarters office location Australia about us"
+
+
+def expand_retrieval_query(text: str) -> str:
+    """Deterministic abbreviation expansion for retrieval only (never shown).
+
+    "e8 ml3" -> "Essential Eight maturity level three"; a "where are you
+    based" question also carries the company-fact vocabulary so the about-us
+    chunk is retrieved on its own merit.
+    """
+    expanded = _ML_RE.sub(lambda m: f"maturity level {_LEVEL_WORDS[m.group(1)]}", text)
+    if _E8_RE.search(expanded) and not _E8_FULL_RE.search(expanded):
+        expanded = _E8_RE.sub("Essential Eight", expanded)
+    if _LOCATION_RE.search(expanded) and _LOCATION_TERMS not in expanded:
+        expanded = f"{expanded} {_LOCATION_TERMS}"
+    return expanded
+
+
+@dataclass(frozen=True)
+class PartRetrieval:
+    """What one sub-question of a compound ask retrieved on its own."""
+
+    query: str
+    max_score: float
+    chunk_ids: frozenset[str]
+    contents: tuple[str, ...]
+
+
+# Filled by retrieve() for compound questions only; the orchestrator reads it.
+part_retrieval_sink: ContextVar[list[PartRetrieval] | None] = ContextVar(
+    "part_retrieval_sink", default=None
+)
+
+
+@dataclass(frozen=True)
+class PartsAssessment:
+    """Which parts of a compound ask the knowledge base supports."""
+
+    supported: tuple[PartRetrieval, ...]
+    unsupported: tuple[PartRetrieval, ...]
+
+    @property
+    def mixed(self) -> bool:
+        return bool(self.supported) and bool(self.unsupported)
+
+    @property
+    def all_unsupported(self) -> bool:
+        return not self.supported and bool(self.unsupported)
+
+    @property
+    def keep_chunk_ids(self) -> frozenset[str]:
+        return frozenset().union(*(p.chunk_ids for p in self.supported))
+
+
+def assess_parts(
+    parts: Iterable[PartRetrieval],
+    *,
+    min_score: float,
+    overlap_limit: float,
+    follow_up: bool = False,
+) -> PartsAssessment:
+    """Judge every part by its OWN best score and word overlap."""
+    supported: list[PartRetrieval] = []
+    unsupported: list[PartRetrieval] = []
+    for part in parts:
+        weak = part.max_score < min_score or is_off_topic_by_overlap(
+            part.query,
+            part.contents,
+            part.max_score,
+            overlap_limit,
+            follow_up=follow_up,
+        )
+        (unsupported if weak else supported).append(part)
+    return PartsAssessment(tuple(supported), tuple(unsupported))
+
+
 def decompose_query(query: str) -> list[str]:
     """Cheap rule-based split of a compound query into sub-queries.
 
@@ -166,9 +305,17 @@ def decompose_query(query: str) -> list[str]:
     question_marks = text.count("?")
 
     if question_marks >= _MIN_SUBQUESTIONS:
-        parts = [p.strip() for p in re.split(r"(?<=\?)\s*", text) if p.strip()]
+        # Stray "??" / "?!" marks are not questions: a part needs a word.
+        parts = [
+            p.strip() for p in re.split(r"(?<=\?)\s*", text) if _HAS_WORD_RE.search(p)
+        ]
         if len(parts) >= _MIN_SUBQUESTIONS:
-            return parts
+            return _cap_parts(parts)
+
+    if question_marks == 0:
+        unpunctuated = _split_unpunctuated(text)
+        if len(unpunctuated) > 1:
+            return unpunctuated
 
     if question_marks >= 1 and _AND_SPLIT_RE.search(text):
         first, second = _AND_SPLIT_RE.split(text, maxsplit=1)
@@ -224,6 +371,7 @@ async def retrieve(
         )
         # Each half still gets history folded in independently, so a
         # follow-up reference inside one clause can still be resolved.
+        part_texts = list(sub_queries)
         sub_queries = [contextualize_query(sq, history) for sq in sub_queries]
     else:
         ctx_query = contextualize_query(query, history)
@@ -234,6 +382,10 @@ async def retrieve(
                 contextualized=ctx_query,
             )
         sub_queries = [ctx_query]
+        part_texts = []
+
+    # Abbreviations are expanded for retrieval only (the visitor never sees it).
+    sub_queries = [expand_retrieval_query(sq) for sq in sub_queries]
 
     # Compound questions need enough budget to hold evidence for both parts.
     final_top_k = (
@@ -260,6 +412,18 @@ async def retrieve(
                 **({"max_documents": max_documents} if max_documents else {}),
             )
         )
+
+    sink = part_retrieval_sink.get()
+    if is_compound and sink is not None:
+        sink[:] = [
+            PartRetrieval(
+                query=text,
+                max_score=max((score for _, score in found), default=0.0),
+                chunk_ids=frozenset(str(chunk.id) for chunk, _ in found),
+                contents=tuple(chunk.content for chunk, _ in found),
+            )
+            for text, found in zip(part_texts, per_query_results, strict=True)
+        ]
 
     merged: dict[uuid.UUID, tuple] = {}
     for results in per_query_results:
