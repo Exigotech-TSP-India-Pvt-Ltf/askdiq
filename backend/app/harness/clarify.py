@@ -75,7 +75,9 @@ _NOT_SURE_HINT = (
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'&+-]*")
 _ANSWER_SPLIT_RE = re.compile(r"[,;\n·]+")
 # Brand / company names: a question that names them is specific, not vague.
-BRAND_RE = re.compile(r"\b(?:exigo(?: tech)?|deploy[ _-]{0,3}iq)\b", re.IGNORECASE)
+BRAND_RE = re.compile(
+    r"\b(?:exigo(?: tech)?|deploy[ _-]{0,3}(?:iq|qi))\b", re.IGNORECASE
+)
 # Company facts (who / where / when, headquarters, contact details...) are
 # answered from the knowledge base, never turned into a "which service?" card.
 COMPANY_FACT_RE = re.compile(
@@ -91,6 +93,17 @@ GENERIC_PRODUCT_RE = re.compile(
     r"what (?:does|do) (?:it|this|that) do|what (?:is|are) (?:it|this|that)|"
     r"(?:is|are) (?:it|this|that) (?:safe|secure|free|legit|reliable)|"
     r"does (?:it|this) work)\W{0,5}$",
+    re.IGNORECASE,
+)
+# "What is X?" / "Explain X": a definition request that names its subject.
+_DEFINITION_LEAD_RE = re.compile(
+    r"^(?:(?:so|ok|okay|and|please) )?(?:what(?: is|'s|s| are)|define|explain|"
+    r"describe|tell me about)\b",
+    re.IGNORECASE,
+)
+# A security incident in progress: answered (what to do now), never a card.
+INCIDENT_RE = re.compile(
+    r"\b(?:hacked|breached|compromised|ransomware|phished|malware|data breach)\b",
     re.IGNORECASE,
 )
 _STOPWORDS = frozenset(
@@ -268,7 +281,9 @@ def _names_known_entity(query: str) -> bool:
     if BRAND_RE.search(scan):
         return True
     rest = ambiguity.strip_offerings(scan)
-    return rest != scan and content_word_count(rest) > 0
+    if rest == scan:
+        return False
+    return content_word_count(rest) > 0 or _DEFINITION_LEAD_RE.match(scan) is not None
 
 
 def is_company_or_generic(query: str) -> bool:
@@ -277,6 +292,7 @@ def is_company_or_generic(query: str) -> bool:
     return (
         COMPANY_FACT_RE.search(scan) is not None
         or GENERIC_PRODUCT_RE.match(scan) is not None
+        or INCIDENT_RE.search(scan) is not None
     )
 
 
