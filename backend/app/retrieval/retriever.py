@@ -162,8 +162,11 @@ _ASK_START_RE = re.compile(
     r"will|would|should|tell|explain)\b",
     re.IGNORECASE,
 )
-_ALSO_SPLIT_RE = re.compile(r"\s*,?\s*\b(?:and\s+also|plus)\b\s+", re.IGNORECASE)
-_BARE_AND_SPLIT_RE = re.compile(r"\s*,?\s*\band\b\s+", re.IGNORECASE)
+# Bounded whitespace: adjacent unbounded `\s*` quantifiers backtrack quadratically.
+_ALSO_SPLIT_RE = re.compile(
+    r"\s{0,3},?\s{0,3}\b(?:and\s{1,3}also|plus)\b\s{1,3}", re.IGNORECASE
+)
+_BARE_AND_SPLIT_RE = re.compile(r"\s{0,3},?\s{0,3}\band\b\s{1,3}", re.IGNORECASE)
 
 
 def _cap_parts(parts: list[str]) -> list[str]:
