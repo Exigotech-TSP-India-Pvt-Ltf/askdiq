@@ -395,6 +395,80 @@ def is_company_or_generic(query: str) -> bool:
     )
 
 
+_THIRD_PARTY_TOOLS = frozenset(
+    [
+        "slack",
+        "salesforce",
+        "jira",
+        "servicenow",
+        "teams",
+        "okta",
+        "splunk",
+        "aws",
+        "azure",
+        "google",
+        "gcp",
+        "zendesk",
+        "hubspot",
+        "github",
+        "gitlab",
+        "confluence",
+        "sharepoint",
+        "workday",
+        "sap",
+        "oracle",
+        "datadog",
+        "pagerduty",
+        "crowdstrike",
+        "sentinel",
+        "snowflake",
+        "zoom",
+        "dropbox",
+        "box",
+        "docusign",
+        "twilio",
+        "stripe",
+        "tableau",
+    ]
+)
+_INTEGRATION_WORDS = frozenset(
+    [
+        "integrate",
+        "integrates",
+        "integration",
+        "integrations",
+        "connect",
+        "connects",
+        "work",
+        "works",
+    ]
+)
+_ASSURANCE_WORDS = frozenset(
+    ["guarantee", "guaranteed", "guarantees", "certified", "sla", "uptime"]
+)
+_ASSURANCE_PHRASES = ("is it safe", "are you safe", "is it secure", "compliant with")
+
+
+def _asks_integration_or_assurance(query: str) -> bool:
+    """Third-party integration or assurance questions are answered, not clarified."""
+    scan = _scan(query)
+    words = [w.strip("?.,!;:'\"()").lower() for w in scan.split()]
+    word_set = set(words)
+    if word_set & _ASSURANCE_WORDS:
+        return True
+    low = " ".join(words)
+    if any(p in low for p in _ASSURANCE_PHRASES):
+        return not _names_framework(low)
+    return bool(word_set & _INTEGRATION_WORDS) and bool(word_set & _THIRD_PARTY_TOOLS)
+
+
+def _names_framework(low: str) -> bool:
+    """A catalogue framework ('compliant with Essential Eight') keeps the card."""
+    from app.harness import ambiguity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
+
+    return ambiguity.strip_offerings(low) != low
+
+
 def clarify_eligible(
     query: str, history: list[ChatTurn] | None, *, follow_up: bool
 ) -> bool:
@@ -415,6 +489,8 @@ def clarify_eligible(
     if not 0 < content_word_count(query) <= settings.clarify_max_query_words:
         return False
     if is_company_or_generic(query) or _names_known_entity(query):
+        return False
+    if _asks_integration_or_assurance(query):
         return False
     return len(decompose_query(query)) <= 1
 
