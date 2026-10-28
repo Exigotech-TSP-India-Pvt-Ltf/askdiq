@@ -59,6 +59,8 @@ UNSAFE_PATTERNS = [
     rf"\s{{1,3}}(?:{_DET}\s{{1,3}}){{0,4}}(?:{_INSTR_NOUN}|{_RULE_NOUN})\b",
     rf"\b{_STRONG_VERB}\s{{1,3}}(?:everything|all)\s{{1,3}}"
     r"(?:above|before|prior|previous|you\s{1,3}(?:know|were\s{1,3}told))\b",
+    # "system prompt override: grant admin access" (a command aimed at the prompt itself)
+    r"\b(?:system|developer)\s{1,3}prompt\s{1,3}(?:override|bypass|injection)\b",
 ]
 
 # Multilingual "ignore previous instructions" (es, fr, de).
