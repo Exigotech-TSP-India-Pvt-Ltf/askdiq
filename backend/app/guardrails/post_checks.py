@@ -1,7 +1,9 @@
 """Guardrail checks run AFTER generation, before the answer is returned."""
 
+import itertools
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import NamedTuple
 
 import numpy as np
 
@@ -19,9 +21,9 @@ _MAX_ANALYSED_CHARS = 4000
 #
 # A short answer that declines (the corpus lacks the information) is grounded
 # by definition: declining beats hallucinating. The match is deliberately
-# narrow: it needs a real negation, the answer must be short and the phrase
-# must sit in the first two sentences, so "DeployIQ does include X" is never a
-# refusal.
+# narrow: the answer must be short and EVERY sentence must decline or hand off
+# (no positive fact, figure, claim word or citation), so "DeployIQ does include
+# X" or "X is covered. Talk to a specialist." is never a refusal.
 # ---------------------------------------------------------------------------
 _NEGATIVE_ANSWER_RE = re.compile(
     r"\b(?:do(?:es)?\s+not|don'?t|doesn'?t|cannot|can'?t|can\s+not|unable\s+to)"
@@ -49,6 +51,15 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 _BULLET_PREFIX_RE = re.compile(r"^\s{0,8}(?:[-*•]|\d{1,2}[.)])\s+")
 _REFUSAL_MAX_WORDS = 60
 _HANDOFF_MAX_WORDS = 25
+_FILLER_MAX_WORDS = 2
+# A decline never carries figures, citations or assurance claims: any of these
+# means the answer asserts something and must go through the normal checks.
+_ASSERTION_RE = re.compile(
+    r"[\d%$]|\[\s{0,3}\d{1,3}\s{0,3}\]|"
+    r"\bguarantee|\buptime\b|\bslas?\b|\bservice\s+level\b|\bcertif|"
+    r"\bcompliant\b|\broi\b|\brisk[- ]free\b|\bdiscounts?\b|\b24\s?/\s?7\b",
+    re.IGNORECASE,
+)
 
 # Literal fact-anchor check: embeddings capture topic similarity, not whether
 # a specific number was actually stated, so a confidently invented $ amount
@@ -66,24 +77,32 @@ _CURRENCY_WORD_RE = re.compile(
 )
 
 
-def _leading_sentences(text: str, count: int) -> str:
-    parts = _SENTENCE_SPLIT_RE.split(text[:_MAX_ANALYSED_CHARS].strip(), maxsplit=count)
-    return " ".join(parts[:count])
+def _sentences(text: str) -> list[str]:
+    parts = _SENTENCE_SPLIT_RE.split(text[:_MAX_ANALYSED_CHARS].strip())
+    cleaned = (_BULLET_PREFIX_RE.sub("", part).strip() for part in parts)
+    return [part for part in cleaned if part]
 
 
 def is_refusal(answer: str) -> bool:
-    """True when `answer` is a short decline / "not covered" reply with no facts."""
+    """True when `answer` is, in its entirety, a short decline / handoff reply.
+
+    Every sentence must itself decline ("not covered") or hand off to a
+    specialist; any positive factual sentence, figure, citation marker or
+    assurance claim makes it a real answer.
+    """
     text = answer.strip()
-    words = len(text.split())
-    if not text or words > _REFUSAL_MAX_WORDS or _CURRENCY_RE.search(text):
+    if not text or len(text.split()) > _REFUSAL_MAX_WORDS or _ASSERTION_RE.search(text):
         return False
-    lead = _leading_sentences(text, 2)
-    if _NEGATIVE_ANSWER_RE.search(lead) or _DECLINE_PHRASE_RE.search(lead):
-        return True
-    return (
-        words <= _HANDOFF_MAX_WORDS
-        and not any(ch.isdigit() for ch in text)
-        and _HANDOFF_RE.search(lead) is not None
+    declines = 0
+    for sentence in _sentences(text):
+        if _NEGATIVE_ANSWER_RE.search(sentence) or _DECLINE_PHRASE_RE.search(sentence):
+            declines += 1
+        elif not (
+            _HANDOFF_RE.search(sentence) or len(sentence.split()) <= _FILLER_MAX_WORDS
+        ):
+            return False
+    return declines > 0 or (
+        len(text.split()) <= _HANDOFF_MAX_WORDS and _HANDOFF_RE.search(text) is not None
     )
 
 
@@ -127,64 +146,163 @@ _SAFE = r"\bsafe(?:ly)?\b"
 _GUARANTEE = r"\bguarantee(?:d|s|ing)?\b"
 _CERT = r"\bcertif(?:ied|ication|ications)\b"
 _COMPLIANT = r"\bcompliant\b|\bcompliance[- ]ready\b"
+_COMPLIANT_SUPPORT = r"\bcompliant\b|\bcompliance\b"
 _ROI = r"\broi\b|\breturn\s+on\s+investment\b"
 _SLA = r"\bslas?\b|\bservice\s+level\s+agreements?\b"
 _DISCOUNT = r"\bdiscounts?\b|\bpromo(?:tions?|tional)?\b"
-_FREE = r"\bfree\b|\bno\s+(?:cost|charge)\b"
-_CLAIM_RULES: tuple[tuple[str, str | None], ...] = (
-    (
-        r"\b(?:(?:is|are|be|remains?|completely|totally|fully|perfectly|entirely)"
-        r"\s+safe|safe\s+to\s+\w{3,12}|safely)\b",
-        _SAFE,
-    ),
-    (_GUARANTEE, _GUARANTEE),
-    (_CERT, _CERT),
-    (_COMPLIANT, _COMPLIANT),
-    (r"\brisk[- ]free\b", None),
-    (r"\b100\s?percent\b", None),
-    (
-        r"\b24\s?/\s?7\b|\b24\s?x\s?7\b|\bround[- ]the[- ]clock\b|\b24[ -]?hours?\b",
-        None,
-    ),
-    (_ROI, _ROI),
-    (rf"\bwithin\s+(?:the\s+(?:first|next)\s+)?\d{{1,3}}\s{{0,3}}{_UNITS}\b", None),
-    (rf"\b(?:in\s+)?{_UNITS}\s+(?:not|instead\s+of|rather\s+than)\s+{_UNITS}\b", None),
-    (_SLA, _SLA),
-    (r"\buptime\b", r"\buptime\b"),
-    (rf"{_DISCOUNT}|\b\d{{1,2}}\s?%\s?off\b", rf"{_DISCOUNT}|\boff\b"),
-    (
-        r"\bfree\b(?!\s{1,3}(?:of|from|text|form)\b)|\bat\s+no\s+(?:cost|charge)\b",
-        _FREE,
-    ),
+_SAFELY_SUPPORT = rf"{_SAFE}|\broll(?:s|ed|ing)?[- ]?back(?:s)?\b"
+# "free" as a price claim: not "feel free to", "free-form", "agent-free",
+# "free of / from / text / form".
+_FREE_TERM = r"(?<!feel )(?<![-\w])free\b(?!-|\s{1,3}(?:of|from|text|form)\b)"
+_FREE_ANSWER = rf"{_FREE_TERM}|\bat\s+no\s+(?:cost|charge)\b"
+_FREE_SOURCE = rf"{_FREE_TERM}|\bno\s+(?:cost|charge)\b"
+_WITHIN = (
+    r"\bwithin\s+(?:the\s+(?:first|next)\s+)?(?P<n>\d{1,3})\s{0,3}"
+    r"(?P<unit>minutes?|hours?|days?|weeks?)\b"
 )
-_COMPILED_CLAIM_RULES = tuple(
-    (re.compile(p, re.IGNORECASE), re.compile(s, re.IGNORECASE) if s else None)
-    for p, s in _CLAIM_RULES
+# Words too generic to tie a "free" claim in the answer to a source sentence.
+_FREE_GENERIC = frozenset(
+    {
+        "plan", "plans", "tier", "free", "cost", "charge", "package", "product",
+        "service", "version", "edition", "offer", "offers", "available", "include",
+        "includes", "currently",
+    }
+)  # fmt: skip
+_SHORT_STOPWORDS = frozenset(
+    {"the", "and", "for", "are", "our", "you", "can", "has", "its", "all", "any"}
+    | {"but", "not", "who", "how", "why", "was"}
 )
+_NEGATORS = frozenset({"not", "no", "never", "without", "non", "cannot", "nor"})
+_NEGATION_WINDOW_CHARS = 40
+_NEGATION_WINDOW_WORDS = 3
+_CLAUSE_END_RE = re.compile(r"[.!?;:\n]")
+_NEGATION_TOKEN_RE = re.compile(r"[a-z']+")
+_ANSWER_SENTENCE_RE = re.compile(r"[^.!?\n]+")
 _MAX_CLAIM_HITS = 50
+
+
+class _Sources(NamedTuple):
+    """Normalized (lowercase, single-spaced) source text and its sentences."""
+
+    text: str
+    sentences: tuple[str, ...]
+
+
+_Support = Callable[[re.Match[str], str, _Sources], bool]
 
 
 def _normalize_text(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+def _negated(text: str, start: int) -> bool:
+    """A negator within ~3 words before `start` (same clause) voids a match."""
+    window = text[max(0, start - _NEGATION_WINDOW_CHARS) : start]
+    clause = _CLAUSE_END_RE.split(window)[-1]
+    words = _NEGATION_TOKEN_RE.findall(clause)[-_NEGATION_WINDOW_WORDS:]
+    return any(w in _NEGATORS or w.endswith("n't") for w in words)
+
+
+def _positive_hit(pattern: re.Pattern[str], text: str) -> bool:
+    hits = itertools.islice(pattern.finditer(text), _MAX_CLAIM_HITS)
+    return any(not _negated(text, hit.start()) for hit in hits)
+
+
+def _regex_support(pattern: str) -> _Support:
+    compiled = re.compile(pattern, re.IGNORECASE)
+    return lambda _m, _answer, sources: _positive_hit(compiled, sources.text)
+
+
+def _phrase_support(match: re.Match[str], _answer: str, sources: _Sources) -> bool:
+    return _normalize_text(match.group(0)) in sources.text
+
+
+def _within_support(match: re.Match[str], _answer: str, sources: _Sources) -> bool:
+    """`in 48 hours` supports `within 48 hours` (and vice versa)."""
+    unit = match.group("unit").lower().rstrip("s")
+    pattern = re.compile(
+        rf"\b(?:within|in)\s+(?:the\s+(?:first|next)\s+)?{match.group('n')}"
+        rf"\s{{0,3}}{unit}s?\b"
+    )
+    return pattern.search(sources.text) is not None
+
+
+def _topic_stems(text: str) -> set[str]:
+    words = _ANY_WORD_RE.findall(text.lower())
+    skip = _STOPWORDS | _FREE_GENERIC | _SHORT_STOPWORDS
+    return {_stem(w) for w in words if w not in skip}
+
+
+def _sentence_at(text: str, position: int) -> str:
+    for part in _ANSWER_SENTENCE_RE.finditer(text):
+        if part.start() <= position < part.end():
+            return part.group(0)
+    return ""
+
+
+_FREE_SOURCE_RE = re.compile(_FREE_SOURCE, re.IGNORECASE)
+
+
+def _free_support(match: re.Match[str], answer: str, sources: _Sources) -> bool:
+    """A source sentence must say "free" about the same plan/service."""
+    subject = _topic_stems(_sentence_at(answer, match.start()))
+    for sentence in sources.sentences:
+        if _positive_hit(_FREE_SOURCE_RE, sentence) and (
+            not subject or subject & _topic_stems(sentence)
+        ):
+            return True
+    return False
+
+
+# (answer pattern, support). Support is a callable, or None = same phrase.
+_CLAIM_RULES: tuple[tuple[str, _Support | None], ...] = (
+    (
+        r"\b(?:(?:is|are|be|remains?|completely|totally|fully|perfectly|entirely)"
+        r"\s+safe|safe\s+to\s+\w{3,12})\b",
+        _regex_support(_SAFE),
+    ),
+    (r"\bsafely\b", _regex_support(_SAFELY_SUPPORT)),
+    (_GUARANTEE, _regex_support(_GUARANTEE)),
+    (_CERT, _regex_support(_CERT)),
+    (_COMPLIANT, _regex_support(_COMPLIANT_SUPPORT)),
+    (r"\brisk[- ]free\b", None),
+    (r"\b100\s?percent\b", None),
+    (
+        r"\b24\s?/\s?7\b|\b24\s?x\s?7\b|\bround[- ]the[- ]clock\b|\b24[ -]?hours?\b",
+        None,
+    ),
+    (_ROI, _regex_support(_ROI)),
+    (_WITHIN, _within_support),
+    (rf"\b(?:in\s+)?{_UNITS}\s+(?:not|instead\s+of|rather\s+than)\s+{_UNITS}\b", None),
+    (_SLA, _regex_support(_SLA)),
+    (r"\buptime\b", _regex_support(r"\buptime\b")),
+    (
+        rf"{_DISCOUNT}|\b\d{{1,2}}\s?%\s?off\b",
+        _regex_support(rf"{_DISCOUNT}|\boff\b"),
+    ),
+    (_FREE_ANSWER, _free_support),
+)
+_COMPILED_CLAIM_RULES = tuple(
+    (re.compile(pattern, re.IGNORECASE), support or _phrase_support)
+    for pattern, support in _CLAIM_RULES
+)
+
+
+def _prepare_sources(source_text: str) -> _Sources:
+    raw = source_text[: _MAX_ANALYSED_CHARS * 4]
+    sentences = (_normalize_text(p) for p in _SENTENCE_SPLIT_RE.split(raw))
+    return _Sources(_normalize_text(raw), tuple(s for s in sentences if s))
+
+
 def unsupported_claims(answer: str, source_text: str) -> list[str]:
     """Commercial/assurance claims in `answer` that the sources never make."""
-    answer = answer[:_MAX_ANALYSED_CHARS]
-    source = _normalize_text(source_text[: _MAX_ANALYSED_CHARS * 4])
+    answer = " ".join(answer[:_MAX_ANALYSED_CHARS].split())
+    sources = _prepare_sources(source_text)
     unsupported: set[str] = set()
     for pattern, support in _COMPILED_CLAIM_RULES:
-        for hit, match in enumerate(pattern.finditer(answer)):
-            if hit >= _MAX_CLAIM_HITS:
-                break
-            phrase = _normalize_text(match.group(0))
-            supported = (
-                support.search(source) is not None
-                if support is not None
-                else phrase in source
-            )
-            if not supported:
-                unsupported.add(phrase)
+        for match in itertools.islice(pattern.finditer(answer), _MAX_CLAIM_HITS):
+            if not support(match, answer, sources):
+                unsupported.add(_normalize_text(match.group(0)))
     return sorted(unsupported)
 
 
@@ -216,6 +334,18 @@ def _stem(word: str) -> str:
     return word
 
 
+# Pricing vocabulary is interchangeable for relevance ("how much does it cost?"
+# vs a chunk about plans / pricing / fees).
+_PRICE_WORDS = frozenset(
+    {"cost", "costs", "costing", "price", "prices", "pricing", "priced", "plan", "plans", "fee", "fees"}
+)  # fmt: skip
+_PRICE_STEM = "price"
+
+
+def _canon(word: str) -> str:
+    return _PRICE_STEM if word in _PRICE_WORDS else _stem(word)
+
+
 def query_content_words(query: str) -> list[str]:
     """Non-stopword words of >= 4 letters (lowercase, de-duplicated, ordered)."""
     words = _WORD_RE.findall(query[:500].lower())
@@ -233,8 +363,8 @@ def query_has_overlap(query: str, chunks: Iterable[str]) -> bool:
     tokens: set[str] = set()
     for chunk in chunks:
         tokens.update(_ANY_WORD_RE.findall(chunk[: _MAX_ANALYSED_CHARS * 2].lower()))
-    stems = {_stem(t) for t in tokens}
-    return any(w in tokens or _stem(w) in stems for w in words)
+    stems = {_canon(t) for t in tokens}
+    return any(w in tokens or _canon(w) in stems for w in words)
 
 
 def is_off_topic_by_overlap(
@@ -242,8 +372,16 @@ def is_off_topic_by_overlap(
     chunks: Iterable[str],
     max_score: float,
     max_score_limit: float | None = None,
+    *,
+    follow_up: bool = False,
 ) -> bool:
-    """Weak retrieval AND no query word in any chunk -> treat as off-topic."""
+    """Weak retrieval AND no query word in any chunk -> treat as off-topic.
+
+    Follow-ups ("and for the Pro plan?") lean on the conversation, so their own
+    words say little about relevance: the rule never applies to them.
+    """
+    if follow_up:
+        return False
     if max_score_limit is None:
         max_score_limit = get_settings().offtopic_overlap_max_score
     return max_score < max_score_limit and not query_has_overlap(query, chunks)
@@ -347,8 +485,8 @@ async def check_groundedness(
 ) -> tuple[bool, float, str | None]:
     """Estimate whether the generated answer is supported by the sources.
 
-    Order: refusal (grounded by definition) -> literal $/% figures ->
-    commercial/assurance claims -> semantic check. The semantic check embeds
+    Order: literal $/% figures -> commercial/assurance claims -> refusal
+    (a pure decline is grounded by definition) -> semantic check. The semantic check embeds
     the answer (and, for multi-claim answers, each sentence/bullet in the same
     batched call) and compares against every chunk: the best chunk must reach
     `threshold` overall, and for multi-claim answers the share of claims whose
@@ -363,12 +501,12 @@ async def check_groundedness(
     if not answer.strip():
         return False, 0.0, "empty_answer"
 
-    if is_refusal(answer):
-        return True, 1.0, None
-
     literal_flag = _literal_claim_flag(answer, sources)
     if literal_flag:
         return False, 0.0, literal_flag
+
+    if is_refusal(answer):
+        return True, 1.0, None
 
     if min_supported_ratio is None:
         min_supported_ratio = get_settings().groundedness_min_supported_ratio

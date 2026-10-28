@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     groundedness_threshold: float = 0.45
     # Multi-sentence answers: share of claims (sentences/bullets) whose best
     # chunk similarity reaches groundedness_threshold. Below it -> ungrounded.
-    groundedness_min_supported_ratio: float = 0.6
+    groundedness_min_supported_ratio: float = Field(default=0.6, ge=0.0, le=1.0)
     max_query_length: int = 2000
 
     # Retrieval
@@ -137,7 +137,7 @@ class Settings(BaseSettings):
     # Extra off-topic rule: when the best retrieval score is below this AND none
     # of the query's content words occur in any retrieved chunk, the question is
     # treated as off-topic (pronounceable nonsense still retrieves generic chunks).
-    offtopic_overlap_max_score: float = 0.30
+    offtopic_overlap_max_score: float = Field(default=0.30, ge=0.0, le=1.0)
     # Metadata keys a /query `filters` object may use. Unknown keys and non-scalar
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).
