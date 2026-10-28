@@ -66,10 +66,6 @@ _MAX_OTHER_CHARS = 300
 _MAX_OPTION_SOURCES = 4
 _EXCERPT_CHARS = 220
 _SCORE_EPSILON = 1e-9  # float noise: 0.65 - 0.60 must count as a 0.05 lead
-_DIRECT_HEADQUARTERS_QUERY_RE = re.compile(
-    r"^\s*where\b.{0,100}\b(?:headquartered|headquarters|located|based)\b",
-    re.IGNORECASE,
-)
 RECOMMENDED_SUFFIX = " (recommended)"
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'&+-]*")
 _ANSWER_SPLIT_RE = re.compile(r"[,;\n·]+")
@@ -237,8 +233,6 @@ def clarify_eligible(
     if not settings.clarify_enabled:
         return False
     if clarification_streak(history) >= settings.clarify_max_consecutive:
-        return False
-    if _DIRECT_HEADQUARTERS_QUERY_RE.search(query):
         return False
     # A follow-up is resolved by the conversation, not by asking again.
     if follow_up and history:

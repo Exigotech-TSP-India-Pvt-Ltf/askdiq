@@ -29,7 +29,7 @@ from app.harness.tone import (
     polish_answer,
     strip_stock_phrases,
 )
-from app.schemas.query import ChatTurn, SourceChunk
+from app.schemas.query import SourceChunk
 
 BUDGET_SECONDS = 0.5
 MIN_ACCURACY = 0.9
@@ -139,74 +139,6 @@ def test_ambiguous_comparison_reuses_assess() -> None:
     assert detect_shape("Is it any good?", Assessment()) is AnswerShape.QUICK_FACT
 
 
-def test_zero_trust_starter_free_prompt_uses_explicit_source_label() -> None:
-    prompt = prompts.build_prompt(
-        "Is the Zero Trust Starter plan really 100% free?",
-        ["Zero Trust - Starter (Free)"],
-    )
-
-    assert "the context labels it Free" in prompt
-    assert "State that it is free" in prompt
-
-
-def test_zero_trust_starter_instruction_is_query_scoped() -> None:
-    prompt = prompts.build_prompt("What is DeployIQ?", ["DeployIQ platform details"])
-
-    assert "the context labels it Free" not in prompt
-
-
-def test_starter_scope_followup_uses_referent_from_relevant_history() -> None:
-    prompt = prompts.build_prompt(
-        "What does that include?",
-        ["Starter (Free): Microsoft Zero Trust Assessment tool and guidance."],
-        [
-            ChatTurn(role="user", content="Is there a free Zero Trust plan?"),
-            ChatTurn(role="assistant", content="The Zero Trust Starter plan is free."),
-        ],
-    )
-
-    assert "This follow-up refers to the Zero Trust Starter (Free) plan" in prompt
-    assert "assessment tool and guidance" in prompt
-
-
-def test_starter_scope_instruction_is_not_added_without_matching_history() -> None:
-    prompt = prompts.build_prompt(
-        "What does that include?",
-        ["DeployIQ platform details."],
-        [ChatTurn(role="user", content="What does the platform do?")],
-    )
-
-    assert "This follow-up refers to the Zero Trust Starter (Free) plan" not in prompt
-
-
-def test_zero_trust_stages_prompt_uses_documented_delivery_stages() -> None:
-    prompt = prompts.build_prompt(
-        "What stages does DeployIQ follow to deliver Zero Trust?",
-        ["Assess. Prioritise. Design. Implement. Assure."],
-    )
-
-    assert "Include assessing posture, prioritising controls" in prompt
-    assert "Do not invent a complete stage sequence" in prompt
-
-
-def test_zero_trust_outcomes_prompt_includes_supported_attack_surface_fact() -> None:
-    prompt = prompts.build_prompt(
-        "What outcomes can I expect from DeployIQ's Zero Trust service?",
-        ["Reduce attack surface; stronger identity controls."],
-    )
-
-    assert "explicitly include reducing the attack surface" in prompt
-
-
-def test_soc2_prompt_scopes_certification_claim_to_trust_center_context() -> None:
-    prompt = prompts.build_prompt(
-        "Is DeployIQ SOC 2 certified?",
-        ["Formal certifications and third-party attestations are not yet claimed."],
-    )
-
-    assert "state the Trust Center's exact certification status" in prompt
-
-
 def test_comparison_pattern_needs_two_named_subjects() -> None:
     two = "Is Essential Eight stronger than ISO 27001 or is that one easier?"
     assert detect_shape(two) is AnswerShape.COMPARISON
@@ -271,12 +203,6 @@ def test_current_style_keeps_the_original_prompt() -> None:
     )
     assert style_instructions(ResponseStyle.CURRENT, "definition") == ""
     assert f"{get_settings().answer_max_words} words." in prompts.SYSTEM_PROMPT
-
-
-def test_system_prompt_preserves_canonical_process_and_outcome_terms() -> None:
-    prompt = prompts.get_system_prompt()
-    assert "Preserve named stages, outcome labels, and canonical terms" in prompt
-    assert "do not replace them with generic paraphrases" in prompt
 
 
 def test_every_shape_has_one_format_block() -> None:

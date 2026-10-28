@@ -1,7 +1,6 @@
 """Azure OpenAI generation wrapper used by the RAG harness."""
 
 import asyncio
-import re
 import time
 from http import HTTPStatus
 from typing import Any
@@ -48,29 +47,6 @@ def count_tokens(text: str) -> int:
 
 
 _MAX_HISTORY_TURNS = 6
-_STARTER_FREE_QUERY_RE = re.compile(
-    r"\bzero\s+trust\s+starter\b.{0,40}\bfree\b"
-    r"|\bfree\b.{0,40}\bzero\s+trust\s+starter\b",
-    re.IGNORECASE,
-)
-_STARTER_SCOPE_FOLLOWUP_RE = re.compile(
-    r"\bwhat does that include\b|\bwhat does it include\b",
-    re.IGNORECASE,
-)
-_ZERO_TRUST_STAGES_QUERY_RE = re.compile(
-    r"\bstages?\b.{0,80}\bdeliver\b.{0,40}\bzero\s+trust\b",
-    re.IGNORECASE,
-)
-_ZERO_TRUST_OUTCOMES_QUERY_RE = re.compile(
-    r"\boutcomes?\b.{0,100}\bzero\s+trust\b"
-    r"|\bzero\s+trust\b.{0,100}\boutcomes?\b",
-    re.IGNORECASE,
-)
-_SOC2_STATUS_QUERY_RE = re.compile(
-    r"\bsoc\s*2\b.{0,60}\b(certified|certification)\b"
-    r"|\b(certified|certification)\b.{0,60}\bsoc\s*2\b",
-    re.IGNORECASE,
-)
 
 
 def get_system_prompt(
@@ -250,57 +226,6 @@ def _build_prompt(
     """
     context = _format_context(context_chunks)
     history_block = _format_history(query, history)
-    starter_free_instruction = (
-        "For the Zero Trust Starter plan, the context labels it Free. "
-        "State that it is free, and do not claim that it is not 100% free "
-        "or infer additional billing terms not stated in the context.\n\n"
-        if _STARTER_FREE_QUERY_RE.search(query)
-        else ""
-    )
-    starter_scope_followup = bool(
-        _STARTER_SCOPE_FOLLOWUP_RE.search(query)
-        and history
-        and any(
-            re.search(r"\bzero\s+trust\b", turn.content, re.IGNORECASE)
-            for turn in history
-        )
-        and any(
-            re.search(r"\bstarter\b", turn.content, re.IGNORECASE)
-            and re.search(r"\bfree\b", turn.content, re.IGNORECASE)
-            for turn in history
-        )
-    )
-    starter_scope_followup_instruction = (
-        "This follow-up refers to the Zero Trust Starter (Free) plan. Answer "
-        "about that plan using the supplied context, including its assessment "
-        "tool and guidance for running the assessment. Include no details "
-        "unless the context supports them.\n\n"
-        if starter_scope_followup
-        else ""
-    )
-    zero_trust_stages_instruction = (
-        "For Zero Trust delivery stages, describe only the stages explicitly "
-        "supported by the supplied context. Include assessing posture, "
-        "prioritising controls, and implementing controls when supported. "
-        "Do not invent a complete stage sequence or add stages absent from "
-        "the supplied context.\n\n"
-        if _ZERO_TRUST_STAGES_QUERY_RE.search(query)
-        else ""
-    )
-    zero_trust_outcomes_instruction = (
-        "When listing Zero Trust outcomes, explicitly include reducing the "
-        "attack surface if the context supports it, along with any other "
-        "relevant supported outcomes.\n\n"
-        if _ZERO_TRUST_OUTCOMES_QUERY_RE.search(query)
-        else ""
-    )
-    soc2_status_instruction = (
-        "For this certification question, state the Trust Center's exact "
-        "certification status from the context. Do not claim a specific SOC 2 "
-        "certification unless the context explicitly does so.\n\n"
-        if _SOC2_STATUS_QUERY_RE.search(query)
-        else ""
-    )
 
     prompt = (
         "Answer the question using only the context. Silently omit "
@@ -308,11 +233,6 @@ def _build_prompt(
         f"{history_block}"
         f"Context:\n{context}\n\n"
         f"{clarify_block}"
-        f"{starter_free_instruction}"
-        f"{starter_scope_followup_instruction}"
-        f"{zero_trust_stages_instruction}"
-        f"{zero_trust_outcomes_instruction}"
-        f"{soc2_status_instruction}"
         f"Question: {query}\n\n"
         "Answer:"
     )

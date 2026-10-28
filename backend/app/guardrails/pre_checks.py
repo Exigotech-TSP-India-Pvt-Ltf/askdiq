@@ -23,43 +23,39 @@ _PROMO_PHRASES_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Sensitive-request patterns. Every pattern runs on a whitespace-collapsed,
+# length-capped query and uses only bounded quantifiers (no polynomial ReDoS).
+_SENSITIVE_MAX_CHARS = 1000
 _CROSS_TENANT_RE = re.compile(
-    r"\b(?:other\s+customers?(?:['\u2019]s?)?|another\s+customer|"
-    r"other\s+tenants?(?:['\u2019]s?)?|another\s+tenant|"
-    r"other\s+clients?(?:['\u2019]s?)?|another\s+client)\b",
+    r"\b(?:other|another)\s{1,3}(?:customers?|tenants?|clients?)\b",
     re.IGNORECASE,
 )
 _CREDENTIAL_RE = re.compile(
-    r"\b(?:passwords?|admin(?:istrator)?\s+credentials?|"
-    r"api[\s_-]?keys?|secrets?|access tokens?|connection strings?)\b",
+    r"\b(?:passwords?|admin(?:istrator)?\s{1,3}credentials?|"
+    r"api[\s_-]{0,3}keys?|secrets?|access\s{1,3}tokens?)\b",
     re.IGNORECASE,
 )
-_APPLICATION_SECRET_REQUEST_RE = re.compile(
-    r"\b(?:print|reveal|show|list|provide|output|give|display)\b"
-    r".{0,100}\b(?:api[\s_-]?keys?|passwords?|connection strings?)\b"
-    r".{0,80}\b(?:used by|used in|in|from)\s+(?:this|the)\s+application\b",
+_REVEAL_VERB_RE = re.compile(
+    r"\b(?:print|reveal|show|list|provide|output|give|display|what\s{1,3}is)\b",
     re.IGNORECASE,
 )
-_APPLICATION_SECRET_VALUE_RE = re.compile(
-    r"\b(?:what is|show|print|reveal|provide|give|display)\b"
-    r".{0,60}\b(?:value|contents?)\s+of\s+"
-    r"[A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)\b",
+_OWN_APPLICATION_RE = re.compile(
+    r"\bused\s{1,3}(?:by|in)\s{1,3}(?:this|your)\s{1,3}(?:application|app|system)\b"
+    r"|\bin\s{1,3}your\s{1,3}environment\b",
     re.IGNORECASE,
 )
-_RESTRICTED_DOCUMENT_REQUEST_RE = re.compile(
-    r"\b(?:show|provide|list|retrieve|access|share|find|get)\b"
-    r".{0,80}\b(?:confidential|internal[- ]only)\b"
-    r".{0,50}\bdocuments?\b",
-    re.IGNORECASE,
+_SECRET_VALUE_RE = re.compile(
+    r"\b(?:value|contents?)\s{1,3}of\s{1,3}[A-Z][A-Z0-9_]{0,60}"
+    r"(?:KEY|SECRET|TOKEN|PASSWORD)\b"
 )
 _PERSONAL_CONTACT_RE = re.compile(
-    r"\b(?:personal|private)\s+(?:mobile|phone|contact)\s+"
-    r"(?:number|details?)\b|\bpersonal\s+number\b",
+    r"\bpersonal\s{1,3}number\b|\b(?:personal|private)\s{1,3}"
+    r"(?:mobile|phone|contact)\s{1,3}(?:number|details?)\b",
     re.IGNORECASE,
 )
 _PERSON_RE = re.compile(
-    r"\b(?:ceo|chief executive|executive|employee|staff member|"
-    r"team member|director)\b",
+    r"\b(?:ceo|chief\s{1,3}executive|executive|employee|"
+    r"staff\s{1,3}member|team\s{1,3}member|director)\b",
     re.IGNORECASE,
 )
 
@@ -194,16 +190,16 @@ def check_unsafe_input(
 
 
 def check_sensitive_request(query: str) -> tuple[bool, str | None]:
-    """Block requests for application/tenant credentials or personal contact details."""
-    if _APPLICATION_SECRET_REQUEST_RE.search(
-        query
-    ) or _APPLICATION_SECRET_VALUE_RE.search(query):
-        return False, "application_secret_request"
-    if _RESTRICTED_DOCUMENT_REQUEST_RE.search(query):
-        return False, "restricted_document_request"
-    if _CROSS_TENANT_RE.search(query) and _CREDENTIAL_RE.search(query):
+    """Block requests for credentials/secrets or staff personal contact details."""
+    text = " ".join(query[:_SENSITIVE_MAX_CHARS].split())
+    if _REVEAL_VERB_RE.search(text):
+        if _SECRET_VALUE_RE.search(text):
+            return False, "application_secret_request"
+        if _CREDENTIAL_RE.search(text) and _OWN_APPLICATION_RE.search(text):
+            return False, "application_secret_request"
+    if _CROSS_TENANT_RE.search(text) and _CREDENTIAL_RE.search(text):
         return False, "no_permission"
-    if _PERSONAL_CONTACT_RE.search(query) and _PERSON_RE.search(query):
+    if _PERSONAL_CONTACT_RE.search(text) and _PERSON_RE.search(text):
         return False, "personal_contact_request"
     return True, None
 

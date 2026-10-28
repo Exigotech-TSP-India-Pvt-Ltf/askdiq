@@ -12,7 +12,6 @@ contains one of the ``expected_headings``).
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Iterable, Sequence
 
 
@@ -165,25 +164,9 @@ def missing_keywords(text: str, specs: Iterable[str]) -> list[str]:
 
 
 def forbidden_found(text: str, specs: Iterable[str]) -> list[str]:
-    """Forbidden specs outside a sentence that clearly refuses the content."""
+    """Specs that DO appear in ``text`` (used for hallucination guards)."""
 
-    sentences = re.split(
-        r"(?<=[.!?])(?:[\"')\]]*)\s+|[\r\n]+",
-        text,
-    )
-    refusal_frame = re.compile(
-        r"\b(?:can['\u2019]t|cannot|won['\u2019]t|will not|"
-        r"refuse(?:d)?|decline(?:d)?|unable to)\b",
-        re.IGNORECASE,
-    )
-    found = []
-    for spec in specs:
-        if any(
-            _matches(sentence, spec) and not refusal_frame.search(sentence)
-            for sentence in sentences
-        ):
-            found.append(spec)
-    return found
+    return [spec for spec in specs if _matches(text, spec)]
 
 
 def word_count(text: str) -> int:

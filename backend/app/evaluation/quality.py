@@ -147,43 +147,6 @@ ABSTAIN_PHRASES = (
     "doesn't say",
     "does not provide",
     "doesn't provide",
-    "don't provide",
-    "do not provide",
-    "don't hold",
-    "do not hold",
-    "don't have that information",
-    "do not have that information",
-    "not stated",
-    "not listed",
-    "not included",
-    "no monthly price",
-    "no ssns",
-    "no personal phone numbers",
-    "can't confirm",
-    "cannot confirm",
-    "can't provide",
-    "cannot provide",
-    "can't tell",
-    "cannot tell",
-    "does not offer",
-    "doesn't offer",
-    "not legal advice",
-    "not legal services",
-    "not legal counsel",
-    "won't comply",
-    "will not comply",
-    "won't follow",
-    "will not follow",
-    "can't share",
-    "cannot share",
-    "don't share",
-    "do not share",
-    "do not print",
-    "does not print",
-    "will not print",
-    "won't print",
-    "refuse to provide",
-    "we refuse",
     "no information",
     "unable to",
     "real-time",
@@ -197,26 +160,14 @@ ABSTAIN_PHRASES = (
     "do not have access",
 )
 
-_CLARIFICATION_MENU_RE = re.compile(
-    r"\bwhich\s+(?:service|topic|one|option)\b.{0,60}"
-    r"\b(?:do you mean|would you like|are you asking|want)\b"
-    r"|\breply with (?:the )?(?:option|number)\b"
-    r"|\bwhat would you like to know about\b",
-    re.IGNORECASE | re.DOTALL,
-)
-_DIRECT_NO_RE = re.compile(r"^\s*no\b(?:[.!,:;]|\s|$)", re.IGNORECASE)
-_SMART_APOSTROPHES = str.maketrans({"\u2019": "'", "\u2018": "'", "\u02bc": "'"})
-
 
 def abstained(grounded: bool, answer: str) -> bool:
     """The system declined: the fallback reply, or a grounded 'not in the docs' answer."""
 
     if not grounded:
         return True
-    lowered = answer.lower().translate(_SMART_APOSTROPHES)
-    return any(p in lowered for p in ABSTAIN_PHRASES) or bool(
-        _CLARIFICATION_MENU_RE.search(lowered) or _DIRECT_NO_RE.search(lowered)
-    )
+    lowered = answer.lower()
+    return any(p in lowered for p in ABSTAIN_PHRASES)
 
 
 # ---------------------------------------------------------------------------
