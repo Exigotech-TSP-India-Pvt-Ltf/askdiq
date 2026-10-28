@@ -176,6 +176,7 @@ describe("Feedback filter chips on the tab row (OR-13)", () => {
     // Same row as the tabs and the date filter.
     const row = bar.closest("[data-page-toolbar]");
     expect(row).toContainElement(screen.getByRole("tablist", { name: "Feedback sections" }));
+    expect(row).toHaveClass("min-[1440px]:flex-nowrap");
     fireEvent.click(within(bar).getByRole("button", { name: "Status: New, change filter" }));
     const list = screen.getByRole("listbox", { name: "Status" });
     expect(within(list).getByRole("option", { name: "New" })).toHaveAttribute("aria-selected", "true");

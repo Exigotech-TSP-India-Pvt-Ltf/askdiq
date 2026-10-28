@@ -16,6 +16,8 @@ export interface PageToolbarProps {
   tabsTour?: string;
   /** Pointer / focus intent on the tabs (route prefetch). */
   onTabsIntent?: (event: React.PointerEvent | React.FocusEvent) => void;
+  /** Keep tabs and actions stacked until the viewport has room for both. */
+  singleRowAtWide?: boolean;
   className?: string;
 }
 
@@ -72,14 +74,26 @@ export function PageToolbar({
   dateRange = false,
   tabsTour,
   onTabsIntent,
+  singleRowAtWide = false,
   className = "",
 }: PageToolbarProps) {
   const tabsRef = useRef<HTMLDivElement>(null);
   const edges = useScrollEdges(tabsRef);
   const hasRight = Boolean(actions || filters || dateRange);
+  const layout = singleRowAtWide
+    ? {
+        row: "min-[1440px]:flex-nowrap",
+        tabs: "min-[1440px]:min-w-[12rem] min-[1440px]:shrink-[4] min-[1440px]:overflow-x-auto min-[1440px]:p-0.5 min-[1440px]:[scrollbar-width:none] min-[1440px]:[&::-webkit-scrollbar]:hidden min-[1440px]:[&_[role=tablist]]:flex-nowrap",
+        actions: "min-[1440px]:max-w-[70%] min-[1440px]:shrink-0",
+      }
+    : {
+        row: "lg:flex-nowrap",
+        tabs: "lg:min-w-[12rem] lg:shrink-[4] lg:overflow-x-auto lg:p-0.5 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden lg:[&_[role=tablist]]:flex-nowrap",
+        actions: "lg:max-w-[70%] lg:shrink-0",
+      };
   if (!tabs && !hasRight) return null;
   return (
-    <div data-page-toolbar className={`flex flex-wrap items-center gap-x-3 gap-y-2 lg:flex-nowrap ${className}`}>
+    <div data-page-toolbar className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${layout.row} ${className}`}>
       {tabs ? (
         <div
           ref={tabsRef}
@@ -87,9 +101,9 @@ export function PageToolbar({
           data-toolbar-tabs
           data-scroll-start={edges.start || undefined}
           data-scroll-end={edges.end || undefined}
-          // lg+: one line of tabs that shrinks first (shrink weight 4) and scrolls;
-          // the padding keeps focus rings inside the scroll box.
-          className="min-w-0 max-w-full lg:min-w-[12rem] lg:shrink-[4] lg:overflow-x-auto lg:p-0.5 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden lg:[&_[role=tablist]]:flex-nowrap"
+          // At the selected breakpoint, tabs shrink first and scroll; padding
+          // keeps focus rings inside the scroll box.
+          className={`min-w-0 max-w-full ${singleRowAtWide ? "w-full min-[1440px]:w-auto" : ""} ${layout.tabs}`}
           style={fadeMask(edges)}
           onPointerOver={onTabsIntent}
           onFocus={onTabsIntent}
@@ -100,9 +114,9 @@ export function PageToolbar({
       {hasRight ? (
         <div
           data-toolbar-actions
-          // lg+: keeps its size on the tab row (the tabs give way); only a very
-          // long chip set wraps inside it, capped at 70% of the row.
-          className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 lg:max-w-[70%] lg:shrink-0"
+          // At the selected breakpoint, actions keep their size while tabs give
+          // way; only a very long chip set wraps inside the capped cluster.
+          className={`ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 ${singleRowAtWide ? "w-full min-[1440px]:w-auto" : ""} ${layout.actions}`}
         >
           {actions}
           {filters}
