@@ -55,7 +55,7 @@ UNSAFE_PATTERNS = [
     rf"(?:[a-z]{{1,15}}\s{{1,3}}){{0,2}}(?:{_INSTR_NOUN}|{_RULE_NOUN})\b",
     rf"\b{_WEAK_VERB}\s{{1,3}}(?:(?:the|of)\s{{1,3}}){{0,2}}"
     r"(?:all|any|every)\s{1,3}(?:instructions?|prompts?)\b",
-    r"\b(?:do\s{1,3}not|don'?t|stop|never)\s{1,3}(?:follow(?:ing)?|obey(?:ing)?)"
+    r"\b(?:d\s?o\s{1,3}not|don'?t|stop|never)\s{1,3}(?:follow(?:ing)?|obey(?:ing)?)"
     rf"\s{{1,3}}(?:{_DET}\s{{1,3}}){{0,4}}(?:{_INSTR_NOUN}|{_RULE_NOUN})\b",
     rf"\b{_STRONG_VERB}\s{{1,3}}(?:everything|all)\s{{1,3}}"
     r"(?:above|before|prior|previous|you\s{1,3}(?:know|were\s{1,3}told))\b",
@@ -259,7 +259,17 @@ _DIRECT_CREDENTIAL_RE = re.compile(
     r"(?!\s{1,3}(?:polic|requirement|reset|rule|complex|length|expir))"
     r"|\bconnection\s{1,3}strings?\b"
     r"|\benv(?:ironment)?\s{1,3}(?:variables?|vars?|file)\b|\.env\b"
-    r"|\bthe\s{1,3}api[\s_-]{0,3}keys?\b",
+    r"|\bthe\s{1,3}api[\s_-]{0,3}keys?\b"
+    r"|\b(?:your|ur)\s{1,3}(?:openai|azure|secret|private|master|admin)"
+    r"\s{1,3}keys?\b",
+    re.IGNORECASE,
+)
+# Imperative ask for "the secret key" ("tell me the secret key"); a question
+# such as "what is a secret key?" is not matched.
+_IMPERATIVE_SECRET_KEY_RE = re.compile(
+    r"\b(?:tell\s{1,3}me|give\s{1,3}me|send\s{1,3}me|share|reveal|show\s{1,3}me|"
+    r"print|dump|leak|expose)\s{1,3}the\s{1,3}"
+    r"(?:secret|private|master|signing)\s{1,3}keys?\b",
     re.IGNORECASE,
 )
 _PERSONAL_CONTACT_RE = re.compile(
@@ -337,6 +347,111 @@ _KNOWN_TERMS = {
     "applocker", "powershell", "linux", "windows", "macos", "android", "ios",
 }  # fmt: skip
 
+# Everyday product-domain words used only to recognise typos of real words.
+_DOMAIN_WORDS = frozenset(
+    [
+        "important",
+        "importance",
+        "length",
+        "duration",
+        "benchmark",
+        "benchmarks",
+        "export",
+        "exports",
+        "import",
+        "month",
+        "months",
+        "monthly",
+        "year",
+        "years",
+        "annual",
+        "annually",
+        "week",
+        "weeks",
+        "weekly",
+        "daily",
+        "hours",
+        "uptime",
+        "coverage",
+        "compare",
+        "onboarding",
+        "enrolment",
+        "enrollment",
+        "enrol",
+        "enroll",
+        "encryption",
+        "encrypted",
+        "authentication",
+        "authorization",
+        "authorisation",
+        "vulnerability",
+        "vulnerabilities",
+        "remediation",
+        "configuration",
+        "configure",
+        "retention",
+        "certification",
+        "certified",
+        "version",
+        "versions",
+        "assessment",
+        "assessments",
+        "requirement",
+        "requirements",
+        "regulation",
+        "regulations",
+        "incident",
+        "incidents",
+        "response",
+        "monitoring",
+        "detection",
+        "automation",
+        "automated",
+        "automate",
+        "application",
+        "applications",
+        "administrative",
+        "administrator",
+        "privilege",
+        "privileges",
+        "password",
+        "passwords",
+        "permission",
+        "permissions",
+        "device",
+        "devices",
+        "license",
+        "licence",
+        "licensing",
+        "subscription",
+        "billing",
+        "invoice",
+        "contract",
+        "storage",
+        "residency",
+        "sovereignty",
+        "logging",
+        "syslog",
+        "connector",
+        "connectors",
+        "scanning",
+        "scanner",
+        "baseline",
+        "baselines",
+        "hardening",
+        "remote",
+        "workforce",
+        "control",
+        "alignment",
+        "align",
+        "aligns",
+        "mapped",
+        "mapping",
+        "evidence",
+        "attestation",
+    ]  # noqa: SIM905
+)
+
 _ALLOWED_SHORT_TOKENS = {"hi", "yo", "ok", "no", "na"}
 
 _KEYBOARD_SEQS = (
@@ -370,6 +485,7 @@ _VALID_VOWEL_PAIRS = frozenset(
 )
 _VOWELS_NO_Y = set("aeiou")
 _RARE_MIN_LEN = 5
+_VOWEL_RUN_RE = re.compile(r"[aeiou]{4,}")
 _RARE_PAIR_FRACTION = 0.25
 _RARE_PAIR_LONG_WORD = 8
 
@@ -400,6 +516,26 @@ _COMMON_WORDS = frozenset(
     "available availability around within without across every each".split()
 )
 
+# Placeholder text ("lorem ipsum dolor sit amet ...") is never a question.
+_LOREM_WORDS = frozenset(
+    [
+        "lorem",
+        "ipsum",
+        "dolor",
+        "amet",
+        "consectetur",
+        "adipiscing",
+        "eiusmod",
+        "tempor",
+        "incididunt",
+        "labore",
+        "dolore",
+        "magna",
+        "aliqua",
+    ]  # noqa: SIM905
+)
+_LOREM_MIN_HITS = 2
+
 _STRIP_CHARS = string.punctuation + string.whitespace
 
 
@@ -429,8 +565,14 @@ def _rare_pair_count(letters: str) -> int:
             rare += (first + second) not in _VALID_VOWEL_PAIRS
         elif first not in _VOWELS_NO_Y and second not in _VOWELS_NO_Y:
             rare += (first + second) not in _VALID_CONSONANT_PAIRS
-        elif first == "q":
-            rare += second != "u"
+    # 'q' not followed by 'u' (or ending the word): 'faq', 'qa' never occur in words.
+    rare += sum(
+        1
+        for i, ch in enumerate(letters)
+        if ch == "q"
+        and letters[i + 1 : i + 2] != "u"
+        and (i + 1 == len(letters) or letters[i + 1] in _VOWELS_NO_Y)
+    )
     return rare
 
 
@@ -442,6 +584,8 @@ def is_implausible_word(token: str) -> bool:
     letters = _collapse_runs(re.sub(r"[^a-z]", "", cleaned))
     if len(letters) < _RARE_MIN_LEN:
         return False
+    if _VOWEL_RUN_RE.search(letters):
+        return True
     rare = _rare_pair_count(letters)
     if rare < 2:
         return False
@@ -564,6 +708,8 @@ def check_sensitive_request(query: str) -> tuple[bool, str | None]:
         and _DIRECT_CREDENTIAL_RE.search(text)
     ):
         return False, "application_secret_request"
+    if _IMPERATIVE_SECRET_KEY_RE.search(text) and not _HOW_TO_RE.search(text):
+        return False, "application_secret_request"
     if _CROSS_TENANT_RE.search(text) and _CREDENTIAL_RE.search(text):
         return False, "no_permission"
     if _PERSONAL_CONTACT_RE.search(text) and _PERSON_RE.search(text):
@@ -588,6 +734,16 @@ def _has_no_recognisable_words(words: list[str]) -> bool:
         w in _COMMON_WORDS or w in _KNOWN_TERMS or w in ALLOWED_ACRONYMS
         for w in lowered
     )
+
+
+def _is_typo_of_known_word(token: str) -> bool:
+    """'benchmrk', 'exxport': a near-miss of a real word, not mash or noise."""
+    letters = _collapse_runs(re.sub(r"[^a-z]", "", _clean_token(token).lower()))
+    if len(letters) < _FUZZY_MIN_WORD_LEN or _is_keyboard_mash(letters):
+        return False
+    if _STRICT_DOUBLES_RE.search(letters) or _VOWEL_RUN_RE.search(letters):
+        return False
+    return _is_near_catalogue_word(letters)
 
 
 def check_spam(
@@ -644,7 +800,10 @@ def check_spam(
 
     # Gibberish words: mash/vowel/cluster rules plus pair plausibility
     gibberish_words = [
-        w for w in words if is_gibberish_token(w) or is_implausible_word(w)
+        w
+        for w in words
+        if (is_gibberish_token(w) or is_implausible_word(w))
+        and not _is_typo_of_known_word(w)
     ]
 
     # If single-word query is gibberish -> spam
@@ -653,6 +812,9 @@ def check_spam(
 
     # If 50% or more words are gibberish -> spam
     if gibberish_words and (len(gibberish_words) / len(words)) >= 0.5:
+        return False, "spam_detected"
+
+    if sum(_clean_token(w).lower() in _LOREM_WORDS for w in words) >= _LOREM_MIN_HITS:
         return False, "spam_detected"
 
     # Pronounceable nonsense ("blorf zindle quarpt"): no recognisable word at all
@@ -665,6 +827,7 @@ def check_spam(
 _SANITIZE_MIN_VALID_WORDS = 2
 _FUZZY_MIN_WORD_LEN = 4
 _FUZZY_LONG_TOKEN_LEN = 5
+_FUZZY_VERY_LONG_TOKEN_LEN = 8
 _FUZZY_MAX_TOKEN_LEN = 40
 
 
@@ -687,15 +850,31 @@ def _edit_distance_within(a: str, b: str, limit: int) -> bool:
     return previous[-1] <= limit
 
 
-def _is_near_catalogue_word(letters: str) -> bool:
+def _is_near_catalogue_word(letters: str, extra_limit: int = 0) -> bool:
     """A typo of a real word ('trst' -> 'trust') is kept, never stripped."""
     if len(letters) > _FUZZY_MAX_TOKEN_LEN:
         return False
     limit = 2 if len(letters) >= _FUZZY_LONG_TOKEN_LEN else 1
-    vocabulary = _COMMON_WORDS | _KNOWN_TERMS | ALLOWED_ACRONYMS
+    limit += (len(letters) >= _FUZZY_VERY_LONG_TOKEN_LEN) * extra_limit
+    vocabulary = _COMMON_WORDS | _KNOWN_TERMS | ALLOWED_ACRONYMS | _DOMAIN_WORDS
     return any(
         len(word) >= _FUZZY_MIN_WORD_LEN and _edit_distance_within(letters, word, limit)
         for word in vocabulary
+    )
+
+
+_STRICT_DOUBLES_RE = re.compile(r"jj|qq|zx|jk|hj|kj")
+_STRIP_MIN_CLUSTER = 6
+_STRIP_MIN_VOWELLESS = 5
+
+
+def _is_clear_junk_shape(letters: str) -> bool:
+    """Shapes a typo of a real word cannot produce: mash, jj/qq, long clusters."""
+    return bool(
+        _is_keyboard_mash(letters)
+        or _STRICT_DOUBLES_RE.search(letters)
+        or re.search(rf"[bcdfghjklmnpqrstvwxz]{{{_STRIP_MIN_CLUSTER},}}", letters)
+        or (len(letters) >= _STRIP_MIN_VOWELLESS and not _VOWEL_RE.search(letters))
     )
 
 
@@ -708,10 +887,12 @@ def _is_strippable_junk(token: str) -> bool:
     if any(ch.isupper() for ch in original[1:]):
         return False
     letters = _collapse_runs(re.sub(r"[^a-z]", "", original.lower()))
+    if not _is_clear_junk_shape(letters):
+        return False
     # English-plausible spelling ('owns'): vowel present, no impossible pairs.
     if _VOWEL_RE.search(letters) and _rare_pair_count(letters) == 0:
         return False
-    return not _is_near_catalogue_word(letters)
+    return not _is_near_catalogue_word(letters, extra_limit=1)
 
 
 def sanitize_query(query: str) -> tuple[str, list[str]]:
