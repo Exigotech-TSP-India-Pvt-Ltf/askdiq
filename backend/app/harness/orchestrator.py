@@ -59,6 +59,70 @@ class GuardrailBlockedError(Exception):
         self.flags = flags
 
 
+_UNSAFE_FLAG = "unsafe_input_detected"
+_SPECIALIST_STEP = "talk to one of our specialists"
+
+
+def _fallback_answer(flags: list[str], brand: str) -> str:
+    """The customer-facing wording for a blocked or non-answered request.
+
+    Unsafe input wins over every other flag. Nothing here names the source of
+    the answer (no "knowledge base", "documents" or "context"), and every
+    not-covered or low-confidence reply ends with a human next step.
+    """
+
+    flagged = set(flags)
+    if _UNSAFE_FLAG in flagged:
+        return (
+            "I can't help with that one, but I'm happy to answer questions about "
+            f"{brand}'s security platform and compliance. For anything else, "
+            f"{_SPECIALIST_STEP}."
+        )
+    if flagged & {"no_permission", "application_secret_request"}:
+        return (
+            "For security reasons I can't share credentials or other customers' "
+            "information. One of our specialists can help with access."
+        )
+    if "personal_contact_request" in flagged:
+        return (
+            "I can't share individual contact details, but one of our specialists "
+            "will be glad to help."
+        )
+    if "spam_detected" in flagged:
+        return (
+            "Sorry, I didn't catch that. Could you rephrase your question? I can "
+            f"help with {brand}, Zero Trust, Essential Eight and more."
+        )
+    if "unclear_input" in flagged:
+        return (
+            "Could you add a little more detail so I can point you in the right "
+            "direction?"
+        )
+    if "query_too_long" in flagged:
+        return "That's a bit long for me. Could you shorten it to a sentence or two?"
+    if "empty_query" in flagged:
+        return "Please type a question and I'll do my best to help."
+    if flagged & {"off_topic", "no_sources"}:
+        return (
+            "That's a bit outside what I can help with here. I can answer "
+            f"questions about {brand}, Zero Trust, Essential Eight, Responsible AI "
+            "and data handling, and our specialists are happy to help with anything "
+            "else."
+        )
+    if flagged & {"llm_call_failed", "empty_llm_output"}:
+        return (
+            "Sorry, something went wrong on our side. Please try again in a "
+            f"moment, or {_SPECIALIST_STEP} if it keeps happening."
+        )
+    # Ungrounded answers (low retrieval confidence, possible hallucination,
+    # unsupported figures): the question was fine, the evidence was not.
+    return (
+        "I want to give you an accurate answer and I'm not certain on this one. "
+        "Could you tell me a bit more about what you're after? Or "
+        f"{_SPECIALIST_STEP}."
+    )
+
+
 def _fallback_response(
     request_id: str,
     flags: list[str],
@@ -80,46 +144,7 @@ def _fallback_response(
     surface whatever sources were considered, for transparency.
     """
 
-    brand = settings.brand_name
-    if "unclear_input" in flags:
-        answer = (
-            "Your question appears too short or incomplete. Could you please provide "
-            f"a bit more detail or ask a specific question about {brand}?"
-        )
-    elif "no_permission" in flags:
-        answer = "I can't provide another customer's credentials or tenant data."
-    elif "personal_contact_request" in flags:
-        answer = f"I don't have personal contact details for {brand} staff."
-    elif "application_secret_request" in flags:
-        answer = "I can't provide application secrets or credentials."
-    elif "spam_detected" in flags:
-        answer = (
-            "I couldn't quite understand your question. Could you please rephrase "
-            f"or ask a question regarding {brand}'s platform, Zero Trust architecture, "
-            "or Essential Eight compliance?"
-        )
-    elif "unsafe_input_detected" in flags:
-        answer = (
-            "I am unable to process that request. Please feel free to ask questions "
-            f"regarding {brand}'s security platform and compliance features."
-        )
-    elif "off_topic" in flags or "no_sources" in flags:
-        answer = (
-            f"I couldn't find relevant information in the {brand} knowledge base to answer that. "
-            f"I can help with questions about the {brand} platform, Zero Trust, "
-            "Essential Eight, Responsible AI, governance, and data handling."
-        )
-    elif "llm_call_failed" in flags or "empty_llm_output" in flags:
-        answer = "I couldn't generate an answer just now. Please try again in a moment."
-    else:
-        # Ungrounded answers (low retrieval confidence, possible hallucination,
-        # unsupported figures): the question was fine, the evidence was not.
-        answer = (
-            f"I couldn't find enough support in the {brand} knowledge base to answer "
-            "that confidently. Try asking about a more specific topic. "
-            f"I can help with questions about the {brand} platform, Zero Trust, "
-            "Essential Eight, Responsible AI, governance, and data handling."
-        )
+    answer = _fallback_answer(flags, settings.brand_name)
 
     return QueryResponse(
         answer=answer,
@@ -270,6 +295,10 @@ async def run_query(
     t0 = time.perf_counter()
 
     pre_flags = run_pre_checks(query, settings.max_query_length)
+    if _UNSAFE_FLAG in pre_flags:
+        # Unsafe input wins over every other flag: canned refusal only, with
+        # no retrieval, no LLM call, no sources and no pitch.
+        pre_flags = [_UNSAFE_FLAG]
     if pre_flags:
         latency_ms = (time.perf_counter() - start) * 1000
         logger.warning(
