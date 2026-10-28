@@ -475,7 +475,10 @@ async def test_run_query_with_style_and_citations(monkeypatch) -> None:
         SourceChunk(
             chunk_id=f"00000000-0000-0000-0000-00000000001{i}",
             document_id=f"00000000-0000-0000-0000-00000000002{i}",
-            content="The Essential Eight is eight mitigation strategies.",
+            content=(
+                "The Essential Eight is eight mitigation strategies, including "
+                "MFA and Backups."
+            ),
             score=0.8,
             metadata={"source_name": f"doc-{i}.md"},
             url=f"https://docs.deployiq.com.au/doc-{i}",

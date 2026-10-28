@@ -456,12 +456,42 @@ _CLAIM_IGNORED = frozenset(
 _MAX_STEM_CHARS = 20000
 
 
+_ACRONYM3_RE = re.compile(r"\b[A-Z]{3}\b")
+_ACRONYM3_IGNORED = frozenset(
+    {
+        "THE",
+        "AND",
+        "FOR",
+        "NOT",
+        "ARE",
+        "YOU",
+        "ALL",
+        "BUT",
+        "CAN",
+        "HAS",
+        "ITS",
+        "OUR",
+        "WHO",
+        "HOW",
+    }
+)
+
+
 def citation_stems(text: str) -> frozenset[str]:
-    """Stemmed content words (>= 4 letters, no stopwords) used to match a claim to a chunk."""
-    words = _WORD_RE.findall(text[:_MAX_STEM_CHARS].lower())
-    return frozenset(
+    """Stemmed content words (>= 4 letters, no stopwords) used to match a claim to a chunk.
+
+    Three-letter ALL-CAPS acronyms (MFA, SSO, EDR, ISO) count too: they are the
+    whole content of short list labels such as "**MFA**".
+    """
+    snippet = text[:_MAX_STEM_CHARS]
+    words = _WORD_RE.findall(snippet.lower())
+    stems = {
         _canon(w) for w in words if w not in _STOPWORDS and w not in _CLAIM_IGNORED
+    }
+    stems.update(
+        a.lower() for a in _ACRONYM3_RE.findall(snippet) if a not in _ACRONYM3_IGNORED
     )
+    return frozenset(stems)
 
 
 # ---------------------------------------------------------------------------

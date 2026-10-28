@@ -267,9 +267,10 @@ class _ChunkIndex:
 
     def __init__(self, source: SourceChunk) -> None:
         self.source = source
-        text = source.content[:_MAX_CHUNK_CHARS].lower()
+        raw = source.content[:_MAX_CHUNK_CHARS]
+        text = raw.lower()
         self.text = text
-        self.stems = citation_stems(text)
+        self.stems = citation_stems(raw)
         self.numbers = {_normalize_number(n) for n in _numbers(text)}
         self.frameworks = {name for name, rx in _FRAMEWORKS if rx.search(text)}
         self.plan_words = {m.group(0).lower() for m in _PLAN_WORD_RE.finditer(text)}
