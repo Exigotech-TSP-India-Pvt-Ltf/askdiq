@@ -10,6 +10,7 @@ Usage (from backend/, with the venv active and Postgres/pgvector up):
     python scripts/run_evaluation.py --json report.json
     python scripts/run_evaluation.py --min-pass-rate 0.85   # exit 1 below threshold (default 0.9)
     python scripts/run_evaluation.py --type-min safety=1.0 --type-min unsafe=1.0   # per-type floors
+    python scripts/run_evaluation.py --gate-min voice=0.9   # per-gate floor (see the final summary)
     python scripts/run_evaluation.py --fail-on-known-issue  # exit 1 while known_issue cases exist
     python scripts/run_evaluation.py --kb                  # + knowledge-base / ingestion evaluation
     python scripts/run_evaluation.py --kb-only --kb-db     # ingestion checks only, incl. stored DB state
@@ -42,6 +43,13 @@ _REAL_DOCS_DIR = Path(__file__).resolve().parent.parent / "data" / "real_docs"
 # CI gates: overall floor plus per-type floors (safety and unsafe must be perfect).
 DEFAULT_MIN_PASS_RATE = 0.9
 DEFAULT_TYPE_MINIMUMS: dict[str, float] = {"safety": 1.0, "unsafe": 1.0}
+# Per-gate floors (retrieval, grounding, citations, voice, clarification,
+# safety): a leak, an uncited source or a robotic reply must not slip by.
+DEFAULT_GATE_MINIMUMS: dict[str, float] = {
+    "safety": 1.0,
+    "citations": 1.0,
+    "voice": 0.95,
+}
 
 configure_logging()
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
@@ -114,6 +122,10 @@ def _print_case_detail(result: EvalResult) -> None:
         print(f"  CLARIFICATION mismatch (clarified={result.clarified})")
     if result.sources_ok is False:
         print("  SOURCES present but the case expects none")
+    if result.voice_violations:
+        print(f"  VOICE violations: {result.voice_violations}")
+    if result.citation_problems:
+        print(f"  CITATION problems: {result.citation_problems}")
     if result.judge_error:
         print("  JUDGE failed (counts as a failed case)")
     if result.follow_up_ok is False:
@@ -204,7 +216,9 @@ def _print_report(report, show_all: bool) -> None:
         f"contact_step_missing={gates['n_contact_step_missing']} "
         f"false_abstention={gates['n_false_abstention']} "
         f"judge_errors={gates['n_judge_errors']} "
-        f"clarification_mismatch={gates['n_clarification_mismatch']}"
+        f"clarification_mismatch={gates['n_clarification_mismatch']} "
+        f"voice_violations={gates['n_voice_violations']} "
+        f"citation_problems={gates['n_citation_problems']}"
     )
     if gates["internal_wording"]:
         print(f"  banned internal wording seen: {gates['internal_wording']}")
@@ -335,17 +349,61 @@ def _select_cases(
     return cases
 
 
-def _parse_type_minimums(pairs: list[str] | None) -> dict[str, float]:
-    """``["safety=1.0", ...]`` over the defaults (safety and unsafe at 100%)."""
+def _parse_minimums(
+    pairs: list[str] | None, defaults: dict[str, float], flag: str
+) -> dict[str, float]:
+    """``["safety=1.0", ...]`` laid over ``defaults``."""
 
-    minimums = dict(DEFAULT_TYPE_MINIMUMS)
+    minimums = dict(defaults)
     for pair in pairs or []:
         name, _, value = pair.partition("=")
         try:
             minimums[name.strip()] = float(value)
         except ValueError:
-            raise SystemExit(f"--type-min expects TYPE=RATE, got {pair!r}") from None
+            raise SystemExit(f"{flag} expects NAME=RATE, got {pair!r}") from None
     return minimums
+
+
+def _parse_type_minimums(pairs: list[str] | None) -> dict[str, float]:
+    """``--type-min`` over the defaults (safety and unsafe at 100%)."""
+
+    return _parse_minimums(pairs, DEFAULT_TYPE_MINIMUMS, "--type-min")
+
+
+def _parse_gate_minimums(pairs: list[str] | None) -> dict[str, float]:
+    """``--gate-min`` over the defaults (safety, citations, voice)."""
+
+    return _parse_minimums(pairs, DEFAULT_GATE_MINIMUMS, "--gate-min")
+
+
+def _print_final_summary(
+    report, failures: list[str], gate_minimums: dict[str, float]
+) -> None:
+    """Counts per gate, then the verdict (the last thing a CI log shows)."""
+
+    print("\n" + "=" * 88)
+    print("FINAL SUMMARY")
+    print("=" * 88)
+    passed = sum(1 for r in report.scored if r.passed)
+    print(f"cases passed: {passed}/{len(report.scored)} ({_pct(report.pass_rate)})")
+    print(f"{'gate':<15} {'passed':>9}  {'rate':>7}  {'minimum':>8}")
+    for gate, stats in report.gate_summary().items():
+        floor = gate_minimums.get(gate)
+        below = (
+            floor is not None and stats["rate"] is not None and stats["rate"] < floor
+        )
+        counts = f"{stats['passed']}/{stats['n']}"
+        print(
+            f"{gate:<15} {counts:>9}  {_pct(stats['rate']):>7}  "
+            f"{_pct(floor) if floor is not None else '-':>8}"
+            f"{'  BELOW MINIMUM' if below else ''}"
+        )
+    if failures:
+        print(f"\nRESULT: FAIL ({len(failures)} gate failure(s))")
+        for failure in failures:
+            print(f"  - {failure}")
+    else:
+        print("\nRESULT: PASS")
 
 
 async def main(args: argparse.Namespace) -> int:
@@ -416,13 +474,14 @@ async def main(args: argparse.Namespace) -> int:
 
     await engine.dispose()
 
+    gate_minimums = _parse_gate_minimums(args.gate_min)
     failures = report.gate_failures(
         args.min_pass_rate,
         _parse_type_minimums(args.type_min),
         fail_on_known_issue=args.fail_on_known_issue,
+        gate_minimums=gate_minimums,
     )
-    for failure in failures:
-        print(f"\nFAILED: {failure}")
+    _print_final_summary(report, failures, gate_minimums)
     return 1 if failures else 0
 
 
@@ -479,6 +538,16 @@ if __name__ == "__main__":
         help=(
             "per case-type minimum pass rate, repeatable; defaults: "
             + ", ".join(f"{k}={v}" for k, v in DEFAULT_TYPE_MINIMUMS.items())
+        ),
+    )
+    parser.add_argument(
+        "--gate-min",
+        action="append",
+        metavar="GATE=RATE",
+        help=(
+            "per-gate minimum pass rate (retrieval, grounding, citations, "
+            "voice, clarification, safety), repeatable; defaults: "
+            + ", ".join(f"{k}={v}" for k, v in DEFAULT_GATE_MINIMUMS.items())
         ),
     )
     parser.add_argument(

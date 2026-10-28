@@ -3,7 +3,7 @@
 from collections import Counter
 from pathlib import Path
 
-from app.evaluation.dataset import ALL_DOCS, EVAL_CASES
+from app.evaluation.dataset import ALL_DOCS, CIS, EVAL_CASES
 from app.evaluation.metrics import _matches
 
 
@@ -141,3 +141,86 @@ def test_replay_turns_returns_the_history_user_turns_in_order():
     assert (
         next(c for c in EVAL_CASES if c.id == "v2_company_based").replay_turns() == []
     )
+
+
+# Canned replies and refusals have no KB keyword to verify against the docs.
+_V3_NO_KB_KEYWORDS = _NO_KB_KEYWORDS | {"conversational", "off_topic"}
+V3_CASE_COUNT = 30
+DATASET_CASE_COUNT = 150
+
+
+def _v3_cases():
+    return [c for c in EVAL_CASES if c.id.startswith("v3_")]
+
+
+def test_v3_dataset_loads_and_the_count_is_asserted():
+    # Update both numbers on purpose when a case is added; a removal fails here.
+    assert len(_v3_cases()) == V3_CASE_COUNT
+    assert len(EVAL_CASES) == DATASET_CASE_COUNT
+
+
+def test_v3_case_ids_are_unique_and_prefixed():
+    ids = [c.id for c in _v3_cases()]
+    assert len(ids) == len(set(ids)), [i for i, n in Counter(ids).items() if n > 1]
+    assert all(i.startswith("v3_") for i in ids)
+    all_ids = [c.id for c in EVAL_CASES]
+    assert len(all_ids) == len(set(all_ids))
+
+
+def test_v3_expected_keywords_occur_in_expected_docs():
+    """Answered cases only assert facts that are really in their docs."""
+    problems = []
+    for case in _v3_cases():
+        if case.case_type in _V3_NO_KB_KEYWORDS or not case.expected_docs:
+            continue
+        text = _kb_text(case.expected_docs)
+        problems += [
+            f"{case.id}: {spec!r} not in {case.expected_docs}"
+            for spec in case.expected_keywords
+            if not _matches(text, spec)
+        ]
+    assert not problems, problems
+    # The answered v3 cases are really checked (not silently skipped).
+    checked = [
+        c
+        for c in _v3_cases()
+        if c.expected_docs and c.case_type not in _V3_NO_KB_KEYWORDS
+    ]
+    assert len(checked) >= 6
+
+
+def test_v3_cis_recommendation_count_is_in_the_cis_doc():
+    case = next(c for c in _v3_cases() if c.id == "v3_cis_recommendation_count")
+    assert case.expected_keywords == ["160"] and case.expected_docs == [CIS]
+    assert "160" in _kb_text([CIS])
+
+
+def test_v3_clarification_cases_have_headers_and_no_sources():
+    cards = [c for c in _v3_cases() if c.expect_clarification is True]
+    assert len(cards) >= 9
+    for case in cards:
+        assert case.expect_clarification_headers, case.id
+        assert case.expect_no_sources, case.id
+    for case in EVAL_CASES:
+        if case.expect_clarification is True:
+            assert case.expect_clarification_headers, case.id
+
+
+def test_v3_cases_are_well_formed():
+    for case in _v3_cases():
+        assert case.query.strip(), case.id
+        assert not set(case.expected_docs) - ALL_DOCS, case.id
+        if case.expect_abstain:
+            assert case.expect_grounded is False, case.id
+        if case.case_type in {"unsafe", "spam"}:
+            assert case.expect_flags_any, case.id
+        if case.variant_of:
+            assert case.perturbation, case.id
+        # Never a clarification card AND no-clarification at once.
+        assert not (case.expect_clarification and case.allow_clarification), case.id
+
+
+def test_query_too_long_expects_the_422_path():
+    case = next(c for c in EVAL_CASES if c.id == "query_too_long")
+    assert case.expect_http_status == 422
+    assert len(case.query) > 2000

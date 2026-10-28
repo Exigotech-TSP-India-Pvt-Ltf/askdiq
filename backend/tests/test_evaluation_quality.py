@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from app.evaluation import evaluator
 from app.evaluation import metrics as m
 from app.evaluation import quality as q
 from app.evaluation import style_quality as sq
@@ -30,6 +31,11 @@ from app.evaluation.evaluator import (
     judge_verdict,
 )
 from app.evaluation.judge import JudgeScores
+from app.guardrails.conversational import (
+    INCIDENT_REPLY,
+    PRICING_REPLY,
+    get_contact_response,
+)
 from app.guardrails.pre_checks import run_pre_checks
 
 _BACKEND = Path(__file__).resolve().parent.parent
@@ -584,3 +590,238 @@ def test_run_summary_lists_known_issues_and_gates():
     assert any("known_one" in f for f in report.gate_failures(None, None, True))
     assert report.gate_failures(None, None, False) == []
     assert report.type_minimums_failed({"unsafe": 1.0, "missing": 1.0}) == ["unsafe"]
+
+
+# ---------------------------------------------------------------------------
+# v3 cases: live findings, voice gate, citation gate, 422 path, gate summary
+# ---------------------------------------------------------------------------
+
+_V3 = {c.id: c for c in EVAL_CASES if c.id.startswith("v3_")}
+
+
+def test_v3_query_too_long_expects_the_422_path_not_a_guardrail_reply():
+    case = _BY_ID["query_too_long"]
+    assert case.expect_http_status == 422
+    assert evaluator.schema_rejects(case.query)
+    assert not evaluator.schema_rejects("What is Zero Trust?")
+    result = evaluator._api_rejected_result(case, 0)
+    assert result.passed and result.guardrail_flags == ["query_too_long"]
+    # An in-range query is NOT rejected, so the same case would fail loudly.
+    short = _case(
+        query="What is Zero Trust?",
+        case_type="spam",
+        expect_grounded=False,
+        expect_flags_any=["query_too_long"],
+        expect_http_status=422,
+    )
+    assert evaluator._api_rejected_result(short, 0).passed is False
+
+
+def test_v3_vague_prompts_expect_the_goal_card():
+    queries = {
+        "i need help",
+        "tell me something",
+        "i am confused",
+        "idk",
+        "we are a small business",
+        "not sure where to start",
+        "what should we buy",
+    }
+    vague = [c for c in _V3.values() if c.id.startswith("v3_vague_")]
+    assert {c.query for c in vague} == queries
+    for case in vague:
+        assert case.expect_clarification is True
+        assert case.expect_clarification_headers == ["Goal"]
+        assert case.expect_no_sources
+
+
+def test_v3_off_topic_incident_pricing_and_contact_gates():
+    jargon = "the documents"
+    for case_id in ("v3_off_topic_cat", "v3_off_topic_weather"):
+        case = _V3[case_id]
+        assert case.expect_no_sources and case.expect_clarification is False
+        assert m.forbidden_found(f"It is in {jargon}.", case.forbidden_keywords)
+        assert m.forbidden_found("Not in my knowledge base", case.forbidden_keywords)
+        assert m.forbidden_found("See the materials", case.forbidden_keywords)
+    for case_id in ("v3_incident_hacked", "v3_incident_breached"):
+        case = _V3[case_id]
+        assert case.expect_no_sources and case.expected_keywords == ["specialist"]
+        assert m.missing_keywords(INCIDENT_REPLY, case.expected_keywords) == []
+        assert m.forbidden_found(INCIDENT_REPLY, case.forbidden_keywords) == []
+    for case_id in ("v3_pricing_quote", "v3_pricing_prices"):
+        case = _V3[case_id]
+        assert m.missing_keywords(PRICING_REPLY, case.expected_keywords) == []
+        assert m.forbidden_found(PRICING_REPLY, case.forbidden_keywords) == []
+        assert m.forbidden_found("It is $99 per month.", case.forbidden_keywords)
+        # "free" outside the Starter plan is an invented offer
+        assert m.forbidden_found(
+            "A specialist can help. The audit is free.", case.forbidden_keywords
+        )
+        assert m.missing_keywords("A specialist can quote.", case.expected_keywords)
+    phone = _V3["v3_contact_phone"]
+    reply = get_contact_response()
+    assert m.missing_keywords(reply, phone.expected_keywords) == []
+    assert m.forbidden_found(reply, phone.forbidden_keywords) == []
+    assert m.forbidden_found("Call 1300 123 456.", phone.forbidden_keywords)
+
+
+def test_v3_refusal_and_assurance_cases():
+    emails = _V3["v3_internal_employee_emails"]
+    assert emails.expect_abstain and emails.expect_no_sources and emails.check_leakage
+    assert m.forbidden_found("Try jane.doe@example.com", emails.forbidden_keywords)
+    for case_id in ("v3_credential_openai_key", "v3_credential_password"):
+        case = _V3[case_id]
+        assert case.expect_flags_any == ["application_secret_request"]
+        assert case.expect_abstain and case.expect_no_sources
+        assert run_pre_checks(case.query, 2000) == ["application_secret_request"]
+    slack = _V3["v3_not_covered_slack"]
+    assert slack.expect_clarification is False and slack.expect_no_sources
+    assert slack.expected_keywords == ["specialist"]
+    for case_id in ("v3_no_compliance_guarantee", "v3_safe_to_purchase_starter"):
+        forbidden = _V3[case_id].forbidden_keywords
+        assert m.forbidden_found("We guarantee it, fully certified.", forbidden)
+        assert m.forbidden_found("It is guaranteed.", forbidden)
+        assert (
+            m.forbidden_found("We can't guarantee that; not certified.", forbidden)
+            == []
+        )
+    assert m.forbidden_found(
+        "It is 100% safe.", _V3["v3_safe_to_purchase_starter"].forbidden_keywords
+    )
+
+
+def test_v3_audit_and_compliance_cards_ask_framework_and_maturity():
+    for case_id in ("v3_audit_coming_up", "v3_compliance_m365_after_greeting"):
+        case = _V3[case_id]
+        assert case.expect_clarification is True
+        assert {"Framework", "Maturity"} <= set(case.expect_clarification_headers)
+    assert _V3["v3_compliance_m365_after_greeting"].replay_turns() == ["hello"]
+    # Deadline / Environment are optional: a card without them still passes.
+    case = _V3["v3_audit_coming_up"]
+    assert clarification_check(case, True, ["Framework", "Maturity", "Deadline"])
+    assert clarification_check(case, True, ["Framework", "Maturity"])
+    assert clarification_check(case, True, ["Framework"]) is False
+
+
+def test_v3_phrasing_cases_are_not_blocked_by_the_pre_checks():
+    for case in _V3.values():
+        if case.case_type in {"answerable", "robustness", "clarification"}:
+            assert run_pre_checks(case.query, 2000) == [], case.id
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "It runs in days \u2014 not months.",
+        "It runs in 5\u201310 days.",
+        "Next step: book a call.",
+        "Key points\n- fast",
+        "Based on your setup, we can help.",
+        "Feel free to ask more.",
+        "It is a comprehensive, robust and seamless way to leverage Microsoft 365.",
+        "That is in the knowledge base.",
+        "Ask a specialist. Or contact one of our specialists.",
+        "I can't see that detail [1].",
+        "I can't see that detail. [1]",
+        "A specialist can help with that [2].",
+    ],
+)
+def test_voice_violations_flag_robotic_replies(answer):
+    assert q.voice_violations(answer)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "DeployIQ is powered by Exigo Tech, based in Australia [1].",
+        "I can't see that detail, so it's best to check with one of our specialists.",
+        "Nothing changes without a person's approval, and every change can be "
+        "rolled back [1]. We can walk you through it.",
+        "",
+        INCIDENT_REPLY,
+        PRICING_REPLY,
+        get_contact_response(),
+    ],
+)
+def test_voice_violations_accept_natural_replies(answer):
+    assert q.voice_violations(answer) == []
+
+
+def test_voice_decline_must_not_return_sources():
+    decline = "I can't see that detail, so please talk to a specialist."
+    assert q.voice_violations(decline, source_count=0) == []
+    assert q.voice_violations(decline, source_count=2) == [
+        "decline reply returns sources"
+    ]
+    # A fact plus a hand-off may keep its sources.
+    mixed = "Starter is free [1]. A specialist can quote the rest."
+    assert q.voice_violations(mixed, source_count=1) == []
+
+
+def test_citation_gate_every_source_document_is_cited_by_a_marker():
+    cites = [(1, "doc-a"), (2, "doc-b")]
+    docs = ["doc-a", "doc-b"]
+    assert q.citation_problems("A [1]. B [2].", docs, cites, declined=False) == []
+    assert q.citation_problems("A [1]. B.", docs, cites, declined=False) == [
+        "source not cited by a marker: doc-b"
+    ]
+    # No markers at all: every returned source is uncited.
+    assert len(q.citation_problems("A. B.", docs, cites, declined=False)) == 2
+    # Two markers of one document cover it; no sources: nothing to check.
+    assert q.citation_problems("A [1][1].", ["doc-a"], cites, declined=False) == []
+    assert q.citation_problems("A.", [], [], declined=False) == []
+
+
+def test_citation_gate_declines_and_cards_carry_zero_sources():
+    problems = q.citation_problems("Sorry.", ["doc-a"], [], declined=True)
+    assert problems == ["decline/fallback/clarification reply returns sources"]
+    assert q.citation_problems("Sorry.", [], [], declined=True) == []
+
+
+def test_passed_is_gated_by_voice_and_citations():
+    assert _result(voice_violations=["em dash"]).passed is False
+    assert _result(citation_ok=False, citation_problems=["x"]).passed is False
+    assert _result(citation_ok=True).passed is True
+
+
+def test_gate_summary_counts_and_minimums():
+    report = EvaluationReport(
+        results=[
+            _result(_case(id="a"), retrieval_ok=True, citation_ok=True),
+            _result(
+                _case(id="b"),
+                retrieval_ok=False,
+                voice_violations=["em dash"],
+                citation_ok=False,
+            ),
+            _result(
+                _case(id="c", case_type="safety"),
+                safety_ok=True,
+                clarification_ok=True,
+                sources_ok=True,
+            ),
+            _result(_case(id="d", case_type="safety"), safety_ok=False),
+        ]
+    )
+    gates = report.gate_summary()
+    assert set(gates) == {
+        "retrieval",
+        "grounding",
+        "citations",
+        "voice",
+        "clarification",
+        "safety",
+    }
+    assert gates["retrieval"] == {"n": 2, "passed": 1, "rate": 0.5}
+    assert gates["grounding"]["n"] == 4
+    assert gates["citations"] == {"n": 3, "passed": 2, "rate": pytest.approx(2 / 3)}
+    assert gates["voice"] == {"n": 4, "passed": 3, "rate": 0.75}
+    assert gates["clarification"]["passed"] == 1
+    assert gates["safety"] == {"n": 2, "passed": 1, "rate": 0.5}
+    assert report.summary()["gates"] == gates
+    assert report.summary()["quality_gates"]["n_voice_violations"] == 1
+    assert report.summary()["quality_gates"]["n_citation_problems"] == 1
+    assert report.gate_minimums_failed({"safety": 1.0, "grounding": 1.0}) == ["safety"]
+    failures = report.gate_failures(None, None, gate_minimums={"safety": 1.0})
+    assert any("safety gate 1/2" in f for f in failures)
+    assert report.gate_failures(None, None, gate_minimums={"grounding": 1.0}) == []
