@@ -147,6 +147,11 @@ class Settings(BaseSettings):
     clarify_max_query_words: int = 4
     # Topics whose best score is within this margin of the top score compete.
     clarify_score_margin: float = 0.06
+    # The best topic must score at least this for the model to be offered the
+    # choice to clarify: low, flat scores mean the evidence is irrelevant to
+    # the question (an off-topic "What is a cat?"), so asking "which one?"
+    # would only invent options. Override with CLARIFY_MIN_GATE_SCORE.
+    clarify_min_gate_score: float = Field(default=0.30, ge=0.0, le=1.0)
     # Topics needed before a clarification is offered, and the most shown.
     clarify_min_options: int = 2
     clarify_max_options: int = 4
