@@ -47,6 +47,7 @@ UNGROUNDED_FLAGS = frozenset(
         "groundedness_check_failed",
         "possible_hallucination",
         "unsupported_numeric_claim",
+        "unsupported_claim",
         "low_retrieval_confidence",
         "no_retrieved_sources",
     }

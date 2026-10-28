@@ -88,6 +88,39 @@ def test_refusal_with_dollar_figure_is_not_a_refusal():
     assert is_refusal("We don't have details, but it costs $50 a month.") is False
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "We don't publish pricing, but we guarantee 99.9% availability.",
+        "The Starter plan doesn't include SSO. The Pro plan includes SSO, MFA and "
+        "99.9% uptime guarantees.",
+        "The Starter plan doesn't include SSO. [1] The Pro plan does include SSO "
+        "and MFA enforcement. [2]",
+        "DeployIQ maps your controls to Essential Eight and tracks maturity. "
+        "Talk to one of our specialists to get started.",
+        "We don't have details on that. Our SLA is strong.",
+    ],
+)
+def test_answers_with_facts_figures_or_claims_are_not_refusals(answer):
+    assert is_refusal(answer) is False
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "We don't publish pricing, but we guarantee 99.9% availability.",
+        "The Starter plan doesn't include SSO. The Pro plan includes SSO, MFA and "
+        "99.9% uptime guarantees.",
+    ],
+)
+async def test_non_refusal_with_figures_is_flagged_before_refusal_shortcut(answer):
+    grounded, confidence, flag = await check_groundedness(
+        answer, [_source("DeployIQ supports SSO on every plan.")], 0.45
+    )
+    assert (grounded, confidence) == (False, 0.0)
+    assert flag in {"unsupported_numeric_claim", "unsupported_claim"}
+
+
 async def test_negative_does_include_runs_normal_checks(monkeypatch):
     async def _fake_embed(texts):
         return [[0.0, 1.0] for _ in texts]
@@ -146,6 +179,46 @@ def test_supported_claims_allowed():
 
 def test_free_of_phrase_is_not_a_claim():
     assert unsupported_claims("The report is free of jargon.", "Plain text.") == []
+
+
+@pytest.mark.parametrize(
+    ("answer", "source"),
+    [
+        ("DeployIQ is compliant with the framework.", "Compliance reporting built in."),
+        ("Feel free to ask our team anything.", "Plain text."),
+        ("You can safely upgrade.", "Upgrades can be rolled back at any time."),
+        ("You can safely upgrade.", "Upgrades are safe."),
+        ("Onboarding is done within 48 hours.", "Onboarding completes in 48 hours."),
+        ("The Starter plan is free.", "Starter (Free) plan includes reporting."),
+        ("The report is free of jargon.", "Plain text."),
+    ],
+)
+def test_claim_guard_accepts_equivalent_support(answer, source):
+    assert unsupported_claims(answer, source) == []
+
+
+@pytest.mark.parametrize(
+    ("answer", "source"),
+    [
+        ("DeployIQ is certified.", "DeployIQ is not yet certified."),
+        ("DeployIQ is certified.", "We have no certification today."),
+        (
+            "The Pro plan is free.",
+            "Free-form notes are supported. The Pro plan is paid.",
+        ),
+        ("The Pro plan is free.", "Our agent-free scanner runs on Pro."),
+        ("The Pro plan is free.", "The Starter plan is free."),
+        ("The Pro plan is free.", "The Pro plan is not free."),
+        ("You can safely upgrade.", "Plain text."),
+    ],
+)
+def test_claim_guard_fail_open_cases_are_flagged(answer, source):
+    assert unsupported_claims(answer, source) != []
+
+
+def test_claim_guard_is_linear_on_pathological_input():
+    nasty = "free " * 800 + "not " * 800
+    assert isinstance(unsupported_claims(nasty, nasty), list)
 
 
 def test_currency_words_checked_like_dollar_figures():
@@ -275,6 +348,37 @@ def test_off_topic_by_overlap_needs_weak_score_and_no_overlap():
     assert is_off_topic_by_overlap("blorptivex zumquat", chunks, 0.2, 0.3) is True
     assert is_off_topic_by_overlap("blorptivex zumquat", chunks, 0.5, 0.3) is False
     assert is_off_topic_by_overlap("identity governance", chunks, 0.2, 0.3) is False
+
+
+def test_price_words_share_a_stem():
+    chunks = ["Our pricing plans start with a free tier."]
+    assert query_has_overlap("How much does it cost?", chunks) is True
+    assert query_has_overlap("What is the price?", chunks) is True
+    assert query_has_overlap("Any fees involved?", chunks) is True
+    assert is_off_topic_by_overlap("what does it cost", chunks, 0.2, 0.3) is False
+
+
+def test_follow_up_skips_the_overlap_rule():
+    chunks = ["DeployIQ monitors identity governance."]
+    assert is_off_topic_by_overlap("blorptivex zumquat", chunks, 0.2, 0.3) is True
+    assert (
+        is_off_topic_by_overlap("blorptivex zumquat", chunks, 0.2, 0.3, follow_up=True)
+        is False
+    )
+
+
+def test_offline_style_question_overlapping_product_name_stays_on_topic():
+    chunks = ["DeployIQ monitors identity governance."]
+    assert (
+        is_off_topic_by_overlap("Does DeployIQ work offline?", chunks, 0.2, 0.3)
+        is False
+    )
+    assert (
+        is_off_topic_by_overlap("blorptivex offline zumquat", chunks, 0.2, 0.3) is True
+    )
+    assert (
+        is_off_topic_by_overlap("blorptivex offline zumquat", chunks, 0.4, 0.3) is False
+    )
 
 
 # --- citations: free-text brackets ------------------------------------
