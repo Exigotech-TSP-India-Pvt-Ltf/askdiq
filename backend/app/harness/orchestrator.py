@@ -29,7 +29,11 @@ from app.guardrails.post_checks import (
     run_post_checks,
 )
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
-from app.harness.ambiguity import assess, rule_clarification, service_clarification
+from app.harness.ambiguity import (
+    assess,
+    rule_clarification,
+    vague_fallback_clarification,
+)
 from app.harness.answer_shape import detect_shape, refine_shape
 from app.harness.citations import (
     TOKEN_DETAILS_KEY,
@@ -738,9 +742,10 @@ async def run_query(
     total_ms = (time.perf_counter() - start) * 1000
 
     if not grounded and gated:
-        # A vague short question whose best guess is unsupported: ask which
-        # service is meant rather than "couldn't find enough support".
-        clarification = service_clarification(query, sources)
+        # A vague short question whose best guess is unsupported: ask what they
+        # want done (or which service is meant) rather than "couldn't find
+        # enough support".
+        clarification = vague_fallback_clarification(query, history, sources)
         if clarification is not None:
             return _clarification_response(
                 clarification,
