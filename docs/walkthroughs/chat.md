@@ -230,13 +230,13 @@ message), but your earlier comment, reasons and corrected answer are not shown.
 3. **Small talk** (greetings, thanks, "what can you do"): a canned reply, outcome `conversational`.
 4. **Pre-checks:** length, unsafe input, spam, unclear input. Blocked questions get a polite fixed
    reply (outcome `blocked`), for example:
-   - `unclear_input`: "Your question appears too short or incomplete. Could you please provide a bit
-     more detail or ask a specific question about {brand}?"
-   - `spam_detected`: "I couldn't quite understand your question. Could you please rephrase ..."
-   - `unsafe_input_detected`: "I am unable to process that request. ..."
+   - `unclear_input`: "Could you add a little more detail so I can point you in the right direction?"
+   - `spam_detected`: "Sorry, I didn't catch that. Could you rephrase your question? ..."
+   - `unsafe_input_detected`: "I can't help with that one, but I'm happy to answer questions about
+     {brand}'s security platform and compliance. ... talk to one of our specialists." (no sources)
 5. **Retrieval:** top **5** chunks (`DEFAULT_TOP_K`). If none, or the best score is below
-   **0.15** (`MIN_RETRIEVAL_SCORE`): "I couldn't find relevant information in the {brand} knowledge
-   base to answer that. ..." (flag `off_topic`). Chunks that look like prompt injection are dropped.
+   **0.15** (`MIN_RETRIEVAL_SCORE`): "That's a bit outside what I can help with here. ... our
+   specialists are happy to help with anything else." (flag `off_topic`). Chunks that look like prompt injection are dropped.
 6. **Generation** (Azure OpenAI, request timeout **60 s**, one retry on error or empty output).
 7. **Groundedness check** (threshold **0.45**). An answer that fails is **not shown**; the user gets
    the generic fallback "Seems like you have made a typo, could you please rephrase your question? I

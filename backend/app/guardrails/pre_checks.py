@@ -555,9 +555,9 @@ def check_sensitive_request(query: str) -> tuple[bool, str | None]:
 
 
 def _is_single_char_run(token: str) -> bool:
-    """A 6+ char token that is one character repeated ('aaaaaaa'), not 'whaaaat'."""
+    """A 6+ char token of at most two distinct characters ('aaaaaaa', 'aaaaabbbbb'), not 'whaaaat'."""
     cleaned = _clean_token(token)
-    return len(cleaned) >= 6 and len(set(cleaned.lower())) == 1
+    return len(cleaned) >= 6 and len(set(cleaned.lower())) <= 2
 
 
 def _has_no_recognisable_words(words: list[str]) -> bool:

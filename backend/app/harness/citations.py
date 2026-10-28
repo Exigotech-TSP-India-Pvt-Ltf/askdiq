@@ -39,9 +39,9 @@ _RUN_GAP = frozenset(" \t")
 def citation_instruction() -> str:
     """The system-prompt sentence asking for markers (kept in one place)."""
     return (
-        "After each sentence or claim supported by the context, add the "
+        "After each sentence or claim supported by the facts, add the "
         "marker of its source, e.g. [1] or [1][3], using only the Source "
-        "numbers given in the context. Never write URLs or invent numbers."
+        "numbers given in the facts. Never write URLs or invent numbers."
     )
 
 
