@@ -163,6 +163,16 @@ def test_pure_repeat_token_is_still_spam() -> None:
         ),
         ("what does ASD recommend?", "what does ASD recommend?"),
         ("what is deployiq? akjj", "what is deployiq?"),
+        ("what is deployiq akjj", "what is deployiq"),
+        (
+            "Who owns the data DeployIQ handles for customers?",
+            "Who owns the data DeployIQ handles for customers?",
+        ),
+        ("wat is zero trst security", "wat is zero trst security"),
+        (
+            "How do I configure mTLS for Zero Trust?",
+            "How do I configure mTLS for Zero Trust?",
+        ),
     ],
 )
 def test_sanitize_query_keeps_real_words(query: str, expected: str) -> None:
@@ -173,6 +183,29 @@ def test_single_url_is_not_spam_but_two_urls_are() -> None:
     assert check_spam("Is https://deployiq.io the official site?") == (True, None)
     assert check_spam("n/a") == (True, None)
     assert check_spam("see http://a.example.com and http://b.example.com")[0] is False
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Check out https://cheap-pills.biz for great deals",
+        "buy cheap pills at www.example.com",
+        "see deployiq.com for a big discount, click here",
+    ],
+)
+def test_url_with_promo_wording_is_spam(query: str) -> None:
+    assert check_spam(query) == (False, "spam_detected")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "is there a free trial? see deployiq.com",
+        "Is https://deployiq.io the official site?",
+    ],
+)
+def test_bare_single_link_in_question_is_allowed(query: str) -> None:
+    assert check_spam(query) == (True, None)
 
 
 def test_unsafe_priority_over_spam_flags() -> None:
