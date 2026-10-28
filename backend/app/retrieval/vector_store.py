@@ -18,19 +18,23 @@ import uuid
 from collections import defaultdict
 from typing import NamedTuple
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from app.core.config import get_settings
 from app.models.db_models import Chunk, Document
 from app.retrieval.reranker import (
+    INTENT_ENTITY_WEIGHT,
+    INTENT_HEADING_SHARE,
+    SPREAD_MAX_CHUNKS,
     HybridSignal,
     compute_hybrid_signal,
     entities_missing_from_pool,
     entity_sql_pattern,
     named_entities,
     pick_entity_documents,
+    query_intent,
     rerank,
     trim_pool,
 )
@@ -40,6 +44,8 @@ logger = logging.getLogger(__name__)
 
 _SCALAR = (str, int, float, bool)
 _MAX_ENTITY_FETCH_DOCUMENTS = 2
+# "What does X cover": headed chunks get a small edge over unheaded ones.
+_SPREAD_HEADING_BONUS = 0.05
 
 
 def usable_filters(filters: dict | None) -> dict[str, str]:
@@ -71,6 +77,10 @@ def quarantined_document_ids():
     return select(Document.id).where(
         Document.doc_metadata["quarantined"].as_string() == "true"
     )
+
+
+def _heading(chunk: Chunk) -> str:
+    return str((chunk.chunk_metadata or {}).get("section_heading") or "")
 
 
 class DocumentLink(NamedTuple):
@@ -255,21 +265,23 @@ class VectorStore:
         """Top chunks of the documents a named entity maps to, if missing.
 
         No work (and no DB round trip) unless the query names a catalogue
-        entity with fewer than max(`retrieval_entity_min_chunks`,
-        `retrieval_entity_fetch_k`) chunks in `pool`. One query, restricted to
-        those documents by name and to chunks not already in the pool, reusing
-        the already-computed embedding; at most two documents are kept.
+        entity with fewer than `retrieval_entity_min_chunks` chunks in `pool`
+        or (for a question whose words map to heading vocabulary, e.g.
+        "stages" -> "Delivery Approach") none under a matching heading. One
+        query, restricted to those documents by name and to chunks not already
+        in the pool, reusing the already-computed embedding and ranked by
+        cosine plus the expanded-vocabulary match; at most two documents.
         """
         entities = named_entities(query_text)
         if not entities:
             return []
+        intent = query_intent(query_text)
         missing = entities_missing_from_pool(
             entities,
             pool,
             self._document_names(),
-            max(
-                settings.retrieval_entity_min_chunks, settings.retrieval_entity_fetch_k
-            ),
+            settings.retrieval_entity_min_chunks,
+            intent,
         )
         if not missing:
             return []
@@ -277,9 +289,24 @@ class VectorStore:
         fetch_k = settings.retrieval_entity_fetch_k
         title = Document.doc_metadata["title"].as_string()
         distance = Chunk.embedding.cosine_distance(query_embedding)
-        # Breadth first: each document's best chunk, then its second, ...
+        heading = Chunk.chunk_metadata["section_heading"].as_string()
+        rank_distance = distance
+        if intent:
+            pattern = intent.pattern(postgres=True)
+            head_hit = case(
+                (func.coalesce(heading, "").op("~*")(pattern), 1.0), else_=0.0
+            )
+            body_hit = case((Chunk.content.op("~*")(pattern), 1.0), else_=0.0)
+            rank_distance = distance - INTENT_ENTITY_WEIGHT * (
+                INTENT_HEADING_SHARE * head_hit + (1 - INTENT_HEADING_SHARE) * body_hit
+            )
+        # Breadth first: each document's best chunk, then its second, ... (or,
+        # for "what does X cover", each section heading's best chunk first).
+        partition = [Chunk.document_id]
+        if intent.spread:
+            partition.append(func.coalesce(heading, ""))
         rank_in_doc = func.row_number().over(
-            partition_by=Chunk.document_id, order_by=distance
+            partition_by=partition, order_by=rank_distance
         )
         stmt = (
             select(
@@ -302,7 +329,7 @@ class VectorStore:
         )
         for key, value in usable_filters(filters).items():
             stmt = stmt.where(Chunk.chunk_metadata[key].as_string() == value)
-        stmt = stmt.order_by(rank_in_doc, distance).limit(fetch_k)
+        stmt = stmt.order_by(rank_in_doc, rank_distance).limit(fetch_k)
 
         rows = (await self.session.execute(stmt)).all()
         await self.session.commit()
@@ -366,6 +393,20 @@ class VectorStore:
 
         signal = signal or HybridSignal()
 
+        # Named documents choose their chunks by cosine + hybrid/intent boost
+        # (so a "Delivery Approach" chunk beats "What Is X" for a "stages"
+        # question); for "what does X cover" headed chunks get a small edge.
+        spread_bonus = _SPREAD_HEADING_BONUS if signal.spread else 0.0
+        for doc_id in signal.entity_doc_ids:
+            if doc_id in by_doc:
+                by_doc[doc_id].sort(
+                    key=lambda item: (
+                        signal.rank_key(item[0].id, item[1])
+                        + (spread_bonus if _heading(item[0]) else 0.0)
+                    ),
+                    reverse=True,
+                )
+
         # Documents ranked by their single best-scoring chunk.
         ranked_docs = sorted(
             doc_order,
@@ -388,7 +429,11 @@ class VectorStore:
         doc_taken: defaultdict[str, int] = defaultdict(int)
         doc_cursor: defaultdict[str, int] = defaultdict(int)
 
-        def _take_next(doc_id: str, *, above_floor: bool) -> bool:
+        headings_taken: defaultdict[str, set[str]] = defaultdict(set)
+
+        def _take_next(
+            doc_id: str, *, above_floor: bool, distinct_heading: bool = False
+        ) -> bool:
             doc_chunks = by_doc[doc_id]
             while doc_cursor[doc_id] < len(doc_chunks):
                 chunk, score = doc_chunks[doc_cursor[doc_id]]
@@ -400,8 +445,13 @@ class VectorStore:
                 if above_floor and score < settings.min_retrieval_score:
                     continue
 
+                heading = _heading(chunk)
+                if distinct_heading and heading in headings_taken[doc_id]:
+                    continue
+
                 selected.append((chunk, score))
                 selected_ids.add(chunk.id)
+                headings_taken[doc_id].add(heading)
                 doc_taken[doc_id] += 1
                 return True
             return False
@@ -409,12 +459,18 @@ class VectorStore:
         # Named documents are seeded first, breadth before depth, so each
         # keeps `retrieval_entity_min_chunks` chunks (beyond the first they
         # must clear the retrieval floor). One slot stays free for others.
+        # "What does X cover": up to SPREAD_MAX_CHUNKS chunks, one per heading.
         seed_budget = max(1, top_k - 1)
-        for level in range(settings.retrieval_entity_min_chunks):
+        levels = settings.retrieval_entity_min_chunks
+        if signal.spread:
+            levels = max(levels, SPREAD_MAX_CHUNKS)
+        for level in range(levels):
             for doc_id in priority:
                 if len(selected) >= seed_budget:
                     break
-                _take_next(doc_id, above_floor=level > 0)
+                _take_next(
+                    doc_id, above_floor=level > 0, distinct_heading=signal.spread
+                )
 
         progressed = True
         while len(selected) < top_k and progressed:
