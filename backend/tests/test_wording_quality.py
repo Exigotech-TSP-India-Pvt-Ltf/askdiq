@@ -147,7 +147,10 @@ def test_prompt_carries_assurance_pricing_and_bracket_rules() -> None:
     assert "talk to one of our specialists" in prompt
     assert "never guess or add unsupported facts" in prompt
     assert "help them choose or recommend" in prompt
-    assert "i can't see that detail" in prompt
+    assert "i don't have that detail" in prompt
+    assert 'never write "i can\'t see"' in prompt
+    assert "visitor's language" in prompt
+    assert "compare it with other vendors" in prompt
 
 
 def test_banned_list_has_the_internal_words() -> None:
@@ -183,7 +186,7 @@ def test_polish_rewrites_a_not_covered_internal_answer() -> None:
 def test_polish_replaces_only_the_offending_sentence() -> None:
     raw = "We run a phased rollout [1]. The documents do not specify timelines."
     polished = polish_answer(raw, ResponseStyle.ADAPTIVE)
-    assert polished.startswith("We run a phased rollout [1]. I can't see that detail")
+    assert polished.startswith("We run a phased rollout [1]. I don't have that detail")
     assert "documents" not in polished
     assert "specialist" in polished
 
@@ -293,8 +296,8 @@ def test_source_reference_sentence_is_replaced_once_with_one_next_step() -> None
         "Next step: talk to a specialist."
     )
     out = remove_internal_wording(raw)
-    assert out.startswith("We run guided pilots [1]. I can't see that detail")
-    assert out.count("can't see that detail") == 1
+    assert out.startswith("We run guided pilots [1]. I don't have that detail")
+    assert out.count("I don't have that detail") == 1
     assert out.lower().count("next step") == 1
     assert "materials" not in out
 

@@ -67,11 +67,26 @@ BANNED_PHRASES: tuple[str, ...] = (
 )
 
 # What a customer is told when something is not covered: one natural line
-# that hands over to a human. Used by the tone post-filter.
-NOT_COVERED_SENTENCE = (
-    "I can't see that detail, so it's best to check with one of our specialists."
+# that hands over to a human. Three variants, picked by a stable hash of the
+# question so a given question always gets the same wording.
+NOT_COVERED_VARIANTS: tuple[str, ...] = (
+    "I don't have that detail, but one of our specialists can help.",
+    "That's one for our specialists, who can give you a proper answer.",
+    "I'm not sure about that one, so it's best to ask our specialists.",
 )
+NOT_COVERED_SENTENCE = NOT_COVERED_VARIANTS[0]
 NOT_COVERED_REPLY = NOT_COVERED_SENTENCE
+
+
+def not_covered_sentence(question: str | None = None) -> str:
+    """The not-covered sentence for ``question`` (deterministic, sha256 based)."""
+
+    key = (question or "").strip().lower()
+    if not key:
+        return NOT_COVERED_SENTENCE
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
+    return NOT_COVERED_VARIANTS[digest[0] % len(NOT_COVERED_VARIANTS)]
+
 
 _TONE_BLOCK = (
     "Style: write like a helpful colleague. Answer in the first sentence, in "

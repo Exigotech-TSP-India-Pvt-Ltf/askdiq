@@ -21,10 +21,15 @@ from app.evaluation.quality import injection_in_chunks
 from app.governance.audit import emit_audit_event
 from app.guardrails.conversational import (
     PRICING_REPLY,
+    detect_acknowledgement,
+    detect_assurance_request,
+    detect_callback_request,
     detect_contact_request,
     detect_conversational_intent,
+    detect_identity_question,
     detect_incident_request,
     detect_pricing_request,
+    detect_support_request,
 )
 from app.guardrails.post_checks import (
     is_off_topic_by_overlap,
@@ -61,7 +66,14 @@ from app.harness.decline import clean_declines
 from app.harness.prompts import _MAX_HISTORY_TURNS, call_llm
 from app.harness.style import resolve_style, use_style
 from app.harness.tone import polish_answer
-from app.retrieval.retriever import needs_conversation_context, retrieve
+from app.retrieval.retriever import (
+    PartRetrieval,
+    PartsAssessment,
+    assess_parts,
+    needs_conversation_context,
+    part_retrieval_sink,
+    retrieve,
+)
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, Clarification, QueryResponse, SourceChunk
 
@@ -256,6 +268,21 @@ def _canned_response(
     )
 
 
+_OUT_OF_SCOPE_NOTE = "The rest of your question is outside what I can help with."
+_NO_DETAIL_NOTE = (
+    "I don't have that detail, but one of our specialists can help with the rest."
+)
+
+
+def _unsupported_part_note(
+    parts: PartsAssessment, history: list[ChatTurn] | None
+) -> str:
+    """ONE short natural line for the part(s) the knowledge base cannot answer."""
+    if all(is_concrete_off_scope(p.query, history) for p in parts.unsupported):
+        return _OUT_OF_SCOPE_NOTE
+    return _NO_DETAIL_NOTE
+
+
 def _canned_reply(query: str) -> str | None:
     """Fixed, no-LLM replies: contact and pricing."""
     return (
@@ -263,6 +290,36 @@ def _canned_reply(query: str) -> str | None:
         or detect_pricing_request(query)
         or (PRICING_REPLY if is_pricing_pick(query) else None)
     )
+
+
+def _last_assistant_was_clarification(history: list[ChatTurn] | None) -> bool:
+    for turn in reversed(history or []):
+        if turn.role == "assistant":
+            return turn.outcome == CLARIFY_OUTCOME
+    return False
+
+
+def _smalltalk_reply(
+    query: str, history: list[ChatTurn] | None, clarification_reply: bool
+) -> str | None:
+    """Fixed replies for support, callback, incident, contact, assurance,
+    identity and bare acknowledgements, in that priority order.
+
+    A bare "yes"/"ok" is never intercepted when it answers a clarification.
+    """
+    reply = (
+        detect_support_request(query)
+        or detect_callback_request(query)
+        or detect_incident_request(query)
+        or detect_contact_request(query)
+        or detect_assurance_request(query)
+        or detect_identity_question(query)
+    )
+    if reply is not None:
+        return reply
+    if clarification_reply or _last_assistant_was_clarification(history):
+        return None
+    return detect_acknowledgement(query)
 
 
 async def run_query(
@@ -347,8 +404,12 @@ async def run_query(
         pre_flags = [_UNSAFE_FLAG]
     # Someone describing a live security incident is helped, not blocked as
     # off-topic: a fixed warm reply (only the off-topic flag is bypassed).
+    # Priority: support, callback, incident, contact, assurance, identity,
+    # acknowledgement (unsafe/blocked input never reaches these).
     incident_reply = (
-        detect_incident_request(query) if set(pre_flags) <= {"off_topic"} else None
+        _smalltalk_reply(query, history, clarification_reply)
+        if set(pre_flags) <= {"off_topic"}
+        else None
     )
     if incident_reply is not None:
         return _canned_response(
@@ -420,14 +481,23 @@ async def run_query(
         query, history, follow_up=follow_up_detected
     )
     wide = gated or ambiguity.detected
-    sources: list[SourceChunk] = await retrieve(
-        vector_store,
-        effective_query,
-        top_k=max(top_k, settings.clarify_retrieval_top_k) if wide else top_k,
-        filters=filters,
-        history=history,
-        **({"max_documents": settings.clarify_retrieval_max_documents} if wide else {}),
-    )
+    part_results: list[PartRetrieval] = []
+    sink_token = part_retrieval_sink.set(part_results)
+    try:
+        sources: list[SourceChunk] = await retrieve(
+            vector_store,
+            effective_query,
+            top_k=max(top_k, settings.clarify_retrieval_top_k) if wide else top_k,
+            filters=filters,
+            history=history,
+            **(
+                {"max_documents": settings.clarify_retrieval_max_documents}
+                if wide
+                else {}
+            ),
+        )
+    finally:
+        part_retrieval_sink.reset(sink_token)
     # Reply to a clarification: the chosen options' documents lead the context.
     sources = boost_documents(sources, boost_document_ids)
 
@@ -498,12 +568,44 @@ async def run_query(
                 ),
             )
 
-    if max_retrieval_score < settings.min_retrieval_score or is_off_topic_by_overlap(
-        effective_query,
-        (s.content for s in sources),
-        max_retrieval_score,
-        settings.offtopic_overlap_max_score,
-        follow_up=follow_up_detected or bool(history),
+    # A mixed ask is judged part by part: one unsupported part must not decline
+    # the supported ones, and only when EVERY part is unsupported is it off-topic.
+    parts = (
+        assess_parts(
+            part_results,
+            min_score=settings.min_retrieval_score,
+            overlap_limit=settings.offtopic_overlap_max_score,
+            follow_up=follow_up_detected or bool(history),
+        )
+        if len(part_results) > 1
+        else None
+    )
+    llm_query = query
+    unsupported_note = ""
+    if parts is not None and parts.mixed:
+        kept = [s for s in sources if s.chunk_id in parts.keep_chunk_ids]
+        sources = kept or sources
+        llm_query = " ".join(p.query for p in parts.supported)
+        unsupported_note = _unsupported_part_note(parts, history)
+        logger.info(
+            "mixed_ask_partial",
+            supported=len(parts.supported),
+            unsupported=len(parts.unsupported),
+        )
+
+    if (
+        parts.all_unsupported
+        if parts is not None
+        else (
+            max_retrieval_score < settings.min_retrieval_score
+            or is_off_topic_by_overlap(
+                effective_query,
+                (s.content for s in sources),
+                max_retrieval_score,
+                settings.offtopic_overlap_max_score,
+                follow_up=follow_up_detected or bool(history),
+            )
+        )
     ):
         latency_ms = (time.perf_counter() - start) * 1000
         logger.info(
@@ -614,7 +716,7 @@ async def run_query(
             )
         try:
             attempt_answer, usage = await call_llm(
-                query,
+                llm_query,
                 sources,
                 history,
                 **llm_kwargs,
@@ -879,6 +981,8 @@ async def run_query(
     )
     if citations:
         token_details[TOKEN_DETAILS_KEY] = citation_records(citations)
+    if unsupported_note:
+        answer = f"{answer.rstrip()}\n\n{unsupported_note}"
     logger.info(
         "query_completed",
         outcome=outcome,

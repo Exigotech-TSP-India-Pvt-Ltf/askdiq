@@ -6,7 +6,11 @@ import time
 
 from app.harness import prompts
 from app.harness.citations import verify_citations
-from app.harness.style import NOT_COVERED_SENTENCE
+from app.harness.style import (
+    NOT_COVERED_SENTENCE,
+    NOT_COVERED_VARIANTS,
+    not_covered_sentence,
+)
 from app.harness.tone import drop_unrequested_caveat
 from app.schemas.query import SourceChunk
 
@@ -54,9 +58,11 @@ def test_kept_when_question_mentions_topic() -> None:
         text, "How much does it cost and what is the timeline?"
     )
     assert "specialists" in kept
-    assert kept.endswith(NOT_COVERED_SENTENCE)
+    assert kept.endswith(
+        not_covered_sentence("How much does it cost and what is the timeline?")
+    )
     assert drop_unrequested_caveat(text, "What are the pricing options?").endswith(
-        NOT_COVERED_SENTENCE
+        not_covered_sentence("What are the pricing options?")
     )
 
 
@@ -67,7 +73,7 @@ def test_here_tell_rewritten_without_question() -> None:
 
 
 def test_one_sentence_answer_never_emptied() -> None:
-    assert drop_unrequested_caveat(TAIL, "What is E8?") == NOT_COVERED_SENTENCE
+    assert drop_unrequested_caveat(TAIL, "What is E8?") in NOT_COVERED_VARIANTS
     plain = "I don't see any pricing here."
     assert drop_unrequested_caveat(plain, "What is E8?") == plain
 
@@ -125,5 +131,5 @@ def test_mixed_verification_linear_time() -> None:
 
 def test_prompt_rules_present() -> None:
     prompt = prompts.SYSTEM_PROMPT
-    assert "Don't mention pricing, timelines or what you can't see" in prompt
+    assert "Don't mention pricing, timelines or what you don't have" in prompt
     assert "short bullets" in prompt

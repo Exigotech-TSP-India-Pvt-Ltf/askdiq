@@ -342,6 +342,8 @@ async def test_pool_size_for_rerank_is_capped(monkeypatch):
 
 
 async def test_boosts_are_configurable(monkeypatch):
+    # Intent expansion has its own tests; here only the two boosts are measured.
+    monkeypatch.setattr(reranker.settings, "retrieval_intent_expansion_enabled", False)
     monkeypatch.setattr(reranker.settings, "retrieval_lexical_boost", 0.0)
     monkeypatch.setattr(reranker.settings, "retrieval_entity_doc_boost", 0.0)
     pool = [(c, 0.5) for c in CORPUS["zero-trust-learn-more.md"]]

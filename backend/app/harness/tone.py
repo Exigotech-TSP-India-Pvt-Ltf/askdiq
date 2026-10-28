@@ -21,9 +21,9 @@ from __future__ import annotations
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.harness.style import (
-    NOT_COVERED_REPLY,
-    NOT_COVERED_SENTENCE,
+    NOT_COVERED_VARIANTS,
     ResponseStyle,
+    not_covered_sentence,
 )
 
 logger = get_logger(__name__)
@@ -348,7 +348,11 @@ def _unwrap_line(line: str) -> str:
     return f"{indent}{prefix}{inner}{closing}"
 
 
-def _rewrite_line(line: str) -> tuple[str, int, int]:
+def _has_not_covered(text: str) -> bool:
+    return any(variant in text for variant in NOT_COVERED_VARIANTS)
+
+
+def _rewrite_line(line: str, sentence: str) -> tuple[str, int, int]:
     """(new line, internal sentences replaced, sentences kept) for one line."""
 
     if line.lstrip().startswith("|"):
@@ -368,9 +372,9 @@ def _rewrite_line(line: str) -> tuple[str, int, int]:
         else:
             replaced += 1
             if _is_negative(content.lower()) and not any(
-                NOT_COVERED_SENTENCE in done for done in out
+                _has_not_covered(done) for done in out
             ):
-                out.append(NOT_COVERED_SENTENCE + piece[len(piece.rstrip()) :])
+                out.append(sentence + piece[len(piece.rstrip()) :])
     text = "".join(out).rstrip()
     return (f"{indent}{prefix}{text}" if text.strip() else ""), replaced, kept
 
@@ -382,40 +386,45 @@ def _drop_repeats(lines: list[str]) -> list[str]:
     result: list[str] = []
     for raw in lines:
         line = raw
-        if NOT_COVERED_SENTENCE in raw:
+        if _has_not_covered(raw):
             if seen:
-                line = raw.replace(NOT_COVERED_SENTENCE, "").strip()
+                line = raw
+                for variant in NOT_COVERED_VARIANTS:
+                    line = line.replace(variant, "")
+                line = line.strip()
             seen = True
         if line.strip() or not result or result[-1].strip():
             result.append(line)
     return result
 
 
-def remove_internal_wording(answer: str) -> str:
+def remove_internal_wording(answer: str, question: str | None = None) -> str:
     """Hide how the answer was built from the customer.
 
     A sentence naming the supplied context, documents, knowledge base or
     materials is replaced by a plain not-covered sentence when it states an
     absence, and dropped otherwise; an answer with nothing else left becomes
     the friendly not-covered reply. A whole sentence wrapped in square
-    brackets is unwrapped (citation markers are never touched). Linear time:
+    brackets is unwrapped (citation markers are never touched). The not-covered
+    wording is one of three variants picked from ``question``. Linear time:
     ``str`` methods and one scan per line, no regex.
     """
 
     if not answer.strip():
         return answer
     lines = [_unwrap_line(line) for line in answer.split("\n")]
+    sentence = not_covered_sentence(question)
     rewritten: list[str] = []
     replaced = kept = 0
     for line in lines:
-        new_line, line_replaced, line_kept = _rewrite_line(line)
+        new_line, line_replaced, line_kept = _rewrite_line(line, sentence)
         rewritten.append(new_line)
         replaced += line_replaced
         kept += line_kept
     if not replaced:
         return "\n".join(lines)
     if not kept:
-        return NOT_COVERED_REPLY
+        return sentence
     text = _single_next_step("\n".join(_drop_repeats(rewritten)).strip())
     if _SPECIALIST not in text.lower():
         text += _NEXT_STEP_LINE
@@ -501,6 +510,16 @@ _TAIL_ABSENCE_CUES: tuple[str, ...] = (
     "i could not find",
     "i don't see",
     "i do not see",
+    "i don't have that",
+    "i don't have any",
+    "i don't have the",
+    "i don't have details",
+    "i do not have that",
+    "i do not have any",
+    "i do not have the",
+    "one for our specialists",
+    "not sure about that one",
+    "best to ask our specialists",
     "isn't mentioned",
     "is not mentioned",
     "aren't mentioned",
@@ -583,7 +602,7 @@ def _absence_topics(lowered: str) -> list[str]:
 def _caveat_topics(sentence: str) -> list[str]:
     """Topic words of a "not covered" caveat sentence; empty when it is not one."""
 
-    terms = _caveat_terms(sentence)
+    terms = _caveat_terms(sentence) or _named_handoff_terms(sentence)
     if terms:
         return terms
     lowered = _plain_lower(sentence)
@@ -612,7 +631,49 @@ def _unrequested_caveat_start(pieces: list[str], asked: str) -> int:
     return -1
 
 
-def _rewrite_here_tell(sentence: str) -> str:
+_NAMED_STARTS: tuple[str, ...] = (
+    "i can't see ",
+    "i cannot see ",
+    "i don't see ",
+    "i do not see ",
+    "i don't have that ",
+    "i don't have any ",
+    "i don't have the ",
+    "i don't have details ",
+    "i do not have that ",
+    "i do not have any ",
+    "i do not have the ",
+)
+_BEST_TO: tuple[str, ...] = (
+    ", so it's best to",
+    ", it's best to",
+    ", but it's best to",
+    ", so best to",
+    ", best to",
+)
+_QUESTION_WORDS = frozenset(
+    ("who", "whom", "what", "which", "whether", "when", "where", "how", "why")
+)
+
+
+def _named_handoff_terms(sentence: str) -> list[str]:
+    """Topic words of "I can't see X, so it's best to ... specialist"; else empty."""
+
+    lowered = _plain_lower(sentence)
+    start = next((s for s in _NAMED_STARTS if lowered.startswith(s)), "")
+    if not start or _SPECIALIST not in lowered:
+        return []
+    if len(lowered.split()) > _MAX_CAVEAT_WORDS:
+        return []
+    cuts = [lowered.find(marker) for marker in _BEST_TO]
+    cut = min((c for c in cuts if c >= 0), default=-1)
+    if cut < len(start):
+        return []
+    words = lowered[len(start) : cut].translate(_PUNCT_TABLE).split()
+    return [w for w in words if w not in _GENERIC_VOCAB and w not in _QUESTION_WORDS]
+
+
+def _rewrite_here_tell(sentence: str, question: str | None = None) -> str:
     """ "I can't see ... here, so ... specialists" becomes the stock sentence."""
 
     lowered = _plain_lower(sentence)
@@ -621,7 +682,7 @@ def _rewrite_here_tell(sentence: str) -> str:
         and _SPECIALIST in lowered
         and _is_absence_statement(lowered)
     ):
-        return NOT_COVERED_SENTENCE + sentence[len(sentence.rstrip()) :]
+        return not_covered_sentence(question) + sentence[len(sentence.rstrip()) :]
     return sentence
 
 
@@ -649,13 +710,13 @@ def drop_unrequested_caveat(answer: str, question: str | None) -> str:
     asked = (question or "").lower().strip()
     start = _unrequested_caveat_start(pieces, asked) if asked else -1
     if start < 0:
-        pieces[-1] = _rewrite_here_tell(pieces[-1])
+        pieces[-1] = _rewrite_here_tell(pieces[-1], question)
         lines[index] = "".join(pieces)
         return "\n".join(lines)
     remaining = "".join(pieces[:start]).rstrip()
     others = any(line.strip() for line in lines[:index])
     if not remaining and not others:
-        pieces[-1] = _rewrite_here_tell(pieces[-1])
+        pieces[-1] = _rewrite_here_tell(pieces[-1], question)
         lines[index] = "".join(pieces)
         return "\n".join(lines)
     if remaining:
@@ -680,7 +741,8 @@ _GENERIC_VOCAB = frozenset(
         "any more further about on the a an and or you your for specific right now "
         "yet isn't mentioned are aren't available covered listed please reach out "
         "ask team someone from in at what beyond else anything get help which if "
-        "you'd like i'd recommend suggest"
+        "you'd like i'd recommend suggest that's i'm sure proper answer give who but "
+        "ask"
     ).split()
 )
 _ASKS_BEYOND_DOCS: tuple[str, ...] = (
@@ -748,6 +810,7 @@ def drop_stock_handoff(answer: str, question: str | None) -> str:
     parsed: list[list[str] | None] = []
     generic: list[tuple[int, int]] = []
     substantive = False
+    last_piece: tuple[int, int] | None = None
     in_fence = False
     for line in lines:
         stripped = line.strip()
@@ -763,12 +826,20 @@ def drop_stock_handoff(answer: str, question: str | None) -> str:
         pieces = _split_sentences(line)
         parsed.append(pieces)
         for position, piece in enumerate(pieces):
+            if piece.strip():
+                last_piece = (len(parsed) - 1, position)
             if _is_generic_handoff(piece):
                 generic.append((len(parsed) - 1, position))
             elif _is_substantive(piece):
                 substantive = True
     if _asks_beyond_docs(asked) or not substantive:
         generic = generic[:-1]
+    if substantive and last_piece is not None and last_piece not in generic:
+        number, position = last_piece
+        pieces = parsed[number]
+        terms = _named_handoff_terms(pieces[position]) if pieces else []
+        if terms and not any(_term_asked(term, asked) for term in terms):
+            generic.append(last_piece)
     if not generic:
         return answer
     emptied: set[int] = set()
@@ -1090,7 +1161,20 @@ def _replace_buzzwords(seg: str) -> str:
     return "".join(parts)
 
 
-def _clean_line(line: str) -> str:
+_NON_ENGLISH_SHARE = 0.3
+
+
+def is_non_english(text: str) -> bool:
+    """True when more than 30% of the letters are not ASCII (Chinese, Hindi ...)."""
+
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return False
+    foreign = sum(1 for c in letters if not c.isascii())
+    return foreign / len(letters) > _NON_ENGLISH_SHARE
+
+
+def _clean_line(line: str, *, english: bool = True) -> str:
     """Odd characters, dashes and buzzwords in one line, outside code spans."""
 
     spaced = not line.strip().startswith("|")
@@ -1101,16 +1185,19 @@ def _clean_line(line: str) -> str:
             continue
         plain = part.replace("\N{NON-BREAKING HYPHEN}", "-")
         plain = plain.replace("\N{NO-BREAK SPACE}", " ")
-        out += _replace_buzzwords(_replace_dashes(plain, out[-3:], spaced=spaced))
+        fixed = _replace_dashes(plain, out[-3:], spaced=spaced)
+        out += _replace_buzzwords(fixed) if english else fixed
     return out
 
 
-def _clean_lines(lines: list[str]) -> list[str]:
+def _clean_lines(lines: list[str], *, english: bool = True) -> list[str]:
     cleaned: list[str] = []
     in_fence = False
     for line in lines:
         is_fence = line.strip().startswith(_FENCE)
-        cleaned.append(line if in_fence or is_fence else _clean_line(line))
+        cleaned.append(
+            line if in_fence or is_fence else _clean_line(line, english=english)
+        )
         in_fence = in_fence != is_fence
     return cleaned
 
@@ -1164,6 +1251,9 @@ def humanise(answer: str) -> str:
 
     if not answer.strip():
         return answer
+    if is_non_english(answer):
+        # Only char-level filters: English word rewriters would corrupt it.
+        return _tidy(_clean_lines(answer.split(chr(10)), english=False)) or answer
     text = _split_inline_headings(answer)
     lines, closing = _extract_next_steps(text.split("\n"))
     lines = _clean_lines(_drop_generic_headings(lines))
@@ -1185,7 +1275,9 @@ def polish_answer(
 
     if style != ResponseStyle.ADAPTIVE:
         return answer
-    polished = remove_internal_wording(strip_stock_phrases(answer))
+    if is_non_english(answer):
+        return humanise(answer)
+    polished = remove_internal_wording(strip_stock_phrases(answer), question)
     polished = drop_stock_handoff(polished, question)
     polished = drop_unrequested_caveat(polished, question)
     polished = humanise(polished)

@@ -314,3 +314,192 @@ def detect_pricing_request(query: str) -> str | None:
     if 0 < len(text) <= _MAX_PRICING_CHARS and _PRICING_RE.match(text):
         return PRICING_REPLY
     return None
+
+
+# ---------------------------------------------------------------------------
+# Support, callback, assurance, identity and acknowledgement. Fixed, warm
+# replies: no LLM, no retrieval, no sources. Every pattern is anchored or
+# keyword-based with bounded quantifiers, and every helper caps its input.
+# ---------------------------------------------------------------------------
+_MAX_SMALLTALK_CHARS = 200
+_MAX_ACK_CHARS = 30
+
+SUPPORT_CANCEL_REPLY = (
+    "I'm sorry to hear that. I can't change accounts or payments here, but our "
+    "team can sort it out quickly, so please get in touch through the Contact "
+    "page on our website."
+)
+SUPPORT_BROKEN_REPLY = (
+    "I'm really sorry, that's not the experience we want you to have. Please "
+    "contact our specialists through the Contact page on our website so they "
+    "can look into it straight away."
+)
+SUPPORT_FRUSTRATION_REPLY = (
+    "Sorry it's not helping. Tell me a bit more about what you were after, or "
+    "our specialists can step in through the Contact page on our website."
+)
+SUPPORT_MANAGER_REPLY = (
+    "Understood. I can't transfer you from here, but our team can take it from "
+    "there, so please use the Contact page on our website and ask for a manager."
+)
+CALLBACK_REPLY = (
+    "Thanks for asking. I can't take phone numbers or book calls here, so "
+    "please use the Contact page on our website and our team will get back to "
+    "you."
+)
+ASSURANCE_REPLY = (
+    "Nobody can honestly promise 100% security, and we wouldn't want to. What "
+    "we do is keep a person in charge of every change, with checkpoints and "
+    "evidence along the way. If you'd like the detail, one of our specialists "
+    "can walk you through it."
+)
+_IDENTITY_VARIANT = (
+    "I'm the {brand} website assistant, here to answer questions about our "
+    "services. I can't say much about what's under the hood, but I can tell "
+    "you all about what {brand} does."
+)
+_ACK_VARIANTS: tuple[str, ...] = (
+    "Okay! What would you like to know about {brand}?",
+    "Sure. Ask me anything about {brand}, Zero Trust or Essential Eight.",
+    "Happy to help. What can I tell you about {brand}?",
+)
+
+_CANCEL_RE = re.compile(
+    r"\b(?:cancel(?:l?ing|l?ation|l?ed)?|refunds?|refunded|unsubscribe|"
+    r"(?:close|delete|deactivate)\s{1,3}(?:my|our|the)\s{1,3}account)\b",
+    re.IGNORECASE,
+)
+_BROKEN_RE = re.compile(
+    r"\b(?:(?:broke|broken|wrecked|trashed|ruined)\s{1,3}(?:my|our|the)\b|"
+    r"(?:stopped|stops|quit)\s{1,3}working\b|(?:is|it's|its|are)\s{1,3}not\s{1,3}working\b)",
+    re.IGNORECASE,
+)
+_MANAGER_RE = re.compile(
+    r"\b(?:speak|talk|chat)\s{1,3}(?:to|with)\s{1,3}(?:a\s{1,3}|your\s{1,3}|the\s{1,3})?"
+    r"(?:manager|supervisor)\b",
+    re.IGNORECASE,
+)
+_FRUSTRATION_RE = re.compile(
+    r"\b(?:(?:this|that|you|it|u)\s{1,3}(?:is|are|'re|'s|was|sucks?)\s{1,3}"
+    r"(?:(?:so|really|totally|just|pretty|very)\s{1,3})?"
+    r"(?:useless|rubbish|garbage|terrible|crap|pathetic|awful|worthless|"
+    r"a\s{1,3}joke|a\s{1,3}waste\s{1,3}of\s{1,3}time|not\s{1,3}helpful|no\s{1,3}help)|"
+    r"(?:not|aren't|am\s{1,3}not|i'm\s{1,3}not)\s{1,3}(?:very\s{1,3})?happy|unhappy|"
+    r"complaints?|complain(?:ing)?|disappointed|fed\s{1,3}up)\b",
+    re.IGNORECASE,
+)
+_CALLBACK_RE = re.compile(
+    r"\b(?:(?:call|phone|ring|contact)\s{1,3}me\b|"
+    r"give\s{1,3}me\s{1,3}a\s{1,3}(?:call|ring)\b|call\s{0,2}back\b)",
+    re.IGNORECASE,
+)
+_ASSURANCE_RE = re.compile(
+    r"(?:\b100\s{0,2}%|\bone\s{1,3}hundred\s{1,3}percent\b|"
+    r"\b(?:completely|totally|absolutely|entirely)\s{1,3}(?=secure|safe)|"
+    r"\bimpenetrable\b|\bunbreakable\b)"
+    r"|\bguarantee[sd]?\b(?:\s{1,3}[a-z']{1,15}){0,4}\s{1,3}"
+    r"(?:security|safety|secure|safe|protection|protected)\b"
+    r"|\bpromise\b(?:\s{1,3}[a-z']{1,15}){0,4}\s{1,3}(?:safe|secure)\b",
+    re.IGNORECASE,
+)
+_UNHACKABLE_RE = re.compile(
+    r"\b(?:(?:hack|breach)[\s-]{0,2}proof|unhackable|bullet[\s-]{0,2}proof)\b",
+    re.IGNORECASE,
+)
+_ASSURANCE_SUBJECT_RE = re.compile(
+    r"\b(?:secure|safe|security|safety|protected|protection)\b", re.IGNORECASE
+)
+_IDENTITY_RE = re.compile(
+    r"^\s{0,3}(?:"
+    r"(?:what|whats|what's)(?:\s{1,3}is)?\s{1,3}(?:your|ur)\s{1,3}name"
+    r"|who\s{1,3}(?:are|r)\s{1,3}(?:you|u)"
+    r"|who\s{1,3}(?:made|built|created|developed|trained|programmed|owns)\s{1,3}(?:you|u)"
+    r"|(?:what|which)\s{1,3}(?:model|ai|llm|bot|chatbot|gpt)(?:\s{1,3}(?:model|bot))?"
+    r"\s{1,3}(?:are|r)\s{1,3}(?:you|u)(?:\s{1,3}(?:running|using|based)(?:\s{1,3}(?:on|in))?)?"
+    r"|(?:are|r)\s{1,3}(?:you|u)\s{1,3}(?:a\s{1,3}|an\s{1,3})?"
+    r"(?:real\s{1,3}(?:person|human)|bot|chatbot|human|real|robot|ai|person|"
+    r"chat\s{0,2}gpt|gpt|claude|gemini|copilot|llm)"
+    r")[\s?!.]{0,6}$",
+    re.IGNORECASE,
+)
+_ACK_RE = re.compile(
+    r"^(?:yes|yeah|yep|yup|no|nope|nah|ok|okay|k|kk|sure|cool|lol|ha(?:ha){1,3}|"
+    r"test|testing|nice|great|hm{1,4}|right|alright|\U0001F44D)"
+    r"[\s!.,?\U0001F44D]{0,6}$",
+    re.IGNORECASE,
+)
+
+
+def _bounded(query: str, limit: int) -> str | None:
+    text = query.strip()
+    if not text or len(text) > limit:
+        return None
+    return text
+
+
+def detect_support_request(query: str) -> str | None:
+    """Fixed reply for cancel/refund, "it broke", frustration and complaints.
+
+    "Can I speak to a human" is left to the contact detector. Pure and bounded.
+    """
+
+    text = _bounded(query, _MAX_SMALLTALK_CHARS)
+    if text is None:
+        return None
+    if _CANCEL_RE.search(text):
+        return SUPPORT_CANCEL_REPLY
+    if _BROKEN_RE.search(text):
+        return SUPPORT_BROKEN_REPLY
+    if _MANAGER_RE.search(text):
+        return SUPPORT_MANAGER_REPLY
+    if _FRUSTRATION_RE.search(text):
+        return SUPPORT_FRUSTRATION_REPLY
+    return None
+
+
+def detect_callback_request(query: str) -> str | None:
+    """Fixed reply for "call me" requests. Never echoes a phone number."""
+
+    text = _bounded(query, _MAX_SMALLTALK_CHARS)
+    if text is not None and _CALLBACK_RE.search(text):
+        return CALLBACK_REPLY
+    return None
+
+
+def detect_assurance_request(query: str) -> str | None:
+    """Fixed reply to "is it 100% secure / do you guarantee security"."""
+
+    text = _bounded(query, _MAX_SMALLTALK_CHARS)
+    if text is None:
+        return None
+    if _UNHACKABLE_RE.search(text) or (
+        _ASSURANCE_RE.search(text) and _ASSURANCE_SUBJECT_RE.search(text)
+    ):
+        return ASSURANCE_REPLY
+    return None
+
+
+def detect_identity_question(query: str) -> str | None:
+    """Fixed reply to "who are you / are you a bot / what model are you"."""
+
+    text = _bounded(query, _MAX_SMALLTALK_CHARS)
+    if text is not None and _IDENTITY_RE.match(text):
+        return _IDENTITY_VARIANT.format(brand=get_settings().brand_name)
+    return None
+
+
+def detect_acknowledgement(query: str) -> str | None:
+    """Fixed reply to a bare "ok", "yes", "lol" or "test" with nothing else.
+
+    The caller must skip this when the previous assistant turn was a
+    clarification, since "yes" or "ok" is then an answer to it.
+    """
+
+    text = _bounded(query, _MAX_ACK_CHARS)
+    if text is not None and _ACK_RE.match(text):
+        return _render(_ACK_VARIANTS, text)
+    return None
+
+
+def all_acknowledgement_responses() -> tuple[str, ...]:
+    return _render_all(_ACK_VARIANTS)
