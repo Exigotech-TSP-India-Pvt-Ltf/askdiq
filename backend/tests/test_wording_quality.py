@@ -89,7 +89,7 @@ def test_unsafe_wins_over_other_flags() -> None:
         flags=["spam_detected", "unclear_input", "unsafe_input_detected"],
         latency_ms=1.0,
     ).answer
-    assert answer.startswith("I can't help with that one")
+    assert answer.startswith("I can't help with that, sorry")
     assert "detect" not in answer.lower()
 
 
@@ -119,7 +119,7 @@ async def test_unsafe_pre_check_returns_canned_refusal_only(monkeypatch) -> None
     )
     assert response.guardrail_flags == ["unsafe_input_detected"]
     assert response.sources == []
-    assert response.answer.startswith("I can't help with that one")
+    assert response.answer.startswith("I can't help with that, sorry")
 
 
 def test_system_prompt_never_names_the_source() -> None:
@@ -345,9 +345,8 @@ def test_system_prompt_forbids_unasked_disclaimers() -> None:
 
 def test_spam_fallback_is_not_a_pitch() -> None:
     answer = _answer("spam_detected")
-    assert "rephrase" in answer
-    assert "Zero Trust" not in answer
-    assert "Essential Eight" not in answer
+    assert "Try asking in a sentence" in answer
+    assert "specialist" not in answer
 
 
 def test_off_topic_fallback_keeps_specialist_step_without_sources() -> None:

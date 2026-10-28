@@ -255,14 +255,16 @@ def service_options(
         items = [(e.label, e.description, docs) for e, docs in grouped.values()]
         defaults = [e.default for e, _ in grouped.values()]
     else:
-        by_doc: dict[str, list[SourceChunk]] = {}
+        by_label: dict[str, list[SourceChunk]] = {}
         for source in ranked:
-            if _source_name(source):
-                by_doc.setdefault(source.document_id, []).append(source)
-        items = [
-            (humanize_source_name(_source_name(docs[0]) or ""), "", docs)
-            for docs in by_doc.values()
-        ]
+            name = _source_name(source)
+            if name:
+                # A known catalogue page is offered by its service name, never
+                # as a raw page title ("E8 service page").
+                entry = _entry_for(source)
+                label = entry.label if entry else humanize_source_name(name)
+                by_label.setdefault(label, []).append(source)
+        items = [(label, "", docs) for label, docs in by_label.items()]
     shown = items[: settings.clarify_max_options]
     options = [
         _option(i, label, description, docs)
@@ -394,7 +396,7 @@ SLOTS: tuple[SlotSpec, ...] = (
     SlotSpec(
         id="maturity",
         header="Maturity",
-        question="Where are your controls today?",
+        question="Where are your controls at today?",
         filled=_re(
             r"\b(maturity level|ml ?[0-3]|level [0-3]|from scratch|greenfield|"
             r"already|partly|partially|mostly|in place|currently at)\b"
@@ -421,7 +423,7 @@ SLOTS: tuple[SlotSpec, ...] = (
     SlotSpec(
         id="deadline",
         header="Deadline",
-        question="When is the deadline?",
+        question="Do you have a deadline in mind?",
         needed=_re(
             r"\b(fast|quick(ly)?|asap|urgent(ly)?|deadline|coming up|soon|upcoming|"
             r"tight|rush)\b"
@@ -441,7 +443,7 @@ SLOTS: tuple[SlotSpec, ...] = (
     SlotSpec(
         id="environment",
         header="Environment",
-        question="Which environment is in scope?",
+        question="Which environment are you working in?",
         filled=_re(
             r"\b(microsoft 365|m365|office 365|o365|azure|entra|intune|aws|gcp|google|"
             r"on[ -]?prem\w*|hybrid|windows|tenant)\b"
@@ -763,6 +765,7 @@ _STALLED_OUTCOMES = frozenset({"blocked", "ungrounded"})
 _STALLED_TURNS = 2
 _MIN_GOAL_OPTIONS = 2
 
+GENERIC_PREAMBLE = "Happy to help. Quick question first so I get this right."
 CUE_DEFAULT = "default"
 CUE_LOST = "lost"
 CUE_WORRIED = "worried"
@@ -1002,23 +1005,23 @@ def _service_question(
     if _COST_RE.search(scan) and _TIME_RE.search(scan):
         # Cost AND time in one message: one combined, multi-select question.
         return (
-            f"{brand} offers several services; let's pin down which ones you mean.",
+            GENERIC_PREAMBLE,
             ClarificationQuestion(
                 id="Q1",
                 header="Service",
-                question="Which services would you like pricing and timelines for?",
+                question="Which services do you want pricing and timelines for?",
                 multi_select=True,
                 options=options,
             ),
         )
     if _COST_RE.search(scan):
-        text = "Which service would you like pricing for?"
+        text = "Which service do you want pricing for?"
     elif _TIME_RE.search(scan):
-        text = "Which service would you like the timeline for?"
+        text = "Which service do you want the timeline for?"
     else:
-        text = f"Which {brand} service do you mean?"
+        text = "Which service are you after?"
     return (
-        f"{brand} offers several services; which one do you mean?",
+        GENERIC_PREAMBLE,
         ClarificationQuestion(
             id="Q1", header="Service", question=text, options=options
         ),
@@ -1148,6 +1151,10 @@ def _join_labels(labels: list[str]) -> str:
     return f"{', '.join(labels[:-1])} and {labels[-1]}"
 
 
+_SLOT_INTROS = {1: "One quick question", 2: "Two quick questions"}
+_SLOT_INTRO_DEFAULT = "A couple of quick questions"
+
+
 def slot_clarification(
     query: str, slot_ids: tuple[str, ...], sources: list[SourceChunk]
 ) -> Clarification | None:
@@ -1180,13 +1187,15 @@ def slot_clarification(
     if not questions:
         return None
     brand = settings.brand_name
+    shown = questions[: settings.clarify_max_questions]
+    slot_intro = _SLOT_INTROS.get(len(shown), _SLOT_INTRO_DEFAULT)
     covers = f" {brand} helps with {_join_labels(labels)}." if labels else ""
     return Clarification(
         preamble=(
-            f"Happy to help you get ready.{covers} A few quick details will let me "
-            "give you a specific plan and timeline."
+            f"Happy to help you get started.{covers} {slot_intro} will point me the "
+            "right way."
         )[:300],
-        questions=questions[: settings.clarify_max_questions],
+        questions=shown,
         original_query=query[:2000],
     )
 

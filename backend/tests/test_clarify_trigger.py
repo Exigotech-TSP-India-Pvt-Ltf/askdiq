@@ -311,7 +311,7 @@ async def test_audit_request_asks_a_grounded_series(monkeypatch) -> None:
     assert "Security Baseline" in clarification.preamble
     assert "covers" not in clarification.preamble
     # Plain-text clients get every question.
-    assert "4. Which environment is in scope?" in response.answer
+    assert "4. Which environment are you working in?" in response.answer
 
 
 async def test_question_cap_bounds_the_series(monkeypatch) -> None:

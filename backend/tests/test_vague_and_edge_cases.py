@@ -201,7 +201,7 @@ def test_unclear_input_fallback_message():
     resp = _fallback_response(
         request_id="req-1", flags=["unclear_input"], latency_ms=10.0
     )
-    assert "add a little more detail" in resp.answer
+    assert "say a bit more" in resp.answer
     assert resp.grounded is False
 
 
@@ -209,7 +209,7 @@ def test_spam_detected_fallback_message():
     resp = _fallback_response(
         request_id="req-2", flags=["spam_detected"], latency_ms=10.0
     )
-    assert "I didn't catch that" in resp.answer
+    assert "didn't come through clearly" in resp.answer
     assert resp.grounded is False
 
 

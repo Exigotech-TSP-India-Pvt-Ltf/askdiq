@@ -494,7 +494,7 @@ def test_not_sure_is_always_the_last_option() -> None:
 def test_series_preamble_lists_the_catalogue_without_claiming_it_is_all() -> None:
     clar = slot_clarification("audit?", ("framework",), _sources())
     assert clar is not None
-    assert clar.preamble.startswith("Happy to help you get ready.")
+    assert clar.preamble.startswith("Happy to help you get started.")
     assert (
         "DeployIQ helps with Essential Eight, ISO 27001, CIS Benchmark, "
         "Zero Trust and Security Baseline." in clar.preamble
