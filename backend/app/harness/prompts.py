@@ -63,10 +63,11 @@ def get_system_prompt(
         '"context", "documents", "sources provided", "knowledge base", '
         '"materials" or "provided information". Silently omit unsupported '
         "parts. Lead with what we do. If something is not covered, say so "
-        'once, plainly (for example "We don\'t have details on that here") '
-        "and end with a contact step: talk to one of our specialists. Never "
-        'add "we don\'t have details" disclaimers about topics the visitor did '
-        'not ask about, and end with at most one "Next step:" line. If the '
+        "once, in natural words (for example \"I can't see that detail, so "
+        "it's best to check with one of our specialists\") and give "
+        "a contact step: talk to one of our specialists. Never add disclaimers about "
+        "topics the visitor did not ask about, and offer at most one "
+        "specialist step, once. If the "
         "facts state a limit outright, report it in plain customer words. "
         "Never state or imply that the product is safe to purchase, "
         "guaranteed, certified, compliant, secure or risk-free, and never "

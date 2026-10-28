@@ -147,7 +147,7 @@ def test_prompt_carries_assurance_pricing_and_bracket_rules() -> None:
     assert "talk to one of our specialists" in prompt
     assert "never guess or add unsupported facts" in prompt
     assert "help them choose or recommend" in prompt
-    assert "don't have details on that here" in prompt
+    assert "i can't see that detail" in prompt
 
 
 def test_banned_list_has_the_internal_words() -> None:
@@ -162,8 +162,9 @@ def test_quick_fact_does_not_force_yes_or_no() -> None:
 
 def test_partial_shape_leads_with_what_we_do() -> None:
     block = style_instructions(ResponseStyle.ADAPTIVE, "partial")
-    assert "lead with what we do" in block
-    assert "Never open with what we can't confirm" in block
+    assert "say what we do" in block
+    assert "Don't open with what we can't confirm" in block
+    assert "Next step:" not in block.partition("Never use these phrases:")[2]
 
 
 # --------------------------------------------------------------------------
@@ -182,7 +183,7 @@ def test_polish_rewrites_a_not_covered_internal_answer() -> None:
 def test_polish_replaces_only_the_offending_sentence() -> None:
     raw = "We run a phased rollout [1]. The documents do not specify timelines."
     polished = polish_answer(raw, ResponseStyle.ADAPTIVE)
-    assert polished.startswith("We run a phased rollout [1]. We don't have details")
+    assert polished.startswith("We run a phased rollout [1]. I can't see that detail")
     assert "documents" not in polished
     assert "specialist" in polished
 
@@ -292,10 +293,8 @@ def test_source_reference_sentence_is_replaced_once_with_one_next_step() -> None
         "Next step: talk to a specialist."
     )
     out = remove_internal_wording(raw)
-    assert out.startswith(
-        "We run guided pilots [1]. We don't have details on that here."
-    )
-    assert out.count("don't have details") == 1
+    assert out.startswith("We run guided pilots [1]. I can't see that detail")
+    assert out.count("can't see that detail") == 1
     assert out.lower().count("next step") == 1
     assert "materials" not in out
 
@@ -320,7 +319,7 @@ def test_unrequested_trailing_caveat_is_removed() -> None:
     )
     assert out == (
         "We run guided pilots [1]. Rollouts are staged [2].\n\n"
-        "Next step: talk to a specialist."
+        "If you'd like, one of our specialists can help with this."
     )
 
 

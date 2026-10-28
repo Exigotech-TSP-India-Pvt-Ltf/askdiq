@@ -18,6 +18,7 @@ scans, so the filter is linear-time on any input (no regex).
 
 from __future__ import annotations
 
+from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.harness.style import (
     NOT_COVERED_REPLY,
@@ -244,7 +245,7 @@ _NEGATIONS: tuple[str, ...] = (
     "none ",
 )
 _SPECIALIST = "specialist"
-_NEXT_STEP_LINE = "\n\nNext step: talk to one of our specialists."
+_NEXT_STEP_LINE = "\n\nIf you'd like, one of our specialists can help."
 _MAX_MARKER_LEN = 12
 _MIN_WRAPPED_LEN = 3
 _SENTENCE_PUNCT = ".!?"
@@ -525,6 +526,396 @@ def drop_unrequested_caveat(answer: str, question: str | None) -> str:
     return "\n".join(lines).strip()
 
 
+# ---------------------------------------------------------------------------
+# Human voice: dashes, odd characters, buzzwords, next-step labels, repeats
+# ---------------------------------------------------------------------------
+# Every step below is str-method code (find/split/scan): linear time, no
+# backtracking regex. Code spans, fenced code, URLs, e-mail addresses,
+# quoted names and citation markers are never changed.
+
+_EM_DASHES = "\N{EM DASH}\N{EN DASH}"
+_END_MARKS = ",.:;!?"
+_MAX_HYPHEN_RUN = 2
+_NO_WRAP_CHARS: tuple[str, ...] = (
+    "-",
+    "_",
+    "/",
+    "'",
+    "\N{RIGHT SINGLE QUOTATION MARK}",
+)
+_PROTECTED_TOKEN_MARKS: tuple[str, ...] = ("://", "www.", "@", "/")
+_MIN_DUPLICATE_WORDS = 3
+_MAX_BLANK_RUN = 2
+
+# Longest phrases first so the pair beats the single word.
+_BUZZWORDS: tuple[tuple[str, str], ...] = (
+    ("comprehensive, tailored", "tailored"),
+    ("comprehensive and tailored", "tailored"),
+    ("delves into", "looks at"),
+    ("delving into", "looking at"),
+    ("delve into", "look at"),
+    ("comprehensive", "full"),
+    ("seamlessly", "smoothly"),
+    ("seamless", "smooth"),
+    ("leveraging", "using"),
+    ("leverages", "uses"),
+    ("leveraged", "used"),
+    ("leverage", "use"),
+    ("robust", "strong"),
+)
+
+_GENERIC_HEADINGS = frozenset(
+    {
+        "key points",
+        "key takeaways",
+        "summary",
+        "overview",
+        "highlights",
+        "details",
+        "key details",
+    }
+)
+_LABEL_HEADS: tuple[str, ...] = ("next step", *sorted(_GENERIC_HEADINGS))
+_CLOSING_LEAD = "If you'd like, "
+_SPECIALIST_CLOSING = "one of our specialists can help"
+_FENCE = "```"
+
+
+def _split_inline_headings(text: str) -> str:
+    """Put a flattened " ## Next step" / " ## Key points" heading on its own line."""
+
+    if " ## " not in text:
+        return text
+    pieces = text.split(" ## ")
+    out = pieces[0]
+    for piece in pieces[1:]:
+        label = piece.lower().startswith(_LABEL_HEADS)
+        out += ("\n\n## " if label else " ## ") + piece
+    return out
+
+
+def _item_text(line: str) -> str:
+    """A next-step line without bullet, bold and trailing full stop."""
+
+    body = line.strip()
+    for prefix in _PREFIXES:
+        if body.startswith(prefix):
+            body = body[len(prefix) :]
+            break
+    return body.replace("**", "").strip().rstrip(".!").strip()
+
+
+def _next_step_head(line: str) -> tuple[str, bool] | None:
+    """(inline remainder, is_heading) for a "Next step" label line, else None."""
+
+    stripped = line.strip()
+    heading = stripped.startswith(("#", "**"))
+    body = stripped.lstrip("#").lstrip().removeprefix("**").lstrip()
+    if not body.lower().startswith(_NEXT_STEP):
+        return None
+    rest = body[len(_NEXT_STEP) :]
+    rest = rest[1:] if rest[:1] in ("s", "S") else rest
+    if rest[:1].isalnum():
+        return None
+    labelled = rest.lstrip("*").startswith(":")
+    if not heading and not labelled:
+        return None
+    inline = rest.replace("**", "").lstrip(" :" + _EM_DASHES)
+    inline = inline.removeprefix("- ")
+    return inline.strip(), heading
+
+
+def _closing_sentence(item: str, brand: str) -> str:
+    """One natural closing sentence for a "Next step" action."""
+
+    lowered = item.lower()
+    factual = any(mark in lowered for mark in ("@", "http", "www."))
+    index = lowered.find(_SPECIALIST)
+    if index >= 0 and not factual:
+        tail = item[index + len(_SPECIALIST) :].lstrip("s").strip()
+        low_tail = tail.lower()
+        if low_tail.startswith("to "):
+            what = tail[3:].strip(" .,")
+        elif low_tail.startswith(("about ", "with ")):
+            what = "with " + tail.split(" ", 1)[1].strip(" .,")
+        else:
+            what = "with this"
+        return f"{_CLOSING_LEAD}{_SPECIALIST_CLOSING} {what}."
+    contact_brand = f"contact {brand.lower()}"
+    if brand and lowered.startswith(contact_brand):
+        rest = item[len(contact_brand) :]
+        return f"{_CLOSING_LEAD}you can get in touch with us{rest}."
+    if lowered.startswith(("if ", "you ", "we ")):
+        return item[:1].upper() + item[1:] + "."
+    first = item[:1] if item[1:2].isupper() else item[:1].lower()
+    return f"{_CLOSING_LEAD}you can {first}{item[1:]}."
+
+
+def _extract_next_steps(lines: list[str]) -> tuple[list[str], str]:
+    """Remove every "Next step" block; return the rest and ONE closing sentence."""
+
+    brand = get_settings().brand_name
+    kept: list[str] = []
+    closing = ""
+    index = 0
+    while index < len(lines):
+        head = _next_step_head(lines[index])
+        index += 1
+        if head is None:
+            kept.append(lines[index - 1])
+            continue
+        inline, heading = head
+        items = [inline] if inline else []
+        if heading or not inline:
+            while (
+                index < len(lines)
+                and lines[index].strip()
+                and not lines[index].lstrip().startswith("#")
+            ):
+                items.append(_item_text(lines[index]))
+                index += 1
+        if items and not closing:
+            closing = _closing_sentence(_item_text(items[0]), brand)
+    return kept, closing
+
+
+def _drop_generic_headings(lines: list[str]) -> list[str]:
+    """Remove "## Key points"-style form headings (the content stays)."""
+
+    result: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        label = stripped.lstrip("#").strip().strip("*").rstrip(":").strip().lower()
+        if label in _GENERIC_HEADINGS and stripped.startswith(("#", "**")):
+            continue
+        result.append(line)
+    return result
+
+
+def _dash_joiner(buf: list[str], following: str, *, has_text: bool) -> str:
+    last = buf[-1] if buf else ""
+    if not following or not has_text:
+        return ""
+    if last.isdigit() and following.isdigit():
+        return " to "
+    if buf[-2:] == ["*", "*"]:
+        return " " if buf[-3:-2] == [":"] else ": "
+    return " " if last in _END_MARKS else ", "
+
+
+def _spaced_hyphen_end(seg: str, index: int) -> int:
+    """End of a " - " / " -- " dash starting at ``index``, or ``index`` if none."""
+
+    end = index
+    while end < len(seg) and seg[end] == "-":
+        end += 1
+    if end - index > _MAX_HYPHEN_RUN or (end < len(seg) and seg[end] != " "):
+        return index
+    return end
+
+
+def _dash_end(
+    seg: str, index: int, buf: list[str], *, spaced: bool, has_text: bool
+) -> int:
+    """End index of the dash at ``index`` (0 when it is not a dash to replace)."""
+
+    char = seg[index]
+    if char in _EM_DASHES:
+        end = index + 1
+        while end < len(seg) and seg[end] in _EM_DASHES:
+            end += 1
+        return end
+    if spaced and char == "-" and has_text and buf and buf[-1] == " ":
+        end = _spaced_hyphen_end(seg, index)
+        return end if end > index else 0
+    return 0
+
+
+def _replace_dashes(seg: str, lead: str, *, spaced: bool) -> str:
+    """Dashes become commas (or a colon after a bold term); ranges become "to"."""
+
+    base = len(lead)
+    buf = list(lead)
+    has_text = any(not char.isspace() for char in lead)
+    length = len(seg)
+    index = 0
+    while index < length:
+        char = seg[index]
+        end = _dash_end(seg, index, buf, spaced=spaced, has_text=has_text)
+        if not end:
+            buf.append(char)
+            has_text = has_text or not char.isspace()
+            index += 1
+            continue
+        if (
+            char == "\N{EN DASH}"
+            and end == index + 1
+            and buf
+            and buf[-1].isdigit()
+            and end < length
+            and seg[end].isdigit()
+        ):
+            buf.extend(" to ")
+            index = end
+            continue
+        while len(buf) > base and buf[-1] == " ":
+            buf.pop()
+        while end < length and seg[end] == " ":
+            end += 1
+        buf.extend(_dash_joiner(buf, seg[end : end + 1], has_text=has_text))
+        index = end
+    return "".join(buf[base:])
+
+
+def _split_quoted(seg: str) -> list[tuple[str, bool]]:
+    """(text, inside double quotes) pieces; quote marks belong to the quoted piece."""
+
+    pieces: list[tuple[str, bool]] = []
+    start = 0
+    inside = False
+    for index, char in enumerate(seg):
+        opens = (char == '"' and not inside) or char == "\N{LEFT DOUBLE QUOTATION MARK}"
+        closes = inside and char in ('"', "\N{RIGHT DOUBLE QUOTATION MARK}")
+        if opens:
+            if index > start:
+                pieces.append((seg[start:index], False))
+            start, inside = index, True
+        elif closes:
+            pieces.append((seg[start : index + 1], True))
+            start, inside = index + 1, False
+    if start < len(seg):
+        pieces.append((seg[start:], inside))
+    return pieces
+
+
+def _is_whole_word(seg: str, start: int, stop: int) -> bool:
+    before = seg[start - 1] if start else " "
+    after = seg[stop] if stop < len(seg) else " "
+    if before.isalnum() or after.isalnum():
+        return False
+    if before in _NO_WRAP_CHARS or after in _NO_WRAP_CHARS:
+        return False
+    token_start = seg.rfind(" ", 0, start) + 1
+    token_end = seg.find(" ", stop)
+    token = seg[token_start : token_end if token_end >= 0 else len(seg)]
+    return not any(mark in token for mark in _PROTECTED_TOKEN_MARKS)
+
+
+def _replace_phrase(seg: str, phrase: str, replacement: str) -> str:
+    lowered = seg.lower()
+    if len(lowered) != len(seg):
+        return seg
+    out: list[str] = []
+    cursor = 0
+    found = lowered.find(phrase)
+    while found >= 0:
+        stop = found + len(phrase)
+        if _is_whole_word(seg, found, stop):
+            new = replacement
+            if seg[found].isupper():
+                new = new[:1].upper() + new[1:]
+            out.append(seg[cursor:found])
+            out.append(new)
+            cursor = stop
+        found = lowered.find(phrase, stop if cursor == stop else found + 1)
+    out.append(seg[cursor:])
+    return "".join(out)
+
+
+def _replace_buzzwords(seg: str) -> str:
+    parts: list[str] = []
+    for text, quoted in _split_quoted(seg):
+        fixed = text
+        if not quoted:
+            for phrase, replacement in _BUZZWORDS:
+                fixed = _replace_phrase(fixed, phrase, replacement)
+        parts.append(fixed)
+    return "".join(parts)
+
+
+def _clean_line(line: str) -> str:
+    """Odd characters, dashes and buzzwords in one line, outside code spans."""
+
+    spaced = not line.strip().startswith("|")
+    out = ""
+    for index, part in enumerate(line.split("`")):
+        if index % 2:
+            out += f"`{part}`"
+            continue
+        plain = part.replace("\N{NON-BREAKING HYPHEN}", "-")
+        plain = plain.replace("\N{NO-BREAK SPACE}", " ")
+        out += _replace_buzzwords(_replace_dashes(plain, out[-3:], spaced=spaced))
+    return out
+
+
+def _clean_lines(lines: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    in_fence = False
+    for line in lines:
+        is_fence = line.strip().startswith(_FENCE)
+        cleaned.append(line if in_fence or is_fence else _clean_line(line))
+        in_fence = in_fence != is_fence
+    return cleaned
+
+
+def _drop_duplicate_sentences(lines: list[str]) -> list[str]:
+    """Drop a sentence (or whole bullet) identical to the one just before it."""
+
+    result: list[str] = []
+    previous = ""
+    for line in lines:
+        if not line.strip():
+            result.append(line)
+            continue
+        if line.lstrip().startswith(("|", _FENCE)):
+            previous = ""
+            result.append(line)
+            continue
+        prefix = next((p for p in _PREFIXES if line.lstrip().startswith(p)), "")
+        indent = line[: len(line) - len(line.lstrip())]
+        pieces: list[str] = []
+        for piece in _split_sentences(line.lstrip()[len(prefix) :]):
+            key = piece.strip().lower()
+            if key and key == previous and len(key.split()) >= _MIN_DUPLICATE_WORDS:
+                continue
+            pieces.append(piece)
+            previous = key or previous
+        text = "".join(pieces).rstrip()
+        if text:
+            result.append(f"{indent}{prefix}{text}")
+    return result
+
+
+def _tidy(lines: list[str]) -> str:
+    result: list[str] = []
+    blanks = 0
+    for line in lines:
+        blanks = 0 if line.strip() else blanks + 1
+        if blanks < _MAX_BLANK_RUN:
+            result.append(line)
+    return "\n".join(result).strip()
+
+
+def humanise(answer: str) -> str:
+    """Make an answer read like a person wrote it.
+
+    Replaces dashes with commas, odd hyphens and spaces with plain ones, swaps
+    stray buzzwords, turns a "Next step" block into one natural closing
+    sentence, drops form headings like "## Key points" and repeated
+    sentences. Code, URLs, quoted names and citation markers stay as written.
+    """
+
+    if not answer.strip():
+        return answer
+    text = _split_inline_headings(answer)
+    lines, closing = _extract_next_steps(text.split("\n"))
+    lines = _clean_lines(_drop_generic_headings(lines))
+    body = _tidy(_drop_duplicate_sentences(lines))
+    if closing and not (_SPECIALIST in closing and _SPECIALIST in body.lower()):
+        body = f"{body}\n\n{closing}" if body else closing
+    return body or answer
+
+
 def polish_answer(
     answer: str,
     style: ResponseStyle | str | None,
@@ -539,6 +930,7 @@ def polish_answer(
         return answer
     polished = remove_internal_wording(strip_stock_phrases(answer))
     polished = drop_unrequested_caveat(polished, question)
+    polished = humanise(polished)
     if paragraph_guard(polished):
         logger.info("answer_paragraph_guard", prose_run=longest_prose_run(polished))
     return polished
