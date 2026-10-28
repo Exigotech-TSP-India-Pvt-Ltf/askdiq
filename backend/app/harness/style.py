@@ -31,7 +31,10 @@ class ResponseStyle(StrEnum):
     ADAPTIVE = "adaptive"
 
 
-# Words that reveal how an answer was built; customers never see them.
+# Words that reveal how an answer was built; customers never see them. This
+# is the "never use" list shown to the model only: the post-filter in
+# app.harness.tone matches narrower first-person source references, because
+# bare "the documents" / "knowledge base" are also ordinary product words.
 INTERNAL_WORDING: tuple[str, ...] = (
     "supplied context",
     "provided context",
