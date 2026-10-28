@@ -270,3 +270,15 @@ def test_voice_filter_is_linear(text: str) -> None:
     started = time.perf_counter()
     humanise(text)
     assert time.perf_counter() - started < BUDGET_SECONDS
+
+
+def test_current_not_covered_tail_dropped_when_unasked() -> None:
+    from app.harness.tone import drop_unrequested_caveat
+
+    body = "We keep a person in charge of every change."
+    tail = (
+        "I can't see any pricing or timeline details here, so it's best to "
+        "talk to one of our specialists."
+    )
+    assert drop_unrequested_caveat(f"{body} {tail}", "What is E8?") == body
+    assert drop_unrequested_caveat(tail, "What is E8?").startswith("I can't see that")

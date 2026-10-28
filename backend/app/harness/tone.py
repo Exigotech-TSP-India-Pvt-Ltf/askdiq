@@ -492,17 +492,149 @@ def _term_asked(term: str, question: str) -> bool:
     return any(syn in question for syn in _TOPIC_SYNONYMS.get(stem, ()))
 
 
-def drop_unrequested_caveat(answer: str, question: str | None) -> str:
-    """Drop a final "We don't have details on <topic>" the visitor never asked about.
+_TAIL_ABSENCE_CUES: tuple[str, ...] = (
+    "i can't see",
+    "i cannot see",
+    "i can't find",
+    "i cannot find",
+    "i couldn't find",
+    "i could not find",
+    "i don't see",
+    "i do not see",
+    "isn't mentioned",
+    "is not mentioned",
+    "aren't mentioned",
+    "not mentioned",
+    "we don't have",
+    "we do not have",
+)
+_THERE_IS_NO: tuple[str, ...] = ("there's no ", "there is no ", "there are no ")
+_THERE_IS_NO_CONTEXT: tuple[str, ...] = (
+    " here",
+    "specialist",
+    "mentioned",
+    "detail",
+)
+_CAVEAT_TOPICS: tuple[str, ...] = (
+    "pric",
+    "cost",
+    "timelin",
+    "timefram",
+    "time",
+    "turnaround",
+    "quote",
+    "discount",
+    "licen",
+    "roi",
+    "sla",
+    "certif",
+    "complian",
+    "guarant",
+    "integrat",
+)
+_MAX_CAVEAT_WORDS = 40
+_EXACT_TOPIC_LEN = 3
+_CURLY_APOSTROPHE = "’"  # noqa: RUF001
+_TELL_HERE = " here"
 
-    Only the last prose sentence is considered, only when other content stays,
-    and only when no word of its topic appears in the visitor's question.
-    Without a question nothing is removed.
+
+def _plain_lower(sentence: str) -> str:
+    """Lower-cased sentence without citation markers, straight apostrophes."""
+
+    out: list[str] = []
+    last = 0
+    while True:
+        start = sentence.find("[", last)
+        if start < 0:
+            break
+        end = sentence.find("]", start, start + _MAX_MARKER_LEN)
+        out.append(sentence[last:start])
+        last = end + 1 if end > 0 else start + 1
+        if end <= 0:
+            out.append("[")
+    out.append(sentence[last:])
+    return "".join(out).strip().lower().replace(_CURLY_APOSTROPHE, "'")
+
+
+def _is_absence_statement(lowered: str) -> bool:
+    if len(lowered.split()) > _MAX_CAVEAT_WORDS:
+        return False
+    if any(cue in lowered for cue in _TAIL_ABSENCE_CUES):
+        return True
+    return any(p in lowered for p in _THERE_IS_NO) and any(
+        c in lowered for c in _THERE_IS_NO_CONTEXT
+    )
+
+
+def _absence_topics(lowered: str) -> list[str]:
+    """Topic words (pricing, timelines, SLA ...) an absence sentence talks about."""
+
+    words = lowered.replace(",", " ").replace(".", " ").replace("/", " ").split()
+    return [
+        w
+        for w in words
+        if any(
+            w == t if len(t) <= _EXACT_TOPIC_LEN else w.startswith(t)
+            for t in _CAVEAT_TOPICS
+        )
+    ]
+
+
+def _caveat_topics(sentence: str) -> list[str]:
+    """Topic words of a "not covered" caveat sentence; empty when it is not one."""
+
+    terms = _caveat_terms(sentence)
+    if terms:
+        return terms
+    lowered = _plain_lower(sentence)
+    return _absence_topics(lowered) if _is_absence_statement(lowered) else []
+
+
+def _is_handoff_only(sentence: str) -> bool:
+    lowered = _plain_lower(sentence)
+    return (
+        _SPECIALIST in lowered
+        and not _is_absence_statement(lowered)
+        and len(lowered.split()) <= _MAX_CAVEAT_WORDS
+    )
+
+
+def _unrequested_caveat_start(pieces: list[str], asked: str) -> int:
+    """Index of the first piece of a trailing unasked caveat, or -1."""
+
+    last = len(pieces) - 1
+    for index in (last, last - 1):
+        if index < 0 or (index < last and not _is_handoff_only(pieces[last])):
+            continue
+        terms = _caveat_topics(pieces[index])
+        if terms and not any(_term_asked(term, asked) for term in terms):
+            return index
+    return -1
+
+
+def _rewrite_here_tell(sentence: str) -> str:
+    """ "I can't see ... here, so ... specialists" becomes the stock sentence."""
+
+    lowered = _plain_lower(sentence)
+    if (
+        _TELL_HERE in lowered
+        and _SPECIALIST in lowered
+        and _is_absence_statement(lowered)
+    ):
+        return NOT_COVERED_SENTENCE + sentence[len(sentence.rstrip()) :]
+    return sentence
+
+
+def drop_unrequested_caveat(answer: str, question: str | None) -> str:
+    """Drop a final "can't see pricing / timelines here" the visitor never asked about.
+
+    Only the last prose sentence (plus a bare specialist hand-off right after
+    it) is considered, only when other content stays, and only when no topic
+    word of the caveat appears in the visitor's question. Without a question
+    nothing is removed. A kept "I can't see ... here" sentence is rewritten to
+    the stock not-covered sentence (no "here" tell).
     """
 
-    if not question or not question.strip():
-        return answer
-    asked = question.lower()
     lines = answer.split("\n")
     index = len(lines) - 1
     while index >= 0 and (
@@ -512,13 +644,20 @@ def drop_unrequested_caveat(answer: str, question: str | None) -> str:
     if index < 0:
         return answer
     pieces = _split_sentences(lines[index])
-    terms = _caveat_terms(pieces[-1]) if pieces else []
-    if not terms or any(_term_asked(term, asked) for term in terms):
+    if not pieces:
         return answer
-    remaining = "".join(pieces[:-1]).rstrip()
+    asked = (question or "").lower().strip()
+    start = _unrequested_caveat_start(pieces, asked) if asked else -1
+    if start < 0:
+        pieces[-1] = _rewrite_here_tell(pieces[-1])
+        lines[index] = "".join(pieces)
+        return "\n".join(lines)
+    remaining = "".join(pieces[:start]).rstrip()
     others = any(line.strip() for line in lines[:index])
     if not remaining and not others:
-        return answer
+        pieces[-1] = _rewrite_here_tell(pieces[-1])
+        lines[index] = "".join(pieces)
+        return "\n".join(lines)
     if remaining:
         lines[index] = remaining
     else:

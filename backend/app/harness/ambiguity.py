@@ -58,6 +58,7 @@ from app.harness.clarify import (
     INCIDENT_RE,
     NOT_SURE_LABEL,
     clarification_streak,
+    content_word_count,
     humanize_source_name,
     is_generic_product_question,
     metadata_text,
@@ -1100,6 +1101,62 @@ def goal_clarification(
     )
 
 
+_FILLER_WORDS = frozenset(
+    {
+        "tell",
+        "more",
+        "about",
+        "some",
+        "something",
+        "thing",
+        "things",
+        "stuff",
+        "info",
+        # Broad domain topics: on-topic but naming no particular service.
+        "security",
+        "cybersecurity",
+        "cyber",
+        "compliance",
+        "cloud",
+        "microsoft",
+        "help",
+        "advice",
+        "services",
+        "service",
+    }
+)
+
+
+def _has_own_content(query: str) -> bool:
+    """Any word that names something (beyond scaffolding, cost words, fillers)?"""
+    for raw in _WORD_RE.findall(_scan_text(query)[:_MAX_GOAL_CHARS]):
+        word = raw.lower()
+        if not (
+            content_word_count(word) == 0
+            or word in _SCAFFOLD
+            or word in _COST_TIME_WORDS
+            or word in _REFERENTS
+            or word in _FILLER_WORDS
+        ):
+            return True
+    return False
+
+
+def _is_vague(query: str, history: list[ChatTurn] | None) -> bool:
+    """A vague help / need statement (goal cue), by rule."""
+    return (
+        _goal_cue(_scan_text(query)) is not None
+        or assess(query, history).kind is AmbiguityKind.GOAL
+    )
+
+
+def is_concrete_off_scope(query: str, history: list[ChatTurn] | None) -> bool:
+    """A question with its own content words, naming nothing we cover, not vague."""
+    return not (_subjects(query) or _history_subjects(history)) and (
+        _has_own_content(query) and not _is_vague(query, history)
+    )
+
+
 def vague_fallback_clarification(
     query: str, history: list[ChatTurn] | None, sources: list[SourceChunk]
 ) -> Clarification | None:
@@ -1109,6 +1166,10 @@ def vague_fallback_clarification(
     you want to get done?); otherwise "which service?" over the retrieved ones.
     """
     if not (_subjects(query) or _history_subjects(history)):
+        if is_concrete_off_scope(query, history):
+            # A concrete question about something else ("what is a cat?") is
+            # out of scope, not a vague one: no card, the caller falls back.
+            return None
         card = goal_clarification(query, sources)
         if card is not None:
             return card

@@ -284,6 +284,21 @@ _PERSON_RE = re.compile(
     re.IGNORECASE,
 )
 
+_BULK_PERSONAL_RE = re.compile(
+    r"\b(?:list|give|show|send|share|dump|export)\s{1,3}(?:me\s{1,3})?"
+    r"(?:(?:all|every|each)\s{1,3}(?:of\s{1,3})?(?:the\s{1,3}|your\s{1,3})?"
+    r"(?:(?:internal|company)\s{1,3})?"
+    r"|(?:the\s{1,3}|your\s{1,3})?(?:internal|company)\s{1,3})"
+    r"(?:employee|staff|customer|user|client)s?(?:'s?)?\s{1,3}"
+    r"(?:email|phone|mobile|contact|address|detail|name)s?\b"
+    r"|\b(?:give|show|send)\s{1,3}me\s{1,3}(?:everyone'?s|all)\s{1,3}"
+    r"(?:emails?|phone\s{1,3}numbers?)\b"
+    r"|\b(?:show|give|list|send)\s{1,3}(?:me\s{1,3})?(?:the\s{1,3})?"
+    r"(?:employee|staff)\s{1,3}(?:data|directory|contact\s{1,3}list)\b",
+    re.IGNORECASE,
+)
+_BULK_PERSONAL_MAX_CHARS = 200
+
 # ---------------------------------------------------------------------------
 # Spam / gibberish
 # ---------------------------------------------------------------------------
@@ -713,6 +728,8 @@ def check_sensitive_request(query: str) -> tuple[bool, str | None]:
     if _CROSS_TENANT_RE.search(text) and _CREDENTIAL_RE.search(text):
         return False, "no_permission"
     if _PERSONAL_CONTACT_RE.search(text) and _PERSON_RE.search(text):
+        return False, "personal_contact_request"
+    if _BULK_PERSONAL_RE.search(text[:_BULK_PERSONAL_MAX_CHARS]):
         return False, "personal_contact_request"
     return True, None
 

@@ -20,8 +20,11 @@ from app.core.logging_config import get_logger
 from app.evaluation.quality import injection_in_chunks
 from app.governance.audit import emit_audit_event
 from app.guardrails.conversational import (
+    PRICING_REPLY,
     detect_contact_request,
     detect_conversational_intent,
+    detect_incident_request,
+    detect_pricing_request,
 )
 from app.guardrails.post_checks import (
     is_off_topic_by_overlap,
@@ -31,6 +34,7 @@ from app.guardrails.post_checks import (
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
 from app.harness.ambiguity import (
     assess,
+    is_concrete_off_scope,
     rule_clarification,
     vague_fallback_clarification,
 )
@@ -48,10 +52,12 @@ from app.harness.clarify import (
     boost_documents,
     clarify_eligible,
     clarify_instruction,
+    is_pricing_pick,
     parse_decision,
     plan_clarification,
     render_clarification_text,
 )
+from app.harness.decline import clean_declines
 from app.harness.prompts import _MAX_HISTORY_TURNS, call_llm
 from app.harness.style import resolve_style, use_style
 from app.harness.tone import polish_answer
@@ -175,7 +181,7 @@ def _clarification_response(
     *,
     request_id: str,
     latency_ms: float,
-    sources: list[SourceChunk],
+    sources: list[SourceChunk],  # noqa: ARG001 - kept for callers; cards carry none
     confidence: float,
     follow_up_detected: bool,
     history_turns_sent: int,
@@ -203,9 +209,9 @@ def _clarification_response(
     )
     return QueryResponse(
         answer=render_clarification_text(clarification),
-        # Kept for the trace (which evidence was ambiguous); the UI shows no
-        # citation chips for a non-answer.
-        sources=sources,
+        # A question is not an answer: no sources or citation chips. The
+        # options keep their document ids inside the clarification payload.
+        sources=[],
         # The options come straight from retrieved documents, nothing invented.
         grounded=True,
         confidence=round(confidence, 4),
@@ -221,6 +227,41 @@ def _clarification_response(
         outcome=CLARIFY_OUTCOME,
         token_details=token_details,
         clarification=clarification,
+    )
+
+
+def _canned_response(
+    answer: str,
+    *,
+    request_id: str,
+    start: float,
+    follow_up_detected: bool,
+    history_turns_sent: int,
+) -> QueryResponse:
+    """A fixed reply: no retrieval, no LLM, no sources, no citations."""
+    latency_ms = (time.perf_counter() - start) * 1000
+    logger.info("canned_reply_intercept", latency_ms=round(latency_ms, 2))
+    return QueryResponse(
+        answer=answer,
+        sources=[],
+        citations=[],
+        grounded=True,
+        confidence=1.0,
+        request_id=request_id,
+        latency_ms=latency_ms,
+        guardrail_flags=[],
+        follow_up_detected=follow_up_detected,
+        history_turns_sent=history_turns_sent,
+        outcome="conversational",
+    )
+
+
+def _canned_reply(query: str) -> str | None:
+    """Fixed, no-LLM replies: contact and pricing."""
+    return (
+        detect_contact_request(query)
+        or detect_pricing_request(query)
+        or (PRICING_REPLY if is_pricing_pick(query) else None)
     )
 
 
@@ -304,6 +345,19 @@ async def run_query(
         # Unsafe input wins over every other flag: canned refusal only, with
         # no retrieval, no LLM call, no sources and no pitch.
         pre_flags = [_UNSAFE_FLAG]
+    # Someone describing a live security incident is helped, not blocked as
+    # off-topic: a fixed warm reply (only the off-topic flag is bypassed).
+    incident_reply = (
+        detect_incident_request(query) if set(pre_flags) <= {"off_topic"} else None
+    )
+    if incident_reply is not None:
+        return _canned_response(
+            incident_reply,
+            request_id=request_id,
+            start=start,
+            follow_up_detected=follow_up_detected,
+            history_turns_sent=history_turns_sent,
+        )
     if pre_flags:
         latency_ms = (time.perf_counter() - start) * 1000
         logger.warning(
@@ -343,26 +397,14 @@ async def run_query(
 
     # A "how do I reach you" question is on-topic: a fixed, helpful reply with
     # a specialist step; no retrieval, no LLM, no invented contact details.
-    contact_reply = detect_contact_request(query)
+    contact_reply = _canned_reply(query)
     if contact_reply is not None:
-        latency_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "contact_request_intercept",
-            query_len=len(query),
-            latency_ms=round(latency_ms, 2),
-        )
-        return QueryResponse(
-            answer=contact_reply,
-            sources=[],
-            citations=[],
-            grounded=True,
-            confidence=1.0,
+        return _canned_response(
+            contact_reply,
             request_id=request_id,
-            latency_ms=latency_ms,
-            guardrail_flags=[],
+            start=start,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
-            outcome="conversational",
         )
 
     # ---------------------------------------------------------
@@ -759,6 +801,8 @@ async def run_query(
             )
 
     if not grounded:
+        if gated and is_concrete_off_scope(query, history):
+            post_flags = ["off_topic"]
         outcome = "ungrounded"
         token_details["outcome"] = outcome
         logger.warning(
@@ -783,8 +827,9 @@ async def run_query(
             token_details=token_details or None,
         )
 
+    answer, declined = clean_declines(answer, query)
     plain_answer = strip_markers(answer)
-    if is_refusal(plain_answer):
+    if declined or is_refusal(plain_answer):
         # A decline ("not covered", "talk to a specialist") is not a grounded
         # answer: label it like other unanswered turns (grounded=False), and
         # never attach the retrieved chunks as sources or citation markers.

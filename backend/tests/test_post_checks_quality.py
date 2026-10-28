@@ -573,3 +573,12 @@ def test_partial_decline_is_not_a_refusal_and_keeps_answer_claims():
     assert not is_refusal(answer)
     claims = split_claims(answer)
     assert len(claims) == 1 and "Essential Eight" in claims[0]
+
+
+# --- lexical containment in claim ratio ---------------------------------
+
+
+def test_supported_claim_ratio_counts_lexically_contained_claims():
+    assert supported_claim_ratio([[1.0, 0.0]], [[0.0, 1.0]], 0.4) == 0.0
+    assert supported_claim_ratio([[1.0, 0.0]], [[0.0, 1.0]], 0.4, lexical=[0.9]) == 1.0
+    assert supported_claim_ratio([[1.0, 0.0]], [[0.0, 1.0]], 0.4, lexical=[0.0]) == 0.0
