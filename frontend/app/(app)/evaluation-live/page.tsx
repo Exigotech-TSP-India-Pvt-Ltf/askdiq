@@ -315,6 +315,7 @@ export default function EvaluationLivePage() {
             </>
           }
           dateRange
+          singleRowAtWide
         />
 
         {/* Domain Tab 1: Quality & Retrieval */}

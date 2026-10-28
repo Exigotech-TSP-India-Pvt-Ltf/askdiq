@@ -68,6 +68,26 @@ describe("PageToolbar (OR-2)", () => {
     expect(right).toContainElement(screen.getByRole("button", { name: /date range/i }));
   });
 
+  it("can keep tabs and actions stacked until the wide-screen breakpoint", () => {
+    render(
+      <RangeProvider>
+        <PageToolbar
+          tabs={<div role="tablist" aria-label="Sections" className="flex flex-wrap" />}
+          actions={<HeaderIconButton icon={Network} label="Compare with benchmark" text="Compare" showLabel onClick={() => undefined} />}
+          dateRange
+          singleRowAtWide
+        />
+      </RangeProvider>,
+    );
+    const tabs = screen.getByRole("tablist").parentElement!;
+    const row = tabs.parentElement!;
+    const right = row.querySelector("[data-toolbar-actions]")!;
+
+    expect(row).toHaveClass("min-[1440px]:flex-nowrap");
+    expect(tabs).toHaveClass("w-full", "min-[1440px]:overflow-x-auto", "min-[1440px]:**:[[role=tablist]]:flex-nowrap");
+    expect(right).toHaveClass("w-full", "min-[1440px]:shrink-0");
+  });
+
   it("every action is icon + text from sm up (no icon-only buttons), collapsing to the icon on phones", () => {
     render(<PageToolbar actions={<HeaderIconButton icon={Upload} label="Upload document" variant="primary" showLabel onClick={() => undefined} />} />);
     const button = screen.getByRole("button", { name: "Upload document" });

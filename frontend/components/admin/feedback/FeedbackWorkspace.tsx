@@ -114,6 +114,7 @@ export function FeedbackWorkspace() {
             ) : null
           }
           dateRange
+          singleRowAtWide
         />
 
         <div data-tour="feedback-panel" role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
