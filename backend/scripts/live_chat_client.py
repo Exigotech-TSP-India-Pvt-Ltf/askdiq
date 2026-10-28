@@ -18,7 +18,14 @@ service key (``API_KEY_NAME``) goes in ``X-API-Key`` and a per-visitor
 
 Env: LIVE_CLIENT_BACKEND_DIR (dir holding ``.env``; default: cwd, then
 C:\\Projects\\askdiq\\backend), LIVE_CLIENT_BASE_URL (default http://127.0.0.1:8000),
-LIVE_CLIENT_CONCURRENCY (default 4; shared by all threads in the process).
+LIVE_CLIENT_CONCURRENCY (default 4; shared by all threads in the process),
+LIVE_CLIENT_RUNNER_CALLS_PER_MIN (default 8; per ConversationRunner, 0 = no pacing).
+
+Rate limits: the server allows 30 q/min per IP and 10/min per client id, so each
+ConversationRunner has its own client id and paces itself below 10/min. HTTP 429
+is retried after 15s (up to 4 tries) and counted in the response's ``rate_limited``.
+One ``httpx.Client`` is shared per process: building one loads the SSL context,
+which took 7-21s on a loaded machine and made every call look slow.
 """
 
 from __future__ import annotations
@@ -42,11 +49,19 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_ENV_BACKEND_DIR = r"C:\Projects\askdiq\backend"
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_S = 1.0
-RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+RETRY_STATUSES = frozenset({500, 502, 503, 504})
+RATE_LIMIT_STATUS = 429
+RATE_LIMIT_WAIT_S = 15.0
+RATE_LIMIT_ATTEMPTS = 4
+DEFAULT_RUNNER_CALLS_PER_MIN = float(
+    os.environ.get("LIVE_CLIENT_RUNNER_CALLS_PER_MIN", "8")
+)
 
 _CONCURRENCY = max(1, int(os.environ.get("LIVE_CLIENT_CONCURRENCY", "4")))
 _SEMAPHORE = threading.BoundedSemaphore(_CONCURRENCY)
 _PROCESS_CLIENT_ID = f"live-{uuid.uuid4()}"
+_CLIENT: httpx.Client | None = None
+_CLIENT_LOCK = threading.Lock()
 
 INTERNAL_PHRASES = (
     "supplied context",
@@ -57,6 +72,10 @@ INTERNAL_PHRASES = (
     "as an ai",
 )
 ASSURANCE_WORDS = ("guaranteed", "100% safe", "certified")
+_NEGATION = re.compile(
+    r"\b(?:not|no|never|cannot|without|unable)\b|n['\u2019]t\b", re.IGNORECASE
+)
+_CLAUSE_SPLIT = re.compile(r"[.!?;\n]+|\b(?:but|however)\b", re.IGNORECASE)
 FALLBACK_OUTCOMES = frozenset({"ungrounded", "llm_failed", "empty_llm_output"})
 NO_SOURCE_FLAG_MARKERS = ("spam", "unsafe", "off_topic", "refus")
 NO_SOURCE_OUTCOMES = frozenset({"blocked", "refused", "off_topic", "spam", "unsafe"})
@@ -99,23 +118,44 @@ def _base_url() -> str:
     return os.environ.get("LIVE_CLIENT_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
 
 
+def _shared_client() -> httpx.Client:
+    """One lazily built, thread-safe client; timeout is set per request."""
+    global _CLIENT  # noqa: PLW0603
+    with _CLIENT_LOCK:
+        if _CLIENT is None:
+            _CLIENT = httpx.Client()
+        return _CLIENT
+
+
 def _post_with_retry(
-    client: httpx.Client, payload: dict, headers: dict
-) -> httpx.Response:
-    last = ""
-    for attempt in range(MAX_ATTEMPTS):
+    client: httpx.Client, url: str, payload: dict, headers: dict, timeout: float
+) -> tuple[httpx.Response, int]:
+    """POST with retries; returns ``(response, rate_limited_count)``."""
+    rate_limited = errors = 0
+    while True:
         try:
-            resp = client.post("/query", json=payload, headers=headers)
+            resp = client.post(url, json=payload, headers=headers, timeout=timeout)
         except httpx.TransportError as exc:
-            last = type(exc).__name__
+            errors += 1
+            if errors >= MAX_ATTEMPTS:
+                raise LiveClientError(
+                    f"/query failed after {MAX_ATTEMPTS} attempts "
+                    f"({type(exc).__name__})"
+                ) from exc
+            time.sleep(BACKOFF_BASE_S * 2 ** (errors - 1))
+            continue
+        if resp.status_code == RATE_LIMIT_STATUS:
+            rate_limited += 1
+            if rate_limited >= RATE_LIMIT_ATTEMPTS:
+                return resp, rate_limited
+            time.sleep(RATE_LIMIT_WAIT_S)
+        elif resp.status_code in RETRY_STATUSES:
+            errors += 1
+            if errors >= MAX_ATTEMPTS:
+                return resp, rate_limited
+            time.sleep(BACKOFF_BASE_S * 2 ** (errors - 1))
         else:
-            if resp.status_code not in RETRY_STATUSES:
-                return resp
-            last = f"HTTP {resp.status_code}"
-            if attempt == MAX_ATTEMPTS - 1:
-                return resp
-        time.sleep(BACKOFF_BASE_S * 2**attempt)
-    raise LiveClientError(f"/query failed after {MAX_ATTEMPTS} attempts ({last})")
+            return resp, rate_limited
 
 
 def ask(
@@ -128,7 +168,8 @@ def ask(
     transport: httpx.BaseTransport | None = None,
     api_key: str | None = None,
 ) -> dict[str, Any]:
-    """POST /query and return the parsed JSON plus ``wall_ms`` and ``client_id``.
+    """POST /query and return the parsed JSON plus ``wall_ms``, ``client_id``
+    and ``rate_limited`` (number of HTTP 429 responses retried).
 
     Reuse the returned ``client_id`` with ``session_id`` to continue a session
     (sessions belong to the client id). Raises LiveClientError on non-2xx.
@@ -145,12 +186,20 @@ def ask(
         "X-API-Key": api_key if api_key is not None else _service_key(),
         "X-Client-Id": cid,
     }
+    url = f"{_base_url()}/query"
     with _SEMAPHORE:
-        started = time.perf_counter()
-        with httpx.Client(
-            base_url=_base_url(), timeout=timeout, transport=transport
-        ) as client:
-            resp = _post_with_retry(client, payload, headers)
+        if transport is not None:
+            with httpx.Client(transport=transport) as client:
+                started = time.perf_counter()
+                resp, rate_limited = _post_with_retry(
+                    client, url, payload, headers, timeout
+                )
+        else:
+            client = _shared_client()  # built before the timer starts
+            started = time.perf_counter()
+            resp, rate_limited = _post_with_retry(
+                client, url, payload, headers, timeout
+            )
         wall_ms = round((time.perf_counter() - started) * 1000, 1)
     if resp.status_code >= 400:
         raise LiveClientError(
@@ -159,13 +208,24 @@ def ask(
     data = resp.json()
     data["wall_ms"] = wall_ms
     data["client_id"] = cid
+    data["rate_limited"] = rate_limited
     return data
 
 
 class ConversationRunner:
-    """Multi-turn conversation: one client id, session_id kept across turns."""
+    """Multi-turn conversation: own client id, session_id kept across turns.
 
-    def __init__(self, **ask_kwargs: Any) -> None:
+    Calls are paced to ``calls_per_min`` (default 8, under the server's 10/min
+    per-client limit); pass 0 or None to disable.
+    """
+
+    def __init__(
+        self,
+        calls_per_min: float | None = DEFAULT_RUNNER_CALLS_PER_MIN,
+        **ask_kwargs: Any,
+    ) -> None:
+        self._min_interval = 60.0 / calls_per_min if calls_per_min else 0.0
+        self._next_call_at = 0.0
         self.client_id = f"live-{uuid.uuid4()}"
         self.session_id: str | None = None
         self.turns: list[dict[str, Any]] = []
@@ -177,6 +237,7 @@ class ConversationRunner:
         clarification_answers: list[dict] | None = None,
         new_session: bool = False,
     ) -> dict[str, Any]:
+        self._pace()
         resp = ask(
             query,
             session_id=None if new_session else self.session_id,
@@ -188,6 +249,25 @@ class ConversationRunner:
         self.session_id = resp.get("session_id") or self.session_id
         self.turns.append(resp)
         return resp
+
+    def _pace(self) -> None:
+        now = time.monotonic()
+        if self._min_interval and now < self._next_call_at:
+            time.sleep(self._next_call_at - now)
+            now = time.monotonic()
+        self._next_call_at = now + self._min_interval
+
+
+def ask_case(case: Any, runner: ConversationRunner | None = None) -> dict[str, Any]:
+    """Run one ``EvalCase`` live: replay its history's user turns, then ask.
+
+    A live run cannot inject ``case.history``, so ``case.replay_turns()`` is sent
+    first on the same session. Returns the final response.
+    """
+    runner = runner or ConversationRunner()
+    for turn in case.replay_turns():
+        runner.ask(turn)
+    return runner.ask(case.query)
 
 
 def _has(text: str, phrase: str) -> bool:
@@ -227,12 +307,27 @@ def check_clarification(resp: dict, min_options: int = 2) -> list[str]:
     return problems
 
 
-def check_answer(resp: dict, rules: dict | None = None) -> list[str]:
+def _asserts(answer: str, word: str) -> bool:
+    """True when ``word`` appears in a clause that carries no negation."""
+    return any(
+        _has(clause, word) and not _NEGATION.search(clause)
+        for clause in _CLAUSE_SPLIT.split(answer)
+        if clause
+    )
+
+
+def check_answer(
+    resp: dict, rules: dict | None = None, query: str | None = None
+) -> list[str]:
     """Return rule violations (empty list = clean).
 
     rules (all optional): ``kind`` to force "answer"/"fallback"/"refusal"/"clarify"
     instead of auto-detecting, ``allow_assurance`` (bool), ``allow_internal``
     (bool), ``min_options`` (int, default 2).
+
+    Assurance words only count when asserted: not in a negated clause ("we don't
+    have details showing ... certified") and not echoed from the visitor's
+    ``query``.
     """
     rules = rules or {}
     kind = rules.get("kind") or response_kind(resp)
@@ -246,7 +341,9 @@ def check_answer(resp: dict, rules: dict | None = None) -> list[str]:
         ]
     if not rules.get("allow_assurance"):
         problems += [
-            f"assurance wording: '{w}'" for w in ASSURANCE_WORDS if _has(answer, w)
+            f"assurance wording: '{w}'"
+            for w in ASSURANCE_WORDS
+            if _asserts(answer, w) and not (query and _has(query, w))
         ]
     if kind == "fallback" and "specialist" not in answer.lower():
         problems.append("fallback reply does not mention 'specialist'")

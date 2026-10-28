@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import threading
 from pathlib import Path
 
 import httpx
@@ -16,6 +17,7 @@ _spec.loader.exec_module(lc)
 @pytest.fixture(autouse=True)
 def _fast(monkeypatch):
     monkeypatch.setattr(lc, "BACKOFF_BASE_S", 0)
+    monkeypatch.setattr(lc, "RATE_LIMIT_WAIT_S", 0)
 
 
 def _ok(**over):
@@ -60,6 +62,80 @@ def test_retries_then_succeeds():
     out = lc.ask("hi", transport=_transport(handler), api_key="k")
     assert len(calls) == 3
     assert out["outcome"] == "answered"
+    assert out["rate_limited"] == 2
+
+
+def test_429_waits_15s_and_gives_up_after_four_tries(monkeypatch):
+    sleeps, calls = [], []
+    monkeypatch.setattr(lc, "RATE_LIMIT_WAIT_S", 15.0)
+    monkeypatch.setattr(lc.time, "sleep", sleeps.append)
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(429, text="slow down")
+
+    with pytest.raises(lc.LiveClientError, match="429"):
+        lc.ask("hi", transport=_transport(handler), api_key="k")
+    assert len(calls) == 4
+    assert sleeps == [15.0, 15.0, 15.0]
+
+
+def test_shared_client_is_reused_and_thread_safe(monkeypatch):
+    monkeypatch.setattr(lc, "_CLIENT", None)
+    seen = []
+    threads = [
+        threading.Thread(target=lambda: seen.append(lc._shared_client()))
+        for _ in range(8)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len({id(c) for c in seen}) == 1
+    seen[0].close()
+
+
+def test_runner_paces_calls_per_minute(monkeypatch):
+    waits = []
+    monkeypatch.setattr(lc.time, "sleep", waits.append)
+    run = lc.ConversationRunner(
+        transport=_transport(lambda _r: httpx.Response(200, json=_ok())), api_key="k"
+    )
+    run.ask("one")
+    run.ask("two")
+    assert run._min_interval == 7.5
+    assert len(waits) == 1
+    assert 7.0 < waits[0] <= 7.5
+
+
+def test_runners_use_distinct_client_ids():
+    assert lc.ConversationRunner().client_id != lc.ConversationRunner().client_id
+
+
+class _Case:
+    query = "How does DeployIQ deliver it?"
+
+    def replay_turns(self):
+        return ["What is Zero Trust?", "And Essential Eight?"]
+
+
+def test_ask_case_replays_history_before_the_query():
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=_ok())
+
+    run = lc.ConversationRunner(
+        calls_per_min=0, transport=_transport(handler), api_key="k"
+    )
+    lc.ask_case(_Case(), run)
+    assert [b["query"] for b in bodies] == [
+        "What is Zero Trust?",
+        "And Essential Eight?",
+        "How does DeployIQ deliver it?",
+    ]
+    assert bodies[2]["session_id"] == "s1"
 
 
 def test_gives_up_after_max_attempts():
@@ -94,7 +170,9 @@ def test_conversation_runner_keeps_session():
         cids.append(request.headers["x-client-id"])
         return httpx.Response(200, json=_ok())
 
-    run = lc.ConversationRunner(transport=_transport(handler), api_key="k")
+    run = lc.ConversationRunner(
+        calls_per_min=0, transport=_transport(handler), api_key="k"
+    )
     run.ask("one")
     run.ask("two")
     assert "session_id" not in bodies[0]
@@ -115,6 +193,20 @@ def test_internal_and_assurance_words():
     assert any("100% safe" in p for p in problems)
     allowed = {"allow_assurance": True, "allow_internal": True}
     assert lc.check_answer(resp, allowed) == []
+
+
+def test_assurance_word_echoed_from_query_or_negated_is_not_flagged():
+    echo = _ok(
+        answer="We don't have details showing DeployIQ is SOC 2 certified. "
+        "Please contact a specialist."
+    )
+    assert lc.check_answer(echo) == []
+    assert lc.check_answer(echo, query="is deployiq SOC 2 certified?") == []
+    asserted = _ok(answer="Yes, DeployIQ is certified.")
+    assert any("certified" in p for p in lc.check_answer(asserted))
+    assert lc.check_answer(asserted, query="is it certified?") == []
+    mixed = _ok(answer="We do not offer refunds. DeployIQ is guaranteed to work.")
+    assert any("guaranteed" in p for p in lc.check_answer(mixed))
 
 
 def test_empty_answer():
