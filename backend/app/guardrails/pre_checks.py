@@ -23,6 +23,42 @@ _PROMO_PHRASES_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Sensitive-request patterns. Every pattern runs on a whitespace-collapsed,
+# length-capped query and uses only bounded quantifiers (no polynomial ReDoS).
+_SENSITIVE_MAX_CHARS = 1000
+_CROSS_TENANT_RE = re.compile(
+    r"\b(?:other|another)\s{1,3}(?:customers?|tenants?|clients?)\b",
+    re.IGNORECASE,
+)
+_CREDENTIAL_RE = re.compile(
+    r"\b(?:passwords?|admin(?:istrator)?\s{1,3}credentials?|"
+    r"api[\s_-]{0,3}keys?|secrets?|access\s{1,3}tokens?)\b",
+    re.IGNORECASE,
+)
+_REVEAL_VERB_RE = re.compile(
+    r"\b(?:print|reveal|show|list|provide|output|give|display|what\s{1,3}is)\b",
+    re.IGNORECASE,
+)
+_OWN_APPLICATION_RE = re.compile(
+    r"\bused\s{1,3}(?:by|in)\s{1,3}(?:this|your)\s{1,3}(?:application|app|system)\b"
+    r"|\bin\s{1,3}your\s{1,3}environment\b",
+    re.IGNORECASE,
+)
+_SECRET_VALUE_RE = re.compile(
+    r"\b(?:value|contents?)\s{1,3}of\s{1,3}[A-Z][A-Z0-9_]{0,60}"
+    r"(?:KEY|SECRET|TOKEN|PASSWORD)\b"
+)
+_PERSONAL_CONTACT_RE = re.compile(
+    r"\bpersonal\s{1,3}number\b|\b(?:personal|private)\s{1,3}"
+    r"(?:mobile|phone|contact)\s{1,3}(?:number|details?)\b",
+    re.IGNORECASE,
+)
+_PERSON_RE = re.compile(
+    r"\b(?:ceo|chief\s{1,3}executive|executive|employee|"
+    r"staff\s{1,3}member|team\s{1,3}member|director)\b",
+    re.IGNORECASE,
+)
+
 _VOWEL_RE = re.compile(r"[aeiouy]", re.IGNORECASE)
 _CONSONANT_CLUSTER_RE = re.compile(r"[bcdfghjklmnpqrstvwxz]{5,}", re.IGNORECASE)
 
@@ -153,6 +189,21 @@ def check_unsafe_input(
     return True, None
 
 
+def check_sensitive_request(query: str) -> tuple[bool, str | None]:
+    """Block requests for credentials/secrets or staff personal contact details."""
+    text = " ".join(query[:_SENSITIVE_MAX_CHARS].split())
+    if _REVEAL_VERB_RE.search(text):
+        if _SECRET_VALUE_RE.search(text):
+            return False, "application_secret_request"
+        if _CREDENTIAL_RE.search(text) and _OWN_APPLICATION_RE.search(text):
+            return False, "application_secret_request"
+    if _CROSS_TENANT_RE.search(text) and _CREDENTIAL_RE.search(text):
+        return False, "no_permission"
+    if _PERSONAL_CONTACT_RE.search(text) and _PERSON_RE.search(text):
+        return False, "personal_contact_request"
+    return True, None
+
+
 def check_spam(
     query: str,
 ) -> tuple[bool, str | None]:
@@ -233,6 +284,7 @@ def run_pre_checks(
 
     checks = (
         (check_length, (query, max_length)),
+        (check_sensitive_request, (query,)),
         (check_unsafe_input, (query,)),
         (check_spam, (query,)),
     )

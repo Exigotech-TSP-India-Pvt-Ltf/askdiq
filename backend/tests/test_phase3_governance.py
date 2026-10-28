@@ -18,7 +18,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.routes.admin import _log_level_for
 from app.core.config import get_settings
-from app.core.quota import quota_monitor
+from app.core.quota import QuotaMonitor
 from app.governance.online_eval import _run_evaluation_task, quality_tracker
 from app.governance.pii import (
     redact_pii,
@@ -166,6 +166,7 @@ def test_pii_redaction_performance_on_large_document():
 
 def test_quota_tracker_rolling_window_and_headroom():
     settings = get_settings()
+    quota_monitor = QuotaMonitor()
     now = 1000.0
 
     # Record 100,000 tokens for chat deployment
@@ -195,6 +196,7 @@ def test_quota_tracker_rolling_window_and_headroom():
 
 
 def test_quota_tracker_throttling_and_header_telemetry():
+    quota_monitor = QuotaMonitor()
     now = 2000.0
     # Simulate a 429 throttle with Azure rate limit headers
     headers = {

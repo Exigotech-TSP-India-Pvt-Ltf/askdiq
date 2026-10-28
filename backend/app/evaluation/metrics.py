@@ -145,8 +145,13 @@ def noise_ratio(flags: Sequence[bool], k: int) -> float:
 def _matches(text: str, spec: str) -> bool:
     """``spec`` may hold alternatives separated by ``|`` (any one matches)."""
 
-    lowered = text.lower()
-    return any(alt.strip().lower() in lowered for alt in spec.split("|") if alt.strip())
+    normalize = str.maketrans({"\u2019": "'", "\u2018": "'", "\u02bc": "'"})
+    lowered = text.lower().translate(normalize)
+    return any(
+        alt.strip().lower().translate(normalize) in lowered
+        for alt in spec.split("|")
+        if alt.strip()
+    )
 
 
 def missing_keywords(text: str, specs: Iterable[str]) -> list[str]:
