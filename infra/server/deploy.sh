@@ -4,7 +4,6 @@
 # Usage (as WebAdmin, from anywhere):
 #   bash deploy.sh [--kit ~/askdiq-deploy-<sha>.tgz] [--skip-backup]
 #                  [--only-backend | --only-frontend]
-# Env: API_SERVICE=<compose service key of the API> (default askdiq-api; prod: backend)
 #
 # Steps: preflight -> backups -> extract backend/ + frontend/ from the kit ->
 # build -> up -d --force-recreate -> wait for healthy -> verification -> summary.
@@ -26,8 +25,6 @@
 set -euo pipefail
 
 ROOT=${ASKDIQ_ROOT:-/opt/askdiq}
-# Compose service key of the API (container/image stay askdiq-api). Prod uses `backend`.
-API_SERVICE=${API_SERVICE:-askdiq-api}
 COMPOSE_FILE="$ROOT/docker-compose.prod.yml"
 PUBLIC_API_URL=${PUBLIC_API_URL:-https://askdiq.ethub.co}
 PG_CONTAINER=${PG_CONTAINER:-et-platform-postgres-1}
@@ -58,7 +55,7 @@ BK="$HOME/askdiq-backups/$TS"
 REL="$HOME/askdiq-release/$TS"
 STEP="init"
 SERVICES=()
-$DO_API && SERVICES+=("$API_SERVICE")
+$DO_API && SERVICES+=(askdiq-api)
 $DO_WEB && SERVICES+=(askdiq-web)
 SCOPE_FLAG=""
 $DO_API && ! $DO_WEB && SCOPE_FLAG=" --only-backend"
@@ -166,8 +163,7 @@ if docker ps --format '{{.Names}}' | grep -qx askdiq-api; then
   docker exec askdiq-api python -m alembic current 2>/dev/null > "$BK/alembic-before.txt" || true
   ok "alembic before: $(grep -oE '^[0-9a-f]{12}' "$BK/alembic-before.txt" | head -1 || echo unknown)"
 fi
-for svc in "${SERVICES[@]}"; do
-  img=$svc; [ "$svc" = "$API_SERVICE" ] && img=askdiq-api
+for img in "${SERVICES[@]}"; do
   if docker image inspect "$img:latest" >/dev/null 2>&1; then
     docker tag "$img:latest" "$img:rollback-$TS"
     echo "image_$img=$img:rollback-$TS" >> "$BK/manifest"
@@ -228,7 +224,7 @@ ok "images built"
 STEP=start
 if $DO_API; then
   log "Start askdiq-api (prestart: alembic upgrade head under lock, then ingestion)"
-  dc up -d --no-build --force-recreate --no-deps "$API_SERVICE"
+  dc up -d --no-build --force-recreate --no-deps askdiq-api
   STEP=wait-api
   wait_healthy askdiq-api "$API_HEALTH_TIMEOUT"
   echo "    prestart log:"

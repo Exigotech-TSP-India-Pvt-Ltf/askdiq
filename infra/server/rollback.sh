@@ -19,7 +19,6 @@
 set -euo pipefail
 
 ROOT=${ASKDIQ_ROOT:-/opt/askdiq}
-API_SERVICE=${API_SERVICE:-askdiq-api}
 COMPOSE_FILE="$ROOT/docker-compose.prod.yml"
 PG_CONTAINER=${PG_CONTAINER:-et-platform-postgres-1}
 PUBLIC_API_URL=${PUBLIC_API_URL:-https://askdiq.ethub.co}
@@ -116,8 +115,8 @@ if $DO_API; then
     downgrade)
       [ -n "$PREV" ] || die "no alembic-before.txt revision in $BK"
       echo "    downgrading with the CURRENT (new) image to $PREV"
-      dc stop "$API_SERVICE"
-      dc run --rm --no-deps "$API_SERVICE" python -m alembic downgrade "$PREV"
+      dc stop askdiq-api
+      dc run --rm --no-deps askdiq-api python -m alembic downgrade "$PREV"
       ok "downgraded to $PREV"
       ;;
     restore)
@@ -126,7 +125,7 @@ if $DO_API; then
       PGU=$(sed -n 's/^pg_user=//p' "$BK/manifest" 2>/dev/null | tail -1)
       [ -n "$PGU" ] || PGU=${PG_DUMP_USER:-$(sed -nE 's#^DATABASE_URL=["'"'"']?[a-z+0-9]+://([^:@/]+).*#\1#p' "$ROOT/backend/.env" | tail -1)}
       docker ps --format '{{.Names}}' | grep -qx askdiq-web && WEB_WAS_RUNNING=true
-      dc stop "$API_SERVICE"
+      dc stop askdiq-api
       if $WEB_WAS_RUNNING; then dc stop askdiq-web; fi
       docker exec -i "$PG_CONTAINER" pg_restore -U "$PGU" -d askdiq --clean --if-exists --no-owner --single-transaction < "$BK/askdiq-db.dump"
       ok "database restored from $BK/askdiq-db.dump"
@@ -136,7 +135,7 @@ if $DO_API; then
   restore_source backend
   docker tag "askdiq-api:rollback-$TS" askdiq-api:latest
   # The old image's prestart runs `alembic upgrade head` = the old head: a no-op now.
-  dc up -d --no-build --force-recreate --no-deps "$API_SERVICE"
+  dc up -d --no-build --force-recreate --no-deps askdiq-api
   wait_healthy askdiq-api 420
   if [ "$DB_MODE" = restore ] && $WEB_WAS_RUNNING; then
     dc up -d --no-build --no-deps askdiq-web
