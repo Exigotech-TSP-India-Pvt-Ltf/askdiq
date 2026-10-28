@@ -418,3 +418,19 @@ def test_fuzz_clear_prompts_never_get_a_goal_card() -> None:
     prompts = _variants(rng, _CLEAR_CORES, 120)
     bad = [q for q in prompts if assess(q, None).kind is AmbiguityKind.GOAL]
     assert not bad, sorted(set(bad))
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "i need help, tell me something, i am confused, idk, what should we buy",
+        "i need help, tell me something, i am confused, idk, what should we buy from google?",
+    ],
+)
+def test_owner_runon_gets_the_goal_card(query: str) -> None:
+    assessment = assess(query, None)
+    assert assessment.kind is AmbiguityKind.GOAL
+    card = goal_clarification(query, _sources(), assessment.cue)
+    assert card is not None
+    assert card.questions[0].question == GOAL_QUESTION
+    assert len(card.questions[0].options) == 4
