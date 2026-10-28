@@ -50,6 +50,35 @@ def source_header(number: int) -> str:
     return f"Source {number}"
 
 
+_FREE_BRACKET_RE = re.compile(r"\[([^\[\]\n]{1,200})\](?!\()")
+_NUMBERISH_RE = re.compile(r"[\d\s,;-]{1,20}")
+_SOURCE_REF_RE = re.compile(r"(?:sources?|docs?|documents?|ref|references?)\b", re.I)
+_FENCE = "```"
+
+
+def _unwrap_bracket(match: re.Match[str]) -> str:
+    """Free-text ``[...]``: drop source-like/number-like ones, else unwrap."""
+    if MARKER_RE.fullmatch(match.group(0)):
+        return match.group(0)
+    inner = match.group(1)
+    if _NUMBERISH_RE.fullmatch(inner) or _SOURCE_REF_RE.match(inner.strip()):
+        return ""
+    return inner
+
+
+def strip_free_brackets(text: str) -> str:
+    """``text`` without free-text ``[...]`` (valid ``[n]`` markers are kept).
+
+    Markdown links ``[label](url)`` and fenced code blocks are left alone.
+    """
+    if "[" not in text:
+        return text
+    parts = text.split(_FENCE)
+    for index in range(0, len(parts), 2):  # even parts are outside code fences
+        parts[index] = _FREE_BRACKET_RE.sub(_unwrap_bracket, parts[index])
+    return _FENCE.join(parts)
+
+
 def strip_markers(text: str) -> str:
     """``text`` without markers (and the spaces right before them)."""
     if "[" not in text:
@@ -100,6 +129,7 @@ def apply_citations(
     """The answer with clean markers and the citations they refer to."""
     if "[" not in answer:
         return answer, []
+    answer = strip_free_brackets(answer)
     out: list[str] = []
     cited: dict[int, Citation] = {}
     last = 0

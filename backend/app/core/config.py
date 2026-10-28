@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     # Guardrails
     # Semantic cosine-similarity threshold (STEP 7), not lexical overlap.
     groundedness_threshold: float = 0.45
+    # Multi-sentence answers: share of claims (sentences/bullets) whose best
+    # chunk similarity reaches groundedness_threshold. Below it -> ungrounded.
+    groundedness_min_supported_ratio: float = 0.6
     max_query_length: int = 2000
 
     # Retrieval
@@ -131,6 +134,10 @@ class Settings(BaseSettings):
     # weather?" ~0.10) — gating too high silently blocks on-topic questions
     # before the LLM+groundedness check (the real safety net) ever sees them.
     min_retrieval_score: float = 0.15
+    # Extra off-topic rule: when the best retrieval score is below this AND none
+    # of the query's content words occur in any retrieved chunk, the question is
+    # treated as off-topic (pronounceable nonsense still retrieves generic chunks).
+    offtopic_overlap_max_score: float = 0.30
     # Metadata keys a /query `filters` object may use. Unknown keys and non-scalar
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).

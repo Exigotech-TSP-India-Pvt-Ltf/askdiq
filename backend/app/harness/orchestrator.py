@@ -20,7 +20,11 @@ from app.core.logging_config import get_logger
 from app.evaluation.quality import injection_in_chunks
 from app.governance.audit import emit_audit_event
 from app.guardrails.conversational import detect_conversational_intent
-from app.guardrails.post_checks import run_post_checks
+from app.guardrails.post_checks import (
+    is_off_topic_by_overlap,
+    is_refusal,
+    run_post_checks,
+)
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
 from app.harness.ambiguity import assess, rule_clarification, service_clarification
 from app.harness.answer_shape import detect_shape, refine_shape
@@ -28,6 +32,7 @@ from app.harness.citations import (
     TOKEN_DETAILS_KEY,
     apply_citations,
     citation_records,
+    strip_free_brackets,
     strip_markers,
 )
 from app.harness.clarify import (
@@ -398,7 +403,12 @@ async def run_query(
                 ),
             )
 
-    if max_retrieval_score < settings.min_retrieval_score:
+    if max_retrieval_score < settings.min_retrieval_score or is_off_topic_by_overlap(
+        query,
+        (s.content for s in sources),
+        max_retrieval_score,
+        settings.offtopic_overlap_max_score,
+    ):
         latency_ms = (time.perf_counter() - start) * 1000
         logger.info(
             "retrieval_low_confidence",
@@ -711,6 +721,39 @@ async def run_query(
             flags=post_flags,
             latency_ms=total_ms,
             sources=sources,
+            follow_up_detected=follow_up_detected,
+            history_turns_sent=history_turns_sent,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
+            outcome=outcome,
+            token_details=token_details or None,
+        )
+
+    plain_answer = strip_markers(answer)
+    if is_refusal(plain_answer):
+        # A decline ("not covered", "talk to a specialist") is not a grounded
+        # answer: label it like other unanswered turns, and never attach the
+        # retrieved chunks as sources or citation markers.
+        outcome = "ungrounded"
+        token_details["outcome"] = outcome
+        token_details["declined"] = True
+        logger.info(
+            "answer_declined",
+            outcome=outcome,
+            confidence=round(confidence, 4),
+            latency_ms=round(total_ms, 2),
+        )
+        return QueryResponse(
+            answer=strip_free_brackets(plain_answer),
+            sources=[],
+            citations=[],
+            grounded=grounded,
+            confidence=confidence,
+            request_id=request_id,
+            latency_ms=total_ms,
+            guardrail_flags=post_flags,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
             prompt_tokens=prompt_tokens,
