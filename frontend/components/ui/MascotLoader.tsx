@@ -112,7 +112,7 @@ function MascotStage({ variant, reduced }: { variant: MascotLoaderVariant; reduc
       </m.span>
       {/* Breathing ground shadow */}
       <m.span
-        className="absolute bottom-[8%] left-1/2 h-2 w-1/3 -translate-x-1/2 rounded-full bg-fg/20 blur-sm"
+        className="absolute bottom-[8%] left-1/2 h-2 w-1/3 -translate-x-1/2 rounded-full bg-fg/20 blur-xs"
         animate={loop(loaderShadow)?.animate}
         transition={loop(loaderShadow)?.transition}
       />

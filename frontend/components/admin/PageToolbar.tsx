@@ -83,12 +83,12 @@ export function PageToolbar({
   const layout = singleRowAtWide
     ? {
         row: "min-[1440px]:flex-nowrap",
-        tabs: "min-[1440px]:min-w-[12rem] min-[1440px]:shrink-[4] min-[1440px]:overflow-x-auto min-[1440px]:p-0.5 min-[1440px]:[scrollbar-width:none] min-[1440px]:[&::-webkit-scrollbar]:hidden min-[1440px]:[&_[role=tablist]]:flex-nowrap",
+        tabs: "min-[1440px]:min-w-48 min-[1440px]:shrink-4 min-[1440px]:overflow-x-auto min-[1440px]:p-0.5 min-[1440px]:scrollbar-none min-[1440px]:[&::-webkit-scrollbar]:hidden min-[1440px]:**:[[role=tablist]]:flex-nowrap",
         actions: "min-[1440px]:max-w-[70%] min-[1440px]:shrink-0",
       }
     : {
         row: "lg:flex-nowrap",
-        tabs: "lg:min-w-[12rem] lg:shrink-[4] lg:overflow-x-auto lg:p-0.5 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden lg:[&_[role=tablist]]:flex-nowrap",
+        tabs: "lg:min-w-48 lg:shrink-4 lg:overflow-x-auto lg:p-0.5 lg:scrollbar-none lg:[&::-webkit-scrollbar]:hidden lg:**:[[role=tablist]]:flex-nowrap",
         actions: "lg:max-w-[70%] lg:shrink-0",
       };
   if (!tabs && !hasRight) return null;

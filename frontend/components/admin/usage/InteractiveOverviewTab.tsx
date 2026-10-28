@@ -184,7 +184,7 @@ export function InteractiveOverviewTab({
       {/* ========================================================================= */}
       {/* 1. CHATBOT LIVE TELEMETRY COMMAND BAR (Signature Command Center) */}
       {/* ========================================================================= */}
-      <div data-tour="usage-command-bar" className="relative overflow-hidden rounded-2xl border border-teal-500/30 bg-gradient-to-r from-brand-600 via-brand-800 to-brand-950 p-6 text-white shadow-xl transition-all">
+      <div data-tour="usage-command-bar" className="relative overflow-hidden rounded-2xl border border-teal-500/30 bg-linear-to-r from-brand-600 via-brand-800 to-brand-950 p-6 text-white shadow-xl transition-all">
         {/* Ambient Glow Orbs */}
         <div className="absolute right-0 top-0 -mt-12 -mr-12 h-64 w-64 rounded-full bg-teal-400/20 blur-3xl pointer-events-none" />
         <div className="absolute left-1/4 bottom-0 -mb-12 h-40 w-40 rounded-full bg-cyan-400/20 blur-2xl pointer-events-none" />
@@ -224,7 +224,7 @@ export function InteractiveOverviewTab({
                   onClick={() => void syncTelemetry()}
                   disabled={isSyncing}
                   aria-busy={isSyncing}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white border border-white/20 hover:bg-white/25 transition shadow-sm"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white border border-white/20 hover:bg-white/25 transition shadow-xs"
                   title="Synchronize live backend telemetry"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
@@ -237,7 +237,7 @@ export function InteractiveOverviewTab({
           {/* Core Chatbot Health Metrics Strip (Frosted Translucent Tiles - NOT White) */}
           <div data-tour="usage-kpis" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {/* Metric 1: Total Turns Processed */}
-            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-xs">
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-2xs">
               <span className="text-[11px] text-teal-200 font-medium">Conversational Turns</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-extrabold font-mono text-white">
@@ -248,7 +248,7 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Metric 2: Groundedness Pass Rate */}
-            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-xs">
+            <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-2xs">
               <span className="text-[11px] text-teal-200 font-medium">Grounded Citations</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-extrabold font-mono text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.4)]">
@@ -259,7 +259,7 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Metric 3: P50 Median Latency */}
-            <div data-tour="usage-latency-p50" className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-xs">
+            <div data-tour="usage-latency-p50" className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-2xs">
               <span className="text-[11px] text-teal-200 font-medium">Median Turn Speed (P50)</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-extrabold font-mono text-cyan-300 drop-shadow-[0_0_8px_rgba(103,232,249,0.4)]">
@@ -270,7 +270,7 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Metric 4: Total Platform Net Cost */}
-            <div data-tour="usage-net-spend" className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-xs">
+            <div data-tour="usage-net-spend" className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between shadow-2xs">
               <span className="text-[11px] text-teal-200 font-medium">Net Platform Spend</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-extrabold font-mono text-white">
@@ -281,7 +281,7 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Metric 5: Average Cost / Turn */}
-            <div data-tour="usage-cost-per-turn" className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between col-span-2 sm:col-span-1 shadow-xs">
+            <div data-tour="usage-cost-per-turn" className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 flex flex-col justify-between col-span-2 sm:col-span-1 shadow-2xs">
               <span className="text-[11px] text-teal-200 font-medium">Avg Cost / Turn</span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-extrabold font-mono text-amber-300 drop-shadow-[0_0_8px_rgba(252,211,77,0.4)]">
@@ -312,13 +312,13 @@ export function InteractiveOverviewTab({
             {/* Header with Production Aurora Glass Branding */}
             <div className="flex items-center justify-between pb-3 border-b border-teal-100 dark:border-teal-500/20">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-500/15 dark:border-emerald-500/30 dark:text-emerald-300 flex items-center justify-center shadow-xs">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-500/15 dark:border-emerald-500/30 dark:text-emerald-300 flex items-center justify-center shadow-2xs">
                   <DollarSign className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">Economic Waterfall</h4>
-                    <span className="text-[9px] uppercase tracking-wider font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30 shadow-xs">
+                    <span className="text-[9px] uppercase tracking-wider font-mono font-bold px-2 py-0.5 rounded-sm bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30 shadow-2xs">
                       Live Accounting
                     </span>
                   </div>
@@ -341,7 +341,7 @@ export function InteractiveOverviewTab({
                 className={`w-full text-left p-3 rounded-xl border transition ${
                   selectedStageDetail === "llm"
                     ? "border-teal-500 bg-teal-50/70 ring-1 ring-teal-500 dark:border-teal-400 dark:bg-teal-500/20 dark:ring-teal-400/40 shadow-inner"
-                    : "border-teal-100/90 bg-teal-50/30 hover:bg-teal-50/60 hover:border-teal-300/80 dark:border-teal-500/20 dark:bg-white/[0.03] dark:hover:bg-white/[0.06] dark:hover:border-teal-400/50"
+                    : "border-teal-100/90 bg-teal-50/30 hover:bg-teal-50/60 hover:border-teal-300/80 dark:border-teal-500/20 dark:bg-white/3 dark:hover:bg-white/6 dark:hover:border-teal-400/50"
                 }`}
               >
                 <div className="flex items-center justify-between text-xs">
@@ -374,7 +374,7 @@ export function InteractiveOverviewTab({
                 className={`w-full text-left p-3 rounded-xl border transition ${
                   selectedStageDetail === "embed"
                     ? "border-teal-500 bg-teal-50/70 ring-1 ring-teal-500 dark:border-teal-400 dark:bg-teal-500/20 dark:ring-teal-400/40 shadow-inner"
-                    : "border-teal-100/90 bg-teal-50/30 hover:bg-teal-50/60 hover:border-teal-300/80 dark:border-teal-500/20 dark:bg-white/[0.03] dark:hover:bg-white/[0.06] dark:hover:border-teal-400/50"
+                    : "border-teal-100/90 bg-teal-50/30 hover:bg-teal-50/60 hover:border-teal-300/80 dark:border-teal-500/20 dark:bg-white/3 dark:hover:bg-white/6 dark:hover:border-teal-400/50"
                 }`}
               >
                 <div className="flex items-center justify-between text-xs">
@@ -403,13 +403,13 @@ export function InteractiveOverviewTab({
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <div>
                     <span className="font-bold block text-emerald-950 dark:text-white">Prompt Cache Savings</span>
                     <span className="text-[10px] text-emerald-700/80 dark:text-emerald-300/80">Zero duplicate billing</span>
                   </div>
                 </div>
-                <span className="font-mono font-black text-emerald-800 bg-emerald-100/90 dark:text-emerald-200 dark:bg-emerald-500/30 px-2.5 py-1 rounded-md text-[11px] shadow-xs border border-emerald-200 dark:border-emerald-400/40">
+                <span className="font-mono font-black text-emerald-800 bg-emerald-100/90 dark:text-emerald-200 dark:bg-emerald-500/30 px-2.5 py-1 rounded-md text-[11px] shadow-2xs border border-emerald-200 dark:border-emerald-400/40">
                   ${financial.stage_costs.cached_savings_usd.toFixed(4)} saved
                 </span>
               </button>
@@ -479,7 +479,7 @@ export function InteractiveOverviewTab({
         {/* DOMAIN 2: TOKEN VOLUME TELEMETRY — COGNITIVE PIPELINE */}
         {/* ----------------------------------------------------------------------- */}
         <div data-tour="usage-token-rings"
-          className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 shadow-card dark:border-teal-500/25 dark:bg-gradient-to-br dark:from-brand-950/95 dark:via-surface-muted/98 dark:to-surface-page dark:text-white dark:shadow-2xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 dark:shadow-[0_0_30px_rgba(20,184,166,0.12),inset_0_1px_0_0_rgba(45,212,191,0.25)]"
+          className="relative rounded-2xl border border-teal-300/80 dark:border-teal-500/25 bg-surface-card p-6 text-slate-900 shadow-card dark:border-teal-500/25 dark:bg-linear-to-br dark:from-brand-950/95 dark:via-surface-muted/98 dark:to-surface-page dark:text-white dark:shadow-2xl flex flex-col justify-between transition-all overflow-hidden hover:border-teal-400 dark:hover:border-teal-400/60 dark:shadow-[0_0_30px_rgba(20,184,166,0.12),inset_0_1px_0_0_rgba(45,212,191,0.25)]"
         >
           {/* Luminous ambient teal glow in the corner */}
           <div className="absolute -top-12 -right-12 w-36 h-36 bg-teal-400/10 dark:bg-teal-500/15 rounded-full blur-2xl pointer-events-none" />
@@ -488,13 +488,13 @@ export function InteractiveOverviewTab({
             {/* Header with Production Aurora Glass Branding */}
             <div className="flex items-center justify-between pb-3 border-b border-teal-100 dark:border-teal-500/20">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200/80 text-teal-600 dark:bg-teal-500/15 dark:border-teal-500/30 dark:text-teal-300 shadow-xs flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200/80 text-teal-600 dark:bg-teal-500/15 dark:border-teal-500/30 dark:text-teal-300 shadow-2xs flex items-center justify-center">
                   <Cpu className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-tight">The Thinking Pipeline</h4>
-                    <span className="text-[9px] uppercase tracking-wider font-mono font-bold px-2 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200/80 dark:bg-teal-500/20 dark:text-teal-300 dark:border-teal-500/30 shadow-xs">
+                    <span className="text-[9px] uppercase tracking-wider font-mono font-bold px-2 py-0.5 rounded-sm bg-teal-50 text-teal-700 border border-teal-200/80 dark:bg-teal-500/20 dark:text-teal-300 dark:border-teal-500/30 shadow-2xs">
                       Token Telemetry
                     </span>
                   </div>
@@ -509,7 +509,7 @@ export function InteractiveOverviewTab({
                   onClick={() => setTokenViewMode("absolute")}
                   className={`px-2 py-1 rounded font-medium transition ${
                     tokenViewMode === "absolute"
-                      ? "bg-teal-600 text-white font-bold shadow-xs dark:bg-teal-400 dark:text-teal-950 dark:shadow-[0_0_10px_rgba(45,212,191,0.5)]"
+                      ? "bg-teal-600 text-white font-bold shadow-2xs dark:bg-teal-400 dark:text-teal-950 dark:shadow-[0_0_10px_rgba(45,212,191,0.5)]"
                       : "text-slate-600 dark:text-teal-300/80 hover:text-slate-900 dark:hover:text-white font-medium"
                   }`}
                 >
@@ -520,7 +520,7 @@ export function InteractiveOverviewTab({
                   onClick={() => setTokenViewMode("percentage")}
                   className={`px-2 py-1 rounded font-medium transition ${
                     tokenViewMode === "percentage"
-                      ? "bg-teal-600 text-white font-bold shadow-xs dark:bg-teal-400 dark:text-teal-950 dark:shadow-[0_0_10px_rgba(45,212,191,0.5)]"
+                      ? "bg-teal-600 text-white font-bold shadow-2xs dark:bg-teal-400 dark:text-teal-950 dark:shadow-[0_0_10px_rgba(45,212,191,0.5)]"
                       : "text-slate-600 dark:text-teal-300/80 hover:text-slate-900 dark:hover:text-white font-medium"
                   }`}
                 >
@@ -532,7 +532,7 @@ export function InteractiveOverviewTab({
             {/* Central Radial Rings & Stage Pipeline */}
             <div className="mt-5 flex items-center gap-4">
               {/* Concentric Circular Rings SVG with Glowing Strokes */}
-              <div className="relative w-28 h-28 flex-shrink-0 flex items-center justify-center">
+              <div className="relative w-28 h-28 shrink-0 flex items-center justify-center">
                 <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
                   {/* Outer Ring: Prompt */}
                   <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" className="text-chart-track" strokeWidth="6" />
@@ -653,7 +653,7 @@ export function InteractiveOverviewTab({
           <div className="relative z-10">
             <div className="flex items-center justify-between pb-3 border-b border-teal-100 dark:border-teal-500/20">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-cyan-50 border border-cyan-200/80 text-cyan-600 dark:bg-cyan-500/15 dark:border-cyan-500/30 dark:text-cyan-300 flex items-center justify-center shadow-xs">
+                <div className="w-9 h-9 rounded-xl bg-cyan-50 border border-cyan-200/80 text-cyan-600 dark:bg-cyan-500/15 dark:border-cyan-500/30 dark:text-cyan-300 flex items-center justify-center shadow-2xs">
                   <Activity className="w-5 h-5" />
                 </div>
                 <div>
@@ -750,7 +750,7 @@ export function InteractiveOverviewTab({
             </div>
 
             {/* Clickable Outcome Filter Pills */}
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/[0.08]">
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/8">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-fg-muted block mb-2">
                 Click Outcome to Filter Real Query Feed
               </span>
@@ -760,7 +760,7 @@ export function InteractiveOverviewTab({
                   onClick={() => setSelectedOutcome(selectedOutcome === "answered" ? "all" : "answered")}
                   className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border transition ${
                     selectedOutcome === "answered"
-                      ? "bg-emerald-600 text-white font-bold border-emerald-700 shadow-sm"
+                      ? "bg-emerald-600 text-white font-bold border-emerald-700 shadow-xs"
                       : "bg-emerald-50 border-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-500/25 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
                   }`}
                 >
@@ -776,7 +776,7 @@ export function InteractiveOverviewTab({
                   onClick={() => setSelectedOutcome(selectedOutcome === "ungrounded" ? "all" : "ungrounded")}
                   className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border transition ${
                     selectedOutcome === "ungrounded"
-                      ? "bg-amber-600 text-white font-bold border-amber-700 shadow-sm"
+                      ? "bg-amber-600 text-white font-bold border-amber-700 shadow-xs"
                       : "bg-amber-50 border-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-500/25 dark:text-amber-300 dark:hover:bg-amber-950/60"
                   }`}
                 >
@@ -792,7 +792,7 @@ export function InteractiveOverviewTab({
                   onClick={() => setSelectedOutcome(selectedOutcome === "blocked" ? "all" : "blocked")}
                   className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border transition ${
                     selectedOutcome === "blocked"
-                      ? "bg-rose-600 text-white font-bold border-rose-700 shadow-sm"
+                      ? "bg-rose-600 text-white font-bold border-rose-700 shadow-xs"
                       : "bg-rose-50 border-rose-100 text-rose-800 hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-500/25 dark:text-rose-300 dark:hover:bg-rose-950/60"
                   }`}
                 >
@@ -808,7 +808,7 @@ export function InteractiveOverviewTab({
                   onClick={() => setSelectedOutcome(selectedOutcome === "conversational" ? "all" : "conversational")}
                   className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border transition ${
                     selectedOutcome === "conversational"
-                      ? "bg-blue-600 text-white font-bold border-blue-700 shadow-sm"
+                      ? "bg-blue-600 text-white font-bold border-blue-700 shadow-xs"
                       : "bg-blue-50 border-blue-100 text-blue-800 hover:bg-blue-100 dark:bg-blue-950/40 dark:border-blue-500/25 dark:text-blue-300 dark:hover:bg-blue-950/60"
                   }`}
                 >
@@ -902,11 +902,11 @@ export function InteractiveOverviewTab({
                   <th className="px-4 py-2.5 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06] text-slate-700 dark:text-fg">
+              <tbody className="divide-y divide-slate-100 dark:divide-white/6 text-slate-700 dark:text-fg">
                 {realQueries.map((q) => (
                   <tr
                     key={q.request_id}
-                    className="hover:bg-teal-50/40 dark:hover:bg-white/[0.04] transition cursor-pointer"
+                    className="hover:bg-teal-50/40 dark:hover:bg-white/4 transition cursor-pointer"
                     onClick={() => setInspectRequestId(q.request_id)}
                     {...feedRowIntent(q)}
                   >
@@ -958,7 +958,7 @@ export function InteractiveOverviewTab({
                           e.stopPropagation();
                           setInspectRequestId(q.request_id);
                         }}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/15 bg-white dark:bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-brand-primary dark:text-teal-300 shadow-2xs hover:bg-slate-50 dark:hover:bg-white/10 transition"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/15 bg-white dark:bg-white/6 px-2.5 py-1 text-[11px] font-semibold text-brand-primary dark:text-teal-300 shadow-2xs hover:bg-slate-50 dark:hover:bg-white/10 transition"
                       >
                         <Eye className="w-3 h-3" />
                         <span>Inspect Trace</span>

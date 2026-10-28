@@ -141,12 +141,12 @@ export function ClarificationCard({
   if (summary) {
     return (
       <div
-        className="inline-flex max-w-full items-start gap-2 rounded-2xl border border-line bg-surface-card px-3.5 py-2 text-xs text-fg-muted shadow-sm"
+        className="inline-flex max-w-full items-start gap-2 rounded-2xl border border-line bg-surface-card px-3.5 py-2 text-xs text-fg-muted shadow-xs"
         aria-label="Your answers"
         role="note"
       >
         <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0 text-status-ok" strokeWidth={2} aria-hidden="true" />
-        <span className="min-w-0 break-words">{summary}</span>
+        <span className="min-w-0 wrap-break-word">{summary}</span>
       </div>
     );
   }
@@ -304,7 +304,7 @@ export function ClarificationCard({
       animate="visible"
       aria-label="Clarifying questions"
       onKeyDown={onCardKey}
-      className="w-full overflow-hidden rounded-2xl border border-line bg-surface-card text-fg shadow-sm dark:border-white/10"
+      className="w-full overflow-hidden rounded-2xl border border-line bg-surface-card text-fg shadow-xs dark:border-white/10"
       data-tour="chat-clarification"
     >
       {clarification.preamble ? (
@@ -406,7 +406,7 @@ export function ClarificationCard({
                     <button
                       type="button"
                       onClick={() => goTo(i)}
-                      className={`shrink-0 rounded px-1 font-medium text-accent-fg hover:underline ${focusRing}`}
+                      className={`shrink-0 rounded-sm px-1 font-medium text-accent-fg hover:underline ${focusRing}`}
                     >
                       Change
                     </button>
@@ -535,7 +535,7 @@ function QuestionRows({
                 className={`relative flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition-colors duration-150 motion-reduce:transition-none ${focusRing} ${
                   row.checked
                     ? "border-brand-300 bg-brand-50/70 before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-brand-600 dark:border-brand-500/40 dark:bg-brand-500/10 dark:before:bg-brand-400"
-                    : "border-transparent hover:bg-surface-muted dark:hover:bg-white/[0.04]"
+                    : "border-transparent hover:bg-surface-muted dark:hover:bg-white/4"
                 } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
               >
                 <kbd className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md border border-line bg-surface-muted px-1 font-mono text-[10px] font-semibold text-fg-muted dark:border-white/10">
@@ -582,7 +582,7 @@ function QuestionRows({
                   placeholder="Type your answer, then press Enter"
                   maxLength={300}
                   disabled={disabled}
-                  className="mt-1.5 w-full rounded-lg border border-line bg-surface-card px-3 py-2 text-sm text-fg outline-none placeholder:text-fg-subtle focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-white/10"
+                  className="mt-1.5 w-full rounded-lg border border-line bg-surface-card px-3 py-2 text-sm text-fg outline-hidden placeholder:text-fg-subtle focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 dark:border-white/10"
                 />
               ) : null}
             </div>

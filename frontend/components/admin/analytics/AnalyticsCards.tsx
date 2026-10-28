@@ -27,7 +27,7 @@ export interface CardProps {
 
 const TAG = "rounded-full border border-line bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-fg-muted";
 const LINK_BUTTON =
-  "group inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors duration-150 hover:border-brand-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300 dark:hover:border-brand-700/60";
+  "group inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors duration-150 hover:border-brand-300 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300 dark:hover:border-brand-700/60";
 
 function ViewConversations({ update }: { update: CardProps["update"] }) {
   return (

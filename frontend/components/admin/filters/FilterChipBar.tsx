@@ -26,7 +26,7 @@ export interface FilterChipBarProps {
   "data-tour"?: string;
 }
 
-const filtersButton = `relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium shadow-sm transition-colors ${focusRing}`;
+const filtersButton = `relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium shadow-xs transition-colors ${focusRing}`;
 
 /**
  * Active filters as editable chips plus a "Filters" button with the active

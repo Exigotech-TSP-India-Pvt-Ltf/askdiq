@@ -96,7 +96,7 @@ function LoginCardPreview({ theme, brand }: { theme: ThemeName; brand: Brand }) 
         </p>
       </div>
       <div className="flex flex-col justify-center gap-2 bg-surface-page p-3">
-        <div className="space-y-2 rounded-lg border border-line bg-surface-card p-3 shadow-sm">
+        <div className="space-y-2 rounded-lg border border-line bg-surface-card p-3 shadow-xs">
           <p className="text-xs font-bold text-fg">Welcome to {brand.productName}</p>
           {brand.login.description ? <p className="line-clamp-3 text-[10px] text-fg-muted">{brand.login.description}</p> : null}
           <span className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-line-strong bg-surface-card px-2 py-1.5 text-[10px] font-semibold text-fg">
@@ -127,13 +127,13 @@ function ChatBubblePreview({ theme, brand }: { theme: ThemeName; brand: Brand })
   return (
     <div className="space-y-2 rounded-xl border border-line bg-surface-page p-3" data-testid={`preview-chat-${theme}`}>
       <div className="flex justify-end">
-        <p className="max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-3 py-1.5 text-[11px] text-white shadow-sm">{question}</p>
+        <p className="max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-3 py-1.5 text-[11px] text-white shadow-xs">{question}</p>
       </div>
       <div className="flex items-start gap-2">
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700">
           <Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
         </span>
-        <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-line bg-surface-card px-3 py-1.5 shadow-sm">
+        <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-line bg-surface-card px-3 py-1.5 shadow-xs">
           <p className="text-[10px] font-semibold text-fg">{brand.assistantName}</p>
           <p className="text-[11px] text-fg-muted">
             Here is a grounded answer from your knowledge base, with{" "}

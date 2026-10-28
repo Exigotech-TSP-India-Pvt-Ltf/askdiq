@@ -1,6 +1,115 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-dark-bg: #090d11;
+  --color-dark-surface: #0e1a1c;
+  --color-dark-card: #112123;
+  --color-dark-border: #1a3032;
+  --color-dark-text: #f1f5f9;
+  --color-dark-muted: #94a3b8;
+
+  --color-brand-50: rgb(var(--brand-50));
+  --color-brand-100: rgb(var(--brand-100));
+  --color-brand-200: rgb(var(--brand-200));
+  --color-brand-300: rgb(var(--brand-300));
+  --color-brand-400: rgb(var(--brand-400));
+  --color-brand-500: rgb(var(--brand-500));
+  --color-brand-600: rgb(var(--brand-600));
+  --color-brand-700: rgb(var(--brand-700));
+  --color-brand-800: rgb(var(--brand-800));
+  --color-brand-900: rgb(var(--brand-900));
+  --color-brand-950: rgb(var(--brand-950));
+
+  --color-ink: #0a1c1a;
+
+  --color-surface-page: rgb(var(--surface-page));
+  --color-surface-card: rgb(var(--surface-card));
+  --color-surface-muted: rgb(var(--surface-muted));
+  --color-surface-elevated: rgb(var(--surface-elevated));
+  --color-surface-inverse: rgb(var(--surface-inverse));
+  --color-surface-studio: rgb(var(--surface-studio));
+
+  --color-fg: rgb(var(--fg));
+  --color-fg-muted: rgb(var(--fg-muted));
+  --color-fg-subtle: rgb(var(--fg-subtle));
+  --color-fg-inverse: rgb(var(--fg-inverse));
+
+  --color-line: rgb(var(--line));
+  --color-line-strong: rgb(var(--line-strong));
+  --color-line-brand: rgb(var(--line-brand));
+
+  --color-accent: rgb(var(--accent));
+  --color-accent-fg: rgb(var(--accent-fg));
+
+  --color-status-ok: rgb(var(--status-ok));
+  --color-status-ok-fg: rgb(var(--status-ok-fg));
+  --color-status-ok-bg: rgb(var(--status-ok-bg));
+  --color-status-warn: rgb(var(--status-warn));
+  --color-status-warn-fg: rgb(var(--status-warn-fg));
+  --color-status-warn-bg: rgb(var(--status-warn-bg));
+  --color-status-danger: rgb(var(--status-danger));
+  --color-status-danger-fg: rgb(var(--status-danger-fg));
+  --color-status-danger-bg: rgb(var(--status-danger-bg));
+  --color-status-info: rgb(var(--status-info));
+  --color-status-info-fg: rgb(var(--status-info-fg));
+  --color-status-info-bg: rgb(var(--status-info-bg));
+
+  --color-chart-grid: rgb(var(--chart-grid));
+  --color-chart-axis: rgb(var(--chart-axis));
+  --color-chart-track: rgb(var(--chart-track));
+
+  --font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+
+  --background-image-brand-panel: linear-gradient(
+    135deg,
+    rgb(var(--brand-950)) 0%,
+    rgb(var(--brand-900)) 48%,
+    rgb(var(--brand-600)) 100%
+  );
+  --background-image-brand-gradient: linear-gradient(
+    135deg,
+    var(--brand-gradient-from) 0%,
+    var(--brand-gradient-via) 50%,
+    var(--brand-gradient-to) 100%
+  );
+  --background-image-studio:
+    radial-gradient(
+      120% 90% at 100% 0%,
+      rgb(var(--brand-400) / var(--studio-glow-alpha)) 0%,
+      transparent 55%
+    ),
+    linear-gradient(
+      165deg,
+      rgb(var(--surface-studio)) 0%,
+      rgb(var(--surface-card)) 60%
+    );
+
+  --shadow-card:
+    0 1px 2px rgba(10, 28, 26, 0.04), 0 8px 24px rgba(10, 28, 26, 0.06);
+  --shadow-brand-glow: 0 4px 14px 0 var(--brand-glow);
+}
+
+/* Tailwind v3 compat: default border colour was gray-200 (explicit line colours still win). */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+/* Theme-driven shadows: values live in :root / .dark below. */
+@utility shadow-studio {
+  box-shadow: var(--shadow-studio);
+}
+@utility shadow-studio-hover {
+  box-shadow: var(--shadow-studio-hover);
+}
 
 /*
  * Theme tokens. Values mirror lib/theme-tokens.ts (single source of truth);

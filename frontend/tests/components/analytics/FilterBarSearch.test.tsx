@@ -18,7 +18,7 @@ describe("Analytics search on the tab row", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle).toHaveClass("inline-flex", "min-[1440px]:hidden");
     const field = screen.getByLabelText("Search").closest("[data-search-field]");
-    expect(field).toHaveClass("hidden", "min-[1440px]:block", "min-w-[9rem]");
+    expect(field).toHaveClass("hidden", "min-[1440px]:block", "min-w-36");
   });
 
   it("opens on click, keeps its value, and Esc collapses it back to the icon", () => {

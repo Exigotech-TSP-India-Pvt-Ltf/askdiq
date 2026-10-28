@@ -154,7 +154,7 @@ export function LinkEditPopover({ token, doc, anchor, onClose, onSaved }: LinkEd
         width: `min(${PANEL_WIDTH}px, calc(100vw - ${EDGE * 2}px))`,
         visibility: position ? "visible" : "hidden",
       }}
-      className={`z-50 !p-4 ${popoverPanel}`}
+      className={`z-50 p-4! ${popoverPanel}`}
     >
       <form onSubmit={save} noValidate className="space-y-3">
         <h2 id={titleId} className="truncate text-xs font-semibold text-fg" title={`Edit link for ${doc.source_name}`}>
@@ -180,7 +180,7 @@ export function LinkEditPopover({ token, doc, anchor, onClose, onSaved }: LinkEd
               setUrl(e.target.value);
               setServerError(null);
             }}
-            className={`w-full rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-subtle aria-[invalid=true]:border-status-danger ${focusRing}`}
+            className={`w-full rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-subtle aria-invalid:border-status-danger ${focusRing}`}
           />
           {error ? (
             <p id={`${urlId}-error`} role={serverError ? "alert" : undefined} className="text-[11px] font-medium text-status-danger-fg">
@@ -199,7 +199,7 @@ export function LinkEditPopover({ token, doc, anchor, onClose, onSaved }: LinkEd
             checked={hasUrl && sectionLinks}
             disabled={!hasUrl}
             onChange={(e) => setSectionLinks(e.target.checked)}
-            className="mt-0.5 h-3.5 w-3.5 rounded border-line accent-brand-600"
+            className="mt-0.5 h-3.5 w-3.5 rounded-sm border-line accent-brand-600"
           />
           <span>
             Section links

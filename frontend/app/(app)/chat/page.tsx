@@ -7,7 +7,7 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatConversation } from "@/components/chat/ChatConversation";
 import { useReportedAction } from "@/components/chat/use-reported-action";
 
-const LIST_SURFACE = "border-r border-ink/10 bg-ink/[0.015] dark:border-white/10 dark:bg-dark-surface/60";
+const LIST_SURFACE = "border-r border-ink/10 bg-ink/1.5 dark:border-white/10 dark:bg-dark-surface/60";
 
 export default function ChatPage() {
   // Chat state (sessions, messages, sending, the send/delete functions)

@@ -222,7 +222,7 @@ export function ModelsTab() {
         </SettingsCard>
       </div>
 
-      <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface-elevated/95 px-4 py-3 shadow-md backdrop-blur">
+      <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface-elevated/95 px-4 py-3 shadow-md backdrop-blur-sm">
         <p className="text-[11px] text-fg-subtle">
           {server.updated_at ? (
             <>

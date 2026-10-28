@@ -53,7 +53,7 @@ export function Modal({
       {open ? (
         <div
           key="modal"
-          className={`fixed inset-0 z-[150] flex justify-center p-4 ${placement === "top" ? "items-start pt-[12vh]" : "items-center"}`}
+          className={`fixed inset-0 z-150 flex justify-center p-4 ${placement === "top" ? "items-start pt-[12vh]" : "items-center"}`}
         >
           <m.div
             aria-hidden="true"

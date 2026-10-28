@@ -57,12 +57,12 @@ export function MicrosoftSignInButton({ next }: MicrosoftSignInButtonProps) {
       onClick={onClick}
       disabled={pending}
       aria-busy={pending}
-      className={`group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl border border-line-strong bg-surface-card px-4 py-3 text-sm font-semibold text-fg shadow-sm transition duration-150 hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md disabled:translate-y-0 disabled:cursor-wait disabled:opacity-80 disabled:shadow-sm motion-reduce:transition-none motion-reduce:hover:translate-y-0 dark:hover:border-brand-500 ${focusRing}`}
+      className={`group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl border border-line-strong bg-surface-card px-4 py-3 text-sm font-semibold text-fg shadow-xs transition duration-150 hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md disabled:translate-y-0 disabled:cursor-wait disabled:opacity-80 disabled:shadow-xs motion-reduce:transition-none motion-reduce:hover:translate-y-0 dark:hover:border-brand-500 ${focusRing}`}
     >
       {/* Sheen sweep on hover (decorative; hidden for reduced motion). */}
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-gradient-to-r from-transparent via-brand-100/60 to-transparent opacity-0 transition-[transform,opacity] duration-700 group-hover:translate-x-[300%] group-hover:opacity-100 group-disabled:hidden motion-reduce:hidden dark:via-white/10"
+        className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-linear-to-r from-transparent via-brand-100/60 to-transparent opacity-0 transition-[transform,opacity] duration-700 group-hover:translate-x-[300%] group-hover:opacity-100 group-disabled:hidden motion-reduce:hidden dark:via-white/10"
       />
       {pending ? (
         <Loader2 className="h-[18px] w-[18px] animate-spin text-brand-600 dark:text-brand-400" strokeWidth={1.75} aria-hidden="true" />

@@ -101,7 +101,7 @@ export function FilterChip({ filter, onChange }: FilterChipProps) {
             animate="visible"
             exit="exit"
             style={{ width: PANEL_WIDTH_PX }}
-            className={`absolute top-full z-50 mt-1.5 max-w-[calc(100vw-2rem)] ${alignRight ? "right-0 origin-top-right" : "left-0 origin-top-left"} ${popoverPanel} outline-none`}
+            className={`absolute top-full z-50 mt-1.5 max-w-[calc(100vw-2rem)] ${alignRight ? "right-0 origin-top-right" : "left-0 origin-top-left"} ${popoverPanel} outline-hidden`}
           >
             {options.map((option) => {
               const selected = option.value === filter.value;

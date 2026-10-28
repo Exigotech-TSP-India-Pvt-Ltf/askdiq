@@ -146,7 +146,7 @@ function TourLauncherInner({ tour, variant, placement, onBeforeStart }: TourLaun
   // Account-corner launchers stay static so the menu anchors to the action row / rail.
   const wrapper = floating ? "fixed right-6 top-24 z-30 hidden md:block" : "";
   const triggerClass = floating
-    ? `relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface-card text-brand-700 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 dark:text-brand-300 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 ${focusRing}`
+    ? `relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface-card text-brand-700 shadow-xs transition-colors hover:border-brand-300 hover:bg-brand-50 dark:text-brand-300 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 ${focusRing}`
     : accountActionButton;
   const menuPosition = floating ? "right-0 mt-2 origin-top-right" : accountPopoverPosition[placement];
 

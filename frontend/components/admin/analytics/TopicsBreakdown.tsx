@@ -23,9 +23,9 @@ export const topicMeta = (t: TopicItem): string => `${t.questions} · ${t.handle
 
 const ROW =
   "grid w-full grid-cols-[minmax(5.5rem,11rem)_minmax(2.5rem,1fr)_auto] items-center gap-x-3 rounded-lg px-2 py-1 text-left transition-colors duration-150 motion-reduce:transition-none";
-const ROW_INTERACTIVE = "hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500";
+const ROW_INTERACTIVE = "hover:bg-surface-muted focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500";
 const LINK =
-  "rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300";
+  "rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-brand-700 hover:underline focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300";
 
 /**
  * Question topics as a ranked list: full topic name (wraps, never cut), a bar
@@ -55,7 +55,7 @@ export function TopicsBreakdown({ items, selected, onSelect }: TopicsBreakdownPr
           const dimmed = selected !== undefined && selected !== "" && !isSelected;
           const content = (
             <>
-              <span className={`break-words text-xs leading-4 ${isSelected ? "font-semibold text-fg" : "font-medium text-fg"}`}>{t.label}</span>
+              <span className={`wrap-break-word text-xs leading-4 ${isSelected ? "font-semibold text-fg" : "font-medium text-fg"}`}>{t.label}</span>
               <span className="block h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: palette.ct.track }} aria-hidden="true">
                 <span
                   className="block h-full rounded-full"

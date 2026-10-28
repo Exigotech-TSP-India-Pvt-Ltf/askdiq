@@ -50,7 +50,7 @@ export interface TableToolbarProps {
 
 export type ColumnOption = { key: string; label: string; hideable?: boolean };
 
-const toolbarButton = `flex shrink-0 items-center whitespace-nowrap gap-1.5 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg shadow-sm transition-colors hover:bg-surface-muted hover:text-fg ${focusRing}`;
+const toolbarButton = `flex shrink-0 items-center whitespace-nowrap gap-1.5 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg shadow-xs transition-colors hover:bg-surface-muted hover:text-fg ${focusRing}`;
 
 function ColumnMenu({
   options,
@@ -101,7 +101,7 @@ function ColumnMenu({
                   checked={checked}
                   disabled={locked}
                   onChange={() => onToggle(opt.key)}
-                  className="h-3.5 w-3.5 rounded border-line accent-brand-600"
+                  className="h-3.5 w-3.5 rounded-sm border-line accent-brand-600"
                 />
                 {opt.label}
               </label>
@@ -244,7 +244,7 @@ export function TableToolbar({
                 }
               }}
               placeholder={searchPlaceholder}
-              className="w-full rounded-lg border border-line bg-surface-card py-1.5 pl-8 pr-7 text-xs text-fg placeholder:text-fg-subtle/80 shadow-sm transition focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="w-full rounded-lg border border-line bg-surface-card py-1.5 pl-8 pr-7 text-xs text-fg placeholder:text-fg-subtle/80 shadow-xs transition focus:border-brand-500 focus:outline-hidden focus:ring-1 focus:ring-brand-500"
             />
             {(debounceMs > 0 ? internalSearch : search) ? (
               <button
@@ -257,7 +257,7 @@ export function TableToolbar({
                 }}
                 aria-label="Clear search"
                 title="Clear search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-subtle hover:text-fg focus:outline-none"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-subtle hover:text-fg focus:outline-hidden"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -272,7 +272,7 @@ export function TableToolbar({
                 aria-haspopup="dialog"
                 aria-expanded={isOpen}
                 onClick={() => setIsOpen(!isOpen)}
-                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-150 ${
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium shadow-xs transition-all duration-150 ${
                   activeCount > 0
                     ? "border-brand-500 bg-brand-50/70 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold shadow-brand-glow/20"
                     : "border-line bg-surface-card text-fg hover:bg-surface-muted hover:text-fg"
@@ -369,7 +369,7 @@ export function TableToolbar({
               data-active={density === "compact" ? "true" : undefined}
               className={
                 density === "compact"
-                  ? `flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-brand-500 bg-brand-50/70 px-2.5 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors dark:bg-brand-950/60 dark:text-brand-300 ${focusRing}`
+                  ? `flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-brand-500 bg-brand-50/70 px-2.5 py-1.5 text-xs font-semibold text-brand-700 shadow-xs transition-colors dark:bg-brand-950/60 dark:text-brand-300 ${focusRing}`
                   : toolbarButton
               }
             >

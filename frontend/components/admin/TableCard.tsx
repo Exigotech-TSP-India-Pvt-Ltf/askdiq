@@ -49,8 +49,8 @@ export function TableCard({
       {hasCardHeader || toolbar ? (
         <div
           data-testid="table-card-header"
-          className={`relative z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b px-4 [container-type:inline-size] sm:px-5 ${
-            toolbar ? "bg-surface-studio/40 py-3 dark:bg-white/[0.02]" : "py-4"
+          className={`relative z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b px-4 @container sm:px-5 ${
+            toolbar ? "bg-surface-studio/40 py-3 dark:bg-white/2" : "py-4"
           } ${studioDivider}`}
         >
           {hasCardHeader ? (

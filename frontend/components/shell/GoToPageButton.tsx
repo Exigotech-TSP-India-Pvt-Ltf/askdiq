@@ -54,7 +54,7 @@ export function GoToPageButton({ collapsed = false, onBeforeOpen }: GoToPageButt
   return (
     <button
       {...shared}
-      className={`group flex h-9 w-full items-center gap-2 rounded-lg border border-line bg-surface-muted/60 px-2.5 text-[13px] text-fg-subtle shadow-sm transition-colors hover:border-brand-300 hover:bg-surface-card hover:text-fg dark:hover:border-brand-700/60 ${focusRing}`}
+      className={`group flex h-9 w-full items-center gap-2 rounded-lg border border-line bg-surface-muted/60 px-2.5 text-[13px] text-fg-subtle shadow-xs transition-colors hover:border-brand-300 hover:bg-surface-card hover:text-fg dark:hover:border-brand-700/60 ${focusRing}`}
     >
       <Search className="h-4 w-4 shrink-0 transition-colors group-hover:text-brand-600 dark:group-hover:text-brand-400" strokeWidth={1.75} aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate text-left">Go to page…</span>

@@ -102,7 +102,7 @@ export function FeedbackReasonPanel({
             maxLength={MAX_CORRECTED_ANSWER_CHARS}
             rows={3}
             placeholder="The answer you expected. Do not include personal information."
-            className="w-full resize-y rounded-lg border border-line bg-surface-muted/50 p-2 text-xs text-fg placeholder:text-fg-subtle outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+            className="w-full resize-y rounded-lg border border-line bg-surface-muted/50 p-2 text-xs text-fg placeholder:text-fg-subtle outline-hidden focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
           />
         </div>
         <div className="flex items-center justify-end gap-2">

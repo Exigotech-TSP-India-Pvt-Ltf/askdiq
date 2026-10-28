@@ -12,7 +12,7 @@ interface BrandedStatusPageProps {
 export function BrandedStatusPage({ code, title, message, children }: BrandedStatusPageProps) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-surface-page px-4 py-12 text-fg">
-      <div className="w-full max-w-md rounded-2xl border border-line bg-surface-card p-8 text-center shadow-sm">
+      <div className="w-full max-w-md rounded-2xl border border-line bg-surface-card p-8 text-center shadow-xs">
         <div className="flex justify-center">
           <BrandLogo variant="full" />
         </div>

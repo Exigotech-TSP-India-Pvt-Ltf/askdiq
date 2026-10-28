@@ -37,7 +37,7 @@ export function ErrorState({
       {requestId ? (
         <p className="flex items-center gap-1 text-[11px] text-fg-subtle">
           <span>Request ID</span>
-          <code className="rounded bg-surface-muted px-1.5 py-0.5 font-mono text-fg-muted">{requestId}</code>
+          <code className="rounded-sm bg-surface-muted px-1.5 py-0.5 font-mono text-fg-muted">{requestId}</code>
           <CopyButton value={requestId} label="Copy request id" />
         </p>
       ) : null}

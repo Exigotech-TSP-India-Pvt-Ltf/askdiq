@@ -404,7 +404,7 @@ export function PipelineWidget({ data, loading, error, onRetry }: WidgetProps) {
       actions={
         <Link
           href="/admin/governance?tab=Monitoring"
-          className="group inline-flex items-center gap-1 rounded-lg text-[11px] font-semibold text-accent-fg hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          className="group inline-flex items-center gap-1 rounded-lg text-[11px] font-semibold text-accent-fg hover:underline focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           Monitoring
           <ArrowUpRight
@@ -422,7 +422,7 @@ export function PipelineWidget({ data, loading, error, onRetry }: WidgetProps) {
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: r.color }} aria-hidden="true" />
               {r.label}
               {r.key === "reranker_ms" && pipeline?.reranker_enabled === false && (
-                <span className="rounded bg-surface-muted px-1.5 py-0.5 text-[10px] text-fg-muted">Disabled</span>
+                <span className="rounded-sm bg-surface-muted px-1.5 py-0.5 text-[10px] text-fg-muted">Disabled</span>
               )}
             </span>
             <span className="font-mono font-semibold tabular-nums text-fg">

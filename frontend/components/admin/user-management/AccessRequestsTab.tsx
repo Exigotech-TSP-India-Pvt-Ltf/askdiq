@@ -149,7 +149,7 @@ export function AccessRequestsTab({ view, update }: AccessRequestsTabProps) {
               aria-checked={view === v.id}
               onClick={() => update({ view: v.id === "pending" ? null : v.id })}
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${focusRing} ${
-                view === v.id ? "bg-surface-card text-fg shadow-sm" : "text-fg-muted hover:text-fg"
+                view === v.id ? "bg-surface-card text-fg shadow-xs" : "text-fg-muted hover:text-fg"
               }`}
             >
               {v.label}
@@ -282,8 +282,8 @@ function PendingQueue({ listKey, items }: { listKey: string; items: readonly Acc
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-2.5 sm:px-5">
         <p id={hintId} className="flex items-center gap-1.5 text-[11px] text-fg-subtle">
           <Keyboard className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-          Focus a row, then press <kbd className="rounded bg-surface-muted px-1 font-mono text-fg-muted">A</kbd> to approve
-          or <kbd className="rounded bg-surface-muted px-1 font-mono text-fg-muted">X</kbd> to reject.
+          Focus a row, then press <kbd className="rounded-sm bg-surface-muted px-1 font-mono text-fg-muted">A</kbd> to approve
+          or <kbd className="rounded-sm bg-surface-muted px-1 font-mono text-fg-muted">X</kbd> to reject.
         </p>
         <div className="flex items-center gap-2" data-testid="um-bulk-bar" data-tour="user-management-requests-bulk">
           <span className="text-xs text-fg-muted tabular-nums">{selectedIds.length} selected</span>
@@ -320,7 +320,7 @@ function PendingQueue({ listKey, items }: { listKey: string; items: readonly Acc
                 type="checkbox"
                 checked={allSelected}
                 onChange={() => setSelected(allSelected ? new Set() : new Set(items.map((r) => r.id)))}
-                className="h-3.5 w-3.5 rounded border-line accent-brand-600"
+                className="h-3.5 w-3.5 rounded-sm border-line accent-brand-600"
               />
             </th>
             <th scope="col" className="px-3 py-2.5 font-semibold">User</th>
@@ -352,7 +352,7 @@ function PendingQueue({ listKey, items }: { listKey: string; items: readonly Acc
                     aria-label={`Select ${r.user_email}`}
                     checked={selected.has(r.id)}
                     onChange={() => toggle(r.id)}
-                    className="h-3.5 w-3.5 rounded border-line accent-brand-600"
+                    className="h-3.5 w-3.5 rounded-sm border-line accent-brand-600"
                   />
                 </td>
                 <td className="px-3 py-2.5">

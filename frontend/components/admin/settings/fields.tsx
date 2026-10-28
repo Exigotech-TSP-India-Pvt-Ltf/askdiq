@@ -5,9 +5,9 @@ import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { focusRing } from "@/components/ui/styles";
 import { formatRatio } from "@/lib/brand-palette";
 
-export const inputClass = `w-full rounded-lg border border-line bg-surface-card px-3 py-2 text-sm text-fg placeholder:text-fg-subtle transition-colors hover:border-line-strong aria-[invalid=true]:border-status-danger ${focusRing}`;
+export const inputClass = `w-full rounded-lg border border-line bg-surface-card px-3 py-2 text-sm text-fg placeholder:text-fg-subtle transition-colors hover:border-line-strong aria-invalid:border-status-danger ${focusRing}`;
 
-export const cardClass = "rounded-2xl border border-line bg-surface-card p-5 shadow-sm";
+export const cardClass = "rounded-2xl border border-line bg-surface-card p-5 shadow-xs";
 
 export function SettingsCard({
   title,

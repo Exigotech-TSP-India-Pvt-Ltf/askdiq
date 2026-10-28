@@ -353,7 +353,7 @@ function LegendSwatch({ color, label, dashed = false }: { color: string; label: 
     <span className="inline-flex items-center gap-1.5">
       <span
         aria-hidden="true"
-        className="inline-block h-2.5 w-2.5 rounded-sm"
+        className="inline-block h-2.5 w-2.5 rounded-xs"
         style={dashed ? { border: `1px dashed ${color}` } : { background: color }}
       />
       {label}

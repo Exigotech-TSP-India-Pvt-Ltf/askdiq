@@ -93,21 +93,21 @@ export function AudienceScopeTabs({
             onClick={() => setAudience(tab.id)}
             onKeyDown={(e) => handleKeyDown(e, idx)}
             title={tooltip}
-            className={`relative flex items-center gap-2 ${fill ? "min-w-0 flex-1 justify-center px-2 md:flex-none md:px-3.5" : "px-3.5"} py-1.5 text-xs font-semibold rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
+            className={`relative flex items-center gap-2 ${fill ? "min-w-0 flex-1 justify-center px-2 md:flex-none md:px-3.5" : "px-3.5"} py-1.5 text-xs font-semibold rounded-lg transition-colors duration-150 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
               isActive
                 ? "text-white"
-                : "text-fg-muted hover:text-fg hover:bg-surface-card/80 dark:hover:bg-white/[0.06]"
+                : "text-fg-muted hover:text-fg hover:bg-surface-card/80 dark:hover:bg-white/6"
             }`}
           >
             {isActive && <ActivePill layoutId={pillId} />}
             <Icon
-              className={`relative w-4 h-4 flex-shrink-0 ${isActive ? "text-white" : "text-fg-subtle"}`}
+              className={`relative w-4 h-4 shrink-0 ${isActive ? "text-white" : "text-fg-subtle"}`}
               strokeWidth={1.75}
             />
             <span className="relative whitespace-nowrap">{tab.label}</span>
             {badgeCount !== null && badgeCount !== undefined ? (
               <span
-                className={`relative text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
+                className={`relative text-[10px] min-w-5 px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
                   isActive
                     ? "bg-white/20 text-white"
                     : "bg-surface-card text-fg-muted dark:bg-white/10"

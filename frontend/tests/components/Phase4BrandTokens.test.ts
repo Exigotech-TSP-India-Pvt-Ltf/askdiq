@@ -14,7 +14,7 @@ describe("Phase 4: Brand Tokens & White-Labelling CSS Variables", () => {
   });
 
   it("extends Tailwind config with brand-gradient and brand-glow utilities", () => {
-    const configPath = path.resolve(__dirname, "../../tailwind.config.ts");
+    const configPath = path.resolve(__dirname, "../../app/globals.css");
     const configContent = fs.readFileSync(configPath, "utf-8");
 
     expect(configContent).toContain("brand-gradient");
