@@ -67,8 +67,32 @@ _MAX_OPTION_SOURCES = 4
 _EXCERPT_CHARS = 220
 _SCORE_EPSILON = 1e-9  # float noise: 0.65 - 0.60 must count as a 0.05 lead
 RECOMMENDED_SUFFIX = " (recommended)"
+NOT_SURE_LABEL = "Not sure, help me choose"
+_NOT_SURE_HINT = (
+    "not sure which fits, so recommend the best fit for my goal and current "
+    "maturity, or suggest I talk to a specialist"
+)
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'&+-]*")
 _ANSWER_SPLIT_RE = re.compile(r"[,;\n·]+")
+# Brand / company names: a question that names them is specific, not vague.
+BRAND_RE = re.compile(r"\b(?:exigo(?: tech)?|deploy[ _-]{0,3}iq)\b", re.IGNORECASE)
+# Company facts (who / where / when, headquarters, contact details...) are
+# answered from the knowledge base, never turned into a "which service?" card.
+COMPANY_FACT_RE = re.compile(
+    r"^(?:who|where|when)\b|\b(?:ceo|cto|founder|founded|owner|owned|employees|"
+    r"headquarter\w{0,6}|hq|located|location|address|phone|telephone|contact|"
+    r"e-?mail|call you|offices?|abn)\b",
+    re.IGNORECASE,
+)
+# "How does it work?" with no history in a one-product assistant: answered
+# generally about the product, not by asking which service is meant.
+GENERIC_PRODUCT_RE = re.compile(
+    r"^(?:(?:so|ok|okay|and) )?(?:how (?:does|do) (?:it|this|that) work|"
+    r"what (?:does|do) (?:it|this|that) do|what (?:is|are) (?:it|this|that)|"
+    r"(?:is|are) (?:it|this|that) (?:safe|secure|free|legit|reliable)|"
+    r"does (?:it|this) work)\W{0,5}$",
+    re.IGNORECASE,
+)
 _STOPWORDS = frozenset(
     {
         "a",
@@ -225,10 +249,46 @@ def clarification_streak(history: list[ChatTurn] | None) -> int:
     return streak
 
 
+def _scan(query: str) -> str:
+    """Whitespace-collapsed, length-bounded user text (before any regex)."""
+    return " ".join(query.split())[:_MAX_QUERY_CHARS]
+
+
+def _names_known_entity(query: str) -> bool:
+    """The question names the company/brand, or a service plus something about it.
+
+    A bare topic ("E8?", "zero trust?") names a service but asks nothing about
+    it yet, so it may still be clarified; "Exigo Tech address" or "E8 pricing"
+    is already specific.
+    """
+    # Lazy: ambiguity imports this module at load time.
+    from app.harness import ambiguity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
+
+    scan = _scan(query)
+    if BRAND_RE.search(scan):
+        return True
+    rest = ambiguity.strip_offerings(scan)
+    return rest != scan and content_word_count(rest) > 0
+
+
+def is_company_or_generic(query: str) -> bool:
+    """Company-fact and generic one-product questions are answered, not asked back."""
+    scan = _scan(query)
+    return (
+        COMPANY_FACT_RE.search(scan) is not None
+        or GENERIC_PRODUCT_RE.match(scan) is not None
+    )
+
+
 def clarify_eligible(
     query: str, history: list[ChatTurn] | None, *, follow_up: bool
 ) -> bool:
-    """Rule gate (no I/O): may this question be answered with questions back?"""
+    """Rule gate (no I/O): may this question be answered with questions back?
+
+    Only bare topics, pronoun questions and cost/time questions qualify: a
+    question that names the company or a service, or asks a company fact
+    (who/where/when, headquarters, contact details), is answered directly.
+    """
     settings = get_settings()
     if not settings.clarify_enabled:
         return False
@@ -238,6 +298,8 @@ def clarify_eligible(
     if follow_up and history:
         return False
     if not 0 < content_word_count(query) <= settings.clarify_max_query_words:
+        return False
+    if is_company_or_generic(query) or _names_known_entity(query):
         return False
     return len(decompose_query(query)) <= 1
 
@@ -315,6 +377,10 @@ def plan_clarification(
     if not clarify_eligible(query, history, follow_up=follow_up):
         return []
     candidates = select_candidates(sources)
+    # Low scores mean the evidence is irrelevant ("What is a cat?"): nothing
+    # to choose between, so the question is just answered.
+    if not candidates or candidates[0].score < settings.clarify_min_gate_score:
+        return []
     distinct_docs = {c.document_id for c in candidates}
     enough = len(candidates) >= settings.clarify_min_options
     # One document with several sections rarely means several intents.
@@ -335,10 +401,13 @@ def clarify_instruction(candidates: list[ClarifyCandidate]) -> str:
         'answer in answer, preamble "" and questions [].\n'
         "- Only if it is genuinely ambiguous between intents the context can "
         'answer, set action to "clarify" and answer "". Write preamble as one '
-        "short, friendly sentence showing you understood, naming what the "
-        'knowledge base actually covers (e.g. "DeployIQ offers several '
-        'services; which would you like to know about?"). Ask as few questions '
-        f"as needed (1 to {settings.clarify_max_questions}), all at once.\n"
+        "short, friendly sentence showing you understood the question. Ask as "
+        f"few questions as needed (1 to {settings.clarify_max_questions}), all "
+        "at once.\n"
+        "- If the question names a company or entity (for example the company "
+        "or a service by name), or is a general company fact (who, where, "
+        "when, headquarters, contact details, ownership), set action to "
+        '"answer" and answer it from the context.\n'
         "- Each question: header (1-2 word tab label, at most 12 characters, "
         "e.g. Topic, Service, Scope), question (one specific sentence ending "
         "with ?), multi_select (true only when several options can apply "
@@ -589,7 +658,10 @@ def _entry(
 
 
 def _part(entry: dict[str, object]) -> str:
-    labels = [str(label) for label in entry["labels"]]  # type: ignore[attr-defined]
+    labels = [
+        _NOT_SURE_HINT if label == NOT_SURE_LABEL else str(label)
+        for label in entry["labels"]  # type: ignore[attr-defined]
+    ]
     if entry.get("other_text"):
         labels.append(str(entry["other_text"]))
     return f"{entry['header']}: {' and '.join(labels)}"
@@ -635,6 +707,8 @@ def _match_text(clarification: Clarification, text: str) -> list[dict[str, objec
         p.strip().strip(".!?").lower().removesuffix(RECOMMENDED_SUFFIX).strip()
         for p in _ANSWER_SPLIT_RE.split(text)
     }
+    # A label may itself contain a comma ("Not sure, help me choose").
+    pieces.add(cleaned.removesuffix(RECOMMENDED_SUFFIX).strip())
     entries: list[dict[str, object]] = []
     for question in questions:
         picked = [o for o in question.options if o.label.lower() in pieces]

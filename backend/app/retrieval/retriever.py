@@ -34,9 +34,20 @@ _AND_SPLIT_RE = re.compile(r"\band\b", re.IGNORECASE)
 # conversation turns (e.g. "what about ITS pricing?", "does IT support SSO?").
 _REFERENTIAL_RE = re.compile(
     r"\b(it|its|this|that|these|those|they|them|their|the same|"
-    r"what about|how about|and (?:the|its|their))\b",
+    r"what about|how about|and (?:the|its|their)|above|previous|earlier|"
+    r"the (?:first|second|third|last) one|the one you mentioned)\b",
     re.IGNORECASE,
 )
+# A named subject (brand, service or framework) makes a short "Who is Exigo?"
+# standalone: it needs no earlier turn to be understood. Literals only.
+_NAMED_SUBJECT_RE = re.compile(
+    r"\b(exigo|deploy[ _-]{0,3}iq|essential[ _-]{0,3}(?:eight|8)|e8|acsc|iso|cis|"
+    r"zero[ _-]{0,3}trust|security[ _-]{0,3}baseline|m365|microsoft[ _-]{0,3}365)\b",
+    re.IGNORECASE,
+)
+# Capitalised word after the first one: a name, not sentence case.
+_PROPER_NOUN_RE = re.compile(r"\b[A-Z][A-Za-z0-9]+\b")
+_MAX_SCAN_CHARS = 2000
 
 _SHORT_QUERY_WORD_COUNT = 3
 _SHORT_FOLLOW_UP_TOKENS = {
@@ -89,13 +100,20 @@ def needs_conversation_context(query: str) -> bool:
     ):
         return False
 
+    text = " ".join(text.split())[:_MAX_SCAN_CHARS]
     if _REFERENTIAL_RE.search(text):
         return True
 
+    # "Who is Exigo?": a named subject stands on its own.
+    rest = text.split(" ", 1)[1] if " " in text else ""
+    named = _NAMED_SUBJECT_RE.search(text) or _PROPER_NOUN_RE.search(rest)
+
     # Short queries (<= 3 words) must contain at least one recognized follow-up token
     clean_words = {w.lower().strip("?!.,:;") for w in words}
-    return len(words) <= _SHORT_QUERY_WORD_COUNT and bool(
-        clean_words & _SHORT_FOLLOW_UP_TOKENS
+    return (
+        not named
+        and len(words) <= _SHORT_QUERY_WORD_COUNT
+        and bool(clean_words & _SHORT_FOLLOW_UP_TOKENS)
     )
 
 
