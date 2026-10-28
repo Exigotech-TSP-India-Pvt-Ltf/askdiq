@@ -465,7 +465,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
           <Keyboard className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
           {SHORTCUT_HINTS.filter(([k]) => canTriage || ["j / k", "Enter"].includes(k)).map(([k, label]) => (
             <span key={k}>
-              <kbd className="rounded bg-surface-muted px-1 font-mono text-fg-muted">{k}</kbd> {label}
+              <kbd className="rounded-sm bg-surface-muted px-1 font-mono text-fg-muted">{k}</kbd> {label}
             </span>
           ))}
         </p>
@@ -515,7 +515,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
                   aria-label="Select all rows"
                   checked={allSelected}
                   onChange={toggleAll}
-                  className="h-3.5 w-3.5 rounded border-line accent-brand-600"
+                  className="h-3.5 w-3.5 rounded-sm border-line accent-brand-600"
                 />
               </th>
             ) : null}
@@ -562,7 +562,7 @@ export function ReviewQueue({ token, audience, filters, onFilter, canTriage, day
                         aria-label={`Select feedback ${index + 1}`}
                         checked={selected.has(item.id)}
                         onChange={() => toggleOne(item.id)}
-                        className="h-3.5 w-3.5 rounded border-line accent-brand-600"
+                        className="h-3.5 w-3.5 rounded-sm border-line accent-brand-600"
                       />
                     </td>
                   ) : null}

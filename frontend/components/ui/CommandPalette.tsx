@@ -173,7 +173,7 @@ export function CommandPalette({ open, onClose, pages, searchProvider, canAccess
             setActive(0);
           }}
           onKeyDown={onKeyDown}
-          className="h-12 w-full bg-transparent text-sm text-fg placeholder:text-fg-subtle focus:outline-none"
+          className="h-12 w-full bg-transparent text-sm text-fg placeholder:text-fg-subtle focus:outline-hidden"
         />
         {searching ? (
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fg-subtle" strokeWidth={1.75} aria-label="Searching" />

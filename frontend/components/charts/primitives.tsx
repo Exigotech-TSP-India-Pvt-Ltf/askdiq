@@ -148,7 +148,7 @@ export function ChartEmpty({ message = "No data for this period", height }: { me
   return (
     <div
       role="status"
-      className={`flex w-full items-center justify-center rounded-xl border border-dashed border-line-brand/70 bg-surface-studio/50 px-4 text-center text-xs text-fg-subtle dark:border-brand-500/20 dark:bg-white/[0.02] ${
+      className={`flex w-full items-center justify-center rounded-xl border border-dashed border-line-brand/70 bg-surface-studio/50 px-4 text-center text-xs text-fg-subtle dark:border-brand-500/20 dark:bg-white/2 ${
         height === undefined ? "h-full min-h-[96px]" : ""
       }`}
       style={height === undefined ? undefined : { height }}

@@ -175,7 +175,7 @@ export function UserOverview({ stats, statsLoading, statsError, onRetry, onDrill
               tone={c.tone}
               className={
                 c.highlight
-                  ? "h-full !border-status-warn/60 !bg-status-warn-bg ring-1 ring-status-warn/40"
+                  ? "h-full border-status-warn/60! bg-status-warn-bg! ring-1 ring-status-warn/40"
                   : "h-full"
               }
             />

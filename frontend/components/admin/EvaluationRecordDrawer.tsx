@@ -227,7 +227,7 @@ export function EvaluationRecordDrawer({
       <span>Continuous Evaluator v2.0</span>
       <button
         onClick={onClose}
-        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors shadow-xs"
       >
         Close Inspector
       </button>
@@ -268,7 +268,7 @@ export function EvaluationRecordDrawer({
           {/* Query Box */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">User Query</label>
-            <div className="p-3.5 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-sm font-medium text-fg select-text">
+            <div className="p-3.5 bg-teal-50/30 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-sm font-medium text-fg select-text">
               {data?.query || "No query available"}
             </div>
           </div>
@@ -303,22 +303,22 @@ export function EvaluationRecordDrawer({
 
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
+            <div className="p-3 bg-teal-50/30 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Faithfulness</p>
               <p className="text-lg font-black font-mono text-teal-600 dark:text-teal-400 mt-0.5">{faith} / 5.0</p>
             </div>
-            <div className="p-3 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
+            <div className="p-3 bg-teal-50/30 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Citation Prec.</p>
               <p className="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">{citPrec}</p>
             </div>
-            <div className="p-3 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
+            <div className="p-3 bg-teal-50/30 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Total Latency</p>
               <p className="text-lg font-black font-mono text-fg mt-0.5">{latency}</p>
             </div>
           </div>
 
           {/* Security & Safety Audit Status: from the record's own flags */}
-          <div className="p-4 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 space-y-2">
+          <div className="p-4 bg-teal-50/30 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-teal-300 flex items-center gap-1.5">
               {guardrails.some((g) => g.tone === "bad") ? (
                 <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400" />
@@ -352,7 +352,7 @@ export function EvaluationRecordDrawer({
       {!loading && activeTab === "judge" && (
         <div className="space-y-5">
           {/* Judge Scores Scorecard */}
-          <div className="p-4 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 space-y-3">
+          <div className="p-4 bg-teal-50/30 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-teal-900 dark:text-teal-300 flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
@@ -362,17 +362,17 @@ export function EvaluationRecordDrawer({
             </div>
 
             <div className="grid grid-cols-3 gap-3 pt-1">
-              <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
+              <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-xs text-center">
                 <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-fg-muted">Faithfulness</p>
                 <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{faith}</p>
                 <p className="text-[10px] text-slate-400 dark:text-fg-subtle mt-0.5">Claims backed by docs</p>
               </div>
-              <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
+              <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-xs text-center">
                 <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-fg-muted">Relevance</p>
                 <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{rel}</p>
                 <p className="text-[10px] text-slate-400 dark:text-fg-subtle mt-0.5">Direct query answer</p>
               </div>
-              <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-sm text-center">
+              <div className="bg-surface-card p-3 rounded-lg border border-teal-100 dark:border-teal-500/20 shadow-xs text-center">
                 <p className="text-[10px] font-bold uppercase text-slate-500 dark:text-fg-muted">Completeness</p>
                 <p className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400 mt-1">{comp}</p>
                 <p className="text-[10px] text-slate-400 dark:text-fg-subtle mt-0.5">Coverage of facts</p>
@@ -383,7 +383,7 @@ export function EvaluationRecordDrawer({
           {/* Judge Reasoning */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-fg-muted">Judge Rationale & Synthesis</label>
-            <div className="p-4 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-fg leading-relaxed select-text">
+            <div className="p-4 bg-teal-50/30 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20 text-xs sm:text-sm text-fg leading-relaxed select-text">
               {data?.judge_reason || (
                 <span className="text-fg-muted">No judge rationale recorded. The LLM judge did not run for this answer.</span>
               )}
@@ -425,12 +425,12 @@ export function EvaluationRecordDrawer({
           </div>
 
           {chunks.length === 0 ? (
-            <div className="p-6 text-center text-slate-400 dark:text-fg-subtle text-xs bg-teal-50/20 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20">
+            <div className="p-6 text-center text-slate-400 dark:text-fg-subtle text-xs bg-teal-50/20 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20">
               No retrieved context chunks stored for this query.
             </div>
           ) : (
             chunks.map((c: any, idx: number) => (
-              <div key={idx} className="p-4 bg-teal-50/20 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 space-y-2 hover:border-teal-400 dark:hover:border-teal-400/60 transition-colors">
+              <div key={idx} className="p-4 bg-teal-50/20 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20 space-y-2 hover:border-teal-400 dark:hover:border-teal-400/60 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="w-5 h-5 rounded-full bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[10px] font-bold flex items-center justify-center border border-teal-500/20">
@@ -439,7 +439,7 @@ export function EvaluationRecordDrawer({
                     <span className="text-xs font-bold text-fg">{c.source_name || "Enterprise Document"}</span>
                   </div>
                   {c.score !== undefined && (
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-semibold">
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-sm bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-semibold">
                       Score: {(c.score * 100).toFixed(1)}%
                     </span>
                   )}
@@ -458,7 +458,7 @@ export function EvaluationRecordDrawer({
 
       {!loading && activeTab === "latency" && (
         <div className="space-y-5">
-          <div className="p-4 bg-teal-50/30 dark:bg-white/[0.02] rounded-xl border border-teal-200/70 dark:border-teal-500/20 space-y-3">
+          <div className="p-4 bg-teal-50/30 dark:bg-white/2 rounded-xl border border-teal-200/70 dark:border-teal-500/20 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-teal-300">End-to-End Latency Waterfall</span>
               <span className="text-sm font-black text-teal-600 dark:text-teal-400 font-mono">{latency}</span>

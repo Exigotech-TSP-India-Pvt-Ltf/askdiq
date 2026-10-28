@@ -95,7 +95,7 @@ export function focusSourceChip(from: Element, documentId: string): boolean {
 }
 
 const CHIP =
-  "inline-flex max-w-[14rem] items-center gap-1 rounded-full border border-line-brand/70 bg-surface-studio/70 px-2 py-0.5 text-[11px] font-medium text-fg-muted transition-shadow dark:border-brand-500/25 data-[highlighted=true]:ring-2 data-[highlighted=true]:ring-brand-500 motion-reduce:transition-none";
+  "inline-flex max-w-56 items-center gap-1 rounded-full border border-line-brand/70 bg-surface-studio/70 px-2 py-0.5 text-[11px] font-medium text-fg-muted transition-shadow dark:border-brand-500/25 data-[highlighted=true]:ring-2 data-[highlighted=true]:ring-brand-500 motion-reduce:transition-none";
 
 /**
  * Citations for a live answer (pass `citedSources(response)`). Names and excerpts are rendered as React text
@@ -121,7 +121,7 @@ export function SourceChips({
           data-source-doc={chip.documentId}
           tabIndex={chip.url ? undefined : -1}
           title={chip.excerpt || chip.name}
-          className={`${CHIP} focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500`}
+          className={`${CHIP} focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500`}
         >
           {chip.url ? (
             <a

@@ -74,7 +74,7 @@ function EventRow({ event }: { event: ActivityEvent }) {
   return href ? (
     <Link
       href={href}
-      className="group flex items-center gap-3 rounded-xl px-2 py-2 transition-colors duration-150 hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      className="group flex items-center gap-3 rounded-xl px-2 py-2 transition-colors duration-150 hover:bg-surface-muted focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500"
     >
       {body}
     </Link>

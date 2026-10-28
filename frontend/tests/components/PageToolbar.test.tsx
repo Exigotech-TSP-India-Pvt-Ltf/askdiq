@@ -63,7 +63,7 @@ describe("PageToolbar (OR-2)", () => {
     // lg+: the row never wraps; the tabs give way (one line, sideways scroll),
     // the action cluster keeps its size. Below lg the cluster wraps as one group.
     expect(row).toHaveClass("flex-wrap", "lg:flex-nowrap");
-    expect(tabs).toHaveClass("min-w-0", "lg:overflow-x-auto", "lg:[&_[role=tablist]]:flex-nowrap", "lg:shrink-[4]");
+    expect(tabs).toHaveClass("min-w-0", "lg:overflow-x-auto", "lg:**:[[role=tablist]]:flex-nowrap", "lg:shrink-4");
     expect(right).toHaveClass("ml-auto", "justify-end", "lg:shrink-0");
     expect(right).toContainElement(screen.getByRole("button", { name: /date range/i }));
   });

@@ -215,7 +215,7 @@ export function ConversationPreviewDrawer({ token, conversationId, onClose, onPr
       open={open}
       onClose={onClose}
       title={
-        <span className="line-clamp-2 min-w-0 break-words leading-5" title={title}>
+        <span className="line-clamp-2 min-w-0 wrap-break-word leading-5" title={title}>
           {title}
         </span>
       }

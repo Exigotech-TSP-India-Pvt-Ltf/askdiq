@@ -256,7 +256,7 @@ function StatTile({
     <Link
       href={carry(href)}
       aria-label={`${label}: ${value}. Open the rows behind it`}
-      className={`group flex h-full flex-col gap-1.5 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${studioCardClass({ interactive: true })}`}
+      className={`group flex h-full flex-col gap-1.5 p-4 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 ${studioCardClass({ interactive: true })}`}
     >
       <div className="relative z-10 flex items-center justify-between gap-2">
         <p className="truncate text-xs font-medium text-fg-subtle">{label}</p>
@@ -336,7 +336,7 @@ function MetricCard({
         <Link
           href={carry(href)}
           aria-label={`${label}: ${shown}, ${caption}. Open the rows behind it`}
-          className="block h-full rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          className="block h-full rounded-2xl focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           {card}
         </Link>
@@ -447,7 +447,7 @@ function ResourceGaugeCard({
           </div>
           {/* Below the arc (never on it); two lines reserved so cards stay equal height. */}
           <p
-            className="line-clamp-2 min-h-[2rem] px-1 text-center text-xs leading-4 tabular-nums text-fg-muted"
+            className="line-clamp-2 min-h-8 px-1 text-center text-xs leading-4 tabular-nums text-fg-muted"
             title={caption}
             data-testid="gauge-caption"
           >

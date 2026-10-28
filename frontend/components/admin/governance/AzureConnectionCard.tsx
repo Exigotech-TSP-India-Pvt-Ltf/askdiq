@@ -38,7 +38,7 @@ function SourceRow({ source }: { source: AzureSourceStatus }) {
       <td className="py-2 pl-2 pr-3">
         <span className={`${PILL} ${TONE[source.state] ?? TONE.never_run}`}>{STATE_LABEL[source.state] ?? source.state}</span>
         {error ? (
-          <p className="mt-1 max-w-xs break-words text-[11px] text-status-danger-fg" title={source.last_error_message ?? undefined}>
+          <p className="mt-1 max-w-xs wrap-break-word text-[11px] text-status-danger-fg" title={source.last_error_message ?? undefined}>
             {source.last_error_code}
             {source.last_error_message ? `: ${source.last_error_message}` : ""}
           </p>

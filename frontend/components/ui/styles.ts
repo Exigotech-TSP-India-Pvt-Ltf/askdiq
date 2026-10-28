@@ -3,11 +3,11 @@
  * overlay, icon button and card uses the same tokens in light and dark.
  */
 export const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-card";
+  "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-card";
 
 export const iconButton = `inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-subtle transition-colors hover:bg-surface-muted hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 ${focusRing}`;
 
-export const overlayBackdrop = "fixed inset-0 bg-ink/40 backdrop-blur-sm dark:bg-black/60";
+export const overlayBackdrop = "fixed inset-0 bg-ink/40 backdrop-blur-xs dark:bg-black/60";
 
 /** Drawers and dialogs: elevated surface with the studio brand edge and inner highlight. */
 export const overlayPanel =
@@ -16,11 +16,11 @@ export const overlayPanel =
 export const popoverPanel =
   "rounded-xl border border-line-brand/70 bg-surface-elevated p-1.5 text-fg shadow-xl dark:border-brand-500/20 dark:shadow-black/40";
 
-export const primaryButton = `inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`;
+export const primaryButton = `inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`;
 
-export const dangerButton = `inline-flex items-center justify-center gap-1.5 rounded-lg bg-status-danger px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:text-fg-inverse ${focusRing}`;
+export const dangerButton = `inline-flex items-center justify-center gap-1.5 rounded-lg bg-status-danger px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:text-fg-inverse ${focusRing}`;
 
-export const secondaryButton = `inline-flex items-center justify-center gap-1.5 rounded-lg border border-line bg-surface-card px-3.5 py-2 text-xs font-medium text-fg-muted shadow-sm transition-colors hover:border-brand-300 hover:text-fg dark:hover:border-brand-700/60 ${focusRing}`;
+export const secondaryButton = `inline-flex items-center justify-center gap-1.5 rounded-lg border border-line bg-surface-card px-3.5 py-2 text-xs font-medium text-fg-muted shadow-xs transition-colors hover:border-brand-300 hover:text-fg dark:hover:border-brand-700/60 ${focusRing}`;
 
 /** Menu / list row (palette results, profile menu items). */
 export const menuItem = `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-fg-muted transition-colors hover:bg-surface-muted hover:text-fg ${focusRing}`;
@@ -28,7 +28,7 @@ export const menuItem = `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2
 /* ------------------------------------------------------------------------ */
 /* Studio look (Usage "Live Telemetry" cards), shared by every card, chart,  */
 /* KPI tile and table. Tokens only: bg-studio / shadow-studio are defined    */
-/* per theme in app/globals.css + tailwind.config.ts.                        */
+/* per theme in app/globals.css (@theme).                        */
 /* ------------------------------------------------------------------------ */
 
 export type StudioTone = "brand" | "ok" | "info" | "warn" | "danger";
@@ -49,10 +49,10 @@ export const studioDivider = "border-line-brand/70 dark:border-brand-500/20";
 
 /** Inset tile inside a studio card (metrics, stage rows, callouts). */
 export const studioTile =
-  "rounded-xl border border-line-brand/60 bg-surface-studio/60 dark:border-brand-500/20 dark:bg-white/[0.03]";
+  "rounded-xl border border-line-brand/60 bg-surface-studio/60 dark:border-brand-500/20 dark:bg-white/3";
 
 export const studioTileInteractive =
-  "transition-colors duration-150 hover:border-brand-300 hover:bg-surface-studio dark:hover:border-brand-400/50 dark:hover:bg-white/[0.06]";
+  "transition-colors duration-150 hover:border-brand-300 hover:bg-surface-studio dark:hover:border-brand-400/50 dark:hover:bg-white/6";
 
 /** Icon badge / mono pill colours per tone. */
 export const studioToneClasses: Record<StudioTone, string> = {
@@ -64,7 +64,7 @@ export const studioToneClasses: Record<StudioTone, string> = {
   danger: "border-status-danger/25 bg-status-danger-bg text-status-danger-fg",
 };
 
-export const studioIconBadge = "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-sm";
+export const studioIconBadge = "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-xs";
 
 export const studioPill =
   "inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider";
@@ -77,7 +77,7 @@ export const studioSubtitle = "text-[11px] font-medium text-fg-subtle dark:text-
 export const tableHead =
   "border-b border-line-brand/70 bg-surface-studio text-fg-muted dark:border-brand-500/20";
 export const tableHeadCell = "font-semibold text-fg-muted";
-export const tableBody = "divide-y divide-line/70 text-fg-muted dark:divide-white/[0.06]";
+export const tableBody = "divide-y divide-line/70 text-fg-muted dark:divide-white/6";
 /**
  * Row states (zebra, hover, `aria-selected` / `data-selected`) set one colour,
  * --row-tint (app/globals.css), so pinned cells can repaint it exactly.

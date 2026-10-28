@@ -276,7 +276,7 @@ export default function EvaluationLivePage() {
             <button
               type="button"
               onClick={() => set({ run: null })}
-              className="ml-auto rounded-md border border-status-info/40 px-2 py-0.5 font-semibold hover:bg-surface-card focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              className="ml-auto rounded-md border border-status-info/40 px-2 py-0.5 font-semibold hover:bg-surface-card focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500"
             >
               Clear
             </button>
@@ -590,7 +590,7 @@ export default function EvaluationLivePage() {
                       </tr>
                     ) : null}
                     {Object.entries(r?.robustness?.by_perturbation ?? {}).map(([k, v]: any) => (
-                      <tr key={k} className="border-b border-teal-100/50 dark:border-teal-500/10 even:bg-surface-muted/30 dark:even:bg-white/[0.015] hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07] transition-colors">
+                      <tr key={k} className="border-b border-teal-100/50 dark:border-teal-500/10 even:bg-surface-muted/30 dark:even:bg-white/1.5 hover:bg-brand-50/60 dark:hover:bg-brand-500/[0.07] transition-colors">
                         <td className="px-3.5 py-2.5 font-bold text-slate-900 dark:text-white">{label(k)}</td>
                         <td className="px-3.5 py-2.5 text-right font-mono tabular-nums text-slate-700 dark:text-slate-300">{v.n}</td>
                         <td className="px-3.5 py-2.5 text-right font-mono tabular-nums text-emerald-600 dark:text-emerald-400">{num(v.retrieval_stability, 3)}</td>

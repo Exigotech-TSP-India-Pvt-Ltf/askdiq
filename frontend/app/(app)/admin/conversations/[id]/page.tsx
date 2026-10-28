@@ -248,7 +248,7 @@ function ConversationDetailContent() {
               conversation.created_ip ? (
                 <Link
                   href={carry(visitorDetailHref(`client-${conversation.created_ip}`))}
-                  className={`rounded font-mono text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+                  className={`rounded-sm font-mono text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
                 >
                   {conversation.created_ip}
                 </Link>
@@ -263,7 +263,7 @@ function ConversationDetailContent() {
             badge={
               <Link
                 href={entityHref({ kind: "analytics", tab: "conversations", q: conversation.id })}
-                className={`rounded text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+                className={`rounded-sm text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
               >
                 In Analytics
               </Link>
@@ -431,7 +431,7 @@ function TurnCard({ turn, conversationId, highlighted, canPromote, promoting, on
       tabIndex={-1}
       aria-label={`Turn ${turn.turnIndex + 1}`}
       data-highlighted={highlighted || undefined}
-      className={`rounded-xl border bg-surface-card p-5 transition duration-150 motion-reduce:transition-none focus:outline-none ${
+      className={`rounded-xl border bg-surface-card p-5 transition duration-150 motion-reduce:transition-none focus:outline-hidden ${
         highlighted
           ? "border-brand-500 ring-2 ring-brand-500/40 shadow-md"
           : "border-line hover:border-brand-300 hover:shadow-md dark:hover:border-brand-700/60"
@@ -441,7 +441,7 @@ function TurnCard({ turn, conversationId, highlighted, canPromote, promoting, on
         <button
           type="button"
           onClick={onSelect}
-          className={`rounded text-xs font-semibold text-fg hover:text-accent-fg ${focusRing}`}
+          className={`rounded-sm text-xs font-semibold text-fg hover:text-accent-fg ${focusRing}`}
           aria-pressed={highlighted}
         >
           Turn {turn.turnIndex + 1}

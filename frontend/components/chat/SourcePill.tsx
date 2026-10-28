@@ -7,7 +7,7 @@ import { focusRing } from "@/components/ui/styles";
 import { focusSourceChip } from "./SourceChips";
 import { SourcePillCard } from "./SourcePillCard";
 
-const PILL = `inline-flex max-w-[10rem] items-center rounded-full bg-surface-muted px-2 text-[11px] font-medium leading-5 text-fg-muted no-underline transition-colors hover:bg-brand-50 hover:text-fg motion-reduce:transition-none dark:hover:bg-white/[0.08] ${focusRing}`;
+const PILL = `inline-flex max-w-40 items-center rounded-full bg-surface-muted px-2 text-[11px] font-medium leading-5 text-fg-muted no-underline transition-colors hover:bg-brand-50 hover:text-fg motion-reduce:transition-none dark:hover:bg-white/8 ${focusRing}`;
 
 /** Visible pill text: the server label, else the title. */
 function pillLabel(citation: Citation): string {

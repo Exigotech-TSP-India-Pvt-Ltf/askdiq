@@ -116,11 +116,11 @@ export function TrendChart({ days, selectedDay = null, onSelectDay, height }: Tr
       footer={
         <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-fg-muted" aria-hidden="true">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: ct.categorical[0] }} />
+            <span className="h-2 w-2 rounded-xs" style={{ backgroundColor: ct.categorical[0] }} />
             Substantive questions
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: ct.sequential[1] }} />
+            <span className="h-2 w-2 rounded-xs" style={{ backgroundColor: ct.sequential[1] }} />
             Conversations
           </span>
         </div>

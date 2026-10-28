@@ -266,7 +266,7 @@ export default function LogsView() {
       }}
     >
       <div
-        className={`flex items-center gap-2 overflow-x-auto border-b px-4 py-2.5 [scrollbar-width:thin] sm:px-5 ${studioDivider}`}
+        className={`flex items-center gap-2 overflow-x-auto border-b px-4 py-2.5 scrollbar-thin sm:px-5 ${studioDivider}`}
         role="group"
         aria-label="Filter by level"
         data-tour="governance-logs-levels"

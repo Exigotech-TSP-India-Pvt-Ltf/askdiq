@@ -239,7 +239,7 @@ export function VisitorsPanel() {
             href={carry(visitorDetailHref(u.id))}
             onClick={(e) => e.stopPropagation()}
             data-tour="visitors-ip-link"
-            className={`rounded font-mono text-xs font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+            className={`rounded-sm font-mono text-xs font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
           >
             {u.ip_address}
           </Link>

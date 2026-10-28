@@ -89,7 +89,7 @@ export function PageToolbar({
           data-scroll-end={edges.end || undefined}
           // lg+: one line of tabs that shrinks first (shrink weight 4) and scrolls;
           // the padding keeps focus rings inside the scroll box.
-          className="min-w-0 max-w-full lg:min-w-[12rem] lg:shrink-[4] lg:overflow-x-auto lg:p-0.5 lg:[scrollbar-width:none] lg:[&::-webkit-scrollbar]:hidden lg:[&_[role=tablist]]:flex-nowrap"
+          className="min-w-0 max-w-full lg:min-w-48 lg:shrink-4 lg:overflow-x-auto lg:p-0.5 lg:scrollbar-none lg:[&::-webkit-scrollbar]:hidden lg:**:[[role=tablist]]:flex-nowrap"
           style={fadeMask(edges)}
           onPointerOver={onTabsIntent}
           onFocus={onTabsIntent}

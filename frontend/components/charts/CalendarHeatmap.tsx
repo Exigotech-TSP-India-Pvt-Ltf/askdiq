@@ -64,7 +64,7 @@ function HeatLegend({ ramp, max, formatValue, valueLabel }: { ramp: readonly str
     <div className="mt-2 flex items-center gap-1.5 whitespace-nowrap text-[11px] text-fg-subtle" aria-label={`${valueLabel} scale: 0 to ${formatValue(max)}`} role="img">
       <span aria-hidden="true">{formatValue(0)}</span>
       {steps.map((v) => (
-        <span key={v} aria-hidden="true" className="h-2.5 w-4 rounded-sm" style={{ backgroundColor: rampColor(ramp, v, max) }} />
+        <span key={v} aria-hidden="true" className="h-2.5 w-4 rounded-xs" style={{ backgroundColor: rampColor(ramp, v, max) }} />
       ))}
       <span aria-hidden="true">{formatValue(max)}</span>
       <span aria-hidden="true" className="ml-1">{valueLabel.toLowerCase()}</span>

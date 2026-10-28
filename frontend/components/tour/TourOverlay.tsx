@@ -126,7 +126,7 @@ export function TourOverlay({ tourTitle, step, index, total, target, reduced, on
   const progress = ((index + 1) / total) * 100;
 
   return createPortal(
-    <div className="fixed inset-0 z-[120]" data-testid="tour-overlay">
+    <div className="fixed inset-0 z-120" data-testid="tour-overlay">
       {/* Click shield: the page is inert while the tour runs. */}
       <div className="absolute inset-0" aria-hidden="true" />
       {rect ? (
