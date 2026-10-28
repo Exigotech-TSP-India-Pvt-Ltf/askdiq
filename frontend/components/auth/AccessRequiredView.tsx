@@ -255,7 +255,7 @@ export function AccessRequiredView() {
         aria-labelledby="access-required-title"
         className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6"
       >
-        <m.div variants={item} className="rounded-2xl border border-line bg-surface-card p-6 shadow-sm sm:p-8">
+        <m.div variants={item} className="rounded-2xl border border-line bg-surface-card p-6 shadow-xs sm:p-8">
           <h2 id="access-required-title" className="text-lg font-bold tracking-tight text-fg">
             {approved ? "Access approved" : "You don't have dashboard access yet"}
           </h2>
@@ -292,7 +292,7 @@ export function AccessRequiredView() {
               {contact ? (
                 <a
                   href={`mailto:${contact}`}
-                  className={`rounded font-medium text-brand-700 underline-offset-4 hover:underline dark:text-brand-300 ${focusRing}`}
+                  className={`rounded-sm font-medium text-brand-700 underline-offset-4 hover:underline dark:text-brand-300 ${focusRing}`}
                 >
                   {contact}
                 </a>

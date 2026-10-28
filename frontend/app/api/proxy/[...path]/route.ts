@@ -220,7 +220,7 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
     const res = await fetchUpstream(
       req,
       targetUrl,
-      { method: req.method, headers: proxyHeaders(req), body: bodyBuffer, cache: "no-store" },
+      { method: req.method, headers: proxyHeaders(req), body: bodyBuffer ? new Uint8Array(bodyBuffer) : undefined, cache: "no-store" },
       timeoutMs,
       retries,
     );

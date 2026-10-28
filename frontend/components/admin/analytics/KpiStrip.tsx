@@ -102,7 +102,7 @@ export function KpiStrip({ summary, loading = false, onOpen, onIntent }: KpiStri
             key={k.key}
             data-testid={`kpi-${k.key}`}
             aria-busy={loading || undefined}
-            className="flex flex-col gap-2 rounded-2xl border border-line bg-surface-card p-4 shadow-sm transition duration-150 hover:border-brand-300 hover:shadow-md motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none dark:hover:border-brand-700/60"
+            className="flex flex-col gap-2 rounded-2xl border border-line bg-surface-card p-4 shadow-xs transition duration-150 hover:border-brand-300 hover:shadow-md motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none dark:hover:border-brand-700/60"
           >
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300">
               <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden="true" />
@@ -111,7 +111,7 @@ export function KpiStrip({ summary, loading = false, onOpen, onIntent }: KpiStri
               {summary ? (
                 <CountUp value={k.value(summary)} format={k.format} fallback="n/a" />
               ) : (
-                <span className="inline-block h-6 w-12 rounded bg-surface-muted motion-safe:animate-pulse" aria-hidden="true" />
+                <span className="inline-block h-6 w-12 rounded-sm bg-surface-muted motion-safe:animate-pulse" aria-hidden="true" />
               )}
             </p>
             <h3 className="text-xs font-medium text-fg-muted">{k.label}</h3>
@@ -123,7 +123,7 @@ export function KpiStrip({ summary, loading = false, onOpen, onIntent }: KpiStri
                 onMouseEnter={onIntent ? () => onIntent(k.target) : undefined}
                 onFocus={onIntent ? () => onIntent(k.target) : undefined}
                 aria-label={`${k.label}: open ${k.targetLabel}`}
-                className="mt-auto inline-flex items-center gap-1 self-start rounded text-[11px] font-semibold text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
+                className="mt-auto inline-flex items-center gap-1 self-start rounded-sm text-[11px] font-semibold text-brand-700 hover:underline focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
               >
                 View records
                 <ArrowUpRight className="h-3 w-3" strokeWidth={2} aria-hidden="true" />

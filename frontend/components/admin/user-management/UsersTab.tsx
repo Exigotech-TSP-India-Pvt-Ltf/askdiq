@@ -93,7 +93,7 @@ export function UsersTab({ url, update, meId, activeSuperadmins }: UsersTabProps
             e.stopPropagation();
             openUser(u);
           }}
-          className={`rounded text-left font-medium text-fg hover:text-brand-700 dark:hover:text-brand-300 ${focusRing}`}
+          className={`rounded-sm text-left font-medium text-fg hover:text-brand-700 dark:hover:text-brand-300 ${focusRing}`}
         >
           {u.name || "—"}
           {u.id === meId ? <span className="ml-1.5 text-[11px] font-normal text-fg-subtle">(you)</span> : null}

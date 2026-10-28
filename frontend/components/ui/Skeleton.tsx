@@ -10,7 +10,7 @@ export function Skeleton({ className = "h-4 w-full" }: SkeletonProps) {
   return (
     <span
       aria-hidden="true"
-      className={`block animate-pulse rounded-md bg-surface-muted motion-reduce:animate-none dark:bg-brand-500/[0.08] ${className}`}
+      className={`block animate-pulse rounded-md bg-surface-muted motion-reduce:animate-none dark:bg-brand-500/8 ${className}`}
     />
   );
 }

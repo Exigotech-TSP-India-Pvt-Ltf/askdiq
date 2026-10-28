@@ -234,7 +234,7 @@ export function TaxonomyTab() {
             type="checkbox"
             checked={showArchived}
             onChange={(e) => setShowArchived(e.target.checked)}
-            className={`h-4 w-4 rounded border-line-strong accent-brand-600 ${focusRing}`}
+            className={`h-4 w-4 rounded-sm border-line-strong accent-brand-600 ${focusRing}`}
           />
           Show archived{archivedCount ? ` (${archivedCount})` : ""}
         </label>
@@ -245,7 +245,7 @@ export function TaxonomyTab() {
         filters and the classifier; conversations already labelled keep showing its label.
       </p>
 
-      <div className="overflow-x-auto rounded-2xl border border-line bg-surface-card shadow-sm" data-tour="settings-taxonomy-table">
+      <div className="overflow-x-auto rounded-2xl border border-line bg-surface-card shadow-xs" data-tour="settings-taxonomy-table">
         {query.isLoading ? (
           <SkeletonRows rows={6} columns={5} label="Loading taxonomy" />
         ) : visible.length === 0 ? (
@@ -354,7 +354,7 @@ export function TaxonomyTab() {
                           aria-label={`Label for ${item.code}`}
                           aria-invalid={Boolean(problem) && !draft.label.trim()}
                           onChange={(e) => edit({ label: e.target.value })}
-                          className={`${inputClass} min-w-[14rem] py-1.5 text-xs`}
+                          className={`${inputClass} min-w-56 py-1.5 text-xs`}
                         />
                       </td>
                       <td className="px-3 py-2">
@@ -561,7 +561,7 @@ function AddTaxonomyEntry({ kind, items, nextOrder, onCreated }: AddProps) {
   }
 
   return (
-    <form onSubmit={submit} noValidate aria-label={`Add ${KIND_NOUN[kind]}`} data-tour="settings-taxonomy-add" className="rounded-2xl border border-line bg-surface-card p-4 shadow-sm">
+    <form onSubmit={submit} noValidate aria-label={`Add ${KIND_NOUN[kind]}`} data-tour="settings-taxonomy-add" className="rounded-2xl border border-line bg-surface-card p-4 shadow-xs">
       <h3 className="mb-3 text-xs font-bold text-fg">Add {KIND_NOUN[kind]}</h3>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[10rem_minmax(0,1fr)_9rem_minmax(0,1fr)_auto] lg:items-end">
         <label className="space-y-1 text-xs font-semibold text-fg">

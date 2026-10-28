@@ -86,7 +86,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         role="status"
         aria-live="polite"
         aria-label="Notifications"
-        className="pointer-events-none fixed bottom-4 right-4 z-[200] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2"
+        className="pointer-events-none fixed bottom-4 right-4 z-200 flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2"
       >
         <AnimatePresence initial={false}>
           {toasts.map((t) => (

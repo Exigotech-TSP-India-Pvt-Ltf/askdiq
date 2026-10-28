@@ -11,9 +11,18 @@ import {
   semanticTokens,
   type ThemeName,
 } from "@/lib/theme-tokens";
-import tailwindConfig from "@/tailwind.config";
 
 const css = fs.readFileSync(path.resolve(__dirname, "../../app/globals.css"), "utf-8");
+
+/** Parses `--name: value;` declarations (multi-line values allowed) from the `@theme { }` block. */
+function theme_(source: string): Record<string, string> {
+  const start = source.indexOf("@theme {");
+  expect(start, "missing @theme block").toBeGreaterThanOrEqual(0);
+  const body = source.slice(start + 8, source.indexOf("\n}", start));
+  const vars: Record<string, string> = {};
+  for (const m of body.matchAll(/--([\w-]+):\s*([^;]+);/g)) vars[m[1]] = m[2].replace(/\s+/g, " ").trim();
+  return vars;
+}
 
 /** Parses `--name: r g b;` declarations from the first `selector {` block. */
 function cssBlock(selector: string): Record<string, string> {
@@ -93,20 +102,21 @@ describe("globals.css mirrors lib/theme-tokens.ts", () => {
 });
 
 describe("tailwind maps colours to the CSS variables", () => {
-  const colors = (tailwindConfig.theme?.extend?.colors ?? {}) as Record<string, Record<string, string>>;
+  // Tailwind v4: tokens live in the CSS-first `@theme` block of globals.css.
+  const theme = theme_(css);
 
-  it("keeps every brand-* class and makes it var-backed with alpha support", () => {
+  it("keeps every brand-* class and makes it var-backed (opacity modifiers via color-mix)", () => {
     for (const shade of BRAND_SHADES) {
-      expect(colors.brand[shade]).toBe(`rgb(var(--brand-${shade}) / <alpha-value>)`);
+      expect(theme[`color-brand-${shade}`]).toBe(`rgb(var(--brand-${shade}))`);
     }
   });
 
   it("exposes the semantic token classes", () => {
-    expect(colors.surface.card).toBe("rgb(var(--surface-card) / <alpha-value>)");
-    expect(colors.fg.DEFAULT).toBe("rgb(var(--fg) / <alpha-value>)");
-    expect(colors.fg.subtle).toBe("rgb(var(--fg-subtle) / <alpha-value>)");
-    expect(colors.line.DEFAULT).toBe("rgb(var(--line) / <alpha-value>)");
-    expect(colors.status["danger-fg"]).toBe("rgb(var(--status-danger-fg) / <alpha-value>)");
+    expect(theme["color-surface-card"]).toBe("rgb(var(--surface-card))");
+    expect(theme["color-fg"]).toBe("rgb(var(--fg))");
+    expect(theme["color-fg-subtle"]).toBe("rgb(var(--fg-subtle))");
+    expect(theme["color-line"]).toBe("rgb(var(--line))");
+    expect(theme["color-status-danger-fg"]).toBe("rgb(var(--status-danger-fg))");
   });
 });
 
@@ -162,18 +172,16 @@ describe("contrast (WCAG AA) in both themes", () => {
 });
 
 describe("studio surface (Live Telemetry look rolled out to every card)", () => {
-  const ext = tailwindConfig.theme?.extend as {
-    backgroundImage: Record<string, string>;
-    boxShadow: Record<string, string>;
-  };
+  const theme = theme_(css);
 
   it("bg-studio and shadow-studio are built from theme variables only", () => {
-    expect(ext.backgroundImage.studio).toContain("var(--surface-studio)");
-    expect(ext.backgroundImage.studio).toContain("var(--surface-card)");
-    expect(ext.backgroundImage.studio).toContain("var(--brand-400)");
-    expect(ext.backgroundImage.studio).not.toMatch(/#[0-9a-f]{3,8}\b/i);
-    expect(ext.boxShadow.studio).toBe("var(--shadow-studio)");
-    expect(ext.boxShadow["studio-hover"]).toBe("var(--shadow-studio-hover)");
+    const studio = theme["background-image-studio"];
+    expect(studio).toContain("var(--surface-studio)");
+    expect(studio).toContain("var(--surface-card)");
+    expect(studio).toContain("var(--brand-400)");
+    expect(studio).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(css).toMatch(/@utility shadow-studio \{\s*box-shadow: var\(--shadow-studio\);/);
+    expect(css).toMatch(/@utility shadow-studio-hover \{\s*box-shadow: var\(--shadow-studio-hover\);/);
   });
 
   it("defines the studio effects separately for light (:root) and dark (.dark)", () => {

@@ -285,7 +285,7 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
               toggle(row);
             }}
             onFocus={() => warmRow(row)}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-surface-muted hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:hover:text-brand-300"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-surface-muted hover:text-brand-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 dark:hover:text-brand-300"
           >
             <ChevronDown {...ICON} className={`h-4 w-4 transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`} />
           </button>
@@ -300,7 +300,7 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
         <Link
           href={`/admin/conversations/${row.conv_id}`}
           onClick={(e) => e.stopPropagation()}
-          className="group inline-flex items-center gap-1 rounded font-mono text-xs font-semibold text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
+          className="group inline-flex items-center gap-1 rounded-sm font-mono text-xs font-semibold text-brand-700 hover:underline focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
           aria-label={`Open conversation ${shortId(row.conv_id)}`}
         >
           {shortId(row.conv_id)}
@@ -326,7 +326,7 @@ export function ConversationsTable({ state, filters, update }: ConversationsTabl
             onMouseEnter={() => prefetchPerson(token, row.person_id, filters, page)}
             aria-pressed={state.person === row.person_id}
             aria-label={`Filter to person ${row.person}`}
-            className="rounded font-medium text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
+            className="rounded-sm font-medium text-brand-700 hover:underline focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300"
           >
             {row.person}
           </button>

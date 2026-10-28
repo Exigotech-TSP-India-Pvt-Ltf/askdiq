@@ -179,7 +179,7 @@ describe("StudioMetricTile count-up", () => {
       </MotionProvider>,
     );
     const tile = screen.getByTestId("studio-metric-tile");
-    expect(tile).toHaveClass("bg-surface-studio/60", "dark:bg-white/[0.03]");
+    expect(tile).toHaveClass("bg-surface-studio/60", "dark:bg-white/3");
     const shown = tile.querySelector('[aria-hidden="true"]');
     expect(shown).toHaveTextContent("3,901");
     expect(screen.getByText("3,901", { selector: ".sr-only" })).toBeInTheDocument();

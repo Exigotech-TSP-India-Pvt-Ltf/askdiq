@@ -234,7 +234,7 @@ function CaseRow({
         </span>
       </td>
       <td className="hidden px-3.5 py-2.5 font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap sm:table-cell">
-        <span className="px-2 py-0.5 rounded bg-teal-50 dark:bg-white/10 border border-teal-200/60 dark:border-teal-500/20 text-[10px] font-mono text-teal-800 dark:text-teal-300">
+        <span className="px-2 py-0.5 rounded-sm bg-teal-50 dark:bg-white/10 border border-teal-200/60 dark:border-teal-500/20 text-[10px] font-mono text-teal-800 dark:text-teal-300">
           {c.type}
         </span>
       </td>

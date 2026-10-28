@@ -287,12 +287,12 @@ function DocumentsContent() {
       header: "Document",
       sortable: true,
       render: (doc) => (
-        <div className="flex min-w-[8rem] max-w-[10rem] flex-col gap-0.5 min-[1440px]:max-w-[12rem] min-[1920px]:max-w-[16rem]">
+        <div className="flex min-w-32 max-w-40 flex-col gap-0.5 min-[1440px]:max-w-48 min-[1920px]:max-w-[16rem]">
           <Link
             href={entityHref({ kind: "document", id: doc.document_id })}
             onClick={(e) => e.stopPropagation()}
             title={doc.source_name}
-            className={`group/link inline-flex min-w-0 max-w-full items-center gap-1 rounded font-medium text-fg hover:text-brand-700 dark:hover:text-brand-300 ${focusRing}`}
+            className={`group/link inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm font-medium text-fg hover:text-brand-700 dark:hover:text-brand-300 ${focusRing}`}
           >
             <span className="truncate">{doc.source_name}</span>
             <ArrowUpRight
@@ -386,7 +386,7 @@ function DocumentsContent() {
       render: (doc) => (
         <div className="flex flex-col whitespace-nowrap">
           <RelativeTime value={ingestedAt(doc)} className="text-fg-muted" />
-          <span className="max-w-[7rem] truncate min-[1440px]:max-w-[8rem] min-[1920px]:max-w-[10rem] text-[10px] text-fg-subtle" title={doc.ingested_by ?? undefined}>
+          <span className="max-w-28 truncate min-[1440px]:max-w-32 min-[1920px]:max-w-40 text-[10px] text-fg-subtle" title={doc.ingested_by ?? undefined}>
             {doc.ingested_by ? `by ${doc.ingested_by}` : "by —"}
             {doc.ingest_count && doc.ingest_count > 1 ? ` · ${doc.ingest_count} ingests` : ""}
           </span>

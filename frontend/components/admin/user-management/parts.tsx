@@ -46,7 +46,7 @@ export function formatWaiting(seconds: number | null | undefined): string {
   return `${Math.floor(seconds / DAY)}d ${Math.floor((seconds % DAY) / HOUR)}h`;
 }
 
-export const fieldClass = `rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs text-fg shadow-sm ${focusRing}`;
+export const fieldClass = `rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs text-fg shadow-xs ${focusRing}`;
 
 interface GuardedButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "disabled"> {
   /** When set the action is unavailable; the reason shows as a tooltip and is announced. */

@@ -48,10 +48,10 @@ const labelledSize = "h-11 min-w-11 px-3 sm:h-9 sm:min-w-0 gap-1.5";
 
 const VARIANT: Record<HeaderIconButtonVariant, string> = {
   default:
-    "border border-line bg-surface-card text-fg-muted shadow-sm hover:border-brand-300 hover:text-fg dark:hover:border-brand-700/60",
+    "border border-line bg-surface-card text-fg-muted shadow-xs hover:border-brand-300 hover:text-fg dark:hover:border-brand-700/60",
   primary: "bg-brand-gradient text-white shadow-brand-glow hover:opacity-90",
 };
-const PRESSED = "border border-brand-500 bg-brand-50 text-brand-700 shadow-sm dark:border-brand-400/60 dark:bg-brand-500/15 dark:text-brand-300";
+const PRESSED = "border border-brand-500 bg-brand-50 text-brand-700 shadow-xs dark:border-brand-400/60 dark:bg-brand-500/15 dark:text-brand-300";
 
 function classes(variant: HeaderIconButtonVariant, pressed: boolean, labelled: boolean): string {
   return `relative inline-flex ${labelled ? labelledSize : headerIconSize} shrink-0 items-center justify-center rounded-lg text-xs font-medium transition-colors motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50 ${

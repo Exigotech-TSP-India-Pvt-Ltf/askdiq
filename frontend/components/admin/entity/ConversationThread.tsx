@@ -67,13 +67,13 @@ function AnswerBody({ text: raw }: { text: string }) {
       <div
         id={id}
         data-collapsed={collapsed || undefined}
-        className={`relative space-y-2 break-words text-[13px] leading-[1.375rem] text-fg ${collapsed ? "max-h-[16.5rem] overflow-hidden" : ""}`}
+        className={`relative space-y-2 wrap-break-word text-[13px] leading-5.5 text-fg ${collapsed ? "max-h-66 overflow-hidden" : ""}`}
       >
         {renderFormattedText(text)}
         {collapsed ? (
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-surface-card to-transparent"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-linear-to-t from-surface-card to-transparent"
           />
         ) : null}
       </div>
@@ -156,7 +156,7 @@ function FeedbackLine({ feedback }: { feedback: TurnFeedback }) {
           {r.replace(/_/g, " ")}
         </ToneChip>
       ))}
-      {feedback.comment ? <span className="min-w-0 break-words text-fg-muted">“{feedback.comment}”</span> : null}
+      {feedback.comment ? <span className="min-w-0 wrap-break-word text-fg-muted">“{feedback.comment}”</span> : null}
     </li>
   );
 }
@@ -229,13 +229,13 @@ function TurnItem({ turn, conversationId, fullViewHref }: { turn: TurnView; conv
     <li className="space-y-2" aria-label={`Turn ${turn.turnIndex + 1}`}>
       {turn.question !== null ? (
         <div className="flex justify-end pl-8 sm:pl-12">
-          <p className="whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-brand-600 px-3.5 py-2 text-[13px] leading-5 text-white shadow-sm">
+          <p className="whitespace-pre-wrap wrap-break-word rounded-2xl rounded-tr-sm bg-brand-600 px-3.5 py-2 text-[13px] leading-5 text-white shadow-xs">
             {turn.question}
           </p>
         </div>
       ) : null}
       <div className="pr-4 sm:pr-8">
-        <div className="rounded-2xl rounded-tl-sm border border-line bg-surface-card px-3.5 py-2.5 shadow-sm dark:border-white/10">
+        <div className="rounded-2xl rounded-tl-sm border border-line bg-surface-card px-3.5 py-2.5 shadow-xs dark:border-white/10">
           {turn.answer !== null ? (
             <AnswerBody text={turn.answer} />
           ) : (
@@ -244,7 +244,7 @@ function TurnItem({ turn, conversationId, fullViewHref }: { turn: TurnView; conv
           {turn.truncated ? (
             <p className="mt-2 border-t border-line pt-1.5 text-[11px] text-fg-subtle">
               Long message shortened in the preview.{" "}
-              <Link href={fullViewHref} className={`rounded font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}>
+              <Link href={fullViewHref} className={`rounded-sm font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}>
                 Open full view
               </Link>{" "}
               for the full text.

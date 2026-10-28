@@ -88,11 +88,11 @@ export function NotificationList({ items, isUnread, onNavigate, itemRole }: Noti
           <>
             <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${TONE_DOT[item.tone ?? "info"]} ${unread ? "" : "opacity-40"}`} aria-hidden="true" />
             <span className="min-w-0 flex-1">
-              <span title={item.title} className={`line-clamp-2 break-words text-xs text-fg ${unread ? "font-semibold" : "font-medium"}`}>
+              <span title={item.title} className={`line-clamp-2 wrap-break-word text-xs text-fg ${unread ? "font-semibold" : "font-medium"}`}>
                 {item.title}
               </span>
               {item.description ? (
-                <span title={item.description} className="line-clamp-2 break-words text-[11px] text-fg-muted">
+                <span title={item.description} className="line-clamp-2 wrap-break-word text-[11px] text-fg-muted">
                   {item.description}
                 </span>
               ) : null}

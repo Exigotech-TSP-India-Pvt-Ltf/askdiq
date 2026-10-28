@@ -60,7 +60,7 @@ export function DashboardHeader({
           keep the centre column (audience switcher) at the same position on
           every page, whatever the title holds. */}
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm border-brand-200/80 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/15 dark:text-brand-300">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-xs border-brand-200/80 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/15 dark:text-brand-300">
           <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0">
@@ -84,7 +84,7 @@ export function DashboardHeader({
                       <Link
                         href={item.href}
                         title={item.label}
-                        className="truncate rounded hover:text-accent-fg hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                        className="truncate rounded-sm hover:text-accent-fg hover:underline focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500"
                       >
                         {item.label}
                       </Link>
@@ -111,7 +111,7 @@ export function DashboardHeader({
       {/* Centre column: AudienceScopeTabs (or a custom slot), always centred.
           VA-33: below md it is a full-width second row, so the audience can
           still be changed on a phone. */}
-      {hasCentre ? <div data-header-centre className="flex min-w-0 items-center justify-center [&>*]:w-full md:[&>*]:w-auto">{centre}</div> : null}
+      {hasCentre ? <div data-header-centre className="flex min-w-0 items-center justify-center *:w-full md:*:w-auto">{centre}</div> : null}
       {/* Empty right column keeps the side columns equal, so the switcher stays centred. */}
       {hasCentre ? <div aria-hidden="true" className="hidden md:block" /> : null}
     </header>

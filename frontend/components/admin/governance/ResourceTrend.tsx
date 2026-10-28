@@ -76,7 +76,7 @@ export function ResourceTrend({ points, warn, danger, label, height = 40 }: Reso
         tabIndex={0}
         viewBox={`0 0 ${W} ${height}`}
         preserveAspectRatio="none"
-        className="block w-full cursor-crosshair rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        className="block w-full cursor-crosshair rounded-sm focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500"
         style={{ height }}
         onPointerMove={onMove}
         onPointerLeave={() => setHover(null)}

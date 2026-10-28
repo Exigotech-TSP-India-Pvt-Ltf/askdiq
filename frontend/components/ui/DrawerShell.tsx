@@ -78,7 +78,7 @@ export function DrawerShell({
   return createPortal(
     <AnimatePresence>
       {open ? (
-        <div key="drawer" className="fixed inset-0 z-[100] flex justify-end">
+        <div key="drawer" className="fixed inset-0 z-100 flex justify-end">
           <m.div
             data-testid="drawer-backdrop"
             aria-hidden="true"

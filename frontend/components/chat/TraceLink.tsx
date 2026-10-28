@@ -21,7 +21,7 @@ export function TraceLink({ requestId }: { requestId: string | null | undefined 
       <Link
         href={entityHref({ kind: "trace", id: requestId })}
         aria-label="View trace"
-        className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-surface-muted hover:text-accent-fg dark:text-slate-400 dark:hover:bg-white/[0.06] sm:h-7 sm:w-7 ${focusRing}`}
+        className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-surface-muted hover:text-accent-fg dark:text-slate-400 dark:hover:bg-white/6 sm:h-7 sm:w-7 ${focusRing}`}
       >
         <Activity className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
       </Link>

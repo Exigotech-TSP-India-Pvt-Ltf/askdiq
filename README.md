@@ -38,8 +38,8 @@ flowchart LR
 ### RAG pipeline
 
 1. **Pre-checks**: length, spam/gibberish, unsafe input and prompt injection.
-2. **Retrieval**: pgvector cosine recall, dedupe, cross-encoder rerank
-   (`fastembed`, reorder only), and a cross-document quota so one document
+2. **Retrieval**: pgvector cosine recall, dedupe, ONNX cross-encoder rerank
+   (reorder only), and a cross-document quota so one document
    cannot crowd out another. Compound questions are split and merged.
 3. **Relevance gate**: off-topic questions get a helpful "what I can help
    with" reply instead of a refusal.

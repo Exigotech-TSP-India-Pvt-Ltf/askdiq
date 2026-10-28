@@ -84,7 +84,7 @@ export function AskDiqDrawer({ id, open, onClose }: AskDiqDrawerProps) {
           {modal ? (
             <m.div
               aria-hidden="true"
-              className={`${overlayBackdrop} z-[89]`}
+              className={`${overlayBackdrop} z-89`}
               variants={crossfade}
               initial="hidden"
               animate="visible"
@@ -106,7 +106,7 @@ export function AskDiqDrawer({ id, open, onClose }: AskDiqDrawerProps) {
             exit="exit"
             data-testid="askdiq-drawer"
             data-modal={modal ? "true" : "false"}
-            className={`fixed inset-y-0 right-0 z-[90] flex h-[100dvh] w-full flex-col overflow-hidden border-y-0 border-r-0 sm:w-[420px] sm:rounded-l-2xl lg:w-[440px] ${overlayPanel}`}
+            className={`fixed inset-y-0 right-0 z-90 flex h-dvh w-full flex-col overflow-hidden border-y-0 border-r-0 sm:w-[420px] sm:rounded-l-2xl lg:w-[440px] ${overlayPanel}`}
           >
             <header className="flex shrink-0 items-center gap-3 border-b border-line-brand/70 bg-surface-studio/70 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] dark:border-brand-500/20">
               <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand-200/80 bg-brand-50 dark:border-brand-500/30 dark:bg-brand-500/15">

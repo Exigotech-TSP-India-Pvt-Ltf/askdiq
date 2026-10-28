@@ -258,7 +258,7 @@ the original `/admin/usage/*` mix.
 
 ## Notes / gotchas
 
-- `fastembed`'s cross-encoder reranker downloads its ONNX model from
+- The ONNX cross-encoder reranker downloads its model from
   Hugging Face on first use inside the backend container — it needs
   outbound network access at least once (or a pre-warmed model cache
   volume) for reranking to work.

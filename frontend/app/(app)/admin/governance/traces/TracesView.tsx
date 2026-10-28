@@ -63,7 +63,7 @@ function traceColumns(open: (id: string) => void): ColumnDef<GovernanceTraceItem
             open(t.request_id);
           }}
           title={`Open trace ${t.request_id}`}
-          className={`rounded font-mono text-[11px] text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+          className={`rounded-sm font-mono text-[11px] text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
         >
           {shortId(t.request_id, 12)}
         </button>

@@ -34,15 +34,15 @@ const LAYOUT: Record<ChatConversationVariant, { scroll: string; column: string; 
 
 /** Page variant: the composer is a floating themed card (no full-width strip). */
 const PAGE_COMPOSER_CARD =
-  "flex items-end gap-2 rounded-2xl border border-line bg-surface-card p-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-brand-500/60 focus-within:ring-2 focus-within:ring-brand-500/20 dark:shadow-none";
+  "flex items-end gap-2 rounded-2xl border border-line bg-surface-card p-2 shadow-xs transition-[border-color,box-shadow] focus-within:border-brand-500/60 focus-within:ring-2 focus-within:ring-brand-500/20 dark:shadow-none";
 const PAGE_TEXTAREA =
-  "max-h-36 flex-1 resize-none bg-transparent px-2.5 py-2 text-sm text-fg outline-none placeholder:text-fg-subtle";
+  "max-h-36 flex-1 resize-none bg-transparent px-2.5 py-2 text-sm text-fg outline-hidden placeholder:text-fg-subtle";
 const PANEL_TEXTAREA =
-  "max-h-36 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-100 dark:border-dark-border dark:bg-dark-card dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-dark-card dark:focus:ring-brand-950";
+  "max-h-36 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-ink outline-hidden transition placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-2 focus:ring-brand-100 dark:border-dark-border dark:bg-dark-card dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-dark-card dark:focus:ring-brand-950";
 const PAGE_PROMPT =
-  "rounded-xl border border-line bg-surface-card px-3.5 py-2.5 text-left text-xs text-fg-muted shadow-xs transition hover:border-brand-300 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 dark:hover:border-brand-600 dark:hover:text-brand-300";
+  "rounded-xl border border-line bg-surface-card px-3.5 py-2.5 text-left text-xs text-fg-muted shadow-2xs transition hover:border-brand-300 hover:text-brand-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500/40 dark:hover:border-brand-600 dark:hover:text-brand-300";
 const PANEL_PROMPT =
-  "rounded-lg border border-slate-200/90 bg-white px-3.5 py-2.5 text-left text-xs text-ink/70 shadow-xs transition hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-700 dark:border-dark-border dark:bg-dark-card dark:text-slate-200 dark:hover:border-brand-600 dark:hover:bg-brand-950/40 dark:hover:text-brand-300";
+  "rounded-lg border border-slate-200/90 bg-white px-3.5 py-2.5 text-left text-xs text-ink/70 shadow-2xs transition hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-700 dark:border-dark-border dark:bg-dark-card dark:text-slate-200 dark:hover:border-brand-600 dark:hover:bg-brand-950/40 dark:hover:text-brand-300";
 /** Subtle brand glow over the page background (both themes; follows the brand). */
 const PAGE_BACKDROP =
   "bg-[radial-gradient(90%_60%_at_50%_0%,rgb(var(--brand-400)/var(--studio-glow-alpha))_0%,transparent_70%)]";

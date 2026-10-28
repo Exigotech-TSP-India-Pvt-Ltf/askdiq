@@ -35,7 +35,7 @@ export function ClientIpCell({ log }: { log: GovernanceLogItem }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={hint}>
       <span className="font-mono text-[11px] text-fg-muted">{log.ip_address}</span>
-      <span className="rounded border border-border px-1 text-[10px] leading-4 text-fg-subtle">linked</span>
+      <span className="rounded-sm border border-border px-1 text-[10px] leading-4 text-fg-subtle">linked</span>
       <span className="sr-only">{hint}</span>
     </span>
   );

@@ -98,7 +98,7 @@ function TextEditor({
         onChange={(e) => setDraft(e.target.value.slice(0, max))}
         rows={4}
         placeholder={placeholder}
-        className="w-full resize-y rounded-lg border border-line bg-surface-card p-2.5 text-xs text-fg placeholder:text-fg-subtle outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 disabled:opacity-60"
+        className="w-full resize-y rounded-lg border border-line bg-surface-card p-2.5 text-xs text-fg placeholder:text-fg-subtle outline-hidden focus:border-brand-500 focus:ring-1 focus:ring-brand-500 disabled:opacity-60"
       />
       <div className="flex justify-end">
         <button
@@ -185,7 +185,7 @@ export function FeedbackDrawer({
                 >
                   <Icon className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
                   {ACTION_LABELS[action].verb}
-                  <kbd className="ml-1 rounded bg-surface-muted px-1 font-mono text-[10px] text-fg-subtle">
+                  <kbd className="ml-1 rounded-sm bg-surface-muted px-1 font-mono text-[10px] text-fg-subtle">
                     {ACTION_LABELS[action].key}
                   </kbd>
                 </button>

@@ -86,6 +86,12 @@ def _fallback_response(
             "Your question appears too short or incomplete. Could you please provide "
             f"a bit more detail or ask a specific question about {brand}?"
         )
+    elif "no_permission" in flags:
+        answer = "I can't provide another customer's credentials or tenant data."
+    elif "personal_contact_request" in flags:
+        answer = f"I don't have personal contact details for {brand} staff."
+    elif "application_secret_request" in flags:
+        answer = "I can't provide application secrets or credentials."
     elif "spam_detected" in flags:
         answer = (
             "I couldn't quite understand your question. Could you please rephrase "

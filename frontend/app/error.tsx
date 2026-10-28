@@ -29,7 +29,7 @@ export default function ErrorPage({ error, reset }: ErrorPageProps) {
           {error.digest ? (
             <p className="mt-3 flex items-center justify-center gap-1 text-xs text-fg-subtle">
               Reference
-              <code className="rounded bg-surface-muted px-1.5 py-0.5 font-mono text-fg-muted">{error.digest}</code>
+              <code className="rounded-sm bg-surface-muted px-1.5 py-0.5 font-mono text-fg-muted">{error.digest}</code>
               <CopyButton value={error.digest} label="Copy error reference" />
             </p>
           ) : null}

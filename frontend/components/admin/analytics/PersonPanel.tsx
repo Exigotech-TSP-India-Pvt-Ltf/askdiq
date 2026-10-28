@@ -20,9 +20,9 @@ import { dayLabel, fmtInt } from "./format";
 import { errorText, personKey } from "./use-insights";
 import type { AnalyticsState } from "./url-state";
 
-const BOX = "flex flex-col gap-2 rounded-2xl border border-line bg-surface-card p-4 text-xs shadow-sm";
+const BOX = "flex flex-col gap-2 rounded-2xl border border-line bg-surface-card p-4 text-xs shadow-xs";
 const LINK =
-  "group inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors duration-150 hover:border-brand-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300 dark:hover:border-brand-700/60";
+  "group inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-semibold text-brand-700 transition-colors duration-150 hover:border-brand-300 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-brand-300 dark:hover:border-brand-700/60";
 const ICON = { className: "h-3.5 w-3.5", strokeWidth: 1.75, "aria-hidden": true } as const;
 
 export const IDENTITY_TEXT: Record<PersonDetail["identity"], string> = {

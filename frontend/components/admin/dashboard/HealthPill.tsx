@@ -24,7 +24,7 @@ export function HealthPill() {
     <Link
       href="/admin/governance?tab=Overall"
       aria-label={`System health: ${status}. Open the governance overview`}
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition duration-150 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${tone.pill}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition duration-150 hover:shadow-md focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 ${tone.pill}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} aria-hidden="true" />
       {status}

@@ -91,7 +91,7 @@ const STACK = {
   head: "max-sm:hidden",
   body: "max-sm:block",
   row: "max-sm:block max-sm:px-1 max-sm:py-2",
-  cell: "max-sm:flex max-sm:min-w-0 max-sm:items-start max-sm:justify-between max-sm:gap-3 max-sm:py-1 max-sm:text-left max-sm:break-words max-sm:before:shrink-0 max-sm:before:font-semibold max-sm:before:text-fg-subtle max-sm:before:content-[attr(data-label)]",
+  cell: "max-sm:flex max-sm:min-w-0 max-sm:items-start max-sm:justify-between max-sm:gap-3 max-sm:py-1 max-sm:text-left max-sm:wrap-break-word max-sm:before:shrink-0 max-sm:before:font-semibold max-sm:before:text-fg-subtle max-sm:before:content-[attr(data-label)]",
   full: "max-sm:block",
 } as const;
 
@@ -232,7 +232,7 @@ export function DataTable<T extends Record<string, any>>({
                 <tr key={`skeleton-${i}`} className="motion-safe:animate-pulse">
                   {columns.map((col) => (
                     <td key={`skeleton-cell-${col.key}`} className={CELL_PADDING[density]}>
-                      <div className="h-3.5 w-3/4 rounded-md bg-surface-muted dark:bg-brand-500/[0.08]" />
+                      <div className="h-3.5 w-3/4 rounded-md bg-surface-muted dark:bg-brand-500/8" />
                     </td>
                   ))}
                 </tr>

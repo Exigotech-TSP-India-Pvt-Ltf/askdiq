@@ -128,7 +128,7 @@ export function FilterBar({ state, update, clearFilters, userTypes = [], chipLab
               // Focus once the field is shown (next frame).
               requestAnimationFrame(() => inputRef.current?.focus());
             }}
-            className={`relative h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-card text-fg-muted shadow-sm hover:text-fg min-[1440px]:hidden ${
+            className={`relative h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-card text-fg-muted shadow-xs hover:text-fg min-[1440px]:hidden ${
               searchOpen ? "hidden" : "inline-flex"
             } ${focusRing}`}
           >
@@ -139,7 +139,7 @@ export function FilterBar({ state, update, clearFilters, userTypes = [], chipLab
           </button>
           <div
             data-search-field
-            className={`relative w-full min-w-[9rem] shrink sm:w-56 min-[1440px]:block ${searchOpen ? "block" : "hidden"}`}
+            className={`relative w-full min-w-36 shrink sm:w-56 min-[1440px]:block ${searchOpen ? "block" : "hidden"}`}
           >
             <label htmlFor={`${id}-q`} className="sr-only">
               Search
@@ -149,7 +149,7 @@ export function FilterBar({ state, update, clearFilters, userTypes = [], chipLab
               ref={inputRef}
               id={`${id}-q`}
               type="search"
-              className={`h-9 w-full rounded-lg border border-line bg-surface-card pl-8 pr-2 text-xs text-fg shadow-sm placeholder:text-fg-subtle ${focusRing}`}
+              className={`h-9 w-full rounded-lg border border-line bg-surface-card pl-8 pr-2 text-xs text-fg shadow-xs placeholder:text-fg-subtle ${focusRing}`}
               placeholder="Question, issue or person"
               maxLength={MAX_SEARCH_CHARS}
               value={search}

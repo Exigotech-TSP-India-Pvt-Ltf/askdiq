@@ -64,7 +64,7 @@ export function KnowledgeGapsTab({ analytics, loading, error, onRetry, onFilter 
         <m.li
           key={`${gap.message_id}-${i}`}
           variants={item}
-          className="flex flex-col gap-3 rounded-2xl border border-line bg-surface-card p-4 shadow-sm transition duration-150 hover:border-brand-300 hover:shadow-md motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none dark:hover:border-brand-700/60 sm:flex-row sm:items-center"
+          className="flex flex-col gap-3 rounded-2xl border border-line bg-surface-card p-4 shadow-xs transition duration-150 hover:border-brand-300 hover:shadow-md motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none dark:hover:border-brand-700/60 sm:flex-row sm:items-center"
         >
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-muted text-xs font-bold tabular-nums text-fg-muted">
             {i + 1}

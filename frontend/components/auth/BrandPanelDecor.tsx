@@ -7,7 +7,7 @@ import { ambientLoop, parallaxSpring, type ambientLoopSeconds } from "@/lib/moti
 type Loop = keyof typeof ambientLoopSeconds;
 
 interface Shape {
-  kind: "hex" | "ring";
+  kind: "hex" | "ring-3";
   /** Position (CSS percentages) and size (px) inside the panel. */
   top: string;
   left: string;
@@ -21,8 +21,8 @@ interface Shape {
 
 /** Thin hexagon outlines echoing the logo geometry, plus two faint concentric rings. */
 const SHAPES: readonly Shape[] = [
-  { kind: "ring", top: "52%", left: "48%", size: 620, depth: 6, loop: "long", drift: { x: 0, y: 0, rotate: 12 }, className: "text-white/10" },
-  { kind: "ring", top: "62%", left: "60%", size: 400, depth: 10, loop: "medium", drift: { x: 0, y: 0, rotate: -10 }, className: "text-white/10" },
+  { kind: "ring-3", top: "52%", left: "48%", size: 620, depth: 6, loop: "long", drift: { x: 0, y: 0, rotate: 12 }, className: "text-white/10" },
+  { kind: "ring-3", top: "62%", left: "60%", size: 400, depth: 10, loop: "medium", drift: { x: 0, y: 0, rotate: -10 }, className: "text-white/10" },
   { kind: "hex", top: "8%", left: "62%", size: 150, depth: 18, loop: "medium", drift: { x: 14, y: -10, rotate: 10 }, className: "text-white/25" },
   { kind: "hex", top: "30%", left: "80%", size: 90, depth: 26, loop: "short", drift: { x: -10, y: 12, rotate: -14 }, className: "text-white/20" },
   { kind: "hex", top: "64%", left: "6%", size: 120, depth: 14, loop: "long", drift: { x: 12, y: 8, rotate: 8 }, className: "text-white/15" },

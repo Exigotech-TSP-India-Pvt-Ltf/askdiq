@@ -47,7 +47,7 @@ export function Pagination({
   return (
     <nav
       aria-label="Pagination Navigation"
-      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-studio/50 dark:bg-white/[0.02] px-4 py-3 sm:px-5 ${className}`}
+      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-studio/50 dark:bg-white/2 px-4 py-3 sm:px-5 ${className}`}
     >
       <div className="flex items-center gap-4 text-xs text-fg-subtle">
         {/* VA-35: on phones only "x–y of N" (no "Showing" / "Rows per page"). */}
@@ -68,7 +68,7 @@ export function Pagination({
               id="page-size-select"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value) as PageSize)}
-              className="rounded-md border border-line bg-surface-card px-2 py-1 text-xs font-medium text-fg focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 transition-colors"
+              className="rounded-md border border-line bg-surface-card px-2 py-1 text-xs font-medium text-fg focus:border-brand-500 focus:outline-hidden focus:ring-1 focus:ring-brand-500 transition-colors"
             >
               {ALLOWED_PAGE_SIZES.map((sz) => (
                 <option key={sz} value={sz} className="bg-surface-elevated text-fg">
@@ -114,7 +114,7 @@ export function Pagination({
               aria-current={isCurrent ? "page" : undefined}
               className={`flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-xs font-medium transition-colors duration-150 ${
                 isCurrent
-                  ? "bg-brand-600 dark:bg-brand-500 text-white shadow-xs font-semibold"
+                  ? "bg-brand-600 dark:bg-brand-500 text-white shadow-2xs font-semibold"
                   : "text-fg-muted hover:bg-surface-muted hover:text-fg"
               }`}
             >

@@ -246,7 +246,7 @@ export function ConversationsPanel() {
           <Link
             href={carry(visitorDetailHref(`client-${c.created_ip}`))}
             onClick={(e) => e.stopPropagation()}
-            className={`rounded font-mono text-xs text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+            className={`rounded-sm font-mono text-xs text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
           >
             {c.created_ip}
           </Link>

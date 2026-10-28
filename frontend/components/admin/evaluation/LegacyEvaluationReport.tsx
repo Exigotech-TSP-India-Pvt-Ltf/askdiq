@@ -70,7 +70,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   const isPct = value.endsWith("%");
   const pctNum = isPct ? Math.min(Math.max(parseFloat(value) || 0, 0), 100) : null;
   return (
-    <div className="rounded-xl border border-ink/10 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3.5 transition-shadow hover:shadow-sm">
+    <div className="rounded-xl border border-ink/10 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3.5 transition-shadow hover:shadow-xs">
       <p className="text-[11px] uppercase tracking-wide text-ink/40 dark:text-slate-500">{label}</p>
       <p className={`mt-1 text-xl font-semibold ${isPct ? statusColor(value) : "text-ink dark:text-white"}`}>
         {value}
@@ -191,7 +191,7 @@ function Table({
             {rows.map((row, i) => (
               <tr
                 key={i}
-                className="odd:bg-white dark:odd:bg-dark-card even:bg-ink/[0.02] dark:even:bg-dark-surface/40 hover:bg-brand-50/40 dark:hover:bg-brand-950/30 transition-colors"
+                className="odd:bg-white dark:odd:bg-dark-card even:bg-ink/2 dark:even:bg-dark-surface/40 hover:bg-brand-50/40 dark:hover:bg-brand-950/30 transition-colors"
               >
                 {row.map((cell, j) => {
                   const isNum =
@@ -690,7 +690,7 @@ export function LegacyEvaluationReport() {
                 <span className="h-3 w-1 rounded-full bg-brand-500" />
                 Knowledge-base evaluation
               </h2>
-              <pre className="max-h-80 overflow-auto rounded-lg border border-ink/10 dark:border-white/10 bg-ink/[0.03] dark:bg-dark-surface p-3 text-[11px] text-ink/70 dark:text-slate-300">
+              <pre className="max-h-80 overflow-auto rounded-lg border border-ink/10 dark:border-white/10 bg-ink/3 dark:bg-dark-surface p-3 text-[11px] text-ink/70 dark:text-slate-300">
                 {JSON.stringify(r.kb, null, 2)}
               </pre>
             </section>

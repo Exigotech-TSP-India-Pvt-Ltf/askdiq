@@ -18,7 +18,7 @@ export function SuspendedView({ contactEmail, onSignOut }: SuspendedViewProps) {
   const brand = useBrand();
   return (
     <main className="flex min-h-screen items-center justify-center bg-surface-page px-4 py-12 text-fg">
-      <div className="w-full max-w-md rounded-2xl border border-line bg-surface-card p-8 text-center shadow-sm">
+      <div className="w-full max-w-md rounded-2xl border border-line bg-surface-card p-8 text-center shadow-xs">
         <div className="flex justify-center">
           <BrandLogo variant="full" />
         </div>
@@ -31,7 +31,7 @@ export function SuspendedView({ contactEmail, onSignOut }: SuspendedViewProps) {
           {contactEmail ? (
             <a
               href={`mailto:${contactEmail}`}
-              className={`rounded font-medium text-brand-700 underline-offset-4 hover:underline dark:text-brand-300 ${focusRing}`}
+              className={`rounded-sm font-medium text-brand-700 underline-offset-4 hover:underline dark:text-brand-300 ${focusRing}`}
             >
               {contactEmail}
             </a>

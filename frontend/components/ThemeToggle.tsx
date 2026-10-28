@@ -34,7 +34,7 @@ export function ThemeToggle({ className = "", size = "md" }: ThemeToggleProps) {
       title={label}
       aria-label={label}
       data-theme-mode={mode}
-      className={`group relative flex ${btnSize} items-center justify-center rounded-lg border border-ink/10 dark:border-white/10 bg-surface-card dark:bg-dark-surface text-fg-muted shadow-sm transition-all duration-200 hover:border-brand-500/40 hover:bg-brand-50/50 dark:hover:bg-brand-950/40 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 active:scale-95 ${className}`}
+      className={`group relative flex ${btnSize} items-center justify-center rounded-lg border border-ink/10 dark:border-white/10 bg-surface-card dark:bg-dark-surface text-fg-muted shadow-xs transition-all duration-200 hover:border-brand-500/40 hover:bg-brand-50/50 dark:hover:bg-brand-950/40 dark:hover:text-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 active:scale-95 ${className}`}
     >
       <AnimatePresence mode="wait" initial={false}>
         <m.span key={mode} variants={crossfade} initial="hidden" animate="visible" exit="exit" className="flex">

@@ -282,7 +282,7 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
                 setUrlServerError(null);
               }}
               onBlur={() => setUrlBlurred(true)}
-              className={`w-full rounded-lg border border-line bg-surface-card px-3 py-2 text-xs text-fg placeholder:text-fg-subtle aria-[invalid=true]:border-status-danger ${focusRing}`}
+              className={`w-full rounded-lg border border-line bg-surface-card px-3 py-2 text-xs text-fg placeholder:text-fg-subtle aria-invalid:border-status-danger ${focusRing}`}
             />
             <p id={`${urlId}-hint`} className="text-[11px] text-fg-subtle">
               The page answers link to when they cite this document (https only

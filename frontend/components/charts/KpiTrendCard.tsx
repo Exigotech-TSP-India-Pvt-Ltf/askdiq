@@ -139,7 +139,7 @@ export function KpiTrendCard({
     <div className={`${CARD} ${href ? CARD_INTERACTIVE : ""} ${info ? "overflow-visible" : ""} ${className}`}>
       {info && <div className="absolute right-10 top-5 z-10">{info}</div>}
       {href ? (
-        <Link href={href} className="flex flex-col gap-3 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" {...intentHandlers}>
+        <Link href={href} className="flex flex-col gap-3 rounded-lg focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500" {...intentHandlers}>
           {header}
           {figure}
         </Link>

@@ -47,6 +47,7 @@ describe("Visitors list", () => {
     expect(screen.getByText("New visitors")).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "New vs returning visitors per day" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Sessions by weekday and hour" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Test IPs$/ })).not.toBeInTheDocument();
   });
 
   it("keeps existing data and shows empty charts when the stats endpoint is absent (404)", async () => {

@@ -149,7 +149,7 @@ export function renderInline(text: string, key = "i"): React.ReactNode[] {
     const [whole, code, link, linkText, linkHref, bold, boldA, boldB, italic, italicA, italicB] = match;
     if (code) {
       out.push(
-        <code key={k} className="rounded bg-surface-muted px-1 py-0.5 font-mono text-[0.85em] text-fg">
+        <code key={k} className="rounded-sm bg-surface-muted px-1 py-0.5 font-mono text-[0.85em] text-fg">
           {code.slice(1, -1)}
         </code>,
       );

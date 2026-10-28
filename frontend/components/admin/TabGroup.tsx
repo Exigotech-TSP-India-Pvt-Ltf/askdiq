@@ -109,16 +109,16 @@ export function TabGroup<T extends string = string>({
             onClick={() => onChange(tab.id)}
             onKeyDown={(e) => handleKeyDown(e, idx)}
             title={tab.description || tab.label}
-            className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
+            className={`relative flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-lg transition-colors duration-150 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 select-none ${
               isActive
                 ? "text-white font-semibold"
-                : "text-fg-muted hover:text-fg hover:bg-surface-card/80 dark:hover:bg-white/[0.06] font-medium"
+                : "text-fg-muted hover:text-fg hover:bg-surface-card/80 dark:hover:bg-white/6 font-medium"
             }`}
           >
             {isActive && <ActivePill layoutId={pillId} />}
             {Icon && (
               <Icon
-                className={`relative w-4 h-4 flex-shrink-0 ${
+                className={`relative w-4 h-4 shrink-0 ${
                   isActive ? "text-white" : "text-fg-subtle"
                 }`}
                 strokeWidth={1.75}
@@ -127,7 +127,7 @@ export function TabGroup<T extends string = string>({
             <span className="relative whitespace-nowrap">{tab.label}</span>
             {tab.badgeCount !== undefined && tab.badgeCount !== null ? (
               <span
-                className={`relative text-[10px] min-w-[1.25rem] px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
+                className={`relative text-[10px] min-w-5 px-1.5 py-0.5 rounded-full font-semibold text-center transition-colors ${
                   isActive
                     ? "bg-white/20 text-white"
                     : "bg-surface-muted text-fg-muted"

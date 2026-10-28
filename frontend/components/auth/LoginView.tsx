@@ -44,14 +44,14 @@ interface LoginViewProps {
   year: number;
 }
 
-const linkClass = `rounded text-brand-700 underline-offset-4 hover:underline dark:text-brand-300 ${focusRing}`;
+const linkClass = `rounded-sm text-brand-700 underline-offset-4 hover:underline dark:text-brand-300 ${focusRing}`;
 
 function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
   const external = /^https:\/\//.test(href);
   return (
     <a
       href={href}
-      className={`rounded text-fg-subtle transition-colors hover:text-fg ${focusRing}`}
+      className={`rounded-sm text-fg-subtle transition-colors hover:text-fg ${focusRing}`}
       {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
     >
       {children}
@@ -108,7 +108,7 @@ export function LoginView({ errorCode, next, contactEmail, year }: LoginViewProp
   return (
     <div className="flex min-h-screen flex-col bg-surface-page text-fg md:flex-row" data-motion={reduced ? "static" : "animated"}>
       {/* Mobile: teal header strip with the logo above the card. */}
-      <header className="relative overflow-hidden bg-gradient-to-br from-brand-600 to-brand-800 px-6 py-5 md:hidden">
+      <header className="relative overflow-hidden bg-linear-to-br from-brand-600 to-brand-800 px-6 py-5 md:hidden">
         <LoginLogo alt={brand.companyName} className="h-12" />
       </header>
 
@@ -116,10 +116,10 @@ export function LoginView({ errorCode, next, contactEmail, year }: LoginViewProp
         aria-label={`${brand.productName} introduction`}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
-        className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-600 to-brand-800 p-12 text-white md:flex md:w-[53%] lg:p-16"
+        className="relative hidden flex-col justify-between overflow-hidden bg-linear-to-br from-brand-600 to-brand-800 p-12 text-white md:flex md:w-[53%] lg:p-16"
       >
         {/* Soft radial highlight. */}
-        <div aria-hidden="true" className="pointer-events-none absolute -left-24 -top-24 h-[28rem] w-[28rem] rounded-full bg-white/10 blur-3xl" />
+        <div aria-hidden="true" className="pointer-events-none absolute -left-24 -top-24 h-112 w-md rounded-full bg-white/10 blur-3xl" />
         <BrandPanelDecor pointerX={pointerX} pointerY={pointerY} reduced={reduced} />
 
         <div className="relative">

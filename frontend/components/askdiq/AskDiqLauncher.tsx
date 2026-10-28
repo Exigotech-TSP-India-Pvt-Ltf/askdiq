@@ -114,7 +114,7 @@ export function AskDiqLauncher() {
     <>
       {hidden ? null : (
         <div
-          className="pointer-events-none fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-[80] flex flex-col items-end gap-3 sm:right-6"
+          className="pointer-events-none fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-80 flex flex-col items-end gap-3 sm:right-6"
           data-testid="askdiq-launcher"
         >
           <AnimatePresence>
@@ -154,7 +154,7 @@ export function AskDiqLauncher() {
               className="pointer-events-none absolute right-full top-1/2 mr-3 hidden -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-lg border border-line bg-surface-elevated px-2.5 py-1.5 text-xs font-medium text-fg opacity-0 shadow-lg transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none sm:flex"
             >
               {label}
-              <kbd className="rounded border border-line bg-surface-muted px-1 font-sans text-[10px] text-fg-subtle">Ctrl /</kbd>
+              <kbd className="rounded-sm border border-line bg-surface-muted px-1 font-sans text-[10px] text-fg-subtle">Ctrl /</kbd>
             </span>
 
             {animate ? (
@@ -201,7 +201,7 @@ export function AskDiqLauncher() {
               ) : sending && !open ? (
                 <span
                   data-testid="askdiq-typing"
-                  className="absolute -top-1 right-[-0.35rem] flex items-center gap-0.5 rounded-full border border-line-brand bg-surface-elevated px-1.5 py-1 shadow-sm"
+                  className="absolute -top-1 right-[-0.35rem] flex items-center gap-0.5 rounded-full border border-line-brand bg-surface-elevated px-1.5 py-1 shadow-xs"
                   aria-hidden="true"
                 >
                   <span className="h-1 w-1 rounded-full bg-brand-500 motion-safe:animate-bounce motion-safe:[animation-delay:-0.3s]" />

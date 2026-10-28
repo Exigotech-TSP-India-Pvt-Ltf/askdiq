@@ -18,7 +18,7 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
     <html lang="en">
       <body className="bg-surface-page text-fg">
         <main className="flex min-h-screen items-center justify-center px-4 py-12">
-          <div className="w-full max-w-md rounded-2xl border border-line bg-surface-card p-8 text-center shadow-sm">
+          <div className="w-full max-w-md rounded-2xl border border-line bg-surface-card p-8 text-center shadow-xs">
             <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-700">Something went wrong</p>
             <h1 className="mt-2 text-lg font-bold tracking-tight">This page could not be loaded</h1>
             <p className="mt-2 text-sm text-fg-muted">Try again in a moment.</p>

@@ -42,7 +42,7 @@ export function JsonViewer({
           event.stopPropagation();
           setOpen((v) => !v);
         }}
-        className={`inline-flex items-center gap-1 rounded px-1 text-[11px] font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+        className={`inline-flex items-center gap-1 rounded-sm px-1 text-[11px] font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
       >
         {open ? (
           <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />

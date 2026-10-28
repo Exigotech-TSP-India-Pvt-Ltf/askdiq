@@ -98,7 +98,7 @@ function ChunkCard({ chunk, highlighted }: { chunk: ChunkRow; highlighted: boole
       tabIndex={-1}
       aria-label={`Chunk ${chunk.chunk_index + 1}`}
       data-highlighted={highlighted || undefined}
-      className={`overflow-hidden rounded-xl border bg-surface-card shadow-sm transition duration-150 focus:outline-none motion-reduce:transition-none ${
+      className={`overflow-hidden rounded-xl border bg-surface-card shadow-xs transition duration-150 focus:outline-hidden motion-reduce:transition-none ${
         highlighted ? "border-brand-500 ring-2 ring-brand-500/40" : "border-line hover:border-brand-300 hover:shadow-md dark:hover:border-brand-700/60"
       }`}
     >
@@ -140,7 +140,7 @@ function ChunkCard({ chunk, highlighted }: { chunk: ChunkRow; highlighted: boole
             type="button"
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
-            className={`mt-3 inline-flex items-center gap-1 rounded text-xs font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+            className={`mt-3 inline-flex items-center gap-1 rounded-sm text-xs font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
           >
             {expanded ? "Show less" : "Show full chunk"}
             <ChevronDown
@@ -171,7 +171,7 @@ function Field({
     <div className="min-w-0">
       <dt className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">{label}</dt>
       <dd
-        className={`mt-0.5 min-w-0 text-xs text-fg ${truncate ? "truncate" : "break-words"} ${mono ? "font-mono" : ""}`}
+        className={`mt-0.5 min-w-0 text-xs text-fg ${truncate ? "truncate" : "wrap-break-word"} ${mono ? "font-mono" : ""}`}
         title={truncate}
       >
         {children}
@@ -217,7 +217,7 @@ function SourceLinkRow({
             aria-label={editLabel}
             aria-haspopup="dialog"
             aria-expanded={anchor !== null}
-            className={`${secondaryButton} ml-auto !px-2.5 !py-1`}
+            className={`${secondaryButton} ml-auto px-2.5! py-1!`}
           >
             <Link2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
             Edit link
@@ -263,7 +263,7 @@ function MetadataCard({
   const stats = detail?.chunk_stats;
   const labels = Object.entries(doc.labels ?? {});
   return (
-    <section aria-label="Document metadata" data-tour="documents-detail-metadata" className="rounded-xl border border-line bg-surface-card p-5 shadow-sm">
+    <section aria-label="Document metadata" data-tour="documents-detail-metadata" className="rounded-xl border border-line bg-surface-card p-5 shadow-xs">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <FormatBadge
           convertedFrom={originalFormat(doc)}
@@ -658,7 +658,7 @@ function DocumentDetailContent() {
                   title="Chunk hits by week"
                   subtitle="Most cited chunks over the last 8 weeks; select a cell to jump to the chunk"
                   // The heatmap sizes itself to its rows (capped cells): no fixed body height.
-                  bodyClassName="min-h-[6rem] w-full"
+                  bodyClassName="min-h-24 w-full"
                   loading={chunks.isLoading && !rawChunks}
                   empty={heatData.length === 0 || weeks.length < MIN_HEATMAP_WEEKS}
                   emptyMessage={
@@ -797,7 +797,7 @@ function DocumentDetailContent() {
                             <button
                               type="button"
                               onClick={() => selectChunk(item.chunk_id ?? "")}
-                              className={`rounded font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
+                              className={`rounded-sm font-medium text-brand-700 hover:underline dark:text-brand-300 ${focusRing}`}
                             >
                               Chunk {item.chunk_index !== null ? item.chunk_index + 1 : ""}
                             </button>

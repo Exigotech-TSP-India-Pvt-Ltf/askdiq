@@ -25,7 +25,7 @@ Contents
 |---|---|---|---|
 | API | `backend/main.py`, `backend/app/api/routes/*` | uvicorn (`main:app`), `WEB_CONCURRENCY` workers per container | All HTTP routes; lifespan starts the event bus, thread pool, reranker preload, optional job worker. |
 | RAG harness | `backend/app/harness/` | in the API process | Orchestrates guardrails, retrieval, LLM call, post-checks (`run_query`). |
-| Retrieval | `backend/app/retrieval/` | in the API process | Azure embeddings, pgvector search, fastembed rerank (in threads), cross-document selection. |
+| Retrieval | `backend/app/retrieval/` | in the API process | Azure embeddings, pgvector search, ONNX cross-encoder rerank (in threads), cross-document selection. |
 | Guardrails | `backend/app/guardrails/` | in the API process | Conversational intercept, pre-checks, groundedness post-checks. |
 | Ingestion | `backend/app/ingestion/`, `backend/app/chunking/` | in the API process (request) or CLI scripts | DOCX conversion, normalisation, chunking, embedding, upsert. |
 | Governance | `backend/app/governance/` | in the API process | Audit log, PII, costing, audience scoping, traces, logs, monitoring, SSE hub, online eval. |
@@ -187,7 +187,7 @@ flowchart TD
     san --> dec["decompose_query (rule-based) + contextualize with history if follow-up"]
     dec --> emb["Embed sub-queries in parallel (Azure)"]
     emb --> rec["pgvector cosine recall per sub-query (candidate pool)"]
-    rec --> rr["Rerank pool (fastembed cross-encoder, thread, max 4 concurrent)"]
+    rec --> rr["Rerank pool (ONNX cross-encoder, thread, max 4 concurrent)"]
     rr --> sel["Cross-document quota selection, merge (round-robin if compound)"]
     sel --> empty{"Any sources?"}
     empty -->|no| ot["Fallback off_topic (hotfix: no_sources)"]

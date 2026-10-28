@@ -34,7 +34,7 @@ import { moveMenuFocus, menuItems, useMenu } from "@/lib/use-menu";
 import { useShellNotifications, MONITORING_HREF } from "@/lib/use-shell-notifications";
 import { useTheme, type ThemeMode } from "@/lib/theme-context";
 
-const avatarClass = "flex shrink-0 items-center justify-center rounded-full bg-brand-600 font-semibold text-white shadow-sm ring-2 ring-surface-card";
+const avatarClass = "flex shrink-0 items-center justify-center rounded-full bg-brand-600 font-semibold text-white shadow-xs ring-2 ring-surface-card";
 
 type Submenu = "notifications" | "tours" | "theme";
 
@@ -56,7 +56,7 @@ interface SidebarAccountProps {
 function CountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="ml-auto min-w-[1.25rem] rounded-full bg-status-danger px-1.5 text-center text-[10px] font-semibold leading-4 text-white dark:text-fg-inverse">
+    <span className="ml-auto min-w-5 rounded-full bg-status-danger px-1.5 text-center text-[10px] font-semibold leading-4 text-white dark:text-fg-inverse">
       {count > 9 ? "9+" : count}
     </span>
   );
@@ -224,7 +224,7 @@ export function SidebarAccount({ collapsed, surface = "sidebar", onBeforeAction 
   }
 
   const panelPosition = surface === "drawer" && !collapsed ? "bottom-full left-0 right-0 mb-2 origin-bottom" : accountPopoverPosition[placement];
-  const panelWidth = collapsed ? "w-72" : "w-full min-w-[15rem]";
+  const panelWidth = collapsed ? "w-72" : "w-full min-w-60";
 
   return (
     <div data-tour="shell-account" className={`relative border-t border-line ${collapsed ? "flex justify-center p-3" : "px-2 py-3"}`}>
@@ -246,7 +246,7 @@ export function SidebarAccount({ collapsed, surface = "sidebar", onBeforeAction 
           className={
             collapsed
               ? `relative rounded-full ${focusRing}`
-              : `flex w-full items-center gap-2 rounded-xl border border-line bg-surface-muted/50 p-2 text-left transition-colors hover:border-brand-300 hover:bg-surface-muted dark:bg-white/[0.03] dark:hover:border-brand-700/60 ${focusRing}`
+              : `flex w-full items-center gap-2 rounded-xl border border-line bg-surface-muted/50 p-2 text-left transition-colors hover:border-brand-300 hover:bg-surface-muted dark:bg-white/3 dark:hover:border-brand-700/60 ${focusRing}`
           }
         >
           <span aria-hidden="true" className={`${avatarClass} relative h-9 w-9 text-xs`}>
@@ -295,7 +295,7 @@ export function SidebarAccount({ collapsed, surface = "sidebar", onBeforeAction 
               className={`absolute z-50 max-w-[calc(100vw-2rem)] ${panelWidth} ${panelPosition} ${popoverPanel}`}
             >
               {level === null ? (
-                <div ref={mainRef} role="menu" aria-label="Account" data-menu-panel="" tabIndex={-1} onKeyDown={onMainKeyDown} className="outline-none">
+                <div ref={mainRef} role="menu" aria-label="Account" data-menu-panel="" tabIndex={-1} onKeyDown={onMainKeyDown} className="outline-hidden">
                   <div role="none" className="mb-1 border-b border-line px-2.5 pb-2 pt-1">
                     <p className="truncate text-sm font-semibold text-fg" title={name}>
                       {name}
@@ -340,7 +340,7 @@ export function SidebarAccount({ collapsed, surface = "sidebar", onBeforeAction 
                   data-menu-panel=""
                   tabIndex={-1}
                   onKeyDown={onSubKeyDown}
-                  className="outline-none"
+                  className="outline-hidden"
                 >
                   {level === "notifications" ? (
                     <>

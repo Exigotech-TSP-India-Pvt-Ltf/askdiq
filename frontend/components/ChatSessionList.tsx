@@ -66,7 +66,7 @@ export function ChatSessionList({
   onRename,
   onDelete,
   onIntent,
-  className = "w-64 shrink-0 border-r border-ink/10 bg-ink/[0.015] dark:border-white/10 dark:bg-dark-surface/60",
+  className = "w-64 shrink-0 border-r border-ink/10 bg-ink/1.5 dark:border-white/10 dark:bg-dark-surface/60",
 }: {
   sessions: ChatSessionSummary[];
   activeSessionId: string | null;
@@ -148,7 +148,7 @@ export function ChatSessionList({
                         onBlur={() => commitRename(session.id)}
                         onKeyDown={(e) => onRenameKeyDown(e, session.id)}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full rounded border border-brand-300 dark:border-brand-600 bg-white dark:bg-dark-card text-ink dark:text-white px-1 py-0.5 text-xs outline-none"
+                        className="w-full rounded-sm border border-brand-300 dark:border-brand-600 bg-white dark:bg-dark-card text-ink dark:text-white px-1 py-0.5 text-xs outline-hidden"
                       />
                     ) : (
                       <p className="truncate font-medium">{session.title}</p>
@@ -165,7 +165,7 @@ export function ChatSessionList({
                         startRename(session.id, session.title);
                       }}
                       title="Rename"
-                      className="rounded p-1 text-ink/40 dark:text-slate-400 hover:bg-ink/10 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white"
+                      className="rounded-sm p-1 text-ink/40 dark:text-slate-400 hover:bg-ink/10 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white"
                     >
                       <PencilIcon />
                     </button>
@@ -177,7 +177,7 @@ export function ChatSessionList({
                         }
                       }}
                       title="Delete"
-                      className="rounded p-1 text-ink/40 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400"
+                      className="rounded-sm p-1 text-ink/40 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400"
                     >
                       <TrashIcon />
                     </button>

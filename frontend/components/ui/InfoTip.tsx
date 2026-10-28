@@ -41,7 +41,7 @@ export function InfoTip({ label, children, align = "right", className = "" }: In
         onKeyDown={(e) => {
           if (e.key === "Escape") setOpen(false);
         }}
-        className="rounded-full p-0.5 text-fg-subtle transition-colors hover:text-accent-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        className="rounded-full p-0.5 text-fg-subtle transition-colors hover:text-accent-fg focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500"
       >
         <Info className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
       </button>

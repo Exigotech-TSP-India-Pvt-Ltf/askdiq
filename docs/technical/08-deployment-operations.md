@@ -328,7 +328,7 @@ outside development.
   plus the job worker's pool and one `LISTEN` connection per process. Check
   `SHOW max_connections;` on `et-platform-postgres-1`; the DB is shared with
   other et-platform apps.
-- Each uvicorn worker loads its own cross-encoder model (`fastembed`, ONNX);
+- Each uvicorn worker loads its own ONNX cross-encoder model;
   budget RAM per worker. The model downloads from Hugging Face on first load,
   so the container needs outbound access once (or a warmed cache).
 

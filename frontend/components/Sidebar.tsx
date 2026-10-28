@@ -173,7 +173,7 @@ function NavList({ items, pathname, collapsed, badges, layoutId, onNavigate }: N
             } ${
               active
                 ? "bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold"
-                : "text-ink/60 dark:text-slate-400 hover:bg-ink/[0.04] dark:hover:bg-white/5 hover:text-ink dark:hover:text-white"
+                : "text-ink/60 dark:text-slate-400 hover:bg-ink/4 dark:hover:bg-white/5 hover:text-ink dark:hover:text-white"
             }`}
           >
             {active && !collapsed && (
@@ -335,7 +335,7 @@ function MobileSidebar({
   return createPortal(
     <AnimatePresence>
       {open ? (
-        <div key="mobile-nav" className="fixed inset-0 z-[120] md:hidden">
+        <div key="mobile-nav" className="fixed inset-0 z-120 md:hidden">
           <m.div
             aria-hidden="true"
             className={overlayBackdrop}

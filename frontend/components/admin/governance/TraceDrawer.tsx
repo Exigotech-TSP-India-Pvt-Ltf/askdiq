@@ -93,7 +93,7 @@ function TraceBody({ detail }: { detail: GovernanceTraceDetail }) {
 
       {detail.query ? (
         <Section title="Query (redacted)">
-          <p className="whitespace-pre-wrap break-words rounded-lg border border-line bg-surface-muted p-3 text-sm text-fg">
+          <p className="whitespace-pre-wrap wrap-break-word rounded-lg border border-line bg-surface-muted p-3 text-sm text-fg">
             {detail.query}
           </p>
         </Section>

@@ -3,7 +3,7 @@
  *
  * - `app/globals.css` mirrors these values as CSS variables (`:root` for light,
  *   `.dark` for dark). `tests/lib/theme-tokens.test.ts` fails if they drift.
- * - `tailwind.config.ts` maps the variables to utility classes
+ * - the `@theme` block in `app/globals.css` maps the variables to utility classes
  *   (`bg-surface`, `text-fg-muted`, `border-line`, `text-status-danger-fg`,
  *   `bg-brand-600/20`, ...), so classes follow the theme without a `dark:` pair.
  * - Charts read `chartTheme` through `useChartTheme()` (lib/use-chart-theme.ts),

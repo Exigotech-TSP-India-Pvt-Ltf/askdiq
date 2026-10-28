@@ -14,4 +14,4 @@ export const accountPopoverPosition: Record<AccountPopoverPlacement, string> = {
 };
 
 /** Equal-sized bordered icon button of the sidebar account corner (matches ThemeToggle `sm`). */
-export const accountActionButton = `relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-ink/10 bg-surface-card text-fg-muted shadow-sm transition-colors hover:border-brand-500/40 hover:bg-brand-50/50 hover:text-fg dark:border-white/10 dark:bg-dark-surface dark:hover:bg-brand-950/40 dark:hover:text-white ${focusRing}`;
+export const accountActionButton = `relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-ink/10 bg-surface-card text-fg-muted shadow-xs transition-colors hover:border-brand-500/40 hover:bg-brand-50/50 hover:text-fg dark:border-white/10 dark:bg-dark-surface dark:hover:bg-brand-950/40 dark:hover:text-white ${focusRing}`;

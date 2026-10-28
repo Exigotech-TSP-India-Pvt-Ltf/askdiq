@@ -1073,7 +1073,7 @@ def("postgres", { name: "PostgreSQL + pgvector", kind: "store", status: "live", 
 /* ---- Containers and services ---- */
 def("api", { name: "askdiq-api", kind: "container", status: "live", sub: "FastAPI on uvicorn · :8000",
   desc: "The RAG backend. Serves the public /query contract, ingestion, and every dashboard route. Middleware order from the outside in: SecurityHeadersMiddleware, SSEAwareGZipMiddleware, LatencyMiddleware, CORS. On startup it runs init_db, sizes the thread pool, checks Azure OpenAI, preloads the ONNX reranker and starts the event bus and (if JOBS_WORKER_ENABLED) the job worker.",
-  tech: ["Python", "FastAPI", "uvicorn", "Pydantic v2 + pydantic-settings", "SQLAlchemy async", "fastembed (ONNX)"],
+  tech: ["Python", "FastAPI", "uvicorn", "Pydantic v2 + pydantic-settings", "SQLAlchemy async", "onnxruntime (cross-encoder)"],
   files: ["backend/main.py", "backend/app/api/routes/", "backend/app/core/config.py", "backend/app/core/middleware.py", "backend/app/core/security_headers.py", "backend/app/core/exceptions.py", "backend/Dockerfile.prod"],
   endpoints: ["POST /query", "/sessions", "POST /ingest, /ingest/file", "/documents", "/metrics/latency, /metrics/evaluation(/live)", "/governance/audit-log", "/admin/* (usage, governance, feedback, insights, entities, users-accounts, branding, models, alerts)", "GET /admin/live (SSE)", "/auth/*", "/branding", "GET /health"],
   env: ["ENV", "DATABASE_URL", "API_KEY_NAME", "TRUST_PROXY_HEADERS", "CORS_ALLOWED_ORIGINS", "ENABLE_API_DOCS=false", "WEB_CONCURRENCY", "JOBS_WORKER_ENABLED"],
@@ -1151,7 +1151,7 @@ def("p_vector", { name: "pgvector similarity", kind: "step", status: "live", ms:
   sec: { A05: "Filter keys allow-listed; values bound as parameters." },
   rel: ["postgres", "t_chunks", "p_rerank"] });
 def("p_rerank", { name: "ONNX rerank", kind: "step", status: "live", ms: 320, metric: "reranker_ms",
-  desc: "Cross-encoder rerank of the candidate pool with fastembed TextCrossEncoder (Xenova/ms-marco-MiniLM-L-6-v2, ONNX on CPU), preloaded at startup. It only changes the order and keeps the cosine score. A bounded semaphore caps parallel reranks; if the model cannot load, cosine order is used. In code this runs before the cross-document quota.",
+  desc: "Cross-encoder rerank of the candidate pool with the custom ONNX TextCrossEncoder (Xenova/ms-marco-MiniLM-L-6-v2, ONNX on CPU), preloaded at startup. It only changes the order and keeps the cosine score. A bounded semaphore caps parallel reranks; if the model cannot load, cosine order is used. In code this runs before the cross-document quota.",
   files: ["backend/app/retrieval/reranker.py"],
   env: ["ENABLE_RERANKER=true", "RERANKER_MODEL", "RERANK_MAX_CONCURRENCY=4", "RERANK_BATCH_SIZE=1"],
   rel: ["p_vector", "p_quota"] });

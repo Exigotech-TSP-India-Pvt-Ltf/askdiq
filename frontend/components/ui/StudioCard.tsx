@@ -318,7 +318,7 @@ export function StudioSegmented<T extends string>({
             aria-label={opt.ariaLabel}
             onClick={() => onChange(opt.id)}
             className={`relative rounded-lg font-semibold transition-colors duration-150 ${pad} ${focusRing} ${
-              on ? "text-white" : "text-fg-muted hover:bg-surface-card/70 hover:text-fg dark:hover:bg-white/[0.06]"
+              on ? "text-white" : "text-fg-muted hover:bg-surface-card/70 hover:text-fg dark:hover:bg-white/6"
             }`}
           >
             {on ? (

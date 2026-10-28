@@ -106,7 +106,7 @@ export function StatusTimeline({ hours, errorRates, requests, incidents, signal 
               ) : (
                 <span className="h-4 w-4" aria-hidden="true" />
               )}
-              <span title={label} aria-label={label} role="img" className={`h-8 w-full rounded-sm ${CELL[cell.state]}`} />
+              <span title={label} aria-label={label} role="img" className={`h-8 w-full rounded-xs ${CELL[cell.state]}`} />
             </li>
           );
         })}
@@ -122,7 +122,7 @@ export function StatusTimeline({ hours, errorRates, requests, incidents, signal 
       <ul className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fg-muted" aria-label="Legend">
         {LEGEND.map((l) => (
           <li key={l.state} className="flex items-center gap-1.5">
-            <span className={`h-2.5 w-2.5 rounded-sm ${CELL[l.state]}`} aria-hidden="true" />
+            <span className={`h-2.5 w-2.5 rounded-xs ${CELL[l.state]}`} aria-hidden="true" />
             {l.label}
           </li>
         ))}

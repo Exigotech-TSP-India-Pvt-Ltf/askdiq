@@ -25,7 +25,7 @@ const ICON_SIZE = 14;
 /** Icon-only message action: a 32 px touch target (28 px from `sm`), visible focus ring. */
 const actionButton = `inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:h-7 sm:w-7 ${focusRing}`;
 const actionIdle =
-  "text-slate-500 hover:bg-surface-muted hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-slate-200";
+  "text-slate-500 hover:bg-surface-muted hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/6 dark:hover:text-slate-200";
 
 function CopyIcon() {
   return (
@@ -361,7 +361,7 @@ export function MessageBubble({
             autoFocus={clarificationAutoFocus}
           />
         ) : (
-        <div data-tour="chat-answer" className="rounded-2xl rounded-tl-sm border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-sm">
+        <div data-tour="chat-answer" className="rounded-2xl rounded-tl-sm border border-slate-200/90 dark:border-dark-border bg-white dark:bg-dark-card px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-xs">
           {message.pending ? (
             <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400" role="status" aria-label="Thinking">
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 dark:bg-slate-500 [animation-delay:-0.3s]" />
@@ -376,7 +376,7 @@ export function MessageBubble({
                   type="button"
                   data-tour="chat-retry"
                   onClick={onRetry}
-                  className="rounded-md border border-line px-2 py-0.5 text-xs font-medium text-fg-muted transition hover:border-brand-300 hover:text-fg focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  className="rounded-md border border-line px-2 py-0.5 text-xs font-medium text-fg-muted transition hover:border-brand-300 hover:text-fg focus:outline-hidden focus:ring-1 focus:ring-brand-500"
                 >
                   Retry
                 </button>
@@ -518,20 +518,20 @@ export function MessageBubble({
                 rows={2}
                 maxLength={1000}
                 placeholder="Optional: Tell us what went well or what could be improved. Do not include personal information."
-                className="w-full resize-none rounded-lg border border-slate-200 dark:border-dark-border bg-slate-50/50 dark:bg-dark-surface p-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                className="w-full resize-none rounded-lg border border-slate-200 dark:border-dark-border bg-slate-50/50 dark:bg-dark-surface p-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-hidden focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
               />
               <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setCommentOpen(false)}
-                  className="rounded px-2.5 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  className="rounded-sm px-2.5 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingFeedback}
-                  className="rounded bg-brand-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-brand-700 disabled:opacity-50"
+                  className="rounded-sm bg-brand-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-brand-700 disabled:opacity-50"
                 >
                   {savingFeedback ? "Saving…" : "Save note"}
                 </button>

@@ -158,7 +158,7 @@ export function PreferenceDataTab({ token, canExport, days }: PreferenceDataTabP
               type="checkbox"
               checked={completeOnly}
               onChange={(e) => setCompleteOnly(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-line accent-brand-600"
+              className="h-3.5 w-3.5 rounded-sm border-line accent-brand-600"
             />
             Complete pairs only
           </label>

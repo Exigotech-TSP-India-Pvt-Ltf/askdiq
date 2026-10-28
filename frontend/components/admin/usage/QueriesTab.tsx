@@ -322,7 +322,7 @@ export function QueriesTab({
             e.stopPropagation();
             setInspectRequestId(r.request_id);
           }}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-200 shadow-xs hover:bg-slate-50 dark:hover:bg-white/5 transition"
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-50 dark:hover:bg-white/5 transition"
           aria-label={`Inspect query ${r.request_id}`}
         >
           <Eye className="w-3 h-3 text-brand-600 dark:text-brand-400" />
@@ -474,7 +474,7 @@ export function QueriesTab({
                   data-tour="usage-queries-export"
                   href={exportUrl}
                   download
-                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/5 transition"
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-xs hover:bg-slate-50 dark:hover:bg-white/5 transition"
                 >
                   <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                   <span>Export CSV</span>

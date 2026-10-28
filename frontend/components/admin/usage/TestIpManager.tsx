@@ -194,7 +194,7 @@ export function TestIpManager({
       role="dialog"
       aria-modal="true"
       aria-labelledby="test-ip-manager-title"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div

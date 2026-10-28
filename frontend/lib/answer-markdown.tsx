@@ -267,7 +267,7 @@ function renderTable(block: AnswerBlock & { type: "table" }, key: string, inline
       role="region"
       aria-label="Table"
       tabIndex={0}
-      className="max-w-full overflow-x-auto rounded-lg border border-line focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-500"
+      className="max-w-full overflow-x-auto rounded-lg border border-line focus:outline-hidden focus-visible:ring-1 focus-visible:ring-brand-500"
     >
       <table className="w-full min-w-max border-collapse text-left text-xs">
         <thead className="bg-slate-50 dark:bg-white/5">

@@ -67,7 +67,7 @@ export function OutcomePillBar({
         onClick={() => onSelectOutcome?.("all")}
         className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
           !selectedOutcome || selectedOutcome === "all"
-            ? "border-slate-800 bg-slate-800 text-white shadow-sm dark:border-brand-400 dark:bg-brand-600"
+            ? "border-slate-800 bg-slate-800 text-white shadow-xs dark:border-brand-400 dark:bg-brand-600"
             : "border-line bg-surface-card text-fg-muted hover:bg-surface-muted"
         }`}
       >
@@ -95,7 +95,7 @@ export function OutcomePillBar({
             onClick={() => onSelectOutcome?.(isSelected ? "all" : key)}
             className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
               isSelected
-                ? `${config.activeBorder} ${config.bg} ${config.text} font-bold shadow-sm`
+                ? `${config.activeBorder} ${config.bg} ${config.text} font-bold shadow-xs`
                 : `${config.bg} ${config.text} border-transparent hover:opacity-90`
             }`}
           >

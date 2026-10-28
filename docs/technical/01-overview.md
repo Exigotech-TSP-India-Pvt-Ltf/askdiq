@@ -224,7 +224,7 @@ Versions are the pinned values in the repo at `9115c45`.
 | Alembic | 1.13.2 | `backend/alembic/` |
 | pgvector (Python) | 0.3.4 | `Vector(EMBEDDING_DIM=1536)` |
 | openai | 3.19.0 | `AsyncAzureOpenAI` for chat and embeddings |
-| fastembed / onnxruntime | 0.8.1 / 1.30.0 | Cross-encoder `Xenova/ms-marco-MiniLM-L-6-v2` |
+| onnxruntime / tokenizers / huggingface_hub | 1.30.0 / 0.23.2 / 1.32.0 | Custom ONNX cross-encoder `Xenova/ms-marco-MiniLM-L-6-v2` |
 | tiktoken | 0.12.0 | Token estimates (`cl100k_base`) |
 | numpy | 2.5.3 | Groundedness cosine |
 | PyJWT[crypto] / cryptography | 2.15.1 / 50.0.1 | ID-token validation, mock IdP keys |
@@ -275,7 +275,7 @@ workflow (no browser E2E suite is run).
 | Content hash | SHA-based hash of canonical text (document) or chunk text; drives "unchanged" detection and incremental re-embedding. |
 | Embedding | 1536-float vector from `text-embedding-3-small`, stored in a pgvector column. |
 | Recall (candidate pool) | First retrieval step: cosine-distance search returning `max(top_k x RETRIEVAL_CANDIDATE_MULTIPLIER, RETRIEVAL_CANDIDATE_MIN)` candidates. |
-| Rerank | Reordering the candidate pool with a cross-encoder (`fastembed`); scores reported stay cosine similarity. |
+| Rerank | Reordering the candidate pool with the custom ONNX cross-encoder; scores reported stay cosine similarity. |
 | Cross-document quota | Final selection that gives up to `CROSS_DOC_QUOTA_MAX_DOCUMENTS=3` top documents a fair share of the `top_k` slots. |
 | Query decomposition | Rule-based split of a compound question into sub-queries, each embedded and searched separately, merged round-robin. |
 | Groundedness | Post-check: max cosine similarity between the answer embedding and source chunk embeddings, compared with `GROUNDEDNESS_THRESHOLD`. |

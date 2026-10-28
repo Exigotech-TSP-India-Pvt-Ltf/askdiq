@@ -28,7 +28,7 @@ export interface CursorPaginationProps {
 
 
 const navButton =
-  "inline-flex items-center gap-1 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500";
+  "inline-flex items-center gap-1 rounded-lg border border-line bg-surface-card px-2.5 py-1.5 text-xs font-medium text-fg transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500";
 
 /**
  * Footer for cursor-paginated endpoints (logs, traces, events): there is no
@@ -56,7 +56,7 @@ export function CursorPagination({
   return (
     <nav
       aria-label="Cursor pagination"
-      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-studio/50 dark:bg-white/[0.02] px-4 py-3 sm:px-5 ${className}`}
+      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-studio/50 dark:bg-white/2 px-4 py-3 sm:px-5 ${className}`}
     >
       {/* VA-35: on phones only "x–y of N" and the buttons (no "Rows per page" / "Page n of m"). */}
       <p className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-subtle" aria-live="polite">
@@ -84,7 +84,7 @@ export function CursorPagination({
               id="cursor-page-size"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
-              className="rounded-md border border-line bg-surface-card px-2 py-1 text-xs font-medium text-fg focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="rounded-md border border-line bg-surface-card px-2 py-1 text-xs font-medium text-fg focus:border-brand-500 focus:outline-hidden focus:ring-1 focus:ring-brand-500"
             >
               {ALLOWED_PAGE_SIZES.map((sz) => (
                 <option key={sz} value={sz} className="bg-surface-elevated text-fg">
