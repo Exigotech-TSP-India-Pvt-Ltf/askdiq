@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import re
 
+from app.guardrails.post_checks import citation_stems
+
 _MAX_CHARS = 20_000
 _MARKER_RE = re.compile(r"\[\d{1,2}\]")
 _TERMINATORS = frozenset(".!?")
@@ -373,8 +375,235 @@ def strip_source_references(text: str) -> str:
     return "".join(out)
 
 
-def clean_declines(answer: str, query: str) -> tuple[str, bool]:
-    """(cleaned answer, is_pure_decline). A pure decline carries no markers."""
+_SUPPORT_THRESHOLD = 0.6
+_MAX_TAIL_LINES = 2000
+_LIST_START_RE = re.compile(r"^\s{0,8}(?:[-*•]|\d{1,2}[.)])\s+")
+_INLINE_NUM_RE = re.compile(r"(?<=\s)(\d{1,2})[.)]\s+")
+_FIGURE_RE = re.compile(r"\d+(?:[.,]\d+)*")
+_IMPERATIVE_STARTS = frozenset(
+    [
+        "ask",
+        "contact",
+        "submit",
+        "fill",
+        "request",
+        "book",
+        "schedule",
+        "create",
+        "configure",
+        "enable",
+        "set",
+        "open",
+        "go",
+        "click",
+        "navigate",
+        "select",
+        "choose",
+        "install",
+        "download",
+        "start",
+        "begin",
+        "first",
+        "then",
+        "next",
+        "finally",
+        "ensure",
+        "make",
+        "send",
+        "email",
+        "call",
+        "visit",
+        "use",
+        "add",
+        "define",
+        "review",
+        "follow",
+        "check",
+        "log",
+        "sign",
+        "register",
+        "upload",
+        "run",
+        "apply",
+        "deploy",
+        "complete",
+        "provide",
+    ]
+)
+
+
+class _Piece:
+    """A list item or a run of free text inside the text that follows a decline."""
+
+    __slots__ = ("is_item", "orig", "removed", "text")
+
+    def __init__(self, text: str, *, is_item: bool) -> None:
+        self.text = self.orig = text
+        self.is_item = is_item
+        self.removed = False
+
+
+def _source_stems(sources_text: str) -> frozenset[str]:
+    stems: set[str] = set()
+    for start in range(0, len(sources_text), _MAX_CHARS):
+        stems |= citation_stems(sources_text[start : start + _MAX_CHARS])
+    return frozenset(stems)
+
+
+class _Support:
+    """Is an item backed by the retrieved sources (or a specialist hand-off)?"""
+
+    def __init__(self, sources_text: str, query: str) -> None:
+        self._text = sources_text.replace(",", "")
+        self._stems = _source_stems(sources_text)
+        self._query_stems = citation_stems(query[:_MAX_CHARS])
+
+    def __call__(self, plain: str) -> bool:
+        if is_decline_sentence(plain) or "specialist" in _norm(plain):
+            return True
+        stems = citation_stems(plain)
+        if not stems or not stems - self._query_stems:
+            return False  # nothing to check, or it only echoes the question
+        if any(f.replace(",", "") not in self._text for f in _FIGURE_RE.findall(plain)):
+            return False
+        return len(stems & self._stems) / len(stems) >= _SUPPORT_THRESHOLD
+
+
+def _split_line(line: str) -> list[_Piece]:
+    """Pieces of one line; an inline "1. a 2. b" list is split into items."""
+    cuts: list[int] = []
+    expected = 1
+    start = 0
+    head = _LIST_START_RE.match(line)
+    if head is not None:
+        cuts.append(0)
+        start = head.end()
+        digits = "".join(c for c in head.group(0) if c.isdigit())
+        expected = int(digits) + 1 if digits else 1
+    for m in _INLINE_NUM_RE.finditer(line, start):
+        if int(m.group(1)) == expected:
+            cuts.append(m.start())
+            expected += 1
+    if not cuts:
+        return [_Piece(line, is_item=False)]
+    pieces: list[_Piece] = []
+    if cuts[0] > 0 and line[: cuts[0]].strip():
+        pieces.append(_Piece(line[: cuts[0]], is_item=False))
+    bounds = [*cuts, len(line)]
+    pieces.extend(
+        _Piece(line[a:b].strip(), is_item=True)
+        for a, b in zip(bounds, bounds[1:], strict=False)
+    )
+    return pieces
+
+
+def _item_body(piece: str) -> str:
+    head = _LIST_START_RE.match(piece)
+    if head is None:
+        head = _INLINE_NUM_RE.match(piece)
+    return _plain(piece[head.end() :] if head else piece)
+
+
+def _is_instruction(sentence: str) -> bool:
+    words = _plain(sentence).split()
+    return bool(words) and words[0].lower().strip(",:") in _IMPERATIVE_STARTS
+
+
+def _filter_free(text: str, supported: _Support) -> str | None:
+    """``text`` without unsupported instruction sentences; None when unchanged."""
+    out: list[str] = []
+    changed = False
+    last = 0
+    for a, b in _sentence_spans(text):
+        sentence = text[a:b]
+        if _is_instruction(sentence) and not supported(_plain(sentence)):
+            changed = True
+            out.append(text[last:a].rstrip(" \t") if last == 0 else "")
+        else:
+            out.append(text[last:b])
+        last = b
+    if not changed:
+        return None
+    out.append(text[last:])
+    return "".join(out)
+
+
+def _mark_removed(pieces: list[_Piece], supported: _Support) -> bool:
+    changed = False
+    for piece in pieces:
+        if piece.is_item:
+            piece.removed = not supported(_item_body(piece.text))
+        else:
+            new = _filter_free(piece.text, supported)
+            if new is not None:
+                piece.text, piece.removed = new, not new.strip()
+                changed = True
+        changed = changed or piece.removed
+    return changed
+
+
+def _drop_orphan_lead_ins(pieces: list[_Piece]) -> None:
+    """A "Here is how:" lead-in whose whole list was removed goes too."""
+    for i in range(len(pieces) - 1):
+        piece, nxt = pieces[i], pieces[i + 1]
+        if (
+            not piece.is_item
+            and not piece.removed
+            and nxt.is_item
+            and nxt.removed
+            and piece.text.rstrip().endswith(":")
+            and len(_sentence_spans(piece.text)) == 1
+        ):
+            piece.removed = True
+
+
+def strip_invented_after_decline(answer: str, sources_text: str, query: str) -> str:
+    """Drop steps / instructions after a decline that the sources do not support.
+
+    After "I can't see that detail" only nothing, or the specialist hand-off, may
+    follow. Each numbered / bulleted item or instruction that follows is kept only
+    when >= 60% of its content words (and every figure) occur in the sources.
+    """
+    text = answer[:_MAX_CHARS]
+    decline_end = -1
+    for (a, b), decline in _classified(text):
+        if decline and _says_not_covered(text[a:b]):
+            decline_end = b
+            break
+    if decline_end < 0:
+        return answer
+    supported = _Support(sources_text, query)
+    lines = text[decline_end:].split("\n")
+    if len(lines) > _MAX_TAIL_LINES:
+        return answer
+    per_line = [_split_line(line) if line.strip() else [] for line in lines]
+    flat = [p for pieces in per_line for p in pieces]
+    if not _mark_removed(flat, supported):
+        return answer
+    _drop_orphan_lead_ins(flat)
+    out: list[str] = [text[:decline_end]]
+    for i, (line, pieces) in enumerate(zip(lines, per_line, strict=True)):
+        kept = [p.text.strip() for p in pieces if not p.removed]
+        if all(not p.removed and p.text == p.orig for p in pieces):
+            body = line
+        elif kept:
+            body = " ".join(kept)
+            body = f" {body}" if i == 0 else body
+        else:
+            continue
+        out.append("\n" + body if i else body)
+    return "".join(out).rstrip()
+
+
+def clean_declines(
+    answer: str, query: str, sources_text: str | None = None
+) -> tuple[str, bool]:
+    """(cleaned answer, is_pure_decline). A pure decline carries no markers.
+
+    ``sources_text`` (the retrieved chunks) enables dropping steps invented after a decline.
+    """
+    if sources_text is not None:
+        answer = strip_invented_after_decline(answer, sources_text, query)
     text = strip_source_references(drop_leading_irrelevant(answer, query))
     if is_decline_only(text):
         return strip_all_markers(text).strip(), True
