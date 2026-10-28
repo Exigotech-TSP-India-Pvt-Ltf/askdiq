@@ -227,6 +227,14 @@ def _within_support(match: re.Match[str], _answer: str, sources: _Sources) -> bo
     return pattern.search(sources.text) is not None
 
 
+def _units_contrast_support(
+    match: re.Match[str], _answer: str, sources: _Sources
+) -> bool:
+    """`days, not months` is supported by the same contrast, comma or not."""
+    wanted = re.sub(r"[^a-z]+", " ", match.group(0).lower()).strip().removeprefix("in ")
+    return wanted in re.sub(r"[^a-z]+", " ", sources.text)
+
+
 def _topic_stems(text: str) -> set[str]:
     words = _ANY_WORD_RE.findall(text.lower())
     skip = _STOPWORDS | _FREE_GENERIC | _SHORT_STOPWORDS
@@ -273,7 +281,11 @@ _CLAIM_RULES: tuple[tuple[str, _Support | None], ...] = (
     ),
     (_ROI, _regex_support(_ROI)),
     (_WITHIN, _within_support),
-    (rf"\b(?:in\s+)?{_UNITS}\s+(?:not|instead\s+of|rather\s+than)\s+{_UNITS}\b", None),
+    (
+        rf"\b(?:in\s+)?{_UNITS}\s{{0,3}},?\s{{0,3}}(?:not|instead\s+of|rather\s+than)"
+        rf"\s+(?:{_UNITS}|months?|years?)\b",
+        _units_contrast_support,
+    ),
     (_SLA, _regex_support(_SLA)),
     (r"\buptime\b", _regex_support(r"\buptime\b")),
     (
@@ -392,33 +404,90 @@ def is_off_topic_by_overlap(
 # ---------------------------------------------------------------------------
 _MAX_CLAIMS = 12
 _MIN_CLAIM_WORDS = 3
+# Claim similarity may sit slightly under the whole-answer threshold: a short
+# bullet is compared against a much longer chunk.
+_CLAIM_THRESHOLD_MARGIN = 0.05
+_LEXICAL_SUPPORT_RATIO = 0.8
+_MIN_LEXICAL_STEMS = 3
+_HEADING_RE = re.compile(r"^\s{0,8}#{1,6}\s")
+_EMPHASIS_RE = re.compile(r"\*{1,3}|_{2}|`")
+_CITATION_RE = re.compile(r"\[\s{0,3}\d{1,3}\s{0,3}\]")
+_DECLINE_CLAIM_MAX_WORDS = 30
+
+
+def _is_decline_claim(text: str) -> bool:
+    """A decline / handoff sentence asserts nothing the sources must support."""
+    if len(text.split()) > _DECLINE_CLAIM_MAX_WORDS or _ASSERTION_RE.search(text):
+        return False
+    return bool(
+        _NEGATIVE_ANSWER_RE.search(text)
+        or _DECLINE_PHRASE_RE.search(text)
+        or _HANDOFF_RE.search(text)
+    )
 
 
 def split_claims(answer: str) -> list[str]:
-    """Sentences / bullets of `answer` (>= 3 words each), capped at 12."""
+    """Factual sentences / bullets of `answer` (>= 3 words each), capped at 12.
+
+    Headings, bare label lines, citation markers and decline / handoff
+    sentences are not claims: they cannot (and need not) match a chunk.
+    """
     claims: list[str] = []
     for part in _SENTENCE_SPLIT_RE.split(answer[:_MAX_ANALYSED_CHARS]):
-        text = _BULLET_PREFIX_RE.sub("", part).strip()
-        if len(text.split()) >= _MIN_CLAIM_WORDS:
+        if _HEADING_RE.match(part):
+            continue
+        text = _CITATION_RE.sub("", _EMPHASIS_RE.sub("", part))
+        text = " ".join(_BULLET_PREFIX_RE.sub("", text).split())
+        if (
+            len(text.split()) >= _MIN_CLAIM_WORDS
+            and not text.endswith(":")
+            and not _is_decline_claim(text)
+        ):
             claims.append(text)
         if len(claims) >= _MAX_CLAIMS:
             break
     return claims
 
 
+def _content_stems(text: str) -> set[str]:
+    words = _ANY_WORD_RE.findall(text.lower())
+    return {_canon(w) for w in words if w not in _STOPWORDS | _SHORT_STOPWORDS}
+
+
+def _lexically_supported(claim: str, source_stems: set[str]) -> bool:
+    """Nearly every content word of `claim` occurs in the sources (a quote)."""
+    stems = _content_stems(claim)
+    if len(stems) < _MIN_LEXICAL_STEMS:
+        return False
+    return len(stems & source_stems) / len(stems) >= _LEXICAL_SUPPORT_RATIO
+
+
 def supported_claim_ratio(
     claim_embeddings: list[list[float]],
     source_embeddings: list[list[float]],
     threshold: float,
+    claims: list[str] | None = None,
+    source_text: str = "",
 ) -> float:
-    """Share of claims whose best-matching chunk reaches `threshold`."""
+    """Share of claims whose best chunk reaches `threshold`.
+
+    When the claim texts and `source_text` are given, a claim that largely
+    quotes the sources (lexical coverage) also counts as supported.
+    """
     if not claim_embeddings or not source_embeddings:
         return 0.0
     sources = np.asarray(source_embeddings, dtype=np.float64)
+    texts = claims or []
+    source_stems = _content_stems(source_text) if texts and source_text else set()
     supported = 0
-    for claim in claim_embeddings:
+    for index, claim in enumerate(claim_embeddings):
         best = float(_cosine_similarities(claim, sources.tolist()).max())
-        supported += best >= threshold
+        quoted = (
+            bool(source_stems)
+            and index < len(texts)
+            and _lexically_supported(texts[index], source_stems)
+        )
+        supported += best >= threshold or quoted
     return supported / len(claim_embeddings)
 
 
@@ -530,7 +599,13 @@ async def check_groundedness(
     confidence = float(similarities.max()) if similarities.size else 0.0
     supported = confidence >= threshold and (
         not check_claims
-        or supported_claim_ratio(claim_embeddings, source_embeddings, threshold)
+        or supported_claim_ratio(
+            claim_embeddings,
+            source_embeddings,
+            max(threshold - _CLAIM_THRESHOLD_MARGIN, 0.0),
+            claims,
+            " ".join(source.content for source in sources),
+        )
         >= min_supported_ratio
     )
 

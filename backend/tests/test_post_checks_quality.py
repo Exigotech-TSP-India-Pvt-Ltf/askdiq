@@ -403,3 +403,129 @@ def test_apply_citations_strips_free_brackets_and_drops_out_of_range():
     answer, citations = apply_citations("It works [note] well [1][9].", sources)
     assert answer == "It works note well [1]."
     assert [c.n for c in citations] == [1]
+
+
+# --- regression: correct, supported answers must not be rejected -------
+
+_WHO_FOR_DOC = (
+    "Section: Who DeployIQ Platform Is For\n\n"
+    "DeployIQ is designed for organisations that need structured, predictable, "
+    "and accountable security uplift, including:\n\n"
+    "- Small and mid-sized businesses strengthening foundational security.\n\n"
+    "- Startups building secure, scalable environments.\n\n"
+    "- Organisations moving from reactive to governed security practices."
+)
+_E8_DOC = (
+    "A structured, phased implementation of the ACSC Essential Eight delivered "
+    "in days, not months, using AI-enabled capability with explicit human "
+    "oversight. The full process—from assessment to audit-ready deployment"
+    "—is achieved in days, not months."
+)
+
+
+@pytest.mark.parametrize(
+    ("answer", "doc"),
+    [
+        (
+            "We deliver the Essential Eight in days, not months. [1]",
+            _E8_DOC,
+        ),
+        (
+            "The full process is achieved in days not months.",
+            _E8_DOC,
+        ),
+        (
+            "DeployIQ is designed for small and mid-sized businesses and startups.",
+            _WHO_FOR_DOC,
+        ),
+    ],
+)
+def test_supported_phrasing_passes_claim_guard(answer, doc):
+    assert unsupported_claims(answer, doc) == []
+    assert _unsupported_figures(answer, doc) == []
+
+
+def test_unsupported_assurances_still_flagged():
+    doc = _WHO_FOR_DOC
+    assert unsupported_claims("DeployIQ is safe to purchase.", doc) != []
+    assert unsupported_claims("Results are guaranteed.", doc) != []
+    assert unsupported_claims("DeployIQ is certified.", doc) != []
+    assert unsupported_claims("Done in days, not months.", doc) != []
+
+
+def test_split_claims_skips_headings_labels_citations_and_declines():
+    claims = split_claims(
+        "We implement the Essential Eight in days. [1]\n\n"
+        "## Key points\n"
+        "- **Speed:**\n"
+        "- **Scope:** Startups building secure environments. [2]\n\n"
+        "We don't have details on exact timelines here; talk to one of our "
+        "specialists."
+    )
+    assert claims == [
+        "We implement the Essential Eight in days.",
+        "Scope: Startups building secure environments.",
+    ]
+
+
+def test_quoted_bullets_count_as_supported_without_embedding_match():
+    claims = split_claims(
+        "- Startups building secure, scalable environments.\n"
+        "- Small and mid-sized businesses strengthening foundational security."
+    )
+    orthogonal = [[0.0, 1.0] for _ in claims]
+    source = [[1.0, 0.0]]
+    assert supported_claim_ratio(orthogonal, source, 0.4) == 0.0
+    assert supported_claim_ratio(orthogonal, source, 0.4, claims, _WHO_FOR_DOC) == 1.0
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # (a) who is DeployIQ for: bullets + handoff line + citation markers
+        "DeployIQ is designed for organisations that need structured, predictable "
+        "security uplift.\n\n## Who it is for\n"
+        "- **Small and mid-sized businesses:** strengthening foundational security. [1]\n"
+        "- **Startups:** building secure, scalable environments. [1]\n\n"
+        "We don't have details on specific industries here; talk to one of our "
+        "specialists.",
+        # (b) speed follow-up
+        "We implement the ACSC Essential Eight in days, not months, with human "
+        "oversight. [1]\n\n## Speed and delivery\n"
+        "- The full process from assessment to audit-ready deployment takes days, "
+        "not months. [2]\n\n"
+        "We don't have details on exact timelines per organisation here; talk to "
+        "one of our specialists.",
+        "DeployIQ is designed for startups building secure, scalable environments.",
+        "Small and mid-sized businesses strengthening foundational security.",
+        "Organisations moving from reactive to governed security practices.",
+        "- Startups building secure, scalable environments.\n"
+        "- Organisations moving from reactive to governed security practices.",
+        "DeployIQ delivers a phased Essential Eight implementation in days, not "
+        "months.",
+        "Essential Eight is delivered in days, not months, using AI-enabled "
+        "capability with explicit human oversight.",
+    ],
+)
+async def test_typical_supported_answers_are_grounded(monkeypatch, answer):
+    # Decline/handoff lines and headings embed far from the chunk; every real
+    # claim embeds close to it.
+    async def _fake_embed(texts):
+        return [
+            [0.0, 1.0]
+            if t.startswith(("We don't", "Key", "Who it", "Speed"))
+            else [1.0, 0.0]
+            for t in texts
+        ]
+
+    monkeypatch.setattr(post_checks, "embed_texts", _fake_embed)
+    source = SourceChunk(
+        chunk_id="00000000-0000-0000-0000-000000000001",
+        document_id="00000000-0000-0000-0000-000000000002",
+        content=_WHO_FOR_DOC + "\n\n" + _E8_DOC,
+        score=0.8,
+        metadata={},
+        embedding=[1.0, 0.0],
+    )
+    grounded, _c, flag = await check_groundedness(answer, [source], 0.45)
+    assert (grounded, flag) == (True, None)

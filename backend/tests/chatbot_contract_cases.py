@@ -254,7 +254,7 @@ SETTINGS_CONTRACT: tuple[tuple[str, str, object, bool], ...] = (
     (
         "groundedness_min_supported_ratio",
         "GROUNDEDNESS_MIN_SUPPORTED_RATIO",
-        0.6,
+        0.5,
         False,
     ),
     ("offtopic_overlap_max_score", "OFFTOPIC_OVERLAP_MAX_SCORE", 0.30, False),
