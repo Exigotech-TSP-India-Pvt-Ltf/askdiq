@@ -50,10 +50,7 @@ from app.schemas.query import (
 
 CLARIFY_OUTCOME = "clarify"
 DEFAULT_HEADER = "Topic"
-REPLY_HINT = (
-    "Reply with the option you want (its name, or its number when there is one "
-    "question), or tell me more about what you're looking for."
-)
+REPLY_HINT = "Pick one, or tell me a bit more."
 
 _MAX_HEADER_CHARS = 12
 _MAX_LABEL_CHARS = 60

@@ -72,7 +72,6 @@ class GuardrailBlockedError(Exception):
 
 
 _UNSAFE_FLAG = "unsafe_input_detected"
-_SPECIALIST_STEP = "talk to one of our specialists"
 
 
 def _fallback_answer(flags: list[str], brand: str) -> str:
@@ -86,49 +85,46 @@ def _fallback_answer(flags: list[str], brand: str) -> str:
     flagged = set(flags)
     if _UNSAFE_FLAG in flagged:
         return (
-            "I can't help with that one, but I'm happy to answer questions about "
-            f"{brand}'s security platform and compliance. For anything else, "
-            f"{_SPECIALIST_STEP}."
+            "I can't help with that, sorry. I'm glad to answer questions about our "
+            "security services, and our specialists can help with anything else."
         )
     if flagged & {"no_permission", "application_secret_request"}:
         return (
-            "For security reasons I can't share credentials or other customers' "
-            "information. One of our specialists can help with access."
+            "I can't share credentials or other customers' details. A specialist "
+            "can sort out access with you."
         )
     if "personal_contact_request" in flagged:
         return (
-            "I can't share individual contact details, but one of our specialists "
-            "will be glad to help."
+            "I can't pass on individual contact details, but one of our "
+            "specialists can get you to the right person."
         )
     if "spam_detected" in flagged:
-        return "Sorry, I didn't catch that. Could you rephrase your question?"
-    if "unclear_input" in flagged:
         return (
-            "Could you add a little more detail so I can point you in the right "
-            "direction?"
+            "That didn't come through clearly. Try asking in a sentence, for "
+            "example about Zero Trust or Essential Eight."
         )
+    if "unclear_input" in flagged:
+        return "I'm not quite sure what you're after. Could you say a bit more?"
     if "query_too_long" in flagged:
         return "That's a bit long for me. Could you shorten it to a sentence or two?"
     if "empty_query" in flagged:
         return "Please type a question and I'll do my best to help."
     if flagged & {"off_topic", "no_sources"}:
         return (
-            "That's a bit outside what I can help with here. I can answer "
-            f"questions about {brand}, Zero Trust, Essential Eight, Responsible AI "
-            "and data handling, and our specialists are happy to help with anything "
-            "else."
+            "That one's outside what I can help with. I'm here for "
+            f"{brand}, Zero Trust, Essential Eight and how we handle data. "
+            "Anything else, one of our specialists is happy to chat."
         )
     if flagged & {"llm_call_failed", "empty_llm_output"}:
         return (
-            "Sorry, something went wrong on our side. Please try again in a "
-            f"moment, or {_SPECIALIST_STEP} if it keeps happening."
+            "Sorry, I hit a snag. Please try again in a moment. If it keeps "
+            "happening, one of our specialists can help."
         )
     # Ungrounded answers (low retrieval confidence, possible hallucination,
     # unsupported figures): the question was fine, the evidence was not.
     return (
-        "I want to give you an accurate answer and I'm not certain on this one. "
-        "Could you tell me a bit more about what you're after? Or "
-        f"{_SPECIALIST_STEP}."
+        "I don't want to guess on that one. Can you tell me a bit more about "
+        "what you need? Or one of our specialists can give you a straight answer."
     )
 
 

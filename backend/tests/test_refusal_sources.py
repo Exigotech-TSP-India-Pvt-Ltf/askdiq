@@ -125,9 +125,10 @@ async def test_llm_failure_returns_no_sources(monkeypatch) -> None:
 def test_spam_unclear_unsafe_are_short_fixed_texts(flag: str) -> None:
     answer = _fallback_response(request_id="r", flags=[flag], latency_ms=1.0).answer
     assert len(answer) < 190
-    lowered = answer.lower()
-    assert "zero trust" not in lowered
-    assert "essential eight" not in lowered
+    if flag != "spam_detected":  # the spam reply gives an example topic
+        lowered = answer.lower()
+        assert "zero trust" not in lowered
+        assert "essential eight" not in lowered
 
 
 @pytest.mark.parametrize(
