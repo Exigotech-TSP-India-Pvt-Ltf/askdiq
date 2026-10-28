@@ -469,16 +469,19 @@ async def test_cost_and_time_message_asks_once(monkeypatch) -> None:
 
 
 def test_framework_options_come_from_the_whole_catalogue() -> None:
-    # Only a Zero Trust document was retrieved: the others still appear.
+    # Only a Zero Trust document was retrieved: the fixed priority order still
+    # applies (Zero Trust is 4th, so it is cut), and nothing is invented.
     only_zt = [_chunk("doc-zt", "zero-trust-learn-more.md", 0.5, "Zero Trust")]
     options = framework_options(only_zt)
     labels = [o.label for o in options]
-    assert labels[0] == "Zero Trust"
+    assert labels[0] == "Essential Eight"
     assert labels[-1] == NOT_SURE_LABEL
-    assert set(labels[1:-1]) <= set(ambiguity.offering_labels())
+    assert set(labels[:-1]) <= set(ambiguity.offering_labels())
     assert len(options) <= settings.clarify_max_options
-    assert options[0].document_ids == ["doc-zt"]
     assert options[-1].document_ids == []
+    named = framework_options(only_zt, "zero trust audit")
+    assert named[0].label == "Zero Trust"
+    assert named[0].document_ids == ["doc-zt"]
 
 
 def test_not_sure_is_always_the_last_option() -> None:
@@ -564,3 +567,115 @@ def test_real_partial_coverage_is_still_detected() -> None:
 )
 def test_strip_answers(query: str, expected: str) -> None:
     assert strip_answers(query) == expected
+
+
+# ---------------------------------------------------------------------------
+# Live findings: deterministic framework options, generic slot options
+# ---------------------------------------------------------------------------
+
+_FRAMEWORK_ORDER = ["Essential Eight", "ISO 27001", "CIS Benchmark"]
+_RETRIEVAL_SHUFFLES = [
+    [
+        ("Zero Trust.pdf", 0.9),
+        ("Security Baseline.pdf", 0.8),
+        ("Essential Eight.pdf", 0.7),
+    ],
+    [("Security Baseline.pdf", 0.9), ("Zero Trust.pdf", 0.8)],
+    [("CIS Benchmark.pdf", 0.9), ("Zero Trust.pdf", 0.8), ("ISO 27001.pdf", 0.1)],
+    [],
+]
+
+
+def _retrieved(spec: list[tuple[str, float]]) -> list[SourceChunk]:
+    return [
+        _chunk(f"d{i}", name, score, "maturity weeks gap")
+        for i, (name, score) in enumerate(spec)
+    ]
+
+
+@pytest.mark.parametrize("spec", _RETRIEVAL_SHUFFLES)
+def test_framework_options_ignore_retrieval_order_and_include_iso(spec) -> None:
+    labels = [o.label for o in framework_options(_retrieved(spec))]
+    assert labels == [*_FRAMEWORK_ORDER, NOT_SURE_LABEL]
+
+
+def test_framework_options_lead_with_what_the_query_implies() -> None:
+    labels = [
+        o.label
+        for o in framework_options(
+            _retrieved(_RETRIEVAL_SHUFFLES[0]), "we want certification"
+        )
+    ]
+    assert labels[0] == "ISO 27001"
+    assert labels[-1] == NOT_SURE_LABEL
+    assert len(labels) == get_settings().clarify_max_options
+
+
+def test_framework_options_include_a_named_zero_trust_even_past_the_cut() -> None:
+    labels = [o.label for o in framework_options([], "we never trust any device")]
+    assert labels[0] == "Zero Trust"
+    assert "Essential Eight" in labels
+
+
+def test_series_always_has_four_questions_with_generic_slot_options() -> None:
+    # Retrieved text mentions none of the slot evidence: options still stand.
+    sources = [_chunk("d1", "Zero Trust.pdf", 0.9, "unrelated prose")]
+    query = "we need compliance asap"
+    result = assess(query, None)
+    clar = slot_clarification(query, result.missing_slots, sources)
+    assert clar is not None
+    assert [q.header for q in clar.questions] == [
+        "Framework",
+        "Maturity",
+        "Deadline",
+        "Environment",
+    ]
+    assert all(len(q.options) >= 3 for q in clar.questions)  # noqa: PLR2004
+    assert len(clar.questions) <= get_settings().clarify_max_questions
+
+
+def test_environment_is_skipped_only_when_the_query_names_it() -> None:
+    sources = [_chunk("d1", "Zero Trust.pdf", 0.9, "unrelated prose")]
+    query = "what do we need to do for compliance in our Microsoft 365 tenant"
+    result = assess(query, None)
+    assert result.kind is AmbiguityKind.SLOTS
+    assert result.missing_slots == ("framework", "maturity")
+    clar = slot_clarification(query, result.missing_slots, sources)
+    assert clar is not None
+    assert [q.header for q in clar.questions] == ["Framework", "Maturity"]
+    bare = assess("what do we need to do for compliance", None)
+    assert "environment" in bare.missing_slots
+
+
+def test_a_named_platform_is_not_a_named_framework() -> None:
+    result = assess("how do we get compliant on your platform", None)
+    assert result.kind is AmbiguityKind.SLOTS
+    assert "framework" in result.missing_slots
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "is that product safe to purchase?",
+        "Is this service safe to buy",
+        "is it worth it",
+    ],
+)
+def test_purchase_trust_questions_are_answered_with_or_without_history(query) -> None:
+    named = [
+        ChatTurn(role="user", content="tell me about E8"),
+        _answered("Essential Eight is..."),
+    ]
+    unnamed = [ChatTurn(role="user", content="hi there"), _answered("Welcome")]
+    for history in (None, named, unnamed):
+        assert assess(query, history).kind is AmbiguityKind.NONE
+        assert not clarify_eligible(query, history, follow_up=False)
+
+
+def test_how_does_it_work_without_history_is_answered() -> None:
+    assert assess("how does it work", None).kind is AmbiguityKind.NONE
+    assert not clarify_eligible("how does it work", None, follow_up=False)
+
+
+def test_price_questions_still_get_the_service_card() -> None:
+    assert assess("how much does it cost?", None).kind is AmbiguityKind.REFERENT
