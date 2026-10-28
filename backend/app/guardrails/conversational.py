@@ -5,6 +5,7 @@ retrieval + the LLM would either waste a call or get rejected as off-topic.
 Handled here with canned, deterministic replies instead.
 """
 
+import hashlib
 import re
 
 from app.core.config import get_settings
@@ -38,7 +39,9 @@ _THANKS_RE = re.compile(
 )
 
 _FAREWELL_RE = re.compile(
-    r"^\s*(bye|goodbye|see\s*you|see\s*ya|later)[\s!.,]*$",
+    r"^\s{0,3}(?:bye(?:\s{0,2}bye)?|goodbye|see\s{0,2}you(?:\s{1,3}(?:later|soon))?|"
+    r"see\s{0,2}ya|later|cya|catch\s{1,3}you\s{1,3}later|good\s{0,2}night|"
+    r"take\s{1,3}care)[\s!.,]{0,6}$",
     re.IGNORECASE,
 )
 
@@ -54,31 +57,80 @@ _CAPABILITY_RE = re.compile(
 )
 
 
-def get_greeting_response() -> str:
+_GREETING_VARIANTS: tuple[str, ...] = (
+    "Hi, I'm the {brand} assistant. Ask me about our services, Zero Trust or "
+    "Essential Eight.",
+    "Hello! Happy to help with questions about {brand}, Zero Trust or Essential Eight.",
+    "Hi there. What would you like to know about {brand}?",
+)
+
+_THANKS_VARIANTS: tuple[str, ...] = (
+    "No worries. Ask away if anything else comes up.",
+    "Happy to help.",
+    "Anytime. Just ask if you think of anything else.",
+)
+
+_FAREWELL_VARIANTS: tuple[str, ...] = (
+    "Thanks for stopping by. Have a good one.",
+    "Take care. Talk soon.",
+    "Cheers, have a great day.",
+)
+
+_CAPABILITY_VARIANTS: tuple[str, ...] = (
+    "I can explain our services, Essential Eight, Zero Trust and how we "
+    "handle your data.",
+    "Ask me about what {brand} does, how Essential Eight and Zero Trust work, "
+    "or how we look after data.",
+    "I can walk you through our services and the security frameworks we work with.",
+)
+
+
+def _variant_index(query: str, count: int) -> int:
+    """Stable (process-independent) variant choice for ``query``."""
+    digest = hashlib.sha256(query.strip().lower().encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % count
+
+
+def _render(variants: tuple[str, ...], query: str) -> str:
+    template = variants[_variant_index(query, len(variants))]
+    return template.format(brand=get_settings().brand_name)
+
+
+def _render_all(variants: tuple[str, ...]) -> tuple[str, ...]:
     brand = get_settings().brand_name
-    return (
-        f"Hello! I'm the {brand} assistant. Ask me anything about {brand}'s "
-        "platform, Essential Eight, Zero Trust, governance."
-    )
+    return tuple(v.format(brand=brand) for v in variants)
 
 
-def get_thanks_response() -> str:
-    brand = get_settings().brand_name
-    return f"You're welcome! Glad I could help with {brand}."
+def get_greeting_response(query: str = "") -> str:
+    return _render(_GREETING_VARIANTS, query)
 
 
-def get_farewell_response() -> str:
-    brand = get_settings().brand_name
-    return f"Goodbye, and thanks for stopping by {brand}. Take care!"
+def get_thanks_response(query: str = "") -> str:
+    return _render(_THANKS_VARIANTS, query)
 
 
-def get_capability_response() -> str:
-    brand = get_settings().brand_name
-    return (
-        f"I can answer questions about {brand} — its platform, Essential Eight "
-        "and Zero Trust compliance, governance features, and plans. "
-        "Just ask a question and I'll find the relevant information."
-    )
+def get_farewell_response(query: str = "") -> str:
+    return _render(_FAREWELL_VARIANTS, query)
+
+
+def get_capability_response(query: str = "") -> str:
+    return _render(_CAPABILITY_VARIANTS, query)
+
+
+def all_greeting_responses() -> tuple[str, ...]:
+    return _render_all(_GREETING_VARIANTS)
+
+
+def all_thanks_responses() -> tuple[str, ...]:
+    return _render_all(_THANKS_VARIANTS)
+
+
+def all_farewell_responses() -> tuple[str, ...]:
+    return _render_all(_FAREWELL_VARIANTS)
+
+
+def all_capability_responses() -> tuple[str, ...]:
+    return _render_all(_CAPABILITY_VARIANTS)
 
 
 GREETING_RESPONSE = get_greeting_response()
@@ -98,15 +150,15 @@ def detect_conversational_intent(query: str) -> str | None:
         return None
 
     if _GREETING_RE.match(text):
-        return get_greeting_response()
+        return get_greeting_response(text)
 
     if _THANKS_RE.match(text):
-        return get_thanks_response()
+        return get_thanks_response(text)
 
     if _FAREWELL_RE.match(text):
-        return get_farewell_response()
+        return get_farewell_response(text)
 
     if _CAPABILITY_RE.match(text):
-        return get_capability_response()
+        return get_capability_response(text)
 
     return None

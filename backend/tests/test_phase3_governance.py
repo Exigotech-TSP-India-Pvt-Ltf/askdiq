@@ -291,7 +291,7 @@ def test_branding_system_prompt_and_fallback_replies():
 
     # Conversational replies parameterization
     greeting = get_greeting_response()
-    assert f"Hello! I'm the {brand} assistant." in greeting
+    assert brand in greeting
 
     greeting_intent = detect_conversational_intent("hello there")
     assert greeting_intent is not None
