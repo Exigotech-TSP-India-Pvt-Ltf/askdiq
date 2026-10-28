@@ -527,12 +527,90 @@ def _lexically_supported(claim: str, source_stems: set[str]) -> bool:
     return len(stems & source_stems) / len(stems) >= _LEXICAL_SUPPORT_RATIO
 
 
+# ---------------------------------------------------------------------------
+# Lexical containment: a short exact fact scores low (cosine) against a long
+# chunk, so a claim whose content words, figures and capitalised names all
+# occur in one chunk (or the top two) is supported regardless of cosine.
+# ---------------------------------------------------------------------------
+_LEX_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*|\d+(?:[.,]\d+)*")
+_LEX_ENTITY_RE = re.compile(r"\b[A-Z][A-Za-z0-9]*")
+_LEX_MIN_WORDS = 2
+_LEX_MIN_TOKEN_LEN = 3
+_LEX_MIN_ENTITY_LEN = 2
+_LEX_TOP_CHUNKS = 2
+_LEX_NEGATION_RE = re.compile(
+    r"\b(?:not|no|never|none|nor|non|cannot|without|neither)\b|n't", re.IGNORECASE
+)
+
+
+def _lex_stems(text: str) -> frozenset[str]:
+    """Stems of every word and figure of `text` (stopwords included)."""
+    tokens = _LEX_TOKEN_RE.findall(text[:_MAX_STEM_CHARS].lower())
+    return frozenset(t if t[0].isdigit() else _canon(t) for t in tokens)
+
+
+def _lex_claim_terms(claim: str) -> tuple[set[str], set[str]]:
+    """(content words + figures, required entities/figures) of a claim, as stems."""
+    skip = _STOPWORDS | _SHORT_STOPWORDS
+    words: set[str] = set()
+    for token in _LEX_TOKEN_RE.findall(claim.lower()):
+        if token[0].isdigit():
+            words.add(token)
+        elif len(token) >= _LEX_MIN_TOKEN_LEN and token not in skip:
+            words.add(_canon(token))
+    required = {t for t in words if t[0].isdigit()}
+    for entity in _LEX_ENTITY_RE.findall(claim):
+        lowered = entity.lower()
+        if len(lowered) >= _LEX_MIN_ENTITY_LEN and lowered not in skip:
+            required.add(_canon(lowered))
+    return words, required
+
+
+def _lexical_containment(
+    claim: str, scopes: list[frozenset[str]], minimum: float
+) -> float:
+    """Best containment of `claim` in any scope; 0.0 unless every figure/entity occurs."""
+    if _LEX_NEGATION_RE.search(claim):
+        return 0.0
+    words, required = _lex_claim_terms(claim)
+    if len(words) < _LEX_MIN_WORDS:
+        return 0.0
+    best = 0.0
+    for scope in scopes:
+        if not required <= scope:
+            continue
+        ratio = len(words & scope) / len(words)
+        best = max(best, ratio)
+    return best if best >= minimum else 0.0
+
+
+def _lexical_scopes(sources: list[SourceChunk]) -> list[frozenset[str]]:
+    """Per-chunk stem sets plus the union of the top two chunks by score."""
+    ranked = sorted(sources, key=lambda s: s.score, reverse=True)
+    stems = [_lex_stems(source.content) for source in ranked]
+    scopes = list(stems)
+    if len(stems) > 1:
+        scopes.append(frozenset().union(*stems[:_LEX_TOP_CHUNKS]))
+    return scopes
+
+
+def lexical_support(
+    claims: list[str], sources: list[SourceChunk], minimum: float | None = None
+) -> list[float]:
+    """Containment score per claim (0.0 = not lexically supported)."""
+    if minimum is None:
+        minimum = get_settings().groundedness_lexical_min
+    scopes = _lexical_scopes(sources)
+    return [_lexical_containment(claim, scopes, minimum) for claim in claims]
+
+
 def supported_claim_ratio(
     claim_embeddings: list[list[float]],
     source_embeddings: list[list[float]],
     threshold: float,
     claims: list[str] | None = None,
     source_text: str = "",
+    lexical: list[float] | None = None,
 ) -> float:
     """Share of claims whose best chunk reaches `threshold`.
 
@@ -552,7 +630,8 @@ def supported_claim_ratio(
             and index < len(texts)
             and _lexically_supported(texts[index], source_stems)
         )
-        supported += best >= threshold or quoted
+        contained = lexical is not None and index < len(lexical) and lexical[index] > 0
+        supported += best >= threshold or quoted or contained
     return supported / len(claim_embeddings)
 
 
@@ -647,6 +726,9 @@ async def check_groundedness(
 
     claims = split_claims(answer)
     check_claims = len(claims) > 1
+    lexical = lexical_support(claims, sources)
+    if claims and all(lexical):
+        return True, min(lexical), None
 
     try:
         answer_embedding, claim_embeddings, source_embeddings = await _embed_for_check(
@@ -670,6 +752,7 @@ async def check_groundedness(
             max(threshold - _CLAIM_THRESHOLD_MARGIN, 0.0),
             claims,
             " ".join(source.content for source in sources),
+            lexical,
         )
         >= min_supported_ratio
     )

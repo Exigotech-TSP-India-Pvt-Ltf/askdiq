@@ -111,6 +111,11 @@ class Settings(BaseSettings):
     # sentences and quoted bullets are handled in post_checks). Below it ->
     # ungrounded. Lowered from 0.6 after correct answers were rejected.
     groundedness_min_supported_ratio: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Lexical containment: a claim whose content words (>= this share) all sit in
+    # ONE retrieved chunk (or the top two) and whose figures / capitalised names
+    # all occur there is supported regardless of cosine (short exact facts score
+    # low against long chunks).
+    groundedness_lexical_min: float = Field(default=0.7, ge=0.0, le=1.0)
     # Citation verification: a [n] marker is kept only when the claim's content
     # words overlap the cited chunk by at least this share (and its figures,
     # framework names and plan words occur in the chunk). The cosine floor
