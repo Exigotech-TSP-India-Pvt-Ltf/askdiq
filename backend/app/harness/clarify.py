@@ -95,6 +95,17 @@ GENERIC_PRODUCT_RE = re.compile(
     r"does (?:it|this) work)\W{0,5}$",
     re.IGNORECASE,
 )
+# "Is that product safe to purchase?": about buying, answered (a general answer
+# or the last discussed product), never "which DeployIQ service?". Literal
+# alternatives only, each optional part is bounded (no nested quantifiers).
+PURCHASE_TRUST_RE = re.compile(
+    r"^(?:(?:so|ok|okay|and) )?(?:is|are|would|will) (?:(?:that|this|the|it) )?"
+    r"(?:(?:product|service|solution|offering|tool) )?"
+    r"(?:safe|secure|reliable|legit|trustworthy|worth it)"
+    r"(?: (?:to|for me to))?(?: (?:purchase|buy|use|trust|get|buying|purchasing))?"
+    r"\W{0,5}$",
+    re.IGNORECASE,
+)
 # "What is X?" / "Explain X": a definition request that names its subject.
 _DEFINITION_LEAD_RE = re.compile(
     r"^(?:(?:so|ok|okay|and|please) )?(?:what(?: is|'s|s| are)|define|explain|"
@@ -286,12 +297,21 @@ def _names_known_entity(query: str) -> bool:
     return content_word_count(rest) > 0 or _DEFINITION_LEAD_RE.match(scan) is not None
 
 
+def is_generic_product_question(query: str) -> bool:
+    """A generic one-product or purchase-trust question: answered, not asked back."""
+    scan = _scan(query)
+    return (
+        GENERIC_PRODUCT_RE.match(scan) is not None
+        or PURCHASE_TRUST_RE.match(scan) is not None
+    )
+
+
 def is_company_or_generic(query: str) -> bool:
     """Company-fact and generic one-product questions are answered, not asked back."""
     scan = _scan(query)
     return (
         COMPANY_FACT_RE.search(scan) is not None
-        or GENERIC_PRODUCT_RE.match(scan) is not None
+        or is_generic_product_question(scan)
         or INCIDENT_RE.search(scan) is not None
     )
 

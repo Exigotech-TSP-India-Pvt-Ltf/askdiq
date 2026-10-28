@@ -422,3 +422,35 @@ def test_folded_reply_is_never_partial(query: str, frameworks: list[str]) -> Non
         refine_shape(AnswerShape.HOW_TO, query, _sources(*_FRAMEWORKS))
         is not AnswerShape.PARTIAL
     )
+
+
+# ---------------------------------------------------------------------------
+# Purchase-trust regex: matching is linear (no ReDoS) and stays specific
+# ---------------------------------------------------------------------------
+
+
+def test_purchase_trust_regex_is_linear_on_adversarial_input() -> None:
+    import time  # noqa: PLC0415
+
+    from app.harness.clarify import PURCHASE_TRUST_RE  # noqa: PLC0415
+
+    nasty = [
+        "is " + "that " * 5000 + "safe",
+        "is that product safe to " + "purchase " * 5000,
+        "is it worth it" + "!" * 5000,
+        "is " + " " * 5000 + "safe",
+    ]
+    start = time.perf_counter()
+    for text in nasty:
+        PURCHASE_TRUST_RE.match(text)
+    assert time.perf_counter() - start < 1.0
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["is E8 safe to use?", "is Zero Trust worth it", "is ISO 27001 safe to buy"],
+)
+def test_purchase_trust_regex_ignores_named_subjects(query: str) -> None:
+    from app.harness.clarify import PURCHASE_TRUST_RE  # noqa: PLC0415
+
+    assert PURCHASE_TRUST_RE.match(query) is None
