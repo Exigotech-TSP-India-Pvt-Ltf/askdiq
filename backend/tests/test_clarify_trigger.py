@@ -379,8 +379,14 @@ async def test_referent_with_history_is_answered(monkeypatch) -> None:
         ChatTurn(role="assistant", content="Essential Eight is...", outcome="answered"),
     ]
     response, calls, retrieve_calls = await _run(
-        monkeypatch, COST, ["Pricing is not published."], history=history
+        monkeypatch,
+        COST,
+        ["Essential Eight engagements are scoped to your environment."],
+        history=history,
     )
+    # The point of this test is the referent: "it" resolves from the history,
+    # so the question is answered (a bare "not published" would now be read as
+    # a decline, which is a different outcome by design).
     assert response.outcome == "answered"
     assert "clarify_block" not in calls[0]
     assert retrieve_calls[0]["history"] == history

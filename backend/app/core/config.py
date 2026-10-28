@@ -139,6 +139,20 @@ class Settings(BaseSettings):
     # contributor to /query latency (~9.7s p50 at multiplier=5/min=25).
     retrieval_candidate_multiplier: int = 1
     retrieval_candidate_min: int = 8
+    # Hybrid lexical / named-entity signal added to the cosine score before
+    # rerank (string ops on the retrieved pool only; no extra embedding call).
+    retrieval_hybrid_enabled: bool = True
+    # Max additive boost for a chunk containing the query's rare content terms.
+    retrieval_lexical_boost: float = Field(default=0.08, ge=0.0, le=1.0)
+    # Additive boost for every chunk of a document whose name/title matches a
+    # framework or service named in the query (Zero Trust, ISO 27001, ...).
+    retrieval_entity_doc_boost: float = Field(default=0.10, ge=0.0, le=1.0)
+    # A named document keeps at least this many chunks (above the retrieval
+    # floor) in the final context, and is never dropped by the document cap.
+    retrieval_entity_min_chunks: int = Field(default=2, ge=1, le=5)
+    # Extra cosine candidates fetched so the hybrid signal can promote a
+    # document the cosine order missed; the rerank pool stays the same size.
+    retrieval_lexical_pool_extra: int = Field(default=8, ge=0, le=64)
     # Cross-document quota: round-robin across at most this many top-scoring documents.
     cross_doc_quota_max_documents: int = 3
     # Below this raw cosine score, retrieval is treated as off-topic. Kept
