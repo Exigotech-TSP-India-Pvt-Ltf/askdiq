@@ -292,9 +292,11 @@ async def retrieve(
 
         results = final
     else:
+        # Order by cosine + hybrid (lexical/entity) boost; scores stay cosine.
+        boosts = getattr(vector_store, "rank_boosts", None) or {}
         results = sorted(
             merged.values(),
-            key=lambda item: item[1],
+            key=lambda item: item[1] + boosts.get(item[0].id, 0.0),
             reverse=True,
         )[:final_top_k]
 
