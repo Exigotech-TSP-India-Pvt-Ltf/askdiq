@@ -827,7 +827,9 @@ async def run_query(
             token_details=token_details or None,
         )
 
-    answer, declined = clean_declines(answer, query)
+    answer, declined = clean_declines(
+        answer, query, " ".join(s.content for s in sources)
+    )
     plain_answer = strip_markers(answer)
     if declined or is_refusal(plain_answer):
         # A decline ("not covered", "talk to a specialist") is not a grounded
