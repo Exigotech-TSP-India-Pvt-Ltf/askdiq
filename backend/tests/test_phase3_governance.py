@@ -291,7 +291,7 @@ def test_branding_system_prompt_and_fallback_replies():
 
     # Conversational replies parameterization
     greeting = get_greeting_response()
-    assert f"Hello! I'm the {brand} assistant." in greeting
+    assert brand in greeting
 
     greeting_intent = detect_conversational_intent("hello there")
     assert greeting_intent is not None
@@ -303,7 +303,12 @@ def test_branding_system_prompt_and_fallback_replies():
         flags=["unclear_input"],
         latency_ms=10.0,
     )
-    assert f"ask a specific question about {brand}?" in fallback.answer
+    assert "say a bit more" in fallback.answer
+
+    spam = _fallback_response(
+        request_id="test-req-fb2", flags=["spam_detected"], latency_ms=10.0
+    )
+    assert "Try asking in a sentence" in spam.answer
 
 
 @pytest.mark.asyncio

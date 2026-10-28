@@ -50,10 +50,7 @@ from app.schemas.query import (
 
 CLARIFY_OUTCOME = "clarify"
 DEFAULT_HEADER = "Topic"
-REPLY_HINT = (
-    "Reply with the option you want (its name, or its number when there is one "
-    "question), or tell me more about what you're looking for."
-)
+REPLY_HINT = "Pick one, or tell me a bit more."
 
 _MAX_HEADER_CHARS = 12
 _MAX_LABEL_CHARS = 60
@@ -67,8 +64,138 @@ _MAX_OPTION_SOURCES = 4
 _EXCERPT_CHARS = 220
 _SCORE_EPSILON = 1e-9  # float noise: 0.65 - 0.60 must count as a 0.05 lead
 RECOMMENDED_SUFFIX = " (recommended)"
+NOT_SURE_LABEL = "Not sure, help me choose"
+_NOT_SURE_HINT = (
+    "not sure which fits, so recommend the best fit for my goal and current "
+    "maturity, or suggest I talk to a specialist"
+)
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'&+-]*")
 _ANSWER_SPLIT_RE = re.compile(r"[,;\n·]+")
+# Brand / company names: a question that names them is specific, not vague.
+BRAND_RE = re.compile(
+    r"\b(?:exigo(?: tech)?|deploy[ _-]{0,3}(?:iq|qi))\b", re.IGNORECASE
+)
+# Company facts (who / where / when, headquarters, contact details...) are
+# answered from the knowledge base, never turned into a "which service?" card.
+COMPANY_FACT_RE = re.compile(
+    r"^(?:who|where|when)\b|\b(?:ceo|cto|founder|founded|owner|owned|employees|"
+    r"headquarter\w{0,6}|hq|located|location|address|phone|telephone|contact|"
+    r"e-?mail|call you|offices?|abn)\b",
+    re.IGNORECASE,
+)
+# "How does it work?" with no history in a one-product assistant: answered
+# generally about the product, not by asking which service is meant.
+GENERIC_PRODUCT_RE = re.compile(
+    r"^(?:(?:so|ok|okay|and) )?(?:how (?:does|do) (?:it|this|that) work|"
+    r"what (?:does|do) (?:it|this|that) do|what (?:is|are) (?:it|this|that)|"
+    r"(?:is|are) (?:it|this|that) (?:safe|secure|free|legit|reliable)|"
+    r"does (?:it|this) work)\W{0,5}$",
+    re.IGNORECASE,
+)
+# "Is that product safe to purchase?": about buying, answered (a general answer
+# or the last discussed product), never "which DeployIQ service?". Literal
+# alternatives only, each optional part is bounded (no nested quantifiers).
+PURCHASE_TRUST_RE = re.compile(
+    r"^(?:(?:so|ok|okay|and) )?(?:is|are|would|will) (?:(?:that|this|the|it) )?"
+    r"(?:(?:product|service|solution|offering|tool) )?"
+    r"(?:safe|secure|reliable|legit|trustworthy|worth it)"
+    r"(?: (?:to|for me to))?(?: (?:purchase|buy|use|trust|get|buying|purchasing))?"
+    r"\W{0,5}$",
+    re.IGNORECASE,
+)
+# "What is X?" / "Explain X": a definition request that names its subject.
+_DEFINITION_LEAD_RE = re.compile(
+    r"^(?:(?:so|ok|okay|and|please) )?(?:what(?: is|'s|s| are)|define|explain|"
+    r"describe|tell me about)\b",
+    re.IGNORECASE,
+)
+# A security incident in progress: answered (what to do now), never a card.
+INCIDENT_RE = re.compile(
+    r"\b(?:hacked|breached|compromised|ransomware|phished|malware|data breach)\b",
+    re.IGNORECASE,
+)
+# The vague "what are you hoping to get done?" card (ambiguity.GOAL): its header,
+# option labels and the fixed question each pick is folded into (the model never
+# writes either). A pick replaces the vague original.
+GOAL_HEADER = "Goal"
+GOAL_QUESTION = "What are you hoping to get done?"
+GOAL_OVERVIEW = "Understand what you do"
+GOAL_AUDIT = "Get audit ready"
+GOAL_SECURITY = "Fix or tighten security"
+GOAL_PRICING = "Pricing or talk to someone"
+GOAL_AUDIT_QUERY = (
+    "How does DeployIQ help an organisation get audit ready: which frameworks "
+    "(Essential Eight, ISO 27001, CIS) does it cover and what evidence and timeline?"
+)
+GOAL_QUERIES: dict[str, str] = {
+    GOAL_OVERVIEW: (
+        "What does DeployIQ do and which services does it offer to "
+        "organisations like yours?"
+    ),
+    GOAL_AUDIT: GOAL_AUDIT_QUERY,
+    GOAL_SECURITY: (
+        "How does DeployIQ assess and improve Microsoft 365 security: Security "
+        "Baseline Assessment, Zero Trust, CIS Benchmark?"
+    ),
+    GOAL_PRICING: (
+        "How do I get pricing and talk to a DeployIQ specialist: engagement "
+        "model, timelines, contact?"
+    ),
+}
+
+
+def is_pricing_pick(query: str) -> bool:
+    """The folded query of the Goal card's pricing pick (context may follow).
+
+    Answered by a fixed reply (the knowledge base publishes no prices).
+    """
+    return query.startswith(GOAL_QUERIES[GOAL_PRICING])
+
+
+# Words of a vague opener that carry no context worth keeping next to a pick.
+_VAGUE_WORDS = frozenset(
+    [
+        "need",
+        "want",
+        "help",
+        "advice",
+        "something",
+        "stuff",
+        "know",
+        "idk",
+        "confused",
+        "sure",
+        "idea",
+        "question",
+        "start",
+        "best",
+        "recommend",
+        "options",
+        "option",
+        "compare",
+        "tell",
+        "things",
+        "thing",
+        "have",
+        "looking",
+        "look",
+        "into",
+        "improve",
+        "get",
+        "started",
+        "should",
+        "buy",
+        "am",
+        "not",
+        "no",
+        "dunno",
+        "unsure",
+        "lost",
+        "assistance",
+        "guidance",
+        "support",
+    ]
+)
 _STOPWORDS = frozenset(
     {
         "a",
@@ -225,10 +352,132 @@ def clarification_streak(history: list[ChatTurn] | None) -> int:
     return streak
 
 
+def _scan(query: str) -> str:
+    """Whitespace-collapsed, length-bounded user text (before any regex)."""
+    return " ".join(query.split())[:_MAX_QUERY_CHARS]
+
+
+def _names_known_entity(query: str) -> bool:
+    """The question names the company/brand, or a service plus something about it.
+
+    A bare topic ("E8?", "zero trust?") names a service but asks nothing about
+    it yet, so it may still be clarified; "Exigo Tech address" or "E8 pricing"
+    is already specific.
+    """
+    # Lazy: ambiguity imports this module at load time.
+    from app.harness import ambiguity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
+
+    scan = _scan(query)
+    if BRAND_RE.search(scan):
+        return True
+    rest = ambiguity.strip_offerings(scan)
+    if rest == scan:
+        return False
+    return content_word_count(rest) > 0 or _DEFINITION_LEAD_RE.match(scan) is not None
+
+
+def is_generic_product_question(query: str) -> bool:
+    """A generic one-product or purchase-trust question: answered, not asked back."""
+    scan = _scan(query)
+    return (
+        GENERIC_PRODUCT_RE.match(scan) is not None
+        or PURCHASE_TRUST_RE.match(scan) is not None
+    )
+
+
+def is_company_or_generic(query: str) -> bool:
+    """Company-fact and generic one-product questions are answered, not asked back."""
+    scan = _scan(query)
+    return (
+        COMPANY_FACT_RE.search(scan) is not None
+        or is_generic_product_question(scan)
+        or INCIDENT_RE.search(scan) is not None
+    )
+
+
+_THIRD_PARTY_TOOLS = frozenset(
+    [
+        "slack",
+        "salesforce",
+        "jira",
+        "servicenow",
+        "teams",
+        "okta",
+        "splunk",
+        "aws",
+        "azure",
+        "google",
+        "gcp",
+        "zendesk",
+        "hubspot",
+        "github",
+        "gitlab",
+        "confluence",
+        "sharepoint",
+        "workday",
+        "sap",
+        "oracle",
+        "datadog",
+        "pagerduty",
+        "crowdstrike",
+        "sentinel",
+        "snowflake",
+        "zoom",
+        "dropbox",
+        "box",
+        "docusign",
+        "twilio",
+        "stripe",
+        "tableau",
+    ]
+)
+_INTEGRATION_WORDS = frozenset(
+    [
+        "integrate",
+        "integrates",
+        "integration",
+        "integrations",
+        "connect",
+        "connects",
+        "work",
+        "works",
+    ]
+)
+_ASSURANCE_WORDS = frozenset(
+    ["guarantee", "guaranteed", "guarantees", "certified", "sla", "uptime"]
+)
+_ASSURANCE_PHRASES = ("is it safe", "are you safe", "is it secure", "compliant with")
+
+
+def _asks_integration_or_assurance(query: str) -> bool:
+    """Third-party integration or assurance questions are answered, not clarified."""
+    scan = _scan(query)
+    words = [w.strip("?.,!;:'\"()").lower() for w in scan.split()]
+    word_set = set(words)
+    if word_set & _ASSURANCE_WORDS:
+        return True
+    low = " ".join(words)
+    if any(p in low for p in _ASSURANCE_PHRASES):
+        return not _names_framework(low)
+    return bool(word_set & _INTEGRATION_WORDS) and bool(word_set & _THIRD_PARTY_TOOLS)
+
+
+def _names_framework(low: str) -> bool:
+    """A catalogue framework ('compliant with Essential Eight') keeps the card."""
+    from app.harness import ambiguity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
+
+    return ambiguity.strip_offerings(low) != low
+
+
 def clarify_eligible(
     query: str, history: list[ChatTurn] | None, *, follow_up: bool
 ) -> bool:
-    """Rule gate (no I/O): may this question be answered with questions back?"""
+    """Rule gate (no I/O): may this question be answered with questions back?
+
+    Only bare topics, pronoun questions and cost/time questions qualify: a
+    question that names the company or a service, or asks a company fact
+    (who/where/when, headquarters, contact details), is answered directly.
+    """
     settings = get_settings()
     if not settings.clarify_enabled:
         return False
@@ -238,6 +487,10 @@ def clarify_eligible(
     if follow_up and history:
         return False
     if not 0 < content_word_count(query) <= settings.clarify_max_query_words:
+        return False
+    if is_company_or_generic(query) or _names_known_entity(query):
+        return False
+    if _asks_integration_or_assurance(query):
         return False
     return len(decompose_query(query)) <= 1
 
@@ -315,6 +568,10 @@ def plan_clarification(
     if not clarify_eligible(query, history, follow_up=follow_up):
         return []
     candidates = select_candidates(sources)
+    # Low scores mean the evidence is irrelevant ("What is a cat?"): nothing
+    # to choose between, so the question is just answered.
+    if not candidates or candidates[0].score < settings.clarify_min_gate_score:
+        return []
     distinct_docs = {c.document_id for c in candidates}
     enough = len(candidates) >= settings.clarify_min_options
     # One document with several sections rarely means several intents.
@@ -335,10 +592,13 @@ def clarify_instruction(candidates: list[ClarifyCandidate]) -> str:
         'answer in answer, preamble "" and questions [].\n'
         "- Only if it is genuinely ambiguous between intents the context can "
         'answer, set action to "clarify" and answer "". Write preamble as one '
-        "short, friendly sentence showing you understood, naming what the "
-        'knowledge base actually covers (e.g. "DeployIQ offers several '
-        'services; which would you like to know about?"). Ask as few questions '
-        f"as needed (1 to {settings.clarify_max_questions}), all at once.\n"
+        "short, friendly sentence showing you understood the question. Ask as "
+        f"few questions as needed (1 to {settings.clarify_max_questions}), all "
+        "at once.\n"
+        "- If the question names a company or entity (for example the company "
+        "or a service by name), or is a general company fact (who, where, "
+        "when, headquarters, contact details, ownership), set action to "
+        '"answer" and answer it from the context.\n'
         "- Each question: header (1-2 word tab label, at most 12 characters, "
         "e.g. Topic, Service, Scope), question (one specific sentence ending "
         "with ?), multi_select (true only when several options can apply "
@@ -589,7 +849,10 @@ def _entry(
 
 
 def _part(entry: dict[str, object]) -> str:
-    labels = [str(label) for label in entry["labels"]]  # type: ignore[attr-defined]
+    labels = [
+        _NOT_SURE_HINT if label == NOT_SURE_LABEL else str(label)
+        for label in entry["labels"]  # type: ignore[attr-defined]
+    ]
     if entry.get("other_text"):
         labels.append(str(entry["other_text"]))
     return f"{entry['header']}: {' and '.join(labels)}"
@@ -635,6 +898,8 @@ def _match_text(clarification: Clarification, text: str) -> list[dict[str, objec
         p.strip().strip(".!?").lower().removesuffix(RECOMMENDED_SUFFIX).strip()
         for p in _ANSWER_SPLIT_RE.split(text)
     }
+    # A label may itself contain a comma ("Not sure, help me choose").
+    pieces.add(cleaned.removesuffix(RECOMMENDED_SUFFIX).strip())
     entries: list[dict[str, object]] = []
     for question in questions:
         picked = [o for o in question.options if o.label.lower() in pieces]
@@ -643,6 +908,27 @@ def _match_text(clarification: Clarification, text: str) -> list[dict[str, objec
                 _entry(question, picked if question.multi_select else picked[:1], None)
             )
     return entries
+
+
+def _goal_context(original: str) -> str | None:
+    """The vague original, only when it still says something ("a small business")."""
+    words = [w.lower() for w in _WORD_RE.findall(original)]
+    kept = [w for w in words if w not in _STOPWORDS and w not in _VAGUE_WORDS]
+    return original.strip() if len(kept) >= 2 else None  # noqa: PLR2004
+
+
+def _goal_query(last: Clarification, entries: list[dict[str, object]]) -> str | None:
+    """A Goal pick replaces the vague original (kept only when it has context)."""
+    if len(entries) != 1 or entries[0].get("other_text"):
+        return None
+    if entries[0].get("header") != GOAL_HEADER:
+        return None
+    labels = entries[0]["labels"]
+    pick = GOAL_QUERIES.get(str(labels[0])) if labels else None  # type: ignore[index]
+    if pick is None:
+        return None
+    context = _goal_context(last.original_query)
+    return compose_query(pick, [context]) if context else pick
 
 
 def resolve_clarification_reply(
@@ -665,8 +951,10 @@ def resolve_clarification_reply(
         doc_ids = list(
             dict.fromkeys(d for e in entries for d in e["document_ids"])  # type: ignore[attr-defined]
         )
+        goal_query = _goal_query(last, entries)
         return ResolvedReply(
-            query=compose_query(last.original_query, [_part(e) for e in entries]),
+            query=goal_query
+            or compose_query(last.original_query, [_part(e) for e in entries]),
             original_query=last.original_query,
             answers=entries,
             document_ids=doc_ids,

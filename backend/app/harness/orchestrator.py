@@ -19,16 +19,37 @@ from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.evaluation.quality import injection_in_chunks
 from app.governance.audit import emit_audit_event
-from app.guardrails.conversational import detect_conversational_intent
-from app.guardrails.post_checks import run_post_checks
+from app.guardrails.conversational import (
+    PRICING_REPLY,
+    detect_acknowledgement,
+    detect_assurance_request,
+    detect_callback_request,
+    detect_contact_request,
+    detect_conversational_intent,
+    detect_identity_question,
+    detect_incident_request,
+    detect_pricing_request,
+    detect_support_request,
+)
+from app.guardrails.post_checks import (
+    is_off_topic_by_overlap,
+    is_refusal,
+    run_post_checks,
+)
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
-from app.harness.ambiguity import assess, rule_clarification, service_clarification
+from app.harness.ambiguity import (
+    assess,
+    is_concrete_off_scope,
+    rule_clarification,
+    vague_fallback_clarification,
+)
 from app.harness.answer_shape import detect_shape, refine_shape
 from app.harness.citations import (
     TOKEN_DETAILS_KEY,
-    apply_citations,
     citation_records,
+    strip_free_brackets,
     strip_markers,
+    verify_and_select,
 )
 from app.harness.clarify import (
     ANSWER_OR_CLARIFY,
@@ -36,14 +57,23 @@ from app.harness.clarify import (
     boost_documents,
     clarify_eligible,
     clarify_instruction,
+    is_pricing_pick,
     parse_decision,
     plan_clarification,
     render_clarification_text,
 )
+from app.harness.decline import clean_declines
 from app.harness.prompts import _MAX_HISTORY_TURNS, call_llm
 from app.harness.style import resolve_style, use_style
 from app.harness.tone import polish_answer
-from app.retrieval.retriever import needs_conversation_context, retrieve
+from app.retrieval.retriever import (
+    PartRetrieval,
+    PartsAssessment,
+    assess_parts,
+    needs_conversation_context,
+    part_retrieval_sink,
+    retrieve,
+)
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, Clarification, QueryResponse, SourceChunk
 
@@ -59,11 +89,67 @@ class GuardrailBlockedError(Exception):
         self.flags = flags
 
 
+_UNSAFE_FLAG = "unsafe_input_detected"
+
+
+def _fallback_answer(flags: list[str], brand: str) -> str:
+    """The customer-facing wording for a blocked or non-answered request.
+
+    Unsafe input wins over every other flag. Nothing here names the source of
+    the answer (no "knowledge base", "documents" or "context"), and every
+    not-covered or low-confidence reply ends with a human next step.
+    """
+
+    flagged = set(flags)
+    if _UNSAFE_FLAG in flagged:
+        return (
+            "I can't help with that, sorry. I'm glad to answer questions about our "
+            "security services, and our specialists can help with anything else."
+        )
+    if flagged & {"no_permission", "application_secret_request"}:
+        return (
+            "I can't share credentials or other customers' details. A specialist "
+            "can sort out access with you."
+        )
+    if "personal_contact_request" in flagged:
+        return (
+            "I can't pass on individual contact details, but one of our "
+            "specialists can get you to the right person."
+        )
+    if "spam_detected" in flagged:
+        return (
+            "That didn't come through clearly. Try asking in a sentence, for "
+            "example about Zero Trust or Essential Eight."
+        )
+    if "unclear_input" in flagged:
+        return "I'm not quite sure what you're after. Could you say a bit more?"
+    if "query_too_long" in flagged:
+        return "That's a bit long for me. Could you shorten it to a sentence or two?"
+    if "empty_query" in flagged:
+        return "Please type a question and I'll do my best to help."
+    if flagged & {"off_topic", "no_sources"}:
+        return (
+            "That one's outside what I can help with. I'm here for "
+            f"{brand}, Zero Trust, Essential Eight and how we handle data. "
+            "Anything else, one of our specialists is happy to chat."
+        )
+    if flagged & {"llm_call_failed", "empty_llm_output"}:
+        return (
+            "Sorry, I hit a snag. Please try again in a moment. If it keeps "
+            "happening, one of our specialists can help."
+        )
+    # Ungrounded answers (low retrieval confidence, possible hallucination,
+    # unsupported figures): the question was fine, the evidence was not.
+    return (
+        "I don't want to guess on that one. Can you tell me a bit more about "
+        "what you need? Or one of our specialists can give you a straight answer."
+    )
+
+
 def _fallback_response(
     request_id: str,
     flags: list[str],
     latency_ms: float,
-    sources: list[SourceChunk] | None = None,
     follow_up_detected: bool = False,
     history_turns_sent: int = 0,
     prompt_tokens: int | None = None,
@@ -75,55 +161,17 @@ def _fallback_response(
 ) -> QueryResponse:
     """Return a safe, polite fallback response.
 
-    Spam/unsafe input is blocked with dedicated polite guidance and never
-    carries retrieval evidence. Genuine off-topic/low-confidence cases still
-    surface whatever sources were considered, for transparency.
+    A fallback is never an answer, so it carries no sources and no citations,
+    whatever was retrieved (retrieval telemetry stays in logs and stage
+    timings). Spam/unsafe/unclear input gets a short fixed text only.
     """
 
-    brand = settings.brand_name
-    if "unclear_input" in flags:
-        answer = (
-            "Your question appears too short or incomplete. Could you please provide "
-            f"a bit more detail or ask a specific question about {brand}?"
-        )
-    elif "no_permission" in flags:
-        answer = "I can't provide another customer's credentials or tenant data."
-    elif "personal_contact_request" in flags:
-        answer = f"I don't have personal contact details for {brand} staff."
-    elif "application_secret_request" in flags:
-        answer = "I can't provide application secrets or credentials."
-    elif "spam_detected" in flags:
-        answer = (
-            "I couldn't quite understand your question. Could you please rephrase "
-            f"or ask a question regarding {brand}'s platform, Zero Trust architecture, "
-            "or Essential Eight compliance?"
-        )
-    elif "unsafe_input_detected" in flags:
-        answer = (
-            "I am unable to process that request. Please feel free to ask questions "
-            f"regarding {brand}'s security platform and compliance features."
-        )
-    elif "off_topic" in flags or "no_sources" in flags:
-        answer = (
-            f"I couldn't find relevant information in the {brand} knowledge base to answer that. "
-            f"I can help with questions about the {brand} platform, Zero Trust, "
-            "Essential Eight, Responsible AI, governance, and data handling."
-        )
-    elif "llm_call_failed" in flags or "empty_llm_output" in flags:
-        answer = "I couldn't generate an answer just now. Please try again in a moment."
-    else:
-        # Ungrounded answers (low retrieval confidence, possible hallucination,
-        # unsupported figures): the question was fine, the evidence was not.
-        answer = (
-            f"I couldn't find enough support in the {brand} knowledge base to answer "
-            "that confidently. Try asking about a more specific topic. "
-            f"I can help with questions about the {brand} platform, Zero Trust, "
-            "Essential Eight, Responsible AI, governance, and data handling."
-        )
+    answer = _fallback_answer(flags, settings.brand_name)
 
     return QueryResponse(
         answer=answer,
-        sources=sources or [],
+        sources=[],
+        citations=[],
         grounded=False,
         confidence=0.0,
         request_id=request_id,
@@ -145,7 +193,7 @@ def _clarification_response(
     *,
     request_id: str,
     latency_ms: float,
-    sources: list[SourceChunk],
+    sources: list[SourceChunk],  # noqa: ARG001 - kept for callers; cards carry none
     confidence: float,
     follow_up_detected: bool,
     history_turns_sent: int,
@@ -173,9 +221,9 @@ def _clarification_response(
     )
     return QueryResponse(
         answer=render_clarification_text(clarification),
-        # Kept for the trace (which evidence was ambiguous); the UI shows no
-        # citation chips for a non-answer.
-        sources=sources,
+        # A question is not an answer: no sources or citation chips. The
+        # options keep their document ids inside the clarification payload.
+        sources=[],
         # The options come straight from retrieved documents, nothing invented.
         grounded=True,
         confidence=round(confidence, 4),
@@ -192,6 +240,86 @@ def _clarification_response(
         token_details=token_details,
         clarification=clarification,
     )
+
+
+def _canned_response(
+    answer: str,
+    *,
+    request_id: str,
+    start: float,
+    follow_up_detected: bool,
+    history_turns_sent: int,
+) -> QueryResponse:
+    """A fixed reply: no retrieval, no LLM, no sources, no citations."""
+    latency_ms = (time.perf_counter() - start) * 1000
+    logger.info("canned_reply_intercept", latency_ms=round(latency_ms, 2))
+    return QueryResponse(
+        answer=answer,
+        sources=[],
+        citations=[],
+        grounded=True,
+        confidence=1.0,
+        request_id=request_id,
+        latency_ms=latency_ms,
+        guardrail_flags=[],
+        follow_up_detected=follow_up_detected,
+        history_turns_sent=history_turns_sent,
+        outcome="conversational",
+    )
+
+
+_OUT_OF_SCOPE_NOTE = "The rest of your question is outside what I can help with."
+_NO_DETAIL_NOTE = (
+    "I don't have that detail, but one of our specialists can help with the rest."
+)
+
+
+def _unsupported_part_note(
+    parts: PartsAssessment, history: list[ChatTurn] | None
+) -> str:
+    """ONE short natural line for the part(s) the knowledge base cannot answer."""
+    if all(is_concrete_off_scope(p.query, history) for p in parts.unsupported):
+        return _OUT_OF_SCOPE_NOTE
+    return _NO_DETAIL_NOTE
+
+
+def _canned_reply(query: str) -> str | None:
+    """Fixed, no-LLM replies: contact and pricing."""
+    return (
+        detect_contact_request(query)
+        or detect_pricing_request(query)
+        or (PRICING_REPLY if is_pricing_pick(query) else None)
+    )
+
+
+def _last_assistant_was_clarification(history: list[ChatTurn] | None) -> bool:
+    for turn in reversed(history or []):
+        if turn.role == "assistant":
+            return turn.outcome == CLARIFY_OUTCOME
+    return False
+
+
+def _smalltalk_reply(
+    query: str, history: list[ChatTurn] | None, clarification_reply: bool
+) -> str | None:
+    """Fixed replies for support, callback, incident, contact, assurance,
+    identity and bare acknowledgements, in that priority order.
+
+    A bare "yes"/"ok" is never intercepted when it answers a clarification.
+    """
+    reply = (
+        detect_support_request(query)
+        or detect_callback_request(query)
+        or detect_incident_request(query)
+        or detect_contact_request(query)
+        or detect_assurance_request(query)
+        or detect_identity_question(query)
+    )
+    if reply is not None:
+        return reply
+    if clarification_reply or _last_assistant_was_clarification(history):
+        return None
+    return detect_acknowledgement(query)
 
 
 async def run_query(
@@ -270,6 +398,27 @@ async def run_query(
     t0 = time.perf_counter()
 
     pre_flags = run_pre_checks(query, settings.max_query_length)
+    if _UNSAFE_FLAG in pre_flags:
+        # Unsafe input wins over every other flag: canned refusal only, with
+        # no retrieval, no LLM call, no sources and no pitch.
+        pre_flags = [_UNSAFE_FLAG]
+    # Someone describing a live security incident is helped, not blocked as
+    # off-topic: a fixed warm reply (only the off-topic flag is bypassed).
+    # Priority: support, callback, incident, contact, assurance, identity,
+    # acknowledgement (unsafe/blocked input never reaches these).
+    incident_reply = (
+        _smalltalk_reply(query, history, clarification_reply)
+        if set(pre_flags) <= {"off_topic"}
+        else None
+    )
+    if incident_reply is not None:
+        return _canned_response(
+            incident_reply,
+            request_id=request_id,
+            start=start,
+            follow_up_detected=follow_up_detected,
+            history_turns_sent=history_turns_sent,
+        )
     if pre_flags:
         latency_ms = (time.perf_counter() - start) * 1000
         logger.warning(
@@ -307,6 +456,18 @@ async def run_query(
 
     stage_timings["guardrail_pre"] = (time.perf_counter() - t0) * 1000
 
+    # A "how do I reach you" question is on-topic: a fixed, helpful reply with
+    # a specialist step; no retrieval, no LLM, no invented contact details.
+    contact_reply = _canned_reply(query)
+    if contact_reply is not None:
+        return _canned_response(
+            contact_reply,
+            request_id=request_id,
+            start=start,
+            follow_up_detected=follow_up_detected,
+            history_turns_sent=history_turns_sent,
+        )
+
     # ---------------------------------------------------------
     # 2. VECTOR RETRIEVAL
     # ---------------------------------------------------------
@@ -320,14 +481,23 @@ async def run_query(
         query, history, follow_up=follow_up_detected
     )
     wide = gated or ambiguity.detected
-    sources: list[SourceChunk] = await retrieve(
-        vector_store,
-        effective_query,
-        top_k=max(top_k, settings.clarify_retrieval_top_k) if wide else top_k,
-        filters=filters,
-        history=history,
-        **({"max_documents": settings.clarify_retrieval_max_documents} if wide else {}),
-    )
+    part_results: list[PartRetrieval] = []
+    sink_token = part_retrieval_sink.set(part_results)
+    try:
+        sources: list[SourceChunk] = await retrieve(
+            vector_store,
+            effective_query,
+            top_k=max(top_k, settings.clarify_retrieval_top_k) if wide else top_k,
+            filters=filters,
+            history=history,
+            **(
+                {"max_documents": settings.clarify_retrieval_max_documents}
+                if wide
+                else {}
+            ),
+        )
+    finally:
+        part_retrieval_sink.reset(sink_token)
     # Reply to a clarification: the chosen options' documents lead the context.
     sources = boost_documents(sources, boost_document_ids)
 
@@ -398,7 +568,45 @@ async def run_query(
                 ),
             )
 
-    if max_retrieval_score < settings.min_retrieval_score:
+    # A mixed ask is judged part by part: one unsupported part must not decline
+    # the supported ones, and only when EVERY part is unsupported is it off-topic.
+    parts = (
+        assess_parts(
+            part_results,
+            min_score=settings.min_retrieval_score,
+            overlap_limit=settings.offtopic_overlap_max_score,
+            follow_up=follow_up_detected or bool(history),
+        )
+        if len(part_results) > 1
+        else None
+    )
+    llm_query = query
+    unsupported_note = ""
+    if parts is not None and parts.mixed:
+        kept = [s for s in sources if s.chunk_id in parts.keep_chunk_ids]
+        sources = kept or sources
+        llm_query = " ".join(p.query for p in parts.supported)
+        unsupported_note = _unsupported_part_note(parts, history)
+        logger.info(
+            "mixed_ask_partial",
+            supported=len(parts.supported),
+            unsupported=len(parts.unsupported),
+        )
+
+    if (
+        parts.all_unsupported
+        if parts is not None
+        else (
+            max_retrieval_score < settings.min_retrieval_score
+            or is_off_topic_by_overlap(
+                effective_query,
+                (s.content for s in sources),
+                max_retrieval_score,
+                settings.offtopic_overlap_max_score,
+                follow_up=follow_up_detected or bool(history),
+            )
+        )
+    ):
         latency_ms = (time.perf_counter() - start) * 1000
         logger.info(
             "retrieval_low_confidence",
@@ -411,7 +619,6 @@ async def run_query(
             request_id=request_id,
             flags=["off_topic"],
             latency_ms=latency_ms,
-            sources=sources,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
         )
@@ -509,7 +716,7 @@ async def run_query(
             )
         try:
             attempt_answer, usage = await call_llm(
-                query,
+                llm_query,
                 sources,
                 history,
                 **llm_kwargs,
@@ -615,7 +822,7 @@ async def run_query(
     )
     token_details.update(style=answer_style.value, shape=shape.value)
     if clarification is None:
-        answer = polish_answer(answer, answer_style)
+        answer = polish_answer(answer, answer_style, query)
 
     # ---------------------------------------------------------
     # 5. LLM FAILURE / EMPTY RESPONSE
@@ -636,7 +843,6 @@ async def run_query(
             request_id=request_id,
             flags=flags,
             latency_ms=(time.perf_counter() - start) * 1000,
-            sources=sources,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
             prompt_tokens=prompt_tokens,
@@ -676,9 +882,10 @@ async def run_query(
     total_ms = (time.perf_counter() - start) * 1000
 
     if not grounded and gated:
-        # A vague short question whose best guess is unsupported: ask which
-        # service is meant rather than "couldn't find enough support".
-        clarification = service_clarification(query, sources)
+        # A vague short question whose best guess is unsupported: ask what they
+        # want done (or which service is meant) rather than "couldn't find
+        # enough support".
+        clarification = vague_fallback_clarification(query, history, sources)
         if clarification is not None:
             return _clarification_response(
                 clarification,
@@ -696,6 +903,8 @@ async def run_query(
             )
 
     if not grounded:
+        if gated and is_concrete_off_scope(query, history):
+            post_flags = ["off_topic"]
         outcome = "ungrounded"
         token_details["outcome"] = outcome
         logger.warning(
@@ -710,7 +919,43 @@ async def run_query(
             request_id=request_id,
             flags=post_flags,
             latency_ms=total_ms,
-            sources=sources,
+            follow_up_detected=follow_up_detected,
+            history_turns_sent=history_turns_sent,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
+            outcome=outcome,
+            token_details=token_details or None,
+        )
+
+    answer, declined = clean_declines(
+        answer, query, " ".join(s.content for s in sources)
+    )
+    plain_answer = strip_markers(answer)
+    if declined or is_refusal(plain_answer):
+        # A decline ("not covered", "talk to a specialist") is not a grounded
+        # answer: label it like other unanswered turns (grounded=False), and
+        # never attach the retrieved chunks as sources or citation markers.
+        grounded = False
+        outcome = "ungrounded"
+        token_details["outcome"] = outcome
+        token_details["declined"] = True
+        logger.info(
+            "answer_declined",
+            outcome=outcome,
+            confidence=round(confidence, 4),
+            latency_ms=round(total_ms, 2),
+        )
+        return QueryResponse(
+            answer=strip_free_brackets(plain_answer),
+            sources=[],
+            citations=[],
+            grounded=grounded,
+            confidence=confidence,
+            request_id=request_id,
+            latency_ms=total_ms,
+            guardrail_flags=post_flags,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
             prompt_tokens=prompt_tokens,
@@ -723,10 +968,21 @@ async def run_query(
 
     outcome = "answered"
     token_details["outcome"] = outcome
-    # Markers -> citations of retrieved sources only (URLs never from the text).
-    answer, citations = apply_citations(answer, sources)
+    # Markers are verified against the cited chunk (a claim the chunk does not
+    # contain loses its marker; a decline never carries one). The response lists
+    # ONLY the sources whose markers survived, in citation order, so the chips
+    # always match the markers; URLs never come from the text.
+    retrieved_documents = sorted({s.document_id for s in sources})
+    verified = verify_and_select(answer, sources)
+    answer, citations, cited_sources = (
+        verified.answer,
+        verified.citations,
+        verified.sources,
+    )
     if citations:
         token_details[TOKEN_DETAILS_KEY] = citation_records(citations)
+    if unsupported_note:
+        answer = f"{answer.rstrip()}\n\n{unsupported_note}"
     logger.info(
         "query_completed",
         outcome=outcome,
@@ -734,6 +990,9 @@ async def run_query(
         confidence=round(confidence, 4),
         latency_ms=round(total_ms, 2),
         sources=len(sources),
+        cited_sources=len(cited_sources),
+        retrieved_documents=retrieved_documents,
+        retrieval_scores=[round(s.score, 4) for s in sources],
         prompt_tok=prompt_tokens or 0,
         comp_tok=completion_tokens or 0,
         reasoning_tok=reasoning_tokens or 0,
@@ -741,7 +1000,7 @@ async def run_query(
 
     return QueryResponse(
         answer=answer,
-        sources=sources,
+        sources=cited_sources,
         citations=citations,
         grounded=grounded,
         confidence=confidence,

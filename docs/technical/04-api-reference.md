@@ -817,7 +817,7 @@ single-key API. Commits: `a795af3`, `27d516c`, `f9d76ed`. Public integration gui
 | Change | Detail |
 |---|---|
 | Allow-listed `filters` | `usable_filters()` (`app/retrieval/vector_store.py`) keeps only keys in `RETRIEVAL_FILTER_KEYS` (default `source_type`, `corpus`, `ingestion_source`) with non-empty scalar values; others are dropped and logged `retrieval_filters_ignored`. Swagger's placeholder `{"additionalProp1": {}}` no longer empties answers. |
-| `no_sources` flag | When retrieval returns nothing, `guardrail_flags` is `["no_sources"]` (was `["off_topic"]`); the fallback answer text is the same "couldn't find relevant information" message. |
+| `no_sources` flag | When retrieval returns nothing, `guardrail_flags` is `["no_sources"]` (was `["off_topic"]`); the fallback answer text is the same off-topic message ("That's a bit outside what I can help with here..."). |
 | `ip_address` on `/query` | `resolve_client_ip(request, body.ip_address)`: when `ALLOW_CLIENT_IP_OVERRIDE` is true and the value is a valid IPv4/IPv6 (first hop of a comma list, normalised), it is used; else `get_client_ip()` (TCP peer, or first `X-Forwarded-For` hop with `TRUST_PROXY_HEADERS=true`). Settings default is `true`; `.env.example` ships `false` (Unverified: value set in prod `.env`). |
 | `ip_address` on sessions and feedback | New optional field on `CreateSessionRequest` and `UserFeedbackRequest`, resolved the same way; stored against the session / feedback and used for the feedback per-IP limit. |
 | Per-IP limit on the end-user IP | `rate_limited_actor` now enforces only the per-user limit; `/query` calls `enforce_ip_rate_limit(client_ip)` after resolving the forwarded IP (30/min, in-process window). |

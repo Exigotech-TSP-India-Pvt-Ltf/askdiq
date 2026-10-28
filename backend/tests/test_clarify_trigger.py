@@ -162,6 +162,8 @@ def _no_decision_call(monkeypatch) -> None:
 
 def _assert_grounded(question) -> None:
     for option in question.options:
+        if option.label == "Not sure, help me choose":
+            continue  # a deliberate no-document escape hatch
         assert option.document_ids
         assert set(option.document_ids) <= _RETRIEVED
 
@@ -286,10 +288,12 @@ async def test_audit_request_asks_a_grounded_series(monkeypatch) -> None:
     ]
     assert [q.id for q in questions] == ["Q1", "Q2", "Q3", "Q4"]
     assert questions[0].question == "Which framework is the audit against?"
+    # Built from the whole catalogue (3 shown + "Not sure": the card holds 4).
     assert [o.label for o in questions[0].options] == [
         "Essential Eight",
-        "CIS Benchmark",
         "ISO 27001",
+        "CIS Benchmark",
+        "Not sure, help me choose",
     ]
     environment = questions[3]
     assert environment.multi_select is True
@@ -300,9 +304,14 @@ async def test_audit_request_asks_a_grounded_series(monkeypatch) -> None:
     ]
     for question in questions:
         _assert_grounded(question)
-    assert "Essential Eight, CIS Benchmark, ISO 27001" in clarification.preamble
+    # The preamble lists the whole catalogue and never claims it is all.
+    assert "DeployIQ helps with Essential Eight, ISO 27001, CIS Benchmark" in (
+        clarification.preamble
+    )
+    assert "Security Baseline" in clarification.preamble
+    assert "covers" not in clarification.preamble
     # Plain-text clients get every question.
-    assert "4. Which environment is in scope?" in response.answer
+    assert "4. Which environment are you working in?" in response.answer
 
 
 async def test_question_cap_bounds_the_series(monkeypatch) -> None:
@@ -321,8 +330,9 @@ async def test_slot_without_evidence_is_not_asked(monkeypatch) -> None:
     plain = [s.model_copy(update={"content": "DeployIQ services."}) for s in _sources()]
     response, _, _ = await _run(monkeypatch, AUDIT, sources=plain)
     assert response.clarification is not None
-    # Only the framework question is grounded (document titles).
-    assert [q.header for q in response.clarification.questions] == ["Framework"]
+    # Slot questions are intent choices: they need no document evidence.
+    assert response.clarification.questions[0].header == "Framework"
+    assert len(response.clarification.questions) > 1
 
 
 async def test_comparison_asks_what_to_compare(monkeypatch) -> None:
@@ -369,8 +379,14 @@ async def test_referent_with_history_is_answered(monkeypatch) -> None:
         ChatTurn(role="assistant", content="Essential Eight is...", outcome="answered"),
     ]
     response, calls, retrieve_calls = await _run(
-        monkeypatch, COST, ["Pricing is not published."], history=history
+        monkeypatch,
+        COST,
+        ["Essential Eight engagements are scoped to your environment."],
+        history=history,
     )
+    # The point of this test is the referent: "it" resolves from the history,
+    # so the question is answered (a bare "not published" would now be read as
+    # a decline, which is a different outcome by design).
     assert response.outcome == "answered"
     assert "clarify_block" not in calls[0]
     assert retrieve_calls[0]["history"] == history
@@ -380,13 +396,16 @@ async def test_vague_short_ungrounded_answer_asks_instead(monkeypatch) -> None:
     reply = json.dumps(
         {"action": "answer", "answer": "Plans vary.", "preamble": "", "questions": []}
     )
-    response, calls, _ = await _run(monkeypatch, "pricing?", [reply], grounded=False)
+    # ("plans?" and "pricing?" are rule-path questions; a bare topic still
+    # goes through the model gate and, naming nothing, falls back to the goal
+    # card rather than "which service?".)
+    response, calls, _ = await _run(monkeypatch, "security?", [reply], grounded=False)
     assert len(calls) == 1
     assert response.outcome == CLARIFY_OUTCOME
     assert response.clarification is not None
-    assert response.clarification.questions[0].question == (
-        "Which service would you like pricing for?"
-    )
+    question = response.clarification.questions[0]
+    assert question.header == "Goal"
+    assert question.question == "What are you hoping to get done?"
     assert response.prompt_tokens == USAGE["prompt_tokens"]
 
 

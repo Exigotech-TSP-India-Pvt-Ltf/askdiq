@@ -201,7 +201,7 @@ def test_unclear_input_fallback_message():
     resp = _fallback_response(
         request_id="req-1", flags=["unclear_input"], latency_ms=10.0
     )
-    assert "Your question appears too short or incomplete" in resp.answer
+    assert "say a bit more" in resp.answer
     assert resp.grounded is False
 
 
@@ -209,11 +209,12 @@ def test_spam_detected_fallback_message():
     resp = _fallback_response(
         request_id="req-2", flags=["spam_detected"], latency_ms=10.0
     )
-    assert "I couldn't quite understand your question" in resp.answer
+    assert "didn't come through clearly" in resp.answer
     assert resp.grounded is False
 
 
 def test_off_topic_fallback_message():
     resp = _fallback_response(request_id="req-3", flags=["off_topic"], latency_ms=10.0)
-    assert "DeployIQ knowledge base" in resp.answer
+    assert "outside what I can help with" in resp.answer
+    assert "specialists" in resp.answer
     assert resp.grounded is False

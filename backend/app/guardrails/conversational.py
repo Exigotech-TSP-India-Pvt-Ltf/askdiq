@@ -5,6 +5,7 @@ retrieval + the LLM would either waste a call or get rejected as off-topic.
 Handled here with canned, deterministic replies instead.
 """
 
+import hashlib
 import re
 
 from app.core.config import get_settings
@@ -22,49 +23,114 @@ _GREETING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Conversational fillers are short; anything longer is a real question. Every
+# pattern below is matched only after a length cap and uses bounded quantifiers.
+_MAX_CONVERSATIONAL_CHARS = 80
+
 _THANKS_RE = re.compile(
-    r"^\s*(thanks?|thank\s*you|thx|ty|cheers|appreciate\s*it)[\s!.,]*$",
+    r"^\s{0,3}(?:(?:ok(?:ay)?|great|cool|perfect|awesome|nice|brilliant|"
+    r"got\s{0,2}it|good|alright)[\s!.,]{1,4})?"
+    r"(?:thanks?|thank\s{0,2}(?:you|u)|thx|ty|cheers|appreciate\s{0,2}it)"
+    r"(?:\s{1,3}(?:a\s{1,3}lot|so\s{1,3}much|very\s{1,3}much|heaps|a\s{1,3}ton|"
+    r"again|mate|team|guys|everyone|"
+    r"for\s{1,3}(?:your\s{1,3})?(?:the\s{1,3})?(?:help|that|info(?:rmation)?)))?"
+    r"[\s!.,]{0,6}$",
     re.IGNORECASE,
 )
 
 _FAREWELL_RE = re.compile(
-    r"^\s*(bye|goodbye|see\s*you|see\s*ya|later)[\s!.,]*$",
+    r"^\s{0,3}(?:bye(?:\s{0,2}bye)?|goodbye|see\s{0,2}you(?:\s{1,3}(?:later|soon))?|"
+    r"see\s{0,2}ya|later|cya|catch\s{1,3}you\s{1,3}later|good\s{0,2}night|"
+    r"take\s{1,3}care)[\s!.,]{0,6}$",
     re.IGNORECASE,
 )
 
 _CAPABILITY_RE = re.compile(
-    r"^\s*(what\s*can\s*you\s*do|how\s*can\s*you\s*help(\s*me)?|"
-    r"what\s*do\s*you\s*do|who\s*are\s*you|what\s*are\s*you|"
-    r"help(\s*me)?|what\s*is\s*this)[\s?!.,]*$",
+    r"^\s{0,3}(?:what\s{0,2}can\s{0,2}(?:you|u)\s{0,2}do|"
+    r"how\s{0,2}can\s{0,2}(?:you|u)\s{0,2}help(?:\s{1,3}me)?|"
+    r"what\s{0,2}do\s{0,2}(?:you|u)\s{0,2}do|who\s{0,2}are\s{0,2}(?:you|u)|"
+    r"what\s{0,2}are\s{0,2}(?:you|u)(?:\s{1,3}able\s{1,3}to\s{1,3}do)?|"
+    r"what\s{0,2}can\s{0,2}(?:you|u)\s{0,2}help(?:\s{1,3}me)?\s{1,3}with|"
+    r"(?:can|could)\s{0,2}(?:you|u)\s{0,2}help(?:\s{1,3}me)?|"
+    r"help(?:\s{1,3}me)?|what\s{0,2}is\s{0,2}this)[\s?!.,]{0,6}$",
     re.IGNORECASE,
 )
 
 
-def get_greeting_response() -> str:
+_GREETING_VARIANTS: tuple[str, ...] = (
+    "Hi, I'm the {brand} assistant. Ask me about our services, Zero Trust or "
+    "Essential Eight.",
+    "Hello! Happy to help with questions about {brand}, Zero Trust or Essential Eight.",
+    "Hi there. What would you like to know about {brand}?",
+)
+
+_THANKS_VARIANTS: tuple[str, ...] = (
+    "No worries. Ask away if anything else comes up.",
+    "Happy to help.",
+    "Anytime. Just ask if you think of anything else.",
+)
+
+_FAREWELL_VARIANTS: tuple[str, ...] = (
+    "Thanks for stopping by. Have a good one.",
+    "Take care. Talk soon.",
+    "Cheers, have a great day.",
+)
+
+_CAPABILITY_VARIANTS: tuple[str, ...] = (
+    "I can explain our services, Essential Eight, Zero Trust and how we "
+    "handle your data.",
+    "Ask me about what {brand} does, how Essential Eight and Zero Trust work, "
+    "or how we look after data.",
+    "I can walk you through our services and the security frameworks we work with.",
+)
+
+
+def _variant_index(query: str, count: int) -> int:
+    """Stable (process-independent) variant choice for ``query``."""
+    digest = hashlib.sha256(query.strip().lower().encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % count
+
+
+def _render(variants: tuple[str, ...], query: str) -> str:
+    template = variants[_variant_index(query, len(variants))]
+    return template.format(brand=get_settings().brand_name)
+
+
+def _render_all(variants: tuple[str, ...]) -> tuple[str, ...]:
     brand = get_settings().brand_name
-    return (
-        f"Hello! I'm the {brand} assistant. Ask me anything about {brand}'s "
-        "platform, Essential Eight, Zero Trust, governance."
-    )
+    return tuple(v.format(brand=brand) for v in variants)
 
 
-def get_thanks_response() -> str:
-    brand = get_settings().brand_name
-    return f"You're welcome! Let me know if you have any other questions about {brand}."
+def get_greeting_response(query: str = "") -> str:
+    return _render(_GREETING_VARIANTS, query)
 
 
-def get_farewell_response() -> str:
-    brand = get_settings().brand_name
-    return f"Goodbye! Feel free to come back anytime you have questions about {brand}."
+def get_thanks_response(query: str = "") -> str:
+    return _render(_THANKS_VARIANTS, query)
 
 
-def get_capability_response() -> str:
-    brand = get_settings().brand_name
-    return (
-        f"I can answer questions about {brand} — its platform, Essential Eight "
-        "and Zero Trust compliance, governance features, and plans. "
-        "Just ask a question and I'll find the relevant information."
-    )
+def get_farewell_response(query: str = "") -> str:
+    return _render(_FAREWELL_VARIANTS, query)
+
+
+def get_capability_response(query: str = "") -> str:
+    return _render(_CAPABILITY_VARIANTS, query)
+
+
+def all_greeting_responses() -> tuple[str, ...]:
+    return _render_all(_GREETING_VARIANTS)
+
+
+def all_thanks_responses() -> tuple[str, ...]:
+    return _render_all(_THANKS_VARIANTS)
+
+
+def all_farewell_responses() -> tuple[str, ...]:
+    return _render_all(_FAREWELL_VARIANTS)
+
+
+def all_capability_responses() -> tuple[str, ...]:
+    return _render_all(_CAPABILITY_VARIANTS)
 
 
 GREETING_RESPONSE = get_greeting_response()
@@ -80,19 +146,360 @@ def detect_conversational_intent(query: str) -> str | None:
 
     text = query.strip()
 
-    if not text:
+    if not text or len(text) > _MAX_CONVERSATIONAL_CHARS:
         return None
 
     if _GREETING_RE.match(text):
-        return get_greeting_response()
+        return get_greeting_response(text)
 
     if _THANKS_RE.match(text):
-        return get_thanks_response()
+        return get_thanks_response(text)
 
     if _FAREWELL_RE.match(text):
-        return get_farewell_response()
+        return get_farewell_response(text)
 
     if _CAPABILITY_RE.match(text):
-        return get_capability_response()
+        return get_capability_response(text)
 
     return None
+
+
+# "How do I reach you" questions are on-topic but not answerable from the
+# knowledge base. Short, anchored, bounded patterns only (no nested quantifiers).
+_MAX_CONTACT_CHARS = 100
+
+_CONTACT_NOUN = (
+    r"(?:phone|telephone|mobile|email|e-?mail|address|contact|number|"
+    r"office|location|support|helpline|hotline)"
+)
+_CONTACT_NOUN_TAIL = (
+    r"(?:\s{1,3}(?:number|address|details|info|information|form|page))?"
+)
+
+_CONTACT_RE = re.compile(
+    r"^\s{0,3}(?:"
+    # "do you have a phone number?"
+    r"(?:do|does|can)\s{1,3}(?:you|u|they|the\s{1,3}company)\s{1,3}have\s{1,3}"
+    r"(?:a|an|any|some)?\s{0,3}"
+    rf"(?:(?:phone|contact|support|email|e-?mail)\s{{1,3}})?{_CONTACT_NOUN}{_CONTACT_NOUN_TAIL}"
+    # "what is your phone number" / "your email address"
+    r"|(?:(?:what|whats|what's)(?:\s{1,3}is|\s{1,3}are)?\s{1,3})?(?:your|ur|the)\s{1,3}"
+    rf"(?:(?:phone|contact|support|email|e-?mail)\s{{1,3}})?{_CONTACT_NOUN}{_CONTACT_NOUN_TAIL}"
+    # "how do I contact you" / "how can I get in touch"
+    r"|how\s{1,3}(?:do|can|could|would|should)\s{1,3}(?:i|we)\s{1,3}"
+    r"(?:contact|reach|call|email|phone|get\s{1,3}in\s{1,3}touch(?:\s{1,3}with)?|"
+    r"get\s{1,3}hold\s{1,3}of)"
+    r"(?:\s{1,3}(?:you|us|them|someone|somebody|sales|support|your\s{1,3}team|the\s{1,3}team|"
+    r"a\s{1,3}specialist|a\s{1,3}human|a\s{1,3}person|deployiq))?"
+    # "I want to talk to someone" / "speak to a human"
+    r"|(?:(?:i|we)(?:\s{1,3}(?:want|need|would\s{1,3}like)|'d\s{1,3}like)\s{1,3}to\s{1,3}|"
+    r"(?:can|could|may)\s{1,3}(?:i|we)\s{1,3}|let\s{1,3}me\s{1,3})?"
+    r"(?:talk|speak|chat)\s{1,3}(?:to|with)\s{1,3}"
+    r"(?:a|an|some|someone|somebody|your|the)?\s{0,3}"
+    r"(?:someone|somebody|human|person|agent|specialist|representative|rep|"
+    r"sales(?:\s{1,3}team)?|support(?:\s{1,3}team)?|team|expert)"
+    # "contact details" / "contact us" / "get in touch"
+    r"|(?:contact\s{1,3}(?:us|you|details|info|information|sales|support)|get\s{1,3}in\s{1,3}touch)"
+    r")[\s?!.]{0,6}$",
+    re.IGNORECASE,
+)
+
+
+def get_contact_response() -> str:
+    brand = get_settings().brand_name
+    return (
+        "Our specialists are happy to help. You can reach them through the "
+        f"Contact {brand} form on our website."
+    )
+
+
+def detect_contact_request(query: str) -> str | None:
+    """Return the fixed contact reply for a "how do I reach you" question.
+
+    Never invents a phone number, email or address. Returns None for anything
+    else (including contact details of a named person, which pre-checks block).
+    """
+
+    text = query.strip()
+    if not text or len(text) > _MAX_CONTACT_CHARS:
+        return None
+    if _CONTACT_RE.match(text):
+        return get_contact_response()
+    return None
+
+
+# Someone describing a live security incident ("we got hacked"): a warm fixed
+# reply, never remediation advice. Short, anchored, bounded patterns only, and
+# never for a question that names DeployIQ or a service (those are retrieved).
+_MAX_INCIDENT_CHARS = 100
+_INCIDENT_EVENT = (
+    r"(?:hacked|breached|compromised|phished|infected|attacked|"
+    r"under\s{1,3}attack|hit\s{1,3}(?:by|with)\s{1,3}ransomware)"
+)
+_INCIDENT_SUBJECT = r"(?:we|i|(?:our|my)\s{1,3}[a-z]{1,20}(?:\s{1,3}[a-z]{1,20})?)"
+_INCIDENT_AUX = r"(?:'ve|'re|'m|\s{1,3}(?:have|has|had|are|is|am|was|were|just|got|been|being)){0,3}"
+_INCIDENT_RE = re.compile(
+    r"^\s{0,3}(?:"
+    # "we got hacked" / "we've been breached" / "our email was compromised"
+    rf"{_INCIDENT_SUBJECT}{_INCIDENT_AUX}\s{{1,3}}{_INCIDENT_EVENT}"
+    # "ransomware" / "we have ransomware"
+    r"|(?:(?:we|i)\s{1,3}(?:have|got)\s{1,3}(?:a\s{1,3})?)?ransomware"
+    # "phishing attack happened"
+    r"|(?:a\s{1,3})?(?:phishing|ransomware|malware|cyber)\s{1,3}(?:attack|incident)\s{1,3}"
+    r"(?:happened|hit\s{1,3}us|occurred)"
+    r")(?:[\s,.!?]{1,3}(?:what|how|help|now\s{1,3}what)[a-z\s',?!.]{0,40})?[\s?!.]{0,6}$",
+    re.IGNORECASE,
+)
+INCIDENT_REPLY = (
+    "I'm sorry you're dealing with that. If it's happening right now, please "
+    "contact your IT team or provider straight away. Our specialists can also "
+    "help you assess what happened and tighten things up, so reach out through "
+    "the Contact page on our website."
+)
+_INCIDENT_NAMED_RE = re.compile(
+    r"\b(?:deploy\s?iq|essential\s{1,3}eight|e8|zero\s{1,3}trust|iso\s?27001|"
+    r"cis|baseline|services?|plans?|products?)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_incident_request(query: str) -> str | None:
+    """Return the fixed incident reply for "we got hacked"-style statements.
+
+    Pure and bounded. Returns None for informational questions (for example
+    "how does DeployIQ help after a breach?"), which go through retrieval.
+    """
+
+    text = query.strip()
+    if not text or len(text) > _MAX_INCIDENT_CHARS:
+        return None
+    if _INCIDENT_NAMED_RE.search(text):
+        return None
+    if _INCIDENT_RE.match(text):
+        return INCIDENT_REPLY
+    return None
+
+
+# Service-agnostic pricing / quote requests: the knowledge base publishes no
+# prices, so a fixed reply. Bare "how much does it cost?" is NOT matched (it
+# asks which service). Bounded, anchored patterns only.
+PRICING_REPLY = (
+    "We don't publish pricing, as it depends on your setup. The Zero Trust "
+    "Starter plan is free, and for anything else one of our specialists can "
+    "give you a proper quote. You can reach them through the Contact page on "
+    "our website."
+)
+_MAX_PRICING_CHARS = 100
+_QUOTE = r"(?:a|an)\s{1,3}(?:free\s{1,3})?(?:quote|quotation|estimate)"
+_PRICING_RE = re.compile(
+    r"^\s{0,3}(?:"
+    r"(?:can|could|may)\s{1,3}(?:i|we)\s{1,3}(?:please\s{1,3})?"
+    rf"(?:get|have|request)\s{{1,3}}{_QUOTE}"
+    r"|(?:i|we)\s{1,3}(?:would\s{1,3}like|want|need|'d\s{1,3}like)\s{1,3}"
+    rf"(?:to\s{{1,3}}(?:get|request)\s{{1,3}})?{_QUOTE}"
+    rf"|(?:get|request)\s{{1,3}}{_QUOTE}"
+    r"|how\s{1,3}much\s{1,3}(?:does|would|will|is)\s{1,3}it\s{1,3}(?:cost|be)\s{1,3}"
+    r"(?:for|to)\s{1,3}(?:my|our)\s{1,3}(?:company|business|organi[sz]ation|org|team)"
+    r"|(?:what|whats|what's)(?:\s{1,3}(?:is|are))?\s{1,3}(?:your|ur|the)\s{1,3}"
+    r"(?:prices|pricing|price|rates|costs)"
+    r")[\s?!.]{0,6}$",
+    re.IGNORECASE,
+)
+
+
+def detect_pricing_request(query: str) -> str | None:
+    """Return the fixed pricing reply for a service-agnostic pricing request."""
+
+    text = query.strip()
+    if 0 < len(text) <= _MAX_PRICING_CHARS and _PRICING_RE.match(text):
+        return PRICING_REPLY
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Support, callback, assurance, identity and acknowledgement. Fixed, warm
+# replies: no LLM, no retrieval, no sources. Every pattern is anchored or
+# keyword-based with bounded quantifiers, and every helper caps its input.
+# ---------------------------------------------------------------------------
+_MAX_SMALLTALK_CHARS = 200
+_MAX_ACK_CHARS = 30
+
+SUPPORT_CANCEL_REPLY = (
+    "I'm sorry to hear that. I can't change accounts or payments here, but our "
+    "team can sort it out quickly, so please get in touch through the Contact "
+    "page on our website."
+)
+SUPPORT_BROKEN_REPLY = (
+    "I'm really sorry, that's not the experience we want you to have. Please "
+    "contact our specialists through the Contact page on our website so they "
+    "can look into it straight away."
+)
+SUPPORT_FRUSTRATION_REPLY = (
+    "Sorry it's not helping. Tell me a bit more about what you were after, or "
+    "our specialists can step in through the Contact page on our website."
+)
+SUPPORT_MANAGER_REPLY = (
+    "Understood. I can't transfer you from here, but our team can take it from "
+    "there, so please use the Contact page on our website and ask for a manager."
+)
+CALLBACK_REPLY = (
+    "Thanks for asking. I can't take phone numbers or book calls here, so "
+    "please use the Contact page on our website and our team will get back to "
+    "you."
+)
+ASSURANCE_REPLY = (
+    "Nobody can honestly promise 100% security, and we wouldn't want to. What "
+    "we do is keep a person in charge of every change, with checkpoints and "
+    "evidence along the way. If you'd like the detail, one of our specialists "
+    "can walk you through it."
+)
+_IDENTITY_VARIANT = (
+    "I'm the {brand} website assistant, here to answer questions about our "
+    "services. I can't say much about what's under the hood, but I can tell "
+    "you all about what {brand} does."
+)
+_ACK_VARIANTS: tuple[str, ...] = (
+    "Okay! What would you like to know about {brand}?",
+    "Sure. Ask me anything about {brand}, Zero Trust or Essential Eight.",
+    "Happy to help. What can I tell you about {brand}?",
+)
+
+_CANCEL_RE = re.compile(
+    r"\b(?:cancel(?:l?ing|l?ation|l?ed)?|refunds?|refunded|unsubscribe|"
+    r"(?:close|delete|deactivate)\s{1,3}(?:my|our|the)\s{1,3}account)\b",
+    re.IGNORECASE,
+)
+_BROKEN_RE = re.compile(
+    r"\b(?:(?:broke|broken|wrecked|trashed|ruined)\s{1,3}(?:my|our|the)\b|"
+    r"(?:stopped|stops|quit)\s{1,3}working\b|(?:is|it's|its|are)\s{1,3}not\s{1,3}working\b)",
+    re.IGNORECASE,
+)
+_MANAGER_RE = re.compile(
+    r"\b(?:speak|talk|chat)\s{1,3}(?:to|with)\s{1,3}(?:a\s{1,3}|your\s{1,3}|the\s{1,3})?"
+    r"(?:manager|supervisor)\b",
+    re.IGNORECASE,
+)
+_FRUSTRATION_RE = re.compile(
+    r"\b(?:(?:this|that|you|it|u)\s{1,3}(?:is|are|'re|'s|was|sucks?)\s{1,3}"
+    r"(?:(?:so|really|totally|just|pretty|very)\s{1,3})?"
+    r"(?:useless|rubbish|garbage|terrible|crap|pathetic|awful|worthless|"
+    r"a\s{1,3}joke|a\s{1,3}waste\s{1,3}of\s{1,3}time|not\s{1,3}helpful|no\s{1,3}help)|"
+    r"(?:not|aren't|am\s{1,3}not|i'm\s{1,3}not)\s{1,3}(?:very\s{1,3})?happy|unhappy|"
+    r"complaints?|complain(?:ing)?|disappointed|fed\s{1,3}up)\b",
+    re.IGNORECASE,
+)
+_CALLBACK_RE = re.compile(
+    r"\b(?:(?:call|phone|ring|contact)\s{1,3}me\b|"
+    r"give\s{1,3}me\s{1,3}a\s{1,3}(?:call|ring)\b|call\s{0,2}back\b)",
+    re.IGNORECASE,
+)
+_ASSURANCE_RE = re.compile(
+    r"(?:\b100\s{0,2}%|\bone\s{1,3}hundred\s{1,3}percent\b|"
+    r"\b(?:completely|totally|absolutely|entirely)\s{1,3}(?=secure|safe)|"
+    r"\bimpenetrable\b|\bunbreakable\b)"
+    r"|\bguarantee[sd]?\b(?:\s{1,3}[a-z']{1,15}){0,4}\s{1,3}"
+    r"(?:security|safety|secure|safe|protection|protected)\b"
+    r"|\bpromise\b(?:\s{1,3}[a-z']{1,15}){0,4}\s{1,3}(?:safe|secure)\b",
+    re.IGNORECASE,
+)
+_UNHACKABLE_RE = re.compile(
+    r"\b(?:(?:hack|breach)[\s-]{0,2}proof|unhackable|bullet[\s-]{0,2}proof)\b",
+    re.IGNORECASE,
+)
+_ASSURANCE_SUBJECT_RE = re.compile(
+    r"\b(?:secure|safe|security|safety|protected|protection)\b", re.IGNORECASE
+)
+_IDENTITY_RE = re.compile(
+    r"^\s{0,3}(?:"
+    r"(?:what|whats|what's)(?:\s{1,3}is)?\s{1,3}(?:your|ur)\s{1,3}name"
+    r"|who\s{1,3}(?:are|r)\s{1,3}(?:you|u)"
+    r"|who\s{1,3}(?:made|built|created|developed|trained|programmed|owns)\s{1,3}(?:you|u)"
+    r"|(?:what|which)\s{1,3}(?:model|ai|llm|bot|chatbot|gpt)(?:\s{1,3}(?:model|bot))?"
+    r"\s{1,3}(?:are|r)\s{1,3}(?:you|u)(?:\s{1,3}(?:running|using|based)(?:\s{1,3}(?:on|in))?)?"
+    r"|(?:are|r)\s{1,3}(?:you|u)\s{1,3}(?:a\s{1,3}|an\s{1,3})?"
+    r"(?:real\s{1,3}(?:person|human)|bot|chatbot|human|real|robot|ai|person|"
+    r"chat\s{0,2}gpt|gpt|claude|gemini|copilot|llm)"
+    r")[\s?!.]{0,6}$",
+    re.IGNORECASE,
+)
+_ACK_RE = re.compile(
+    r"^(?:yes|yeah|yep|yup|no|nope|nah|ok|okay|k|kk|sure|cool|lol|ha(?:ha){1,3}|"
+    r"test|testing|nice|great|hm{1,4}|right|alright|\U0001F44D)"
+    r"[\s!.,?\U0001F44D]{0,6}$",
+    re.IGNORECASE,
+)
+
+
+def _bounded(query: str, limit: int) -> str | None:
+    text = query.strip()
+    if not text or len(text) > limit:
+        return None
+    return text
+
+
+def detect_support_request(query: str) -> str | None:
+    """Fixed reply for cancel/refund, "it broke", frustration and complaints.
+
+    "Can I speak to a human" is left to the contact detector. Pure and bounded.
+    """
+
+    text = _bounded(query, _MAX_SMALLTALK_CHARS)
+    if text is None:
+        return None
+    if _CANCEL_RE.search(text):
+        return SUPPORT_CANCEL_REPLY
+    if _BROKEN_RE.search(text):
+        return SUPPORT_BROKEN_REPLY
+    if _MANAGER_RE.search(text):
+        return SUPPORT_MANAGER_REPLY
+    if _FRUSTRATION_RE.search(text):
+        return SUPPORT_FRUSTRATION_REPLY
+    return None
+
+
+def detect_callback_request(query: str) -> str | None:
+    """Fixed reply for "call me" requests. Never echoes a phone number."""
+
+    text = _bounded(query, _MAX_SMALLTALK_CHARS)
+    if text is not None and _CALLBACK_RE.search(text):
+        return CALLBACK_REPLY
+    return None
+
+
+def detect_assurance_request(query: str) -> str | None:
+    """Fixed reply to "is it 100% secure / do you guarantee security"."""
+
+    text = _bounded(query, _MAX_SMALLTALK_CHARS)
+    if text is None:
+        return None
+    if _UNHACKABLE_RE.search(text) or (
+        _ASSURANCE_RE.search(text) and _ASSURANCE_SUBJECT_RE.search(text)
+    ):
+        return ASSURANCE_REPLY
+    return None
+
+
+def detect_identity_question(query: str) -> str | None:
+    """Fixed reply to "who are you / are you a bot / what model are you"."""
+
+    text = _bounded(query, _MAX_SMALLTALK_CHARS)
+    if text is not None and _IDENTITY_RE.match(text):
+        return _IDENTITY_VARIANT.format(brand=get_settings().brand_name)
+    return None
+
+
+def detect_acknowledgement(query: str) -> str | None:
+    """Fixed reply to a bare "ok", "yes", "lol" or "test" with nothing else.
+
+    The caller must skip this when the previous assistant turn was a
+    clarification, since "yes" or "ok" is then an answer to it.
+    """
+
+    text = _bounded(query, _MAX_ACK_CHARS)
+    if text is not None and _ACK_RE.match(text):
+        return _render(_ACK_VARIANTS, text)
+    return None
+
+
+def all_acknowledgement_responses() -> tuple[str, ...]:
+    return _render_all(_ACK_VARIANTS)

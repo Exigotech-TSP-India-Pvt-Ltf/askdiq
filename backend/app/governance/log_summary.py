@@ -91,6 +91,7 @@ LEVEL_FLAGS: tuple[tuple[str, frozenset[str]], ...] = (
                 "empty_answer",
                 "no_retrieved_sources",
                 "unsupported_numeric_claim",
+                "unsupported_claim",
             }
         ),
     ),

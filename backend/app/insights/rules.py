@@ -11,9 +11,9 @@ from dataclasses import dataclass
 
 from app.governance.outcomes import LEGACY_OUTCOME_MAP
 from app.guardrails.conversational import (
+    all_farewell_responses,
+    all_thanks_responses,
     detect_conversational_intent,
-    get_farewell_response,
-    get_thanks_response,
 )
 from app.guardrails.pre_checks import check_unsafe_input
 from app.insights.taxonomy import (
@@ -96,7 +96,7 @@ def conversational_intent(user_text: str) -> Intent | None:
     reply = detect_conversational_intent(user_text)
     if reply is None:
         return None
-    if reply in (get_thanks_response(), get_farewell_response()):
+    if reply in (*all_thanks_responses(), *all_farewell_responses()):
         return Intent.CLOSING
     return Intent.GREETING
 

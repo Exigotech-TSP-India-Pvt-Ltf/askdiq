@@ -31,6 +31,19 @@ class ResponseStyle(StrEnum):
     ADAPTIVE = "adaptive"
 
 
+# Words that reveal how an answer was built; customers never see them. This
+# is the "never use" list shown to the model only: the post-filter in
+# app.harness.tone matches narrower first-person source references, because
+# bare "the documents" / "knowledge base" are also ordinary product words.
+INTERNAL_WORDING: tuple[str, ...] = (
+    "supplied context",
+    "provided context",
+    "the context",
+    "the documents",
+    "knowledge base",
+    "provided information",
+)
+
 # Stock AI phrases the answer must never contain (owner's banned list).
 BANNED_PHRASES: tuple[str, ...] = (
     "As an AI",
@@ -49,29 +62,55 @@ BANNED_PHRASES: tuple[str, ...] = (
     "In today's evolving landscape",
     "I'm sorry, but I cannot",
     "Certainly!",
+    *INTERNAL_WORDING,
+    "materials",
 )
 
+# What a customer is told when something is not covered: one natural line
+# that hands over to a human. Three variants, picked by a stable hash of the
+# question so a given question always gets the same wording.
+NOT_COVERED_VARIANTS: tuple[str, ...] = (
+    "I don't have that detail, but one of our specialists can help.",
+    "That's one for our specialists, who can give you a proper answer.",
+    "I'm not sure about that one, so it's best to ask our specialists.",
+)
+NOT_COVERED_SENTENCE = NOT_COVERED_VARIANTS[0]
+NOT_COVERED_REPLY = NOT_COVERED_SENTENCE
+
+
+def not_covered_sentence(question: str | None = None) -> str:
+    """The not-covered sentence for ``question`` (deterministic, sha256 based)."""
+
+    key = (question or "").strip().lower()
+    if not key:
+        return NOT_COVERED_SENTENCE
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
+    return NOT_COVERED_VARIANTS[digest[0] % len(NOT_COVERED_VARIANTS)]
+
+
 _TONE_BLOCK = (
-    "Style: answer in the first sentence; no warm-up and no restating the "
-    "question. Use plain words; contractions are fine. Prefer specifics "
-    '(numbers, names) over vague words ("eight strategies", not "various '
-    'controls"). Say "we" for {brand} and "you" for the reader. Never write '
-    "paragraphs: more than 2 sentences of unbroken prose must become "
-    "bullets. Format with Markdown only: ## headings, - bullets, 1. steps, "
-    "**bold**, and a pipe table only when the format below asks for one; no "
-    "raw HTML, no links, no code fences unless the context quotes code. Keep "
-    "any citation marker at the end of the claim it supports, including "
-    "inside bullets and table cells. If part of the question isn't covered, "
-    "say so once, plainly, without mentioning the context, documents or "
-    "information provided, and never borrow a fact from a neighbouring "
-    "service. Never use these phrases: {banned}."
+    "Style: write like a helpful colleague. Answer in the first sentence, in "
+    'plain words; never open with "We" plus a corporate verb (deliver, '
+    "implement, provide). Use contractions and short sentences. A simple "
+    "fact gets 1-2 sentences, no headings or bullets; bullets only for 3+ "
+    "parallel items. Never write paragraphs of more than 2 sentences, and "
+    'never write "Based on", "Next step:", "Key points" or any form-style '
+    "label, or repeat a sentence or a closing. Offer at most one next step, "
+    'once, only when it helps. Say "we" for {brand} and "you" for the '
+    "reader, never the product name. Use commas or full stops, never "
+    'dashes; Australian spelling (programme); no jargon (say "a person '
+    'approves it"); no raw HTML, no links, no code fences '
+    "unless the facts quote code. Keep any citation marker at the end of the "
+    "claim it supports, including inside bullets and table cells. If "
+    "something isn't covered, say so once, naturally, and offer a "
+    "specialist. Never use these phrases: {banned}."
 )
 
 # One format instruction per AnswerShape value; only the detected one is sent.
 _SHAPE_BLOCKS: dict[str, str] = {
     "definition": (
-        "Format: a 1-2 sentence lead that answers directly, then a ## heading "
-        "with 2-4 bullets, each starting with a **bold** key term."
+        "Format: 1-3 short, plain sentences that answer directly. Add 3 or "
+        "more bullets only if the facts are really a list."
     ),
     "how_to": (
         "Format: one lead sentence, then numbered steps (1., 2., 3.), one "
@@ -81,25 +120,27 @@ _SHAPE_BLOCKS: dict[str, str] = {
         "Format: one lead sentence with the main difference, then a Markdown "
         "pipe table with a header row, a separator row (| --- |), one row per "
         "aspect and one column per option, at most 5 columns, short cells. "
-        "Leave out any aspect the context doesn't cover."
+        "Leave out any aspect the facts don't cover."
     ),
     "quick_fact": (
-        "Format: a one-line direct answer (yes, no, or the fact) of at most "
-        "25 words, then 2-3 bullets with the supporting detail."
+        "Format: the direct answer in one sentence (yes, no, or the fact), "
+        "only if the facts state it, then at most one supporting sentence. "
+        "If the facts don't state it, say what we do and point to a "
+        "specialist."
     ),
     "partial": (
-        "Format: one line stating plainly what we can't confirm, then "
-        '"Here\'s what we can confirm:" with 2-4 bullets, then a last line '
-        'starting "Next step:" with one action from the context.'
+        "Format: say what we do in 1-2 sentences, then one short natural "
+        "sentence that the rest is best checked with a specialist. Don't "
+        "open with what we can't confirm and don't use a label."
     ),
     "out_of_scope": (
-        "Format: one human line saying we don't cover that here, then a line "
-        'starting "Next step:" with one real action from the context (such '
-        "as talking to our team). Nothing else."
+        "Format: one warm line saying that is outside what we cover here, "
+        "then offer a chat with one of our specialists in natural words. "
+        "Nothing else."
     ),
     "general": (
-        "Format: a 1-2 sentence lead, then a ## heading with 2-4 bullets; "
-        "never more than 2 sentences of unbroken prose."
+        "Format: 1-3 short, plain sentences; add 3 or more bullets only if "
+        "the facts are really a list."
     ),
 }
 
@@ -137,7 +178,8 @@ def style_instructions(
     style: ResponseStyle | str | None, shape: AnswerShape | str | None
 ) -> str:
     """System-prompt suffix: the tone block plus the one format block for
-    ``shape``, with a leading space ("" for ``current``)."""
+    ``shape``, with a leading space ("" for ``current``). Any next step is
+    always a contact action, never an internal one."""
 
     profile = profile_for(style)
     if not profile.structured:

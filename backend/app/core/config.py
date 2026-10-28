@@ -106,6 +106,22 @@ class Settings(BaseSettings):
     # Guardrails
     # Semantic cosine-similarity threshold (STEP 7), not lexical overlap.
     groundedness_threshold: float = 0.45
+    # Multi-sentence answers: share of claims (sentences/bullets) whose best
+    # chunk similarity reaches groundedness_threshold (headings, decline
+    # sentences and quoted bullets are handled in post_checks). Below it ->
+    # ungrounded. Lowered from 0.6 after correct answers were rejected.
+    groundedness_min_supported_ratio: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Lexical containment: a claim whose content words (>= this share) all sit in
+    # ONE retrieved chunk (or the top two) and whose figures / capitalised names
+    # all occur there is supported regardless of cosine (short exact facts score
+    # low against long chunks).
+    groundedness_lexical_min: float = Field(default=0.7, ge=0.0, le=1.0)
+    # Citation verification: a [n] marker is kept only when the claim's content
+    # words overlap the cited chunk by at least this share (and its figures,
+    # framework names and plan words occur in the chunk). The cosine floor
+    # applies only when claim embeddings are supplied by the caller.
+    citation_min_overlap: float = Field(default=0.5, ge=0.0, le=1.0)
+    citation_min_cosine: float = Field(default=0.45, ge=0.0, le=1.0)
     max_query_length: int = 2000
 
     # Retrieval
@@ -123,6 +139,29 @@ class Settings(BaseSettings):
     # contributor to /query latency (~9.7s p50 at multiplier=5/min=25).
     retrieval_candidate_multiplier: int = 1
     retrieval_candidate_min: int = 8
+    # Hybrid lexical / named-entity signal added to the cosine score before
+    # rerank (string ops on the retrieved pool only; no extra embedding call).
+    retrieval_hybrid_enabled: bool = True
+    # Max additive boost for a chunk containing the query's rare content terms.
+    retrieval_lexical_boost: float = Field(default=0.08, ge=0.0, le=1.0)
+    # Additive boost for every chunk of a document whose name/title matches a
+    # framework or service named in the query (Zero Trust, ISO 27001, ...).
+    retrieval_entity_doc_boost: float = Field(default=0.10, ge=0.0, le=1.0)
+    # A named document keeps at least this many chunks (above the retrieval
+    # floor) in the final context, and is never dropped by the document cap.
+    retrieval_entity_min_chunks: int = Field(default=3, ge=1, le=5)
+    # Extra cosine candidates fetched so the hybrid signal can promote a
+    # document the cosine order missed; the rerank pool stays the same size.
+    retrieval_lexical_pool_extra: int = Field(default=8, ge=0, le=64)
+    # When the query names a catalogue entity whose document is missing from
+    # the cosine pool, run one extra document-constrained vector query (same
+    # embedding, no extra embedding call) and merge its top chunks in.
+    retrieval_entity_fetch_enabled: bool = True
+    retrieval_entity_fetch_k: int = Field(default=8, ge=1, le=16)
+    # Map question words (stages, covers, pricing, ...) to the heading/body
+    # vocabulary the documents use; applied to the lexical boost and the entity
+    # fetch ranking only (never to the embedding).
+    retrieval_intent_expansion_enabled: bool = True
     # Cross-document quota: round-robin across at most this many top-scoring documents.
     cross_doc_quota_max_documents: int = 3
     # Below this raw cosine score, retrieval is treated as off-topic. Kept
@@ -131,6 +170,10 @@ class Settings(BaseSettings):
     # weather?" ~0.10) — gating too high silently blocks on-topic questions
     # before the LLM+groundedness check (the real safety net) ever sees them.
     min_retrieval_score: float = 0.15
+    # Extra off-topic rule: when the best retrieval score is below this AND none
+    # of the query's content words occur in any retrieved chunk, the question is
+    # treated as off-topic (pronounceable nonsense still retrieves generic chunks).
+    offtopic_overlap_max_score: float = Field(default=0.30, ge=0.0, le=1.0)
     # Metadata keys a /query `filters` object may use. Unknown keys and non-scalar
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).
@@ -147,6 +190,11 @@ class Settings(BaseSettings):
     clarify_max_query_words: int = 4
     # Topics whose best score is within this margin of the top score compete.
     clarify_score_margin: float = 0.06
+    # The best topic must score at least this for the model to be offered the
+    # choice to clarify: low, flat scores mean the evidence is irrelevant to
+    # the question (an off-topic "What is a cat?"), so asking "which one?"
+    # would only invent options. Override with CLARIFY_MIN_GATE_SCORE.
+    clarify_min_gate_score: float = Field(default=0.30, ge=0.0, le=1.0)
     # Topics needed before a clarification is offered, and the most shown.
     clarify_min_options: int = 2
     clarify_max_options: int = 4
