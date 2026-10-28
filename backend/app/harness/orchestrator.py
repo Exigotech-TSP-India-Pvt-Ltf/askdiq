@@ -655,7 +655,7 @@ async def run_query(
     )
     token_details.update(style=answer_style.value, shape=shape.value)
     if clarification is None:
-        answer = polish_answer(answer, answer_style)
+        answer = polish_answer(answer, answer_style, query)
 
     # ---------------------------------------------------------
     # 5. LLM FAILURE / EMPTY RESPONSE

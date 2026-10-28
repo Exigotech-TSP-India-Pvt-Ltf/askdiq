@@ -196,6 +196,19 @@ _LEAK_PHRASES: tuple[str, ...] = (
     *(f"according to the {noun}" for noun in _SOURCE_NOUNS[:2]),
     *(f"according to the provided {noun}" for noun in _SOURCE_NOUNS[:2]),
 )
+# Source references that only leak when they report an absence ("the
+# materials do not state ..."); a bare "training materials" stays untouched.
+_SOURCE_REFS: tuple[str, ...] = (
+    "published materials",
+    "our materials",
+    "the materials",
+    "available materials",
+    "the information available to me",
+    "the information provided",
+    "in the material",
+    "in my sources",
+    "we don't have details showing",
+)
 # "in the knowledge base" is a leak only when it reports an absence.
 _KB_LOCATION = "in the knowledge base"
 _ABSENCE_CUES: tuple[str, ...] = (
@@ -251,7 +264,9 @@ def _kb_absence(lowered: str) -> bool:
 
 def _has_internal_wording(lowered: str) -> bool:
     lowered = lowered.replace("\N{RIGHT SINGLE QUOTATION MARK}", "'")
-    return any(phrase in lowered for phrase in _LEAK_PHRASES) or _kb_absence(lowered)
+    if any(phrase in lowered for phrase in _LEAK_PHRASES) or _kb_absence(lowered):
+        return True
+    return any(ref in lowered for ref in _SOURCE_REFS) and _is_negative(lowered)
 
 
 def _is_negative(lowered: str) -> bool:
@@ -351,7 +366,9 @@ def _rewrite_line(line: str) -> tuple[str, int, int]:
             kept += 1
         else:
             replaced += 1
-            if _is_negative(content.lower()):
+            if _is_negative(content.lower()) and not any(
+                NOT_COVERED_SENTENCE in done for done in out
+            ):
                 out.append(NOT_COVERED_SENTENCE + piece[len(piece.rstrip()) :])
     text = "".join(out).rstrip()
     return (f"{indent}{prefix}{text}" if text.strip() else ""), replaced, kept
@@ -398,13 +415,121 @@ def remove_internal_wording(answer: str) -> str:
         return "\n".join(lines)
     if not kept:
         return NOT_COVERED_REPLY
-    text = "\n".join(_drop_repeats(rewritten)).strip()
+    text = _single_next_step("\n".join(_drop_repeats(rewritten)).strip())
     if _SPECIALIST not in text.lower():
         text += _NEXT_STEP_LINE
     return text
 
 
-def polish_answer(answer: str, style: ResponseStyle | str | None) -> str:
+def _single_next_step(text: str) -> str:
+    """Keep only the first "Next step:" line."""
+
+    seen = False
+    kept: list[str] = []
+    for line in text.split("\n"):
+        if line.strip().lower().startswith(_NEXT_STEP):
+            if seen:
+                continue
+            seen = True
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+# ---------------------------------------------------------------------------
+# Unrequested trailing caveat
+# ---------------------------------------------------------------------------
+
+_CAVEAT_STARTS: tuple[str, ...] = (
+    "we don't have details on ",
+    "we don't have details about ",
+    "we do not have details on ",
+    "we do not have details about ",
+)
+_TOPIC_STOPS: tuple[str, ...] = (
+    " beyond",
+    " for ",
+    " in ",
+    " at ",
+    " here",
+    " yet",
+    " right now",
+    ".",
+    "[",
+)
+_TOPIC_FILLER = frozenset(
+    {"that", "this", "those", "these", "the", "any", "it", "such"}
+)
+_STEM_LEN = 4
+_MIN_STEM_WORD = 5
+_TOPIC_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "pric": ("cost", "quote", "fee", "how much", "pay", "budget"),
+    "time": ("how long", "weeks", "months", "duration", "when", "schedule"),
+}
+
+
+def _caveat_terms(sentence: str) -> list[str]:
+    """Topic words a "We don't have details on ..." sentence talks about."""
+
+    lowered = sentence.strip().lower().replace("\N{RIGHT SINGLE QUOTATION MARK}", "'")
+    start = next((c for c in _CAVEAT_STARTS if lowered.startswith(c)), "")
+    if not start:
+        return []
+    topic = lowered[len(start) :]
+    cut = len(topic)
+    for stop in _TOPIC_STOPS:
+        found = topic.find(stop)
+        if found >= 0:
+            cut = min(cut, found)
+    words = topic[:cut].replace(",", " ").replace(" or ", " ").replace(" and ", " ")
+    return [w for w in words.split() if w not in _TOPIC_FILLER]
+
+
+def _term_asked(term: str, question: str) -> bool:
+    stem = term[:_STEM_LEN] if len(term) >= _MIN_STEM_WORD else term
+    if stem in question:
+        return True
+    return any(syn in question for syn in _TOPIC_SYNONYMS.get(stem, ()))
+
+
+def drop_unrequested_caveat(answer: str, question: str | None) -> str:
+    """Drop a final "We don't have details on <topic>" the visitor never asked about.
+
+    Only the last prose sentence is considered, only when other content stays,
+    and only when no word of its topic appears in the visitor's question.
+    Without a question nothing is removed.
+    """
+
+    if not question or not question.strip():
+        return answer
+    asked = question.lower()
+    lines = answer.split("\n")
+    index = len(lines) - 1
+    while index >= 0 and (
+        not lines[index].strip() or lines[index].strip().lower().startswith(_NEXT_STEP)
+    ):
+        index -= 1
+    if index < 0:
+        return answer
+    pieces = _split_sentences(lines[index])
+    terms = _caveat_terms(pieces[-1]) if pieces else []
+    if not terms or any(_term_asked(term, asked) for term in terms):
+        return answer
+    remaining = "".join(pieces[:-1]).rstrip()
+    others = any(line.strip() for line in lines[:index])
+    if not remaining and not others:
+        return answer
+    if remaining:
+        lines[index] = remaining
+    else:
+        del lines[index]
+    return "\n".join(lines).strip()
+
+
+def polish_answer(
+    answer: str,
+    style: ResponseStyle | str | None,
+    question: str | None = None,
+) -> str:
     """Apply the filter under ``adaptive`` only (``current`` stays the baseline).
 
     The paragraph guard only logs, for the eval; it never rewrites.
@@ -413,6 +538,7 @@ def polish_answer(answer: str, style: ResponseStyle | str | None) -> str:
     if style != ResponseStyle.ADAPTIVE:
         return answer
     polished = remove_internal_wording(strip_stock_phrases(answer))
+    polished = drop_unrequested_caveat(polished, question)
     if paragraph_guard(polished):
         logger.info("answer_paragraph_guard", prose_run=longest_prose_run(polished))
     return polished

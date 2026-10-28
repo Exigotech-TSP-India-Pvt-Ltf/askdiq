@@ -268,3 +268,77 @@ def test_internal_wording_filter_is_linear(text: str) -> None:
     started = time.perf_counter()
     remove_internal_wording(text)
     assert time.perf_counter() - started < 2.0
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DeployIQ's published materials do not state exact dollar pricing.",
+        "We don't have details showing exact pricing.",
+        "Our materials don't mention a price.",
+        "The information provided does not say.",
+        "There is no mention in the material of a price.",
+        "Nothing in my sources covers that.",
+    ],
+)
+def test_live_source_references_become_not_covered(text: str) -> None:
+    assert remove_internal_wording(text) == NOT_COVERED_REPLY
+
+
+def test_source_reference_sentence_is_replaced_once_with_one_next_step() -> None:
+    raw = (
+        "We run guided pilots [1]. The published materials do not state exact "
+        "pricing. The materials don't mention timelines.\n\n"
+        "Next step: talk to a specialist."
+    )
+    out = remove_internal_wording(raw)
+    assert out.startswith(
+        "We run guided pilots [1]. We don't have details on that here."
+    )
+    assert out.count("don't have details") == 1
+    assert out.lower().count("next step") == 1
+    assert "materials" not in out
+
+
+def test_legit_materials_and_supported_answer_unchanged() -> None:
+    raw = "We include training materials for your team [1]. Setup is guided [2]."
+    assert remove_internal_wording(raw) == raw
+    assert polish_answer(raw, ResponseStyle.ADAPTIVE, "What do you include?") == raw
+
+
+_COMPOUND = (
+    "We run guided pilots [1]. Rollouts are staged [2]. "
+    "We don't have details on pricing or timelines beyond that."
+)
+
+
+def test_unrequested_trailing_caveat_is_removed() -> None:
+    out = polish_answer(
+        _COMPOUND + "\n\nNext step: talk to a specialist.",
+        ResponseStyle.ADAPTIVE,
+        "What are pilots and how are rollouts staged?",
+    )
+    assert out == (
+        "We run guided pilots [1]. Rollouts are staged [2].\n\n"
+        "Next step: talk to a specialist."
+    )
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["What does it cost and how do pilots work?", "How long is a rollout?"],
+)
+def test_trailing_caveat_kept_when_topic_was_asked(question: str) -> None:
+    assert polish_answer(_COMPOUND, ResponseStyle.ADAPTIVE, question) == _COMPOUND
+
+
+def test_trailing_caveat_kept_without_question_or_other_content() -> None:
+    assert polish_answer(_COMPOUND, ResponseStyle.ADAPTIVE) == _COMPOUND
+    only = "We don't have details on pricing."
+    assert polish_answer(only, ResponseStyle.ADAPTIVE, "How do pilots work?") == only
+
+
+def test_system_prompt_forbids_unasked_disclaimers() -> None:
+    prompt = prompts.get_system_prompt(ResponseStyle.ADAPTIVE, "overview")
+    assert "not ask about" in prompt
+    assert "at most one" in prompt
