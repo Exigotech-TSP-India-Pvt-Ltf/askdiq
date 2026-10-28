@@ -529,3 +529,47 @@ async def test_typical_supported_answers_are_grounded(monkeypatch, answer):
     )
     grounded, _c, flag = await check_groundedness(answer, [source], 0.45)
     assert (grounded, flag) == (True, None)
+
+
+# --- decline sentences vs citation markers ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We don't have details on that. [2]",
+        "Pricing isn't published here [1][4] - contact one of our specialists.",
+        "Formal certifications are not yet claimed.",
+        "I can't see that detail in what I have. [3]",
+        "A specialist can confirm the exact plan.",
+    ],
+)
+def test_is_decline_sentence_true(text):
+    assert post_checks.is_decline_sentence(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DeployIQ covers the Essential Eight. [1]",
+        "The Starter plan is free. [2]",
+        "We assess your tenant against CIS controls.",
+    ],
+)
+def test_is_decline_sentence_false(text):
+    assert not post_checks.is_decline_sentence(text)
+
+
+def test_marker_alone_is_not_an_assertion_in_a_decline():
+    assert is_refusal("We don't have details on that. [1] Talk to a specialist. [2]")
+    assert not is_refusal("We don't have details on 99% uptime. Talk to a specialist.")
+
+
+def test_partial_decline_is_not_a_refusal_and_keeps_answer_claims():
+    answer = (
+        "DeployIQ assesses Essential Eight maturity and prioritises controls. [1]\n"
+        "We don't have details on pricing; talk to a specialist. [2]"
+    )
+    assert not is_refusal(answer)
+    claims = split_claims(answer)
+    assert len(claims) == 1 and "Essential Eight" in claims[0]

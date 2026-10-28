@@ -54,8 +54,9 @@ _HANDOFF_MAX_WORDS = 25
 _FILLER_MAX_WORDS = 2
 # A decline never carries figures, citations or assurance claims: any of these
 # means the answer asserts something and must go through the normal checks.
+# A bare ``[n]`` marker is NOT an assertion: markers are stripped first.
 _ASSERTION_RE = re.compile(
-    r"[\d%$]|\[\s{0,3}\d{1,3}\s{0,3}\]|"
+    r"[\d%$]|"
     r"\bguarantee|\buptime\b|\bslas?\b|\bservice\s+level\b|\bcertif|"
     r"\bcompliant\b|\broi\b|\brisk[- ]free\b|\bdiscounts?\b|\b24\s?/\s?7\b",
     re.IGNORECASE,
@@ -77,6 +78,50 @@ _CURRENCY_WORD_RE = re.compile(
 )
 
 
+_MARKER_RE = re.compile(r"\s{0,3}\[\s{0,3}\d{1,3}\s{0,3}\]")
+# Absence / "not published" wordings (sentence level, markers already removed).
+_ABSENCE_RE = re.compile(
+    r"\bnot\s+(?:publicly\s+|currently\s+)?(?:published|disclosed|documented|detailed)\b|"
+    r"\b(?:isn'?t|aren'?t|is\s+not|are\s+not|wasn'?t)\s+(?:\w{1,15}\s+){0,2}"
+    r"(?:listed|published|claimed|stated|mentioned|specified|available|provided)\b|"
+    r"\bno\s+(?:\w{1,15}\s+){0,3}(?:are|is|were)\s+(?:\w{1,15}\s+){0,2}"
+    r"(?:published|listed|stated|provided|available)\b|"
+    r"\b(?:do(?:es)?\s+not|don'?t|doesn'?t)\s+claim\b|"
+    r"\b(?:can'?t|cannot|can\s+not|couldn'?t)\s+see\s+(?:that|those|any|the)\b|"
+    r"\bnothing\s+(?:is\s+)?(?:published|listed)\b",
+    re.IGNORECASE,
+)
+# "Contact one of our specialists", "a specialist can ...": a hand-off, not a fact.
+_HANDOFF_EXTRA_RE = re.compile(
+    r"\bcontact\s+(?:one\s+of\s+)?(?:our|a|the)\s+(?:\w{3,15}\s+)?"
+    r"(?:specialists?|team|experts?|consultants?)\b|\bspecialists?\s+can\b",
+    re.IGNORECASE,
+)
+_DECLINE_SENTENCE_MAX_WORDS = 45
+
+
+def is_decline_sentence(text: str, *, handoff: bool = True) -> bool:
+    """True when one sentence declines ("we don't have details", "not published").
+
+    Citation markers in ``text`` are ignored. A decline asserts nothing, so it
+    must never carry a source marker. With ``handoff=False`` a bare "talk to a
+    specialist" hand-off does not count (only absence / "no details" wordings).
+    """
+    plain = _MARKER_RE.sub("", text[:_MAX_ANALYSED_CHARS]).strip()
+    plain = plain.replace("\u2019", "'")
+    if not plain or len(plain.split()) > _DECLINE_SENTENCE_MAX_WORDS:
+        return False
+    if (
+        _NEGATIVE_ANSWER_RE.search(plain)
+        or _DECLINE_PHRASE_RE.search(plain)
+        or _ABSENCE_RE.search(plain)
+    ):
+        return True
+    return handoff and bool(
+        _HANDOFF_RE.search(plain) or _HANDOFF_EXTRA_RE.search(plain)
+    )
+
+
 def _sentences(text: str) -> list[str]:
     parts = _SENTENCE_SPLIT_RE.split(text[:_MAX_ANALYSED_CHARS].strip())
     cleaned = (_BULLET_PREFIX_RE.sub("", part).strip() for part in parts)
@@ -90,7 +135,7 @@ def is_refusal(answer: str) -> bool:
     specialist; any positive factual sentence, figure, citation marker or
     assurance claim makes it a real answer.
     """
-    text = answer.strip()
+    text = _MARKER_RE.sub("", answer).strip()
     if not text or len(text.split()) > _REFUSAL_MAX_WORDS or _ASSERTION_RE.search(text):
         return False
     declines = 0
@@ -397,6 +442,26 @@ def is_off_topic_by_overlap(
     if max_score_limit is None:
         max_score_limit = get_settings().offtopic_overlap_max_score
     return max_score < max_score_limit and not query_has_overlap(query, chunks)
+
+
+# Words that say nothing about WHICH document a claim comes from.
+_CLAIM_IGNORED = frozenset(
+    {
+        "deployiq", "exigo", "offer", "offers", "offered", "provide", "provides",
+        "include", "includes", "including", "deliver", "delivers", "help", "helps",
+        "support", "supports", "across", "using", "used", "uses", "your", "yours",
+        "ours", "team", "also", "along", "well", "work", "works", "ensure", "ensures",
+    }
+)  # fmt: skip
+_MAX_STEM_CHARS = 20000
+
+
+def citation_stems(text: str) -> frozenset[str]:
+    """Stemmed content words (>= 4 letters, no stopwords) used to match a claim to a chunk."""
+    words = _WORD_RE.findall(text[:_MAX_STEM_CHARS].lower())
+    return frozenset(
+        _canon(w) for w in words if w not in _STOPWORDS and w not in _CLAIM_IGNORED
+    )
 
 
 # ---------------------------------------------------------------------------

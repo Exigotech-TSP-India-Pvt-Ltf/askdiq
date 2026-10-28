@@ -33,10 +33,10 @@ from app.harness.ambiguity import assess, rule_clarification, service_clarificat
 from app.harness.answer_shape import detect_shape, refine_shape
 from app.harness.citations import (
     TOKEN_DETAILS_KEY,
-    apply_citations,
     citation_records,
     strip_free_brackets,
     strip_markers,
+    verify_and_select,
 )
 from app.harness.clarify import (
     ANSWER_OR_CLARIFY,
@@ -818,8 +818,17 @@ async def run_query(
 
     outcome = "answered"
     token_details["outcome"] = outcome
-    # Markers -> citations of retrieved sources only (URLs never from the text).
-    answer, citations = apply_citations(answer, sources)
+    # Markers are verified against the cited chunk (a claim the chunk does not
+    # contain loses its marker; a decline never carries one). The response lists
+    # ONLY the sources whose markers survived, in citation order, so the chips
+    # always match the markers; URLs never come from the text.
+    retrieved_documents = sorted({s.document_id for s in sources})
+    verified = verify_and_select(answer, sources)
+    answer, citations, cited_sources = (
+        verified.answer,
+        verified.citations,
+        verified.sources,
+    )
     if citations:
         token_details[TOKEN_DETAILS_KEY] = citation_records(citations)
     logger.info(
@@ -829,6 +838,9 @@ async def run_query(
         confidence=round(confidence, 4),
         latency_ms=round(total_ms, 2),
         sources=len(sources),
+        cited_sources=len(cited_sources),
+        retrieved_documents=retrieved_documents,
+        retrieval_scores=[round(s.score, 4) for s in sources],
         prompt_tok=prompt_tokens or 0,
         comp_tok=completion_tokens or 0,
         reasoning_tok=reasoning_tokens or 0,
@@ -836,7 +848,7 @@ async def run_query(
 
     return QueryResponse(
         answer=answer,
-        sources=sources,
+        sources=cited_sources,
         citations=citations,
         grounded=grounded,
         confidence=confidence,
