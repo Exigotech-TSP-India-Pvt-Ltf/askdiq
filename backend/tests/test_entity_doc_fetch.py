@@ -12,6 +12,8 @@ import pytest
 
 from app.retrieval import reranker
 from app.retrieval.reranker import (
+    INTENT_ENTITY_WEIGHT,
+    INTENT_HEADING_SHARE,
     entities_missing_from_pool,
     entity_sql_pattern,
     pick_entity_documents,
@@ -30,6 +32,7 @@ from .test_retrieval_misses import (
 )
 
 ZT = "zero-trust-learn-more.md"
+INTENT_START = r"\m"
 ISO = "iso-27001-technical-controls.md"
 TRUST = "trust-center.md"
 
@@ -53,29 +56,43 @@ class _FakeSession:
         ]
         self.main_limits: list[int] = []
         self.entity_limits: list[int] = []
+        self.intent_patterns: list[str | None] = []
 
     async def execute(self, stmt) -> _Rows:
-        pattern = next(
-            (
-                value
-                for value in stmt.compile().params.values()
-                if isinstance(value, str) and "[^a-z0-9]" in value
-            ),
-            None,
-        )
+        params = [v for v in stmt.compile().params.values() if isinstance(v, str)]
+        pattern = next((v for v in params if "[^a-z0-9]" in v), None)
+        intent = next((v for v in params if v.startswith(INTENT_START)), None)
         ordered = sorted(self.rows, key=lambda row: row[1])
         if pattern is None:
             self.main_limits.append(stmt._limit)
             return _Rows(ordered[: stmt._limit])
         self.entity_limits.append(stmt._limit)
+        self.intent_patterns.append(intent)
         matched = [
             row for row in ordered if re.search(pattern, row[5].lower(), re.IGNORECASE)
         ]
-        seen: dict[uuid.UUID, int] = {}
+        by_section = "coalesce" in str(stmt.compile()).split("PARTITION BY")[1][:80]
+        intent_re = re.compile(
+            intent.replace(r"\m", r"\b").replace(r"\M", r"\b") if intent else "$^",
+            re.IGNORECASE,
+        )
+
+        def adjusted(row) -> float:
+            if intent is None:
+                return row[1]
+            chunk = row[0]
+            head = bool(intent_re.search(_heading(chunk)))
+            body = bool(intent_re.search(chunk.content))
+            return row[1] - INTENT_ENTITY_WEIGHT * (
+                INTENT_HEADING_SHARE * head + (1 - INTENT_HEADING_SHARE) * body
+            )
+
+        seen: dict[tuple, int] = {}
         ranked = []
-        for row in matched:  # breadth first: rank within each document
-            seen[row[0].document_id] = seen.get(row[0].document_id, 0) + 1
-            ranked.append((seen[row[0].document_id], row[1], row))
+        for row in sorted(matched, key=adjusted):  # breadth first per partition
+            key = (row[0].document_id, _heading(row[0]) if by_section else None)
+            seen[key] = seen.get(key, 0) + 1
+            ranked.append((seen[key], adjusted(row), row))
         ranked.sort(key=lambda item: (item[0], item[1]))
         return _Rows([item[2] for item in ranked][: stmt._limit])
 
@@ -116,7 +133,7 @@ def _settings(monkeypatch):
 
 
 async def test_missing_entity_doc_is_fetched_selected_and_merged():
-    cosine = _generic_cosines({ZT: 0.20})
+    cosine = _generic_cosines({ZT: 0.40})
     session, store, results = await _search(cosine, Q_STAGES)
 
     assert session.entity_limits == [4]
@@ -224,3 +241,75 @@ def test_sql_patterns_match_catalogue_documents():
 def test_fixture_corpus_has_delivery_and_iso_chunks():
     assert "Assess" in {_heading(c) for c in CORPUS[ZT]}
     assert len(CORPUS[ISO]) >= 2
+
+
+DELIVERY_HEADINGS = {"Assess", "Prioritise", "Design", "Implement", "Assure"}
+
+
+@pytest.fixture
+def _intent(monkeypatch):
+    monkeypatch.setattr(reranker.settings, "retrieval_intent_expansion_enabled", True)
+    monkeypatch.setattr(reranker.settings, "retrieval_entity_fetch_k", 8)
+    monkeypatch.setattr(reranker.settings, "retrieval_entity_min_chunks", 3)
+
+
+def _headings(results, doc: str) -> list[str]:
+    return [_heading(c) for c, _ in results if NAME_BY_ID[c.document_id] == doc]
+
+
+@pytest.mark.usefixtures("_intent")
+async def test_stages_question_selects_delivery_approach_chunks():
+    cosine = _generic_cosines({ZT: 0.40})
+    session, _store, results = await _search(cosine, Q_STAGES)
+
+    assert session.entity_limits == [8]  # one extra round trip, fetch_k = 8
+    assert session.intent_patterns[0] is not None
+    assert DELIVERY_HEADINGS & set(_headings(results, ZT))
+    assert len(_headings(results, ZT)) >= 3
+
+
+@pytest.mark.usefixtures("_intent")
+async def test_delivery_chunk_beats_definition_chunk_for_stages():
+    # "What Is Zero Trust?" has the better cosine, but "Assess" matches the
+    # expanded vocabulary, so it wins the entity document's slot.
+    cosine = _generic_cosines({ZT: 0.40})
+    for chunk in CORPUS[ZT]:
+        if _heading(chunk) == "What Is Zero Trust?":
+            cosine[chunk.id] = 0.55
+        if _heading(chunk) == "Assess":
+            cosine[chunk.id] = 0.45
+    _session, _store, results = await _search(cosine, Q_STAGES, top_k=3)
+    assert "Assess" in _headings(results, ZT)
+
+
+@pytest.mark.usefixtures("_intent")
+async def test_cover_question_spans_sections_one_chunk_per_heading():
+    cosine = _generic_cosines({TRUST: 0.40})
+    session, _store, results = await _search(cosine, Q_TRUST)
+
+    headings = _headings(results, TRUST)
+    assert len(session.entity_limits) == 1
+    assert 3 <= len(headings) <= 4
+    assert len(headings) == len(set(headings))  # at most one chunk per heading
+
+
+@pytest.mark.usefixtures("_intent")
+async def test_intent_expansion_disabled_by_setting(monkeypatch):
+    monkeypatch.setattr(reranker.settings, "retrieval_intent_expansion_enabled", False)
+    session, _store, _results = await _search(_generic_cosines({ZT: 0.40}), Q_STAGES)
+    assert session.intent_patterns in ([], [None])
+
+
+@pytest.mark.usefixtures("_intent")
+async def test_no_intent_words_means_plain_entity_fetch():
+    cosine = _generic_cosines({ISO: 0.40})
+    session, _store, results = await _search(cosine, Q_ISO)
+    assert session.intent_patterns == [None]
+    assert _docs(results).count(ISO) >= 2
+
+
+@pytest.mark.usefixtures("_intent")
+async def test_trigger_skipped_when_intent_heading_already_in_pool():
+    cosine = _generic_cosines({ZT: 0.80})
+    session, _store, _results = await _search(cosine, Q_STAGES)
+    assert session.entity_limits == []

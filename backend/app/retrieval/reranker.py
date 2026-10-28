@@ -210,9 +210,124 @@ class HybridSignal:
 
     boosts: dict[Any, float] = field(default_factory=dict)  # chunk id -> boost
     entity_doc_ids: tuple[str, ...] = ()  # documents named by the query
+    spread: bool = False  # "what does X cover": one chunk per section heading
 
     def rank_key(self, chunk_id: Any, score: float) -> float:
         return score + self.boosts.get(chunk_id, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# Query-intent expansion: question words -> the heading/body vocabulary the
+# documents use. Deterministic; feeds only the lexical boost and the entity
+# fetch ranking (the embedding is never touched).
+# ---------------------------------------------------------------------------
+
+_EXPANDED_TERM_WEIGHT = 0.7  # expanded terms count less than the user's own words
+SPREAD_MAX_CHUNKS = 4  # "what does X cover": chunks kept per named document
+INTENT_ENTITY_WEIGHT = 0.30  # added to entity-document chunks matching the intent
+INTENT_HEADING_SHARE = 0.6  # heading vs body share of the intent match score
+_INTENT_BODY_HITS = 3  # distinct body terms that saturate the body share
+_SHORT_TERM_LEN = 5  # shorter terms match whole words, longer ones as prefixes
+
+# (question-word pattern, vocabulary, spread across section headings)
+_INTENT_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...], bool], ...] = tuple(
+    (re.compile(query_re, re.IGNORECASE), terms, spread)
+    for query_re, terms, spread in (
+        (
+            r"\b(?:stages?|steps?|phases?|process(?:es)?|workflows?|journey|"
+            r"deliver(?:y|ies|s)?|methodolog(?:y|ies)|approach(?:es)?)\b",
+            (
+                "approach",
+                "delivery approach",
+                "journey",
+                "how it works",
+                "phases",
+                "assess",
+                "prioritise",
+                "design",
+                "implement",
+                "validate",
+            ),
+            False,
+        ),
+        (
+            r"\b(?:covers?|covered|includ(?:e|es|ed|ing)|contains?|offers?)\b|"
+            r"\bwhat\s+is\s+in\b",
+            ("sections", "what we", "key", "areas"),
+            True,
+        ),
+        (
+            r"\b(?:outcomes?|benefits?|results?)\b",
+            ("outcomes", "benefits", "value"),
+            False,
+        ),
+        (
+            r"\b(?:pricing|prices?|costs?|plans?)\b",
+            ("plans", "starter", "professional", "free"),
+            False,
+        ),
+        (
+            r"\bwho\s+is\s+(?:it|this)\s+for\b|\baudience\b",
+            ("who", "designed for", "for organisations"),
+            False,
+        ),
+    )
+)
+
+
+@dataclass(frozen=True)
+class QueryIntent:
+    """Expanded vocabulary for a question (empty when nothing matched)."""
+
+    terms: tuple[str, ...] = ()
+    spread: bool = False
+
+    def __bool__(self) -> bool:
+        return bool(self.terms)
+
+    def pattern(self, *, postgres: bool = False) -> str:
+        """Regex matching any term at a word start (short terms as whole words)."""
+        start, end = (r"\m", r"\M") if postgres else (r"\b", r"\b")
+        parts = [
+            re.escape(term) + (r"\w*" if len(term) >= _SHORT_TERM_LEN else end)
+            for term in self.terms
+        ]
+        return start + "(?:" + "|".join(parts) + ")"
+
+    def compiled(self) -> re.Pattern[str]:
+        return re.compile(self.pattern(), re.IGNORECASE)
+
+    def stems(self) -> list[str]:
+        """Content-term stems of the vocabulary (for the lexical boost)."""
+        seen: dict[str, None] = {}
+        for term in self.terms:
+            for tok in _TOKEN_RE.findall(term.lower()):
+                if tok not in _STOPWORDS and len(tok) >= _MIN_TERM_LEN:
+                    seen.setdefault(_stem(tok), None)
+        return list(seen)
+
+    def match(self, heading: str, content: str) -> float:
+        """0..1: heading hit (most weight) plus distinct body terms."""
+        if not self:
+            return 0.0
+        regex = self.compiled()
+        head = 1.0 if regex.search(heading) else 0.0
+        hits = {m.lower() for m in regex.findall(content)}
+        body = min(1.0, len(hits) / _INTENT_BODY_HITS)
+        return INTENT_HEADING_SHARE * head + (1 - INTENT_HEADING_SHARE) * body
+
+
+def query_intent(query: str) -> QueryIntent:
+    """Vocabulary the question's words map to; empty when disabled."""
+    if not query or not settings.retrieval_intent_expansion_enabled:
+        return QueryIntent()
+    terms: dict[str, None] = {}
+    spread = False
+    for query_re, vocabulary, spreads in _INTENT_RULES:
+        if query_re.search(query):
+            terms.update(dict.fromkeys(vocabulary))
+            spread = spread or spreads
+    return QueryIntent(tuple(terms), spread)
 
 
 def _stem(token: str) -> str:
@@ -311,6 +426,8 @@ def compute_hybrid_signal(
     entity_doc_set = set(entity_docs)
 
     terms = _query_terms(query)
+    intent = query_intent(query)
+    expanded = [stem for stem in intent.stems() if stem not in terms]
     texts: list[set[str]] = []
     heads: list[set[str]] = []
     for chunk, _score in candidates:
@@ -323,10 +440,11 @@ def compute_hybrid_signal(
     # nothing; terms found in none of them cannot discriminate either.
     pool = len(candidates)
     weights: dict[str, float] = {}
-    for term in terms:
-        df = sum(1 for stems in texts if term in stems)
-        if df:
-            weights[term] = math.log(1.0 + (pool - df + 0.5) / (df + 0.5))
+    for scale, group in ((1.0, terms), (_EXPANDED_TERM_WEIGHT, expanded)):
+        for term in group:
+            df = sum(1 for stems in texts if term in stems)
+            if df:
+                weights[term] = scale * math.log(1.0 + (pool - df + 0.5) / (df + 0.5))
     total = sum(weights.values())
 
     boosts: dict[Any, float] = {}
@@ -340,9 +458,15 @@ def compute_hybrid_signal(
             boost += lex * ((1 - _HEADING_WEIGHT) * body + _HEADING_WEIGHT * head)
         if ent > 0 and str(chunk.document_id) in entity_doc_set:
             boost += ent
+            if intent:
+                boost += INTENT_ENTITY_WEIGHT * intent.match(
+                    _chunk_heading(chunk), chunk.content
+                )
         if boost:
             boosts[chunk.id] = boost
-    return HybridSignal(boosts=boosts, entity_doc_ids=tuple(entity_docs))
+    return HybridSignal(
+        boosts=boosts, entity_doc_ids=tuple(entity_docs), spread=intent.spread
+    )
 
 
 def entity_reserved_indices(
@@ -391,7 +515,10 @@ def trim_pool(
     reserved = entity_reserved_indices(
         ranked,
         signal.entity_doc_ids,
-        settings.retrieval_entity_min_chunks,
+        max(
+            settings.retrieval_entity_min_chunks,
+            SPREAD_MAX_CHUNKS if signal.spread else 0,
+        ),
         max(1, limit // 2),
     )
     position = {index: pos for pos, (index, _cand) in enumerate(ranked)}
@@ -435,13 +562,22 @@ def entities_missing_from_pool(
     pool: Sequence[tuple[Any, float]],
     doc_names: Mapping[Any, str],
     min_chunks: int,
+    intent: QueryIntent | None = None,
 ) -> list[str]:
-    """Named entities with fewer than `min_chunks` chunks in the candidate pool."""
+    """Named entities whose document is under-represented in the candidate pool.
+
+    That is: fewer than `min_chunks` chunks in the pool or, when the question
+    carries an `intent`, no chunk whose section heading matches its vocabulary.
+    """
+    heading_re = intent.compiled() if intent else None
     missing: list[str] = []
     for key in entities:
         doc_ids = set(entity_documents([key], doc_names))
-        present = sum(1 for chunk, _score in pool if str(chunk.document_id) in doc_ids)
-        if present < min_chunks:
+        chunks = [chunk for chunk, _score in pool if str(chunk.document_id) in doc_ids]
+        if len(chunks) < min_chunks or (
+            heading_re is not None
+            and not any(heading_re.search(_chunk_heading(c)) for c in chunks)
+        ):
             missing.append(key)
     return missing
 

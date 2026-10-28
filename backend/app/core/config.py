@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     retrieval_entity_doc_boost: float = Field(default=0.10, ge=0.0, le=1.0)
     # A named document keeps at least this many chunks (above the retrieval
     # floor) in the final context, and is never dropped by the document cap.
-    retrieval_entity_min_chunks: int = Field(default=2, ge=1, le=5)
+    retrieval_entity_min_chunks: int = Field(default=3, ge=1, le=5)
     # Extra cosine candidates fetched so the hybrid signal can promote a
     # document the cosine order missed; the rerank pool stays the same size.
     retrieval_lexical_pool_extra: int = Field(default=8, ge=0, le=64)
@@ -157,7 +157,11 @@ class Settings(BaseSettings):
     # the cosine pool, run one extra document-constrained vector query (same
     # embedding, no extra embedding call) and merge its top chunks in.
     retrieval_entity_fetch_enabled: bool = True
-    retrieval_entity_fetch_k: int = Field(default=4, ge=1, le=10)
+    retrieval_entity_fetch_k: int = Field(default=8, ge=1, le=16)
+    # Map question words (stages, covers, pricing, ...) to the heading/body
+    # vocabulary the documents use; applied to the lexical boost and the entity
+    # fetch ranking only (never to the embedding).
+    retrieval_intent_expansion_enabled: bool = True
     # Cross-document quota: round-robin across at most this many top-scoring documents.
     cross_doc_quota_max_documents: int = 3
     # Below this raw cosine score, retrieval is treated as off-topic. Kept
