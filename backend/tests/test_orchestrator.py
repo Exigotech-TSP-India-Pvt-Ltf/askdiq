@@ -173,7 +173,8 @@ async def test_groundedness_failure_returns_fallback(monkeypatch):
 async def test_happy_path_grounded_on_first_attempt(monkeypatch):
     response = await _run(
         monkeypatch,
-        llm_side_effect=["Deploy IQ manages Essential Eight compliance."],
+        sources=[_source("Deploy IQ manages Essential Eight compliance.")],
+        llm_side_effect=["Deploy IQ manages Essential Eight compliance. [1]"],
         post_checks_side_effect=[(True, 0.85, [])],
     )
 
@@ -239,8 +240,13 @@ async def test_declined_answer_is_not_grounded_and_has_no_sources(monkeypatch):
 async def test_short_positive_answer_with_handoff_keeps_sources(monkeypatch):
     response = await _run(
         monkeypatch,
+        sources=[
+            _source(
+                "DeployIQ maps your controls to Essential Eight and tracks maturity."
+            )
+        ],
         llm_side_effect=[
-            "DeployIQ maps your controls to Essential Eight and tracks maturity. "
+            "DeployIQ maps your controls to Essential Eight and tracks maturity. [1] "
             "Talk to one of our specialists to get started."
         ],
         post_checks_side_effect=[(True, 0.85, [])],
