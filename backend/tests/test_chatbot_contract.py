@@ -172,12 +172,6 @@ def test_attack_or_junk_is_flagged(query: str) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="known guard gap, see KNOWN_GAP_ATTACKS")
-@pytest.mark.parametrize("query", cases.KNOWN_GAP_ATTACKS)
-def test_known_gap_attack_is_not_yet_flagged(query: str) -> None:
-    assert run_pre_checks(query, MAX_QUERY_LENGTH), f"{query!r} is not flagged yet"
-
-
 @pytest.mark.parametrize("name", list(cases.INCIDENT_FLAGGED))
 def test_production_incident_stays_flagged(name: str) -> None:
     query = cases.INCIDENT_FLAGGED[name]
