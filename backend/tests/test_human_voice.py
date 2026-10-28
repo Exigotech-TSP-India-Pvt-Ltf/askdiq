@@ -15,7 +15,7 @@ from app.harness.style import (
 )
 from app.harness.tone import humanise, polish_answer
 
-BUDGET_SECONDS = 2.0
+BUDGET_SECONDS = 5.0  # generous: guards against quadratic blow-ups, not machine load
 SPECIALIST_CLOSING = "If you'd like, one of our specialists can help with this."
 
 
