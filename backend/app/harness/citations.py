@@ -323,20 +323,73 @@ def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
 _CLAUSE_SPLIT_RE = re.compile(r"\s{0,3}(?:;|\u2014|\u2013|\s-\s)\s{0,3}")
 
 
+_FINE_BOUNDS: tuple[str, ...] = (", ", " but ", ";", " and ")
+_MAX_FINE_CLAUSES = 12
+_MIN_FINE_WORDS = 3
+_MAX_FINE_CHARS = 2000
+
+
+def _fine_clauses(clauses: list[str]) -> list[str]:
+    """Split clauses further on ", ", " but ", ";" and " and " (bounded)."""
+    out: list[str] = []
+    for clause in clauses:
+        pieces = [clause] if len(clause) <= _MAX_FINE_CHARS else []
+        for bound in _FINE_BOUNDS:
+            pieces = [p for piece in pieces for p in piece.split(bound)]
+        out.extend(p.strip() for p in pieces[:_MAX_FINE_CLAUSES])
+    return [c for c in out if c]
+
+
+def _factual_clauses(plain: str) -> list[str] | None:
+    """Factual clauses of a sentence mixing a fact and an absence clause.
+
+    ``None`` when the sentence has no absence clause at all.
+    """
+    clauses = [c for c in _CLAUSE_SPLIT_RE.split(plain) if c]
+    if not any(is_decline_sentence(c, handoff=False) for c in clauses):
+        return None
+    return [
+        c
+        for c in _fine_clauses(clauses)
+        if len(c.split()) >= _MIN_FINE_WORDS and not is_decline_sentence(c)
+    ]
+
+
 def _claim_text(unit: str) -> str:
     """The claim of ``unit``: markers, emphasis and hand-off clauses removed.
 
-    "We offer X; talk to a specialist." keeps "We offer X". A sentence with an
-    absence / decline clause ("pricing isn't published here") or nothing but a
-    hand-off yields ``""``: it asserts nothing a source can back, so it never
-    carries a marker.
+    "We offer X; talk to a specialist." keeps "We offer X". A sentence that is
+    only an absence / decline ("pricing isn't published here") or a hand-off
+    yields ``""``: it asserts nothing a source can back. A MIXED sentence
+    ("Pricing isn't published for X, it's offered as Free") is verified on its
+    factual clause alone.
     """
     plain = _EMPHASIS_RE.sub("", strip_markers(unit))
     plain = " ".join(_BULLET_RE.sub("", plain).split())
+    factual = _factual_clauses(plain)
+    if factual is not None:
+        return " ".join(factual)
     clauses = [c for c in _CLAUSE_SPLIT_RE.split(plain) if c]
-    if any(is_decline_sentence(c, handoff=False) for c in clauses):
-        return ""
     return " ".join(c for c in clauses if not is_decline_sentence(c))
+
+
+def _after_factual(unit: str, markers: str) -> str | None:
+    """``unit`` (markers removed) with ``markers`` right after its factual clause.
+
+    Only for a mixed sentence whose absence clause trails the factual one.
+    """
+    plain = strip_markers(unit)
+    factual = _factual_clauses(" ".join(plain.split()))
+    if not factual:
+        return None
+    end = plain.rfind(factual[-1])
+    if end < 0:
+        return None
+    end += len(factual[-1])
+    rest = plain[end:]
+    if not rest.strip(" ,;.!?") or not any(ch.isalpha() for ch in rest):
+        return None
+    return f"{plain[:end]}{markers}{rest}"
 
 
 class _Verifier:
@@ -429,7 +482,12 @@ class _Verifier:
             out.append("".join(f"[{n}]" for n in self.renumber(kept)))
             last = end
         out.append(unit[last:])
-        return "".join(out)
+        result = "".join(out)
+        if len(runs) == 1 and not unit[runs[0][1] :].strip(" \t.!?") and out[1]:
+            moved = _after_factual(result, out[1])
+            if moved is not None:
+                return moved
+        return result
 
 
 def verify_and_select(

@@ -314,3 +314,13 @@ def test_refusal_ignores_bare_markers_but_not_real_assertions() -> None:
         "We don't have details on that here. [1] Talk to a specialist. [2]"
     )
     assert not is_refusal("DeployIQ covers Essential Eight. [1] Talk to a specialist.")
+
+
+def test_mixed_fact_and_absence_sentence_keeps_marker() -> None:
+    answer, citations = verify_citations(
+        "Pricing isn't published for the Zero Trust Starter plan, it's offered "
+        "as Free [1].",
+        [_src(1, _ZT_PLANS)],
+    )
+    assert "[1]" in answer
+    assert len(citations) == 1
