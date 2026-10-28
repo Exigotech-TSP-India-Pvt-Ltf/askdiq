@@ -18,7 +18,7 @@ import uuid
 from collections import defaultdict
 from typing import NamedTuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
@@ -27,6 +27,10 @@ from app.models.db_models import Chunk, Document
 from app.retrieval.reranker import (
     HybridSignal,
     compute_hybrid_signal,
+    entities_missing_from_pool,
+    entity_sql_pattern,
+    named_entities,
+    pick_entity_documents,
     rerank,
     trim_pool,
 )
@@ -35,6 +39,7 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 _SCALAR = (str, int, float, bool)
+_MAX_ENTITY_FETCH_DOCUMENTS = 2
 
 
 def usable_filters(filters: dict | None) -> dict[str, str]:
@@ -184,6 +189,26 @@ class VectorStore:
         )
 
         # ---------------------------------------------------------
+        # STEP 2b: Named-entity document fetch. Reordering cannot rescue a
+        # document whose chunks are not in the cosine pool, so when the query
+        # names a framework/service whose document is under-represented, one
+        # extra document-constrained query (same embedding) adds its chunks.
+        # ---------------------------------------------------------
+        if hybrid and query_text and settings.retrieval_entity_fetch_enabled:
+            extra = await self._fetch_entity_chunks(
+                query_embedding, query_text, candidates, filters
+            )
+            if extra:
+                by_id = {chunk.id: (chunk, score) for chunk, score in candidates}
+                for chunk, score in extra:
+                    current = by_id.get(chunk.id)
+                    if current is None or score > current[1]:
+                        by_id[chunk.id] = (chunk, score)
+                candidates = sorted(
+                    by_id.values(), key=lambda item: item[1], reverse=True
+                )
+
+        # ---------------------------------------------------------
         # STEP 5: Rerank the candidate pool before final selection
         # ---------------------------------------------------------
 
@@ -191,11 +216,9 @@ class VectorStore:
         if hybrid and query_text:
             # String ops only (no embedding call): lexical + named-entity
             # boost, then trim the pool back to its normal rerank size.
-            doc_names = {
-                doc_id: f"{link.source_name or ''} {link.title or ''}"
-                for doc_id, link in self.document_links.items()
-            }
-            signal = compute_hybrid_signal(query_text, candidates, doc_names)
+            signal = compute_hybrid_signal(
+                query_text, candidates, self._document_names()
+            )
             self.rank_boosts.update(signal.boosts)
             candidates = trim_pool(candidates, signal, candidate_k)
 
@@ -215,6 +238,99 @@ class VectorStore:
             max_documents=max_documents,
             signal=signal,
         )
+
+    def _document_names(self) -> dict[uuid.UUID, str]:
+        return {
+            doc_id: f"{link.source_name or ''} {link.title or ''}"
+            for doc_id, link in self.document_links.items()
+        }
+
+    async def _fetch_entity_chunks(
+        self,
+        query_embedding: list[float],
+        query_text: str,
+        pool: list[tuple[Chunk, float]],
+        filters: dict | None,
+    ) -> list[tuple[Chunk, float]]:
+        """Top chunks of the documents a named entity maps to, if missing.
+
+        No work (and no DB round trip) unless the query names a catalogue
+        entity with fewer than max(`retrieval_entity_min_chunks`,
+        `retrieval_entity_fetch_k`) chunks in `pool`. One query, restricted to
+        those documents by name and to chunks not already in the pool, reusing
+        the already-computed embedding; at most two documents are kept.
+        """
+        entities = named_entities(query_text)
+        if not entities:
+            return []
+        missing = entities_missing_from_pool(
+            entities,
+            pool,
+            self._document_names(),
+            max(
+                settings.retrieval_entity_min_chunks, settings.retrieval_entity_fetch_k
+            ),
+        )
+        if not missing:
+            return []
+
+        fetch_k = settings.retrieval_entity_fetch_k
+        title = Document.doc_metadata["title"].as_string()
+        distance = Chunk.embedding.cosine_distance(query_embedding)
+        # Breadth first: each document's best chunk, then its second, ...
+        rank_in_doc = func.row_number().over(
+            partition_by=Chunk.document_id, order_by=distance
+        )
+        stmt = (
+            select(
+                Chunk,
+                distance.label("distance"),
+                Document.source_url,
+                Document.section_links,
+                title,
+                Document.source_name,
+            )
+            .join(Document, Document.id == Chunk.document_id)
+            .options(defer(Chunk.embedding))
+            .where(Chunk.document_id.not_in(quarantined_document_ids()))
+            .where(Chunk.id.not_in([chunk.id for chunk, _score in pool]))
+            .where(
+                func.concat_ws(" ", Document.source_name, title).op("~*")(
+                    entity_sql_pattern(missing)
+                )
+            )
+        )
+        for key, value in usable_filters(filters).items():
+            stmt = stmt.where(Chunk.chunk_metadata[key].as_string() == value)
+        stmt = stmt.order_by(rank_in_doc, distance).limit(fetch_k)
+
+        rows = (await self.session.execute(stmt)).all()
+        await self.session.commit()
+
+        names = {
+            chunk.document_id: f"{source_name or ''} {doc_title or ''}"
+            for chunk, _d, _u, _s, doc_title, source_name in rows
+        }
+        best: dict[str, float] = {}
+        for chunk, dist, *_rest in rows:
+            doc_id = str(chunk.document_id)
+            best[doc_id] = max(best.get(doc_id, float("-inf")), 1 - dist)
+        keep = set(
+            pick_entity_documents(missing, names, best, _MAX_ENTITY_FETCH_DOCUMENTS)
+        )
+
+        fetched: list[tuple[Chunk, float]] = []
+        for chunk, dist, source_url, section_links, doc_title, source_name in rows:
+            if str(chunk.document_id) not in keep:
+                continue
+            self.document_links[chunk.document_id] = DocumentLink(
+                source_url, bool(section_links), doc_title, source_name
+            )
+            fetched.append((chunk, 1 - dist))
+        logger.info(
+            "retrieval_entity_fetch entities=%s chunks=%d", missing, len(fetched)
+        )
+        return fetched
 
     @staticmethod
     def _select_diverse_chunks(

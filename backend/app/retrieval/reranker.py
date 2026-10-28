@@ -399,3 +399,69 @@ def trim_pool(
     chosen += [item for item in ranked if item[0] not in reserved]
     chosen = sorted(chosen[:limit], key=lambda item: position[item[0]])
     return [candidate for _index, candidate in chosen]
+
+
+# ---------------------------------------------------------------------------
+# Entity document fetch helpers (see VectorStore._fetch_entity_chunks)
+# ---------------------------------------------------------------------------
+
+_SQL_SEP = "[^a-z0-9]+"
+_SQL_EDGE_L = "(^|[^a-z0-9])"
+_SQL_EDGE_R = "([^a-z0-9]|$)"
+# PostgreSQL (case-insensitive) regex per entity, matched against
+# "<source_name> <title>"; mirrors the Python document patterns in
+# _ENTITY_CATALOGUE. The Python pattern re-checks every row afterwards.
+_ENTITY_SQL_RE: dict[str, str] = {
+    key: _SQL_EDGE_L + body + _SQL_EDGE_R
+    for key, body in {
+        "zero trust": f"zero{_SQL_SEP}trust",
+        "iso 27001": f"iso{_SQL_SEP}27001",
+        "essential eight": f"(e8|essential{_SQL_SEP}(eight|8))",
+        "cis": "cis",
+        "trust center": f"trust{_SQL_SEP}cent(er|re)",
+        "security baseline": f"security{_SQL_SEP}baseline",
+        "responsible ai": f"responsible{_SQL_SEP}ai",
+    }.items()
+}
+
+
+def entity_sql_pattern(entities: Sequence[str]) -> str:
+    """One alternation matching the documents of the given entities."""
+    return "|".join(f"({_ENTITY_SQL_RE[key]})" for key in entities)
+
+
+def entities_missing_from_pool(
+    entities: Sequence[str],
+    pool: Sequence[tuple[Any, float]],
+    doc_names: Mapping[Any, str],
+    min_chunks: int,
+) -> list[str]:
+    """Named entities with fewer than `min_chunks` chunks in the candidate pool."""
+    missing: list[str] = []
+    for key in entities:
+        doc_ids = set(entity_documents([key], doc_names))
+        present = sum(1 for chunk, _score in pool if str(chunk.document_id) in doc_ids)
+        if present < min_chunks:
+            missing.append(key)
+    return missing
+
+
+def pick_entity_documents(
+    entities: Sequence[str],
+    doc_names: Mapping[Any, str],
+    best_score: Mapping[str, float],
+    cap: int,
+) -> list[str]:
+    """At most `cap` document ids: best document per entity first, then by score."""
+    chosen: list[str] = []
+    rest: list[str] = []
+    for key in entities:
+        docs = sorted(
+            entity_documents([key], doc_names),
+            key=lambda doc_id: (-best_score.get(doc_id, 0.0), doc_id),
+        )
+        if docs and docs[0] not in chosen:
+            chosen.append(docs[0])
+        rest.extend(doc_id for doc_id in docs[1:] if doc_id not in rest)
+    rest.sort(key=lambda doc_id: (-best_score.get(doc_id, 0.0), doc_id))
+    return (chosen + [doc_id for doc_id in rest if doc_id not in chosen])[:cap]
