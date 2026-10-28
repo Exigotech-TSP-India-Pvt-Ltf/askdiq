@@ -495,7 +495,7 @@ def build_v2_cases(EvalCase) -> list:  # noqa: N803, RUF100
             "v2_company_experience",
             "How long has Exigo Tech been supporting organisations?",
             [ABOUT],
-            ["decade|10 years|ten years"],
+            ["decade"],
             expect_clarification=False,
         ),
         # An elongated but valid question is answered, not blocked as spam.
@@ -503,7 +503,9 @@ def build_v2_cases(EvalCase) -> list:  # noqa: N803, RUF100
             "v2_elongated_valid_question",
             "what is deployiq tellllll mee okayyyy",
             [ABOUT, PLATFORM, HOME],
-            [OVERVIEW_FACT],
+            # Answer-only facts (home-page.md / deploy-iq-platform.md); the
+            # visitor's query has none of these words.
+            ["methodology|security and compliance|microsoft 365"],
             expect_clarification=False,
         ),
         answerable(
