@@ -103,8 +103,9 @@ async def test_off_topic_when_retrieval_score_below_minimum(monkeypatch):
 
     assert response.grounded is False
     assert response.guardrail_flags == ["off_topic"]
-    # Low-confidence sources are still surfaced as evidence.
-    assert response.sources == low_score_sources
+    # A fallback never surfaces the retrieved chunks.
+    assert response.sources == []
+    assert response.citations == []
 
 
 async def test_terse_on_topic_phrasing_passes_the_relevance_gate(monkeypatch):
