@@ -193,8 +193,9 @@ def test_citation_markers_survive_the_voice_filter(answer: str) -> None:
 
 def test_not_covered_reply_is_one_natural_line_with_a_specialist() -> None:
     assert NOT_COVERED_REPLY == (
-        "I can't see that detail, so it's best to check with one of our specialists."
+        "I don't have that detail, but one of our specialists can help."
     )
+    assert "can't see" not in NOT_COVERED_REPLY
     assert "\n" not in NOT_COVERED_REPLY
 
 
@@ -281,4 +282,6 @@ def test_current_not_covered_tail_dropped_when_unasked() -> None:
         "talk to one of our specialists."
     )
     assert drop_unrequested_caveat(f"{body} {tail}", "What is E8?") == body
-    assert drop_unrequested_caveat(tail, "What is E8?").startswith("I can't see that")
+    assert drop_unrequested_caveat(tail, "What is E8?").startswith(
+        ("I can't see that", "I don't have that", "That's one for", "I'm not sure")
+    )
