@@ -38,12 +38,18 @@ _NEGATIVE_ANSWER_RE = re.compile(
 _DECLINE_PHRASE_RE = re.compile(
     r"\boutside\s+(?:of\s+)?what\s+i\s+can\s+help\s+with\b|"
     r"\bnot\s+(?:completely\s+|entirely\s+)?(?:certain|sure)\b|"
-    r"\b(?:don'?t|do\s+not)\s+have\s+(?:any\s+)?(?:details|information|specifics)\b",
+    r"\b(?:don'?t|do\s+not)\s+have\s+(?:any\s+)?(?:details|information|specifics)\b|"
+    r"\b(?:don'?t|do\s+not)\s+have\s+(?:that|the|any)\s+(?:\w{1,15}\s+){0,2}"
+    r"(?:details?|information|specifics)\b|"
+    r"\b(?:can'?t|cannot|don'?t|do\s+not)\s+see\s+(?:that|those|any|the)\b|"
+    r"\bone\s+for\s+(?:our|the)\s+(?:specialists?|team|experts?)\b",
     re.IGNORECASE,
 )
 _HANDOFF_RE = re.compile(
-    r"\b(?:talk|speak|reach\s+out|get\s+in\s+touch)\s+(?:to|with)\s+"
+    r"\b(?:talk|speak|reach\s+out|get\s+in\s+touch|check)\s+(?:to|with)\s+"
     r"(?:one\s+of\s+)?(?:our|a|the)\s+(?:\w{3,15}\s+)?"
+    r"(?:specialists?|team|experts?|consultants?)\b|"
+    r"\bask\s+(?:one\s+of\s+)?(?:our|a|the)\s+(?:\w{3,15}\s+)?"
     r"(?:specialists?|team|experts?|consultants?)\b",
     re.IGNORECASE,
 )
@@ -87,7 +93,7 @@ _ABSENCE_RE = re.compile(
     r"\bno\s+(?:\w{1,15}\s+){0,3}(?:are|is|were)\s+(?:\w{1,15}\s+){0,2}"
     r"(?:published|listed|stated|provided|available)\b|"
     r"\b(?:do(?:es)?\s+not|don'?t|doesn'?t)\s+claim\b|"
-    r"\b(?:can'?t|cannot|can\s+not|couldn'?t)\s+see\s+(?:that|those|any|the)\b|"
+    r"\b(?:can'?t|cannot|can\s+not|couldn'?t|don'?t|do\s+not)\s+see\s+(?:that|those|any|the)\b|"
     r"\bnothing\s+(?:is\s+)?(?:published|listed)\b",
     re.IGNORECASE,
 )

@@ -25,6 +25,11 @@ _DECLINE_PHRASES = (
     "i could not find",
     "i don't have",
     "i do not have",
+    "i don't have that detail",
+    "i don't have details on",
+    "one for our specialists",
+    "not sure about that one",
+    "best to ask our specialists",
     "we don't have details",
     "we do not have details",
     "we don't have any details",
@@ -329,6 +334,8 @@ _NOT_COVERED_MARKS = (
     "aren't",
     "not yet",
     "no details",
+    "not sure about",
+    "one for our specialists",
 )
 
 
