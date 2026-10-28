@@ -117,6 +117,78 @@ INCIDENT_RE = re.compile(
     r"\b(?:hacked|breached|compromised|ransomware|phished|malware|data breach)\b",
     re.IGNORECASE,
 )
+# The vague "what are you hoping to get done?" card (ambiguity.GOAL): its header,
+# option labels and the fixed question each pick is folded into (the model never
+# writes either). A pick replaces the vague original.
+GOAL_HEADER = "Goal"
+GOAL_QUESTION = "What are you hoping to get done?"
+GOAL_OVERVIEW = "Understand what you do"
+GOAL_AUDIT = "Get audit ready"
+GOAL_SECURITY = "Fix or tighten security"
+GOAL_PRICING = "Pricing or talk to someone"
+GOAL_AUDIT_QUERY = (
+    "How does DeployIQ help an organisation get audit ready: which frameworks "
+    "(Essential Eight, ISO 27001, CIS) does it cover and what evidence and timeline?"
+)
+GOAL_QUERIES: dict[str, str] = {
+    GOAL_OVERVIEW: (
+        "What does DeployIQ do and which services does it offer to "
+        "organisations like yours?"
+    ),
+    GOAL_AUDIT: GOAL_AUDIT_QUERY,
+    GOAL_SECURITY: (
+        "How does DeployIQ assess and improve Microsoft 365 security: Security "
+        "Baseline Assessment, Zero Trust, CIS Benchmark?"
+    ),
+    GOAL_PRICING: (
+        "How do I get pricing and talk to a DeployIQ specialist: engagement "
+        "model, timelines, contact?"
+    ),
+}
+# Words of a vague opener that carry no context worth keeping next to a pick.
+_VAGUE_WORDS = frozenset(
+    [
+        "need",
+        "want",
+        "help",
+        "advice",
+        "something",
+        "stuff",
+        "know",
+        "idk",
+        "confused",
+        "sure",
+        "idea",
+        "question",
+        "start",
+        "best",
+        "recommend",
+        "options",
+        "option",
+        "compare",
+        "tell",
+        "things",
+        "thing",
+        "have",
+        "looking",
+        "look",
+        "into",
+        "improve",
+        "get",
+        "started",
+        "should",
+        "buy",
+        "am",
+        "not",
+        "no",
+        "dunno",
+        "unsure",
+        "lost",
+        "assistance",
+        "guidance",
+        "support",
+    ]
+)
 _STOPWORDS = frozenset(
     {
         "a",
@@ -755,6 +827,27 @@ def _match_text(clarification: Clarification, text: str) -> list[dict[str, objec
     return entries
 
 
+def _goal_context(original: str) -> str | None:
+    """The vague original, only when it still says something ("a small business")."""
+    words = [w.lower() for w in _WORD_RE.findall(original)]
+    kept = [w for w in words if w not in _STOPWORDS and w not in _VAGUE_WORDS]
+    return original.strip() if len(kept) >= 2 else None  # noqa: PLR2004
+
+
+def _goal_query(last: Clarification, entries: list[dict[str, object]]) -> str | None:
+    """A Goal pick replaces the vague original (kept only when it has context)."""
+    if len(entries) != 1 or entries[0].get("other_text"):
+        return None
+    if entries[0].get("header") != GOAL_HEADER:
+        return None
+    labels = entries[0]["labels"]
+    pick = GOAL_QUERIES.get(str(labels[0])) if labels else None  # type: ignore[index]
+    if pick is None:
+        return None
+    context = _goal_context(last.original_query)
+    return compose_query(pick, [context]) if context else pick
+
+
 def resolve_clarification_reply(
     query: str,
     history: list[ChatTurn] | None,
@@ -775,8 +868,10 @@ def resolve_clarification_reply(
         doc_ids = list(
             dict.fromkeys(d for e in entries for d in e["document_ids"])  # type: ignore[attr-defined]
         )
+        goal_query = _goal_query(last, entries)
         return ResolvedReply(
-            query=compose_query(last.original_query, [_part(e) for e in entries]),
+            query=goal_query
+            or compose_query(last.original_query, [_part(e) for e in entries]),
             original_query=last.original_query,
             answers=entries,
             document_ids=doc_ids,

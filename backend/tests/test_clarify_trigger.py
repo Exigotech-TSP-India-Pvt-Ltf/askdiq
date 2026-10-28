@@ -390,15 +390,16 @@ async def test_vague_short_ungrounded_answer_asks_instead(monkeypatch) -> None:
     reply = json.dumps(
         {"action": "answer", "answer": "Plans vary.", "preamble": "", "questions": []}
     )
-    # ("pricing?" is now a rule-path question; a non-cost bare topic still
-    # goes through the model gate and falls back to the service question.)
-    response, calls, _ = await _run(monkeypatch, "plans?", [reply], grounded=False)
+    # ("plans?" and "pricing?" are rule-path questions; a bare topic still
+    # goes through the model gate and, naming nothing, falls back to the goal
+    # card rather than "which service?".)
+    response, calls, _ = await _run(monkeypatch, "security?", [reply], grounded=False)
     assert len(calls) == 1
     assert response.outcome == CLARIFY_OUTCOME
     assert response.clarification is not None
-    assert response.clarification.questions[0].question == (
-        "Which DeployIQ service do you mean?"
-    )
+    question = response.clarification.questions[0]
+    assert question.header == "Goal"
+    assert question.question == "What are you hoping to get done?"
     assert response.prompt_tokens == USAGE["prompt_tokens"]
 
 
