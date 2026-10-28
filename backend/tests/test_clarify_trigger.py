@@ -291,8 +291,8 @@ async def test_audit_request_asks_a_grounded_series(monkeypatch) -> None:
     # Built from the whole catalogue (3 shown + "Not sure": the card holds 4).
     assert [o.label for o in questions[0].options] == [
         "Essential Eight",
-        "CIS Benchmark",
         "ISO 27001",
+        "CIS Benchmark",
         "Not sure, help me choose",
     ]
     environment = questions[3]
@@ -330,8 +330,9 @@ async def test_slot_without_evidence_is_not_asked(monkeypatch) -> None:
     plain = [s.model_copy(update={"content": "DeployIQ services."}) for s in _sources()]
     response, _, _ = await _run(monkeypatch, AUDIT, sources=plain)
     assert response.clarification is not None
-    # Only the framework question is grounded (document titles).
-    assert [q.header for q in response.clarification.questions] == ["Framework"]
+    # Slot questions are intent choices: they need no document evidence.
+    assert response.clarification.questions[0].header == "Framework"
+    assert len(response.clarification.questions) > 1
 
 
 async def test_comparison_asks_what_to_compare(monkeypatch) -> None:

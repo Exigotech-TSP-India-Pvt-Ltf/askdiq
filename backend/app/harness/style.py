@@ -66,36 +66,36 @@ BANNED_PHRASES: tuple[str, ...] = (
     "materials",
 )
 
-# What a customer is told when something is not covered: said once, plainly,
-# then a human next step. Used by the tone post-filter.
-NOT_COVERED_SENTENCE = "We don't have details on that here."
-NOT_COVERED_REPLY = (
-    f"{NOT_COVERED_SENTENCE}\n\n"
-    "Next step: talk to one of our specialists, who will be happy to help."
+# What a customer is told when something is not covered: one natural line
+# that hands over to a human. Used by the tone post-filter.
+NOT_COVERED_SENTENCE = (
+    "I can't see that detail, so it's best to check with one of our specialists."
 )
+NOT_COVERED_REPLY = NOT_COVERED_SENTENCE
 
 _TONE_BLOCK = (
-    "Style: answer in the first sentence; no warm-up and no restating the "
-    "question. Use plain words; contractions are fine. Prefer specifics "
-    '(numbers, names) over vague words ("eight strategies", not "various '
-    'controls"). Say "we" for {brand} and "you" for the reader. Never write '
-    "paragraphs: more than 2 sentences of unbroken prose must become "
-    "bullets. Format with Markdown only: ## headings, - bullets, 1. steps, "
-    "**bold**, and a pipe table only when the format below asks for one; no "
-    "raw HTML, no links, no code fences unless the facts quote code. Keep "
-    "any citation marker at the end of the claim it supports, including "
-    "inside bullets and table cells. If part of the question isn't covered, "
-    "say so once, plainly (for example \"We don't have details on that "
-    'here"), never say where your facts come from, offer to connect the '
-    "reader with one of our specialists, and never borrow a fact from a "
-    "neighbouring service. Never use these phrases: {banned}."
+    "Style: write like a helpful colleague. Answer in the first sentence, in "
+    'plain words; never open with "We" plus a corporate verb (deliver, '
+    "implement, provide). Use contractions and short sentences. A simple "
+    "fact gets 1-2 sentences, no headings or bullets; bullets only for 3+ "
+    "parallel items. Never write paragraphs of more than 2 sentences, and "
+    'never write "Based on", "Next step:", "Key points" or any form-style '
+    "label, or repeat a sentence or a closing. Offer at most one next step, "
+    'once, only when it helps. Say "we" for {brand} and "you" for the '
+    "reader, never the product name. Use commas or full stops, never "
+    'dashes; Australian spelling (programme); no jargon (say "a person '
+    'approves it"); no raw HTML, no links, no code fences '
+    "unless the facts quote code. Keep any citation marker at the end of the "
+    "claim it supports, including inside bullets and table cells. If "
+    "something isn't covered, say so once, naturally, and offer a "
+    "specialist. Never use these phrases: {banned}."
 )
 
 # One format instruction per AnswerShape value; only the detected one is sent.
 _SHAPE_BLOCKS: dict[str, str] = {
     "definition": (
-        "Format: a 1-2 sentence lead that answers directly, then a ## heading "
-        "with 2-4 bullets, each starting with a **bold** key term."
+        "Format: 1-3 short, plain sentences that answer directly. Add 3 or "
+        "more bullets only if the facts are really a list."
     ),
     "how_to": (
         "Format: one lead sentence, then numbered steps (1., 2., 3.), one "
@@ -108,26 +108,24 @@ _SHAPE_BLOCKS: dict[str, str] = {
         "Leave out any aspect the facts don't cover."
     ),
     "quick_fact": (
-        "Format: a one-line direct answer (yes, no, or the fact) of at most "
-        "25 words, only if the facts state it; otherwise state what we do "
-        "and point to a specialist. Then 2-3 bullets with the supporting "
-        "detail."
+        "Format: the direct answer in one sentence (yes, no, or the fact), "
+        "only if the facts state it, then at most one supporting sentence. "
+        "If the facts don't state it, say what we do and point to a "
+        "specialist."
     ),
     "partial": (
-        "Format: lead with what we do (1-2 sentences or bullets), then one "
-        'short scope note if needed ("X stays with your Y"), then a last '
-        'line starting "Next step:" with a contact action (talk to one of '
-        "our specialists to scope this for you). Never open with what we "
-        "can't confirm."
+        "Format: say what we do in 1-2 sentences, then one short natural "
+        "sentence that the rest is best checked with a specialist. Don't "
+        "open with what we can't confirm and don't use a label."
     ),
     "out_of_scope": (
         "Format: one warm line saying that is outside what we cover here, "
-        'then a line starting "Next step:" to talk to one of our '
-        "specialists. Nothing else."
+        "then offer a chat with one of our specialists in natural words. "
+        "Nothing else."
     ),
     "general": (
-        "Format: a 1-2 sentence lead, then a ## heading with 2-4 bullets; "
-        "never more than 2 sentences of unbroken prose."
+        "Format: 1-3 short, plain sentences; add 3 or more bullets only if "
+        "the facts are really a list."
     ),
 }
 
@@ -165,7 +163,7 @@ def style_instructions(
     style: ResponseStyle | str | None, shape: AnswerShape | str | None
 ) -> str:
     """System-prompt suffix: the tone block plus the one format block for
-    ``shape``, with a leading space ("" for ``current``). A Next step is
+    ``shape``, with a leading space ("" for ``current``). Any next step is
     always a contact action, never an internal one."""
 
     profile = profile_for(style)

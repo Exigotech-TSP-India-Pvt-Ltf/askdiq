@@ -147,7 +147,7 @@ def test_prompt_carries_assurance_pricing_and_bracket_rules() -> None:
     assert "talk to one of our specialists" in prompt
     assert "never guess or add unsupported facts" in prompt
     assert "help them choose or recommend" in prompt
-    assert "don't have details on that here" in prompt
+    assert "i can't see that detail" in prompt
 
 
 def test_banned_list_has_the_internal_words() -> None:
@@ -162,8 +162,9 @@ def test_quick_fact_does_not_force_yes_or_no() -> None:
 
 def test_partial_shape_leads_with_what_we_do() -> None:
     block = style_instructions(ResponseStyle.ADAPTIVE, "partial")
-    assert "lead with what we do" in block
-    assert "Never open with what we can't confirm" in block
+    assert "say what we do" in block
+    assert "Don't open with what we can't confirm" in block
+    assert "Next step:" not in block.partition("Never use these phrases:")[2]
 
 
 # --------------------------------------------------------------------------
@@ -182,7 +183,7 @@ def test_polish_rewrites_a_not_covered_internal_answer() -> None:
 def test_polish_replaces_only_the_offending_sentence() -> None:
     raw = "We run a phased rollout [1]. The documents do not specify timelines."
     polished = polish_answer(raw, ResponseStyle.ADAPTIVE)
-    assert polished.startswith("We run a phased rollout [1]. We don't have details")
+    assert polished.startswith("We run a phased rollout [1]. I can't see that detail")
     assert "documents" not in polished
     assert "specialist" in polished
 
@@ -268,3 +269,89 @@ def test_internal_wording_filter_is_linear(text: str) -> None:
     started = time.perf_counter()
     remove_internal_wording(text)
     assert time.perf_counter() - started < 2.0
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "DeployIQ's published materials do not state exact dollar pricing.",
+        "We don't have details showing exact pricing.",
+        "Our materials don't mention a price.",
+        "The information provided does not say.",
+        "There is no mention in the material of a price.",
+        "Nothing in my sources covers that.",
+    ],
+)
+def test_live_source_references_become_not_covered(text: str) -> None:
+    assert remove_internal_wording(text) == NOT_COVERED_REPLY
+
+
+def test_source_reference_sentence_is_replaced_once_with_one_next_step() -> None:
+    raw = (
+        "We run guided pilots [1]. The published materials do not state exact "
+        "pricing. The materials don't mention timelines.\n\n"
+        "Next step: talk to a specialist."
+    )
+    out = remove_internal_wording(raw)
+    assert out.startswith("We run guided pilots [1]. I can't see that detail")
+    assert out.count("can't see that detail") == 1
+    assert out.lower().count("next step") == 1
+    assert "materials" not in out
+
+
+def test_legit_materials_and_supported_answer_unchanged() -> None:
+    raw = "We include training materials for your team [1]. Setup is guided [2]."
+    assert remove_internal_wording(raw) == raw
+    assert polish_answer(raw, ResponseStyle.ADAPTIVE, "What do you include?") == raw
+
+
+_COMPOUND = (
+    "We run guided pilots [1]. Rollouts are staged [2]. "
+    "We don't have details on pricing or timelines beyond that."
+)
+
+
+def test_unrequested_trailing_caveat_is_removed() -> None:
+    out = polish_answer(
+        _COMPOUND + "\n\nNext step: talk to a specialist.",
+        ResponseStyle.ADAPTIVE,
+        "What are pilots and how are rollouts staged?",
+    )
+    assert out == (
+        "We run guided pilots [1]. Rollouts are staged [2].\n\n"
+        "If you'd like, one of our specialists can help with this."
+    )
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["What does it cost and how do pilots work?", "How long is a rollout?"],
+)
+def test_trailing_caveat_kept_when_topic_was_asked(question: str) -> None:
+    assert polish_answer(_COMPOUND, ResponseStyle.ADAPTIVE, question) == _COMPOUND
+
+
+def test_trailing_caveat_kept_without_question_or_other_content() -> None:
+    assert polish_answer(_COMPOUND, ResponseStyle.ADAPTIVE) == _COMPOUND
+    only = "We don't have details on pricing."
+    assert polish_answer(only, ResponseStyle.ADAPTIVE, "How do pilots work?") == only
+
+
+def test_system_prompt_forbids_unasked_disclaimers() -> None:
+    prompt = prompts.get_system_prompt(ResponseStyle.ADAPTIVE, "overview")
+    assert "not ask about" in prompt
+    assert "at most one" in prompt
+
+
+def test_spam_fallback_is_not_a_pitch() -> None:
+    answer = _answer("spam_detected")
+    assert "rephrase" in answer
+    assert "Zero Trust" not in answer
+    assert "Essential Eight" not in answer
+
+
+def test_off_topic_fallback_keeps_specialist_step_without_sources() -> None:
+    response = _fallback_response(request_id="r", flags=["off_topic"], latency_ms=1.0)
+    assert "specialist" in response.answer.lower()
+    assert response.sources == []
+    assert response.citations == []

@@ -107,8 +107,10 @@ class Settings(BaseSettings):
     # Semantic cosine-similarity threshold (STEP 7), not lexical overlap.
     groundedness_threshold: float = 0.45
     # Multi-sentence answers: share of claims (sentences/bullets) whose best
-    # chunk similarity reaches groundedness_threshold. Below it -> ungrounded.
-    groundedness_min_supported_ratio: float = Field(default=0.6, ge=0.0, le=1.0)
+    # chunk similarity reaches groundedness_threshold (headings, decline
+    # sentences and quoted bullets are handled in post_checks). Below it ->
+    # ungrounded. Lowered from 0.6 after correct answers were rejected.
+    groundedness_min_supported_ratio: float = Field(default=0.5, ge=0.0, le=1.0)
     max_query_length: int = 2000
 
     # Retrieval

@@ -13,7 +13,10 @@ stay comparable with earlier runs. The rest widen coverage:
 
 Fields beyond the original ones
 -------------------------------
-history                    prior (role, content) turns passed to the pipeline
+history                    prior (role, content) turns passed to the pipeline.
+                           A live run has no way to inject history, so it must
+                           replay the user turns first (``replay_turns()``)
+                           on one session before sending ``query``.
 expected_headings          substrings of the chunk's ``section_heading``
                            (chunk-level ground truth; reported, not gated).
                            Run with --json and look at ``retrieved`` to see the
@@ -105,6 +108,10 @@ class EvalCase:
     # Tab labels (``ClarificationQuestion.header``) the card must include.
     expect_clarification_headers: list[str] = field(default_factory=list)
     expect_no_sources: bool = False
+
+    def replay_turns(self) -> list[str]:
+        """User turns a live run sends first, in order, to rebuild ``history``."""
+        return [content for role, content in self.history if role == "user"]
 
 
 # Source documents in the corpus (kept here so the dataset test can catch typos).

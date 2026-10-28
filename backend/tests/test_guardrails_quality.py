@@ -7,6 +7,7 @@ import time
 import pytest
 
 from app.guardrails.conversational import (
+    all_thanks_responses,
     detect_conversational_intent,
     get_farewell_response,
     get_thanks_response,
@@ -312,7 +313,7 @@ def test_pre_checks_are_fast_on_pathological_input() -> None:
     ],
 )
 def test_thanks_variants_are_conversational(query: str) -> None:
-    assert detect_conversational_intent(query) == get_thanks_response()
+    assert detect_conversational_intent(query) in all_thanks_responses()
 
 
 @pytest.mark.parametrize(

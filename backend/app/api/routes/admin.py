@@ -66,10 +66,10 @@ from app.governance.test_ips import (
 )
 from app.governance.traces import normalized_outcome_sql
 from app.guardrails.conversational import (
-    CAPABILITY_RESPONSE,
-    FAREWELL_RESPONSE,
-    GREETING_RESPONSE,
-    THANKS_RESPONSE,
+    all_capability_responses,
+    all_farewell_responses,
+    all_greeting_responses,
+    all_thanks_responses,
     detect_conversational_intent,
 )
 from app.model_settings.service import current_model_settings
@@ -1079,10 +1079,10 @@ def _usage_rows_from_records(rows: Sequence[Any], rates: Any) -> list[dict]:
             or (
                 p["answer"]
                 in (
-                    GREETING_RESPONSE,
-                    THANKS_RESPONSE,
-                    FAREWELL_RESPONSE,
-                    CAPABILITY_RESPONSE,
+                    *all_greeting_responses(),
+                    *all_thanks_responses(),
+                    *all_farewell_responses(),
+                    *all_capability_responses(),
                 )
             )
         )

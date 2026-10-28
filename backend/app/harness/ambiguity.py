@@ -45,10 +45,10 @@ from app.guardrails.conversational import detect_conversational_intent
 from app.harness.clarify import (
     BRAND_RE,
     COMPANY_FACT_RE,
-    GENERIC_PRODUCT_RE,
     NOT_SURE_LABEL,
     clarification_streak,
     humanize_source_name,
+    is_generic_product_question,
     metadata_text,
     recommend_option,
 )
@@ -261,13 +261,37 @@ def service_options(
     )
 
 
-def framework_options(sources: list[SourceChunk]) -> list[ClarificationOption]:
-    """Every catalogue service/framework (retrieved first), then "Not sure".
+# What a request implies beyond naming the framework ("certification" -> ISO).
+_IMPLIED: dict[str, re.Pattern[str]] = {
+    "Essential Eight": _re(r"\b(acsc|asd|maturity level|ml ?[1-3]|government)\b"),
+    "ISO 27001": _re(r"\b(isms|certif\w{0,8}|27001|accredit\w{0,8})\b"),
+    "CIS Benchmark": _re(r"\b(benchmarks?|hardening)\b"),
+    "Zero Trust": _re(r"\b(never trust|least privilege)\b"),
+    "Security Baseline": _re(r"\b(baselines?)\b"),
+}
 
-    Built from the whole catalogue, not only the retrieved subset, so a
-    visitor sees all of what DeployIQ covers; the retrieved ones lead and carry
-    their documents. The question card shows at most ``clarify_max_options``
-    options, the last one always being "Not sure, help me choose".
+
+def _named_labels(query: str) -> list[str]:
+    """Catalogue labels the query names or implies, in fixed catalogue order."""
+    text = _scan_text(query)
+    return [
+        e.label
+        for e in CATALOGUE
+        if e.offering
+        and (_hit(e.pattern, text) or _hit(_IMPLIED.get(e.label, e.pattern), text))
+    ]
+
+
+def framework_options(
+    sources: list[SourceChunk], query: str = ""
+) -> list[ClarificationOption]:
+    """Catalogue services/frameworks in a fixed order, then "Not sure".
+
+    Deterministic (never retrieval-score order): whatever the query names or
+    implies comes first, then the catalogue's priority order (Essential Eight,
+    ISO 27001, CIS Benchmark, Zero Trust, Security Baseline). Retrieved
+    documents are attached to their option. The card shows at most
+    ``clarify_max_options`` options, the last being "Not sure, help me choose".
     """
     settings = get_settings()
     ranked = sorted(sources, key=lambda s: s.score, reverse=True)
@@ -276,22 +300,19 @@ def framework_options(sources: list[SourceChunk]) -> list[ClarificationOption]:
         entry = _entry_for(source)
         if entry is not None and entry.offering:
             grouped.setdefault(entry.label, []).append(source)
-    if not grouped:
-        # No catalogue document retrieved: fall back to the document titles.
-        base = service_options(sources, frameworks_only=True)
-    else:
-        entries = {e.label: e for e in CATALOGUE if e.offering}
-        order = [*grouped, *(label for label in entries if label not in grouped)]
-        shown = order[: max(settings.clarify_max_options - 1, 1)]
-        built = [
-            _option(i, label, entries[label].description, grouped.get(label, []))
-            for i, label in enumerate(shown, 1)
-        ]
-        base = recommend_option(
-            built,
-            [_best_score(grouped.get(label, [])) for label in shown],
-            [entries[label].default for label in shown],
-        )
+    entries = {e.label: e for e in CATALOGUE if e.offering}
+    named = _named_labels(query)
+    order = [*named, *(label for label in entries if label not in named)]
+    shown = order[: max(settings.clarify_max_options - 1, 1)]
+    built = [
+        _option(i, label, entries[label].description, grouped.get(label, []))
+        for i, label in enumerate(shown, 1)
+    ]
+    base = recommend_option(
+        built,
+        [_best_score(grouped.get(label, [])) for label in shown],
+        [entries[label].default for label in shown],
+    )
     base = base[: max(settings.clarify_max_options - 1, 1)]
     not_sure = ClarificationOption(
         id=f"O{len(base) + 1}",
@@ -440,7 +461,8 @@ def _missing_slots(query: str) -> tuple[str, ...]:
     planning = _PLANNING_RE.search(query) and _COMPLIANCE_RE.search(query)
     if not (planning or _GOAL_RE.search(query)):
         return ()
-    if any(_hit(e.pattern, query) for e in CATALOGUE):
+    # A named platform (Microsoft 365, "the platform") is not a named framework.
+    if any(e.offering and _hit(e.pattern, query) for e in CATALOGUE):
         return ()
     missing = [FRAMEWORK_SLOT]
     for slot in SLOTS:
@@ -732,7 +754,7 @@ def assess(
         return Assessment(AmbiguityKind.SLOTS, missing)
     # Company facts ("where are they located?") and generic one-product
     # questions ("how does it work?") are answered, not asked back.
-    if COMPANY_FACT_RE.search(query) or GENERIC_PRODUCT_RE.match(query):
+    if COMPANY_FACT_RE.search(query) or is_generic_product_question(query):
         return Assessment()
     return Assessment(_reference_kind(query, history))
 
@@ -821,25 +843,24 @@ def service_clarification(
 
 def _slot_question(
     slot: SlotSpec, index: int, sources: list[SourceChunk]
-) -> ClarificationQuestion | None:
+) -> ClarificationQuestion:
+    """The slot's own options: intent choices, not claims, so no evidence is needed.
+
+    Documents that do cover an option are attached to it as sources.
+    """
     covering = [s for s in sources if _hit(slot.evidence, s.content)]
-    if not covering:
-        return None
     options: list[ClarificationOption] = []
     scores: list[float] = []
     for spec in slot.options:
-        grounded = (
-            [s for s in covering if _hit(spec.evidence, s.content)]
-            if spec.evidence
-            else covering
+        grounded = [
+            s
+            for s in covering
+            if spec.evidence is None or _hit(spec.evidence, s.content)
+        ]
+        options.append(
+            _option(len(options) + 1, spec.label, spec.description, grounded)
         )
-        if grounded:
-            options.append(
-                _option(len(options) + 1, spec.label, spec.description, grounded)
-            )
-            scores.append(_best_score(grounded))
-    if len(options) < get_settings().clarify_min_options:
-        return None
+        scores.append(_best_score(grounded))
     return ClarificationQuestion(
         id=f"Q{index}",
         header=slot.header,
@@ -864,7 +885,7 @@ def slot_clarification(
     questions: list[ClarificationQuestion] = []
     labels: list[str] = []
     if FRAMEWORK_SLOT in slot_ids:
-        options = framework_options(sources)
+        options = framework_options(sources, query)
         # At least ``clarify_min_options`` real options besides "Not sure".
         if len(options) > settings.clarify_min_options:
             labels = offering_labels()
@@ -884,9 +905,7 @@ def slot_clarification(
         slot = _SLOTS_BY_ID.get(slot_id)
         if slot is None or len(questions) >= settings.clarify_max_questions:
             continue
-        question = _slot_question(slot, len(questions) + 1, sources)
-        if question is not None:
-            questions.append(question)
+        questions.append(_slot_question(slot, len(questions) + 1, sources))
     if not questions:
         return None
     brand = settings.brand_name
