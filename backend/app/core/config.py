@@ -153,6 +153,11 @@ class Settings(BaseSettings):
     # Extra cosine candidates fetched so the hybrid signal can promote a
     # document the cosine order missed; the rerank pool stays the same size.
     retrieval_lexical_pool_extra: int = Field(default=8, ge=0, le=64)
+    # When the query names a catalogue entity whose document is missing from
+    # the cosine pool, run one extra document-constrained vector query (same
+    # embedding, no extra embedding call) and merge its top chunks in.
+    retrieval_entity_fetch_enabled: bool = True
+    retrieval_entity_fetch_k: int = Field(default=4, ge=1, le=10)
     # Cross-document quota: round-robin across at most this many top-scoring documents.
     cross_doc_quota_max_documents: int = 3
     # Below this raw cosine score, retrieval is treated as off-topic. Kept
