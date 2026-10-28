@@ -43,7 +43,7 @@ List (`/admin/users`):
 
 ```text
 +--------------------------------------------------------------------------+
-| [#] Visitors          [Overview|Users|Testing] [Last 7 days v] [Manage test IPs]
+| [#] Visitors          [Overview|Users|Testing] [Last 7 days v]
 |     Audience-scoped visitors by client IP: activity, sessions and ...    |
 +--------------------------------------------------------------------------+
 | Visitors      | New visitors  | Returning visitors | Active now          |
@@ -92,7 +92,7 @@ Detail (`/admin/users/client-<ip>`):
 
 - **Visitors**, "Audience-scoped visitors by client IP: activity, sessions and engagement".
 - Audience tabs and date range picker: the same controls as the Dashboard (`dashboard.md`).
-- **Manage test IPs** button: shown only with `testip:write` (`useCan("testip:write")`). It opens the test IP dialog (see below).
+- There is no test IP button on this page. Test IP rules are managed under **Settings > Test IPs** (see below); a single visitor can still be marked as a test IP from its row.
 
 ### KPI cards (list)
 
@@ -168,9 +168,9 @@ Columns:
   - On failure: "Couldn't mark <ip> as a test IP".
 - Effect: the backend writes `test_ip_configs` and an `audit_log` row (`test_ip_added`, or `test_ip_updated` if the rule existed). It then clears the audience classification cache in this process and publishes a cache-invalidate event to other workers. All historical data for that IP is re-classified, because the classification is computed at query time and not stored per row.
 
-### Manage test IPs (dialog)
+### Manage test IPs (Settings > Test IPs)
 
-Opened with **Manage test IPs** (`testip:write`). Title: **Manage Test IP Rules & Audience Segmentation** (`frontend/components/admin/usage/TestIpManager.tsx`). The same dialog is used on Usage & Cost.
+Opened from **Settings > Test IPs** (`testip:write`). Title: **Manage Test IP Rules & Audience Segmentation** (`frontend/components/admin/usage/TestIpManager.tsx`, rendered by `frontend/components/admin/settings/TestIpsTab.tsx`). It is no longer opened from the Visitors toolbar.
 
 - Banner **Audience Re-classification Guarantee**, with the server's note: "Historical query metrics, sessions, and cost distributions are dynamically re-classified when test IP rules change."
 - Form **Add New Test IP / CIDR Subnet Rule**:

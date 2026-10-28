@@ -276,7 +276,7 @@ There is no manual refresh button. To force fresh numbers, change the range or a
 2. **Report real-user activity only (exclude QA and internal tests)**
    1. Select the **Users** audience tab.
    2. Choose the period, for example **Last 30 days**.
-   3. Read **Total Users** (distinct client IPs that asked something in the period) and **Queries**. If test traffic still appears, add its IP on **Visitors > Manage test IPs** (`visitors.md`); the numbers re-classify within about 30 s.
+   3. Read **Total Users** (distinct client IPs that asked something in the period) and **Queries**. If test traffic still appears, add its IP under **Settings > Test IPs**, or mark it from a Visitors row (`visitors.md`); the numbers re-classify within about 30 s.
 3. **Investigate a spike in failed or blocked answers**
    1. In **Queries by outcome**, click the day with the spike. Usage & Cost opens on **Queries** for that day.
    2. Or watch **Live activity**: red (error) and amber (guardrail) rows open the exact trace.

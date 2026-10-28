@@ -101,7 +101,7 @@ Permissions come from `backend/app/auth/permissions.py` via `GET /auth/me`.
 |---|---|
 | No role (`pending`, `rejected`, or active without a role) | **Chat** only. Any dashboard URL shows **Access required** ([login.md](login.md)). |
 | `operator` (`dashboard:read`) | Dashboard, Chat, Documents, Visitors, Usage & Cost, Conversation Logs, Feedback, Evaluation (Live), Governance, Analytics (10 items). Write controls inside pages are hidden. |
-| `admin` (+ `documents:write`, `feedback:triage`, `feedback:export`, `eval:run`, `testip:write`, `usage:export`) | Same 10 items as operator; extra actions appear inside pages (uploads, triage, exports, eval runs, **Manage test IPs** on Visitors). |
+| `admin` (+ `documents:write`, `feedback:triage`, `feedback:export`, `eval:run`, `testip:write`, `usage:export`) | Same 10 items as operator; extra actions appear inside pages (uploads, triage, exports, eval runs, test IP rules under **Settings > Test IPs**). |
 | `superadmin` (+ `users:manage`, `audit:auth:read`, `branding:write`, `taxonomy:write`) | All 12 items, including **User Management** (with the pending badge) and **Settings**. |
 | `suspended` | No shell at all: the suspended page. |
 
