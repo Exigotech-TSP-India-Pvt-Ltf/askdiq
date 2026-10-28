@@ -226,3 +226,91 @@ def detect_contact_request(query: str) -> str | None:
     if _CONTACT_RE.match(text):
         return get_contact_response()
     return None
+
+
+# Someone describing a live security incident ("we got hacked"): a warm fixed
+# reply, never remediation advice. Short, anchored, bounded patterns only, and
+# never for a question that names DeployIQ or a service (those are retrieved).
+_MAX_INCIDENT_CHARS = 100
+_INCIDENT_EVENT = (
+    r"(?:hacked|breached|compromised|phished|infected|attacked|"
+    r"under\s{1,3}attack|hit\s{1,3}(?:by|with)\s{1,3}ransomware)"
+)
+_INCIDENT_SUBJECT = r"(?:we|i|(?:our|my)\s{1,3}[a-z]{1,20}(?:\s{1,3}[a-z]{1,20})?)"
+_INCIDENT_AUX = r"(?:'ve|'re|'m|\s{1,3}(?:have|has|had|are|is|am|was|were|just|got|been|being)){0,3}"
+_INCIDENT_RE = re.compile(
+    r"^\s{0,3}(?:"
+    # "we got hacked" / "we've been breached" / "our email was compromised"
+    rf"{_INCIDENT_SUBJECT}{_INCIDENT_AUX}\s{{1,3}}{_INCIDENT_EVENT}"
+    # "ransomware" / "we have ransomware"
+    r"|(?:(?:we|i)\s{1,3}(?:have|got)\s{1,3}(?:a\s{1,3})?)?ransomware"
+    # "phishing attack happened"
+    r"|(?:a\s{1,3})?(?:phishing|ransomware|malware|cyber)\s{1,3}(?:attack|incident)\s{1,3}"
+    r"(?:happened|hit\s{1,3}us|occurred)"
+    r")(?:[\s,.!?]{1,3}(?:what|how|help|now\s{1,3}what)[a-z\s',?!.]{0,40})?[\s?!.]{0,6}$",
+    re.IGNORECASE,
+)
+INCIDENT_REPLY = (
+    "I'm sorry you're dealing with that. If it's happening right now, please "
+    "contact your IT team or provider straight away. Our specialists can also "
+    "help you assess what happened and tighten things up, so reach out through "
+    "the Contact page on our website."
+)
+_INCIDENT_NAMED_RE = re.compile(
+    r"\b(?:deploy\s?iq|essential\s{1,3}eight|e8|zero\s{1,3}trust|iso\s?27001|"
+    r"cis|baseline|services?|plans?|products?)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_incident_request(query: str) -> str | None:
+    """Return the fixed incident reply for "we got hacked"-style statements.
+
+    Pure and bounded. Returns None for informational questions (for example
+    "how does DeployIQ help after a breach?"), which go through retrieval.
+    """
+
+    text = query.strip()
+    if not text or len(text) > _MAX_INCIDENT_CHARS:
+        return None
+    if _INCIDENT_NAMED_RE.search(text):
+        return None
+    if _INCIDENT_RE.match(text):
+        return INCIDENT_REPLY
+    return None
+
+
+# Service-agnostic pricing / quote requests: the knowledge base publishes no
+# prices, so a fixed reply. Bare "how much does it cost?" is NOT matched (it
+# asks which service). Bounded, anchored patterns only.
+PRICING_REPLY = (
+    "We don't publish pricing, as it depends on your setup. The Zero Trust "
+    "Starter plan is free, and for anything else one of our specialists can "
+    "give you a proper quote. You can reach them through the Contact page on "
+    "our website."
+)
+_MAX_PRICING_CHARS = 100
+_QUOTE = r"(?:a|an)\s{1,3}(?:free\s{1,3})?(?:quote|quotation|estimate)"
+_PRICING_RE = re.compile(
+    r"^\s{0,3}(?:"
+    r"(?:can|could|may)\s{1,3}(?:i|we)\s{1,3}(?:please\s{1,3})?"
+    rf"(?:get|have|request)\s{{1,3}}{_QUOTE}"
+    r"|(?:i|we)\s{1,3}(?:would\s{1,3}like|want|need|'d\s{1,3}like)\s{1,3}"
+    rf"(?:to\s{{1,3}}(?:get|request)\s{{1,3}})?{_QUOTE}"
+    rf"|(?:get|request)\s{{1,3}}{_QUOTE}"
+    r"|how\s{1,3}much\s{1,3}(?:does|would|will|is)\s{1,3}it\s{1,3}(?:cost|be)\s{1,3}"
+    r"(?:for|to)\s{1,3}(?:my|our)\s{1,3}(?:company|business|organi[sz]ation|org|team)"
+    r"|(?:what|whats|what's)(?:\s{1,3}(?:is|are))?\s{1,3}(?:your|ur|the)\s{1,3}"
+    r"(?:prices|pricing|price|rates|costs)"
+    r")[\s?!.]{0,6}$",
+    re.IGNORECASE,
+)
+
+
+def detect_pricing_request(query: str) -> str | None:
+    """Return the fixed pricing reply for a service-agnostic pricing request."""
+
+    text = query.strip()
+    if 0 < len(text) <= _MAX_PRICING_CHARS and _PRICING_RE.match(text):
+        return PRICING_REPLY
+    return None
