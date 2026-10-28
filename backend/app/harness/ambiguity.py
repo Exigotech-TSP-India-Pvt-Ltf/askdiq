@@ -885,6 +885,152 @@ def _goal_cue(scan: str) -> str | None:
     return None
 
 
+# --- Run-ons: several vague cues in one message -----------------------------
+# "i need help, tell me something, i am confused, idk, what should we buy" is
+# not one anchored cue but a run of them. The prompt is split into clauses
+# (bounded: input capped, clause count capped, one linear pass each); it is
+# vague when at least one clause is a vague cue and none is concrete.
+
+_MAX_CLAUSES = 24
+_CLAUSE_SPLIT_RE = re.compile(
+    r"[,;.?!:/|()\n]+|[^\w\s,;.?!:/|()'’&+-]+|"  # noqa: RUF001
+    r"\s(?:and|but|also|plus|then|or)\s|\s[-–—]{1,3}\s"  # noqa: RUF001
+)
+_NOT_WORD_RE = re.compile(r"[^a-z0-9' -]+")
+_REPEAT_RE = re.compile(r"(.)\1{2,}")
+_FILLER_LEAD = (
+    r"(?:ok|okay|so|um+|uh+|er|erm|hm+|well|please|pls|hi|hello|hey|yeah|yes|yep|"
+    r"like|just|lol|haha|oh|and|but|also|then|actually|basically|sorry|anyway|"
+    r"anyways|ugh|right|alright)"
+)
+_LEAD_FILLER_RE = re.compile(rf"^(?:{_FILLER_LEAD}(?: |$)){{1,4}}")
+_TRAIL_FILLER_RE = re.compile(
+    r"(?: (?:please|pls|lol|haha|thanks|thx|now|today|again|though|really|honestly|"
+    r"mate|ok|okay|hm+|then|guys|team|so|um+|uh+|er|erm|oh|well|ugh)){1,4}$"
+)
+# Filler tokens that are themselves hesitation (a bare "hmm" / "ok so" is vague).
+_HESITATION_RE = re.compile(r"so|um+|uh+|er|erm|hm+|please|pls|oh|well")
+_VAGUE_TAIL = (
+    r"(?:(?: (?:with|about|on|for|of|at|in|regarding))? (?:all |all of |any )?"
+    r"(?:this|that|it|these|those|everything|anything|something|stuff|things?|"
+    r"you|here|your (?:company|business|services|stuff)))?"
+)
+_VAGUE_CORE = (
+    r"help(?: (?:me|us))?(?: out)?"
+    r"|(?:can|could|will|would) you (?:please )?help(?: (?:me|us))?"
+    r"|(?:(?:i|we) )?(?:really |just |also )?(?:need|want|require)"
+    r"(?: (?:some|a little|a bit of|your))? (?:help|advice|assistance|guidance|"
+    r"support|ideas?|suggestions?|recommendations?|a hand|a pointer|tips)"
+    r"|(?:tell|show|give) (?:me|us) (?:something|anything|stuff|more|everything|all)"
+    r"(?: (?:interesting|good|useful))?"
+    r"|(?:any|some) (?:suggestions?|ideas?|thoughts?|advice|tips?|"
+    r"recommendations?|pointers?)"
+    r"|(?:suggestions?|ideas?|thoughts?|advice|tips|pointers?|anything|something|"
+    r"whatever|everything|stuff|things?|hm+|um+|uh+)"
+    r"|what do you (?:recommend|suggest|think)"
+    r"|what(?:'s| is| are|s) (?:the )?best(?: (?:option|choice|one|thing|for (?:me|us)))?"
+    r"|what(?:'s| is| are|s) (?:good|new)"
+    r"|(?:i |we )?(?:dunno|idk|don'?t know|do not know|no idea|no clue|clueless)"
+    r"|(?:(?:i|we) )?(?:am |are |'m |'re |im )?(?:so |very |a bit |really |totally )?"
+    r"(?:not sure|unsure|confused|lost|stuck|overwhelmed)"
+    r"|(?:where|how) (?:do|should|can|to) (?:(?:i|we) )?(?:start|begin|get started)"
+    r"|how to (?:get started|start|begin)"
+    r"|what (?:should|do|can|could|would|shall) (?:i|we) (?:do|try|look at|go for)"
+    r"(?: first| next)?"
+    r"|(?:i|we) (?:have|got|had) (?:a |one |an? |some )?(?:few |several |many |"
+    r"lots of )?(?:questions?|queries|something to ask)"
+    r"|(?:can|could|may) (?:i|we) ask (?:you )?(?:a |some )?(?:questions?|something)"
+    r"|(?:my|our|the) (?:boss|manager|ceo|director|cto|team|it guy|client) "
+    r"(?:told|asked|wants|said|has asked)(?: me| us)?(?: to)? "
+    r"(?:look (?:into|at)|check(?: out)?|investigate|find out about|sort out|"
+    r"figure out|do)"
+    r"|(?:i|we) (?:am |are |'m |'re )?(?:looking for|after) (?:some )?"
+    r"(?:help|advice|guidance|something|anything|ideas|suggestions)"
+    r"|(?:i|we) (?:need|want) to (?:know|learn|understand|find out|look into)"
+    r"(?: (?:something|stuff|things|more|a bit))?"
+    r"|(?:i|we) (?:am |are |'m |'re )?(?:new|just looking|just browsing)"
+    r"|(?:just )?(?:looking|browsing)(?: around)?"
+    r"|recommend(?:ations?)?(?: (?:me|us))?(?: something| anything)?"
+    r"|(?:i|we) (?:need|want) (?:a )?recommendations?"
+    r"|(?:what|which) (?:are|is) (?:my|our|the|your) (?:options?|choices?)"
+    r"|(?:i|we) (?:am |are |'m |'re )?(?:worried|concerned|nervous|anxious)"
+    r"|(?:i|we) (?:need|want) (?:something|anything)"
+    r"|how (?:does|do|would) (?:this|that|it) (?:all )?work"
+)
+_VAGUE_CLAUSE_RE = re.compile(rf"(?:{_VAGUE_CORE}){_VAGUE_TAIL}")
+# "what should we buy (from google)": a buy/choose cue with a short tail. The
+# tail names another vendor or product at most; we cannot advise on those.
+_BUY_CORE = (
+    r"(?:what|which) (?:should|do|can|could|would|shall) (?:i|we) "
+    r"(?:buy|get|choose|pick|use|purchase|go with)"
+    r"|(?:what|which) (?:to|should i|should we) (?:buy|get|choose|pick|purchase)"
+    r"|(?:i|we) (?:need|want|would like) to (?:buy|get|choose|purchase)"
+)
+_BUY_CLAUSE_RE = re.compile(
+    rf"(?:{_BUY_CORE})(?: first| next)?(?: (?:from|at|on|for|of|by|in|with|to|about))?"
+    r"(?: [a-z0-9'&+-]{1,20}){0,3}"
+)
+_BUY_PREFIX_RE = re.compile(rf"(?:{_BUY_CORE})(?: first| next)?")
+_MAX_TOLERATED_WORDS = 3
+
+
+def _norm_clause(raw: str) -> str:
+    text = _NOT_WORD_RE.sub(" ", raw.replace("’", "'").lower())  # noqa: RUF001
+    text = " ".join(_REPEAT_RE.sub(r"\1", text).split())
+    return text.strip("-' ")
+
+
+def _strip_filler(clause: str) -> str:
+    lead = _LEAD_FILLER_RE.match(clause)
+    rest = clause[lead.end() :] if lead else clause
+    return _TRAIL_FILLER_RE.sub("", rest).strip()
+
+
+def _clause_kind(clause: str) -> str:
+    """``vague`` / ``buy`` / ``concrete`` / ``filler`` for one normalised clause."""
+    rest = _strip_filler(clause)
+    if not rest:
+        hesitant = any(_HESITATION_RE.fullmatch(t) for t in clause.split())
+        return "vague" if hesitant else "filler"
+    if _BUY_CLAUSE_RE.fullmatch(rest):
+        return "buy"
+    if _VAGUE_CLAUSE_RE.fullmatch(rest) or _goal_cue(rest) is not None:
+        return "vague"
+    words = (w for w in _WORD_RE.findall(rest) if len(w) > 1)
+    return "concrete" if any(w not in _NON_CONTENT for w in words) else "filler"
+
+
+def vague_runon_cue(query: str) -> str | None:
+    """The preamble cue when ``query`` is only vague cues (and filler), else ``None``.
+
+    Vague = at least one vague-cue clause and no concrete clause. A buy/choose
+    cue tolerates a short tail or clause (another vendor's product, "from
+    google"): we do not advise on those, so the card steers to what we do.
+    """
+    text = _scan_text(re.sub(r"[\r\n]+", ", ", query[:_MAX_GOAL_CHARS])).lower()
+    clauses = [c for c in (_norm_clause(p) for p in _CLAUSE_SPLIT_RE.split(text)) if c]
+    if not clauses or len(clauses) > _MAX_CLAUSES:
+        return None
+    kinds = [_clause_kind(c) for c in clauses]
+    buying = "buy" in kinds
+    third_party = False
+    for clause, kind in zip(clauses, kinds, strict=True):
+        if kind == "concrete":
+            if not buying or len(clause.split()) > _MAX_TOLERATED_WORDS:
+                return None
+            third_party = True
+        elif kind == "buy" and not _BUY_PREFIX_RE.fullmatch(_strip_filler(clause)):
+            third_party = True
+    if not (buying or "vague" in kinds):
+        return None
+    if third_party:
+        return CUE_DEFAULT
+    first = next(
+        _strip_filler(c) for c, k in zip(clauses, kinds, strict=True) if k != "filler"
+    )
+    return _goal_cue(first) or CUE_DEFAULT
+
+
 def _stalled(history: list[ChatTurn] | None) -> bool:
     """Two refusals / dead ends in a row (the latest assistant turns)."""
     count = 0
@@ -897,7 +1043,9 @@ def _stalled(history: list[ChatTurn] | None) -> bool:
     return count >= _STALLED_TURNS
 
 
-def _goal_assessment(query: str, history: list[ChatTurn] | None) -> Assessment | None:
+def _goal_assessment(
+    query: str, history: list[ChatTurn] | None, raw: str = ""
+) -> Assessment | None:
     """A vague, subject-less help statement (or a third dead end): ask the goal."""
     if len(query) > _MAX_GOAL_CHARS:
         return None
@@ -906,14 +1054,20 @@ def _goal_assessment(query: str, history: list[ChatTurn] | None) -> Assessment |
         or detect_contact_request(query) is not None
         or INCIDENT_RE.search(query)
         or is_generic_product_question(query)
-        or _subjects(query)
         or _history_subjects(history)
     ):
         return None
-    cue = _goal_cue(query)
-    if cue is None and (COMPANY_FACT_RE.search(query) or not _stalled(history)):
-        return None
-    return Assessment(AmbiguityKind.GOAL, cue=cue or CUE_DEFAULT)
+    named = bool(_subjects(query))
+    cue = None if named else _goal_cue(query)
+    if cue is None and not _catalogue_subjects(query):
+        # Run-ons of vague cues; a lone third-party name ("from Google") is not
+        # a subject we cover, so it does not stop the card.
+        cue = vague_runon_cue(raw or query)
+    if cue is None:
+        if named or COMPANY_FACT_RE.search(query) or not _stalled(history):
+            return None
+        cue = CUE_DEFAULT
+    return Assessment(AmbiguityKind.GOAL, cue=cue)
 
 
 def _last_was_goal_card(history: list[ChatTurn] | None) -> bool:
@@ -932,7 +1086,7 @@ def assess(
     clarification_reply: bool = False,
 ) -> Assessment:
     """Rule gate (no I/O): does this question need asking back?"""
-    query = _scan_text(query)
+    raw, query = query[:_MAX_GOAL_CHARS], _scan_text(query)
     settings = get_settings()
     if (
         not settings.clarify_enabled
@@ -950,7 +1104,7 @@ def assess(
     missing = _missing_slots(query)
     if missing:
         return Assessment(AmbiguityKind.SLOTS, missing)
-    goal = _goal_assessment(query, history)
+    goal = _goal_assessment(query, history, raw)
     if goal is not None:
         return goal
     # Company facts ("where are they located?") and generic one-product
@@ -1124,6 +1278,97 @@ _FILLER_WORDS = frozenset(
         "services",
         "service",
     }
+)
+
+
+# Words that never name a subject (cue scaffolding, pronouns, auxiliaries).
+_NON_CONTENT = (
+    _SCAFFOLD
+    | _REFERENTS
+    | _FILLER_WORDS
+    | frozenset(
+        [
+            "i",
+            "we",
+            "you",
+            "me",
+            "us",
+            "my",
+            "our",
+            "your",
+            "am",
+            "are",
+            "im",
+            "i'm",
+            "we're",
+            "you're",
+            "be",
+            "been",
+            "have",
+            "has",
+            "had",
+            "will",
+            "would",
+            "should",
+            "shall",
+            "need",
+            "want",
+            "tell",
+            "give",
+            "show",
+            "know",
+            "think",
+            "get",
+            "got",
+            "buy",
+            "like",
+            "please",
+            "pls",
+            "help",
+            "advice",
+            "idea",
+            "ideas",
+            "thing",
+            "things",
+            "stuff",
+            "something",
+            "anything",
+            "everything",
+            "whatever",
+            "really",
+            "very",
+            "just",
+            "there",
+            "here",
+            "now",
+            "today",
+            "one",
+            "ask",
+            "question",
+            "questions",
+            "more",
+            "other",
+            "if",
+            "at",
+            "by",
+            "from",
+            "up",
+            "out",
+            "as",
+            "about",
+            "no",
+            "yes",
+            "ok",
+            "hi",
+            "hello",
+            "lol",
+            "idk",
+            "dunno",
+            "hmm",
+            "um",
+            "uh",
+        ]
+    )
 )
 
 
