@@ -666,6 +666,124 @@ def drop_unrequested_caveat(answer: str, question: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Stock hand-off after a complete answer
+# ---------------------------------------------------------------------------
+# "I can't see that detail, so it's best to check with one of our specialists."
+# names no topic. When the answer already says something useful and the
+# visitor did not ask for something the docs rarely state, it is noise.
+
+_GENERIC_VOCAB = frozenset(
+    (  # noqa: SIM905
+        "i can can't cannot couldn't could don't do not see find we have details "
+        "detail information info that this those these it it's its so best to check "
+        "with one of our specialist specialists talk speak here there there's is no "
+        "any more further about on the a an and or you your for specific right now "
+        "yet isn't mentioned are aren't available covered listed please reach out "
+        "ask team someone from in at what beyond else anything get help which if "
+        "you'd like i'd recommend suggest"
+    ).split()
+)
+_ASKS_BEYOND_DOCS: tuple[str, ...] = (
+    "pric",
+    "cost",
+    "quote",
+    "timeline",
+    "time frame",
+    "timeframe",
+    "how much",
+    "how long",
+    "certif",
+    "guarant",
+    "integrat",
+    "contact",
+    "phone",
+    "email",
+    "e-mail",
+)
+_MAX_GENERIC_CHARS = 200
+_MIN_SUBSTANTIVE_WORDS = 3
+_PUNCT_TABLE = str.maketrans(dict.fromkeys(',.;:!?"()[]*-\N{EM DASH}\N{EN DASH}', " "))
+_BULLET_CHARS = "-*\N{BULLET} "
+
+
+def _is_generic_handoff(sentence: str) -> bool:
+    """A decline or hand-off sentence made only of stock words (names no topic)."""
+
+    lowered = _plain_lower(sentence)
+    if not lowered or len(lowered) > _MAX_GENERIC_CHARS:
+        return False
+    words = lowered.translate(_PUNCT_TABLE).split()
+    if not words or any(word not in _GENERIC_VOCAB for word in words):
+        return False
+    return _SPECIALIST in lowered or _is_absence_statement(lowered)
+
+
+def _is_substantive(sentence: str) -> bool:
+    lowered = _plain_lower(sentence)
+    if len(lowered.split()) < _MIN_SUBSTANTIVE_WORDS:
+        return False
+    return _SPECIALIST not in lowered and not _is_absence_statement(lowered)
+
+
+def _asks_beyond_docs(asked: str) -> bool:
+    return any(term in asked for term in _ASKS_BEYOND_DOCS) or any(
+        word in ("sla", "slas") for word in asked.translate(_PUNCT_TABLE).split()
+    )
+
+
+def drop_stock_handoff(answer: str, question: str | None) -> str:
+    """Drop a generic "check with one of our specialists" from a complete answer.
+
+    Applies to the tail and to the middle. Kept (as exactly one sentence, the
+    last) when the visitor asked for something the docs rarely state (pricing,
+    SLA, timeline, certification, contact ...) or when nothing substantive
+    was answered. Without a question nothing changes. Citation markers on
+    other sentences are untouched.
+    """
+
+    asked = (question or "").lower().strip()
+    if not asked:
+        return answer
+    lines = answer.split("\n")
+    parsed: list[list[str] | None] = []
+    generic: list[tuple[int, int]] = []
+    substantive = False
+    in_fence = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(_FENCE):
+            in_fence = not in_fence
+        if (
+            in_fence
+            or stripped.startswith(_FENCE)
+            or stripped.lower().startswith(_NEXT_STEP)
+        ):
+            parsed.append(None)
+            continue
+        pieces = _split_sentences(line)
+        parsed.append(pieces)
+        for position, piece in enumerate(pieces):
+            if _is_generic_handoff(piece):
+                generic.append((len(parsed) - 1, position))
+            elif _is_substantive(piece):
+                substantive = True
+    if _asks_beyond_docs(asked) or not substantive:
+        generic = generic[:-1]
+    if not generic:
+        return answer
+    emptied: set[int] = set()
+    for number, position in generic:
+        pieces = parsed[number]
+        if pieces is not None:
+            pieces[position] = ""
+            lines[number] = "".join(pieces).rstrip()
+            if not lines[number].strip(_BULLET_CHARS):
+                emptied.add(number)
+    kept = [line for number, line in enumerate(lines) if number not in emptied]
+    return _tidy(kept)
+
+
+# ---------------------------------------------------------------------------
 # Human voice: dashes, odd characters, buzzwords, next-step labels, repeats
 # ---------------------------------------------------------------------------
 # Every step below is str-method code (find/split/scan): linear time, no
@@ -1068,6 +1186,7 @@ def polish_answer(
     if style != ResponseStyle.ADAPTIVE:
         return answer
     polished = remove_internal_wording(strip_stock_phrases(answer))
+    polished = drop_stock_handoff(polished, question)
     polished = drop_unrequested_caveat(polished, question)
     polished = humanise(polished)
     if paragraph_guard(polished):
