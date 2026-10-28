@@ -21,10 +21,15 @@ from app.evaluation.quality import injection_in_chunks
 from app.governance.audit import emit_audit_event
 from app.guardrails.conversational import (
     PRICING_REPLY,
+    detect_acknowledgement,
+    detect_assurance_request,
+    detect_callback_request,
     detect_contact_request,
     detect_conversational_intent,
+    detect_identity_question,
     detect_incident_request,
     detect_pricing_request,
+    detect_support_request,
 )
 from app.guardrails.post_checks import (
     is_off_topic_by_overlap,
@@ -265,6 +270,36 @@ def _canned_reply(query: str) -> str | None:
     )
 
 
+def _last_assistant_was_clarification(history: list[ChatTurn] | None) -> bool:
+    for turn in reversed(history or []):
+        if turn.role == "assistant":
+            return turn.outcome == CLARIFY_OUTCOME
+    return False
+
+
+def _smalltalk_reply(
+    query: str, history: list[ChatTurn] | None, clarification_reply: bool
+) -> str | None:
+    """Fixed replies for support, callback, incident, contact, assurance,
+    identity and bare acknowledgements, in that priority order.
+
+    A bare "yes"/"ok" is never intercepted when it answers a clarification.
+    """
+    reply = (
+        detect_support_request(query)
+        or detect_callback_request(query)
+        or detect_incident_request(query)
+        or detect_contact_request(query)
+        or detect_assurance_request(query)
+        or detect_identity_question(query)
+    )
+    if reply is not None:
+        return reply
+    if clarification_reply or _last_assistant_was_clarification(history):
+        return None
+    return detect_acknowledgement(query)
+
+
 async def run_query(
     query: str,
     top_k: int,
@@ -347,8 +382,12 @@ async def run_query(
         pre_flags = [_UNSAFE_FLAG]
     # Someone describing a live security incident is helped, not blocked as
     # off-topic: a fixed warm reply (only the off-topic flag is bypassed).
+    # Priority: support, callback, incident, contact, assurance, identity,
+    # acknowledgement (unsafe/blocked input never reaches these).
     incident_reply = (
-        detect_incident_request(query) if set(pre_flags) <= {"off_topic"} else None
+        _smalltalk_reply(query, history, clarification_reply)
+        if set(pre_flags) <= {"off_topic"}
+        else None
     )
     if incident_reply is not None:
         return _canned_response(
