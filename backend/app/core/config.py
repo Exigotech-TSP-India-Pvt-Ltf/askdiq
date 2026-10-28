@@ -111,6 +111,12 @@ class Settings(BaseSettings):
     # sentences and quoted bullets are handled in post_checks). Below it ->
     # ungrounded. Lowered from 0.6 after correct answers were rejected.
     groundedness_min_supported_ratio: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Citation verification: a [n] marker is kept only when the claim's content
+    # words overlap the cited chunk by at least this share (and its figures,
+    # framework names and plan words occur in the chunk). The cosine floor
+    # applies only when claim embeddings are supplied by the caller.
+    citation_min_overlap: float = Field(default=0.5, ge=0.0, le=1.0)
+    citation_min_cosine: float = Field(default=0.45, ge=0.0, le=1.0)
     max_query_length: int = 2000
 
     # Retrieval
