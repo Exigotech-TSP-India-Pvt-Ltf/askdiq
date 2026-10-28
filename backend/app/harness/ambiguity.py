@@ -140,7 +140,7 @@ def _strip(pattern: re.Pattern[str], text: str) -> str:
 CATALOGUE: tuple[CatalogueEntry, ...] = (
     CatalogueEntry(
         "Essential Eight",
-        _re(r"\b(essential[ _-]{0,3}(eight|8)|e8|acsc)\b"),
+        _re(r"\b(essent\w{1,3}l[ _-]{0,3}(eight|eigth|eigh|8)|e8|acsc)\b"),
         "ACSC Essential Eight implementation and maturity uplift",
         framework=True,
     ),
@@ -158,12 +158,12 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
     ),
     CatalogueEntry(
         "Zero Trust",
-        _re(r"\bzero[ _-]{0,3}trust\b"),
+        _re(r"\bzero[ _-]{0,3}tr(ust|sut|uts)\b"),
         "Zero Trust assessment and implementation",
     ),
     CatalogueEntry(
         "Security Baseline",
-        _re(r"\bsecurity[ _-]{0,3}baseline\b"),
+        _re(r"\bsecur(it|ti|t)y[ _-]{0,3}baseline\b"),
         "Microsoft 365 Security Baseline Assessment",
     ),
     CatalogueEntry(
@@ -344,7 +344,7 @@ _COMPLIANCE_RE = _re(
 # certified", "how do I secure my company", "help us get ready for our audit").
 _GOAL_RE = _re(
     r"\b((we|i) (need|want|have|must)( to)? (get |be |become |achieve |meet )?"
-    r"(compliance|compliant|complience|certified|certification|accredited)|"
+    r"(compl(?:ian|ien|ain)\w{1,3}|complaint|certified|certification|accredited)|"
     r"(improve|strengthen|lift|uplift|harden) (our|my|the) (security|cyber|posture)|"
     r"how (do|can|should) (i|we) (secure|protect|harden) (my|our|the) "
     r"(company|business|organi[sz]ation|tenant|environment|data)|"
@@ -515,6 +515,15 @@ _BACKREF_RE = _re(
     r"the (product|service|framework|option) (above|you mentioned)|"
     r"(mentioned|said|discussed) (above|earlier|before)|earlier|above)\b"
 )
+# "that one" / "this one" point back too, unless the question compares things.
+_POINTER_RE = _re(r"\b(that|this) one\b")
+_COMPARING_RE = _re(r"\b(than|compar\w*|versus|vs|better|worse|differen\w*)\b")
+# A bare "tell me more": the whole message asks for more on the previous answer.
+_MORE_RE = _re(
+    r"^(?:(?:ok|okay|so|and|please) )?(?:(?:can|could) you )?"
+    r"(?:tell me more|more (?:details?|info\w{0,8})|elaborate|go on|"
+    r"expand on (?:that|it)|say more)\W{0,5}$"
+)
 # Capitalised word of 2+ characters (acronyms, product names, Titlecase).
 _PROPER_RE = re.compile(r"\b[A-Z][A-Za-z0-9]+\b")
 
@@ -589,6 +598,8 @@ def _subjects(text: str, *, brand: bool = True) -> set[str]:
         found |= brands
     # Proper nouns after the first word (sentence case is not a name).
     rest = " ".join(text.split()[1:])
+    if rest.isupper():  # SHOUTING is not a list of names
+        rest = rest.lower()
     found |= {m.lower() for m in _PROPER_RE.findall(rest) if m.lower() not in _COMMON}
     return found
 
@@ -646,6 +657,7 @@ def _dangling_pronoun(query: str) -> bool:
 # A cost/time question that names nothing at all ("pricing?", "how much?").
 _COST_TIME_RE = _re(
     r"\b(cost\w*|price\w*|pricing|fees?|quotes?|charge\w*|pay|expensive|cheap|"
+    r"plans?|packages?|tiers?|subscriptions?|licen[cs]\w*|free|trial|"
     r"how long|how much|timeline|how (quickly|fast)|duration)\b"
 )
 _COST_TIME_WORDS = frozenset(
@@ -666,6 +678,16 @@ _COST_TIME_WORDS = frozenset(
         "takes",
         "timeline",
         "duration",
+        "plan",
+        "plans",
+        "package",
+        "packages",
+        "tier",
+        "tiers",
+        "subscription",
+        "subscriptions",
+        "free",
+        "trial",
         "expensive",
         "cheap",
         "quickly",
@@ -718,7 +740,8 @@ def assess(
 def _reference_kind(query: str, history: list[ChatTurn] | None) -> AmbiguityKind:
     """Referent / comparison ambiguity of a question that names no framework."""
     named = _subjects(query)
-    if _BACKREF_RE.search(query) and not named:
+    pointer = _hit(_POINTER_RE, query) and not _hit(_COMPARING_RE, query)
+    if (_BACKREF_RE.search(query) or pointer or _MORE_RE.match(query)) and not named:
         # "the one you mentioned above": resolved only when the last answer
         # named exactly one service; otherwise ask which one is meant.
         one = _last_answer_subject_count(history) == 1
