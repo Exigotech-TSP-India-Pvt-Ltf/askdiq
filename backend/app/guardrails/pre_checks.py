@@ -259,7 +259,17 @@ _DIRECT_CREDENTIAL_RE = re.compile(
     r"(?!\s{1,3}(?:polic|requirement|reset|rule|complex|length|expir))"
     r"|\bconnection\s{1,3}strings?\b"
     r"|\benv(?:ironment)?\s{1,3}(?:variables?|vars?|file)\b|\.env\b"
-    r"|\bthe\s{1,3}api[\s_-]{0,3}keys?\b",
+    r"|\bthe\s{1,3}api[\s_-]{0,3}keys?\b"
+    r"|\b(?:your|ur)\s{1,3}(?:openai|azure|secret|private|master|admin)"
+    r"\s{1,3}keys?\b",
+    re.IGNORECASE,
+)
+# Imperative ask for "the secret key" ("tell me the secret key"); a question
+# such as "what is a secret key?" is not matched.
+_IMPERATIVE_SECRET_KEY_RE = re.compile(
+    r"\b(?:tell\s{1,3}me|give\s{1,3}me|send\s{1,3}me|share|reveal|show\s{1,3}me|"
+    r"print|dump|leak|expose)\s{1,3}the\s{1,3}"
+    r"(?:secret|private|master|signing)\s{1,3}keys?\b",
     re.IGNORECASE,
 )
 _PERSONAL_CONTACT_RE = re.compile(
@@ -697,6 +707,8 @@ def check_sensitive_request(query: str) -> tuple[bool, str | None]:
         and not _HOW_TO_RE.search(text)
         and _DIRECT_CREDENTIAL_RE.search(text)
     ):
+        return False, "application_secret_request"
+    if _IMPERATIVE_SECRET_KEY_RE.search(text) and not _HOW_TO_RE.search(text):
         return False, "application_secret_request"
     if _CROSS_TENANT_RE.search(text) and _CREDENTIAL_RE.search(text):
         return False, "no_permission"
