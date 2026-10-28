@@ -19,7 +19,10 @@ from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.evaluation.quality import injection_in_chunks
 from app.governance.audit import emit_audit_event
-from app.guardrails.conversational import detect_conversational_intent
+from app.guardrails.conversational import (
+    detect_contact_request,
+    detect_conversational_intent,
+)
 from app.guardrails.post_checks import (
     is_off_topic_by_overlap,
     is_refusal,
@@ -94,10 +97,7 @@ def _fallback_answer(flags: list[str], brand: str) -> str:
             "will be glad to help."
         )
     if "spam_detected" in flagged:
-        return (
-            "Sorry, I didn't catch that. Could you rephrase your question? I can "
-            f"help with {brand}, Zero Trust, Essential Eight and more."
-        )
+        return "Sorry, I didn't catch that. Could you rephrase your question?"
     if "unclear_input" in flagged:
         return (
             "Could you add a little more detail so I can point you in the right "
@@ -132,7 +132,6 @@ def _fallback_response(
     request_id: str,
     flags: list[str],
     latency_ms: float,
-    sources: list[SourceChunk] | None = None,
     follow_up_detected: bool = False,
     history_turns_sent: int = 0,
     prompt_tokens: int | None = None,
@@ -144,16 +143,17 @@ def _fallback_response(
 ) -> QueryResponse:
     """Return a safe, polite fallback response.
 
-    Spam/unsafe input is blocked with dedicated polite guidance and never
-    carries retrieval evidence. Genuine off-topic/low-confidence cases still
-    surface whatever sources were considered, for transparency.
+    A fallback is never an answer, so it carries no sources and no citations,
+    whatever was retrieved (retrieval telemetry stays in logs and stage
+    timings). Spam/unsafe/unclear input gets a short fixed text only.
     """
 
     answer = _fallback_answer(flags, settings.brand_name)
 
     return QueryResponse(
         answer=answer,
-        sources=sources or [],
+        sources=[],
+        citations=[],
         grounded=False,
         confidence=0.0,
         request_id=request_id,
@@ -341,6 +341,30 @@ async def run_query(
 
     stage_timings["guardrail_pre"] = (time.perf_counter() - t0) * 1000
 
+    # A "how do I reach you" question is on-topic: a fixed, helpful reply with
+    # a specialist step; no retrieval, no LLM, no invented contact details.
+    contact_reply = detect_contact_request(query)
+    if contact_reply is not None:
+        latency_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "contact_request_intercept",
+            query_len=len(query),
+            latency_ms=round(latency_ms, 2),
+        )
+        return QueryResponse(
+            answer=contact_reply,
+            sources=[],
+            citations=[],
+            grounded=True,
+            confidence=1.0,
+            request_id=request_id,
+            latency_ms=latency_ms,
+            guardrail_flags=[],
+            follow_up_detected=follow_up_detected,
+            history_turns_sent=history_turns_sent,
+            outcome="conversational",
+        )
+
     # ---------------------------------------------------------
     # 2. VECTOR RETRIEVAL
     # ---------------------------------------------------------
@@ -451,7 +475,6 @@ async def run_query(
             request_id=request_id,
             flags=["off_topic"],
             latency_ms=latency_ms,
-            sources=sources,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
         )
@@ -676,7 +699,6 @@ async def run_query(
             request_id=request_id,
             flags=flags,
             latency_ms=(time.perf_counter() - start) * 1000,
-            sources=sources,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
             prompt_tokens=prompt_tokens,
@@ -750,7 +772,6 @@ async def run_query(
             request_id=request_id,
             flags=post_flags,
             latency_ms=total_ms,
-            sources=sources,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
             prompt_tokens=prompt_tokens,

@@ -268,3 +268,17 @@ def test_internal_wording_filter_is_linear(text: str) -> None:
     started = time.perf_counter()
     remove_internal_wording(text)
     assert time.perf_counter() - started < 2.0
+
+
+def test_spam_fallback_is_not_a_pitch() -> None:
+    answer = _answer("spam_detected")
+    assert "rephrase" in answer
+    assert "Zero Trust" not in answer
+    assert "Essential Eight" not in answer
+
+
+def test_off_topic_fallback_keeps_specialist_step_without_sources() -> None:
+    response = _fallback_response(request_id="r", flags=["off_topic"], latency_ms=1.0)
+    assert "specialist" in response.answer.lower()
+    assert response.sources == []
+    assert response.citations == []

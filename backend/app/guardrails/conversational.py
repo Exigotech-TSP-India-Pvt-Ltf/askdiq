@@ -110,3 +110,67 @@ def detect_conversational_intent(query: str) -> str | None:
         return get_capability_response()
 
     return None
+
+
+# "How do I reach you" questions are on-topic but not answerable from the
+# knowledge base. Short, anchored, bounded patterns only (no nested quantifiers).
+_MAX_CONTACT_CHARS = 100
+
+_CONTACT_NOUN = (
+    r"(?:phone|telephone|mobile|email|e-?mail|address|contact|number|"
+    r"office|location|support|helpline|hotline)"
+)
+_CONTACT_NOUN_TAIL = (
+    r"(?:\s{1,3}(?:number|address|details|info|information|form|page))?"
+)
+
+_CONTACT_RE = re.compile(
+    r"^\s{0,3}(?:"
+    # "do you have a phone number?"
+    r"(?:do|does|can)\s{1,3}(?:you|u|they|the\s{1,3}company)\s{1,3}have\s{1,3}"
+    r"(?:a|an|any|some)?\s{0,3}"
+    rf"(?:(?:phone|contact|support|email|e-?mail)\s{{1,3}})?{_CONTACT_NOUN}{_CONTACT_NOUN_TAIL}"
+    # "what is your phone number" / "your email address"
+    r"|(?:(?:what|whats|what's)(?:\s{1,3}is|\s{1,3}are)?\s{1,3})?(?:your|ur|the)\s{1,3}"
+    rf"(?:(?:phone|contact|support|email|e-?mail)\s{{1,3}})?{_CONTACT_NOUN}{_CONTACT_NOUN_TAIL}"
+    # "how do I contact you" / "how can I get in touch"
+    r"|how\s{1,3}(?:do|can|could|would|should)\s{1,3}(?:i|we)\s{1,3}"
+    r"(?:contact|reach|call|email|phone|get\s{1,3}in\s{1,3}touch(?:\s{1,3}with)?|"
+    r"get\s{1,3}hold\s{1,3}of)"
+    r"(?:\s{1,3}(?:you|us|them|someone|somebody|sales|support|your\s{1,3}team|the\s{1,3}team|"
+    r"a\s{1,3}specialist|a\s{1,3}human|a\s{1,3}person|deployiq))?"
+    # "I want to talk to someone" / "speak to a human"
+    r"|(?:(?:i|we)(?:\s{1,3}(?:want|need|would\s{1,3}like)|'d\s{1,3}like)\s{1,3}to\s{1,3}|"
+    r"(?:can|could|may)\s{1,3}(?:i|we)\s{1,3}|let\s{1,3}me\s{1,3})?"
+    r"(?:talk|speak|chat)\s{1,3}(?:to|with)\s{1,3}"
+    r"(?:a|an|some|someone|somebody|your|the)?\s{0,3}"
+    r"(?:someone|somebody|human|person|agent|specialist|representative|rep|"
+    r"sales(?:\s{1,3}team)?|support(?:\s{1,3}team)?|team|expert)"
+    # "contact details" / "contact us" / "get in touch"
+    r"|(?:contact\s{1,3}(?:us|you|details|info|information|sales|support)|get\s{1,3}in\s{1,3}touch)"
+    r")[\s?!.]{0,6}$",
+    re.IGNORECASE,
+)
+
+
+def get_contact_response() -> str:
+    brand = get_settings().brand_name
+    return (
+        "Our specialists are happy to help. You can reach them through the "
+        f"Contact {brand} form on our website."
+    )
+
+
+def detect_contact_request(query: str) -> str | None:
+    """Return the fixed contact reply for a "how do I reach you" question.
+
+    Never invents a phone number, email or address. Returns None for anything
+    else (including contact details of a named person, which pre-checks block).
+    """
+
+    text = query.strip()
+    if not text or len(text) > _MAX_CONTACT_CHARS:
+        return None
+    if _CONTACT_RE.match(text):
+        return get_contact_response()
+    return None
