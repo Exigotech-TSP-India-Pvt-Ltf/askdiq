@@ -76,12 +76,6 @@ export const visitorsTour: PageTour = {
       placement: "left",
     },
     {
-      target: '[data-tour="visitors-manage-test-ips"]',
-      title: "Manage test IPs",
-      body: "Add or remove test IP rules (single IPs or CIDR ranges such as 10.0.0.0/24) with a note on who they belong to. Built-in loopbacks and configured defaults are listed but can't be removed. Changes re-classify historical data immediately.",
-      placement: "bottom",
-    },
-    {
       target: '[data-tour="visitors-pagination"]',
       title: "Pagination",
       body: "Page through visitors and choose 10, 25, 50 or 100 rows per page.",
