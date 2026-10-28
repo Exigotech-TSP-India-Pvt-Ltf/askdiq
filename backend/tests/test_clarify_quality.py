@@ -679,3 +679,15 @@ def test_how_does_it_work_without_history_is_answered() -> None:
 
 def test_price_questions_still_get_the_service_card() -> None:
     assert assess("how much does it cost?", None).kind is AmbiguityKind.REFERENT
+
+
+@pytest.mark.parametrize("query", ["idk", "i need help", "what should we buy"])
+def test_subject_less_vague_prompts_get_the_goal_card_not_a_service_card(
+    query: str,
+) -> None:
+    assert assess(query, None).kind is AmbiguityKind.GOAL
+
+
+def test_named_subjects_keep_the_service_flow() -> None:
+    assert assess("how much does it cost?", None).kind is AmbiguityKind.REFERENT
+    assert assess("E8 pricing", None).kind is AmbiguityKind.NONE

@@ -41,10 +41,21 @@ from app.core.circuit import get_llm_breaker
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.evaluation.quality import injection_in_chunks
-from app.guardrails.conversational import detect_conversational_intent
+from app.guardrails.conversational import (
+    detect_contact_request,
+    detect_conversational_intent,
+)
 from app.harness.clarify import (
     BRAND_RE,
     COMPANY_FACT_RE,
+    GOAL_AUDIT,
+    GOAL_AUDIT_QUERY,
+    GOAL_HEADER,
+    GOAL_OVERVIEW,
+    GOAL_PRICING,
+    GOAL_QUESTION,
+    GOAL_SECURITY,
+    INCIDENT_RE,
     NOT_SURE_LABEL,
     clarification_streak,
     humanize_source_name,
@@ -76,6 +87,7 @@ class AmbiguityKind(StrEnum):
     REFERENT = "referent"
     COMPARISON = "comparison"
     SLOTS = "slots"
+    GOAL = "goal"
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +96,8 @@ class Assessment:
 
     kind: AmbiguityKind = AmbiguityKind.NONE
     missing_slots: tuple[str, ...] = ()
+    cue: str = ""  # GOAL: which opener the visitor used (picks the preamble)
+    deterministic: bool = False  # SLOTS: no LLM confirmation needed
 
     @property
     def detected(self) -> bool:
@@ -371,7 +385,8 @@ _GOAL_RE = _re(
     r"(company|business|organi[sz]ation|tenant|environment|data)|"
     r"(we|i)( have| 've| got)? an? (upcoming |external |internal )?(audit|audti)( coming up| soon| next \w{1,10})?|"
     r"help (us|me) (to )?(get ready|prepare|be ready)|"
-    r"(get|be) ready for (the |an? |our |my )?(audit|audti))\b"
+    r"(get|be) ready for (the |an? |our |my )?(audit|audti)|"
+    r"(get|be|become|getting|being) audit[ -]{0,3}ready)\b"
 )
 _AUDIT_RE = _re(r"\b(audit|audti)\w*\b")
 
@@ -734,6 +749,178 @@ def _bare_cost_or_time(query: str) -> bool:
     return all(w in _SCAFFOLD or w in _COST_TIME_WORDS for w in words)
 
 
+# ---------------------------------------------------------------------------
+# GOAL: a genuinely vague help / need / situation statement
+# ---------------------------------------------------------------------------
+# "I need help", "idk", "we are a small business": nothing names a service, so
+# retrieval has nothing to go on. Decided by rules before retrieval; the card
+# asks what they want to get done (see goal_clarification). Every pattern is
+# anchored to the whole (short) message, built from literals and bounded
+# repeats only, over input capped at _MAX_GOAL_CHARS.
+
+_MAX_GOAL_CHARS = 300
+_STALLED_OUTCOMES = frozenset({"blocked", "ungrounded"})
+_STALLED_TURNS = 2
+_MIN_GOAL_OPTIONS = 2
+
+CUE_DEFAULT = "default"
+CUE_LOST = "lost"
+CUE_WORRIED = "worried"
+CUE_SMALL = "small"
+GOAL_PREAMBLES: dict[str, str] = {
+    CUE_LOST: "No worries, plenty of people aren't sure where to start.",
+    CUE_WORRIED: "Sounds like something's on your mind.",
+    CUE_SMALL: "Happy to help a small business get this right.",
+    CUE_DEFAULT: "Happy to point you in the right direction.",
+}
+
+_LEAD_RE = _re(r"^(?:(?:hi|hello|hey|ok|okay|so|um|well|please|sorry)[ ,]{1,3}){1,2}")
+_END_RE = _re(
+    r"^(?: (?:please|pls|thanks|here|today|now|really|lol|honestly|with this|"
+    r"with something|on this|from you|from someone|a bit|a lot))?[\s\W]{0,6}$"
+)
+_I_WE = r"(?:i|we)(?: really| just)?"
+_NEED = r"(?:need|want|have|require|would like|'d like)"
+_IM = r"(?:i am|i'm|im|we are|we're|were)"
+_PROBLEM = r"(?:problems|issues|trouble|errors)"
+_SMALL_ORG = (
+    r"(?:business|company|firm|startup|organi[sz]ation|team|practice|shop|clinic|"
+    r"charity|school|council|agency)"
+)
+_GOAL_CUES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        CUE_LOST,
+        _re(
+            rf"^(?:{_IM}(?: a bit| very| so| really| totally)? "
+            r"(?:confused|lost|stuck|overwhelmed|unsure|not sure)|confused|idk|dunno|"
+            r"no (?:idea|clue)|(?:i |we )?(?:don'?t|do not) know|(?:i |we )?not sure|"
+            r"unsure)"
+            r"(?: (?:what|where|how|which) (?:to (?:start|begin|do|ask|choose|pick|"
+            r"buy|get|go)|i need|we need|i want|we want|one|service|option))?"
+        ),
+    ),
+    (
+        CUE_LOST,
+        _re(
+            r"^(?:where (?:do|should|can|to) (?:(?:i|we) )?(?:start|begin)|"
+            r"how (?:do|can|should) (?:i|we) (?:get started|start|begin)|"
+            r"how to (?:get started|start|begin))"
+        ),
+    ),
+    (
+        CUE_WORRIED,
+        _re(
+            rf"^(?:{_IM}(?: a bit| very| so| really)? (?:worried|concerned|nervous|"
+            r"anxious)(?: about (?:hackers|security|cyber ?(?:security|attacks?)?|"
+            r"breaches|ransomware|data|our data|my data|it|this|things|stuff))?|"
+            r"worried about (?:hackers|security|cyber ?(?:security|attacks?)?|"
+            r"breaches|ransomware|data|our data)|"
+            r"(?:our|my) (?:tenant|microsoft 365|m365|office 365|email|network|it|"
+            r"security|systems?|setup|environment) (?:has|have|is having|keeps having) "
+            rf"(?:some |a few |lots of |many |a lot of )?{_PROBLEM}|"
+            rf"(?:i|we) (?:have|am having|are having|'ve got|got) (?:some |a few )?"
+            rf"{_PROBLEM})"
+        ),
+    ),
+    (
+        CUE_SMALL,
+        _re(
+            rf"^(?:(?:{_IM}|we run|i run|we own|i own|we have|i have) (?:just )?"
+            r"(?:a |an |the )?(?:(?:very |really )?(?:small|medium|tiny|mid-?sized|"
+            r"growing|new|local|family|startup)[ -]?)(?:\w{1,15} )?"
+            rf"{_SMALL_ORG}|{_IM} (?:a |an )?(?:startup|start-up))"
+        ),
+    ),
+    (
+        CUE_DEFAULT,
+        _re(
+            rf"^(?:(?:{_I_WE} )?{_NEED}(?: to get)? (?:some |a little |a bit of |your |any )?"
+            r"(?:help|advice|assistance|a hand|guidance|support|something|ideas|"
+            r"some ideas|a recommendation|a suggestion)"
+            rf"|{_I_WE} {_NEED} to (?:know|look into|improve|learn|find out|"
+            r"understand|get better|do better|get started)(?: (?:more|something|"
+            r"stuff|things|a bit|some things|about (?:stuff|something|things|it|"
+            r"this|you|everything)))?"
+            r"|(?:i have|i've got|we have) (?:a |one |some )?(?:question|questions)"
+            r"|(?:can|could) (?:i|we) ask (?:you )?(?:a |some )?(?:question|something)"
+            r"|what should (?:we|i) (?:do|buy|get|choose|pick|use)(?: first| next)?"
+            r"|what(?:'s|s| is) (?:the )?best(?: (?:option|choice|one|thing|for (?:me|us)))?"
+            r"|(?:what|which) (?:are|is) (?:my|our|the|your) (?:options?|choices?)"
+            r"|(?:what|which) (?:do|would) you recommend"
+            r"|(?:i|we) (?:need|want) (?:a )?recommendations?"
+            r"|(?:can|could) you recommend (?:me |us )?(?:something|anything)?"
+            r"|recommend(?: me| us)?(?: something| anything)?"
+            r"|(?:compare|show me|list|give me) (?:all )?(?:your|the) "
+            r"(?:options|choices|services|offerings|plans)"
+            r"|compare (?:your )?options"
+            r"|tell me something(?: interesting| good| useful)?"
+            r"|(?:tell me|i want to know|i need to know|give me) something "
+            r"about (?:stuff|things|it|this|you|your (?:company|business|services|"
+            r"stuff)|the company|security|cyber ?security|compliance|cloud|"
+            r"microsoft|it)"
+            r"|something about (?:stuff|things|security|cyber ?security|compliance|"
+            r"cloud|microsoft)"
+            r"|(?:my boss|my manager|my ceo|the boss) (?:asked|told|wants|has asked) "
+            r"(?:me )?(?:to )?(?:look into|check|investigate|find out about|sort out)"
+            r"(?: this| it| something| security| things)?"
+            r"|help(?: me| us)? out"
+            r"|(?:i|we) (?:am |are |'m |'re )?(?:looking for|after) (?:some )?"
+            r"(?:help|advice|guidance|something|a recommendation))"
+        ),
+    ),
+)
+
+
+def _goal_cue(scan: str) -> str | None:
+    """The cue of a vague help/need/situation statement, or ``None``."""
+    text = _LEAD_RE.sub("", scan.lower().strip(), count=1)
+    for cue, pattern in _GOAL_CUES:
+        match = pattern.match(text)
+        if match is not None and _END_RE.match(text[match.end() :]):
+            return cue
+    return None
+
+
+def _stalled(history: list[ChatTurn] | None) -> bool:
+    """Two refusals / dead ends in a row (the latest assistant turns)."""
+    count = 0
+    for turn in reversed(history or []):
+        if turn.role != "assistant":
+            continue
+        if turn.outcome not in _STALLED_OUTCOMES:
+            break
+        count += 1
+    return count >= _STALLED_TURNS
+
+
+def _goal_assessment(query: str, history: list[ChatTurn] | None) -> Assessment | None:
+    """A vague, subject-less help statement (or a third dead end): ask the goal."""
+    if len(query) > _MAX_GOAL_CHARS:
+        return None
+    if (
+        detect_conversational_intent(query) is not None
+        or detect_contact_request(query) is not None
+        or INCIDENT_RE.search(query)
+        or is_generic_product_question(query)
+        or _subjects(query)
+        or _history_subjects(history)
+    ):
+        return None
+    cue = _goal_cue(query)
+    if cue is None and (COMPANY_FACT_RE.search(query) or not _stalled(history)):
+        return None
+    return Assessment(AmbiguityKind.GOAL, cue=cue or CUE_DEFAULT)
+
+
+def _last_was_goal_card(history: list[ChatTurn] | None) -> bool:
+    for turn in reversed(history or []):
+        if turn.role != "assistant":
+            continue
+        card = turn.clarification if turn.outcome == "clarify" else None
+        return card is not None and any(q.header == GOAL_HEADER for q in card.questions)
+    return False
+
+
 def assess(
     query: str,
     history: list[ChatTurn] | None,
@@ -745,13 +932,23 @@ def assess(
     settings = get_settings()
     if (
         not settings.clarify_enabled
-        or clarification_reply
         or clarification_streak(history) >= settings.clarify_max_consecutive
     ):
+        return Assessment()
+    if clarification_reply:
+        # "Get audit ready" is the one Goal pick that chains into the
+        # framework / maturity questions (two cards in a row is the cap).
+        if query.startswith(GOAL_AUDIT_QUERY) and _last_was_goal_card(history):
+            return Assessment(
+                AmbiguityKind.SLOTS, (FRAMEWORK_SLOT, "maturity"), deterministic=True
+            )
         return Assessment()
     missing = _missing_slots(query)
     if missing:
         return Assessment(AmbiguityKind.SLOTS, missing)
+    goal = _goal_assessment(query, history)
+    if goal is not None:
+        return goal
     # Company facts ("where are they located?") and generic one-product
     # questions ("how does it work?") are answered, not asked back.
     if COMPANY_FACT_RE.search(query) or is_generic_product_question(query):
@@ -839,6 +1036,80 @@ def service_clarification(
         return None
     preamble, question = _service_question(query, kind, options)
     return Clarification(preamble=preamble, questions=[question], original_query=query)
+
+
+_GOAL_OPTIONS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    (
+        GOAL_OVERVIEW,
+        "A plain-English overview of the services",
+        _re(r"deploy[ _-]?iq|exigo|services?|platform|methodology|microsoft 365"),
+    ),
+    (
+        GOAL_AUDIT,
+        "Essential Eight, ISO 27001 and CIS readiness and evidence",
+        _re(
+            r"audit|evidence|essential eight|iso[ /_-]{0,3}(iec )?27001|\bcis\b|"
+            r"compliance|certif"
+        ),
+    ),
+    (
+        GOAL_SECURITY,
+        "Microsoft 365 tenant assessment, Zero Trust and a security baseline",
+        _re(r"tenant|baseline|zero[ _-]?trust|harden|assessment|security posture"),
+    ),
+    (
+        GOAL_PRICING,
+        "Costs, timelines and a specialist to talk to",
+        _re(
+            r"pric(e|ing)|\bcosts?\b|quote|timelines?|\bdays\b|\bweeks\b|"
+            r"\bmonths\b|specialist|engagement|contact"
+        ),
+    ),
+)
+
+
+def goal_clarification(
+    query: str, sources: list[SourceChunk], cue: str = CUE_DEFAULT
+) -> Clarification | None:
+    """The "what are you hoping to get done?" card, or ``None``.
+
+    Options are fixed and kept only when a retrieved chunk covers them (its
+    documents are attached so a pick boosts them); at least two must remain.
+    """
+    ranked = sorted(sources, key=lambda s: s.score, reverse=True)
+    options: list[ClarificationOption] = []
+    for label, description, evidence in _GOAL_OPTIONS:
+        covering = [
+            s for s in ranked if _hit(evidence, f"{s.content} {_source_name(s) or ''}")
+        ]
+        if covering:
+            options.append(_option(len(options) + 1, label, description, covering))
+    if len(options) < max(get_settings().clarify_min_options, _MIN_GOAL_OPTIONS):
+        return None
+    return Clarification(
+        preamble=GOAL_PREAMBLES.get(cue, GOAL_PREAMBLES[CUE_DEFAULT]),
+        questions=[
+            ClarificationQuestion(
+                id="Q1", header=GOAL_HEADER, question=GOAL_QUESTION, options=options
+            )
+        ],
+        original_query=query[:2000],
+    )
+
+
+def vague_fallback_clarification(
+    query: str, history: list[ChatTurn] | None, sources: list[SourceChunk]
+) -> Clarification | None:
+    """The card for a short question the answer step could not ground.
+
+    Nothing named in the question or the conversation: the goal card (what do
+    you want to get done?); otherwise "which service?" over the retrieved ones.
+    """
+    if not (_subjects(query) or _history_subjects(history)):
+        card = goal_clarification(query, sources)
+        if card is not None:
+            return card
+    return service_clarification(query, sources)
 
 
 def _slot_question(
@@ -1036,10 +1307,16 @@ async def rule_clarification(
     if not assessment.detected or not sources:
         return RuleClarification()
     settings = get_settings()
-    if max(s.score for s in sources) < settings.clarify_min_retrieval_score:
-        return RuleClarification(decision="below_floor")
     poisoned = set(injection_in_chunks([s.content for s in sources]))
     clean = [s for i, s in enumerate(sources) if i not in poisoned]
+    if assessment.kind is AmbiguityKind.GOAL:
+        # A vague statement scores low by nature: no relevance floor, the
+        # options are fixed and only need covering chunks.
+        return RuleClarification(
+            goal_clarification(query, clean, assessment.cue), decision="rules"
+        )
+    if max(s.score for s in sources) < settings.clarify_min_retrieval_score:
+        return RuleClarification(decision="below_floor")
     if assessment.kind is not AmbiguityKind.SLOTS:
         return RuleClarification(
             service_clarification(query, clean, assessment.kind), decision="rules"
@@ -1047,7 +1324,7 @@ async def rule_clarification(
     slots = assessment.missing_slots
     usage: dict[str, int] | None = None
     decision = "rules"
-    if len(slots) < _DETERMINISTIC_SLOTS:
+    if len(slots) < _DETERMINISTIC_SLOTS and not assessment.deterministic:
         confirmed, usage = await confirm_slots(query, slots)
         if not confirmed:
             return RuleClarification(
