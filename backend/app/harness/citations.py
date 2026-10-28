@@ -220,7 +220,9 @@ def apply_citations(
 # contains the claim it sits on. Every regex is bounded / linear-time.
 # ---------------------------------------------------------------------------
 # A claim ends at ./!/? + whitespace (unless a marker follows: "claim. [1]") or a newline.
-_UNIT_SPLIT_RE = re.compile(r"((?<=[.!?])[ \t]+(?![ \t]|\[\d)|\n+)")
+_UNIT_SPLIT_RE = re.compile(
+    r"((?<=[.!?])[ \t]+(?![ \t]|\[\d)|(?<=\])[ \t]+(?=[A-Z])|\n+)"
+)
 _BULLET_RE = re.compile(r"^\s{0,8}(?:[-*•]|\d{1,2}[.)])\s+")
 _EMPHASIS_RE = re.compile(r"\*{1,3}|_{2}|`")
 _THOUSANDS_RE = re.compile(r"(?<=\d),(?=\d{3})")
