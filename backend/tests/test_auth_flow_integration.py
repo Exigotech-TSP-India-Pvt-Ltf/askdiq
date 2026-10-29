@@ -1,6 +1,6 @@
 """Phase B2 end-to-end journey through the mock IdP.
 
-A new user signs in (pending), uses Chat, gets 403 on the dashboard,
+A new user signs in (pending), gets 403 on Chat and the dashboard,
 requests access; a superadmin (bootstrapped from SUPERADMIN_EMAILS) approves;
 the user's next request is authorised without signing in again; the user is
 suspended and the next request is denied; signing in again is refused. The
@@ -49,10 +49,10 @@ async def test_full_sign_in_approval_and_suspension_journey(
     assert (me["status"], me["role"], me["permissions"]) == ("pending", None, [])
     assert me["access_contact_email"] == "it-help@example.com"
 
-    # 2. Chat works; every dashboard route answers 403.
-    assert (await client.get(CHAT, headers=headers)).status_code == 200
-    created = await client.post(CHAT, json={"title": "hello"}, headers=headers)
-    assert created.status_code == 201
+    # 2. Chat and every dashboard route answer 403 until a role is granted.
+    chat_denied = await client.get(CHAT, headers=headers)
+    assert chat_denied.status_code == 403
+    assert chat_denied.json()["detail"] == "Chatbot access requires approval."
     denied = await client.get(DASHBOARD, headers=headers)
     assert denied.status_code == 403
     assert denied.json()["detail"] == "Dashboard access requires approval."
@@ -84,6 +84,7 @@ async def test_full_sign_in_approval_and_suspension_journey(
 
     # 5. The user's very next request is authorised (same session).
     assert (await client.get(DASHBOARD, headers=headers)).status_code == 200
+    assert (await client.get(CHAT, headers=headers)).status_code == 200
     me = (await client.get("/auth/me", headers=headers)).json()
     assert (me["status"], me["role"]) == ("active", "operator")
     assert me["permissions"] == [Permission.DASHBOARD_READ]
