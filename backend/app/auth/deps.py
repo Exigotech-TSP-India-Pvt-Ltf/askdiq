@@ -70,6 +70,7 @@ DETAIL_UNAUTHENTICATED = "Not authenticated."
 DETAIL_CSRF = "Cross-site request rejected."
 DETAIL_SUSPENDED = "Account suspended."
 DETAIL_APPROVAL = "Dashboard access requires approval."
+DETAIL_CHAT_ACCESS = "Chatbot access requires approval."
 DETAIL_FORBIDDEN = "Insufficient permissions."
 
 service_key_header = APIKeyHeader(
@@ -286,6 +287,9 @@ async def require_chat_actor(
         request.state.auth_user = user
         if user.status not in CHAT_STATUSES:
             raise _deny(status.HTTP_403_FORBIDDEN, DETAIL_SUSPENDED)
+        # SSO users need an approved role (superadmin/admin/operator) to use the chatbot.
+        if not user.is_active:
+            raise _deny(status.HTTP_403_FORBIDDEN, DETAIL_CHAT_ACCESS)
         return user.email
     if SESSION_HEADER in request.headers or request.headers.get(PROXY_HEADER):
         raise _deny(status.HTTP_401_UNAUTHORIZED, DETAIL_UNAUTHENTICATED)
