@@ -1,7 +1,7 @@
 /**
  * Phase F1 auth journey: `/auth/me` is mocked through each
- * state. A new user signs in, uses Chat, meets Access Required on a dashboard
- * route, requests access, is approved (the 15 s poll picks it up) and lands on
+ * state. A new user signs in and sees only the chatbot access dialog (no shell)
+ * on every route, is approved (the 15 s poll picks it up) and lands on
  * the dashboard without signing in again. A suspended user sees the suspended
  * page. Signed-out visitors are sent to /login with `next`.
  */
@@ -101,15 +101,18 @@ afterEach(() => {
 const meCalls = () => fetchMock.mock.calls.filter(([url]) => url === "/api/proxy/auth/me").length;
 
 describe("Auth journey", { timeout: 15_000 }, () => {
-  it("new user: Chat works, dashboards show Access Required, request, approval, dashboard", async () => {
-
-    // 1. Pending user on /chat: the page renders, the sidebar offers Chat only.
+  it("new user: only the access dialog (no shell) on every route, then approval opens the dashboard", async () => {
+    // 1. Pending user on /chat: the access dialog replaces the whole app.
     const { rerender } = renderApp(<h1>Chat page</h1>);
-    expect(await screen.findByRole("heading", { name: "Chat page" })).toBeInTheDocument();
-    const mainNav = screen.getAllByRole("navigation", { name: "Main" })[0];
-    expect(within(mainNav).getAllByRole("link").map((a) => a.textContent)).toEqual(["AskDIQ"]);
+    expect(await screen.findByRole("alertdialog", { name: "Access Approval Required" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Chat page" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Main" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "it-admin@contoso.example" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^mailto:it-admin@contoso\.example\?subject=AskDIQ%20Dashboard%20Access%20Request&body=.+/),
+    );
 
-    // 2. A dashboard route renders Access Required instead of the page.
+    // 2. A dashboard route shows the same dialog, not the page.
     nav.pathname = "/admin";
     rerender(
       <MotionProvider>
@@ -122,37 +125,10 @@ describe("Auth journey", { timeout: 15_000 }, () => {
         </ToastProvider>
       </MotionProvider>,
     );
-    // (rerender keeps the provider state; the gate re-evaluates the new path)
-    expect(await screen.findByRole("heading", { name: "You don't have dashboard access yet" })).toBeInTheDocument();
+    expect(await screen.findByRole("alertdialog", { name: "Access Approval Required" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Dashboard page" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "it-admin@contoso.example" })).toHaveAttribute("href", "mailto:it-admin@contoso.example");
-    const stepper = screen.getByRole("list", { name: "Access request progress" });
-    expect(within(stepper).getAllByRole("listitem").map((li) => li.getAttribute("data-state"))).toEqual([
-      "current",
-      "upcoming",
-      "upcoming",
-    ]);
 
-    // 3. Request access (role + justification, max 500 characters).
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "operator" } });
-    const reason = screen.getByLabelText(/why do you need access/i);
-    fireEvent.change(reason, { target: { value: "x".repeat(600) } });
-    expect((reason as HTMLTextAreaElement).value).toHaveLength(500);
-    fireEvent.change(reason, { target: { value: "Weekly reporting" } });
-    fireEvent.click(screen.getByRole("button", { name: "Request access" }));
-    await waitFor(() => expect(backend.posted).toEqual([{ requested_role: "operator", justification: "Weekly reporting" }]));
-    expect(await screen.findByText(/is waiting for review/)).toBeInTheDocument();
-    await waitFor(() =>
-      expect(within(stepper).getAllByRole("listitem").map((li) => li.getAttribute("data-state"))).toEqual([
-        "done",
-        "current",
-        "upcoming",
-      ]),
-    );
-
-    // 4. Approved in the backend. The status re-check (every 15 s, and at once
-    //    when the tab becomes visible again) picks it up; here the user
-    //    switches back to the tab.
+    // 3. Approved in the backend; the re-check on tab focus picks it up.
     backend.me = makeMe("operator");
     const before = meCalls();
     visibility = "hidden";
@@ -165,9 +141,9 @@ describe("Auth journey", { timeout: 15_000 }, () => {
     });
     await waitFor(() => expect(meCalls()).toBe(before + 1));
 
-    // 5. The dashboard renders in place, with no re-login and no navigation.
+    // 4. The dashboard renders in place, with no re-login and no navigation.
     expect(await screen.findByRole("heading", { name: "Dashboard page" })).toBeInTheDocument();
-    expect(screen.getByText("Access approved")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog", { name: "Access Approval Required" })).not.toBeInTheDocument();
     expect(redirectTo).not.toHaveBeenCalled();
     const sidebar = screen.getAllByRole("navigation", { name: "Main" })[0];
     expect(within(sidebar).getByRole("link", { name: /visitors/i })).toBeInTheDocument();
@@ -177,7 +153,7 @@ describe("Auth journey", { timeout: 15_000 }, () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     nav.pathname = "/admin";
     renderApp();
-    await screen.findByRole("heading", { name: "You don't have dashboard access yet" });
+    await screen.findByRole("alertdialog", { name: "Access Approval Required" });
     const initial = meCalls();
     await act(async () => {
       vi.advanceTimersByTime(ACCESS_POLL_INTERVAL_MS - 1);
@@ -205,23 +181,12 @@ describe("Auth journey", { timeout: 15_000 }, () => {
     await waitFor(() => expect(meCalls()).toBe(start + 1));
   });
 
-  it("rejected user sees the reviewer note and can request again", async () => {
+  it("rejected user also gets only the access dialog", async () => {
     backend.me = makeMe(null, "rejected");
-    backend.request = {
-      id: "r-0",
-      status: "rejected",
-      requested_role: "admin",
-      justification: null,
-      created_at: "2026-10-01T00:00:00Z",
-      decided_at: "2026-10-02T00:00:00Z",
-      decision_note: "Please ask your manager first.",
-    };
     nav.pathname = "/documents";
     renderApp();
-    expect(await screen.findByText("Reviewer note: Please ask your manager first.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Request access again" })).toBeInTheDocument();
-    const stepper = screen.getByRole("list", { name: "Access request progress" });
-    expect(within(stepper).getByText("Not approved").closest("li")).toHaveAttribute("data-state", "failed");
+    expect(await screen.findByRole("alertdialog", { name: "Access Approval Required" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Main" })).not.toBeInTheDocument();
   });
 
   it("suspended user sees the suspended page with the contact email and no shell", async () => {

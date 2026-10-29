@@ -120,23 +120,35 @@ async def test_no_session_is_401(client: AsyncClient) -> None:
 
 
 @pytest.mark.real_auth
-async def test_pending_user_gets_chat_but_not_dashboard(
+async def test_pending_user_gets_neither_chat_nor_dashboard(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await make_user(db_session, status="pending")
     headers = await session_headers(db_session, user)
     assert (await client.get(DASHBOARD_ROUTE, headers=headers)).status_code == 403
-    assert (await client.get(CHAT_ROUTE, headers=headers)).status_code == 200
+    chat = await client.get(CHAT_ROUTE, headers=headers)
+    assert chat.status_code == 403
+    assert chat.json()["detail"] == "Chatbot access requires approval."
 
 
 @pytest.mark.real_auth
-async def test_rejected_user_still_gets_chat(
+async def test_rejected_user_gets_no_chat(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     user = await make_user(db_session, status="rejected")
     headers = await session_headers(db_session, user)
-    assert (await client.get(CHAT_ROUTE, headers=headers)).status_code == 200
+    assert (await client.get(CHAT_ROUTE, headers=headers)).status_code == 403
     assert (await client.get(DASHBOARD_ROUTE, headers=headers)).status_code == 403
+
+
+@pytest.mark.real_auth
+@pytest.mark.parametrize("role", ["operator", "admin", "superadmin"])
+async def test_every_role_gets_chat(
+    client: AsyncClient, db_session: AsyncSession, role: str
+) -> None:
+    user = await make_user(db_session, role=role, status="active")
+    headers = await session_headers(db_session, user)
+    assert (await client.get(CHAT_ROUTE, headers=headers)).status_code == 200
 
 
 @pytest.mark.real_auth
@@ -241,7 +253,7 @@ async def test_missing_service_key_is_401_even_with_valid_session(
 async def test_cross_site_post_is_rejected(
     client: AsyncClient, db_session: AsyncSession, csrf_headers: dict[str, str]
 ) -> None:
-    user = await make_user(db_session, status="pending")
+    user = await make_user(db_session, role="operator", status="active")
     headers = await session_headers(db_session, user, csrf=False)
     response = await client.post(
         CHAT_ROUTE, json={"title": "x"}, headers={**headers, **csrf_headers}
@@ -254,7 +266,7 @@ async def test_cross_site_post_is_rejected(
 async def test_same_origin_post_passes(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = await make_user(db_session, status="pending")
+    user = await make_user(db_session, role="operator", status="active")
     headers = await session_headers(db_session, user)
     response = await client.post(CHAT_ROUTE, json={"title": "ok"}, headers=headers)
     assert response.status_code == 201
@@ -264,7 +276,7 @@ async def test_same_origin_post_passes(
 async def test_safe_methods_need_no_csrf_headers(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = await make_user(db_session, status="pending")
+    user = await make_user(db_session, role="operator", status="active")
     headers = await session_headers(db_session, user, csrf=False)
     assert (await client.get(CHAT_ROUTE, headers=headers)).status_code == 200
 
@@ -275,11 +287,11 @@ async def test_safe_methods_need_no_csrf_headers(
 
 
 @pytest.mark.real_auth
-async def test_pending_user_cannot_read_another_users_chat_session(
+async def test_user_cannot_read_another_users_chat_session(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    owner = await make_user(db_session, status="pending")
-    other = await make_user(db_session, status="pending")
+    owner = await make_user(db_session, role="operator", status="active")
+    other = await make_user(db_session, role="operator", status="active")
     owner_headers = await session_headers(db_session, owner)
     other_headers = await session_headers(db_session, other)
 
@@ -303,8 +315,8 @@ async def test_pending_user_cannot_read_another_users_chat_session(
 async def test_client_id_header_cannot_impersonate_another_user(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    owner = await make_user(db_session, status="pending")
-    other = await make_user(db_session, status="pending")
+    owner = await make_user(db_session, role="operator", status="active")
+    other = await make_user(db_session, role="operator", status="active")
     owner_headers = await session_headers(db_session, owner)
     other_headers = await session_headers(db_session, other)
     created = await client.post(
