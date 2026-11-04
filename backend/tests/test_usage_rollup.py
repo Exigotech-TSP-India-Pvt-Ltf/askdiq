@@ -112,7 +112,8 @@ async def _assert_parity(
             for key, values in tokens.items():
                 assert all(_close(rows.tokens[key][k], v) for k, v in values.items())
             assert all(_close(rows.ingestion[k], v) for k, v in ingestion.items())
-        month = day.replace(day=1)
+        # daily_cost takes midnights; `day` can be an hour (the sync test uses now - 6 h).
+        month = day.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         month_end = (month + timedelta(days=32)).replace(day=1)
         assert await usage_rollup.daily_cost(
             db, audience, month, month_end
