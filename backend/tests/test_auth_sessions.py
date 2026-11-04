@@ -20,7 +20,7 @@ from app.auth.sessions import SessionService, hash_session_id
 from app.core.config import get_settings
 from app.models.db_models import AccessRequest, AuthSession
 from tests.auth_helpers import make_user
-from tests.pg_helpers import new_engine, require_postgres
+from tests.pg_helpers import new_engine, require_disposable_database, require_postgres
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -180,6 +180,7 @@ async def test_one_pending_access_request_per_user(db_session: AsyncSession) -> 
 
 
 def _alembic(*args: str) -> str:
+    require_disposable_database()
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [sys.executable, "-m", "alembic", *args],
         cwd=BACKEND_DIR,

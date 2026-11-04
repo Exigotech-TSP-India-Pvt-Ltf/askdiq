@@ -1,13 +1,14 @@
 """Selects and constructs a chunking strategy by name.
 
-`auto` picks a strategy based on source_type — e.g. markdown/code docs go
-structure-aware, prose goes semantic — giving a sensible default while
-still letting callers force a specific strategy for comparison/testing.
+`auto` is the section-tree strategy (one chunk per self-contained section,
+with a page/section breadcrumb), the default for every upload; callers may
+still force another strategy for comparison/testing.
 """
 
 from app.chunking.base import ChunkingStrategy
 from app.chunking.fixed_size import FixedSizeChunker
 from app.chunking.metadata_aware import MetadataAwareChunker
+from app.chunking.section_tree import SectionTreeChunker
 from app.chunking.semantic import SemanticChunker
 from app.chunking.structure_aware import StructureAwareChunker
 from app.retrieval.embeddings import embed_texts
@@ -25,7 +26,7 @@ def get_strategy(
     source_type: str = "text",  # noqa: ARG001 - public kwarg, callers pass it
 ) -> ChunkingStrategy:
     if name == "auto":
-        name = "structure_aware"
+        name = "section_tree"
 
     base: ChunkingStrategy
     if name == "fixed_size":
@@ -34,6 +35,8 @@ def get_strategy(
         base = SemanticChunker(embed_fn=_semantic_embed_fn)
     elif name == "structure_aware":
         base = StructureAwareChunker()
+    elif name == "section_tree":
+        base = SectionTreeChunker()
     else:
         raise ValueError(f"Unknown chunking strategy: {name}")
 

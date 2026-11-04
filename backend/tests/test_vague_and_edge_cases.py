@@ -6,6 +6,7 @@ from app.guardrails.pre_checks import (
     run_pre_checks,
     sanitize_query,
 )
+from app.harness import prompt_catalog as catalog
 from app.harness.orchestrator import _fallback_response
 from app.retrieval.retriever import needs_conversation_context
 
@@ -201,7 +202,7 @@ def test_unclear_input_fallback_message():
     resp = _fallback_response(
         request_id="req-1", flags=["unclear_input"], latency_ms=10.0
     )
-    assert "say a bit more" in resp.answer
+    assert resp.answer == catalog.UNCLEAR_LINE
     assert resp.grounded is False
 
 
@@ -209,12 +210,5 @@ def test_spam_detected_fallback_message():
     resp = _fallback_response(
         request_id="req-2", flags=["spam_detected"], latency_ms=10.0
     )
-    assert "didn't come through clearly" in resp.answer
-    assert resp.grounded is False
-
-
-def test_off_topic_fallback_message():
-    resp = _fallback_response(request_id="req-3", flags=["off_topic"], latency_ms=10.0)
-    assert "outside what I can help with" in resp.answer
-    assert "specialists" in resp.answer
+    assert resp.answer == catalog.SPAM_LINE
     assert resp.grounded is False

@@ -8,6 +8,8 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
+import openai
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -21,6 +23,7 @@ from app.governance import audit
 from app.governance.pii import redact_pii
 from app.harness import orchestrator
 from app.models.db_models import AuditLog, ChatSession
+from tests.grounded_fakes import claim, claims_reply
 from tests.test_orchestrator import _run
 
 
@@ -165,35 +168,47 @@ async def test_unhandled_exception_writes_exactly_one_server_error(captured):
     assert captured[0]["request_id"] == resp.json()["request_id"]
 
 
-async def test_llm_failure_and_retry_are_discrete_rows(monkeypatch, captured):
+_GOOD_REPLY = claims_reply([claim("Deploy IQ content.", "Deploy IQ content")])
+
+
+async def test_llm_failure_is_one_row_and_not_retried(monkeypatch, captured):
+    # call_llm owns the transport retry; an error reaching the orchestrator
+    # ends the attempts (one llm_call_failed row, no llm_retry).
     response = await _run(
         monkeypatch,
-        llm_side_effect=[RuntimeError("transient Azure error"), "Deploy IQ does X."],
-        post_checks_side_effect=[(True, 0.9, [])],
+        llm_side_effect=[
+            openai.APITimeoutError(request=httpx.Request("POST", "https://x")),
+            _GOOD_REPLY,
+        ],
     )
+    assert response.outcome == "llm_failed"
+
+    await audit.flush_audit_events()
+    assert _actions(captured) == ["llm_call_failed"]
+    (failed,) = captured
+    assert failed["request_id"] == "test-request"
+    assert failed["detail"]["attempt"] == 1
+    assert failed["detail"]["error_type"] == "APITimeoutError"
+    assert failed["detail"]["will_retry"] is False
+    assert _pii_clean(failed["detail"])
+
+
+async def test_unparseable_reply_retry_is_a_discrete_row(monkeypatch, captured):
+    response = await _run(monkeypatch, llm_side_effect=["", _GOOD_REPLY])
     assert response.grounded is True
 
     await audit.flush_audit_events()
-    assert _actions(captured) == ["llm_call_failed", "llm_retry"]
-    failed, retry = captured
-    assert failed["request_id"] == "test-request"
-    assert failed["detail"]["attempt"] == 1
-    assert failed["detail"]["error_type"] == "RuntimeError"
-    assert failed["detail"]["will_retry"] is True
-    assert retry["detail"] == {
+    assert _actions(captured) == ["llm_retry"]
+    assert captured[0]["detail"] == {
         "attempt": 2,
         "max_attempts": orchestrator.settings.max_llm_retries + 1,
-        "reason": "llm_call_failed",
+        "reason": "empty_llm_output",
     }
-    assert all(_pii_clean(r["detail"]) for r in captured)
+    assert _pii_clean(captured[0]["detail"])
 
 
 async def test_successful_llm_call_writes_no_rows(monkeypatch, captured):
-    await _run(
-        monkeypatch,
-        llm_side_effect=["Deploy IQ does X."],
-        post_checks_side_effect=[(True, 0.9, [])],
-    )
+    await _run(monkeypatch, llm_side_effect=[_GOOD_REPLY])
     await audit.flush_audit_events()
     assert captured == []
 

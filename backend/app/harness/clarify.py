@@ -30,6 +30,7 @@ boosted when it is answered.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass, field
@@ -38,7 +39,13 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.guardrails.conversational import detect_conversational_intent
-from app.retrieval.retriever import decompose_query
+from app.harness.prompt_catalog import NO_ANSWER_LINE
+from app.retrieval.reranker import entity_documents, entity_mentions, rerank
+from app.retrieval.retriever import (
+    decompose_query,
+    history_subject,
+    is_bare_reference,
+)
 from app.schemas.query import (
     ChatTurn,
     Clarification,
@@ -50,7 +57,7 @@ from app.schemas.query import (
 
 CLARIFY_OUTCOME = "clarify"
 DEFAULT_HEADER = "Topic"
-REPLY_HINT = "Pick one, or tell me a bit more."
+REPLY_HINT = "Just pick an option, or tell me a bit more about what you need."
 
 _MAX_HEADER_CHARS = 12
 _MAX_LABEL_CHARS = 60
@@ -599,6 +606,14 @@ def clarify_instruction(candidates: list[ClarifyCandidate]) -> str:
         "or a service by name), or is a general company fact (who, where, "
         "when, headquarters, contact details, ownership), set action to "
         '"answer" and answer it from the context.\n'
+        "- If none of the topics above actually address what the visitor is "
+        "asking — even if their wording loosely overlaps a topic's words — "
+        'set action to "answer" and write the plain decline instead of '
+        f'picking one: "{NO_ANSWER_LINE}" with nothing else '
+        "and no mention of a specialist (specialists are only offered for a "
+        "genuine, published-but-missing detail, never for a question unrelated "
+        "to us). Never offer a clarifying choice between topics that do "
+        "not genuinely answer the question asked.\n"
         "- Each question: header (1-2 word tab label, at most 12 characters, "
         "e.g. Topic, Service, Scope), question (one specific sentence ending "
         "with ?), multi_select (true only when several options can apply "
@@ -946,7 +961,15 @@ def resolve_clarification_reply(
     last = _last_clarification(history)
     if last is None:
         return None
-    entries = _from_answers(last, answers) if answers else _match_text(last, query)
+    entries = (
+        _from_answers(last, answers)
+        if answers
+        else (
+            _match_text(last, query)
+            or _match_entity(last, query)
+            or _match_pointer(last, query)
+        )
+    )
     if entries:
         doc_ids = list(
             dict.fromkeys(d for e in entries for d in e["document_ids"])  # type: ignore[attr-defined]
@@ -959,20 +982,138 @@ def resolve_clarification_reply(
             answers=entries,
             document_ids=doc_ids,
         )
-    settings = get_settings()
-    # A new question ("what is E8?") is answered as such, not folded in.
-    if (
-        not answers
-        and not query.strip().endswith("?")
-        and detect_conversational_intent(query) is None
-        and 0 < content_word_count(query) <= settings.clarify_max_query_words
-    ):
+    if answers or not query.strip() or detect_conversational_intent(query) is not None:
+        return None
+    if _NOT_SURE_RE.search(_scan(query)) and len(query.split()) <= _MAX_POINTER_WORDS:
+        everything = [o for q in last.questions for o in q.options]
         return ResolvedReply(
-            query=compose_query(last.original_query, [query]),
+            query=compose_query(last.original_query, [_NOT_SURE_HINT]),
             original_query=last.original_query,
+            answers=[_entry(last.questions[0], [], query.strip()[:_MAX_OTHER_CHARS])],
+            document_ids=list(
+                dict.fromkeys(d for o in everything for d in o.document_ids)
+            ),
             free_text=True,
         )
-    return None
+    if _is_new_question(query):
+        # "where are you based?": a standalone question is answered as such.
+        return None
+    # Free text of any length refines the original question; the card's
+    # option pages are searched for it.
+    offered = [o for q in last.questions for o in q.options]
+    return ResolvedReply(
+        query=compose_query(last.original_query, [_clip(query, _MAX_OTHER_CHARS)]),
+        original_query=last.original_query,
+        document_ids=list(dict.fromkeys(d for o in offered for d in o.document_ids)),
+        free_text=True,
+    )
+
+
+_MAX_POINTER_WORDS = 8
+_ORDINAL_INDEX = {
+    "first": 0,
+    "1st": 0,
+    "one": 0,
+    "second": 1,
+    "2nd": 1,
+    "two": 1,
+    "third": 2,
+    "3rd": 2,
+    "three": 2,
+    "fourth": 3,
+    "4th": 3,
+    "four": 3,
+}
+_POINTER_RE = re.compile(
+    r"\b(?:(?:option|number|no\.?|#)\s{0,3}(\d{1,2})|(\d{1,2})(?:st|nd|rd|th)?|"
+    r"(first|1st|second|2nd|third|3rd|fourth|4th|last|one|two|three|four))\b",
+    re.IGNORECASE,
+)
+_NOT_SURE_RE = re.compile(
+    r"\b(?:not\s{1,3}sure|unsure|don'?t\s{1,3}know|dont\s{1,3}know|dunno|no\s{1,3}idea|"
+    r"idk|either|whichever|help\s{1,3}me\s{1,3}choose|you\s{1,3}(?:pick|choose|decide)|"
+    r"any\s{1,3}of\s{1,3}them|all\s{1,3}of\s{1,3}them|both)\b",
+    re.IGNORECASE,
+)
+_ASK_LEAD_RE = re.compile(
+    r"^(?:what|who|where|when|why|how|which|is|are|do|does|can|could|will|would|"
+    r"should|tell|explain)\b",
+    re.IGNORECASE,
+)
+
+
+def _option_index(token: tuple[str, str, str], count: int) -> int | None:
+    number = token[0] or token[1]
+    if number:
+        index = int(number) - 1
+    else:
+        word = token[2].lower()
+        index = count - 1 if word == "last" else _ORDINAL_INDEX.get(word, -1)
+    return index if 0 <= index < count else None
+
+
+def _match_pointer(clarification: Clarification, text: str) -> list[dict[str, object]]:
+    """ "2", "option 2", "the first one", "1, 3": numbers / ordinals -> options.
+
+    Several pointers on a multi-question card map to its questions in order;
+    on a single question they are its (multi-select) picks.
+    """
+    scan = _scan(text)
+    if len(scan.split()) > _MAX_POINTER_WORDS:
+        return []
+    tokens = _POINTER_RE.findall(scan)
+    if not tokens:
+        return []
+    questions = clarification.questions
+    entries: list[dict[str, object]] = []
+    if len(questions) == 1 or len(tokens) == 1:
+        question = questions[0]
+        picked = [
+            question.options[i]
+            for t in tokens
+            if (i := _option_index(t, len(question.options))) is not None
+        ]
+        picked = list(dict.fromkeys(picked)) if question.multi_select else picked[:1]
+        return [_entry(question, picked, None)] if picked else []
+    for question, token in zip(questions, tokens, strict=False):
+        index = _option_index(token, len(question.options))
+        if index is not None:
+            entries.append(_entry(question, [question.options[index]], None))
+    return entries
+
+
+def _match_entity(clarification: Clarification, text: str) -> list[dict[str, object]]:
+    """ "e8" / "the zero trust one": the option whose label names the same service."""
+    scan = _scan(text)
+    keys = {k for _s, _e, k in entity_mentions(scan)}
+    words = {w.lower() for w in _WORD_RE.findall(scan)} - _STOPWORDS - _GENERIC_WORDS
+    entries: list[dict[str, object]] = []
+    for question in clarification.questions:
+        by_key = [
+            o
+            for o in question.options
+            if keys and keys & {k for _s, _e, k in entity_mentions(o.label)}
+        ]
+        by_word = [
+            o
+            for o in question.options
+            if words
+            and words
+            <= ({w.lower() for w in _WORD_RE.findall(o.label)} | _LABEL_FILLER)
+        ]
+        picked = by_key or by_word
+        if picked and (len(picked) == 1 or question.multi_select):
+            entries.append(_entry(question, picked, None))
+    return entries
+
+
+def _is_new_question(text: str) -> bool:
+    """A standalone question that names its own subject (not an answer to the card)."""
+    scan = _scan(text)
+    if not (scan.endswith("?") or _ASK_LEAD_RE.match(scan)):
+        return False
+    rest = scan.split(" ", 1)[1] if " " in scan else ""
+    return bool(entity_mentions(scan) or _PROPER_NOUN_RE.search(rest))
 
 
 def boost_documents(
@@ -983,3 +1124,555 @@ def boost_documents(
         return sources
     preferred = set(document_ids)
     return sorted(sources, key=lambda s: s.document_id not in preferred)
+
+
+# ---------------------------------------------------------------------------
+# Deterministic clarification (owner rule, 2026-11-04). ONE mechanism, no LLM:
+#   (a) the question matches knowledge-base content but is ambiguous across
+#       services (generic words only, the covered evidence spreads over two or
+#       more service pages with close cross-encoder scores) -> "which service?";
+#   (b) buying intent without a named service -> "which service?".
+# Never for a named service/product, a multi-part ask, an off-domain ask, a
+# reply to a card, or past the consecutive-card cap. Options are the retrieved
+# service pages only (labels from their page titles, non-empty document ids).
+# ---------------------------------------------------------------------------
+
+SERVICE_HEADER = "Service"
+SERVICE_QUESTION = "Which service is your question about?"
+BUYING_QUESTION = "Which service are you interested in?"
+SERVICE_PREAMBLE = "Sure, the answer depends on the service you have in mind."
+BUYING_PREAMBLE = "I'd be happy to help you get started."
+REFERENCE_PREAMBLE = "I'm not sure which one you mean yet."
+REFERENCE_REASON = "unresolved_reference"
+# Catalogue entities (app.retrieval.reranker) that are services a visitor can
+# ask about or buy; governance pages (Secure AI, Responsible AI, platform) are not.
+SERVICE_ENTITY_KEYS = (
+    "zero trust",
+    "essential eight",
+    "security baseline",
+    "cis",
+    "iso 27001",
+    "iso 42001",
+    "packages",
+)
+# Retrieval used for the buying card when the question's own evidence names
+# fewer than two service pages (still retrieved KB documents, never a fixed list).
+SERVICE_CATALOGUE_QUERY = (
+    "Deploy IQ services: Zero Trust, Essential Eight, Microsoft 365 Security "
+    "Baseline Assessment, CIS Benchmark, ISO 27001, ISO 42001, security packages"
+)
+_TITLE_SUFFIX_RE = re.compile(
+    r"\s{0,3}[-|\u2013\u2014]\s{0,3}deploy\s{0,3}iq\b.{0,80}$", re.IGNORECASE
+)
+_PROPER_NOUN_RE = re.compile(r"\b[A-Z][A-Za-z0-9]+\b")
+# Microsoft products and brand words the KB covers: a bare "m365" / "intune"
+# / "entra" gets an overview answer, never a card.
+_PRODUCT_TERM_RE = re.compile(
+    r"\b(?:m365|o365|microsoft[\s_-]{0,3}365|office[\s_-]{0,3}365|intune|entra|"
+    r"azure[\s_-]{0,3}ad|defender|purview|copilot|sharepoint|exchange|teams|"
+    r"onedrive|conditional[\s_-]{0,3}access|mfa|multi[\s_-]{0,3}factor|mdr|"
+    r"acsc|starter|professional|baseline|foundation|strengthen|frontier)\b",
+    re.IGNORECASE,
+)
+# Fallback buying detector (app.guardrails.intent supplies the real intent).
+_BUYING_RE = re.compile(
+    r"\b(?:price|prices|pricing|priced|cost|costs|costing|quote|quotation|"
+    r"how\s{1,3}much|buy|buying|purchase|purchasing|sign\s{1,3}(?:me|us)\s{1,3}up|"
+    r"subscribe|subscription|demo)\b",
+    re.IGNORECASE,
+)
+_BUYING_WORDS = frozenset(
+    [
+        "price",
+        "prices",
+        "pricing",
+        "priced",
+        "cost",
+        "costs",
+        "costing",
+        "quote",
+        "quotation",
+        "estimate",
+        "much",
+        "buy",
+        "buying",
+        "purchase",
+        "purchasing",
+        "sign",
+        "up",
+        "subscribe",
+        "subscription",
+        "demo",
+        "trial",
+        "plan",
+        "plans",
+        "want",
+        "like",
+        "get",
+        "interested",
+        "something",
+        "service",
+        "services",
+        "pay",
+        "paying",
+        "charge",
+        "charges",
+        "fee",
+        "fees",
+    ]
+)
+_GENERIC_WORDS = frozenset(
+    [
+        "roadmap",
+        "roadmaps",
+        "typical",
+        "typically",
+        "usual",
+        "usually",
+        "security",
+        "secure",
+        "cyber",
+        "cybersecurity",
+        "compliance",
+        "compliant",
+        "comply",
+        "audit",
+        "audits",
+        "auditing",
+        "audited",
+        "certified",
+        "certification",
+        "certify",
+        "framework",
+        "frameworks",
+        "standard",
+        "standards",
+        "protect",
+        "protection",
+        "help",
+        "assessment",
+        "assessments",
+        "assess",
+        "risk",
+        "risks",
+        "posture",
+        "services",
+        "service",
+        "options",
+        "start",
+        "started",
+        "get",
+        "long",
+        "take",
+        "takes",
+        "time",
+        "timeline",
+        "duration",
+        "implement",
+        "implementation",
+        "cost",
+        "costs",
+        "price",
+        "pricing",
+        "need",
+        "needs",
+        "work",
+        "offer",
+        "offers",
+        "do",
+        "does",
+        "doing",
+        "done",
+        "ready",
+    ]
+)
+_LABEL_FILLER = frozenset(
+    [
+        "the",
+        "one",
+        "option",
+        "that",
+        "this",
+        "please",
+        "service",
+        "services",
+        "page",
+        "i",
+        "mean",
+    ]
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceDoc:
+    """A retrieved service page and its best relevance to the question."""
+
+    document_id: str
+    label: str
+    score: float  # best cross-encoder logit (cosine x 10 when the reranker is off)
+    source_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ClarifyDecision:
+    """The deterministic clarification verdict for one message."""
+
+    ask: bool = False
+    buying: bool = False
+    docs: tuple[ServiceDoc, ...] = ()  # the question's own service pages
+    reason: str = "not_eligible"
+    term: str = ""  # an ambiguous service term ("iso"): the card shows its pages only
+
+
+def page_label(source: SourceChunk) -> str:
+    """The page title without the site suffix ("Essential Eight Compliance")."""
+    metadata = source.metadata or {}
+    title = (
+        source.title
+        or metadata_text(metadata, "page_title", "title")
+        or humanize_source_name(metadata_text(metadata, "source_name") or "")
+    )
+    label = _TITLE_SUFFIX_RE.sub("", title).strip(" -|")
+    return _clip(label or title, _MAX_LABEL_CHARS + 20)
+
+
+def _service_key(source: SourceChunk) -> str | None:
+    metadata = source.metadata or {}
+    name = f"{metadata_text(metadata, 'source_name') or ''} {source.title or ''}"
+    for key in SERVICE_ENTITY_KEYS:
+        if entity_documents([key], {source.document_id: name}):
+            return key
+    return None
+
+
+def service_documents(
+    sources: list[SourceChunk], ce_by_chunk: dict[str, float] | None = None
+) -> list[ServiceDoc]:
+    """Distinct service pages among ``sources``, most relevant first."""
+    best: dict[str, ServiceDoc] = {}
+    for source in sources:
+        if _service_key(source) is None:
+            continue
+        score = (ce_by_chunk or {}).get(source.chunk_id, source.score * 10)
+        current = best.get(source.document_id)
+        if current is None or score > current.score:
+            best[source.document_id] = ServiceDoc(
+                document_id=source.document_id,
+                label=page_label(source),
+                score=score,
+                source_name=metadata_text(source.metadata or {}, "source_name"),
+            )
+    return sorted(best.values(), key=lambda d: (-d.score, d.label))
+
+
+def is_buying(query: str) -> bool:
+    """Fallback buying-intent check (price, quote, buy, demo, sign up)."""
+    return _BUYING_RE.search(_scan(query)) is not None
+
+
+def names_product(query: str) -> bool:
+    """A named service, framework, Microsoft product or the brand."""
+    scan = _scan(query)
+    return bool(
+        entity_mentions(scan) or _PRODUCT_TERM_RE.search(scan) or BRAND_RE.search(scan)
+    )
+
+
+def names_service(query: str, history: list[ChatTurn] | None) -> bool:
+    """The service is known: named now, or the conversation is about one.
+
+    A bare service-family word ("m365") names several services, not one.
+    """
+    scan = _scan(query)
+    named = bool(entity_mentions(scan) or _PRODUCT_TERM_RE.search(scan))
+    if named and family_term(query) is not None:
+        named = False
+    return named or history_subject(history) is not None
+
+
+def _content_words(query: str) -> list[str]:
+    return [
+        w
+        for w in (t.lower() for t in _WORD_RE.findall(_scan(query)))
+        if w not in _STOPWORDS
+    ]
+
+
+def _is_generic(query: str) -> bool:
+    """Every content word is generic ("security", "how do I get compliant?")."""
+    words = _content_words(query)
+    return bool(words) and all(w in _GENERIC_WORDS or w in _VAGUE_WORDS for w in words)
+
+
+# Owner rule (2026-11-04): a short term naming 2+ catalogue services by their
+# page names ("iso" -> ISO 27001 + ISO 42001, "assessment" -> Security
+# Baseline + CIS) gets a card with exactly those services; one match is answered.
+_TERM_FILLER = _STOPWORDS | frozenset(
+    [
+        "explain",
+        "describe",
+        "overview",
+        "info",
+        "information",
+        "more",
+        "details",
+        "detail",
+        "give",
+        "know",
+        "any",
+        "anything",
+        "guys",
+        "offer",
+        "have",
+        "got",
+        "us",
+    ]
+)
+# Words in nearly every service page name: never a service family.
+_BROAD_TERMS = frozenset(
+    ["security", "microsoft", "365", "m365", "service", "services", "deploy", "iq"]
+)
+_MAX_TERM_WORDS = 2
+_NAME_SEP_RE = re.compile(r"[-_./|]+")
+
+
+# Bare words naming a family of catalogue services that their page names do
+# not carry as such (owner rule, stress test 2026-11-04): term -> page-name
+# pattern. "m365" -> every Microsoft 365 service, "plans" -> the Zero Trust
+# plans and the packages, "certification" -> the certifiable frameworks.
+_M365_FAMILY = re.compile(r"\b(?:microsoft 365|m365)\b")
+_TERM_FAMILIES: dict[str, re.Pattern[str]] = {
+    "m365": _M365_FAMILY,
+    "o365": _M365_FAMILY,
+    "microsoft 365": _M365_FAMILY,
+    "office 365": _M365_FAMILY,
+    "plan": re.compile(r"\b(?:packages?|zero trust)\b"),
+    "plans": re.compile(r"\b(?:packages?|zero trust)\b"),
+    "certification": re.compile(r"\b(?:iso|essential eight)\b"),
+    "certifications": re.compile(r"\b(?:iso|essential eight)\b"),
+}
+
+
+def _term_words(query: str) -> list[str]:
+    words = [w.lower() for w in _WORD_RE.findall(_scan(query))]
+    return [w for w in words if w not in _TERM_FILLER]
+
+
+def family_term(query: str) -> str | None:
+    """The bare service-family word of a short ask ("m365", "plans")."""
+    term = " ".join(_term_words(query))
+    return term if term in _TERM_FAMILIES else None
+
+
+def ambiguous_term(query: str) -> str | None:
+    """The bare service term of a short ask ("tell me about iso" -> "iso")."""
+    family = family_term(query)
+    if family is not None:
+        return family
+    rest = _term_words(query)
+    if not rest or len(rest) > _MAX_TERM_WORDS or any(w in _BROAD_TERMS for w in rest):
+        return None
+    return " ".join(rest)
+
+
+def _names_term(doc: ServiceDoc, term: str) -> bool:
+    name = _NAME_SEP_RE.sub(" ", f"{doc.label} {doc.source_name or ''}".lower())
+    family = _TERM_FAMILIES.get(term)
+    if family is not None:
+        return family.search(name) is not None
+    stem = term[:-1] if term.endswith("s") and len(term) > 3 else term  # noqa: PLR2004
+    return re.search(rf"\b{re.escape(stem)}s?\b", name) is not None
+
+
+def term_documents(term: str, docs: list[ServiceDoc]) -> list[ServiceDoc]:
+    """The service pages whose name carries ``term`` (order kept, deduped)."""
+    seen: set[str] = set()
+    found = []
+    for doc in docs:
+        if doc.document_id not in seen and _names_term(doc, term):
+            seen.add(doc.document_id)
+            found.append(doc)
+    return found
+
+
+def service_card(
+    query: str, decision: ClarifyDecision, catalogue: list[ServiceDoc]
+) -> Clarification | None:
+    """The "which service?" card: the question's own service pages first, then
+    the other retrieved service pages, at most ``clarify_max_options``."""
+    settings = get_settings()
+    docs = list(decision.docs)
+    seen = {d.document_id for d in docs}
+    docs += [d for d in catalogue if d.document_id not in seen]
+    if decision.term:
+        docs = term_documents(decision.term, docs)
+        if (
+            len(docs) > settings.clarify_max_options
+            and decision.term not in _TERM_FAMILIES
+        ):
+            return None  # too broad to be one family of services
+    options = [
+        ClarificationOption(
+            id=f"O{i}",
+            label=doc.label,
+            document_ids=[doc.document_id],
+            sources=[doc.source_name] if doc.source_name else [],
+        )
+        for i, doc in enumerate(docs[: settings.clarify_max_options], 1)
+    ]
+    if len(options) < settings.clarify_min_options:
+        return None
+    if decision.buying:
+        preamble = BUYING_PREAMBLE
+    elif decision.reason == REFERENCE_REASON:
+        preamble = REFERENCE_PREAMBLE
+    else:
+        preamble = SERVICE_PREAMBLE
+    return Clarification(
+        preamble=preamble,
+        questions=[
+            ClarificationQuestion(
+                id="Q1",
+                header=SERVICE_HEADER,
+                question=BUYING_QUESTION if decision.buying else SERVICE_QUESTION,
+                options=options,
+            )
+        ],
+        original_query=query[:_MAX_QUERY_CHARS],
+    )
+
+
+def _concentrated(docs: list[ServiceDoc]) -> bool:
+    """One service page clearly leads the evidence."""
+    settings = get_settings()
+    if not docs or docs[0].score < settings.retrieval_ce_confident_min:
+        return False
+    return len(docs) == 1 or docs[0].score - docs[1].score >= settings.clarify_ce_margin
+
+
+def clarify_allowed(
+    query: str,
+    history: list[ChatTurn] | None,
+    *,
+    clarification_reply: bool,
+    parts: int,
+) -> bool:
+    """Cheap pre-retrieval check: may this message get a card at all?"""
+    settings = get_settings()
+    return (
+        settings.clarify_enabled
+        and not clarification_reply
+        and parts == 1
+        and clarification_streak(history) < settings.clarify_max_consecutive
+        and not names_service(query, history)
+    )
+
+
+_DANGLING_RE = re.compile(r"\b(?:it|its|it's|they|them|this|that|those|these)\b", re.I)
+
+
+def decide_clarification(
+    query: str,
+    history: list[ChatTurn] | None,
+    *,
+    sources: list[SourceChunk],
+    ce_by_chunk: dict[str, float],
+    max_ce: float | None,
+    route: str,
+    buying: bool,
+    clarification_reply: bool,
+    parts: int,
+) -> ClarifyDecision:
+    """Ask "which service?" only under the owner rule; otherwise answer.
+
+    ``route`` is the gate's verdict (``app.harness.decision.Route`` value).
+    A positive decision carries the question's own service pages; the card
+    is completed by ``service_card`` with the retrieved service catalogue.
+    """
+    settings = get_settings()
+    if not clarify_allowed(
+        query, history, clarification_reply=clarification_reply, parts=parts
+    ):
+        return ClarifyDecision(reason="not_eligible")
+    docs = [
+        d
+        for d in service_documents(sources, ce_by_chunk)
+        if d.score >= settings.retrieval_ce_relevant_min
+    ]
+    if buying:
+        if BRAND_RE.search(_scan(query)):
+            # "a demo of DeployIQ": the whole product, nothing to choose.
+            return ClarifyDecision(reason="buying_brand")
+        residual = [w for w in _content_words(query) if w not in _BUYING_WORDS]
+        relevant = max_ce is not None and max_ce >= settings.retrieval_ce_relevant_min
+        if residual and route == "answer" and (relevant or _concentrated(docs)):
+            # "is it free?", "how do I book a consultation?": the evidence
+            # already answers it.
+            return ClarifyDecision(reason="buying_answerable")
+        if route == "off_topic" and residual:
+            return ClarifyDecision(reason="off_topic")
+        return ClarifyDecision(
+            ask=True, buying=True, docs=tuple(docs), reason="buying_without_service"
+        )
+    if not history and is_bare_reference(query):
+        # "what about the second one?" in a new chat: which service?
+        return ClarifyDecision(ask=True, docs=tuple(docs), reason=REFERENCE_REASON)
+    term = ambiguous_term(query)
+    if term is not None and route != "off_topic":
+        matched = term_documents(term, service_documents(sources, ce_by_chunk))
+        # A specific term needs one retrieved match to look (the card is
+        # completed from every service page and dropped unless 2+ carry it);
+        # a generic word ("compliance") keeps the generic card below otherwise;
+        # a family word ("plans") is completed from the catalogue alone.
+        if term in _TERM_FAMILIES:
+            needed = 0
+        elif _is_generic(query):
+            needed = settings.clarify_min_options
+        else:
+            needed = 1
+        if len(matched) >= needed:
+            return ClarifyDecision(
+                ask=True, docs=tuple(matched), reason="ambiguous_term", term=term
+            )
+    if names_product(query) or is_company_or_generic(query) or not _is_generic(query):
+        return ClarifyDecision(reason="specific")
+    # "how long does it take?" with nothing to point at: which service?
+    dangling = _DANGLING_RE.search(_scan(query)) is not None
+    if not dangling and route != "answer":
+        return ClarifyDecision(reason="not_in_kb")
+    if not dangling and _concentrated(docs):
+        return ClarifyDecision(reason="one_service")
+    return ClarifyDecision(
+        ask=True,
+        docs=tuple(docs),
+        reason="dangling_reference" if dangling else "ambiguous_across_services",
+    )
+
+
+async def catalogue_documents(
+    vector_store: Any, part: Any, filters: dict | None
+) -> list[ServiceDoc]:
+    """Every service page, retrieved with the question's own embedding (its
+    best chunk each), ranked by the cross-encoder against the question."""
+    if not getattr(part, "embedding", None):
+        return []
+    found = await vector_store.best_chunk_per_entity_document(
+        list(part.embedding), list(SERVICE_ENTITY_KEYS), filters
+    )
+    logits: dict[Any, float] = {}
+    if found:
+        await asyncio.to_thread(rerank, part.search or part.query, found, None, logits)
+    sources = [
+        SourceChunk(
+            chunk_id=str(chunk.id),
+            document_id=str(chunk.document_id),
+            content=chunk.content,
+            score=score,
+            metadata=chunk.chunk_metadata or {},
+            title=getattr(
+                vector_store.document_links.get(chunk.document_id), "title", None
+            ),
+        )
+        for chunk, score in found
+    ]
+    return service_documents(sources, {str(k): v for k, v in logits.items()})

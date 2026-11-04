@@ -104,9 +104,9 @@ contents, `APP_BASE_URL` matching the frontend's, `API_KEY_NAME` strength.
 | `AZURE_DEPLOYMENT_NAME` | none | Yes | Chat deployment (e.g. `gpt-5-mini`). Also the insights classifier model when `INSIGHTS_MODEL` is empty. |
 | `AZURE_OPENAI_REQUEST_TIMEOUT` | `60.0` | No | Timeout (s) for chat-completion clients. |
 | `AZURE_OPENAI_MAX_RETRIES` | `2` | No | SDK retries for chat, judge and embedding clients. Not in `.env.example`. |
-| `AZURE_OPENAI_TEMPERATURE` | `1.0` | No | Defined, but not read by any code at 9115c45 (verified by grep). gpt-5-mini accepts only 1.0. |
 | `LLM_MAX_COMPLETION_TOKENS` | `1400` | No | Defined, but not read by any code at 9115c45 (verified by grep). Not in `.env.example`. |
-| `LLM_REASONING_EFFORT` | `minimal` | No | `minimal`/`low`/`medium`/`high`; passed as `reasoning_effort` (`app/harness/prompts.py`). Main latency lever. |
+| `LLM_REASONING_EFFORT` | `minimal` | No | `minimal`/`low`/`medium`/`high` (validated at startup); passed as `reasoning_effort` (`app/harness/prompts.py`, eval judge). Main latency lever: `minimal` spends ~0 reasoning tokens. `minimal` exists only on original GPT-5 models (gpt-5/-mini/-nano); gpt-5.1+ reject it. There is no temperature setting: gpt-5-mini rejects `temperature`≠1, `top_p`, penalties, `logprobs`, `max_tokens` ([Azure reasoning models](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning)). |
+| `LLM_VERBOSITY` | `low` | No | `low`/`medium`/`high` (validated at startup); GPT-5 `verbosity` answer-length hint for the answer call ([Azure chat reference](https://learn.microsoft.com/en-us/rest/api/microsoft-foundry/azureopenai/chat)). |
 | `ANSWER_MAX_WORDS` | `150` | No | Word cap stated in the prompt and checked by the evaluator. |
 | `LLM_CONTEXT_MAX_TOKENS` | `2400` | No | Token budget for retrieved evidence in the prompt. |
 | `LLM_HISTORY_MAX_TOKENS` | `400` | No | Token budget for chat history in the prompt. |
@@ -333,7 +333,7 @@ they are not environment variables.
 | `INSIGHTS_USER_MAX_CHARS` | `1000` | No | User text truncation after PII masking. |
 | `INSIGHTS_ANSWER_MAX_CHARS` | `600` | No | Answer text truncation after PII masking. |
 | `INSIGHTS_MODEL` | `""` | No | Classifier deployment; empty = `AZURE_DEPLOYMENT_NAME`. |
-| `INSIGHTS_REASONING_EFFORT` | `minimal` | No | Classifier reasoning effort. |
+| `INSIGHTS_REASONING_EFFORT` | `minimal` | No | Classifier reasoning effort; same values as `LLM_REASONING_EFFORT`. |
 | `INSIGHTS_COMPLETION_TOKENS_PER_TURN` | `120` | No | Completion token allowance per turn. |
 
 ## Backend: ingestion
@@ -459,6 +459,6 @@ settings (verified by diffing `config.py`, `.env.example`, `.env.local.example` 
 | Item | Detail |
 |---|---|
 | In `.env.example`, not a setting | `AZURE_OPENAI_CREATIVE_TEMPERATURE` (ignored). |
-| Settings missing from `.env.example` | `ANSWER_MAX_WORDS`, `AZURE_OPENAI_EMBEDDING_RPM_LIMIT`, `AZURE_OPENAI_EMBEDDING_TPM_LIMIT`, `AZURE_OPENAI_MAX_RETRIES`, `COMPOUND_QUERY_TOP_K`, `CROSS_DOC_QUOTA_MAX_DOCUMENTS`, `DB_ECHO`, `ENABLE_QUERY_DECOMPOSITION`, `ENABLE_RERANKER`, `INGEST_CONVERT_CONCURRENCY`, `INGEST_MAX_CHARS`, `LATENCY_BUDGET_MS`, `LLM_CONTEXT_MAX_TOKENS`, `LLM_HISTORY_MAX_TOKENS`, `LLM_MAX_COMPLETION_TOKENS`, `LLM_REASONING_EFFORT`, `MAX_LLM_RETRIES`, `MIN_RETRIEVAL_SCORE`, `PII_ALLOWLIST`, `RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_PER_MINUTE_PER_IP`, `RERANKER_MODEL`, `RERANK_BATCH_SIZE`, `RERANK_MAX_CONCURRENCY`, `RETRIEVAL_CANDIDATE_MIN`, `RETRIEVAL_CANDIDATE_MULTIPLIER`, `SESSION_HISTORY_MAX_MESSAGES`, `SESSION_TIMEOUT_MINUTES`, `THREAD_POOL_WORKERS`. |
+| Settings missing from `.env.example` | `ANSWER_MAX_WORDS`, `AZURE_OPENAI_EMBEDDING_RPM_LIMIT`, `AZURE_OPENAI_EMBEDDING_TPM_LIMIT`, `AZURE_OPENAI_MAX_RETRIES`, `COMPOUND_QUERY_TOP_K`, `CROSS_DOC_QUOTA_MAX_DOCUMENTS`, `DB_ECHO`, `ENABLE_QUERY_DECOMPOSITION`, `ENABLE_RERANKER`, `INGEST_CONVERT_CONCURRENCY`, `INGEST_MAX_CHARS`, `LATENCY_BUDGET_MS`, `LLM_CONTEXT_MAX_TOKENS`, `LLM_HISTORY_MAX_TOKENS`, `LLM_MAX_COMPLETION_TOKENS`, `MAX_LLM_RETRIES`, `MIN_RETRIEVAL_SCORE`, `PII_ALLOWLIST`, `RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_PER_MINUTE_PER_IP`, `RERANKER_MODEL`, `RERANK_BATCH_SIZE`, `RERANK_MAX_CONCURRENCY`, `RETRIEVAL_CANDIDATE_MIN`, `RETRIEVAL_CANDIDATE_MULTIPLIER`, `SESSION_HISTORY_MAX_MESSAGES`, `SESSION_TIMEOUT_MINUTES`, `THREAD_POOL_WORKERS`. |
 | Value differs from code default | `MONTHLY_COST_BUDGET_USD` (example `100`, code unset); hotfix `ALLOW_CLIENT_IP_OVERRIDE` (example `false`, code `true`). |
-| Settings no code reads | `AZURE_OPENAI_TEMPERATURE`, `LLM_MAX_COMPLETION_TOKENS`, `INGEST_SERVER_CONVERSION`, `ONLINE_EVAL_SAMPLE_RATE`, `WEB_CONCURRENCY` (read only by the Dockerfile shell). |
+| Settings no code reads | `LLM_MAX_COMPLETION_TOKENS`, `INGEST_SERVER_CONVERSION`, `ONLINE_EVAL_SAMPLE_RATE`, `WEB_CONCURRENCY` (read only by the Dockerfile shell). |

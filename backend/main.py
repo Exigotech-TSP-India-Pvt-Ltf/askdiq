@@ -37,6 +37,7 @@ from app.core.middleware import LatencyMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.tasks import drain as drain_background_tasks
 from app.governance.stream import get_governance_hub
+from app.guardrails import intent as intent_classifier
 from app.harness.prompts import call_llm
 from app.jobs.runtime import start_platform_services
 from app.knowledge.settings_service import refresh_knowledge_settings
@@ -87,6 +88,12 @@ async def lifespan(_app: FastAPI):
     await refresh_model_settings(get_session_factory())
     # Settings > Knowledge links (citation links on the first /query).
     await refresh_knowledge_settings(get_session_factory())
+    # Intent-classifier example vectors, embedded in the background (never
+    # blocks or fails startup; a failed build is retried lazily per request).
+    try:
+        intent_classifier.warm_up()
+    except Exception as exc:
+        logger.error("intent_warm_up_failed error=%s", exc)
     await _startup_azure_health_check()
     await asyncio.to_thread(preload_reranker)
     # Event bus (LISTEN/NOTIFY) and, if JOBS_WORKER_ENABLED, the job worker.

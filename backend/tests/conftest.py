@@ -157,6 +157,16 @@ def _fresh_dashboard_cache(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def _offline_intent_classifier(monkeypatch: pytest.MonkeyPatch):
+    """The embedding intent classifier (app.guardrails.intent) makes a real
+    embeddings call; offline tests get QUESTION (retrieval decides) unless a
+    test stubs ``classify_intent`` itself (tests/test_guardrails_intent.py)."""
+    from app.guardrails import intent  # noqa: PLC0415 - keep conftest imports light
+
+    monkeypatch.setattr(intent._state, "backoff_until", float("inf"))
+
+
+@pytest.fixture(autouse=True)
 def signed_in_superadmin(request: pytest.FixtureRequest):
     """Every API test runs as a signed-in superadmin unless marked `real_auth`
     (which exercises the real session resolution in tests/test_auth_*.py)."""

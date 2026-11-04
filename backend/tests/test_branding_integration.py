@@ -27,7 +27,7 @@ from app.branding import service
 from app.branding.defaults import default_brand_values
 from app.core.config import get_settings
 from app.models.db_models import AuditLog, BrandAsset, BrandSettings
-from tests.pg_helpers import new_engine, require_postgres
+from tests.pg_helpers import new_engine, require_disposable_database, require_postgres
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ACTOR = "brand-admin@example.com"
@@ -300,6 +300,7 @@ async def test_clearing_optional_links_and_accent(client: AsyncClient) -> None:
 
 
 def _alembic(*args: str) -> str:
+    require_disposable_database()
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [sys.executable, "-m", "alembic", *args],
         cwd=BACKEND_DIR,

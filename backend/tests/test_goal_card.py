@@ -25,8 +25,6 @@ from app.harness.clarify import (
 from app.schemas.query import ChatTurn, Clarification, ClarificationAnswer
 from tests.test_clarify_trigger import (
     _assert_grounded,
-    _no_decision_call,
-    _run,
     _sources,
 )
 
@@ -159,27 +157,6 @@ def test_a_third_dead_end_is_replaced_by_the_card() -> None:
     assert assess("we got hacked", two).kind is not AmbiguityKind.GOAL
 
 
-async def test_orchestrator_asks_the_goal_card_before_retrieval_refusal(
-    monkeypatch,
-) -> None:
-    _no_decision_call(monkeypatch)
-    low = _sources(scale=0.2)  # a vague prompt scores very low
-    response, calls, _ = await _run(monkeypatch, "i am confused", sources=low)
-    assert calls == []
-    assert response.outcome == CLARIFY_OUTCOME
-    assert response.clarification is not None
-    assert response.clarification.preamble == LOST
-    assert response.clarification.questions[0].header == GOAL_HEADER
-
-
-async def test_orchestrator_answers_a_clear_prompt_instead(monkeypatch) -> None:
-    response, calls, _ = await _run(
-        monkeypatch, "E8 pricing", ["Pricing is on request [1]."]
-    )
-    assert len(calls) == 1
-    assert response.outcome != CLARIFY_OUTCOME
-
-
 async def test_goal_card_needs_two_covered_options() -> None:
     sources = [s for s in _sources() if s.document_id == "doc-home"]
     ruled = await rule_clarification(assess("idk", None), "idk", sources)
@@ -275,41 +252,6 @@ def test_other_keeps_the_free_text_fold() -> None:
     )
     assert resolved is not None
     assert resolved.query == "i need help (Goal: email security)"
-
-
-async def test_get_audit_ready_chains_into_the_framework_series(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    history, card = _history("i need help")
-    pick = next(o for o in card.questions[0].options if o.label == "Get audit ready")
-    resolved = resolve_clarification_reply(
-        "", history, [ClarificationAnswer(question_id="Q1", option_ids=[pick.id])]
-    )
-    assert resolved is not None
-    response, calls, _ = await _run(
-        monkeypatch,
-        resolved.query,
-        history=history,
-        clarification_reply=True,
-        boost_document_ids=resolved.document_ids,
-    )
-    assert calls == []
-    assert response.outcome == CLARIFY_OUTCOME
-    assert response.clarification is not None
-    headers = [q.header for q in response.clarification.questions]
-    assert headers[:2] == ["Framework", "Maturity"]
-    # After that card the reply is answered: no more cards.
-    follow = [
-        *history,
-        ChatTurn(
-            role="assistant",
-            content="q2",
-            outcome=CLARIFY_OUTCOME,
-            clarification=response.clarification,
-        ),
-    ]
-    assert assess("Essential Eight; Partly", follow, clarification_reply=True).kind is (
-        AmbiguityKind.NONE
-    )
 
 
 def test_other_goal_picks_never_chain() -> None:

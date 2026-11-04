@@ -35,7 +35,7 @@ from app.models.db_models import (
     KnowledgeSettings,
 )
 from main import app
-from tests.pg_helpers import new_engine, require_postgres
+from tests.pg_helpers import new_engine, require_disposable_database, require_postgres
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REVISION = "05b32ff49272"
@@ -455,6 +455,7 @@ async def test_session_detail_refreshes_citation_links(
 
 
 def _alembic(*args: str) -> str:
+    require_disposable_database()
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [sys.executable, "-m", "alembic", *args],
         cwd=BACKEND_DIR,
@@ -469,6 +470,7 @@ def _alembic(*args: str) -> str:
 
 
 async def test_migration_upgrade_downgrade_upgrade() -> None:
+    require_disposable_database()
     engine = new_engine()
     await require_postgres(engine)
     columns_sql = text(

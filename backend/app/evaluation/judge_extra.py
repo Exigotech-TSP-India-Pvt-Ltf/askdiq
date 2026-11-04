@@ -18,6 +18,7 @@ from app.evaluation.judge import (
     _client_for,
     _extract_json,
 )
+from app.harness.prompt_catalog import deep_judge_prompt
 from app.model_settings.service import current_model_settings
 
 logger = logging.getLogger(__name__)
@@ -40,24 +41,8 @@ HELPFULNESS_AXES = (
     "no_repetition",
 )
 
-DEEP_JUDGE_PROMPT = (
-    "You are a strict, impartial evaluator of a retrieval-augmented assistant. "
-    "You get a QUESTION, numbered CONTEXT passages, optional EXPECTED FACTS and "
-    "the ANSWER. Judge only against the CONTEXT.\n"
-    "1. Split the ANSWER into atomic verifiable claims. For each give "
-    '"supported" (true only if a context passage supports it) and '
-    '"needs_citation" (true if it states a fact that should be cited).\n'
-    "2. Score correctness axes 1-5, or null if the axis does not apply: "
-    + ", ".join(CORRECTNESS_AXES)
-    + ".\n3. Score helpfulness axes 1-5: "
-    + ", ".join(HELPFULNESS_AXES)
-    + ".\n4. List any statements in the answer that contradict each other or "
-    "the context in contradictions.\n"
-    "Respond with ONLY JSON: "
-    '{"claims":[{"claim":str,"supported":bool,"needs_citation":bool}],'
-    '"correctness":{axis:int|null},"helpfulness":{axis:int},'
-    '"contradictions":[str],"reason":str}'
-)
+# Text lives in app.harness.prompt_catalog (shared rules composed in).
+DEEP_JUDGE_PROMPT = deep_judge_prompt(CORRECTNESS_AXES, HELPFULNESS_AXES)
 
 
 @dataclass

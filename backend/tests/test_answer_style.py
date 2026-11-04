@@ -13,7 +13,7 @@ from app.core.config import Settings, get_settings
 from app.harness import orchestrator, prompts, style
 from app.harness.ambiguity import AmbiguityKind, Assessment
 from app.harness.answer_shape import AnswerShape, detect_shape, refine_shape
-from app.harness.citations import MARKER_RE, citation_instruction
+from app.harness.citations import MARKER_RE
 from app.harness.style import (
     BANNED_PHRASES,
     STYLE_PROFILES,
@@ -202,7 +202,7 @@ def test_current_style_keeps_the_original_prompt() -> None:
         prompts.SYSTEM_PROMPT
     )
     assert style_instructions(ResponseStyle.CURRENT, "definition") == ""
-    assert f"{get_settings().answer_max_words} words." in prompts.SYSTEM_PROMPT
+    assert f"At most {get_settings().answer_max_words} words" in prompts.SYSTEM_PROMPT
 
 
 def test_every_shape_has_one_format_block() -> None:
@@ -214,17 +214,24 @@ def test_every_shape_has_one_format_block() -> None:
 def test_only_the_detected_shape_block_is_injected(shape: AnswerShape) -> None:
     blocks = STYLE_PROFILES[ResponseStyle.ADAPTIVE].shape_blocks
     prompt = prompts.get_system_prompt(ResponseStyle.ADAPTIVE, shape)
-    assert prompt.startswith(prompts.SYSTEM_PROMPT.rsplit(" at most ", 1)[0])
+    assert prompt.startswith(prompts.SYSTEM_PROMPT.rsplit("- At most ", 1)[0])
     assert blocks[shape.value] in prompt
     others = [b for k, b in blocks.items() if k != shape.value and b != blocks[shape]]
     assert not any(b in prompt for b in others)
 
 
 def test_adaptive_prompt_carries_tone_rules_and_banned_list() -> None:
+    from app.harness.prompt_catalog import INTERNAL_WORDING
+
     prompt = prompts.get_system_prompt(ResponseStyle.ADAPTIVE, AnswerShape.GENERAL)
     assert "Never write paragraphs" in prompt
-    assert "no raw HTML, no links" in prompt
-    assert all(f'"{phrase}"' in prompt for phrase in BANNED_PHRASES)
+    assert "no raw HTML, links" in prompt
+    # Internal words are banned once, by the shared rules.
+    assert all(
+        f'"{phrase}"' in prompt
+        for phrase in BANNED_PHRASES
+        if phrase not in INTERNAL_WORDING
+    )
     assert get_settings().brand_name in prompt
 
 
@@ -378,18 +385,18 @@ def test_tone_filter_never_removes_or_alters_markers(answer: str) -> None:
     assert body in answer
 
 
-def test_prompt_composes_style_block_and_citation_instruction() -> None:
+def test_prompt_composes_rules_contract_then_style() -> None:
+    from app.harness.prompt_catalog import common_rules
+
     blocks = STYLE_PROFILES[ResponseStyle.ADAPTIVE].shape_blocks
     for shape in AnswerShape:
         prompt = prompts.get_system_prompt(ResponseStyle.ADAPTIVE, shape)
-        assert citation_instruction() in prompt
         assert blocks[shape.value] in prompt
-        assert "Keep any citation marker at the end of the claim" in prompt
-        # Grounding, then markers, then the style: one instruction each.
-        assert prompt.count(citation_instruction()) == 1
-        assert prompt.index(citation_instruction()) < prompt.index("Style:")
+        # Rules once, then the JSON contract, then the style.
+        assert prompt.count(common_rules()) == 1
+        assert prompt.index(common_rules()) < prompt.index("Reply in the required JSON")
+        assert prompt.index("Reply in the required JSON") < prompt.index("Style:")
     current = prompts.get_system_prompt(ResponseStyle.CURRENT, "comparison")
-    assert citation_instruction() in current
     assert "Style:" not in current
 
 
@@ -432,45 +439,46 @@ def test_tone_filter_stays_fast_on_100kb(text: str) -> None:
 
 
 async def test_run_query_uses_style_shape_and_records_them(monkeypatch) -> None:
+    from tests.grounded_fakes import claim, claims_reply, patch_pipeline, run
+
     seen: list[str] = []
-    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *_a, **_k: [])
+    source = _source("The Essential Eight is eight mitigation strategies.")
+    patch_pipeline(
+        monkeypatch,
+        [source],
+        claims_reply(
+            [
+                claim(
+                    "Great question! The Essential Eight is eight mitigation strategies.",
+                    "The Essential Eight is eight mitigation strategies",
+                )
+            ]
+        ),
+    )
+    real_llm = orchestrator.call_llm
 
-    async def fake_retrieve(*_a, **_k):
-        return [_source("The Essential Eight is eight mitigation strategies.")]
-
-    async def fake_call_llm(_query, _chunks, _history=None, **_kw):
+    async def spy(*a, **k):
         seen.append(prompts.get_system_prompt(*style.active_style()))
-        answer = "Great question! We cover eight strategies.\n- **MFA**\n- **Backups**"
-        return answer, {"prompt_tokens": 10, "completion_tokens": 5}
+        return await real_llm(*a, **k)
 
-    async def fake_post_checks(*_a, **_k):
-        return True, 0.9, []
-
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "call_llm", fake_call_llm)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
+    monkeypatch.setattr(orchestrator, "call_llm", spy)
     _patch_settings(monkeypatch, response_style="adaptive", response_style_b_pct=0)
 
-    response = await orchestrator.run_query(
-        query="What is the Essential Eight?",
-        top_k=5,
-        filters=None,
-        vector_store=None,
-        request_id="style-test",
-        stage_timings={},
-        style_key="session-1",
-    )
+    response = await run("What is the Essential Eight?", style_key="session-1")
 
     blocks = STYLE_PROFILES[ResponseStyle.ADAPTIVE].shape_blocks
     assert blocks["definition"] in seen[0]
-    assert response.answer.startswith("We cover eight strategies.")
+    # The stock opener is cut BEFORE verification; the rest ships verified.
+    assert response.answer == (
+        "The Essential Eight is eight mitigation strategies. [1]"
+    )
     assert response.token_details["style"] == "adaptive"
     assert response.token_details["shape"] == "definition"
 
 
 async def test_run_query_with_style_and_citations(monkeypatch) -> None:
-    checked: list[str] = []
-    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *_a, **_k: [])
+    from tests.grounded_fakes import claim, claims_reply, patch_pipeline, run
+
     sources = [
         SourceChunk(
             chunk_id=f"00000000-0000-0000-0000-00000000001{i}",
@@ -485,45 +493,24 @@ async def test_run_query_with_style_and_citations(monkeypatch) -> None:
         )
         for i in (1, 2)
     ]
-
-    async def fake_retrieve(*_a, **_k):
-        return sources
-
-    async def fake_call_llm(_query, _chunks, _history=None, **_kw):
-        answer = (
-            "Great question! We cover eight strategies [1].\n\n"
-            "## Key controls\n- **MFA** [1][2]\n- **Backups** [2][9]\n\n"
-            "I hope this helps!"
-        )
-        return answer, {"prompt_tokens": 10, "completion_tokens": 5}
-
-    async def fake_post_checks(answer, *_a, **_k):
-        checked.append(answer)
-        return True, 0.9, []
-
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "call_llm", fake_call_llm)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
+    reply = claims_reply(
+        [
+            claim(
+                "We cover eight mitigation strategies.", "eight mitigation strategies"
+            ),
+            claim("MFA", "MFA", source=2, kind="item"),
+            claim("Backups", "Backups", source=9, kind="item"),
+            claim("I hope this helps!", "MFA"),
+        ]
+    )
+    patch_pipeline(monkeypatch, sources, reply)
     _patch_settings(monkeypatch, response_style="adaptive", response_style_b_pct=0)
 
-    response = await orchestrator.run_query(
-        query="What is the Essential Eight?",
-        top_k=5,
-        filters=None,
-        vector_store=None,
-        request_id="style-citations-test",
-        stage_timings={},
-        style_key="session-1",
-    )
+    response = await run("What is the Essential Eight?", style_key="session-1")
 
-    # Markers are stripped before the groundedness check.
-    assert "[" not in checked[0]
-    # Tone filter ran (opener and closer gone), then markers were resolved:
-    # the unknown [9] is dropped, the rest stay inside the Markdown blocks.
-    assert response.answer == (
-        "We cover eight strategies [1].\n\n"
-        "## Key controls\n- **MFA** [1][2]\n- **Backups** [2]"
-    )
+    # Unknown source 9 and the stock closer are dropped; numbers are per
+    # document in first-use order and match the citations exactly.
+    assert response.answer == "We cover eight mitigation strategies. [1]\n\n- MFA [2]"
     assert [c.n for c in response.citations] == [1, 2]
     assert response.citations[0].url == "https://docs.deployiq.com.au/doc-1"
     details = response.token_details

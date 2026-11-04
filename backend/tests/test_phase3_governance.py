@@ -286,8 +286,8 @@ def test_branding_system_prompt_and_fallback_replies():
 
     # System prompt parameterization
     prompt = get_system_prompt()
-    assert f"You are {brand}'s website assistant." in prompt
-    assert f"keep {brand} as the active subject" in prompt
+    assert f"You are {brand}'s website assistant" in prompt
+    assert prompt.count(brand) >= 2  # noqa: PLR2004 - persona + rules
 
     # Conversational replies parameterization
     greeting = get_greeting_response()
@@ -303,12 +303,12 @@ def test_branding_system_prompt_and_fallback_replies():
         flags=["unclear_input"],
         latency_ms=10.0,
     )
-    assert "say a bit more" in fallback.answer
+    assert "tell me a bit more" in fallback.answer
 
     spam = _fallback_response(
         request_id="test-req-fb2", flags=["spam_detected"], latency_ms=10.0
     )
-    assert "Try asking in a sentence" in spam.answer
+    assert "Try asking a question in a sentence" in spam.answer
 
 
 @pytest.mark.asyncio

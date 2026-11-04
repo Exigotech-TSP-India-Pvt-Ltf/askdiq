@@ -30,7 +30,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.guardrails.post_checks import citation_stems, is_decline_sentence
-from app.knowledge.links import brand_label, chunk_anchor, citation_url, link_host
+from app.knowledge.links import (
+    brand_label,
+    chunk_anchor,
+    citation_url,
+    document_url,
+    link_host,
+)
 from app.knowledge.settings_service import current_knowledge_settings
 from app.models.db_models import Document
 from app.schemas.query import Citation, SourceChunk
@@ -580,11 +586,13 @@ async def _document_links(
             Document.section_links,
             Document.source_name,
             Document.doc_metadata["title"].as_string(),
+            Document.doc_metadata["route"].as_string(),
         ).where(Document.id.in_(ids))
     )
+    base_url = get_settings().site_base_url
     return {
-        str(doc_id): (url, bool(sections), name, title)
-        for doc_id, url, sections, name, title in rows.all()
+        str(doc_id): (document_url(url, route, base_url), bool(sections), name, title)
+        for doc_id, url, sections, name, title, route in rows.all()
     }
 
 

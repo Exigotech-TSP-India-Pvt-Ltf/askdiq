@@ -44,7 +44,7 @@ from app.insights.taxonomy import (
 )
 from app.insights.types import LlmUsage, TurnInput
 from app.jobs import queue
-from tests.pg_helpers import new_engine, require_postgres
+from tests.pg_helpers import new_engine, require_disposable_database, require_postgres
 
 settings = get_settings()
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -911,6 +911,7 @@ async def test_backfill_dry_run_prints_counts_and_writes_nothing(engine, chat):
 
 
 def _alembic(*args: str) -> str:
+    require_disposable_database()
     import os
     import subprocess
     import sys

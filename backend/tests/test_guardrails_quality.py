@@ -9,6 +9,7 @@ import pytest
 from app.guardrails.conversational import (
     all_thanks_responses,
     detect_conversational_intent,
+    detect_identity_question,
     get_farewell_response,
     get_thanks_response,
 )
@@ -318,10 +319,16 @@ def test_thanks_variants_are_conversational(query: str) -> None:
 
 @pytest.mark.parametrize(
     "query",
-    ["what can u do", "What can you do?", "what can you do for me"[:15], "who are u"],
+    ["what can u do", "What can you do?", "what can you do for me"[:15]],
 )
 def test_capability_fillers_are_conversational(query: str) -> None:
     assert detect_conversational_intent(query) is not None
+
+
+def test_who_are_you_is_an_identity_question() -> None:
+    # "who are u" gets the identity reply, not the capability one.
+    assert detect_conversational_intent("who are u") is None
+    assert detect_identity_question("who are u") is not None
 
 
 @pytest.mark.parametrize(

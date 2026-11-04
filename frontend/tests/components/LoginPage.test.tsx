@@ -79,7 +79,7 @@ describe("Login page", () => {
 
   it("falls back to the DeployIQ defaults when login_* fields are absent (current backend)", () => {
     renderLogin({}, DEFAULT_BRAND);
-    expect(screen.getByRole("heading", { level: 1, name: "Welcome to DeployIQ" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Welcome to AskDIQ" })).toBeInTheDocument();
     expect(screen.getByText("ASKDIQ")).toBeInTheDocument();
     expect(screen.getByText(/Sign in with your Exigo Tech Microsoft account/)).toBeInTheDocument();
   });

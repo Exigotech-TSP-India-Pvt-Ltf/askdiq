@@ -8,11 +8,12 @@ already in requirements.txt. MMR is intentionally not layered on top: dedupe
 by chunk id (STEP 2) plus cross-document quota (STEP 3) already provide the
 diversity MMR would add, on a corpus this small.
 
-The cross-encoder is used to REORDER the candidate pool only — its raw
-logits aren't on a comparable, query-independent scale (empirically they can
-be strongly negative even for on-topic-but-narrow questions), so the
-reported score stays the original cosine similarity. That keeps the
-off-topic / low-confidence gates in orchestrator.py well-calibrated.
+The cross-encoder orders the candidate pool, and its raw logit per chunk is
+kept (``logits_out``): the retrieval relevance gate is calibrated on that
+logit (see ``retrieval_ce_covered_min`` in app/core/config.py), not on
+cosine. The reported ``score`` stays the cosine similarity. Hybrid
+lexical/entity evidence is only a capped tie-breaker on top of the logit, so
+a named document can never push the real answer document out.
 """
 
 import logging
@@ -86,17 +87,18 @@ def rerank(
     query: str,
     candidates: list[tuple[Chunk, float]],
     boosts: Sequence[float] | None = None,
+    logits_out: dict[Any, float] | None = None,
 ) -> list[tuple[Chunk, float]]:
     """Reorder (chunk, cosine_score) candidates by cross-encoder relevance.
 
-    The cosine score is preserved (only the order changes). Falls back to
-    the original cosine ordering if the reranker model can't be loaded (e.g.
-    no network on first run), so retrieval never hard-fails.
+    The cosine score is preserved (only the order changes); the raw
+    cross-encoder logit of every candidate goes into ``logits_out`` (chunk id
+    -> logit) for the relevance gate. Falls back to the original cosine
+    ordering (and no logits) if the reranker model can't be loaded, so
+    retrieval never hard-fails.
 
-    `boosts` (one per candidate, from the lexical/entity hybrid signal) is
-    added to the min-max normalised cross-encoder score, so named-entity
-    evidence still counts after the cross-encoder reorders. With no boosts
-    (or all zero) the order is the pure cross-encoder order.
+    `boosts` (one per candidate, from the lexical/entity hybrid signal) adds
+    at most ``BOOST_MAX_LOGITS`` to a logit: a tie-breaker, never a trump.
     """
 
     if not settings.enable_reranker or len(candidates) <= 1:
@@ -121,22 +123,31 @@ def rerank(
         )
         return candidates
 
-    keys = _fused_rerank_keys(raw_scores, boosts)
+    keys = fused_rerank_keys(raw_scores, boosts)
+    if logits_out is not None:
+        for (chunk, _score), logit in zip(candidates, raw_scores, strict=True):
+            logits_out[chunk.id] = float(logit)
     order = sorted(range(len(candidates)), key=lambda i: keys[i], reverse=True)
 
     return [candidates[i] for i in order]
 
 
-def _fused_rerank_keys(
+# Hybrid boosts are on the cosine scale (0..~0.5). At most BOOST_CAP of it
+# counts, mapped to at most BOOST_MAX_LOGITS cross-encoder logits: enough to
+# break a near tie in favour of the named document, never enough to lift an
+# irrelevant chunk over the one that answers (answer chunks lead by 4+).
+BOOST_CAP = 0.20
+BOOST_MAX_LOGITS = 1.5
+
+
+def fused_rerank_keys(
     raw_scores: Sequence[float], boosts: Sequence[float] | None
 ) -> list[float]:
-    """Cross-encoder logits, plus hybrid boosts on a 0-1 normalised scale."""
+    """Cross-encoder logits plus a capped hybrid boost (in logit units)."""
     if not boosts or not any(boosts) or len(boosts) != len(raw_scores):
         return [float(score) for score in raw_scores]
-    low, high = min(raw_scores), max(raw_scores)
-    span = (high - low) or 1.0
     return [
-        (float(score) - low) / span + boost
+        float(score) + BOOST_MAX_LOGITS * min(max(boost, 0.0), BOOST_CAP) / BOOST_CAP
         for score, boost in zip(raw_scores, boosts, strict=True)
     ]
 
@@ -180,25 +191,46 @@ _STOPWORDS = frozenset(_STOPWORD_TEXT.split())
 _ENTITY_CATALOGUE: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = tuple(
     (key, re.compile(query_re, re.IGNORECASE), re.compile(doc_re, re.IGNORECASE))
     for key, query_re, doc_re in (
-        ("zero trust", r"\bzero[\s_-]*trust\b", r"\bzero trust\b"),
-        ("iso 27001", r"\biso[\s_-]*27001\b", r"\biso 27001\b"),
+        ("zero trust", r"\bzero[\s_-]{0,3}trust\b", r"\bzero trust\b"),
+        ("iso 27001", r"\biso[\s_/-]{0,3}(?:iec[\s_-]{0,3})?27001\b", r"\biso 27001\b"),
+        ("iso 42001", r"\biso[\s_/-]{0,3}(?:iec[\s_-]{0,3})?42001\b", r"\biso 42001\b"),
         (
             "essential eight",
-            r"\bessential[\s_-]*(?:eight|8)\b|\be8\b",
+            r"\bessential[\s_-]{0,3}(?:eight|8)\b|\be8\b",
             r"\be8\b|\bessential (?:eight|8)\b",
         ),
         ("cis", r"\bcis\b", r"\bcis\b"),
         (
-            "trust center",
-            r"\btrust[\s_-]*cent(?:er|re)\b",
-            r"\btrust cent(?:er|re)\b",
-        ),
-        (
             "security baseline",
-            r"\bsecurity[\s_-]*baseline\b",
+            r"\bsecurity[\s_-]{0,3}baseline\b",
             r"\bsecurity baseline\b",
         ),
-        ("responsible ai", r"\bresponsible[\s_-]*ai\b", r"\bresponsible ai\b"),
+        (
+            "packages",
+            r"\bpackages?\b|\btiers?\b|\b(?:baseline|foundation|strengthen|frontier)"
+            r"[\s_-]{0,3}(?:package|tier|plan)s?\b|\bfrontier\b",
+            r"\bsecurity packages\b|^packages\b",
+        ),
+        (
+            # Bare tier names ("How long does Baseline take?", "Fortify"): their
+            # cards are on the home page and the packages page. Never overlaps
+            # "Security Baseline" or "<tier> package" (other entities' spans);
+            # Foundation / Strengthen only capitalised (common English words).
+            "tiers",
+            r"(?<!security\s)(?<!security[_-])\bbaseline\b"
+            r"(?![\s_-]{0,3}(?:packages?|tiers?|plans?|assessments?)\b)"
+            r"|\b(?-i:Foundation|Strengthen)\b"
+            r"(?![\s_-]{0,3}(?:packages?|tiers?|plans?|benchmarks?)\b)"
+            r"|\bfortify\b",
+            r"^home md\b|\bsecurity packages\b|^packages\b",
+        ),
+        ("secure ai", r"\bsecure[\s_-]{0,3}ai\b", r"\bsecure ai\b"),
+        ("responsible ai", r"\bresponsible[\s_-]{0,3}ai\b", r"\bresponsible ai\b"),
+        (
+            "platform",
+            r"\b(?:deploy[\s_-]{0,3}iq[\s_-]{0,3})?platform\b",
+            r"\bdeploy iq platform\b|^platform\b",
+        ),
     )
 )
 _ENTITY_DOC_RE = {key: doc_re for key, _query_re, doc_re in _ENTITY_CATALOGUE}
@@ -247,6 +279,7 @@ _INTENT_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...], bool], ...] = tuple
                 "design",
                 "implement",
                 "validate",
+                "assure",
             ),
             False,
         ),
@@ -365,6 +398,17 @@ def named_entities(query: str) -> list[str]:
             found.append((matches[-1].start(), key))
     found.sort(key=lambda item: (-item[0], item[1]))
     return [key for _, key in found[:_MAX_QUERY_ENTITIES]]
+
+
+def entity_mentions(text: str) -> list[tuple[int, int, str]]:
+    """Every catalogue entity mention in ``text``: (start, end, key), by position."""
+    found = [
+        (match.start(), match.end(), key)
+        for key, query_re, _doc_re in _ENTITY_CATALOGUE
+        for match in query_re.finditer(text)
+    ]
+    found.sort()
+    return found
 
 
 def _normalise_doc_name(name: str | None) -> str:
@@ -543,11 +587,15 @@ _ENTITY_SQL_RE: dict[str, str] = {
     for key, body in {
         "zero trust": f"zero{_SQL_SEP}trust",
         "iso 27001": f"iso{_SQL_SEP}27001",
+        "iso 42001": f"iso{_SQL_SEP}42001",
         "essential eight": f"(e8|essential{_SQL_SEP}(eight|8))",
         "cis": "cis",
-        "trust center": f"trust{_SQL_SEP}cent(er|re)",
         "security baseline": f"security{_SQL_SEP}baseline",
+        "packages": f"security{_SQL_SEP}packages",
+        "tiers": f"(home{_SQL_SEP}md|security{_SQL_SEP}packages)",
+        "secure ai": f"secure{_SQL_SEP}ai",
         "responsible ai": f"responsible{_SQL_SEP}ai",
+        "platform": f"deploy{_SQL_SEP}iq{_SQL_SEP}platform",
     }.items()
 }
 

@@ -223,11 +223,13 @@ def test_adaptive_prompt_carries_the_human_style_rules(needle: str) -> None:
 
 
 @pytest.mark.parametrize("shape", ["partial", "out_of_scope"])
-def test_hand_over_shapes_use_natural_specialist_words(shape: str) -> None:
+def test_hand_over_shapes_never_restate_the_hand_over(shape: str) -> None:
+    # The partial / no-answer lines are added by code (prompt_catalog), so a
+    # style block never asks the model for a specialist line.
     block = style_instructions(ResponseStyle.ADAPTIVE, shape).partition(
         "Never use these phrases:"
     )[2]
-    assert "specialist" in block
+    assert "specialist" not in block
     assert "starting" not in block
 
 

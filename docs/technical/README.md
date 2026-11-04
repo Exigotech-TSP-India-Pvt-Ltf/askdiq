@@ -38,6 +38,7 @@ is in [the plan](../plan.md), and production setup is in
 | 8 | [Deployment and operations](08-deployment-operations.md) | Ops | Prod layout, release procedure, migrations, backfills, backups, rollback, monitoring, incidents |
 | 9 | [Development](09-development.md) | Engineers | Local setup, running, tests, lint, CI and the local CI mirror, branch workflow, troubleshooting |
 | 10 | [Website integration](10-website-integration.md) | Website frontend team | `/query` contract, visitor identity, IP forwarding, rate limits, 429 handling |
+| 12 | [Live golden eval](12-live-golden-eval.md) | Engineers, release | Live golden set (`backend/tests/golden/golden_cases.json`), the HTTP release gate and how to run it |
 | - | [Plan](../plan.md) | Everyone | Current status of every work item, open items, risks (replaces the old in-flight-work page) |
 
 ## Related documents in the repo

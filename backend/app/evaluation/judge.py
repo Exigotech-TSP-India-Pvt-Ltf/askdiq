@@ -33,6 +33,7 @@ from openai import AsyncAzureOpenAI
 
 from app.core.circuit import get_llm_breaker
 from app.core.config import get_settings
+from app.harness.prompt_catalog import judge_system_prompt
 from app.model_settings.service import current_model_settings
 
 logger = logging.getLogger(__name__)
@@ -40,28 +41,8 @@ logger = logging.getLogger(__name__)
 _MAX_CHUNKS = 10
 _MAX_CHUNK_CHARS = 2000
 
-JUDGE_SYSTEM_PROMPT = (
-    "You are a strict, impartial evaluator of a retrieval-augmented "
-    "assistant. You are given a QUESTION, the CONTEXT passages the assistant "
-    "was allowed to use, and the assistant's ANSWER. Grade only against the "
-    "CONTEXT - never use outside knowledge to decide whether a claim is "
-    "true.\n\n"
-    "Score each axis as an integer from 1 to 5:\n"
-    "- faithfulness: 5 = every claim in the answer is directly supported by "
-    "the context; 3 = mostly supported but contains a minor unsupported "
-    "detail or overstatement; 1 = contains fabricated or contradicted "
-    "claims.\n"
-    "- relevance: 5 = directly answers the question asked; 3 = partly "
-    "on-topic; 1 = does not address the question.\n"
-    "- completeness: 5 = covers every part of the question that the context "
-    "can support (and every KEY FACT listed, if any); 3 = misses some "
-    "supportable parts; 1 = misses most of them. Do NOT penalise the answer "
-    "for omitting something the context does not contain.\n\n"
-    "List any unsupported claims verbatim in unsupported_claims (empty list "
-    "if none). Respond with ONLY a JSON object, no prose, in this exact "
-    'shape: {"faithfulness": int, "relevance": int, "completeness": int, '
-    '"unsupported_claims": [str], "reason": str}'
-)
+# Text lives in app.harness.prompt_catalog (shared rules composed in).
+JUDGE_SYSTEM_PROMPT = judge_system_prompt()
 
 
 @dataclass

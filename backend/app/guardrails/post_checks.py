@@ -364,6 +364,9 @@ def unsupported_claims(answer: str, source_text: str) -> list[str]:
     unsupported: set[str] = set()
     for pattern, support in _COMPILED_CLAIM_RULES:
         for match in itertools.islice(pattern.finditer(answer), _MAX_CLAIM_HITS):
+            # "We don't guarantee X" makes no assurance claim.
+            if _negated(answer.lower(), match.start()):
+                continue
             if not support(match, answer, sources):
                 unsupported.add(_normalize_text(match.group(0)))
     return sorted(unsupported)

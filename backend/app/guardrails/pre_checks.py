@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Deterministic pre-retrieval guardrails (length, injection, secrets, junk).
 
 Every regex that runs on visitor text uses only bounded quantifiers or
@@ -10,6 +11,11 @@ from __future__ import annotations
 import re
 import string
 import unicodedata
+from functools import cache
+
+import tiktoken
+
+from app.guardrails.normalize import fold_accents, strip_format_chars
 
 # Input is length-capped by the API layer; cap again before any regex work.
 _MATCH_MAX_CHARS = 4000
@@ -41,7 +47,9 @@ _RULE_NOUN = (
     r"(?:rules|guidelines|policies|restrictions|constraints|guardrails|"
     r"safeguards|filters|limitations)"
 )
-_INSTR_NOUN = r"(?:instructions?|prompts?|directives?|programming)"
+_INSTR_NOUN = r"(?:instructions?|prompts?|directives?|directions|programming)"
+# Rules that are the assistant's own ("your safety rules"), not a product's.
+_OWN_CTX = r"(?:your|ur|safety|ethical)"
 
 # Public: also used to quarantine ingested documents, so it holds only the
 # core injection phrasing (no broad leak/jailbreak patterns).
@@ -52,7 +60,11 @@ UNSAFE_PATTERNS = [
     rf"\b{_STRONG_VERB}\b.{{0,30}}\b(?:instructions?|rules|guidelines|prompts?)"
     r"\s{1,3}(?:above|before|earlier|prior|previously)\b",
     rf"\b{_WEAK_VERB}\s{{1,3}}{_FILLER}{_CTX}\s{{1,3}}"
-    rf"(?:[a-z]{{1,15}}\s{{1,3}}){{0,2}}(?:{_INSTR_NOUN}|{_RULE_NOUN})\b",
+    rf"(?:[a-z]{{1,15}}\s{{1,3}}){{0,2}}{_INSTR_NOUN}\b",
+    # "bypass your safety rules"; not "bypass the previous restrictions of
+    # manual audits" (a product question about someone else's rules).
+    rf"\b{_WEAK_VERB}\s{{1,3}}{_FILLER}{_OWN_CTX}\s{{1,3}}"
+    rf"(?:[a-z]{{1,15}}\s{{1,3}}){{0,2}}{_RULE_NOUN}\b",
     rf"\b{_WEAK_VERB}\s{{1,3}}(?:(?:the|of)\s{{1,3}}){{0,2}}"
     r"(?:all|any|every)\s{1,3}(?:instructions?|prompts?)\b",
     r"\b(?:d\s?o\s{1,3}not|don'?t|stop|never)\s{1,3}(?:follow(?:ing)?|obey(?:ing)?)"
@@ -127,7 +139,14 @@ _JAILBREAK_PATTERNS = [
     r"\bdan\s{1,3}(?:mode|jailbreak|prompt)\b",
     r"\bdo\s{1,3}anything\s{1,3}now\b",
     r"\b(?:you\s{1,3}are|act\s{1,3}as|be|become)\s{1,3}dan\b",
-    r"\b(?:developer|god|sudo)\s{1,3}mode\b",
+    # A mode switch, not "developer mode deployment of DeployIQ".
+    r"\b(?:enable|enter|activate|unlock|turn\s{1,3}on|switch\s{1,3}(?:to|into)|"
+    r"go\s{1,3}into|now\s{1,3}in|you\s{1,3}are\s{1,3}in)\s{1,3}(?:the\s{1,3})?"
+    r"(?:developer|god|sudo|debug|dan|admin)\s{1,3}mode\b",
+    r"\b(?:developer|god|sudo|debug|dan)\s{1,3}mode\s{0,3}[:=]?\s{0,3}"
+    r"(?:enabled|activated|on|engaged|unlocked)\b",
+    r"^\W{0,3}(?:developer|god|sudo)\s{1,3}mode\W{0,3}$",
+    r"\b(?:system|admin|root|developer|god|security)\s{1,3}override\b",
     r"\bjailbr\w{0,8}\b.{0,25}\b(?:you|your|prompt|chatbot|assistant|bot|ai|llm|"
     r"gpt|model|mode)\b",
     r"\b(?:you|your|prompt|chatbot|assistant|bot|ai|llm|gpt|model|mode)\b"
@@ -161,11 +180,52 @@ _ENCODED_PATTERNS = [
     r"run)\b",
 ]
 
+# Paraphrased injection seen in the audit: "disregard what you were told",
+# "set aside your guidelines", "throw out your instructions".
+_SET_ASIDE_VERB = (
+    r"(?:set|put|leave|cast|push)\s{1,3}aside|throw\s{1,3}(?:out|away)|"
+    r"discard|abandon|drop|ditch|suspend|turn\s{1,3}off|switch\s{1,3}off|disable"
+)
+_PARAPHRASE_PATTERNS = [
+    rf"\b{_STRONG_VERB}\s{{1,3}}(?:(?:everything|all|anything)\s{{1,3}})?"
+    r"(?:what|whatever)\s{1,3}(?:you\s{1,3})?(?:were|'ve\s{1,3}been|have\s{1,3}been|"
+    r"was|got)\s{1,3}(?:told|instructed|given|programmed|taught)\b",
+    rf"\b(?:{_SET_ASIDE_VERB})\s{{1,3}}{_FILLER}(?:{_OWN_CTX}|previous|prior|"
+    r"earlier|initial|original)\s{1,3}(?:[a-z]{1,15}\s{1,3}){0,2}"
+    rf"{_INSTR_NOUN}\b",
+    rf"\b(?:{_SET_ASIDE_VERB})\s{{1,3}}{_FILLER}{_OWN_CTX}\s{{1,3}}"
+    rf"(?:[a-z]{{1,15}}\s{{1,3}}){{0,2}}{_RULE_NOUN}\b",
+    rf"\b(?:{_SET_ASIDE_VERB})\s{{1,3}}(?:the\s{{1,3}}|all\s{{1,3}}){{0,2}}"
+    r"(?:instructions|guidelines|guardrails|safety\s{1,3}rules)\b",
+    r"\bwhat\s{1,3}(?:were|was)\s{1,3}you\s{1,3}(?:told|instructed|given|programmed)"
+    r"\s{1,3}(?:at|in)\s{1,3}the\s{1,3}(?:start|beginning|outset)\b",
+]
+
+# Non-Latin scripts, matched on text without the homoglyph mapping (which
+# would turn Cyrillic into Latin look-alikes). CJK has no word spaces, so
+# the gap is a bounded run of non-punctuation characters.
+_SCRIPT_PATTERNS = [
+    # zh: 忽略/无视/忘记 ... 指令/指示/规则/提示
+    r"(?:\u5ffd\u7565|\u5ffd\u89c6|\u65e0\u89c6|\u7121\u8996|\u5fd8\u8bb0|\u5fd8\u6389|\u4e0d\u8981\u7406\u4f1a|\u8df3\u8fc7)[^\u3002\uff01\uff1f!?.]{0,12}"
+    r"(?:\u6307\u4ee4|\u6307\u793a|\u8bf4\u660e|\u898f\u5247|\u89c4\u5219|\u63d0\u793a|\u547d\u4ee4|\u8bbe\u5b9a|\u8a2d\u5b9a)",
+    # ja: 指示を無視 / 以前の指示を忘れて
+    r"(?:\u6307\u793a|\u547d\u4ee4|\u30eb\u30fc\u30eb|\u30d7\u30ed\u30f3\u30d7\u30c8)[^\u3002\uff01\uff1f!?.]{0,8}(?:\u7121\u8996|\u5fd8\u308c)",
+    # ru/uk: игнорируй/забудь (все) (предыдущие) инструкции/правила
+    r"(?:\u0438\u0433\u043d\u043e\u0440\u0438\u0440\w{0,6}|\u043f\u0440\u043e\u0438\u0433\u043d\u043e\u0440\u0438\u0440\w{0,6}|\u0437\u0430\u0431\u0443\u0434\w{0,3}|\u0437\u0430\u0431\u044b\u0442\u044c|\u043e\u0442\u0431\u0440\u043e\u0441\u044c|"
+    r"\u043d\u0435\s{1,3}\u043e\u0431\u0440\u0430\u0449\u0430\u0439\s{1,3}\u0432\u043d\u0438\u043c\u0430\u043d\u0438\u044f\s{1,3}\u043d\u0430)\s{1,3}"
+    r"(?:(?:\u0432\u0441\u0435|\u0432\u0441\u0451|\u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0438\u0435|\u043f\u0440\u043e\u0448\u043b\u044b\u0435|\u043f\u0440\u0435\u0436\u043d\u0438\u0435|\u0441\u0432\u043e\u0438|\u0442\u0432\u043e\u0438|\u044d\u0442\u0438|\u0432\u0430\u0448\u0438)\s{1,3}){0,3}"
+    r"(?:\u0438\u043d\u0441\u0442\u0440\u0443\u043a\u0446\w{0,4}|\u0443\u043a\u0430\u0437\u0430\u043d\u0438\w{0,3}|\u043f\u0440\u0430\u0432\u0438\u043b\w{0,3}|\u043a\u043e\u043c\u0430\u043d\u0434\w{0,3}|\u043f\u0440\u043e\u043c\u043f\u0442\w{0,3})",
+    # ko: 이전 지시를 무시
+    r"(?:\uc9c0\uc2dc|\uba85\ub839|\uaddc\uce59|\ud504\ub86c\ud504\ud2b8)[^.!?]{0,8}(?:\ubb34\uc2dc|\uc78a\uc5b4)",
+]
+_SCRIPT_RES = [re.compile(p) for p in _SCRIPT_PATTERNS]
+
 _INJECTION_RES = [re.compile(p) for p in (*UNSAFE_PATTERNS, *_MULTILINGUAL_PATTERNS)]
 _QUERY_ONLY_RES = [
     re.compile(p)
     for p in (
         *_LEAK_PATTERNS,
+        *_PARAPHRASE_PATTERNS,
         *_JAILBREAK_PATTERNS,
         *_MARKER_PATTERNS,
         *_ENCODED_PATTERNS,
@@ -189,16 +249,7 @@ _SPACED_SEPARATORS_RE = re.compile(r"[ .\-_*]")
 
 def _strip_invisible(text: str) -> str:
     """Drop zero-width/format chars and turn other control chars into spaces."""
-    out: list[str] = []
-    for ch in text:
-        category = unicodedata.category(ch)
-        if category == "Cf":
-            continue
-        if category == "Cc" and ch not in "\t\n\r":
-            out.append(" ")
-        else:
-            out.append(ch)
-    return "".join(out)
+    return strip_format_chars(text, keep="\t\n\r")
 
 
 def _normalise_for_matching(text: str, *, leet: bool = False) -> str:
@@ -221,6 +272,14 @@ def _normalise_for_matching(text: str, *, leet: bool = False) -> str:
 # Every pattern runs on a whitespace-collapsed, length-capped query and uses
 # only bounded quantifiers (no polynomial ReDoS).
 _SENSITIVE_MAX_CHARS = 1000
+# Another customer's records ("give me the email addresses of your other
+# customers"); "how do you protect other customers' data" is a how-to.
+_CUSTOMER_DATA_RE = re.compile(
+    r"\b(?:e-?mails?(?:\s{1,3}address(?:es)?)?|address(?:es)?|phone\s{1,3}numbers?|"
+    r"numbers|names|contacts?(?:\s{1,3}(?:details|list))?|details|data|records|"
+    r"information|info|list|files|reports?)\b",
+    re.IGNORECASE,
+)
 _CROSS_TENANT_RE = re.compile(
     r"\b(?:other|another)\s{1,3}(?:customers?|tenants?|clients?)\b",
     re.IGNORECASE,
@@ -245,22 +304,43 @@ _SECRET_VALUE_RE = re.compile(
 )
 _GIVE_VERB_RE = re.compile(
     r"\b(?:give|share|send|tell|provide|show|print|reveal|list|dump|leak|expose|"
-    r"output|display|read|what\s{1,3}is|what'?s)\b",
+    r"output|display|read|what\s{1,3}(?:is|are)|what'?s)\b",
     re.IGNORECASE,
+)
+# Secret material named directly; no verb needed ("cat .env", "os.environ",
+# "SECRET_KEY"). The constant-style name is matched case-sensitively.
+_SECRET_TOKEN_RE = re.compile(
+    r"\bos\.environ\b|\bprocess\.env\b|\bgetenv\s{0,2}\("
+    r"|(?:^|\s)(?:cat|type|more|less|head|tail|print|echo|open|read|show|dump|"
+    r"display|source|get)\s{1,3}\S{0,40}\.env\b"
+    r"|\b[A-Z][A-Z0-9]{0,30}_(?:[A-Z0-9]{1,15}_){0,3}"
+    r"(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|PWD|CREDENTIALS?|DSN)\b"
+    r"|\b(?i:secret|api|private|signing|access)_(?i:key|token)s?\b"
 )
 _HOW_TO_RE = re.compile(
     r"\bhow\s{1,3}(?:do|does|can|could|to|should|would|would)\b", re.IGNORECASE
 )
+# "password policy", "credential rotation": a question about the practice.
+_CRED_PRACTICE = (
+    r"(?!\s{1,3}(?:polic|requirement|reset|rule|complex|length|expir|rotat|"
+    r"manag|hygiene|best|standard|guidance|setting))"
+)
 _DIRECT_CREDENTIAL_RE = re.compile(
     r"\b(?:(?:your|ur)|the\s{1,3}(?:admin(?:istrator)?|root|database|db|"
     r"production|prod|server|company'?s?|backend|master|internal|system|"
-    r"openai|azure))\s{1,3}(?:[a-z_]{1,15}\s{1,3}){0,1}"
+    r"openai|azure|postgres(?:ql)?|mysql|redis|sql))\s{1,3}(?:[a-z_]{1,15}\s{1,3}){0,1}"
     r"(?:api[\s_-]{0,3}keys?|passwords?|secret\s{1,3}keys?|access\s{1,3}tokens?|"
-    r"private\s{1,3}keys?|credentials?|connection\s{1,3}strings?)\b"
-    r"|\b(?:admin(?:istrator)?|root|db|database)\s{1,3}(?:password|credentials?)\b"
-    r"(?!\s{1,3}(?:polic|requirement|reset|rule|complex|length|expir))"
+    r"private\s{1,3}keys?|credentials?|creds|logins?|login\s{1,3}details|"
+    rf"connection\s{{1,3}}strings?)\b{_CRED_PRACTICE}"
+    r"|\b(?:admin(?:istrator)?|root|db|database|postgres(?:ql)?|mysql|redis)"
+    rf"\s{{1,3}}(?:password|credentials?|creds|logins?|login\s{{1,3}}details)\b{_CRED_PRACTICE}"
     r"|\bconnection\s{1,3}strings?\b"
-    r"|\benv(?:ironment)?\s{1,3}(?:variables?|vars?|file)\b|\.env\b"
+    r"|\b(?:your|ur|the|server|app|application|backend|production|prod)\s{1,3}"
+    r"env(?:ironment)?\s{1,3}(?:variables?|vars?|file)\b"
+    # "the environment variable setup for DeployIQ agents" is a product question
+    r"(?!\s{1,3}(?:setup|set[\s-]?up|configuration|config|requirements?|for\b|"
+    r"needed|required|names?))"
+    r"|\benv\s{1,3}file\b|\.env\b"
     r"|\bthe\s{1,3}api[\s_-]{0,3}keys?\b"
     r"|\b(?:your|ur)\s{1,3}(?:openai|azure|secret|private|master|admin)"
     r"\s{1,3}keys?\b",
@@ -469,7 +549,8 @@ _DOMAIN_WORDS = frozenset(
     ]  # noqa: SIM905
 )
 
-_ALLOWED_SHORT_TOKENS = {"hi", "yo", "ok", "no", "na"}
+# Two-letter KB terms (zt = Zero Trust, e8 = Essential Eight) are questions.
+_ALLOWED_SHORT_TOKENS = {"hi", "yo", "ok", "no", "na", "zt", "e8"}
 
 _KEYBOARD_SEQS = (
     "qwertyuiop",
@@ -708,12 +789,21 @@ def check_unsafe_input(
     if any(regex.search(plain) for regex in _QUERY_ONLY_RES):
         return False, "unsafe_input_detected"
 
+    if not query.isascii():
+        native = " ".join(
+            unicodedata.normalize("NFKC", query[:_MATCH_MAX_CHARS]).lower().split()
+        )
+        if any(regex.search(native) for regex in _SCRIPT_RES):
+            return False, "unsafe_input_detected"
+
     return True, None
 
 
 def check_sensitive_request(query: str) -> tuple[bool, str | None]:
     """Block requests for credentials/secrets or staff personal contact details."""
     text = " ".join(query[:_SENSITIVE_MAX_CHARS].split())
+    if _SECRET_TOKEN_RE.search(text):
+        return False, "application_secret_request"
     if _REVEAL_VERB_RE.search(text):
         if _SECRET_VALUE_RE.search(text):
             return False, "application_secret_request"
@@ -729,6 +819,13 @@ def check_sensitive_request(query: str) -> tuple[bool, str | None]:
         return False, "application_secret_request"
     if _CROSS_TENANT_RE.search(text) and _CREDENTIAL_RE.search(text):
         return False, "no_permission"
+    if (
+        _CROSS_TENANT_RE.search(text)
+        and _CUSTOMER_DATA_RE.search(text)
+        and _GIVE_VERB_RE.search(text)
+        and not _HOW_TO_RE.search(text)
+    ):
+        return False, "no_permission"
     if _PERSONAL_CONTACT_RE.search(text) and _PERSON_RE.search(text):
         return False, "personal_contact_request"
     if _BULK_PERSONAL_RE.search(text[:_BULK_PERSONAL_MAX_CHARS]):
@@ -742,15 +839,40 @@ def _is_single_char_run(token: str) -> bool:
     return len(cleaned) >= 6 and len(set(cleaned.lower())) <= 2
 
 
+@cache
+def _word_encoding():  # noqa: ANN202 - tiktoken Encoding, optional dependency
+    """cl100k BPE (already used for token counts); None when unavailable."""
+    try:
+        return tiktoken.get_encoding("cl100k_base")
+    # No cached BPE file (offline): fall back to the word lists.
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+        return None
+
+
+def _is_vocabulary_word(word: str) -> bool:
+    """A real English word is one BPE token (' banana'); 'blorf' is two."""
+    encoding = _word_encoding()
+    return encoding is not None and len(encoding.encode(" " + word)) == 1
+
+
 def _has_no_recognisable_words(words: list[str]) -> bool:
-    """3+ long alphabetic tokens, none a common/brand word (e.g. 'blorf zindle')."""
+    """3+ long ASCII alphabetic tokens, none a real word (e.g. 'blorf zindle').
+
+    'banana bread recipe' is real words (off-topic, not spam); text in another
+    script is never judged by these English heuristics.
+    """
     if len(words) < 3:
         return False
     lowered = [_clean_token(w).lower() for w in words]
-    if not all(w.isalpha() and len(w) >= _RARE_MIN_LEN for w in lowered):
+    if not all(
+        w.isascii() and w.isalpha() and len(w) >= _RARE_MIN_LEN for w in lowered
+    ):
         return False
     return not any(
-        w in _COMMON_WORDS or w in _KNOWN_TERMS or w in ALLOWED_ACRONYMS
+        w in _COMMON_WORDS
+        or w in _KNOWN_TERMS
+        or w in ALLOWED_ACRONYMS
+        or (w not in _LOREM_WORDS and _is_vocabulary_word(w))
         for w in lowered
     )
 
@@ -765,6 +887,59 @@ def _is_typo_of_known_word(token: str) -> bool:
     return _is_near_catalogue_word(letters)
 
 
+# A bare calculation: "2+2", "1+1=?", "what is 15% of 200", "sqrt(16)".
+# A bare number ("42", "160") is not one; it may be a figure from the KB.
+_MATH_MAX_CHARS = 80
+_MATH_LEAD_RE = re.compile(
+    r"^(?:(?:what\s{1,3}is|what'?s|whats|calculate|compute|solve|evaluate|"
+    r"how\s{1,3}much\s{1,3}is|work\s{1,3}out)\s{1,3})?",
+    re.IGNORECASE,
+)
+_MATH_EXPR_RE = re.compile(
+    r"^[(\s]{0,3}-?\d{1,12}(?:[.,]\d{1,6})?\s{0,3}%?[)\s]{0,3}"
+    r"(?:(?:[-+*/x\u00d7\u00f7^]|\*\*|mod|plus|minus|times|divided\s{1,3}by|"
+    r"multiplied\s{1,3}by)[(\s]{0,3}-?\d{1,12}(?:[.,]\d{1,6})?\s{0,3}%?[)\s]{0,3}){1,8}"
+    r"(?:=\s{0,3}\??)?[\s?=.!]{0,4}$",
+    re.IGNORECASE,
+)
+_MATH_FUNC_RE = re.compile(
+    r"^(?:sqrt|square\s{1,3}root\s{1,3}of|cube\s{1,3}root\s{1,3}of|sin|cos|tan|"
+    r"log|ln|abs|exp|factorial(?:\s{1,3}of)?)\s{0,3}\(?\s{0,3}-?\d{1,12}"
+    r"(?:[.,]\d{1,6})?\s{0,3}\)?[\s?=.!]{0,4}$",
+    re.IGNORECASE,
+)
+_MATH_PERCENT_RE = re.compile(
+    r"^\d{1,12}(?:[.,]\d{1,6})?\s{0,3}(?:%|percent|per\s{1,3}cent)\s{1,3}of\s{1,3}"
+    r"\d{1,12}(?:[.,]\d{1,6})?[\s?=.!]{0,4}$",
+    re.IGNORECASE,
+)
+
+
+# "what time is it in Sydney?", "what's today's date": the clock, not us.
+_CLOCK_RE = re.compile(
+    r"^(?:what\s{1,3}time\s{1,3}is\s{1,3}it|what\s{1,3}day\s{1,3}is\s{1,3}(?:it|today)|"
+    r"what(?:'s|\s{1,3}is)\s{1,3}(?:the\s{1,3})?(?:current\s{1,3})?(?:time|date)|"
+    r"what(?:'s|\s{1,3}is)\s{1,3}today'?s\s{1,3}date|what\s{1,3}date\s{1,3}is\s{1,3}"
+    r"(?:it|today))(?:\s{1,3}(?:now|right\s{1,3}now|today|(?:in|at)\s{1,3}"
+    r"[a-z]{1,20}(?:\s{1,3}[a-z]{1,20}){0,2}))?[\s?.!]{0,4}$",
+    re.IGNORECASE,
+)
+
+
+def check_math(query: str) -> tuple[bool, str | None]:
+    """A bare calculation or clock/date ask is off-topic (the same reply as
+    any other off-topic ask)."""
+    text = " ".join(query[: _MATH_MAX_CHARS + 1].split())
+    if not text or len(text) > _MATH_MAX_CHARS:
+        return True, None
+    if _CLOCK_RE.match(text):
+        return False, "off_topic"
+    body = text[_MATH_LEAD_RE.match(text).end() :]
+    if any(r.match(body) for r in (_MATH_EXPR_RE, _MATH_FUNC_RE, _MATH_PERCENT_RE)):
+        return False, "off_topic"
+    return True, None
+
+
 def check_spam(
     query: str,
 ) -> tuple[bool, str | None]:
@@ -773,7 +948,9 @@ def check_spam(
     Elongated but real wording ("whaaaat is deployiq", "zero trust??????") is
     normalised before the checks and is never spam by itself.
     """
-    text = unicodedata.normalize("NFKC", query[:_MATCH_MAX_CHARS]).strip()
+    # Accents are folded first: "Zéro Trüst" is real wording, not mash.
+    text = fold_accents(unicodedata.normalize("NFKC", query[:_MATCH_MAX_CHARS]))
+    text = text.strip()
     if not text:
         return True, None
 
@@ -805,6 +982,8 @@ def check_spam(
     alphanumeric_chars = re.sub(r"[\W_]", "", normalised).lower()
     if (
         len(alphanumeric_chars) <= 2
+        # a bare number ("42") may be a figure from the knowledge base
+        and not alphanumeric_chars.isdigit()
         and alphanumeric_chars not in ALLOWED_ACRONYMS
         and alphanumeric_chars not in _ALLOWED_SHORT_TOKENS
     ):
@@ -914,22 +1093,37 @@ def _is_strippable_junk(token: str) -> bool:
     return not _is_near_catalogue_word(letters, extra_limit=1)
 
 
-def sanitize_query(query: str) -> tuple[str, list[str]]:
+def _is_strippable_word(token: str) -> bool:
+    folded = fold_accents(token)
+    if any(ch.isalpha() and not ch.isascii() for ch in folded):
+        return False
+    return _is_strippable_junk(folded)
+
+
+def sanitize_query(query: str, flags: list[str] | None = None) -> tuple[str, list[str]]:
     """Strip stray junk tokens when valid question content exists.
 
     Conservative: a token is removed only when it is clearly junk (not an
     English-plausible word, acronym/brand term, or near-typo of a known word)
     and at least two other words remain. Otherwise the query is kept as typed.
 
+    Accents are folded before the letter heuristics ("Zéro" is "Zero"), and a
+    token holding any non-ASCII letter ("Größe", "безопасность", "安全") is
+    never stripped: the English shape rules cannot judge it.
+
+    ``flags``: the pre-check flags the caller already computed (pre-checks
+    then run only once per request); computed here when omitted.
+
     Returns (sanitized_query, pre_flags).
     """
-    flags = run_pre_checks(query, 2000)
+    if flags is None:
+        flags = run_pre_checks(query, 2000)
     if flags:
         return query, flags
 
     # e.g. "what is deployiq? akjj" -> "what is deployiq?"
     words = query.strip().split()
-    valid_words = [w for w in words if not _is_strippable_junk(w)]
+    valid_words = [w for w in words if not _is_strippable_word(w)]
 
     if _SANITIZE_MIN_VALID_WORDS <= len(valid_words) < len(words):
         return " ".join(valid_words).strip(), []
@@ -937,32 +1131,54 @@ def sanitize_query(query: str) -> tuple[str, list[str]]:
     return query.strip(), []
 
 
-_JUNK_FLAGS = frozenset({"spam_detected", "unclear_input"})
+_JUNK_FLAGS = frozenset({"spam_detected", "unclear_input", "off_topic"})
+
+
+def _security_check(check, query: str, raw: str | None) -> tuple[bool, str | None]:  # noqa: ANN001
+    """Run a security check on the normalised text and, if given, the raw text.
+
+    The raw text matters: normalising strips markup such as ``</system>`` and
+    turns ``SECRET_KEY`` into ``SECRET KEY``.
+    """
+    passed, flag = check(query)
+    if passed and raw is not None and raw != query:
+        passed, flag = check(raw[:_MATCH_MAX_CHARS])
+    return passed, flag
 
 
 def run_pre_checks(
     query: str,
     max_length: int,
+    raw: str | None = None,
 ) -> list[str]:
     """Run checks that do not require retrieval.
 
-    Flag order: length, sensitive-request, unsafe-input, then junk. When a
-    security flag (sensitive/unsafe) fires, the junk flags (spam_detected /
-    unclear_input) are dropped, so the visitor sees the security response and
-    attack strings are never mislabelled as spam. Length flags always remain.
+    ``query`` is the normalised text (``app.guardrails.normalize``); ``raw``
+    (optional) is the text as typed, also screened by the security checks.
+
+    Flag order: length, sensitive-request, unsafe-input, then junk / maths.
+    When a security flag (sensitive/unsafe) fires, the junk flags
+    (spam_detected / unclear_input / off_topic) are dropped, so the visitor
+    sees the security response and attack strings are never mislabelled as
+    spam. Length flags always remain. A bare calculation ("2+2", "sqrt(16)",
+    "15% of 200") is ``off_topic``, the same reply as any other off-topic ask.
     """
     flags: list[str] = []
     capped = query[:_MATCH_MAX_CHARS]
 
     checks = (
-        (check_length, (query, max_length)),
-        (check_sensitive_request, (capped,)),
-        (check_unsafe_input, (capped,)),
-        (check_spam, (capped,)),
+        (check_length, (raw if raw is not None else query, max_length)),
+        (_security_check, (check_sensitive_request, capped, raw)),
+        (_security_check, (check_unsafe_input, capped, raw)),
+        (check_math, (capped,)),
     )
 
     for check, args in checks:
         passed, flag = check(*args)
+        if not passed and flag:
+            flags.append(flag)
+    if "off_topic" not in flags:
+        passed, flag = check_spam(capped)
         if not passed and flag:
             flags.append(flag)
 

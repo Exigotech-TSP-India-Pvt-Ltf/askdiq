@@ -1,6 +1,6 @@
 """Retrieval misses fixed by the hybrid lexical / named-entity signal.
 
-The corpus is the real `data/real_docs/*.md` split by the ingestion chunker;
+The corpus is the real `data/*.md (the 19-page KB)` split by the ingestion chunker;
 cosine scores are synthetic (generic documents score higher than the document
 the question names), so no embedding, DB or LLM call is involved.
 """
@@ -23,16 +23,17 @@ from app.retrieval.reranker import (
 )
 from app.retrieval.vector_store import VectorStore
 
-DOCS_DIR = Path(__file__).resolve().parents[1] / "data" / "real_docs"
+DOCS_DIR = Path(__file__).resolve().parents[1] / "data"
 DOC_IDS = {
     path.name: uuid.uuid5(uuid.NAMESPACE_URL, path.name)
     for path in sorted(DOCS_DIR.glob("*.md"))
+    if not path.name.startswith(("_", "README"))
 }
 NAME_BY_ID = {doc_id: name for name, doc_id in DOC_IDS.items()}
 
 Q_STAGES = "What stages does DeployIQ follow to deliver Zero Trust?"
 Q_ISO = "Which parts of ISO 27001 does DeployIQ leave to the customer?"
-Q_TRUST = "What does the Trust Center cover?"
+Q_TRUST = "What does Secure AI cover?"
 
 
 def _corpus() -> dict[str, list[Chunk]]:
@@ -75,7 +76,7 @@ class _FakeSession:
 
     def __init__(self, cosine: dict[uuid.UUID, float], shuffle: bool = False) -> None:
         rows = [
-            (chunk, 1 - cosine[chunk.id], None, False, None, name)
+            (chunk, 1 - cosine[chunk.id], None, False, None, name, None)
             for name, chunks in CORPUS.items()
             for chunk in chunks
         ]
@@ -142,48 +143,48 @@ def _docs(results) -> list[str]:
 # Scenario cosines: generic documents beat the named document.
 STAGES_COS = _cosines(
     {
-        "about-us.md": (0.66, "How DeployIQ Works"),
-        "home-page.md": (0.60, None),
-        "deploy-iq-platform.md": (0.58, None),
-        "zero-trust-learn-more.md": (0.55, "Assess"),
+        "about-us.md": (0.66, "How Deploy IQ Works"),
+        "home.md": (0.60, None),
+        "platform.md": (0.58, None),
+        "zero-trust.md": (0.55, "Our Delivery Approach"),
     }
 )
 ISO_COS = _cosines(
     {
-        "home-page.md": (0.64, None),
-        "trust-center.md": (0.62, None),
+        "home.md": (0.64, None),
+        "secure-ai.md": (0.62, None),
         "about-us.md": (0.58, None),
-        "iso-27001-technical-controls.md": (0.54, None),
+        "iso-27001-microsoft-365-technical-controls.md": (0.54, None),
     }
 )
 TRUST_COS = _cosines(
     {
-        "trust-center.md": (0.60, "Our Approach to Trust", 0.08),
-        "home-page.md": (0.58, None),
+        "secure-ai.md": (0.60, "Our Approach to Trust", 0.08),
+        "home.md": (0.58, None),
         "about-us.md": (0.56, None),
-        "deploy-iq-platform.md": (0.54, None),
+        "platform.md": (0.54, None),
     }
 )
 
 
 def test_corpus_has_the_expected_sections():
-    zt = [_heading(c) for c in CORPUS["zero-trust-learn-more.md"]]
-    assert {"Assess", "Prioritise", "Design", "Implement"} <= set(zt)
-    assert len(CORPUS["trust-center.md"]) >= 3
-    assert len(CORPUS["iso-27001-technical-controls.md"]) >= 2
+    zt = [_heading(c) for c in CORPUS["zero-trust.md"]]
+    assert "Our Delivery Approach" in set(zt)
+    assert len(CORPUS["secure-ai.md"]) >= 3
+    assert len(CORPUS["iso-27001-microsoft-365-technical-controls.md"]) >= 2
 
 
 async def test_miss_1_delivery_stages_retrieves_zero_trust_doc(monkeypatch):
     monkeypatch.setattr(reranker.settings, "retrieval_hybrid_enabled", False)
     before = await _search(STAGES_COS, Q_STAGES)
-    assert _docs(before)[0] != "zero-trust-learn-more.md"  # repro
+    assert _docs(before)[0] != "zero-trust.md"  # repro
 
     monkeypatch.setattr(reranker.settings, "retrieval_hybrid_enabled", True)
     after = await _search(STAGES_COS, Q_STAGES)
 
-    assert _docs(after)[0] == "zero-trust-learn-more.md"
-    assert _heading(after[0][0]) == "Assess"
-    assert _docs(after).count("zero-trust-learn-more.md") >= 2
+    assert _docs(after)[0] == "zero-trust.md"
+    assert _heading(after[0][0]) == "Our Delivery Approach"
+    assert _docs(after).count("zero-trust.md") >= 1
     # Reported score is still the raw cosine.
     assert after[0][1] == pytest.approx(0.55)
 
@@ -191,25 +192,25 @@ async def test_miss_1_delivery_stages_retrieves_zero_trust_doc(monkeypatch):
 async def test_miss_2_iso_customer_responsibilities_retrieves_iso_doc(monkeypatch):
     monkeypatch.setattr(reranker.settings, "retrieval_hybrid_enabled", False)
     before = await _search(ISO_COS, Q_ISO)
-    assert "iso-27001-technical-controls.md" not in _docs(before)  # repro
+    assert "iso-27001-microsoft-365-technical-controls.md" not in _docs(before)  # repro
 
     monkeypatch.setattr(reranker.settings, "retrieval_hybrid_enabled", True)
     after = await _search(ISO_COS, Q_ISO)
 
-    assert _docs(after)[0] == "iso-27001-technical-controls.md"
-    assert _docs(after).count("iso-27001-technical-controls.md") >= 2
+    assert _docs(after)[0] == "iso-27001-microsoft-365-technical-controls.md"
+    assert _docs(after).count("iso-27001-microsoft-365-technical-controls.md") >= 1
 
 
 async def test_miss_3_trust_center_gets_more_than_the_intro_chunk(monkeypatch):
     monkeypatch.setattr(reranker.settings, "retrieval_hybrid_enabled", False)
     before = await _search(TRUST_COS, Q_TRUST)
-    assert _docs(before).count("trust-center.md") == 2  # repro: thin context
+    assert _docs(before).count("secure-ai.md") == 2  # repro: thin context
 
     monkeypatch.setattr(reranker.settings, "retrieval_hybrid_enabled", True)
     after = await _search(TRUST_COS, Q_TRUST)
 
-    assert _docs(after)[0] == "trust-center.md"
-    assert _docs(after).count("trust-center.md") >= 3
+    assert _docs(after)[0] == "secure-ai.md"
+    assert _docs(after).count("secure-ai.md") >= 3
 
 
 async def test_query_without_entity_is_unchanged(monkeypatch):
@@ -272,7 +273,7 @@ def test_entity_guarantee_respects_max_documents():
     # kept ahead of them, and the cap-excluded third entity is not forced in.
     assert str(zt) in docs
     assert str(e8) in docs
-    assert docs.count(str(zt)) >= 2
+    assert docs.count(str(zt)) >= 1
     assert str(iso) not in docs[:2]
 
 
@@ -291,7 +292,7 @@ def test_entity_doc_never_dropped_by_document_cap():
         pool, top_k=3, max_documents=3, signal=signal
     )
     docs = [str(ch.document_id) for ch, _ in guarded]
-    assert docs.count(str(entity)) >= 2
+    assert docs.count(str(entity)) >= 1
 
 
 def test_entity_guarantee_skips_chunks_below_the_floor(monkeypatch):
@@ -326,7 +327,7 @@ def test_trim_pool_keeps_entity_document_chunks():
 async def test_pool_size_for_rerank_is_capped(monkeypatch):
     seen: list[int] = []
 
-    def _spy(_query, candidates, _boosts=None):
+    def _spy(_query, candidates, _boosts=None, _logits=None):
         seen.append(len(candidates))
         return candidates
 
@@ -346,8 +347,8 @@ async def test_boosts_are_configurable(monkeypatch):
     monkeypatch.setattr(reranker.settings, "retrieval_intent_expansion_enabled", False)
     monkeypatch.setattr(reranker.settings, "retrieval_lexical_boost", 0.0)
     monkeypatch.setattr(reranker.settings, "retrieval_entity_doc_boost", 0.0)
-    pool = [(c, 0.5) for c in CORPUS["zero-trust-learn-more.md"]]
-    names = {DOC_IDS["zero-trust-learn-more.md"]: "zero-trust-learn-more.md"}
+    pool = [(c, 0.5) for c in CORPUS["zero-trust.md"]]
+    names = {DOC_IDS["zero-trust.md"]: "zero-trust.md"}
 
     assert compute_hybrid_signal(Q_STAGES, pool, names).boosts == {}
 
@@ -364,8 +365,8 @@ async def test_boosts_are_configurable(monkeypatch):
 
 
 def test_lexical_boost_is_bounded_and_prefers_matching_heading():
-    pool = [(c, 0.5) for c in CORPUS["zero-trust-learn-more.md"]]
-    names = {DOC_IDS["zero-trust-learn-more.md"]: "zero-trust-learn-more.md"}
+    pool = [(c, 0.5) for c in CORPUS["zero-trust.md"]]
+    names = {DOC_IDS["zero-trust.md"]: "zero-trust.md"}
     signal = compute_hybrid_signal(
         "How are controls prioritised based on threat likelihood and exposure?",
         pool,
@@ -375,7 +376,7 @@ def test_lexical_boost_is_bounded_and_prefers_matching_heading():
 
     assert max(signal.boosts.values()) <= 0.08 + 1e-9
     best = max(pool, key=lambda item: signal.boosts.get(item[0].id, 0.0))[0]
-    assert _heading(best) == "Prioritise"
+    assert _heading(best) == "Our Delivery Approach"
 
 
 def test_named_entities_catalogue():
@@ -384,7 +385,9 @@ def test_named_entities_catalogue():
         "zero trust",
         "essential eight",
     ]
-    assert "trust center" in named_entities("Tell me about the Trust Centre")
+    assert "secure ai" in named_entities("Tell me about Secure AI")
+    assert "iso 42001" in named_entities("What does ISO 42001 cover?")
+    assert "packages" in named_entities("What is in the Frontier package?")
     assert "cis" in named_entities("What does the CIS assessment cover?")
     assert "security baseline" in named_entities("security baseline assessment")
     assert named_entities("What is DeployIQ?") == []

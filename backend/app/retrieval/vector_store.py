@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from app.core.config import get_settings
+from app.knowledge.links import document_url
 from app.models.db_models import Chunk, Document
 from app.retrieval.reranker import (
     INTENT_ENTITY_WEIGHT,
@@ -92,6 +93,21 @@ class DocumentLink(NamedTuple):
     source_name: str | None = None
 
 
+# A routed document (website page) cites SITE_BASE_URL + its route.
+_ROUTE = Document.doc_metadata["route"].as_string()
+
+
+def _document_link(
+    source_url: str | None,
+    section_links: bool | None,
+    title: str | None,
+    source_name: str | None,
+    route: str | None,
+) -> DocumentLink:
+    url = document_url(source_url, route, settings.site_base_url)
+    return DocumentLink(url, bool(section_links), title, source_name)
+
+
 class VectorStore:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -102,6 +118,11 @@ class VectorStore:
         # rank boost, so callers can order by cosine + boost. Reported scores
         # stay the raw cosine.
         self.rank_boosts: dict[uuid.UUID, float] = {}
+        # Filled by each similarity_search call (reset per call): chunk id ->
+        # raw cross-encoder logit against that call's query_text. The
+        # relevance gate reads it right after the call; empty when the
+        # reranker is disabled or failed (the gate then falls back to cosine).
+        self.last_ce_scores: dict[uuid.UUID, float] = {}
 
     async def fetch_embeddings(self, chunk_ids: list) -> dict:
         """Embeddings for just these chunks (candidates are loaded without them)."""
@@ -137,6 +158,7 @@ class VectorStore:
         # STEP 1: Broad semantic candidate recall
         # ---------------------------------------------------------
 
+        self.last_ce_scores = {}
         candidate_k = max(
             top_k * settings.retrieval_candidate_multiplier,
             settings.retrieval_candidate_min,
@@ -156,6 +178,7 @@ class VectorStore:
                 Document.section_links,
                 Document.doc_metadata["title"].as_string(),
                 Document.source_name,
+                _ROUTE,
             )
             .join(Document, Document.id == Chunk.document_id)
             .options(defer(Chunk.embedding))
@@ -182,9 +205,17 @@ class VectorStore:
 
         unique_candidates: dict = {}
 
-        for chunk, distance, source_url, section_links, title, source_name in rows:
-            self.document_links[chunk.document_id] = DocumentLink(
-                source_url, bool(section_links), title, source_name
+        for (
+            chunk,
+            distance,
+            source_url,
+            section_links,
+            title,
+            source_name,
+            route,
+        ) in rows:
+            self.document_links[chunk.document_id] = _document_link(
+                source_url, section_links, title, source_name, route
             )
             score = 1 - distance
             existing = unique_candidates.get(chunk.id)
@@ -232,11 +263,22 @@ class VectorStore:
             self.rank_boosts.update(signal.boosts)
             candidates = trim_pool(candidates, signal, candidate_k)
 
+        order: dict[uuid.UUID, float] | None = None
         if query_text:
             boosts = [signal.boosts.get(chunk.id, 0.0) for chunk, _ in candidates]
+            logits: dict[uuid.UUID, float] = {}
             # CPU-bound ONNX inference — off the event loop so it doesn't
             # stall every other concurrent request behind it.
-            candidates = await asyncio.to_thread(rerank, query_text, candidates, boosts)
+            candidates = await asyncio.to_thread(
+                rerank, query_text, candidates, boosts, logits
+            )
+            self.last_ce_scores = logits
+            if logits:
+                # The cross-encoder order is final: selection never re-sorts
+                # by cosine (position rank, higher is better).
+                order = {
+                    chunk.id: float(-pos) for pos, (chunk, _s) in enumerate(candidates)
+                }
 
         # ---------------------------------------------------------
         # STEP 3: Cross-document quota selection
@@ -247,6 +289,7 @@ class VectorStore:
             top_k=top_k,
             max_documents=max_documents,
             signal=signal,
+            order=order,
         )
 
     def _document_names(self) -> dict[uuid.UUID, str]:
@@ -254,6 +297,154 @@ class VectorStore:
             doc_id: f"{link.source_name or ''} {link.title or ''}"
             for doc_id, link in self.document_links.items()
         }
+
+    async def best_chunk_per_entity_document(
+        self,
+        query_embedding: list[float],
+        entities: list[str],
+        filters: dict | None = None,
+    ) -> list[tuple[Chunk, float]]:
+        """The best chunk (by cosine to the query) of every document the given
+        catalogue entities name, best first. One query; used for a "which
+        service?" card so its options are retrieved service pages."""
+        if not entities:
+            return []
+        title = Document.doc_metadata["title"].as_string()
+        distance = Chunk.embedding.cosine_distance(query_embedding)
+        rank_in_doc = func.row_number().over(
+            partition_by=Chunk.document_id, order_by=distance
+        )
+        inner = (
+            select(Chunk.id.label("chunk_id"), rank_in_doc.label("rank"))
+            .join(Document, Document.id == Chunk.document_id)
+            .where(Chunk.document_id.not_in(quarantined_document_ids()))
+            .where(
+                func.concat_ws(" ", Document.source_name, title).op("~*")(
+                    entity_sql_pattern(entities)
+                )
+            )
+        )
+        for key, value in usable_filters(filters).items():
+            inner = inner.where(Chunk.chunk_metadata[key].as_string() == value)
+        best = inner.subquery()
+        stmt = (
+            select(
+                Chunk,
+                distance.label("distance"),
+                Document.source_url,
+                Document.section_links,
+                title,
+                Document.source_name,
+                _ROUTE,
+            )
+            .join(Document, Document.id == Chunk.document_id)
+            .join(best, best.c.chunk_id == Chunk.id)
+            .options(defer(Chunk.embedding))
+            .where(best.c.rank == 1)
+            .order_by(distance)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        await self.session.commit()
+        found: list[tuple[Chunk, float]] = []
+        for (
+            chunk,
+            dist,
+            source_url,
+            section_links,
+            doc_title,
+            source_name,
+            route,
+        ) in rows:
+            self.document_links[chunk.document_id] = _document_link(
+                source_url, section_links, doc_title, source_name, route
+            )
+            found.append((chunk, 1 - dist))
+        return found
+
+    async def chunks_in_documents(
+        self,
+        query_embedding: list[float],
+        document_ids: list[str],
+        per_document: int = 2,
+    ) -> list[tuple[Chunk, float]]:
+        """The ``per_document`` best chunks (cosine) of each given document,
+        best first (a reply to a clarification: the options' pages)."""
+        ids = [uuid.UUID(d) for d in dict.fromkeys(document_ids)]
+        if not ids:
+            return []
+        title = Document.doc_metadata["title"].as_string()
+        distance = Chunk.embedding.cosine_distance(query_embedding)
+        rank_in_doc = func.row_number().over(
+            partition_by=Chunk.document_id, order_by=distance
+        )
+        inner = (
+            select(Chunk.id.label("chunk_id"), rank_in_doc.label("rank"))
+            .where(Chunk.document_id.in_(ids))
+            .where(Chunk.document_id.not_in(quarantined_document_ids()))
+        ).subquery()
+        stmt = (
+            select(
+                Chunk,
+                distance.label("distance"),
+                Document.source_url,
+                Document.section_links,
+                title,
+                Document.source_name,
+                _ROUTE,
+            )
+            .join(Document, Document.id == Chunk.document_id)
+            .join(inner, inner.c.chunk_id == Chunk.id)
+            .options(defer(Chunk.embedding))
+            .where(inner.c.rank <= per_document)
+            .order_by(distance)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        await self.session.commit()
+        found: list[tuple[Chunk, float]] = []
+        for (
+            chunk,
+            dist,
+            source_url,
+            section_links,
+            doc_title,
+            source_name,
+            route,
+        ) in rows:
+            self.document_links[chunk.document_id] = _document_link(
+                source_url, section_links, doc_title, source_name, route
+            )
+            found.append((chunk, 1 - dist))
+        return found
+
+    async def chunks_for_route(self, route: str, limit: int = 8) -> list[Chunk]:
+        """The chunks of the (non-quarantined) document at site ``route``,
+        in reading order (a fixed page such as the contact page)."""
+        title = Document.doc_metadata["title"].as_string()
+        stmt = (
+            select(
+                Chunk,
+                Document.source_url,
+                Document.section_links,
+                title,
+                Document.source_name,
+                _ROUTE,
+            )
+            .join(Document, Document.id == Chunk.document_id)
+            .options(defer(Chunk.embedding))
+            .where(Document.doc_metadata["route"].as_string() == route)
+            .where(Chunk.document_id.not_in(quarantined_document_ids()))
+            .order_by(Chunk.document_id, Chunk.chunk_index)
+            .limit(limit)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        await self.session.commit()
+        chunks: list[Chunk] = []
+        for chunk, source_url, section_links, doc_title, source_name, doc_route in rows:
+            self.document_links[chunk.document_id] = _document_link(
+                source_url, section_links, doc_title, source_name, doc_route
+            )
+            chunks.append(chunk)
+        return chunks
 
     async def _fetch_entity_chunks(
         self,
@@ -316,6 +507,7 @@ class VectorStore:
                 Document.section_links,
                 title,
                 Document.source_name,
+                _ROUTE,
             )
             .join(Document, Document.id == Chunk.document_id)
             .options(defer(Chunk.embedding))
@@ -336,7 +528,7 @@ class VectorStore:
 
         names = {
             chunk.document_id: f"{source_name or ''} {doc_title or ''}"
-            for chunk, _d, _u, _s, doc_title, source_name in rows
+            for chunk, _d, _u, _s, doc_title, source_name, _r in rows
         }
         best: dict[str, float] = {}
         for chunk, dist, *_rest in rows:
@@ -347,11 +539,19 @@ class VectorStore:
         )
 
         fetched: list[tuple[Chunk, float]] = []
-        for chunk, dist, source_url, section_links, doc_title, source_name in rows:
+        for (
+            chunk,
+            dist,
+            source_url,
+            section_links,
+            doc_title,
+            source_name,
+            route,
+        ) in rows:
             if str(chunk.document_id) not in keep:
                 continue
-            self.document_links[chunk.document_id] = DocumentLink(
-                source_url, bool(section_links), doc_title, source_name
+            self.document_links[chunk.document_id] = _document_link(
+                source_url, section_links, doc_title, source_name, route
             )
             fetched.append((chunk, 1 - dist))
         logger.info(
@@ -365,6 +565,7 @@ class VectorStore:
         top_k: int,
         max_documents: int | None = None,
         signal: HybridSignal | None = None,
+        order: dict[uuid.UUID, float] | None = None,
     ) -> list[tuple[Chunk, float]]:
         """Allocate the result budget across the top-scoring documents.
 
@@ -373,14 +574,25 @@ class VectorStore:
         second genuinely relevant document is never starved by the single
         top-scoring one (the bug this replaces).
 
-        With a hybrid `signal`, documents named by the query are never dropped
-        by the document cap and keep at least `retrieval_entity_min_chunks`
-        chunks (those above the retrieval floor); the final order uses
-        cosine + hybrid boost.
+        ``order`` (chunk id -> rank key, higher first) is the cross-encoder
+        order; it ranks documents, chunks and the final list. Without it
+        (reranker off) cosine + hybrid boost is used.
+
+        Entity seeding is a recall aid only: a document the query names is
+        never dropped by the document cap and keeps ONE chunk (its best),
+        or one per section heading for "what does X cover"; everything else
+        competes on relevance, so the answer document is never crowded out.
         """
 
         if not candidates:
             return []
+
+        signal = signal or HybridSignal()
+
+        def key(item: tuple[Chunk, float]) -> float:
+            if order is not None:
+                return order.get(item[0].id, float("-inf"))
+            return signal.rank_key(item[0].id, item[1])
 
         by_doc: dict[str, list[tuple[Chunk, float]]] = defaultdict(list)
         doc_order: list[str] = []
@@ -391,29 +603,26 @@ class VectorStore:
                 doc_order.append(doc_id)
             by_doc[doc_id].append((chunk, score))
 
-        signal = signal or HybridSignal()
-
-        # Named documents choose their chunks by cosine + hybrid/intent boost
-        # (so a "Delivery Approach" chunk beats "What Is X" for a "stages"
-        # question); for "what does X cover" headed chunks get a small edge.
+        # "What does X cover": headed chunks of the named document first.
         spread_bonus = _SPREAD_HEADING_BONUS if signal.spread else 0.0
-        for doc_id in signal.entity_doc_ids:
-            if doc_id in by_doc:
-                by_doc[doc_id].sort(
-                    key=lambda item: (
-                        signal.rank_key(item[0].id, item[1])
-                        + (spread_bonus if _heading(item[0]) else 0.0)
-                    ),
-                    reverse=True,
-                )
+        for doc_chunks in by_doc.values():
+            doc_chunks.sort(
+                key=lambda item: (
+                    key(item)
+                    + (
+                        spread_bonus
+                        if order is None
+                        and _heading(item[0])
+                        and str(item[0].document_id) in signal.entity_doc_ids
+                        else 0.0
+                    )
+                ),
+                reverse=True,
+            )
 
-        # Documents ranked by their single best-scoring chunk.
+        # Documents ranked by their single best chunk.
         ranked_docs = sorted(
-            doc_order,
-            key=lambda doc_id: signal.rank_key(
-                by_doc[doc_id][0][0].id, by_doc[doc_id][0][1]
-            ),
-            reverse=True,
+            doc_order, key=lambda doc_id: key(by_doc[doc_id][0]), reverse=True
         )
 
         doc_cap = max_documents or settings.cross_doc_quota_max_documents
@@ -456,14 +665,12 @@ class VectorStore:
                 return True
             return False
 
-        # Named documents are seeded first, breadth before depth, so each
-        # keeps `retrieval_entity_min_chunks` chunks (beyond the first they
-        # must clear the retrieval floor). One slot stays free for others.
-        # "What does X cover": up to SPREAD_MAX_CHUNKS chunks, one per heading.
+        # Named documents are seeded first with ONE chunk each (recall aid);
+        # "What does X cover": up to SPREAD_MAX_CHUNKS, one per heading.
+        # Beyond the first, a seeded chunk must clear the retrieval floor.
+        # One slot always stays free for others.
         seed_budget = max(1, top_k - 1)
-        levels = settings.retrieval_entity_min_chunks
-        if signal.spread:
-            levels = max(levels, SPREAD_MAX_CHUNKS)
+        levels = SPREAD_MAX_CHUNKS if signal.spread else 1
         for level in range(levels):
             for doc_id in priority:
                 if len(selected) >= seed_budget:
@@ -486,20 +693,18 @@ class VectorStore:
                 if _take_next(doc_id, above_floor=False):
                     progressed = True
 
-        # Backfill any remaining slots with the next best-scoring chunks
-        # overall, regardless of document, once quotas are satisfied.
-        for chunk, score in candidates:
+        # Backfill any remaining slots with the next best chunks overall,
+        # regardless of document, once quotas are satisfied.
+        for item in sorted(candidates, key=key, reverse=True):
             if len(selected) >= top_k:
                 break
 
-            if chunk.id in selected_ids:
+            if item[0].id in selected_ids:
                 continue
 
-            selected.append((chunk, score))
-            selected_ids.add(chunk.id)
+            selected.append(item)
+            selected_ids.add(item[0].id)
 
-        selected.sort(
-            key=lambda item: signal.rank_key(item[0].id, item[1]), reverse=True
-        )
+        selected.sort(key=key, reverse=True)
 
         return selected

@@ -32,7 +32,7 @@ from app.jobs import queue
 from app.jobs.registry import get_timeout
 from app.models.db_models import AuditLog, EvalRun
 from main import app
-from tests.pg_helpers import new_engine, require_postgres
+from tests.pg_helpers import new_engine, require_disposable_database, require_postgres
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 RUNS = "/metrics/evaluation/runs"
@@ -269,7 +269,7 @@ async def test_cancel_queued_run_then_409(
     assert (await client.post(RUNS, json={})).status_code == 202
 
 
-async def test_running_cancel_only_flags_the_row(
+async def test_running_cancel_without_a_live_worker_cancels_at_once(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     run = _finished_run(status="running", finished_at=None, pass_rate=None)
@@ -278,7 +278,7 @@ async def test_running_cancel_only_flags_the_row(
     response = await client.post(f"{RUNS}/{run.id}/cancel")
     assert response.status_code == 202
     body = response.json()
-    assert body["status"] == "running"
+    assert body["status"] == "cancelled"
     assert body["cancel_requested"] is True
 
 
@@ -587,6 +587,7 @@ PREVIOUS = "144fe4240293"
 
 
 def _alembic(*args: str) -> str:
+    require_disposable_database()
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [sys.executable, "-m", "alembic", *args],
         cwd=BACKEND_DIR,

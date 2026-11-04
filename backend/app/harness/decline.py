@@ -602,6 +602,16 @@ def strip_invented_after_decline(answer: str, sources_text: str, query: str) -> 
     return "".join(out).rstrip()
 
 
+def has_decline_sentence(text: str) -> bool:
+    """True when at least one sentence of `text` declines / hands off.
+
+    Unlike :func:`is_decline_only`, the rest of the answer need not decline —
+    used to catch a real decline buried after unrelated pitch content.
+    """
+    text = text[:_MAX_CHARS]
+    return any(decline for _span, decline in _classified(text))
+
+
 def clean_declines(
     answer: str, query: str, sources_text: str | None = None
 ) -> tuple[str, bool]:

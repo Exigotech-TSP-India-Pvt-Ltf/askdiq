@@ -131,5 +131,5 @@ def test_mixed_verification_linear_time() -> None:
 
 def test_prompt_rules_present() -> None:
     prompt = prompts.SYSTEM_PROMPT
-    assert "Don't mention pricing, timelines or what you don't have" in prompt
-    assert "short bullets" in prompt
+    assert "nothing that was not asked" in prompt
+    assert '"item" in a list' in prompt

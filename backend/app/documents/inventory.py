@@ -17,7 +17,8 @@ from typing import Any
 from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.knowledge.links import link_host, link_status
+from app.core.config import get_settings
+from app.knowledge.links import document_url, link_host, link_status
 from app.knowledge.settings_service import current_knowledge_settings
 from app.models.db_models import AuditLog, Chunk, Document, User
 from app.schemas.document import (
@@ -157,7 +158,9 @@ def build_summary(
 ) -> DocumentSummary:
     """Pure mapping of one document row (+ aggregates) to its inventory entry."""
     meta = _meta(doc)
-    source_url = doc.source_url
+    source_url = document_url(
+        doc.source_url, meta.get("route"), get_settings().site_base_url
+    )
     original_filename = str(meta.get("original_filename") or doc.source_name)
     original_format = infer_original_format(meta, original_filename)
     full_hash = doc.content_hash or meta.get("content_hash")

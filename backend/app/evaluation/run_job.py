@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 SessionFactory = Callable[[], Any]
+_STOP_GRACE_SECONDS = 10.0
 _STOPPED = "Stopped: the run hit EVAL_RUN_TIMEOUT_SECONDS or the worker shut down."
 
 
@@ -179,9 +180,10 @@ async def _watch(
 
 
 async def _stop_task(task: asyncio.Task[Any]) -> None:
+    """Cancel ``task``; never wait forever on a case that ignores cancellation."""
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError, Exception):
-        await task
+        await asyncio.wait({task}, timeout=_STOP_GRACE_SECONDS)
 
 
 async def _succeed(

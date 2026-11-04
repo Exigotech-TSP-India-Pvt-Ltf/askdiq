@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
@@ -661,10 +661,18 @@ async def get_session_detail(
 ) -> ChatSessionDetail:
     session = await _get_owned_session(db, session_id, user_email)
 
+    # A turn's user and assistant rows share the same `created_at` (both
+    # written in one transaction), so ordering by it alone ties and leaves the
+    # two rows in whatever order the DB happens to scan them — correct on
+    # first load, sometimes swapped after a reload. turn_index groups a turn,
+    # then an explicit user-before-assistant rule breaks the tie deterministically.
+    _role_order = case((ChatMessageRecord.role == "user", 0), else_=1)
     result = await db.execute(
         select(ChatMessageRecord)
         .where(ChatMessageRecord.session_id == session.id)
-        .order_by(ChatMessageRecord.created_at)
+        .order_by(
+            ChatMessageRecord.turn_index, ChatMessageRecord.created_at, _role_order
+        )
     )
     messages = result.scalars().all()
     now = datetime.utcnow()

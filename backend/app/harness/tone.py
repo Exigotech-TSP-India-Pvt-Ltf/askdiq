@@ -1284,3 +1284,24 @@ def polish_answer(
     if paragraph_guard(polished):
         logger.info("answer_paragraph_guard", prose_run=longest_prose_run(polished))
     return polished
+
+
+def polish_claim(text: str) -> str:
+    """Subtractive polish of ONE claim, run before it is verified.
+
+    Cuts a stock opener, drops a boilerplate or internal-wording claim
+    (returns ``""``) and fixes dashes / odd characters (plus buzzwords in
+    English). Never adds a sentence, so verification always checks the exact
+    text that ships.
+    """
+
+    text = " ".join(text.split())
+    if not text:
+        return ""
+    english = not is_non_english(text)
+    if english and _has_internal_wording(text.lower()):
+        return ""
+    text = _cut_opener(text)
+    if _is_boilerplate(text):
+        return ""
+    return _clean_line(text, english=english).strip()

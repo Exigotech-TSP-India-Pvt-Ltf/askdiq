@@ -383,6 +383,7 @@ async def ingest_text(
         {
             "source_name": canonical_name,
             "source_type": source_type,
+            **({"page_title": link.title} if link.title else {}),
         },
     )
     chunk_ms = (time.perf_counter() - chunk_start) * 1000

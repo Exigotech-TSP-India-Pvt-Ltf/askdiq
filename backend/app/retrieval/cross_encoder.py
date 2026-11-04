@@ -7,6 +7,14 @@ the app needs: scoring pairs with an HF-hosted ONNX cross-encoder such as
 `logits[:, 0]` output) using only `onnxruntime`, `tokenizers` and
 `huggingface_hub`, so scores are identical while dropping fastembed's
 `pillow<13` pin.
+
+Latency knobs (app/core/config.py): ONNX intra/inter-op threads
+(RERANKER_INTRA_OP_THREADS / RERANKER_INTER_OP_THREADS) and pair truncation
+(RERANKER_MAX_TOKENS, default 256). ``score_pairs`` returns the raw logits
+for a whole candidate list in one call. Pairs are run through ONNX
+RERANK_BATCH_SIZE at a time (default 1): measured on the KB's ~100-token
+pairs, one padded 12-pair batch is ~1.5-2x slower than 12 single runs, even
+with length-sorted, padding-trimmed sub-batches.
 """
 
 from __future__ import annotations
@@ -21,6 +29,8 @@ import numpy as np
 import onnxruntime as ort
 from huggingface_hub import model_info, snapshot_download
 from tokenizers import AddedToken, Encoding, Tokenizer
+
+from app.core.config import get_settings
 
 MODEL_FILE = "onnx/model.onnx"
 _MODEL_FILES = [
@@ -67,12 +77,19 @@ def _iter_special_tokens(tokens_map: dict[str, Any]) -> Iterator[Any]:
             yield value
 
 
-def load_tokenizer(model_dir: Path) -> Tokenizer:
-    """Load the tokenizer with truncation + batch-longest padding."""
+def load_tokenizer(model_dir: Path, max_tokens: int | None = None) -> Tokenizer:
+    """Load the tokenizer with truncation + batch-longest padding.
+
+    Pairs are truncated to ``max_tokens`` (capped at the model's context);
+    ``None`` keeps the model's full context.
+    """
     tokenizer_config = _read_json(model_dir / "tokenizer_config.json")
     config = _read_json(model_dir / "config.json")
     tokenizer = Tokenizer.from_file(str(model_dir / "tokenizer.json"))
-    tokenizer.enable_truncation(max_length=_max_context(tokenizer_config, model_dir))
+    max_length = _max_context(tokenizer_config, model_dir)
+    if max_tokens is not None:
+        max_length = min(max_length, max_tokens)
+    tokenizer.enable_truncation(max_length=max_length)
 
     for token in _iter_special_tokens(
         _read_json(model_dir / "special_tokens_map.json")
@@ -103,10 +120,28 @@ def load_tokenizer(model_dir: Path) -> Tokenizer:
     return tokenizer
 
 
+def session_options(intra_op_threads: int, inter_op_threads: int) -> ort.SessionOptions:
+    """CPU session options: full graph optimisation, bounded thread pools."""
+    options = ort.SessionOptions()
+    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    options.intra_op_num_threads = max(1, intra_op_threads)
+    options.inter_op_num_threads = max(1, inter_op_threads)
+    return options
+
+
 class TextCrossEncoder:
     """ONNX cross-encoder returning one raw relevance logit per document."""
 
-    def __init__(self, model_name: str, cache_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        cache_dir: str | None = None,
+        *,
+        intra_op_threads: int | None = None,
+        inter_op_threads: int | None = None,
+        max_tokens: int | None = None,
+    ) -> None:
+        settings = get_settings()
         # Pin to the resolved commit sha (mirrors fastembed's own model_info().sha
         # lookup) so the download is reproducible rather than tracking a mutable
         # branch ref. nosec: revision is a resolved commit sha, not attacker input.
@@ -119,15 +154,19 @@ class TextCrossEncoder:
                 cache_dir=cache_dir,
             )
         )
-        options = ort.SessionOptions()
-        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        options = session_options(
+            intra_op_threads or settings.reranker_intra_op_threads,
+            inter_op_threads or settings.reranker_inter_op_threads,
+        )
         self._session = ort.InferenceSession(
             str(model_dir / MODEL_FILE),
             sess_options=options,
             providers=["CPUExecutionProvider"],
         )
         self._input_names = {node.name for node in self._session.get_inputs()}
-        self._tokenizer = load_tokenizer(model_dir)
+        self._tokenizer = load_tokenizer(
+            model_dir, max_tokens or settings.reranker_max_tokens
+        )
 
     def _build_inputs(self, encodings: list[Encoding]) -> dict[str, np.ndarray]:
         inputs = {"input_ids": np.array([e.ids for e in encodings], dtype=np.int64)}
@@ -145,6 +184,16 @@ class TextCrossEncoder:
         encodings = self._tokenizer.encode_batch([(query, doc) for doc in documents])
         logits = self._session.run(None, self._build_inputs(encodings))[0]
         return [float(score) for score in logits[:, 0]]
+
+    def score_pairs(
+        self, query: str, documents: Iterable[str], batch_size: int | None = None
+    ) -> list[float]:
+        """Raw cross-encoder logits, one per document, in input order.
+
+        ``batch_size=None`` uses RERANK_BATCH_SIZE pairs per ONNX run.
+        """
+        size = batch_size or get_settings().rerank_batch_size
+        return list(self.rerank(query, documents, batch_size=max(1, size)))
 
     def rerank(
         self, query: str, documents: Iterable[str], batch_size: int = 64

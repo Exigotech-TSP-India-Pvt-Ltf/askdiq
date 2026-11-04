@@ -28,27 +28,33 @@ _ALL_FLAGS = [
     "low_retrieval_confidence",
     "possible_hallucination",
 ]
+# Owner voice guide: "specialist" only in the sales line; these hand over to
+# "our team" instead.
 _SPECIALIST_FLAGS = [
-    "unsafe_input_detected",
     "no_permission",
     "application_secret_request",
     "personal_contact_request",
-    "off_topic",
-    "no_sources",
     "llm_call_failed",
     "empty_llm_output",
+]
+# A specialist is never offered for a question unrelated to us: these flags
+# mean the question itself is out of scope (personal, medical, employee, or
+# any other real-world topic the KB does not cover), not that a detail about
+# us is merely unpublished.
+_NO_SPECIALIST_FLAGS = [
+    "off_topic",
+    "no_sources",
     "low_retrieval_confidence",
     "possible_hallucination",
 ]
 _BANNED = ("knowledge base", "supplied context", "the documents", "materials")
 _DASHES = re.compile(r"[-\u2013\u2014]")
-_BRAND = "DeployIQ"
 
 
 @pytest.mark.parametrize("flag", _ALL_FLAGS)
 def test_fallback_text_is_clean_and_deterministic(flag: str) -> None:
-    text = _fallback_answer([flag], _BRAND)
-    assert text == _fallback_answer([flag], _BRAND)
+    text = _fallback_answer([flag])
+    assert text == _fallback_answer([flag])
     lowered = text.lower()
     assert not any(word in lowered for word in _BANNED)
     assert not _DASHES.search(text)
@@ -56,24 +62,34 @@ def test_fallback_text_is_clean_and_deterministic(flag: str) -> None:
 
 
 @pytest.mark.parametrize("flag", _SPECIALIST_FLAGS)
-def test_help_fallbacks_hand_over_to_a_specialist(flag: str) -> None:
-    assert "specialist" in _fallback_answer([flag], _BRAND)
+def test_help_fallbacks_hand_over_to_our_team(flag: str) -> None:
+    text = _fallback_answer([flag])
+    assert "our team" in text
+    assert "specialist" not in text.lower()
 
 
-def test_off_topic_is_templated_with_the_brand() -> None:
-    text = _fallback_answer(["off_topic"], "Acme")
-    assert text.startswith("That one's outside what I can help with.")
-    assert "I'm here for Acme, Zero Trust" in text
+@pytest.mark.parametrize("flag", _NO_SPECIALIST_FLAGS)
+def test_off_scope_fallbacks_never_offer_a_specialist(flag: str) -> None:
+    assert "specialist" not in _fallback_answer([flag]).lower()
+
+
+def test_off_topic_is_the_fixed_off_topic_line() -> None:
+    from app.harness.prompt_catalog import off_topic_line
+
+    assert _fallback_answer(["off_topic"]) == off_topic_line()
 
 
 def test_default_ungrounded_wording() -> None:
-    text = _fallback_answer(["low_retrieval_confidence"], _BRAND)
-    assert text.startswith("I don't want to guess on that one.")
+    # Phase 2 contract: not answered from the KB -> the one fixed line.
+    from app.harness.prompt_catalog import NO_ANSWER_LINE
+
+    text = _fallback_answer(["low_retrieval_confidence"])
+    assert text == NO_ANSWER_LINE
 
 
 def test_unsafe_wins_over_other_flags() -> None:
-    text = _fallback_answer(["spam_detected", "unsafe_input_detected"], _BRAND)
-    assert text.startswith("I can't help with that, sorry.")
+    text = _fallback_answer(["spam_detected", "unsafe_input_detected"])
+    assert text.startswith("Sorry, I can't help with that one.")
 
 
 def _sources(*names: str) -> list[SourceChunk]:
@@ -129,7 +145,9 @@ def test_catalogue_pages_are_offered_by_service_name() -> None:
 
 
 def test_reply_hint() -> None:
-    assert REPLY_HINT == "Pick one, or tell me a bit more."
+    assert (
+        REPLY_HINT == "Just pick an option, or tell me a bit more about what you need."
+    )
 
 
 def test_slot_questions_and_preamble_make_no_plan_promise() -> None:

@@ -70,7 +70,7 @@ def test_match_prefers_heading_and_uses_word_boundaries():
 
 def test_lexical_boost_uses_expanded_terms_for_entity_chunks(monkeypatch):
     doc = uuid.uuid4()
-    names = {doc: "zero-trust-learn-more.md"}
+    names = {doc: "zero-trust.md"}
     assess = _chunk(doc, "Assess", "We assess your tenant.")
     plain = _chunk(doc, "What Is Zero Trust?", "A security model.")
     pool = [(plain, 0.6), (assess, 0.4)]
@@ -95,7 +95,7 @@ def test_no_change_without_entity_or_intent_words():
 
 def test_fetch_trigger_needs_matching_heading_or_enough_chunks():
     doc = uuid.uuid4()
-    names = {doc: "zero-trust-learn-more.md"}
+    names = {doc: "zero-trust.md"}
     three = [(_chunk(doc, h), 0.5) for h in ("A", "B", "C")]
     assert entities_missing_from_pool(["zero trust"], three, names, 3) == []
     intent = query_intent("What stages does it follow?")

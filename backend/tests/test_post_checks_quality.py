@@ -9,6 +9,7 @@ from app.guardrails.post_checks import (
     check_groundedness,
     is_off_topic_by_overlap,
     is_refusal,
+    query_content_words,
     query_has_overlap,
     split_claims,
     supported_claim_ratio,
@@ -365,6 +366,14 @@ def test_follow_up_skips_the_overlap_rule():
         is_off_topic_by_overlap("blorptivex zumquat", chunks, 0.2, 0.3, follow_up=True)
         is False
     )
+
+
+def test_pure_arithmetic_query_is_detected_as_non_linguistic():
+    # Real incident: "5+98 add this" has no 4+ letter word to compare, so the
+    # overlap heuristic alone can't flag it off-topic; the orchestrator's
+    # off-scope + decline-sentence override (app.harness.orchestrator) and the
+    # existing min_retrieval_score floor are the actual safety nets for it.
+    assert query_content_words("5+98 add this") == []
 
 
 def test_offline_style_question_overlapping_product_name_stays_on_topic():

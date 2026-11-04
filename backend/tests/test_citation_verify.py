@@ -235,24 +235,10 @@ def test_redos_time_budget_on_a_large_answer() -> None:
 
 
 async def _run(monkeypatch, llm_answer: str, sources: list[SourceChunk]):
-    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *_a, **_k: [])
+    # A plain-text reply: each sentence ships only if verbatim in its chunk.
+    from tests.grounded_fakes import patch_pipeline  # noqa: PLC0415
 
-    async def fake_retrieve(*_a, **_k):
-        return sources
-
-    async def fake_call_llm(_query, _chunks, _history=None):
-        return llm_answer, {
-            "prompt_tokens": 1,
-            "completion_tokens": 1,
-            "total_tokens": 2,
-        }
-
-    async def fake_post_checks(*_a, **_k):
-        return True, 0.85, []
-
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "call_llm", fake_call_llm)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
+    patch_pipeline(monkeypatch, sources, llm_answer)
     return await orchestrator.run_query(
         query="What does DeployIQ do about Essential Eight?",
         top_k=6,
@@ -304,7 +290,7 @@ async def test_marker_bearing_pure_decline_takes_the_refusal_branch(
         "We don't have details on that here. [1] Talk to one of our specialists.",
         sources,
     )
-    assert response.token_details["declined"] is True
+    assert response.outcome == "ungrounded"
     assert response.sources == [] and response.citations == []
     assert "[" not in response.answer
 

@@ -6,6 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 _OptionId = Annotated[str, StringConstraints(min_length=1, max_length=16)]
 
+# Hard request cap that only protects the server (422 beyond it). The product
+# limit is ``settings.max_query_length``: longer or blank questions reach the
+# pre-checks, which answer with the friendly too-long / empty template.
+QUERY_HARD_MAX_LENGTH = 20_000
+
 
 class ClarificationOption(BaseModel):
     """One choice of a clarifying question, grounded in the retrieved context."""
@@ -124,7 +129,9 @@ class ClarificationAnswer(BaseModel):
 
 class ChatTurn(BaseModel):
     role: Literal["user", "assistant"]
-    content: str = Field(..., min_length=1, max_length=4000)
+    # Loaded from stored messages, so it accepts whatever /query accepted
+    # (a blank or over-length question is stored with its template reply).
+    content: str = Field(..., max_length=QUERY_HARD_MAX_LENGTH)
     # Server-side only (loaded from the stored message): lets the harness see
     # that the previous assistant turn asked a clarifying question.
     outcome: str | None = Field(default=None, exclude=True)
@@ -149,7 +156,17 @@ class QueryRequest(BaseModel):
         }
     )
 
-    query: str = Field(..., min_length=1, max_length=2000)
+    query: str = Field(
+        ...,
+        max_length=QUERY_HARD_MAX_LENGTH,
+        description=(
+            "The user's question. Over the product limit (`MAX_QUERY_LENGTH`, "
+            "default 2000 characters) it is answered with the too-long template "
+            "(outcome `blocked`, flag `query_too_long`); empty or blank, with the "
+            "empty-question template (flag `empty_query`). Only beyond "
+            f"{QUERY_HARD_MAX_LENGTH} characters is the request rejected (422)."
+        ),
+    )
     filters: dict | None = Field(
         default=None,
         description=(

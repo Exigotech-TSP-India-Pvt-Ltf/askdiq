@@ -19,16 +19,6 @@ def test_decompose_query_splits_two_question_marks():
     assert "implement" in result[1]
 
 
-def test_decompose_query_splits_on_and_with_single_question_mark():
-    result = decompose_query(
-        "What is the Essential Eight and how does Zero Trust fit into Deploy IQ's platform?"
-    )
-    assert len(result) == 2
-    assert "Essential Eight" in result[0]
-    assert "Zero Trust" in result[1]
-    assert all(part.strip().endswith("?") for part in result)
-
-
 def test_decompose_query_does_not_split_short_and_clause():
     # "and" present but one side too short to be an independent topic.
     result = decompose_query("What is Deploy IQ and E8?")

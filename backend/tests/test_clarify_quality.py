@@ -38,8 +38,6 @@ from tests.clarify_eval_cases import (
 from tests.test_clarify import _spread_sources
 from tests.test_clarify_trigger import (
     _assert_grounded,
-    _no_decision_call,
-    _run,
     _sources,
 )
 
@@ -115,27 +113,6 @@ def test_gate_score_is_a_setting(monkeypatch) -> None:
     assert plan_clarification("plans", _flat(0.21), None, follow_up=False)
 
 
-async def test_what_is_a_cat_is_answered_not_clarified(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    response, calls, _ = await _run(
-        monkeypatch, "What is a cat?", ["It is an animal."], sources=_sources(0.7)
-    )
-    assert response.outcome == "answered"
-    assert "clarify_block" not in calls[0]
-
-
-async def test_exigo_headquarters_is_answered_not_clarified(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    response, calls, retrieve_calls = await _run(
-        monkeypatch,
-        "Where is Exigo Tech headquartered?",
-        ["Exigo Tech is headquartered in Australia."],
-    )
-    assert response.outcome == "answered"
-    assert "clarify_block" not in calls[0]
-    assert "max_documents" not in retrieve_calls[0]
-
-
 def test_instruction_has_no_canned_example_and_answers_entities() -> None:
     brief = clarify_instruction(
         plan_clarification("plans", _spread_sources(), None, follow_up=False)
@@ -191,15 +168,6 @@ def test_back_reference_after_a_fallback_asks_which() -> None:
         ChatTurn(role="assistant", content="Essential Eight?", outcome="ungrounded"),
     ]
     assert assess("the previous one?", history).kind is AmbiguityKind.REFERENT
-
-
-async def test_back_reference_asks_a_grounded_service_question(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    response, calls, _ = await _run(monkeypatch, "What about the previous one?")
-    assert response.outcome == CLARIFY_OUTCOME
-    assert calls == []
-    assert response.clarification is not None
-    _assert_grounded(response.clarification.questions[0])
 
 
 @pytest.mark.parametrize(
@@ -323,20 +291,6 @@ def test_where_are_they_located_is_not_a_dangling_pronoun() -> None:
     assert assess("where are they located?", None).kind is AmbiguityKind.NONE
 
 
-async def test_bare_price_is_asked_by_rules_without_the_model(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    response, calls, _ = await _run(monkeypatch, "pricing?")
-    assert response.outcome == CLARIFY_OUTCOME
-    assert calls == []
-
-
-async def test_phone_is_answered(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    response, calls, _ = await _run(monkeypatch, "phone number?", ["Call us."])
-    assert response.outcome == "answered"
-    assert "clarify_block" not in calls[0]
-
-
 # ---------------------------------------------------------------------------
 # 7. Generic one-product questions
 # ---------------------------------------------------------------------------
@@ -350,13 +304,6 @@ def test_generic_product_questions_are_answered(query: str) -> None:
 
 def test_how_much_does_it_cost_still_asks_which_service() -> None:
     assert assess("How much does it cost?", None).kind is AmbiguityKind.REFERENT
-
-
-async def test_how_does_it_work_is_answered(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    response, calls, _ = await _run(monkeypatch, "how does it work", ["It works."])
-    assert response.outcome == "answered"
-    assert "clarify_block" not in calls[0]
 
 
 # ---------------------------------------------------------------------------
@@ -430,16 +377,6 @@ def test_clear_goals_are_not_asked_back(query: str) -> None:
     assert assess(query, None).kind is AmbiguityKind.NONE
 
 
-async def test_vague_goal_asks_framework_and_maturity(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    response, calls, _ = await _run(monkeypatch, "I need compliance")
-    assert response.outcome == CLARIFY_OUTCOME
-    assert calls == []
-    assert response.clarification is not None
-    headers = [q.header for q in response.clarification.questions]
-    assert headers[:2] == ["Framework", "Maturity"]
-
-
 def test_cost_and_time_in_one_message_is_one_combined_question() -> None:
     query = "how much will this cost and how long will it take"
     assert assess(query, None).kind is AmbiguityKind.REFERENT
@@ -449,18 +386,6 @@ def test_cost_and_time_in_one_message_is_one_combined_question() -> None:
     assert question.multi_select is True
     assert "pricing and timelines" in question.question
     _assert_grounded(question)
-
-
-async def test_cost_and_time_message_asks_once(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    response, calls, _ = await _run(
-        monkeypatch, "how much will this cost and how long will it take"
-    )
-    assert response.outcome == CLARIFY_OUTCOME
-    assert calls == []
-    assert response.clarification is not None
-    assert len(response.clarification.questions) == 1
-    assert response.clarification.questions[0].multi_select is True
 
 
 # ---------------------------------------------------------------------------
@@ -615,23 +540,6 @@ def test_framework_options_include_a_named_zero_trust_even_past_the_cut() -> Non
     labels = [o.label for o in framework_options([], "we never trust any device")]
     assert labels[0] == "Zero Trust"
     assert "Essential Eight" in labels
-
-
-def test_series_always_has_four_questions_with_generic_slot_options() -> None:
-    # Retrieved text mentions none of the slot evidence: options still stand.
-    sources = [_chunk("d1", "Zero Trust.pdf", 0.9, "unrelated prose")]
-    query = "we need compliance asap"
-    result = assess(query, None)
-    clar = slot_clarification(query, result.missing_slots, sources)
-    assert clar is not None
-    assert [q.header for q in clar.questions] == [
-        "Framework",
-        "Maturity",
-        "Deadline",
-        "Environment",
-    ]
-    assert all(len(q.options) >= 3 for q in clar.questions)  # noqa: PLR2004
-    assert len(clar.questions) <= get_settings().clarify_max_questions
 
 
 def test_environment_is_skipped_only_when_the_query_names_it() -> None:

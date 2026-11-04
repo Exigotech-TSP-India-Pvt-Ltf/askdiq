@@ -40,20 +40,10 @@ def _source(n: int = 1) -> SourceChunk:
 
 
 async def _run(monkeypatch, query: str, llm_text: str):
-    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *_a, **_k: [])
+    # A plain-text reply: each sentence ships only if verbatim in its chunk.
+    from tests.grounded_fakes import patch_pipeline  # noqa: PLC0415
 
-    async def fake_retrieve(*_a, **_k):
-        return [_source(1), _source(2)]
-
-    async def fake_llm(*_a, **_k):
-        return llm_text, {"prompt_tokens": 1, "completion_tokens": 1}
-
-    async def fake_post(*_a, **_k):
-        return True, 0.9, []
-
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "call_llm", fake_llm)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post)
+    patch_pipeline(monkeypatch, [_source(1), _source(2)], llm_text)
     return await orchestrator.run_query(
         query=query,
         top_k=3,
@@ -150,8 +140,7 @@ async def test_decline_answer_has_no_sources_or_citations(monkeypatch) -> None:
     assert response.grounded is False
     assert response.outcome == "ungrounded"
     assert "[" not in response.answer
-    assert response.token_details
-    assert response.token_details.get("declined") is True
+    assert response.confidence == 0.0
 
 
 async def test_supported_answer_keeps_markers_loses_decline_marker(monkeypatch) -> None:

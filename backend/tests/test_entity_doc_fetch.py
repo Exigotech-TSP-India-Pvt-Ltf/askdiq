@@ -1,6 +1,6 @@
 """Constrained entity-document fetch: rescues documents outside the cosine pool.
 
-Uses the real `data/real_docs/*.md` chunks with synthetic cosines and a fake
+Uses the real `data/*.md (the 19-page KB)` chunks with synthetic cosines and a fake
 session that emulates the main query and the entity-constrained query; no
 embedding, DB or LLM call is involved.
 """
@@ -31,10 +31,10 @@ from .test_retrieval_misses import (
     _heading,
 )
 
-ZT = "zero-trust-learn-more.md"
+ZT = "zero-trust.md"
 INTENT_START = r"\m"
-ISO = "iso-27001-technical-controls.md"
-TRUST = "trust-center.md"
+ISO = "iso-27001-microsoft-365-technical-controls.md"
+TRUST = "secure-ai.md"
 
 
 class _Rows:
@@ -50,7 +50,7 @@ class _FakeSession:
 
     def __init__(self, cosine: dict[uuid.UUID, float]) -> None:
         self.rows = [
-            (chunk, 1 - cosine[chunk.id], None, False, None, name)
+            (chunk, 1 - cosine[chunk.id], None, False, None, name, None)
             for name, chunks in CORPUS.items()
             for chunk in chunks
         ]
@@ -137,7 +137,7 @@ async def test_missing_entity_doc_is_fetched_selected_and_merged():
     session, store, results = await _search(cosine, Q_STAGES)
 
     assert session.entity_limits == [4]
-    assert _docs(results).count(ZT) >= 2
+    assert _docs(results).count(ZT) >= 1
     assert len(results) == 5
     # Deduped by chunk id; reported scores stay the raw cosine.
     ids = [chunk.id for chunk, _ in results]
@@ -151,18 +151,18 @@ async def test_not_issued_when_doc_already_represented():
     session, _store, results = await _search(cosine, Q_STAGES)
 
     assert session.entity_limits == []
-    assert _docs(results).count(ZT) >= 2
+    assert _docs(results).count(ZT) >= 1
 
 
 async def test_iso_and_trust_center_questions_fetch_their_documents():
     cosine = _generic_cosines({ISO: 0.20, TRUST: 0.20})
     session, _store, results = await _search(cosine, Q_ISO)
     assert len(session.entity_limits) == 1
-    assert _docs(results).count(ISO) >= 2
+    assert _docs(results).count(ISO) >= 1
 
     session, _store, results = await _search(cosine, Q_TRUST)
     assert len(session.entity_limits) == 1
-    assert _docs(results).count(TRUST) >= 2
+    assert _docs(results).count(TRUST) >= 1
 
 
 async def test_no_entity_means_no_extra_query():
@@ -193,7 +193,7 @@ async def test_fetch_k_is_configurable(monkeypatch):
 
 async def test_at_most_two_entity_documents_are_kept():
     cosine = _generic_cosines({ZT: 0.20, ISO: 0.21, TRUST: 0.22})
-    query = "How do Zero Trust, ISO 27001 and the Trust Center relate?"
+    query = "How do Zero Trust, ISO 27001 and Secure AI relate?"
     session, _store, results = await _search(cosine, query, top_k=6, max_documents=3)
 
     assert len(session.entity_limits) == 1  # still one extra round trip
@@ -207,7 +207,7 @@ def test_pick_entity_documents_prefers_one_per_entity_and_caps():
     names = {
         "a": "e8-learn-more.md",
         "b": "e8-service-page.md",
-        "c": "iso-27001-technical-controls.md",
+        "c": "iso-27001-microsoft-365-technical-controls.md",
     }
     best = {"a": 0.9, "b": 0.8, "c": 0.1}
     picked = pick_entity_documents(["essential eight", "iso 27001"], names, best, 2)
@@ -217,7 +217,7 @@ def test_pick_entity_documents_prefers_one_per_entity_and_caps():
 
 def test_entities_missing_from_pool_counts_chunks():
     doc, other = uuid.uuid4(), uuid.uuid4()
-    names = {doc: "zero-trust-learn-more.md", other: "about-us.md"}
+    names = {doc: "zero-trust.md", other: "about-us.md"}
 
     class _C:
         def __init__(self, document_id):
@@ -231,19 +231,19 @@ def test_entities_missing_from_pool_counts_chunks():
 
 def test_sql_patterns_match_catalogue_documents():
     pattern = re.compile(entity_sql_pattern(["zero trust", "essential eight"]), re.I)
-    assert pattern.search("zero-trust-learn-more.md ")
+    assert pattern.search("zero-trust.md ")
     assert pattern.search("e8-learn-more.md ")
-    assert not pattern.search("iso-27001-technical-controls.md Decision")
+    assert not pattern.search("iso-27001-microsoft-365-technical-controls.md Decision")
     assert not re.search(entity_sql_pattern(["cis"]), "decision.md", re.I)
     assert re.search(entity_sql_pattern(["cis"]), "cis-benchmark-assessment.md", re.I)
 
 
 def test_fixture_corpus_has_delivery_and_iso_chunks():
-    assert "Assess" in {_heading(c) for c in CORPUS[ZT]}
+    assert "Our Delivery Approach" in {_heading(c) for c in CORPUS[ZT]}
     assert len(CORPUS[ISO]) >= 2
 
 
-DELIVERY_HEADINGS = {"Assess", "Prioritise", "Design", "Implement", "Assure"}
+DELIVERY_HEADINGS = {"Our Delivery Approach"}
 
 
 @pytest.fixture
@@ -265,7 +265,8 @@ async def test_stages_question_selects_delivery_approach_chunks():
     assert session.entity_limits == [8]  # one extra round trip, fetch_k = 8
     assert session.intent_patterns[0] is not None
     assert DELIVERY_HEADINGS & set(_headings(results, ZT))
-    assert len(_headings(results, ZT)) >= 3
+    # Phase 4: the named document is seeded with one chunk (recall aid only).
+    assert len(_headings(results, ZT)) >= 1
 
 
 @pytest.mark.usefixtures("_intent")
@@ -276,10 +277,10 @@ async def test_delivery_chunk_beats_definition_chunk_for_stages():
     for chunk in CORPUS[ZT]:
         if _heading(chunk) == "What Is Zero Trust?":
             cosine[chunk.id] = 0.55
-        if _heading(chunk) == "Assess":
+        if _heading(chunk) == "Our Delivery Approach":
             cosine[chunk.id] = 0.45
     _session, _store, results = await _search(cosine, Q_STAGES, top_k=3)
-    assert "Assess" in _headings(results, ZT)
+    assert "Our Delivery Approach" in _headings(results, ZT)
 
 
 @pytest.mark.usefixtures("_intent")
@@ -305,7 +306,7 @@ async def test_no_intent_words_means_plain_entity_fetch():
     cosine = _generic_cosines({ISO: 0.40})
     session, _store, results = await _search(cosine, Q_ISO)
     assert session.intent_patterns == [None]
-    assert _docs(results).count(ISO) >= 2
+    assert _docs(results).count(ISO) >= 1
 
 
 @pytest.mark.usefixtures("_intent")

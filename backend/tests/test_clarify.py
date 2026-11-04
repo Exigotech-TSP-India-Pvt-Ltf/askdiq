@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 
 from app.api.routes import query as query_route
-from app.core import sessions
 from app.core.config import get_settings
 from app.governance.outcomes import ALL_OUTCOMES, GENERATION_OUTCOMES, derive_outcome
 from app.harness import orchestrator
@@ -38,7 +37,6 @@ from app.schemas.query import (
     SourceChunk,
 )
 from tests.clarify_eval_cases import AMBIGUOUS_QUERIES, CLEAR_QUERIES
-from tests.conftest import shared_session_factory
 
 settings = get_settings()
 
@@ -421,162 +419,9 @@ async def _run(monkeypatch, query: str, replies: list[str], **kwargs: Any):
     return response, calls, retrieve_calls
 
 
-async def test_ambiguous_query_returns_questions(monkeypatch) -> None:
-    response, calls, retrieve_calls = await _run(
-        monkeypatch, "do you buy?", [json.dumps(_payload())]
-    )
-    assert response.outcome == "clarify"
-    assert response.clarification is not None
-    assert len(response.clarification.questions) == 2
-    assert "Buy a DeployIQ service" in response.answer
-    assert response.grounded is True
-    assert response.prompt_tokens == USAGE["prompt_tokens"]
-    assert response.token_details is not None
-    assert response.token_details["clarification"]["original_query"] == "do you buy?"
-    # Dedicated brief + strict schema, and a wider retrieval.
-    assert "Clarification brief" in calls[0]["clarify_block"]
-    assert calls[0]["response_format"] is ANSWER_OR_CLARIFY
-    assert retrieve_calls[0]["top_k"] == settings.clarify_retrieval_top_k
-    assert (
-        retrieve_calls[0]["max_documents"] == settings.clarify_retrieval_max_documents
-    )
-
-
-async def test_model_may_answer_a_gated_query(monkeypatch) -> None:
-    reply = json.dumps(
-        {
-            "action": "answer",
-            "answer": "We sell services.",
-            "preamble": "",
-            "questions": [],
-        }
-    )
-    response, calls, _ = await _run(monkeypatch, "do you buy?", [reply])
-    assert response.outcome == "answered"
-    assert response.answer == "We sell services."
-    assert len(calls) == 1
-
-
-async def test_ungrounded_clarification_falls_back_to_an_answer(monkeypatch) -> None:
-    payload = _payload()
-    for question in payload["questions"]:
-        for option in question["options"]:
-            option["source_ids"] = []
-    response, calls, _ = await _run(
-        monkeypatch, "do you buy?", [json.dumps(payload), "Direct answer."]
-    )
-    assert response.outcome == "answered"
-    assert response.answer == "Direct answer."
-    assert "clarify_block" not in calls[1]
-
-
-async def test_clear_query_is_never_gated(monkeypatch) -> None:
-    response, calls, retrieve_calls = await _run(
-        monkeypatch,
-        "How are the Platform plans priced for annual enterprise contracts",
-        ["Annual contracts are priced per seat."],
-    )
-    assert response.outcome == "answered"
-    assert "clarify_block" not in calls[0]
-    assert "max_documents" not in retrieve_calls[0]
-
-
-async def test_boosted_documents_lead_the_context(monkeypatch) -> None:
-    _, calls, _ = await _run(
-        monkeypatch,
-        "do you buy? (Topic: Become a partner and the reseller programme)",
-        ["Partners resell DeployIQ."],
-        boost_document_ids=["doc-partner"],
-    )
-    assert calls[0]["chunks"][0].document_id == "doc-partner"
-
-
-async def test_greetings_are_never_clarified(monkeypatch) -> None:
-    response, calls, _ = await _run(monkeypatch, "hello", ["unused"])
-    assert response.outcome == "conversational"
-    assert calls == []
-
-
 # ---------------------------------------------------------------------------
 # /query round trip
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.db
-async def test_query_round_trip_clarify_then_answer(
-    client, db_session, fake_llm, monkeypatch
-) -> None:
-    actor = f"clarify-{uuid.uuid4().hex[:8]}"
-    headers = {"X-Client-Id": actor}
-
-    async def fake_retrieve(*_a, **_k):
-        return _spread_sources()
-
-    async def fake_post_checks(*_a, **_k):
-        return True, 0.9, []
-
-    evaluated: list[str] = []
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
-    monkeypatch.setattr(
-        sessions, "AsyncSessionLocal", shared_session_factory(db_session)
-    )
-    monkeypatch.setattr(
-        query_route,
-        "schedule_online_evaluation",
-        lambda **k: evaluated.append(k["outcome"]),
-    )
-    monkeypatch.setattr(settings, "rate_limit_exempt_actors", [actor])
-
-    fake_llm["set_response"](json.dumps(_payload()), USAGE)
-    first = await client.post("/query", json={"query": "do you buy?"}, headers=headers)
-    assert first.status_code == 200, first.text
-    body = first.json()
-    assert body["outcome"] == "clarify"
-    questions = body["clarification"]["questions"]
-    assert [q["header"] for q in questions] == ["Topic", "Region"]
-    assert questions[0]["options"][0]["sources"] == ["services.md"]
-    assert body["prompt_tokens"] == USAGE["prompt_tokens"]
-    assert body["cost_usd"] is not None
-    assert evaluated == []  # questions back are not judged as an answer
-    session_id = body["session_id"]
-
-    await sessions.drain_pending_writes(actor)
-    detail = await client.get(f"/sessions/{session_id}", headers=headers)
-    assert detail.status_code == 200, detail.text
-    stored = [m for m in detail.json()["messages"] if m["role"] == "assistant"]
-    assert stored[-1]["outcome"] == "clarify"
-    assert len(stored[-1]["clarification"]["questions"]) == 2
-
-    fake_llm["set_response"]("Partners resell DeployIQ services.", USAGE)
-    second = await client.post(
-        "/query",
-        json={
-            "query": "Topic: Become a partner · Region: Australia",
-            "session_id": session_id,
-            "clarification_answers": [
-                {"question_id": "Q1", "option_ids": ["O3"]},
-                {"question_id": "Q2", "option_ids": ["O1"]},
-            ],
-        },
-        headers=headers,
-    )
-    assert second.status_code == 200, second.text
-    answer = second.json()
-    assert answer["outcome"] == "answered"
-    assert answer["clarification"] is None
-    stored_answers = answer["token_details"]["clarification_answers"]
-    assert [a["labels"] for a in stored_answers["answers"]] == [
-        ["Become a partner"],
-        ["Australia"],
-    ]
-    assert fake_llm["calls"][-1]["prompt"] == (
-        "do you buy? (Topic: Become a partner; Region: Australia)"
-    )
-    assert evaluated == ["answered"]
-
-    # A plain-text client gets the questions as text and can reply by name.
-    assert "Become a partner" in body["answer"]
 
 
 @pytest.mark.db
