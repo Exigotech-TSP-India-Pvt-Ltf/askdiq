@@ -112,3 +112,33 @@ def test_creative_wins_over_regulated_subject() -> None:
 
 def test_long_input_is_bounded() -> None:
     assert detect_task_type("translate " + "a " * 5000 + "into Hindi") is None
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Tell me a joke, then tell me what the Frontier package includes",
+        "tell me a joke and what's in Frontier",
+        "write a story about a hacker. what is zero trust?",
+    ],
+)
+def test_creative_part_of_a_compound_ask_is_retrieved(query: str) -> None:
+    # ob-13: the KB part is answered; the joke part gets the off-topic line.
+    assert detect_task_type(query) is None
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Can you tell me if my company is legally required to comply with the Essential Eight?",
+        "are we legally required to have MFA?",
+        "is our business required by law to report breaches?",
+    ],
+)
+def test_own_legal_obligation_is_regulated(query: str) -> None:
+    # ob-46
+    assert detect_task_type(query) is TaskType.REGULATED
+
+
+def test_general_legal_fact_is_retrieved() -> None:
+    assert detect_task_type("Is Essential Eight legally required for agencies?") is None

@@ -40,6 +40,7 @@ _FIXED_REPLIES = {
     ex.MANAGER: conv.SUPPORT_MANAGER_REPLY,
     ex.FRUSTRATION: conv.SUPPORT_FRUSTRATION_REPLY,
     ex.CALLBACK: conv.CALLBACK_REPLY,
+    ex.CALLBACK_DETAILS: conv.CALLBACK_DETAILS_REPLY,
     ex.ASSURANCE: conv.ASSURANCE_REPLY,
     ex.INCIDENT: conv.INCIDENT_REPLY,
 }
@@ -95,6 +96,8 @@ def _clean(reply: str) -> None:
 def test_reply_keys_map_to_fixed_replies(key: str, expected: str) -> None:
     reply = conv.canned_reply_for(key, "anything")
     assert reply == expected
+    # Voice guide: no specialist hand-off outside the sales line.
+    assert "specialist" not in reply.lower()
     if key not in _UNCHANGED_TEXTS:
         _clean(reply)
 
@@ -111,10 +114,17 @@ def test_every_example_reply_key_renders() -> None:
 
 
 def test_support_and_callback_replies_point_to_contact_page() -> None:
-    for key in (ex.CANCEL, ex.BROKEN, ex.MANAGER, ex.FRUSTRATION, ex.CALLBACK):
+    for key in (
+        ex.CANCEL,
+        ex.BROKEN,
+        ex.MANAGER,
+        ex.FRUSTRATION,
+        ex.CALLBACK,
+        ex.CALLBACK_DETAILS,
+    ):
         reply = conv.canned_reply_for(key, "x")
         assert "Contact page" in reply
-        assert "team" in reply or "specialist" in reply
+        assert "team" in reply
 
 
 def test_human_request_stays_with_contact_detector() -> None:

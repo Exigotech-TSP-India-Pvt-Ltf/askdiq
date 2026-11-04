@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import string
 import time
 
 import pytest
@@ -41,6 +42,55 @@ from app.guardrails.pre_checks import run_pre_checks, sanitize_query
 )
 def test_normalise_input(raw: str, expected: str) -> None:
     assert normalise_input(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # kb-wrap-15: angle brackets are wrappers, not an HTML tag.
+        (
+            "<<what is iso 27001 technical controls>>",
+            "what is iso 27001 technical controls",
+        ),
+        ("<what is E8>", "what is E8"),
+        ("<a lot of controls>", "a lot of controls"),
+        ('<a href="x">E8</a>', "E8"),
+        ("<br/>what is CIS", "what is CIS"),
+        # A fence's language tag only before a newline; inline keeps "what".
+        ("```what is cis```", "what is cis"),
+        ("```python\nwhat is E8\n```", "what is E8"),
+    ],
+)
+def test_only_real_tags_and_fences_are_stripped(raw: str, expected: str) -> None:
+    assert normalise_input(raw) == expected
+
+
+_MARKUP_ONLY = (
+    "`",
+    "```",
+    "**",
+    "__",
+    "<>",
+    "<<>>",
+    "<b></b>",
+    "\u200b",
+    "\x00",
+    "` `",
+)
+
+
+@pytest.mark.parametrize("raw", [chr(c) for c in range(33, 127)] + list(_MARKUP_ONLY))
+def test_non_blank_input_never_normalises_to_empty(raw: str) -> None:
+    # kb-sym-28: "`" became "" and the embedding call failed (HTTP 502).
+    out = normalise_input(raw)
+    assert out
+    run_pre_checks(out, 500, raw=raw)
+
+
+@pytest.mark.parametrize("raw", _MARKUP_ONLY)
+def test_markup_only_input_is_unclear(raw: str) -> None:
+    out = normalise_input(raw)
+    assert "unclear_input" in run_pre_checks(out, 500, raw=raw)
 
 
 def test_normalise_is_idempotent() -> None:
@@ -158,3 +208,9 @@ def test_maths_and_clock_are_off_topic_not_spam(query: str) -> None:
 
 def test_pronounceable_nonsense_is_still_spam() -> None:
     assert _flags("blorf zindle quarpt") == ["spam_detected"]
+
+
+@pytest.mark.parametrize("raw", list(string.punctuation))
+def test_lone_punctuation_gets_the_unclear_template(raw: str) -> None:
+    # kb-sym-28: never an empty query, never an embedding call.
+    assert "unclear_input" in run_pre_checks(normalise_input(raw), 500, raw=raw)

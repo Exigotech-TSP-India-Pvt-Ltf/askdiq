@@ -255,3 +255,246 @@ def test_contact_detail_regexes_are_bounded() -> None:
     payload = "office " * 5000 + "what about " * 5000
     assert ex.names_contact_detail(payload)
     assert not ex.is_follow_up_fragment(" " * 5000 + "what about email")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Does your AI make binding decisions?",
+        "When AI is used, who stays accountable?",
+        "Are the recommendations AI-generated or reviewed by humans?",
+    ],
+)
+def test_ai_governance_questions_never_get_the_identity_reply(text: str) -> None:
+    index = _one_row_index(Intent.IDENTITY, ex.IDENTITY, "is this an AI?")
+    match = intent.nearest_intent(text, _canned_vec(), index)
+    assert not match.result.pure
+    assert match.reply_key is None
+
+
+@pytest.mark.parametrize(
+    ("label", "reply", "example", "text"),
+    [
+        (
+            Intent.INCIDENT,
+            ex.INCIDENT,
+            "we have ransomware",
+            "How does ransomware encrypt files?",
+        ),
+        (
+            Intent.ACCOUNT_SUPPORT,
+            ex.MANAGER,
+            "get me your boss",
+            "My boss hates me, what should I do?",
+        ),
+        (
+            Intent.CAPABILITY,
+            ex.ASSURANCE,
+            "do you guarantee security",
+            "Do you guarantee uninterrupted delivery?",
+        ),
+        (
+            Intent.CAPABILITY,
+            ex.ASSURANCE,
+            "do you guarantee security",
+            "do you guarantee results",
+        ),
+    ],
+)
+def test_reply_needs_what_it_is_for(
+    label: Intent, reply: str, example: str, text: str
+) -> None:
+    match = intent.nearest_intent(
+        text, _canned_vec(), _one_row_index(label, reply, example)
+    )
+    assert not match.result.pure
+    assert match.reply_key is None
+
+
+@pytest.mark.parametrize(
+    ("label", "reply", "text"),
+    [
+        (Intent.IDENTITY, ex.IDENTITY, "is this an AI?"),
+        (Intent.IDENTITY, ex.IDENTITY, "who are you"),
+        (Intent.CAPABILITY, ex.PERSONA_PRIVACY, "is our conversation confidential"),
+        (Intent.INCIDENT, ex.INCIDENT, "a hacker got into our network"),
+        (Intent.ACCOUNT_SUPPORT, ex.MANAGER, "let me talk to your supervisor"),
+        (Intent.CAPABILITY, ex.ASSURANCE, "can you guarantee we will never be hacked?"),
+        (Intent.CAPABILITY, ex.ASSURANCE, "promise me it's safe"),
+    ],
+)
+def test_genuine_canned_intents_keep_their_reply(
+    label: Intent, reply: str, text: str
+) -> None:
+    match = intent.nearest_intent(
+        text, _canned_vec(), _one_row_index(label, reply, text)
+    )
+    assert match.result.pure
+    assert match.reply_key == reply
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I want to purchase Frontier for 200 users",
+        "we'd like to buy the Starter package",
+        "can we order Strengthen for our team",
+    ],
+)
+def test_explicit_purchase_ask_is_buying_whatever_the_score(text: str) -> None:
+    match = intent.nearest_intent(text, _vec(question=0.3, buying=0.1), _index())
+    assert match.result.intent == Intent.BUYING
+    assert not match.result.pure
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "My name is John Smith, email john.smith@acme.com.au, phone 0412 345 678. "
+        "Can someone call me about Essential Eight?",
+        "call me on 0412 345 678, I'm John from Acme",
+        "please email me at jo@example.com about Zero Trust",
+    ],
+)
+async def test_callback_with_own_details_gets_the_callback_reply(
+    monkeypatch, text: str
+) -> None:
+    async def boom(*_a, **_k):
+        raise AssertionError("no embedding for a callback with contact details")
+
+    monkeypatch.setattr(intent.embeddings, "embed_text", boom)
+    match = await intent.classify_intent(text)
+    assert match.result.pure
+    assert match.reply_key == ex.CALLBACK_DETAILS
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "what is your phone number",
+        "can someone call me",
+        "my number is 0412 345 678",
+    ],
+)
+def test_callback_rule_needs_an_ask_and_own_details(text: str) -> None:
+    assert not intent.callback_with_details(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "buying"),
+    [
+        ("How much is Frontier?", True),
+        ("What does Frontier cost?", True),
+        ("By how much did ransomware drop?", False),
+        ("Do I need to sign in to confirm a booking?", False),
+        ("book a demo", True),
+    ],
+)
+def test_buying_cue_needs_price_or_purchase_wording(text: str, buying: bool) -> None:
+    assert intent.has_buying_cue(text) is buying
+
+
+@pytest.mark.parametrize("text", ["quote", "quote pls", "quote for Zero Trust"])
+def test_short_quote_ask_is_buying_at_a_low_score(text: str) -> None:
+    # fin-clar-quote-name: "quote" scored 0.29 against the buying examples.
+    match = intent.nearest_intent(text, _vec(question=0.29, buying=0.2), _index())
+    assert match.result.intent == Intent.BUYING
+    # Live, "quote" sat nearest an unclear "bye" (0.41): still buying.
+    unclear = intent.nearest_intent(
+        text, _vec(noise=0.8, question=0.29, greeting=0.41, buying=0.2), _index()
+    )
+    assert unclear.result.intent == Intent.BUYING
+
+
+def test_clear_small_talk_with_a_price_word_keeps_its_label() -> None:
+    match = intent.nearest_intent(
+        "your prices are a joke", _vec(complaint=0.9, question=0.3), _index()
+    )
+    assert match.result.intent == Intent.COMPLAINT
+
+
+def test_long_quote_question_still_needs_the_buying_score() -> None:
+    text = "what does the word quote mean in the terms of service page"
+    match = intent.nearest_intent(text, _vec(question=0.6, buying=0.2), _index())
+    assert match.result.intent == Intent.QUESTION
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Who will I speak with if I book a session?",
+        "how do I get started?",
+        "what does the demo include?",
+    ],
+)
+def test_booking_info_question_is_not_buying(text: str) -> None:
+    # sec-a-booking-intro-01: answered from the booking page, no sales pitch.
+    assert intent.is_booking_info_question(text)
+    match = intent.nearest_intent(text, _vec(question=0.5, buying=0.6), _index())
+    assert match.result.intent == Intent.QUESTION
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["book a demo", "can I book a demo?", "what does the demo cost?"],
+)
+def test_booking_request_or_price_ask_stays_buying(text: str) -> None:
+    assert not intent.is_booking_info_question(text)
+    match = intent.nearest_intent(text, _vec(question=0.5, buying=0.6), _index())
+    assert match.result.intent == Intent.BUYING
+
+
+@pytest.mark.parametrize(
+    ("label", "reply", "example", "text"),
+    [
+        # para-phone: the visitor wants our number, not a callback.
+        (
+            Intent.CONTACT,
+            ex.CALLBACK,
+            "please ring me",
+            "whats the best number to ring you on",
+        ),
+        # ob-02: a privacy question near "who made this chatbot".
+        (
+            Intent.IDENTITY,
+            ex.PERSONA_CREATOR,
+            "who made this chatbot",
+            "what happens to the stuff i type into this chatbot thing?",
+        ),
+    ],
+)
+def test_persona_and_callback_replies_need_their_cue(
+    label: Intent, reply: str, example: str, text: str
+) -> None:
+    match = intent.nearest_intent(
+        text, _canned_vec(), _one_row_index(label, reply, example)
+    )
+    assert not match.result.pure
+    assert match.reply_key is None
+
+
+@pytest.mark.parametrize(
+    ("label", "reply", "text"),
+    [
+        (Intent.CONTACT, ex.CALLBACK, "give me a call on 0400 000 000"),
+        (Intent.CONTACT, ex.CALLBACK, "can your team call me this afternoon"),
+        (Intent.IDENTITY, ex.PERSONA_CREATOR, "who do you work for"),
+        (Intent.IDENTITY, ex.PERSONA_MODEL, "are you built on openai"),
+        (Intent.CAPABILITY, ex.PERSONA_LANGUAGES, "can I chat with you in Spanish"),
+        (Intent.CAPABILITY, ex.PERSONA_PRIVACY, "does anyone read what I type here"),
+    ],
+)
+def test_every_example_style_keeps_its_cue(
+    label: Intent, reply: str, text: str
+) -> None:
+    match = intent.nearest_intent(
+        text, _canned_vec(), _one_row_index(label, reply, text)
+    )
+    assert match.reply_key == reply
+
+
+def test_every_canned_example_passes_its_own_guards() -> None:
+    # A guard must never block the examples that define the reply.
+    for _label, reply, text in ex.EXAMPLES:
+        if reply is not None:
+            assert not intent._key_mismatch(text, reply), text

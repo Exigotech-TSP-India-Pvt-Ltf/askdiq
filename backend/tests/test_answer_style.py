@@ -494,6 +494,7 @@ async def test_run_query_with_style_and_citations(monkeypatch) -> None:
             ),
             claim("MFA", "MFA", source=2, kind="item"),
             claim("Backups", "Backups", source=9, kind="item"),
+            claim("Patching", "Patching", source=9, kind="item"),
             claim("I hope this helps!", "MFA"),
         ]
     )
@@ -502,9 +503,13 @@ async def test_run_query_with_style_and_citations(monkeypatch) -> None:
 
     response = await run("What is the Essential Eight?", style_key="session-1")
 
-    # Unknown source 9 and the stock closer are dropped; numbers are per
-    # document in first-use order and match the citations exactly.
-    assert response.answer == "We cover eight mitigation strategies. [1]\n\n- MFA [2]"
+    # A verbatim quote cited with an unknown Source number (9) is re-pointed
+    # to the first chunk holding it (claims.py); one no chunk holds and the
+    # stock closer are dropped. Numbers are per document in first-use order
+    # and match the citations exactly.
+    assert response.answer == (
+        "We cover eight mitigation strategies. [1]\n\n- MFA [2]\n- Backups [1]"
+    )
     assert [c.n for c in response.citations] == [1, 2]
     assert response.citations[0].url == "https://docs.deployiq.com.au/doc-1"
     details = response.token_details

@@ -191,6 +191,26 @@ def build_citation(number: int, source: SourceChunk) -> Citation:
     )
 
 
+def with_backing_chunks(
+    cited: Sequence[SourceChunk], backing: Iterable[SourceChunk]
+) -> list[SourceChunk]:
+    """``cited`` plus every other ``backing`` chunk of a cited document.
+
+    ``cited`` holds one chunk per citation in citation order, so
+    ``sources[n - 1]`` stays the chunk of citation ``n``; the further chunks
+    of those documents that back a shown claim follow, de-duplicated by chunk
+    id. A chunk of an uncited document is never added.
+    """
+    out = list(cited)
+    documents = {s.document_id for s in out}
+    seen = {s.chunk_id for s in out}
+    for source in backing:
+        if source.document_id in documents and source.chunk_id not in seen:
+            seen.add(source.chunk_id)
+            out.append(source)
+    return out
+
+
 def apply_citations(
     answer: str, sources: Sequence[SourceChunk]
 ) -> tuple[str, list[Citation]]:
@@ -399,7 +419,7 @@ def _after_factual(unit: str, markers: str) -> str | None:
     return f"{plain[:end]}{markers}{rest}"
 
 
-class _Verifier:
+class _Verifier:  # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
         sources: Sequence[SourceChunk],
@@ -413,6 +433,7 @@ class _Verifier:
         self.index: dict[int, _ChunkIndex] = {}
         self.numbers: dict[str, int] = {}  # document_id -> new number
         self.selected: list[SourceChunk] = []
+        self.backing: list[SourceChunk] = []  # every chunk behind a kept marker
 
     def chunk(self, number: int) -> _ChunkIndex:
         if number not in self.index:
@@ -463,6 +484,7 @@ class _Verifier:
         out: list[int] = []
         for number in numbers:
             source = self.sources[number - 1]
+            self.backing.append(source)
             new = self.numbers.get(source.document_id)
             if new is None:
                 self.selected.append(source)
@@ -515,7 +537,8 @@ def verify_and_select(
 
     Numbers are reassigned from 1 in order of first appearance, one per
     document, so ``citations[i].n == i + 1`` and ``sources[i]`` is the chunk of
-    citation ``i + 1``.
+    citation ``i + 1``. The other chunks behind a kept marker follow (see
+    :func:`with_backing_chunks`), so every excerpt a claim rests on is returned.
     """
     if "[" not in answer:
         return VerifiedCitations(answer)
@@ -532,7 +555,11 @@ def verify_and_select(
         build_citation(number, source)
         for number, source in enumerate(verifier.selected, start=1)
     ]
-    return VerifiedCitations("".join(rewritten), citations, verifier.selected)
+    return VerifiedCitations(
+        "".join(rewritten),
+        citations,
+        with_backing_chunks(verifier.selected, verifier.backing),
+    )
 
 
 def verify_citations(

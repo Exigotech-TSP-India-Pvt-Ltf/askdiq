@@ -150,6 +150,14 @@ _SENTENCE_RE = re.compile(r"[^.!?\n]+")
 _SPACE_RE = re.compile(r"\s+")
 # A ``{name}`` placeholder inside ``re.escape`` output ("\{name\}").
 _PLACEHOLDER_RE = re.compile(r"\\\{\w+\\\}")
+# Lines code appends to an answer (``app.harness.prompt_catalog``): not claims,
+# so they are removed before the judge scores faithfulness.
+FIXED_LINE_NAMES = (
+    "PRICING_LINE",
+    "SALES_CONTACT_LINE",
+    "PARTIAL_LINE",
+    "PAGE_LINK_LINE",
+)
 # Emitted flag aliases: the pre-LLM identity refusal flags "identity_probe".
 FLAG_ALIASES: dict[str, frozenset[str]] = {
     "identity": frozenset({"identity_probe"}),
@@ -209,6 +217,32 @@ def template_regex(template: str, *, tail: bool = False) -> re.Pattern[str]:
     """A fixed line with ``{name}`` placeholders as a regex over ``norm`` text."""
     body = _PLACEHOLDER_RE.sub(".+?", re.escape(norm(template)))
     return re.compile(rf"(?:^|\s){body}\s*$" if tail else body)
+
+
+def fixed_match(answer: str, template: str) -> bool:
+    """A normalised ``answer`` is ``template`` (``{name}`` matches any text)."""
+    if "{" not in template:
+        return answer == norm(template)
+    return template_regex(template).fullmatch(answer) is not None
+
+
+def fixed_line_regex(template: str) -> re.Pattern[str]:
+    """A fixed line over the RAW answer (case, quotes and its markers loose).
+
+    ``{url}`` / ``{email}`` match one token, any other placeholder lazily.
+    """
+    body = re.escape(" ".join(template.split()))
+    body = re.sub(r"\\\{(?:url|email)\\\}", r"\\S+", body)
+    body = _PLACEHOLDER_RE.sub(".+?", body).replace("'", "['\\u2019]")
+    return re.compile(rf"{body}(?:[ \t]*\[\d{{1,2}}\])*", re.IGNORECASE)
+
+
+def without_fixed_lines(answer: str, lines: tuple[re.Pattern[str], ...]) -> str:
+    """``answer`` without the code-added fixed lines (they are not claims)."""
+    for pattern in lines:
+        answer = pattern.sub(" ", answer)
+    kept = (" ".join(line.split()) for line in answer.split("\n"))
+    return "\n".join(line for line in kept if line.strip(" -*.:"))
 
 
 def strip_tails(text: str, tails: tuple[re.Pattern[str], ...]) -> str:
@@ -359,6 +393,7 @@ class ExpectedTexts:  # pylint: disable=too-many-instance-attributes  # one per 
         self.sales: re.Pattern[str] | None = None
         self.partial: re.Pattern[str] | None = None
         self.tails: tuple[re.Pattern[str], ...] = ()
+        self.fixed_lines: tuple[re.Pattern[str], ...] = ()
         self.variants: tuple[str, ...] = ()
         self.templates: dict[str, str] = {}
         self._template_id: Callable[[list[str], str], str] | None = None
@@ -407,7 +442,13 @@ class ExpectedTexts:  # pylint: disable=too-many-instance-attributes  # one per 
                 self.templates[template_id] = str(policy_template(template_id))
             except (KeyError, TypeError):
                 continue  # needs more values than {brand} ("partial")
+        self._load_personas(cat)
         self._template_id = getattr(cat, "refusal_template_id", None)
+        self.fixed_lines = tuple(
+            fixed_line_regex(line)
+            for name in FIXED_LINE_NAMES
+            if (line := getattr(cat, name, None))
+        )
         sales = getattr(cat, "SALES_CONTACT_LINE", None)
         self.sales = template_regex(sales) if sales else None
         partial = getattr(cat, "PARTIAL_LINE", None)
@@ -417,6 +458,33 @@ class ExpectedTexts:  # pylint: disable=too-many-instance-attributes  # one per 
             for name in ("PAGE_LINK_LINE", "SALES_CONTACT_LINE", "PRICING_LINE")
             if (line := getattr(cat, name, None))
         )
+
+    def _load_personas(self, cat: Any) -> None:
+        """``persona_<intent>`` ids -> their approved reply.
+
+        The privacy reply keeps a ``{url}`` placeholder (the link is built
+        from the privacy page's route at run time); see :func:`fixed_match`.
+        """
+        persona_template = getattr(cat, "persona_template", None)
+        template_id = getattr(cat, "persona_template_id", None)
+        if not callable(persona_template) or not callable(template_id):
+            return
+        for intent in getattr(cat, "PERSONA_TEMPLATES", {}):
+            try:
+                self.templates[str(template_id(intent))] = str(
+                    persona_template(intent, privacy_url="{url}")
+                )
+            except (KeyError, TypeError):
+                continue
+
+    def judged_answer(self, answer: str) -> str:
+        """``answer`` as the judge sees it: fixed lines and ``[n]`` markers removed.
+
+        Markers are not content (the online judge strips them too), else the
+        judge may score "the citation is [1]" as a claim.
+        """
+        prose = _MARKER_RE.sub("", answer)
+        return without_fixed_lines(prose, self.fixed_lines)
 
     def for_flags(self, flags: list[str], template_id: str | None = None) -> set[str]:
         """Acceptable fixed replies for a blocked turn with ``flags``.
@@ -493,7 +561,7 @@ class Checker:  # pylint: disable=too-many-instance-attributes,too-few-public-me
         if tr.observed in ANSWERED | {CANNED}:
             self._must_contain(spec, answer, tr)
         self._must_not_contain(spec, answer, tr)
-        self._internal(answer, tr)
+        self._internal(answer, resp, tr)
         if tr.observed in ANSWERED:
             self._citations(spec, tr)
             self._value_routes(spec, resp, tr)
@@ -528,9 +596,13 @@ class Checker:  # pylint: disable=too-many-instance-attributes,too-few-public-me
                 if tr.observed in ANSWERED | {CANNED}:
                     tr.fabricated.append(term)
 
-    def _internal(self, answer: str, tr: TurnResult) -> None:
+    def _internal(self, answer: str, resp: dict, tr: TurnResult) -> None:
+        # The page's own term ("Downloadable Materials") is not stock wording.
+        sources = " ".join(
+            str(s.get("content") or "") for s in resp.get("sources") or []
+        )
         for phrase in self.internal:
-            if has_term(answer, phrase):
+            if has_term(answer, phrase) and not has_term(sources, phrase):
                 tr.failures.append(f"internal wording: {phrase}")
 
     def _citations(self, spec: dict, tr: TurnResult) -> None:
@@ -612,7 +684,7 @@ class Checker:  # pylint: disable=too-many-instance-attributes,too-few-public-me
                 errs.append(f"flags {tr.flags}, want one of {list(want)}")
             template_id = (resp.get("token_details") or {}).get("refusal_template")
             expected = self.texts.for_flags(tr.flags, template_id)
-            if expected and answer not in {norm(t) for t in expected}:
+            if expected and not any(fixed_match(answer, t) for t in expected):
                 errs.append(f"wrong fallback for {tr.flags}: {answer[:80]}")
         elif kind in {CANNED, CLARIFY}:
             if grounded is True:
@@ -830,38 +902,51 @@ def _in_env_dir(fn: Callable[[], Any]) -> Any:
         os.chdir(previous)
 
 
+JudgeJob = tuple[TurnResult, str, list[str], str, list[str]]
+
+
 def _judge_jobs(
-    cases: list[dict], results: list[CaseResult], raw: dict
-) -> list[tuple[TurnResult, str, list[str], list]]:
+    cases: list[dict], results: list[CaseResult], raw: dict, texts: ExpectedTexts
+) -> list[JudgeJob]:
+    """``(turn, query, chunks, judged answer, facts)`` per answered turn.
+
+    The code-added fixed lines are removed first; a turn that is only fixed
+    lines asserts nothing and is not judged.
+    """
     specs = {c["id"]: c for c in cases}
-    jobs: list[tuple[TurnResult, str, list[str], list]] = []
+    jobs: list[JudgeJob] = []
     for res in results:
         for idx, tr in enumerate(res.turns):
             resp = raw.get((res.id, idx))
             if tr.observed not in ANSWERED or not resp:
                 continue
+            answer = texts.judged_answer(tr.answer)
+            if not answer.strip():
+                continue
             chunks = [str(s.get("content") or "") for s in resp.get("sources") or []]
             facts = specs[res.id]["turns"][idx].get("must_contain") or []
-            jobs.append((tr, tr.query, chunks, [term_label(f) for f in facts]))
+            jobs.append((tr, tr.query, chunks, answer, [term_label(f) for f in facts]))
     return jobs
 
 
-def run_judge(cases: list[dict], results: list[CaseResult], raw: dict) -> None:
+def run_judge(
+    cases: list[dict], results: list[CaseResult], raw: dict, texts: ExpectedTexts
+) -> None:
     """Claim-level faithfulness of answered turns against the returned sources."""
     from app.evaluation.judge_extra import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
         deep_judge,
     )
 
-    jobs = _judge_jobs(cases, results, raw)
+    jobs = _judge_jobs(cases, results, raw, texts)
     sys.stdout.write(f"judging {len(jobs)} answered turns...\n")
 
     async def _all() -> list:
         sem = asyncio.Semaphore(MAX_CONCURRENCY)
 
-        async def one(job: tuple) -> Any:
-            tr, query, chunks, facts = job
+        async def one(job: JudgeJob) -> Any:
+            _tr, query, chunks, answer, facts = job
             async with sem:
-                return await deep_judge(query, chunks, tr.answer, facts)
+                return await deep_judge(query, chunks, answer, facts)
 
         return await asyncio.gather(*(one(j) for j in jobs))
 
@@ -1174,7 +1259,7 @@ def _run_all(
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         results = list(pool.map(runner.run_case, cases))
     if judge:
-        run_judge(cases, results, runner.raw)
+        run_judge(cases, results, runner.raw, runner.checker.texts)
     return results
 
 

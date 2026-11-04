@@ -14,9 +14,11 @@ Retrieval pipeline (in order):
 
 import asyncio
 import logging
+import re
+import time
 import uuid
 from collections import defaultdict
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,7 @@ from app.core.config import get_settings
 from app.knowledge.links import document_url
 from app.models.db_models import Chunk, Document
 from app.retrieval.reranker import (
+    HEADING_HIT_LOGITS,
     INTENT_ENTITY_WEIGHT,
     INTENT_HEADING_SHARE,
     SPREAD_MAX_CHUNKS,
@@ -33,9 +36,12 @@ from app.retrieval.reranker import (
     compute_hybrid_signal,
     entities_missing_from_pool,
     entity_sql_pattern,
+    fused_rerank_keys,
+    looks_english,
     named_entities,
     pick_entity_documents,
     query_intent,
+    rare_word_stems,
     rerank,
     run_in_rerank_slot,
     trim_pool,
@@ -48,6 +54,18 @@ _SCALAR = (str, int, float, bool)
 _MAX_ENTITY_FETCH_DOCUMENTS = 2
 # "What does X cover": headed chunks get a small edge over unheaded ones.
 _SPREAD_HEADING_BONUS = 0.05
+# KB vocabulary for typo correction (refreshed after ingestion within the TTL).
+_VOCABULARY_TTL_SECONDS = 300.0
+_VOCABULARY_WORD_RE = re.compile(r"[a-z]{3,}")
+_VOCABULARY_CACHE: dict[str, Any] = {}
+# Rare-word recall: a word at most this many chunks use, and at most this many
+# extra chunks reranked for it.
+_RARE_WORD_MAX_DF = 4
+_RARE_WORD_FETCH_K = 3
+# The reserve batch is reranked when the pool's best logit is below this:
+# measured on the r3 section misses, answer chunks cosine ranked 9-16 led
+# with 4.4-5.1 while the pool's best stayed at 3.1-3.8 (wrong page).
+_WIDEN_BELOW_LOGIT = 4.0
 
 
 def usable_filters(filters: dict | None) -> dict[str, str]:
@@ -125,6 +143,89 @@ class VectorStore:
         # reranker is disabled or failed (the gate then falls back to cosine).
         self.last_ce_scores: dict[uuid.UUID, float] = {}
 
+    async def corpus_vocabulary(self) -> frozenset[str]:
+        """Lower-case words of the citable KB (typo correction of asks)."""
+        return frozenset(await self._word_frequencies())
+
+    async def _word_frequencies(self) -> dict[str, int]:
+        """Word -> number of citable chunks using it; cached per process for
+        ``_VOCABULARY_TTL_SECONDS`` (one small query over the KB text)."""
+        now = time.monotonic()
+        cached = _VOCABULARY_CACHE.get("df")
+        if (
+            cached is not None
+            and now - _VOCABULARY_CACHE["at"] < _VOCABULARY_TTL_SECONDS
+        ):
+            return cached
+        rows = (
+            await self.session.execute(
+                select(Chunk.content).where(
+                    Chunk.document_id.not_in(quarantined_document_ids())
+                )
+            )
+        ).all()
+        frequencies: defaultdict[str, int] = defaultdict(int)
+        for content, *_rest in rows:
+            if not isinstance(content, str):
+                continue
+            for word in set(_VOCABULARY_WORD_RE.findall(content.lower())):
+                frequencies[word] += 1
+        await self.session.commit()
+        _VOCABULARY_CACHE.update(df=dict(frequencies), at=now)
+        return _VOCABULARY_CACHE["df"]
+
+    async def _fetch_rare_word_chunks(  # pylint: disable=too-many-locals
+        self,
+        query_embedding: list[float],
+        query_text: str,
+        pool: list[tuple[Chunk, float]],
+        filters: dict | None,
+    ) -> list[tuple[Chunk, float]]:
+        """Chunks outside ``pool`` that carry a rare word of the question
+        (used by at most ``_RARE_WORD_MAX_DF`` chunks), best cosine first, at
+        most ``_RARE_WORD_FETCH_K``. No query when the question has none."""
+        frequencies = await self._word_frequencies()
+        stems = rare_word_stems(query_text, frequencies, _RARE_WORD_MAX_DF)
+        if not stems:
+            return []
+        pattern = r"\m(?:" + "|".join(re.escape(stem) for stem in stems) + ")"
+        distance = Chunk.embedding.cosine_distance(query_embedding)
+        stmt = (
+            select(
+                Chunk,
+                distance.label("distance"),
+                Document.source_url,
+                Document.section_links,
+                Document.doc_metadata["title"].as_string(),
+                Document.source_name,
+                _ROUTE,
+            )
+            .join(Document, Document.id == Chunk.document_id)
+            .options(defer(Chunk.embedding))
+            .where(Chunk.document_id.not_in(quarantined_document_ids()))
+            .where(Chunk.id.not_in([chunk.id for chunk, _score in pool]))
+            .where(Chunk.content.op("~*")(pattern))
+        )
+        for key, value in usable_filters(filters).items():
+            stmt = stmt.where(Chunk.chunk_metadata[key].as_string() == value)
+        rows = (
+            await self.session.execute(
+                stmt.order_by(distance).limit(_RARE_WORD_FETCH_K)
+            )
+        ).all()
+        await self.session.commit()
+        fetched: list[tuple[Chunk, float]] = []
+        for chunk, dist, source_url, section_links, title, source_name, route in rows:
+            self.document_links[chunk.document_id] = _document_link(
+                source_url, section_links, title, source_name, route
+            )
+            fetched.append((chunk, 1 - dist))
+        if fetched:
+            logger.info(
+                "retrieval_rare_word_fetch stems=%s chunks=%d", stems, len(fetched)
+            )
+        return fetched
+
     async def fetch_embeddings(self, chunk_ids: list) -> dict:
         """Embeddings for just these chunks (candidates are loaded without them)."""
         if not chunk_ids:
@@ -169,7 +270,14 @@ class VectorStore:
         # the pool: fetch a few extra rows (cheap), then trim back to
         # candidate_k before the (expensive) rerank.
         hybrid = bool(query_text) and settings.retrieval_hybrid_enabled
-        fetch_k = candidate_k + (settings.retrieval_lexical_pool_extra if hybrid else 0)
+        # Plus a reserve batch, reranked only when the first pool holds no
+        # confident match (see _rank_and_select): the DB rows are cheap.
+        reserve_k = candidate_k if query_text and settings.enable_reranker else 0
+        fetch_k = (
+            candidate_k
+            + (settings.retrieval_lexical_pool_extra if hybrid else 0)
+            + reserve_k
+        )
 
         stmt = (
             select(
@@ -250,6 +358,18 @@ class VectorStore:
                     by_id.values(), key=lambda item: item[1], reverse=True
                 )
 
+        # STEP 2c: rare-word recall. A chunk carrying a word of the question
+        # that only a few chunks use ("workshops") competes in the rerank
+        # even when cosine ranks it far down (one long page, many topics).
+        lexical: list[tuple[Chunk, float]] = []
+        if hybrid and query_text and settings.enable_reranker:
+            lexical = await self._fetch_rare_word_chunks(
+                query_embedding, query_text, candidates, filters
+            )
+            candidates = sorted(
+                [*candidates, *lexical], key=lambda item: item[1], reverse=True
+            )
+
         # ---------------------------------------------------------
         # STEP 5: Rerank the candidate pool before final selection
         # ---------------------------------------------------------
@@ -265,8 +385,13 @@ class VectorStore:
             candidate_k=candidate_k,
             top_k=top_k,
             max_documents=max_documents,
+            # The cross-encoder is English-only (a Spanish question scored
+            # -11 against its own answer): other languages keep the
+            # multilingual embedding order and the cosine gate.
+            cross_encode=bool(query_text) and looks_english(query_text or ""),
+            forced_ids=frozenset(chunk.id for chunk, _score in lexical),
         )
-        if query_text and settings.enable_reranker:
+        if job.cross_encode and settings.enable_reranker:
             selected, signal, logits = await run_in_rerank_slot(_rank_and_select, job)
         else:
             selected, signal, logits = await asyncio.to_thread(_rank_and_select, job)
@@ -571,6 +696,16 @@ class VectorStore:
             return []
 
         signal = signal or HybridSignal()
+        # "How is Zero Trust described on the Get Started page?": the page the
+        # question scopes itself to is the whole context (the model answered
+        # from the Zero Trust page when both were offered).
+        in_scope = set(signal.scoped_doc_ids) & {
+            str(chunk.document_id) for chunk, _score in candidates
+        }
+        if in_scope:
+            candidates = [
+                item for item in candidates if str(item[0].document_id) in in_scope
+            ]
 
         def key(item: tuple[Chunk, float]) -> float:
             if order is not None:
@@ -611,7 +746,12 @@ class VectorStore:
         doc_cap = max_documents or settings.cross_doc_quota_max_documents
         # Documents the query names come first and are never cut by the cap
         # in favour of unnamed ones (they only compete with each other).
-        priority = [doc for doc in signal.entity_doc_ids if doc in by_doc][:doc_cap]
+        scoped = [doc for doc in signal.scoped_doc_ids if doc in by_doc]
+        priority = list(
+            dict.fromkeys(
+                scoped + [doc for doc in signal.entity_doc_ids if doc in by_doc]
+            )
+        )[: max(doc_cap, len(scoped))]
         others = [doc for doc in ranked_docs if doc not in priority]
         quota_docs = (priority + others)[: min(doc_cap, len(ranked_docs))]
         per_doc_quota = max(1, top_k // len(quota_docs))
@@ -653,11 +793,13 @@ class VectorStore:
         # Beyond the first, a seeded chunk must clear the retrieval floor.
         # One slot always stays free for others.
         seed_budget = max(1, top_k - 1)
-        levels = SPREAD_MAX_CHUNKS if signal.spread else 1
+        levels = SPREAD_MAX_CHUNKS if signal.spread or scoped else 1
         for level in range(levels):
             for doc_id in priority:
                 if len(selected) >= seed_budget:
                     break
+                if level and not signal.spread and doc_id not in scoped:
+                    continue
                 _take_next(
                     doc_id, above_floor=level > 0, distinct_heading=signal.spread
                 )
@@ -688,7 +830,13 @@ class VectorStore:
             selected.append(item)
             selected_ids.add(item[0].id)
 
-        selected.sort(key=key, reverse=True)
+        # A page the question scopes itself to ("on the Get Started page")
+        # leads the context; the rest keeps the relevance order.
+        scoped_set = set(scoped)
+        selected.sort(
+            key=lambda item: (str(item[0].document_id) in scoped_set, key(item)),
+            reverse=True,
+        )
 
         return selected
 
@@ -701,6 +849,80 @@ class _RankJob(NamedTuple):
     candidate_k: int
     top_k: int
     max_documents: int | None
+    cross_encode: bool = True
+    forced_ids: frozenset = frozenset()  # always reranked (rare-word recall)
+
+
+def _widened_rerank(  # pylint: disable=too-many-locals  # one rerank step's full state
+    job: _RankJob,
+    candidates: list[tuple[Chunk, float]],
+    signal: HybridSignal,
+    logits: dict[uuid.UUID, float],
+) -> list[tuple[Chunk, float]]:
+    """Cross-encoder order of the rerank pool; when its best logit is below
+    the confident bar, the reserve batch (the next cosine candidates) is
+    reranked too, so an answer chunk cosine ranked just outside the pool
+    still competes (the cost is paid only by unsure questions).
+
+    Rare-word chunks and the scoped page's chunks are always reranked;
+    a rare-word or reserve chunk the cross-encoder scores below the covered
+    bar is dropped again (a recall aid never adds noise to the context)."""
+    scoped = set(signal.scoped_doc_ids)
+    per_scoped: defaultdict[str, int] = defaultdict(int)
+    forced_ids = set(job.forced_ids)
+    for chunk, _score in candidates:
+        doc_id = str(chunk.document_id)
+        if doc_id in scoped and per_scoped[doc_id] < SPREAD_MAX_CHUNKS:
+            per_scoped[doc_id] += 1
+            forced_ids.add(chunk.id)
+    forced = [item for item in candidates if item[0].id in forced_ids]
+    pool = trim_pool(
+        [item for item in candidates if item[0].id not in forced_ids],
+        signal,
+        job.candidate_k,
+    )
+    pool += forced
+    query = job.query_text or ""
+    ranked = rerank(
+        query, pool, [signal.boosts.get(c.id, 0.0) for c, _ in pool], logits
+    )
+    in_pool = {chunk.id for chunk, _score in pool}
+    reserve = [item for item in candidates if item[0].id not in in_pool][
+        : job.candidate_k
+    ]
+    if not logits:
+        return ranked
+    merged = ranked
+    if reserve and max(logits.values()) < _WIDEN_BELOW_LOGIT:
+        extra: dict[uuid.UUID, float] = {}
+        rerank(query, reserve, None, extra)
+        if extra:
+            logits.update(extra)
+            merged = ranked + reserve
+    extras = set(job.forced_ids) | {chunk.id for chunk, _score in reserve}
+    weak = {
+        chunk.id
+        for chunk, _score in merged
+        if chunk.id in extras
+        and str(chunk.document_id) not in scoped
+        and logits.get(chunk.id, float("-inf")) < settings.retrieval_ce_covered_min
+    }
+    if weak:
+        merged = [item for item in merged if item[0].id not in weak]
+    if merged is ranked and not signal.heading_hits:
+        return ranked
+    # A section the question names by its heading ("the Frontier package")
+    # leads its page's other chunks (order only; the gate reads raw logits).
+    keys = fused_rerank_keys(
+        [logits.get(c.id, float("-inf")) for c, _ in merged],
+        [signal.boosts.get(c.id, 0.0) for c, _ in merged],
+    )
+    keys = [
+        key + (HEADING_HIT_LOGITS if chunk.id in signal.heading_hits else 0.0)
+        for key, (chunk, _score) in zip(keys, merged, strict=True)
+    ]
+    order = sorted(range(len(merged)), key=lambda i: keys[i], reverse=True)
+    return [merged[i] for i in order]
 
 
 def _rank_and_select(
@@ -712,15 +934,13 @@ def _rank_and_select(
     signal = HybridSignal()
     if job.hybrid and job.query_text:
         # String ops only (no embedding call): lexical + named-entity
-        # boost, then trim the pool back to its normal rerank size.
+        # boost; the pool is trimmed back to its rerank size below.
         signal = compute_hybrid_signal(job.query_text, candidates, job.names)
-        candidates = trim_pool(candidates, signal, job.candidate_k)
 
     order: dict[uuid.UUID, float] | None = None
     logits: dict[uuid.UUID, float] = {}
-    if job.query_text:
-        boosts = [signal.boosts.get(chunk.id, 0.0) for chunk, _ in candidates]
-        candidates = rerank(job.query_text, candidates, boosts, logits)
+    if job.query_text and job.cross_encode:
+        candidates = _widened_rerank(job, candidates, signal, logits)
         if logits:
             # The cross-encoder order is final: selection never re-sorts
             # by cosine (position rank, higher is better).

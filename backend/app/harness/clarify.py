@@ -39,12 +39,14 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.guardrails.conversational import detect_conversational_intent
+from app.guardrails.pre_checks import is_junk_input
 from app.harness.prompt_catalog import NO_ANSWER_LINE
 from app.retrieval.reranker import entity_documents, entity_mentions, rerank_async
 from app.retrieval.retriever import (
     decompose_query,
     history_subject,
     is_bare_reference,
+    is_contact_ask,
 )
 from app.schemas.query import (
     ChatTurn,
@@ -982,7 +984,13 @@ def resolve_clarification_reply(
             answers=entries,
             document_ids=doc_ids,
         )
-    if answers or not query.strip() or detect_conversational_intent(query) is not None:
+    if (
+        answers
+        or not query.strip()
+        or detect_conversational_intent(query) is not None
+        # "!!!" / keyboard mash refines nothing: the junk template answers it.
+        or is_junk_input(query)
+    ):
         return None
     if _NOT_SURE_RE.search(_scan(query)) and len(query.split()) <= _MAX_POINTER_WORDS:
         everything = [o for q in last.questions for o in q.options]
@@ -1113,7 +1121,9 @@ def _is_new_question(text: str) -> bool:
     if not (scan.endswith("?") or _ASK_LEAD_RE.match(scan)):
         return False
     rest = scan.split(" ", 1)[1] if " " in scan else ""
-    return bool(entity_mentions(scan) or _PROPER_NOUN_RE.search(rest))
+    return bool(
+        entity_mentions(scan) or _PROPER_NOUN_RE.search(rest) or is_contact_ask(scan)
+    )
 
 
 def boost_documents(
@@ -1426,6 +1436,28 @@ _TERM_FILLER = _STOPWORDS | frozenset(
         "have",
         "got",
         "us",
+        # Chatty padding around a bare term ("iso stuff", "m365 help",
+        # "assessments pls", "what's your iso offering").
+        "stuff",
+        "things",
+        "thing",
+        "something",
+        "help",
+        "pls",
+        "plz",
+        "offering",
+        "offerings",
+        "options",
+        "option",
+        "wanna",
+        "want",
+        "need",
+        "interested",
+        "looking",
+        "show",
+        "see",
+        "list",
+        "all",
     ]
 )
 # Words in nearly every service page name: never a service family.

@@ -99,8 +99,16 @@ _CONFUSABLE_PAIRS = {
 }
 _CONFUSABLES = str.maketrans(_CONFUSABLE_PAIRS)
 
-_HTML_TAG_RE = re.compile(r"</?[A-Za-z][A-Za-z0-9]{0,10}(?:\s[^<>]{0,200})?/?>")
-_FENCE_RE = re.compile(r"`{3}[A-Za-z0-9_+-]{0,20}")
+# Tag-shaped markup only: "<b>", "</p>", "<br/>", or a tag whose attribute
+# part has an ``=`` ("<a href=x>"). "<<what is iso 27001>>" is text, kept.
+_HTML_TAG_RE = re.compile(
+    r"</?[A-Za-z][A-Za-z0-9]{0,10}\s{0,3}/?>"
+    r"|<[A-Za-z][A-Za-z0-9]{0,10}\s[^<>=]{0,100}=[^<>]{0,200}>"
+)
+# A fence and its language tag ("```python" + newline); "```what is E8```"
+# keeps its first word.
+_FENCE_RE = re.compile(r"`{3}(?:[A-Za-z0-9_+-]{1,20}(?=[^\S\n]{0,5}\n))?")
+_MAX_ANGLE_WRAP = 3
 # Markdown emphasis only: "**x**", "*x*", "__x__". "2*3" and "2 * 3" stay.
 _EMPHASIS_RE = re.compile(
     r"\*{2,3}|(?:(?<=\s)|^)\*(?=[^\s*])|(?<=[^\s*])\*(?=\s|$|[?.!,])"
@@ -180,6 +188,11 @@ def _strip_wrappers(text: str) -> str:
         and stripped[-1] in _WRAP_QUOTES
     ):
         stripped = stripped[1:-1].strip()
+    # "<<what is iso 27001>>": angle brackets around the whole message.
+    for _ in range(_MAX_ANGLE_WRAP):
+        if len(stripped) < 2 or stripped[0] != "<" or stripped[-1] != ">":  # noqa: PLR2004
+            break
+        stripped = stripped[1:-1].strip()
     return stripped
 
 
@@ -211,14 +224,20 @@ def normalise_input(text: str) -> str:
     """The canonical text every gate and retrieval use (see module docstring)."""
     if not text:
         return ""
-    text = unicodedata.normalize("NFKC", text[:MAX_NORMALISE_CHARS])
+    raw = text[:MAX_NORMALISE_CHARS]
+    text = unicodedata.normalize("NFKC", raw)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = strip_format_chars(text)
     text = text.translate(_SMART_QUOTES)
     text = _TOKEN_RE.sub(lambda m: _fix_mixed_script(m.group(0)), text)
     text = _fold_latin_accents(text)
-    text = _strip_wrappers(text)
-    return _collapse_whitespace(text)
+    unwrapped = _collapse_whitespace(_strip_wrappers(text))
+    if unwrapped:
+        return unwrapped
+    # Markup only ("`", "**", "<b></b>") or invisible characters: never an
+    # empty query (the embedding call rejects it); the text as typed reaches
+    # the gates, whose junk check answers with the unclear-input template.
+    return _collapse_whitespace(text) or raw.strip()
 
 
 def fold_accents(text: str) -> str:

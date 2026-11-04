@@ -132,4 +132,5 @@ def test_mixed_verification_linear_time() -> None:
 def test_prompt_rules_present() -> None:
     prompt = prompts.SYSTEM_PROMPT
     assert "nothing that was not asked" in prompt
-    assert '"item" in a list' in prompt
+    # A list item is its own claim kind ("i"), one item per quote.
+    assert '"i" list item' in prompt

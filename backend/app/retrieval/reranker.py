@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """STEP 5 reranker over the broad cosine-recall candidate pool.
 
 Chosen algorithm: cross-encoder reranking, scoring (query, chunk) pairs with
@@ -168,6 +169,139 @@ def rerank(
     return [candidates[i] for i in order]
 
 
+# Function words of the languages visitors write in besides English (es, fr,
+# de, pt, it, nl). Words shared with English ("a", "in", "is", "die", "as")
+# are left out.
+_FOREIGN_WORDS = frozenset(
+    [
+        "el",
+        "la",
+        "los",
+        "las",
+        "del",
+        "que",
+        "qué",
+        "es",
+        "cómo",
+        "como",
+        "cuál",
+        "cuáles",
+        "cuánto",
+        "cuanto",
+        "para",
+        "por",
+        "con",
+        "una",
+        "uno",
+        "y",
+        "lo",
+        "se",
+        "su",
+        "sus",
+        "hay",
+        "tiene",
+        "tienen",
+        "puedo",
+        "ofrecen",
+        "le",
+        "les",
+        "des",
+        "du",
+        "est",
+        "sont",
+        "quel",
+        "quelle",
+        "quels",
+        "quelles",
+        "comment",
+        "pour",
+        "avec",
+        "et",
+        "ou",
+        "où",
+        "combien",
+        "vous",
+        "nous",
+        "qui",
+        "est-ce",
+        "votre",
+        "vos",
+        "der",
+        "das",
+        "ist",
+        "sind",
+        "wie",
+        "welche",
+        "welcher",
+        "für",
+        "mit",
+        "und",
+        "ein",
+        "eine",
+        "einen",
+        "dauert",
+        "kostet",
+        "gibt",
+        "ihr",
+        "ihre",
+        "sie",
+        "bietet",
+        "können",
+        "kann",
+        "são",
+        "quais",
+        "uma",
+        "não",
+        "você",
+        "vocês",
+        "oferecem",
+        "quanto",
+        "custa",
+        "qual",
+        "il",
+        "di",
+        "che",
+        "sono",
+        "gli",
+        "della",
+        "quali",
+        "quanto",
+        "offrite",
+        "het",
+        "een",
+        "zijn",
+        "hoe",
+        "wat",
+        "voor",
+        "jullie",
+    ]
+)
+_ENGLISH_TEXT = """about and any are can could did do does for has have how i is
+    it its my of or our should that the there these this those to we what when
+    where which who why will with would you your"""
+_ENGLISH_WORDS = frozenset(_ENGLISH_TEXT.split())
+_WORD_TOKEN_RE = re.compile(
+    r"[^\W\d_][^\W\d_'\N{RIGHT SINGLE QUOTATION MARK}-]*", re.UNICODE
+)
+_LATIN_RE = re.compile(r"[A-Za-zÀ-ɏ]")
+
+
+def looks_english(text: str) -> bool:
+    """Cheap language check for the English-only cross-encoder: False for a
+    non-Latin script or a question whose function words are mostly another
+    language's ("¿Cuáles son ...", "Wie lange dauert ..."). Defaults to True."""
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return True
+    latin = sum(1 for ch in letters if _LATIN_RE.match(ch))
+    if latin < len(letters) / 2:
+        return False
+    words = [w.lower() for w in _WORD_TOKEN_RE.findall(text)]
+    foreign = sum(1 for w in words if w in _FOREIGN_WORDS)
+    english = sum(1 for w in words if w in _ENGLISH_WORDS)
+    return not (foreign >= 2 and foreign > english)  # noqa: PLR2004
+
+
 # Hybrid boosts are on the cosine scale (0..~0.5). At most BOOST_CAP of it
 # counts, mapped to at most BOOST_MAX_LOGITS cross-encoder logits: enough to
 # break a near tie in favour of the named document, never enough to lift an
@@ -269,7 +403,72 @@ _ENTITY_CATALOGUE: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = tu
         ),
     )
 )
-_ENTITY_DOC_RE = {key: doc_re for key, _query_re, doc_re in _ENTITY_CATALOGUE}
+# Site pages a question can scope itself to ("on the Get Started page", "in
+# your privacy policy", "your vision"). Retrieval-only: never a service
+# subject (entity_mentions ignores them), but the named page is seeded into
+# the candidate pool and its chunks lead the context (page_scope).
+_PAGE_CATALOGUE: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = tuple(
+    (key, re.compile(query_re, re.IGNORECASE), re.compile(doc_re, re.IGNORECASE))
+    for key, query_re, doc_re in (
+        (
+            "page:get started",
+            r"\bget[\s_-]{0,3}started\s{1,3}(?:page|section|screen)\b"
+            r"|\b(?:on|in|from)\s{1,3}(?:the\s{1,3}|your\s{1,3})?get[\s_-]{0,3}started\b",
+            r"^get started\b",
+        ),
+        (
+            "page:home",
+            r"\bhome[\s-]{0,3}page\b|\blanding\s{1,3}page\b|\bmain\s{1,3}page\b",
+            r"^home(?: md)?\b",
+        ),
+        (
+            "page:our vision",
+            r"\b(?:our|your|its|deploy\s{0,3}iq'?s?|company'?s?)\s{1,3}vision\b"
+            r"|\bvision\s{1,3}(?:page|statement)\b",
+            r"^our vision\b",
+        ),
+        (
+            "page:privacy",
+            r"\bprivacy\s{1,3}(?:policy|statement|notice|page)\b",
+            r"^privacy\b",
+        ),
+        (
+            "page:terms",
+            r"\bterms\s{0,3}(?:&|and)\s{0,3}conditions\b|\bterms\s{1,3}of\s{1,3}(?:use|service)\b"
+            r"|\b(?:your|the)\s{1,3}terms\b|\bt\s{0,2}&\s{0,2}cs?\b|\btncs?\b",
+            r"^terms\b",
+        ),
+        (
+            "page:about us",
+            r"\babout(?:[\s-]{1,3}us)?\s{1,3}page\b",
+            r"^about us\b",
+        ),
+        (
+            "page:contact us",
+            r"\bcontact(?:[\s-]{1,3}us)?\s{1,3}(?:page|form)\b",
+            r"^contact us\b",
+        ),
+        (
+            "page:services",
+            r"\bservices\s{1,3}page\b",
+            r"^services\b",
+        ),
+    )
+)
+# Site path of each page key (a pasted page URL scopes the question too).
+PAGE_ROUTES: dict[str, str] = {
+    "page:get started": "/get-started",
+    "page:home": "/",
+    "page:our vision": "/our-vision",
+    "page:privacy": "/privacy",
+    "page:terms": "/terms",
+    "page:about us": "/about-us",
+    "page:contact us": "/contact-us",
+    "page:services": "/services",
+}
+_ENTITY_DOC_RE = {key: doc_re for key, _query_re, doc_re in _ENTITY_CATALOGUE} | {
+    key: doc_re for key, _query_re, doc_re in _PAGE_CATALOGUE
+}
 
 
 @dataclass(frozen=True)
@@ -279,6 +478,8 @@ class HybridSignal:
     boosts: dict[Any, float] = field(default_factory=dict)  # chunk id -> boost
     entity_doc_ids: tuple[str, ...] = ()  # documents named by the query
     spread: bool = False  # "what does X cover": one chunk per section heading
+    scoped_doc_ids: tuple[str, ...] = ()  # pages the question scopes itself to
+    heading_hits: frozenset = frozenset()  # chunks whose heading the question names
 
     def rank_key(self, chunk_id: Any, score: float) -> float:
         return score + self.boosts.get(chunk_id, 0.0)
@@ -425,6 +626,27 @@ def _query_terms(query: str) -> list[str]:
     return list(seen)[:_MAX_QUERY_TERMS]
 
 
+_RARE_WORD_MIN_LEN = 5
+
+
+def rare_word_stems(
+    query: str, frequencies: Mapping[str, int], max_df: int
+) -> list[str]:
+    """Stems of the question's content words that 1..``max_df`` KB chunks use
+    (by the word's own count, else the most-used word sharing its stem)."""
+    stems: dict[str, None] = {}
+    for token in _TOKEN_RE.findall((query or "").lower()):
+        if len(token) < _RARE_WORD_MIN_LEN or token in _STOPWORDS:
+            continue
+        stem = _stem(token)
+        df = frequencies.get(token) or max(
+            (n for word, n in frequencies.items() if word.startswith(stem)), default=0
+        )
+        if 0 < df <= max_df:
+            stems.setdefault(stem, None)
+    return list(stems)[:_MAX_QUERY_ENTITIES]
+
+
 def named_entities(query: str) -> list[str]:
     """Catalogue entities named in the query, most recently mentioned first."""
     found: list[tuple[int, str]] = []
@@ -433,7 +655,32 @@ def named_entities(query: str) -> list[str]:
         if matches:
             found.append((matches[-1].start(), key))
     found.sort(key=lambda item: (-item[0], item[1]))
-    return [key for _, key in found[:_MAX_QUERY_ENTITIES]]
+    entities = [key for _, key in found[:_MAX_QUERY_ENTITIES]]
+    pages = [key for key in named_pages(query) if key not in entities]
+    return (pages + entities)[: _MAX_QUERY_ENTITIES + len(pages)]
+
+
+_PAGE_WORD_RE = re.compile(
+    r"^(?:[\s'\N{RIGHT SINGLE QUOTATION MARK}]{0,3}[\w-]{1,20}){0,3}?\s{0,3}"
+    r"(?:web\s{1,3})?page\b",
+    re.IGNORECASE,
+)
+
+
+def named_pages(query: str) -> list[str]:
+    """Pages the question scopes itself to: a site page by name ("on the Get
+    Started page", "your privacy policy") or a catalogue page called a page
+    ("the Zero Trust page"). Keys as in ``named_entities``."""
+    if not query:
+        return []
+    keys = [key for key, query_re, _doc in _PAGE_CATALOGUE if query_re.search(query)]
+    for key, query_re, _doc_re in _ENTITY_CATALOGUE:
+        if key not in keys and any(
+            _PAGE_WORD_RE.match(query[m.end() : m.end() + 40])
+            for m in query_re.finditer(query)
+        ):
+            keys.append(key)
+    return keys
 
 
 def entity_mentions(text: str) -> list[tuple[int, int, str]]:
@@ -504,6 +751,8 @@ def compute_hybrid_signal(  # pylint: disable=too-many-locals
     names = doc_names or {}
     entity_docs = entity_documents(named_entities(query), names)
     entity_doc_set = set(entity_docs)
+    scoped = entity_documents(named_pages(query), names)
+    section = section_number_re(query)
 
     terms = _query_terms(query)
     intent = query_intent(query)
@@ -542,10 +791,96 @@ def compute_hybrid_signal(  # pylint: disable=too-many-locals
                 boost += INTENT_ENTITY_WEIGHT * intent.match(
                     _chunk_heading(chunk), chunk.content
                 )
+        if section is not None and section.search(
+            f"{_chunk_heading(chunk)}\n{chunk.content}"
+        ):
+            boost += BOOST_CAP
         if boost:
             boosts[chunk.id] = boost
     return HybridSignal(
-        boosts=boosts, entity_doc_ids=tuple(entity_docs), spread=intent.spread
+        boosts=boosts,
+        entity_doc_ids=tuple(entity_docs),
+        spread=intent.spread,
+        scoped_doc_ids=tuple(scoped),
+        heading_hits=frozenset(
+            chunk.id
+            for chunk, _score in candidates
+            if heading_named(query, _chunk_heading(chunk))
+        ),
+    )
+
+
+# Rank bonus (logits) for a chunk whose section heading the question names.
+HEADING_HIT_LOGITS = 3.0
+_HEADING_MIN_CHARS = 4
+_HEADING_WORD_MIN_CHARS = 5  # one-word headings: "Frontier", never "Data"
+_GENERIC_HEADINGS = frozenset(
+    [
+        "overview",
+        "introduction",
+        "faq",
+        "faqs",
+        "frequently",
+        "asked",
+        "questions",
+        "definitions",
+        "contact",
+        "us",
+        "about",
+        "summary",
+        "key",
+        "features",
+        "benefits",
+        "outcomes",
+        "cta",
+        "services",
+    ]
+)
+
+
+def heading_named(query: str, heading: str) -> bool:
+    """The question names this section by its heading: a multi-word heading
+    as a phrase, or a one-word heading as a capitalised name of its own
+    ("the Frontier package", never the "Baseline" of "Security Baseline")."""
+    words = _TOKEN_RE.findall(heading.lower())
+    if not words or len(heading) < _HEADING_MIN_CHARS:
+        return False
+    if " ".join(words) in _GENERIC_HEADINGS or all(w in _STOPWORDS for w in words):
+        return False
+    if len(words) > 1:
+        phrase = r"\W{1,3}".join(re.escape(w) for w in words)
+        return re.search(rf"\b{phrase}\b", query, re.IGNORECASE) is not None
+    if len(words[0]) < _HEADING_WORD_MIN_CHARS:
+        return False
+    for match in re.finditer(rf"\b{re.escape(words[0])}\b", query, re.IGNORECASE):
+        before = query[: match.start()].split()
+        prev = before[-1] if before else ""
+        # Part of a longer name ("Security Baseline", "Zero Trust Foundation").
+        longer = prev.lower() == "security" or (
+            len(before) > 1 and prev[:1].isupper() and prev.lower() not in _STOPWORDS
+        )
+        if not longer:
+            return True
+    return False
+
+
+# "section 2.2" / "clause 5": the numbered section a question names.
+_SECTION_ASK_RE = re.compile(
+    r"\b(?:section|clause|paragraph)\s{0,3}(\d{1,2}(?:\.\d{1,2}){0,2})\b",
+    re.IGNORECASE,
+)
+
+
+def section_number_re(query: str) -> re.Pattern[str] | None:
+    """Matches the numbered heading ("2.2 Information ...") of the section the
+    question names, at a line start or after a breadcrumb; None if none named."""
+    match = _SECTION_ASK_RE.search(query or "")
+    if match is None:
+        return None
+    number = re.escape(match.group(1))
+    return re.compile(
+        rf"(?:^|\n|\N{{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}}\s{{0,3}}|\s{{2}})"
+        rf"{number}\.?\s{{1,3}}[A-Z]"
     )
 
 
@@ -632,6 +967,19 @@ _ENTITY_SQL_RE: dict[str, str] = {
         "secure ai": f"secure{_SQL_SEP}ai",
         "responsible ai": f"responsible{_SQL_SEP}ai",
         "platform": f"deploy{_SQL_SEP}iq{_SQL_SEP}platform",
+    }.items()
+} | {
+    # Site pages, by file name at the start of "<source_name> <title>".
+    key: f"^{body}{_SQL_EDGE_R}"
+    for key, body in {
+        "page:get started": f"get{_SQL_SEP}started",
+        "page:home": f"home{_SQL_SEP}md",
+        "page:our vision": f"our{_SQL_SEP}vision",
+        "page:privacy": "privacy",
+        "page:terms": "terms",
+        "page:about us": f"about{_SQL_SEP}us",
+        "page:contact us": f"contact{_SQL_SEP}us",
+        "page:services": "services",
     }.items()
 }
 

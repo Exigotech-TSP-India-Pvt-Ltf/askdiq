@@ -5,6 +5,7 @@ from app.guardrails.pre_checks import (
     check_sensitive_request,
     check_spam,
     check_unsafe_input,
+    is_junk_input,
     run_pre_checks,
 )
 
@@ -135,6 +136,25 @@ def test_check_spam_detects_gibberish():
     assert flag == "spam_detected"
 
 
+@pytest.mark.parametrize("query", ["zxcvb nmmm ppplk", "nmmm ppplk qwrt"])
+def test_check_spam_detects_elongated_vowelless_mash(query):
+    assert check_spam(query) == (False, "spam_detected")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "hmmm what is zero trust",
+        "brrr cold",
+        "pssst what is MFA",
+        "tellllll me about E8",
+        "whaaaat is deployiq",
+    ],
+)
+def test_check_spam_keeps_interjections_and_emphasis(query):
+    assert check_spam(query) == (True, None)
+
+
 def test_check_spam_allows_legitimate_pricing_question():
     # Real, on-topic word "pricing"/"subscribe" should never trip promo
     # phrase matching — only URLs/scam phrasing/gibberish/repetition should.
@@ -148,3 +168,23 @@ def test_check_spam_allows_legitimate_pricing_question():
 def test_check_sensitive_request_handles_pathological_whitespace_quickly():
     query = "show" + " " * 50000 + "api key" + " " * 50000 + "x"
     assert check_sensitive_request(query) == (True, None)
+
+
+def test_buy_now_alone_is_a_purchase_ask_not_spam():
+    # clar-buy-thanks
+    assert check_spam("buy now") == (True, None)
+    assert check_spam("buy now https://cheap.example.com")[0] is False
+
+
+@pytest.mark.parametrize(
+    ("query", "junk"),
+    [
+        ("!!!", True),
+        ("asdfghjkl", True),
+        ("e8", False),
+        ("2", False),
+        ("for MSP partners", False),
+    ],
+)
+def test_is_junk_input(query, junk):
+    assert is_junk_input(query) is junk

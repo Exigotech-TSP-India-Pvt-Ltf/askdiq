@@ -110,7 +110,9 @@ def test_renumbering_has_no_gaps_and_dedupes_by_document() -> None:
     assert lines[0].endswith("context. [1]")
     assert lines[1].endswith("rapidly. [2]")
     assert [c.n for c in result.citations] == [1, 2]
-    assert [s.chunk_id for s in result.sources] == ["c3", "c2"]
+    # sources[n - 1] is citation n's chunk; c4 (same document, also backs the
+    # claim) follows so every excerpt the answer rests on is returned.
+    assert [s.chunk_id for s in result.sources] == ["c3", "c2", "c4"]
     assert {c.document_id for c in result.citations} == {
         s.document_id for s in result.sources
     }

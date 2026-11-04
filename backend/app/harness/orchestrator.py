@@ -40,7 +40,11 @@ from app.guardrails.conversational import (
     detect_persona,
     pre_llm_policy,
 )
-from app.guardrails.intent import IntentMatch, classify_intent
+from app.guardrails.intent import (
+    IntentMatch,
+    classify_intent,
+    is_booking_info_question,
+)
 from app.guardrails.normalize import normalise_input
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
 from app.guardrails.task_type import task_type_policy
@@ -49,8 +53,10 @@ from app.harness.answer_shape import detect_shape, refine_shape
 from app.harness.citations import (
     TOKEN_DETAILS_KEY,
     citation_records,
+    with_backing_chunks,
 )
 from app.harness.claims import (
+    PLAIN_MODE,
     Draft,
     GroundedAnswer,
     Part,
@@ -74,6 +80,8 @@ from app.harness.decision import Intent, Route, RouteDecision
 from app.harness.page_links import with_page_link
 from app.harness.persona import persona_response
 from app.harness.prompt_catalog import (
+    LANGUAGE_NOTE,
+    OVERVIEW_NOTE,
     POLICY_NONE,
     POLICY_OFF_TOPIC,
     POLICY_TEMPLATE_IDS,
@@ -87,12 +95,14 @@ from app.harness.prompt_catalog import (
 )
 from app.harness.prompts import _MAX_HISTORY_TURNS, NO_ANSWER_LINE, call_llm
 from app.harness.style import resolve_style, use_style
-from app.retrieval.reranker import entity_documents, entity_mentions
+from app.retrieval.reranker import entity_documents, entity_mentions, looks_english
 from app.retrieval.retriever import (
     covered_sources,
     decide_route,
     decompose_query,
+    log_safe_text,
     needs_conversation_context,
+    resolve_page_urls,
     retrieve_parts,
     route_sources,
     trust_clarified,
@@ -456,7 +466,7 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
             "input_normalised",
             raw_len=len(raw_query),
             normalised_len=len(query),
-            raw_snippet=raw_query[:60],
+            raw_snippet=log_safe_text(raw_query, 60),
         )
 
     # Computed once up front (pure function of query+history) so every
@@ -476,7 +486,7 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
 
     # PERSONA (name, maker, model, languages, chat privacy, memory, human...):
     # its own approved template (app.harness.persona); anchored patterns only.
-    persona = None if clarification_reply else detect_persona(query)
+    persona = None if clarification_reply else detect_persona(query, history)
     if persona is not None:
         return await persona_response(
             persona,
@@ -580,7 +590,7 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
             "guardrail_blocked",
             stage="pre_checks",
             flags=pre_flags,
-            query_snippet=query[:60],
+            query_snippet=log_safe_text(query, 60),
             latency_ms=round(latency_ms, 2),
         )
         return _fallback_response(
@@ -591,14 +601,19 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
             history_turns_sent=history_turns_sent,
         )
 
-    effective_query, sanitize_flags = sanitize_query(query, pre_flags)
+    # A pasted page URL becomes the page's name first: sanitising would drop
+    # the URL token as junk ("https://deployiq.co/packages what's on this
+    # page?" -> "what's on this page?") and retrieval would lose the page.
+    effective_query, sanitize_flags = sanitize_query(
+        resolve_page_urls(query), pre_flags
+    )
     if sanitize_flags:
         latency_ms = (time.perf_counter() - start) * 1000
         logger.warning(
             "guardrail_blocked",
             stage="sanitize_query",
             flags=sanitize_flags,
-            query_snippet=query[:60],
+            query_snippet=log_safe_text(query, 60),
             latency_ms=round(latency_ms, 2),
         )
         return _fallback_response(
@@ -639,7 +654,7 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
     if intent_match is not None and not intent_match.result.score and not buying:
         # Classifier unavailable (it fails open to QUESTION, score 0): keep the
         # owner's buying rules working on the purchase wording alone.
-        buying = is_buying(query)
+        buying = is_buying(query) and not is_booking_info_question(query)
     # "Talk to sales about X" is a buying ask whatever the classifier says.
     buying = buying or _SALES_ASK_RE.search(query) is not None
     asks = 1 if clarification_reply else len(decompose_query(effective_query))
@@ -678,7 +693,7 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
         buying=buying,
         max_ce=retrieval.max_ce,
         parts=[
-            {"text": v.text[:80], "covered": v.covered, "score": v.score}
+            {"text": log_safe_text(v.text, 80), "covered": v.covered, "score": v.score}
             for v in route_decision.parts
         ],
     )
@@ -857,6 +872,12 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
     # the reply carries its facts (the pricing and sales lines follow).
     buying_answer = route_decision.buying and route_decision.route is Route.ANSWER
     llm_question = f"{query} {_BUYING_FOLLOW_UP}" if buying_answer else query
+    # A bare catalogue topic whose own page was retrieved ("ISO 27001", "e8")
+    # is covered by definition (see _topic_sources): asked as an overview.
+    topic = _topic_sources(query, sources, route_decision)
+    focus_block = "\n".join(
+        b for b in (OVERVIEW_NOTE if topic else "", _language_note(query)) if b
+    )
     max_attempts = settings.max_llm_retries + 1
     for attempt in range(max_attempts):
         if attempt > 0:
@@ -870,7 +891,9 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
                 request_id=request_id,
             )
         try:
-            raw_reply, usage = await call_llm(llm_question, sources, history)
+            raw_reply, usage = await call_llm(
+                llm_question, sources, history, focus_block=focus_block
+            )
         except _LLM_ERRORS as exc:
             # call_llm already retried transient failures (the one transport
             # retry layer); an error reaching here ends the attempts.
@@ -903,6 +926,12 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
             tot_reasoning += usage.get("reasoning_tokens", 0)
             tot_cached += usage.get("cached_tokens", 0)
         draft = parse_draft(raw_reply)
+        if draft is not None and _cut_json(raw_reply, draft):
+            # A JSON reply cut off at the output cap is re-asked, never
+            # verified as plain text.
+            logger.warning("llm_json_truncated", request_id=request_id)
+            draft = None
+            continue
         if draft is not None:
             break
 
@@ -934,9 +963,6 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
     # 5. LLM FAILURE / EMPTY RESPONSE
     # ---------------------------------------------------------
 
-    # A bare catalogue topic whose own page was retrieved ("ISO 27001", "e8")
-    # is covered by definition (see _topic_sources).
-    topic = _topic_sources(query, sources, route_decision)
     if draft is None and topic:
         # No usable reply: the topic page's own sentences, verified below,
         # instead of the "try again" line (deterministic, no model needed).
@@ -1155,6 +1181,16 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
     partial = bool(grounded_answer.uncovered) or answer_text != grounded_answer.text
     post_flags = ["partial_answer"] if partial else []
     citations = grounded_answer.citations
+    # Every chunk a kept claim rests on (not only the first one per document);
+    # ``sources[n - 1]`` stays the chunk of citation ``n``.
+    cited_sources = with_backing_chunks(
+        grounded_answer.sources,
+        [
+            sources[c.source - 1]
+            for c in grounded_answer.kept
+            if 0 < c.source <= len(sources)
+        ],
+    )
     if citations:
         token_details[TOKEN_DETAILS_KEY] = citation_records(citations)
     confidence = grounded_answer.verified_ratio
@@ -1165,7 +1201,7 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
         confidence=confidence,
         latency_ms=round(total_ms, 2),
         sources=len(sources),
-        cited_sources=len(grounded_answer.sources),
+        cited_sources=len(cited_sources),
         retrieved_documents=sorted({s.document_id for s in sources}),
         retrieval_scores=[round(s.score, 4) for s in sources],
         prompt_tok=prompt_tokens or 0,
@@ -1176,7 +1212,7 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
 
     return QueryResponse(
         answer=answer_text,
-        sources=grounded_answer.sources,
+        sources=cited_sources,
         citations=citations,
         grounded=True,
         confidence=confidence,
@@ -1199,6 +1235,32 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
 # claim although the gate found evidence (gpt-5-mini has no temperature 0).
 # ---------------------------------------------------------------------------
 _MAX_FOCUS_SOURCES = 4
+# Covered retry: chunks named per ask, and the shortest ask word ranked by.
+_MAX_PART_SOURCES = 3
+_MIN_ASK_WORD_CHARS = 4
+# Reply language: a question of 3+ words with no English function word and an
+# accented letter or a common foreign function word is answered in its own
+# language ("Wo befinden sich Ihre Büros?", "Che cos'è l'Essential Eight?").
+_MIN_FOREIGN_WORDS = 3
+_LETTER_WORD_RE = re.compile(r"[^\W\d_]+")
+_ENGLISH_FUNCTION_WORDS = frozenset(
+    {
+        "the", "a", "an", "what", "how", "which", "who", "where", "when",
+        "why", "do", "does", "did", "is", "are", "was", "can", "could",
+        "will", "would", "you", "your", "we", "our", "us", "i", "my", "me",
+        "it", "its", "this", "that", "of", "to", "for", "in", "on", "at",
+        "with", "and", "or", "about", "from", "have", "has", "any", "there",
+    }
+)  # fmt: skip
+_FOREIGN_FUNCTION_WORDS = frozenset(
+    {
+        "wo", "wie", "ist", "sind", "ihre", "ihr", "sie", "und", "der", "das",
+        "für", "mit", "che", "cos", "il", "di", "sono", "gli", "della",
+        "quali", "qué", "que", "el", "los", "las", "es", "cómo", "para",
+        "por", "con", "une", "est", "vous", "nous", "où", "quel", "quelle",
+        "comment", "avec", "bạn", "có", "không", "ở", "và", "ban", "khong",
+    }
+)  # fmt: skip
 _MAX_TOPIC_SCAN_CHARS = 200
 _TOPIC_WORD_RE = re.compile(r"[a-z0-9][a-z0-9'&+-]{0,40}")
 # What a bare-topic question may add around the topic ("tell me about e8").
@@ -1275,6 +1337,83 @@ def _focus_sources(sources: list[SourceChunk], decision: RouteDecision) -> list[
     return (numbers or list(range(1, len(sources) + 1)))[:_MAX_FOCUS_SOURCES]
 
 
+def _language_note(query: str) -> str:
+    """``LANGUAGE_NOTE`` for a question not written in English, else ""."""
+    words = _LETTER_WORD_RE.findall(query.lower())
+    short_foreign = (
+        len(words) >= _MIN_FOREIGN_WORDS
+        and not any(w in _ENGLISH_FUNCTION_WORDS for w in words)
+        and (
+            any(not c.isascii() for w in words for c in w)
+            or any(w in _FOREIGN_FUNCTION_WORDS for w in words)
+        )
+    )
+    foreign = short_foreign or not looks_english(query)
+    return LANGUAGE_NOTE if foreign else ""
+
+
+def _cut_json(raw: str, draft: Draft) -> bool:
+    """The reply started as JSON but did not parse (cut off at the cap)."""
+    return draft.mode == PLAIN_MODE and raw.lstrip().startswith("{")
+
+
+def _ask_words(text: str) -> set[str]:
+    return {
+        w
+        for w in _TOPIC_WORD_RE.findall(text.lower())
+        if w not in _TOPIC_FILLER_WORDS
+        and (len(w) >= _MIN_ASK_WORD_CHARS or w.isdigit())
+    }
+
+
+def _part_sources(
+    asks: list[str], sources: list[SourceChunk], decision: RouteDecision
+) -> list[list[int]]:
+    """Per ask, the chunks that answer it: its gate part's documents (else
+    every covered part's), ranked by the ask's words they share; [] = none."""
+    docs = {
+        " ".join(p.text.split()).lower(): set(p.document_ids) for p in decision.parts
+    }
+    every = {d for p in decision.covered_parts for d in p.document_ids}
+    result: list[list[int]] = []
+    for ask in asks:
+        wanted = docs.get(" ".join(ask.split()).lower()) or every
+        words = _ask_words(ask)
+        scored = [
+            (len(words & _ask_words(f"{_source_name(s)} {s.content}")), n)
+            for n, s in enumerate(sources, start=1)
+            if not wanted or s.document_id in wanted
+        ]
+        ranked = sorted((-score, n) for score, n in scored if score)
+        result.append(sorted(n for _s, n in ranked[:_MAX_PART_SOURCES]))
+    return result
+
+
+def _answered_parts(
+    answer: GroundedAnswer, keep_open: bool
+) -> tuple[list[Part], dict[int, int]]:
+    """``answer``'s parts (only the answered ones unless ``keep_open``) and
+    each kept part index's new position."""
+    used = {c.part for c in answer.kept}
+    count = max([len(answer.parts), *(p + 1 for p in used)])
+    numbers = [i for i in range(count) if keep_open or i in used]
+    parts = [
+        answer.parts[i] if i < len(answer.parts) else Part("", True) for i in numbers
+    ]
+    return parts, {old: new for new, old in enumerate(numbers)}
+
+
+def _merged_draft(current: GroundedAnswer, retried: GroundedAnswer) -> Draft:
+    """The first answer's answered parts, then every part of the re-ask, as
+    one draft of their verified claims (verified again as one reply)."""
+    first_parts, first_index = _answered_parts(current, keep_open=False)
+    retry_parts, retry_index = _answered_parts(retried, keep_open=True)
+    offset = len(first_parts)
+    claims = [replace(c, part=first_index[c.part]) for c in current.kept]
+    claims += [replace(c, part=retry_index[c.part] + offset) for c in retried.kept]
+    return Draft("answer", [*first_parts, *retry_parts], claims, current.mode)
+
+
 async def _covered_retry(  # pylint: disable=too-many-arguments,too-many-locals
     query: str,
     sources: list[SourceChunk],
@@ -1295,8 +1434,14 @@ async def _covered_retry(  # pylint: disable=too-many-arguments,too-many-locals
     asks = current.uncovered if current.answered else []
     asks = asks or [p.text for p in decision.covered_parts] or [query]
     block = covered_retry_block(
-        asks, topic or _focus_sources(sources, decision), overview=bool(topic)
+        asks,
+        topic or _focus_sources(sources, decision),
+        overview=bool(topic),
+        part_sources=_part_sources(asks, sources, decision),
     )
+    language = _language_note(query)
+    if language:
+        block = f"{block}\n{language}"
     try:
         raw_reply, usage = await call_llm(query, sources, history, focus_block=block)
     except _LLM_ERRORS as exc:
@@ -1316,11 +1461,33 @@ async def _covered_retry(  # pylint: disable=too-many-arguments,too-many-locals
         query,
         numbered=numbered,
         gap_parts=[p.text for p in decision.uncovered_parts],
+        # The re-ask must answer what it asked: an ask naming something no
+        # kept claim's chunk mentions ("AWS regions") stays a gap.
+        named_asks=asks,
         sales_contact=sales,
     )
     better = result.answered and (
         not current.answered or len(result.uncovered) < len(current.uncovered)
     )
+    if (
+        better
+        and current.answered
+        and len({c.part for c in result.kept}) < len(current.parts)
+    ):
+        # The re-ask answered the missing part only: the parts the first
+        # answer already covered are kept beside it, never dropped.
+        merged = await asyncio.to_thread(
+            ground_answer,
+            _merged_draft(current, result),
+            sources,
+            query,
+            numbered=numbered,
+            gap_parts=[p.text for p in decision.uncovered_parts],
+            named_asks=asks,
+            sales_contact=sales,
+        )
+        if merged.answered and len(merged.uncovered) <= len(result.uncovered):
+            result = merged
     logger.info(
         "covered_retry",
         request_id=request_id,

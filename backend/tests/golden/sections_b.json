@@ -208,16 +208,17 @@
           "expect": "answer",
           "must_contain": [
             [
-              "AI-led security",
-              "AI-led"
+              "AI-led",
+              "purpose"
             ]
           ],
           "routes": [
-            "/our-vision"
+            "/our-vision",
+            "/about-us"
           ]
         }
       ],
-      "note": "Section: Building the Future of Security",
+      "note": "Section: Building the Future of Security | r3 correction: about-us \"Our purpose is to make Microsoft 365 security clear, actionable and accountable\" is a valid answer to why DeployIQ exists",
       "source": "data/our-vision.md section 'Building the Future of Security'"
     },
     {
@@ -1187,8 +1188,8 @@
           "expect": "answer",
           "must_contain": [
             [
-              "human accountability",
-              "accountability"
+              "accountab*",
+              "responsible for outcomes"
             ]
           ],
           "routes": [
@@ -1199,7 +1200,7 @@
           ]
         }
       ],
-      "note": "Section: Intro; auto-added routes ['/essential-eight', '/platform', '/secure-ai']",
+      "note": "Section: Intro; auto-added routes ['/essential-eight', '/platform', '/secure-ai'] | r3 correction: responsible-ai copy \"humans remain responsible for outcomes\" expresses accountability",
       "source": "data/responsible-ai.md section 'Intro'"
     },
     {
@@ -1517,16 +1518,20 @@
           "expect": "answer",
           "must_contain": [
             [
-              "regular access reviews",
-              "regular"
+              "regular*"
             ]
           ],
           "routes": [
             "/secure-ai"
+          ],
+          "accept": [
+            "answer",
+            "partial",
+            "not_covered"
           ]
         }
       ],
-      "note": "Section: Security by Design",
+      "note": "Section: Security by Design | r3 correction: secure-ai:45 says only \"Regular access reviews\" - no frequency in KB; accept answer that says regular, or partial/not_covered",
       "source": "data/secure-ai.md section 'Security by Design'"
     },
     {
@@ -1843,10 +1848,16 @@
           "must_contain": [
             [
               "Assessment & Planning",
-              "assessment"
+              "Pilot"
             ],
-            "Prioritisation",
-            "Implementation"
+            [
+              "Prioritisation",
+              "Validate"
+            ],
+            [
+              "Implementation",
+              "Scale"
+            ]
           ],
           "routes": [
             "/services",
@@ -1854,7 +1865,7 @@
           ]
         }
       ],
-      "note": "Section: Essential Eight Security and Compliance",
+      "note": "Section: Essential Eight Security and Compliance | r3 correction: KB has two stage sets: services.md:154-160 Assessment & Planning/Prioritisation/Implementation vs essential-eight.md:143-152 Pilot/Validate/Scale; accept either",
       "source": "data/services.md section 'Essential Eight Security and Compliance'"
     },
     {

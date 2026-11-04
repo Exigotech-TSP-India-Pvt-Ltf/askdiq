@@ -7,6 +7,7 @@ real /query calls (scripts/live_golden_eval.py).
 
 from __future__ import annotations
 
+# pylint: disable=too-many-lines  # one suite for the verifier's contract
 import json
 from functools import cache
 from pathlib import Path
@@ -17,7 +18,12 @@ from app.chunking.section_tree import SectionTreeChunker
 from app.guardrails.intent import IntentMatch
 from app.harness import orchestrator
 from app.harness import prompt_catalog as catalog
-from app.harness.claims import ground_answer, parse_draft
+from app.harness.claims import (
+    find_sales_contact,
+    ground_answer,
+    parse_draft,
+    uncovered_parts,
+)
 from app.harness.decision import Intent, IntentResult, PartVerdict, Route, RouteDecision
 from app.ingestion.cleanup import clean_markdown
 from app.ingestion.site_pages import parse_site_page
@@ -103,6 +109,34 @@ def test_unsupported_claim_is_dropped(text: str, quote: str, reason: str) -> Non
     assert [r for _c, r in result.dropped] == [reason]
 
 
+def test_page_wording_is_not_banned_wording() -> None:
+    # terms-downloads: "materials" is the page's own term there, not stock wording.
+    page = "These materials are not Services or Deliverables."
+    draft = parse_draft(_reply([_claim(page, page)]))
+    assert draft is not None
+    result = ground_answer(draft, [_source(page)], "what are downloads?")
+    assert result.answered
+    assert "materials are not Services" in result.text
+
+
+@pytest.mark.parametrize(
+    ("text", "answered"),
+    [
+        ("No, they aren't tailored to any environment.", True),
+        ("They aren't provided as is.", False),
+    ],
+)
+def test_negation_is_checked_against_the_restated_clause(
+    text: str, answered: bool
+) -> None:
+    # terms-downloads: the quote negates two clauses; the claim restates one.
+    quote = "These are not Services, are not tailored to any environment, and are provided as is"
+    draft = parse_draft(_reply([_claim(text, quote)]))
+    assert draft is not None
+    result = ground_answer(draft, [_source(quote + ".")], "are they tailored?")
+    assert result.answered is answered
+
+
 def test_supported_claims_render_with_renumbered_markers() -> None:
     result = _ground(
         [
@@ -141,7 +175,9 @@ def test_uncovered_part_gets_the_fixed_partial_line() -> None:
         ],
         query="How many controls and what is the price?",
     )
-    assert result.text.endswith(catalog.partial_line(["the price"]))
+    # A price part gets the fixed pricing line, never "I don't have details".
+    assert result.text.endswith(catalog.PRICING_LINE)
+    assert catalog.partial_line(["the price"]) not in result.text
     assert result.uncovered == ["the price"]
 
 
@@ -232,8 +268,6 @@ def test_conflicting_values_cannot_be_ranged() -> None:
 
 
 def test_sales_contact_is_read_from_the_contact_chunk() -> None:
-    from app.harness.claims import find_sales_contact
-
     found = find_sales_contact([_source(SBA), _source(CONTACT, 2, "contact-us.md")])
     assert found is not None
     assert (found.source, found.phone, found.email) == (
@@ -305,6 +339,30 @@ async def test_matrix_answered(monkeypatch) -> None:
     assert r.guardrail_flags == []
 
 
+async def test_sources_carry_every_chunk_behind_a_kept_claim(monkeypatch) -> None:
+    head, tail = SBA.split(" Nothing changes", 1)
+    first, second = _source(head, 1), _source("Nothing changes" + tail, 2)
+    second = second.model_copy(update={"document_id": first.document_id})
+    unused = _source(CONTACT, 3, name="contact.md")
+    reply = _reply(
+        [
+            _claim("It covers 42 controls.", "42 controls", source=1),
+            _claim(
+                "Nothing changes in your environment without your sign-off.",
+                "Nothing changes in your environment without your sign-off",
+                source=2,
+            ),
+        ]
+    )
+    _patch_pipeline(monkeypatch, reply, sources=[first, second, unused])
+    r = await _run()
+    assert r.outcome == "answered"
+    assert [c.n for c in r.citations] == [1]
+    # sources[0] stays citation 1's chunk; the document's other backing chunk
+    # follows (once); the unused chunk is not returned.
+    assert [s.chunk_id for s in r.sources] == [first.chunk_id, second.chunk_id]
+
+
 async def test_matrix_partial(monkeypatch) -> None:
     reply = _reply(
         [_claim("It covers 42 controls.", "42 controls")],
@@ -317,7 +375,7 @@ async def test_matrix_partial(monkeypatch) -> None:
     r = await _run("How many controls and what is the price?")
     assert (r.outcome, r.grounded) == ("answered", True)
     assert r.guardrail_flags == ["partial_answer"]
-    assert r.answer.endswith(catalog.partial_line(["the price"]))
+    assert r.answer.endswith(catalog.PRICING_LINE)
 
 
 @pytest.mark.parametrize(
@@ -676,7 +734,9 @@ def test_shared_bullet_lead_is_cut():
         "What does the Frontier package include?",
     )
     assert "- 24/7 detection and response [1]" in answer.text
-    assert "The Frontier package includes" not in answer.text
+    # The shared lead is said once, as the list's lead sentence.
+    assert answer.text.count("The Frontier package includes") == 1
+    assert answer.text.startswith("The Frontier package includes:")
 
 
 def test_sentences_repeating_one_lead_render_as_lead_plus_bullets():
@@ -746,4 +806,431 @@ def test_word_budget_drops_extra_claims_but_never_a_part(monkeypatch):
     assert len(answer.kept) == 3
     assert "five areas" not in answer.text
     assert "1 to 2 weeks" in answer.text
-    assert answer.uncovered == []
+    assert not answer.uncovered
+
+
+# ---------------------------------------------------------------------------
+# Final-run fixes: true claims that were dropped, fabrications that passed,
+# and rendering (removes / restructures only).
+# ---------------------------------------------------------------------------
+
+HOME = (
+    "Redefining Cybersecurity & Compliance\n\n"
+    "Security that works the way your team does.\nThe Intelligence Shift\n\n"
+    "The perfect balance of intelligent agents, automation, and human judgment.\n\n"
+    "- 01 Agentic by design\n- 02 Continuous automation\n- 03 Human when it matters\n"
+    "- 04 Fast by default\n- 05 Secure at every step\n"
+)
+VISION = (
+    "Our Vision\n\n- Centre circle: No Tradeoffs\n"
+    "- Chips below: Responsible AI \u00b7 Secure AI \u00b7 Learning Loops"
+)
+JOURNEY = (
+    "Packages \u203a How it works\n\nOnboard \u2192 Assess \u2192 Recommend \u2192 "
+    "Approve \u2192 Apply \u2192 Validate \u2192 Improve"
+)
+CONTACT_PAGE = (
+    "Contact Us\n\nAustralia\nSydney Office\nSuite B5-B6, 12-14 Solent Circuit, Norwest\n"
+    "Melbourne Office\nLevel 2 Riverside Quay, 1 Southbank Blvd\nCall\n1300 394 468\n"
+    "Mail\ninfo@deployiq.co\nEnquiry category tabs\n- Sales\n- Support\n- Careers"
+)
+WHO_FOR = (
+    "Deploy IQ Platform \u203a Who Deploy IQ Platform Is For\n\n"
+    "Designed for organisations that need structured, predictable, and "
+    "accountable security uplift\n\nStartups\n\nBuilding secure, scalable "
+    "environments. Turn the struggle up with best practices.\n\n"
+    "Mature teams\n\nSeeking consistent execution across distributed responsibilities."
+)
+GAIN = (
+    "Deploy IQ Platform \u203a What Organisations Gain\n\n"
+    "Using Deploy IQ, organisations benefit from:\n\n"
+    "- Hardened configuration states aligned to recognised frameworks.\n"
+    "- Reduced exposure through prioritised, validated implementation."
+)
+TIERS = (
+    "Microsoft 365 Security Packages \u203a Packages\n\nBaseline\n\n"
+    "A point-in-time assessment of your tenant.\n\nStrengthen\n\n"
+    "Everything in Foundation, plus:\n- Risk-based access for sign-ins\n"
+    "- Just-in-time admin access"
+)
+
+
+def _answer(claims, sources, query, parts=None, **kwargs):
+    draft = parse_draft(_compact(claims, parts or [{"a": "the ask", "c": True}]))
+    assert draft is not None
+    return ground_answer(draft, sources, query, **kwargs)
+
+
+def _reasons(answer) -> list[str]:
+    return [reason for _, reason in answer.dropped]
+
+
+def test_list_items_under_a_list_heading_verify_without_page_numerals():
+    # home-intel-04: items 02-05 sit 3+ lines below "The Intelligence Shift".
+    items = [
+        "01 Agentic by design",
+        "02 Continuous automation",
+        "03 Human when it matters",
+        "04 Fast by default",
+        "05 Secure at every step",
+    ]
+    answer = _answer(
+        [_c(q, k="i") for q in items],
+        [_source(HOME, name="home.md")],
+        "What are the five principles of 'The Intelligence Shift'?",
+    )
+    assert len(answer.kept) == 5, answer.dropped
+    assert "- Secure at every step [1]" in answer.text
+    assert "01" not in answer.text
+    assert "05" not in answer.text
+
+
+def test_a_count_of_the_quotes_own_list_verifies():
+    # our-vision-02 ("three") and packages-12 ("seven", arrows in the chunk).
+    three = _answer(
+        [
+            _c(
+                "Responsible AI \u00b7 Secure AI \u00b7 Learning Loops",
+                t="The three themes are Responsible AI, Secure AI and Learning Loops.",
+            )
+        ],
+        [_source(VISION, name="our-vision.md")],
+        "What three themes sit underneath the no-tradeoffs vision?",
+    )
+    assert three.answered, three.dropped
+    seven = _answer(
+        [
+            _c(
+                "Onboard Assess Recommend Approve Apply Validate Improve",
+                t="There are seven stages: Onboard, Assess, Recommend, Approve, "
+                "Apply, Validate and Improve.",
+            )
+        ],
+        [_source(JOURNEY, name="packages.md")],
+        "How many stages are in the journey?",
+    )
+    assert seven.answered, seven.dropped
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        (
+            "The four themes are Responsible AI, Secure AI and Learning Loops.",
+            "figure_not_in_source",
+        ),
+        (
+            "The three themes take 3 weeks: Responsible AI, Secure AI and Learning Loops.",
+            "figure_not_in_source",
+        ),
+    ],
+)
+def test_a_count_the_list_does_not_back_still_fails(text: str, reason: str):
+    answer = _answer(
+        [_c("Responsible AI \u00b7 Secure AI \u00b7 Learning Loops", t=text)],
+        [_source(VISION, name="our-vision.md")],
+        "What themes sit underneath the vision?",
+    )
+    assert _reasons(answer) == [reason]
+
+
+def test_verbatim_quote_cited_with_the_wrong_source_number_is_re_attributed():
+    # hard-negative-06 / privacy section 8: the quote is verbatim in Source 2.
+    retention = _source(
+        "Privacy Policy \u203a 8 Retention\n\nInformation is retained only for the "
+        "duration needed to deliver services or meet legal obligations. It is "
+        "then securely archived or disposed of.",
+        n=2,
+        name="privacy.md",
+    )
+    quote = (
+        "Information is retained only for the duration needed to deliver "
+        "services or meet legal obligations."
+    )
+    answer = _answer(
+        [_c(quote, s=1), _c("It is retained for seven years.", s=1)],
+        [_source(SBA), retention],
+        "How long do you keep personal information?",
+    )
+    assert [c.source for c in answer.kept] == [2]
+    assert _reasons(answer) == ["quote_not_in_source"]
+
+
+def test_contact_values_with_framing_words_verify_and_render_once():
+    # contact-05: "Our phone number is ..." over "Call / 1300 394 468".
+    answer = _answer(
+        [
+            _c("1300 394 468", t="Our phone number is 1300 394 468."),
+            _c("info@deployiq.co", t="You can email info@deployiq.co."),
+            _c("1300 394 468", t="Our Australia phone number is 1300 394 468."),
+        ],
+        [_source(CONTACT_PAGE, name="contact-us.md")],
+        "How can I get in touch?",
+    )
+    assert not answer.dropped
+    assert answer.text.count("1300 394 468") == 1  # stated once, not twice
+    assert "info@deployiq.co" in answer.text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Our phone number is 1300 394 469.",
+        "Our support line is open around the clock on 1300 394 468.",
+    ],
+)
+def test_contact_framing_never_backs_a_new_fact(text: str):
+    answer = _answer([_c("1300 394 468", t=text)], [_source(CONTACT_PAGE)], "phone?")
+    assert not answer.answered
+
+
+def test_short_items_verify_and_a_label_echoing_the_question_does_not():
+    # "Support" / "ML3" have no content stem; "TARGET MATURITY LEVEL." only
+    # repeats the question.
+    source = _source("Essential Eight\n\nTARGET MATURITY LEVEL\nML3\n" + CONTACT_PAGE)
+    answer = _answer(
+        [_c("Support", k="i"), _c("ML3", k="i"), _c("TARGET MATURITY LEVEL")],
+        [source],
+        "What target maturity level is shown, and what tabs are on the form?",
+    )
+    assert [c.text for c in answer.kept] == ["Support", "ML3"]
+    assert _reasons(answer) == ["label_only"]
+
+
+def test_a_generic_list_is_not_presented_as_one_audiences_benefits():
+    # platform-10: the "What Organisations Gain" list attributed to startups.
+    sources = [
+        _source(WHO_FOR, n=1, name="platform.md"),
+        _source(GAIN, n=2, name="platform.md"),
+    ]
+    answer = _answer(
+        [
+            _c(
+                "Hardened configuration states aligned to recognised frameworks.",
+                t="Deploy IQ helps startups gain hardened configurations.",
+                s=2,
+            ),
+            _c(
+                "Building secure, scalable environments.",
+                t="Startups build secure, scalable environments with Deploy IQ.",
+            ),
+            _c(
+                "Reduced exposure through prioritised, validated implementation.",
+                t="Organisations gain reduced exposure.",
+                s=2,
+            ),
+        ],
+        sources,
+        "Is the Deploy IQ platform suitable for startups?",
+    )
+    assert _reasons(answer) == ["subject_not_local"]
+    assert "Startups build" in answer.text
+    assert "Organisations gain" in answer.text
+
+
+def test_a_claim_about_another_tier_than_asked_is_dropped():
+    answer = _answer(
+        [
+            _c(
+                "A point-in-time assessment of your tenant.",
+                t="The Baseline package is a point-in-time assessment of your tenant.",
+            ),
+            _c(
+                "Everything in Foundation, plus:",
+                t="It includes everything in Foundation.",
+            ),
+            _c("Risk-based access for sign-ins", k="i"),
+        ],
+        [_source(TIERS, name="packages.md")],
+        "What does the Strengthen package include?",
+    )
+    assert _reasons(answer) == ["other_subject"]
+    assert "everything in Foundation" in answer.text
+
+
+def test_list_lead_restated_facts_and_fragments_render_cleanly():
+    answer = _answer(
+        [
+            _c("Sales", k="i"),
+            _c("Support", k="i"),
+            _c(
+                "Enquiry category tabs",
+                t="The enquiry category tabs are on the contact form.",
+            ),
+            _c("Call"),
+            _c("Careers", k="i"),
+        ],
+        [_source(CONTACT_PAGE)],
+        "What can I pick on the contact form?",
+    )
+    lines = answer.text.splitlines()
+    assert lines[0].startswith("The enquiry category tabs")  # lead before bullets
+    assert [line for line in lines if line.startswith("- ")] == [
+        "- Sales [1]",
+        "- Support [1]",
+        "- Careers [1]",
+    ]
+    assert "Call." not in answer.text  # a bare page label
+
+
+def test_flattened_numbered_steps_become_items():
+    source = _source("Steps\n1. Step 1 Onboard\n2. Step 2 Assess\n3. Step 3 Recommend")
+    answer = _answer(
+        [
+            _c(
+                "1. Step 1 Onboard 2. Step 2 Assess 3. Step 3 Recommend",
+                t="Step 1, Onboard 2. Step 2, Assess 3. Step 3, Recommend",
+                k="i",
+            )
+        ],
+        [source],
+        "What are the steps?",
+        numbered=True,
+    )
+    assert answer.text.splitlines() == [
+        "1. Onboard [1]",
+        "2. Assess [1]",
+        "3. Recommend [1]",
+    ]
+
+
+def test_sentences_sharing_a_tail_become_lead_and_bullets():
+    tail = "is one of Deploy IQ's Responsible AI principles."
+    heads = ("Transparency", "Accountability", "Human oversight")
+    source = _source("Responsible AI\n" + "\n".join(f"{w} {tail}" for w in heads))
+    answer = _answer(
+        [_c(f"{w} {tail}") for w in heads],
+        [source],
+        "What are your Responsible AI principles?",
+    )
+    assert answer.text.count(tail) == 1
+    assert "- Accountability [1]" in answer.text
+    assert "- Human oversight [1]" in answer.text
+
+
+def test_fixed_sales_line_replaces_a_model_sales_sentence():
+    sources = [_source(SBA), _source(CONTACT, n=2, name="contact-us.md")]
+    contact = find_sales_contact(sources)
+    assert contact is not None
+    answer = _answer(
+        [
+            _c("Nothing changes in your environment without your sign-off."),
+            _c(
+                "Call 1300 394 468",
+                t="You can buy the service by calling 1300 394 468.",
+                s=2,
+            ),
+        ],
+        sources,
+        "How do I buy the assessment?",
+        sales_contact=contact,
+    )
+    assert "You can buy the service" not in answer.text
+    assert answer.text.count("1300 394 468") == 1
+    assert contact.line in answer.text
+
+
+def test_fixed_lines_count_towards_the_word_cap(monkeypatch):
+    from app.harness import claims as claims_module  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        claims_module.get_settings(), "answer_max_words", 30, raising=False
+    )
+    answer = _answer(
+        [
+            _c("Nothing changes in your environment without your sign-off."),
+            _c("We evaluate your tenant across five areas that matter most"),
+        ],
+        [_source(SBA)],
+        "What is the assessment and who founded you?",
+        parts=[
+            {"a": "the assessment", "c": True},
+            {"a": "who founded you", "c": False},
+        ],
+    )
+    assert "five areas" not in answer.text  # the partial line took the room
+    assert "sign-off" in answer.text
+    assert answer.uncovered == ["who founded you"]
+
+
+@pytest.mark.parametrize(
+    ("ask", "query", "expected"),
+    [
+        (
+            "do you have one in Perth",
+            "Where are your offices, and do you have one in Perth?",
+            ["an office in Perth"],
+        ),
+        (
+            "suggest I talk to a specialist",
+            "not sure, suggest I talk to a specialist",
+            None,
+        ),
+        ("thanks, bye - oh", "thanks, bye - oh", None),
+    ],
+)
+def test_partial_line_names_a_noun_phrase_or_nothing(ask, query, expected):
+    draft = parse_draft(
+        _compact(
+            [_c("Nothing changes in your environment without your sign-off.")],
+            [{"a": "the assessment", "c": True}, {"a": ask, "c": False}],
+        )
+    )
+    assert draft is not None
+    assert uncovered_parts(draft, list(draft.claims), query) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "shipped"),
+    [
+        ("01, Access Control & Identity", "Access Control & Identity"),
+        ("05 Secure at every step", "Secure at every step"),
+        ("Steps (in order): Onboard, Assess", "Onboard, Assess"),
+        (
+            "The Zero Trust, Starter plan is self-service.",
+            "The Zero Trust Starter plan",
+        ),
+    ],
+)
+def test_page_numerals_labels_and_name_commas_never_ship(text: str, shipped: str):
+    source = _source(
+        "Controls\n- 01 Access Control & Identity\n- 05 Secure at every step\n"
+        "Onboard, Assess\nZero Trust - Starter plan is self-service."
+    )
+    quote = {
+        "01, Access Control & Identity": "01 Access Control & Identity",
+        "05 Secure at every step": "05 Secure at every step",
+        "Steps (in order): Onboard, Assess": "Onboard, Assess",
+    }.get(text, "Starter plan is self-service")
+    answer = _answer([_c(quote, t=text, k="i")], [source], "What are the controls?")
+    assert answer.answered, answer.dropped
+    assert answer.text.startswith(f"- {shipped}")
+
+
+def test_items_framed_in_the_questions_words_and_page_numerals_verify():
+    # which-03 ("The service handles Cryptography") and intel-04 ("principle two").
+    iso = _source(
+        "ISO 27001 Technical Controls\n- 01 Access Control & Identity\n"
+        "- 02 Cryptography\n- 03 Logging & Monitoring"
+    )
+    answer = _answer(
+        [
+            _c(
+                "Access Control & Identity",
+                t="The service handles Access Control.",
+                k="i",
+            ),
+            _c("02 Cryptography", t="The service handles Cryptography.", k="i"),
+            _c("02 Cryptography", t="The service outsources Cryptography.", k="i"),
+            _c("02 Cryptography", t="Control area two is Cryptography.", k="i"),
+            _c("02 Cryptography", t="Control area four is Cryptography.", k="i"),
+        ],
+        [iso],
+        "List the ISO 27001 control areas you handle in Microsoft 365.",
+    )
+    assert [c.text for c in answer.kept] == [
+        "The service handles Access Control.",
+        "The service handles Cryptography.",
+        "Control area two is Cryptography.",
+    ]
+    assert _reasons(answer) == ["low_overlap", "figure_not_in_source"]

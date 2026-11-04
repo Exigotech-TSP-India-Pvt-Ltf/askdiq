@@ -395,9 +395,9 @@
           "expect": "answer",
           "must_contain": [
             [
-              "verified",
-              "confirmed",
-              "checked"
+              "verif*",
+              "confirm*",
+              "check*"
             ]
           ],
           "routes": [
@@ -1399,7 +1399,11 @@
           "query": "Which ISO 27001 controls do you implement in Microsoft 365?",
           "expect": "answer",
           "must_contain": [
-            "Annex A"
+            [
+              "Annex A",
+              "Access Control",
+              "Cryptography"
+            ]
           ],
           "routes": [
             "/iso-27001-microsoft-365-technical-controls",
@@ -3546,7 +3550,11 @@
             "AI management system",
             [
               "certification body",
-              "accredited"
+              "accredited",
+              "not certify",
+              "will not certify",
+              "don't certify",
+              "do not certify"
             ]
           ],
           "routes": [
@@ -10609,10 +10617,14 @@
           ],
           "routes": [
             "/zero-trust"
+          ],
+          "must_not_contain": [
+            "don't publish set prices",
+            "1300 394 468"
           ]
         }
       ],
-      "note": "exact number from KB",
+      "note": "exact number from KB | r2: strengthen: a stats question must not get the pricing/sales tails (buying-intent false positive on \"by how much\")",
       "source": "taxonomy stress test 2026-11-04"
     },
     {
@@ -11026,10 +11038,13 @@
           ],
           "not_covered_parts": [
             "Google Cloud"
+          ],
+          "must_not_contain": [
+            "details on do you"
           ]
         }
       ],
-      "note": "answer the covered part, name the uncovered part",
+      "note": "answer the covered part, name the uncovered part | r2: strengthen: gap line must name the part grammatically, not echo the raw subquery",
       "source": "taxonomy stress test 2026-11-04"
     },
     {

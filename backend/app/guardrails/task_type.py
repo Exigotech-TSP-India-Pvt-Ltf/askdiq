@@ -212,6 +212,13 @@ _LEGAL_HR_RE = re.compile(
     r"|\b(?:draft|write|prepare)\s{1,3}(?:me\s{1,3}|us\s{1,3})?(?:an?\s{1,3}|the\s{1,3}|"
     r"my\s{1,3}|our\s{1,3})?(?:non[\s-]{0,2}disclosure|nda|contract|employment\s{1,3}"
     r"contract|agreement|will|lease|legal\s{1,3}letter)\b"
+    # the visitor's own legal obligation ("is my company legally required to
+    # comply with the Essential Eight?", "are we required by law to ...")
+    r"|\b(?:(?:my|our)\s{1,3}(?:[\w-]{1,20}\s{1,3}){0,2}|we\s{1,3}|i\s{1,3})"
+    r"(?:is\s{1,3}|are\s{1,3}|am\s{1,3})?(?:legally|lawfully)\s{1,3}"
+    r"(?:required|obliged|obligated|bound|mandated)\b"
+    r"|\b(?:(?:my|our)\s{1,3}[\w-]{1,20}|we|i)\s{1,3}(?:is\s{1,3}|are\s{1,3}|am\s{1,3})?"
+    r"required\s{1,3}by\s{1,3}law\b"
     r"|\bnotice\s{1,3}period\b|\bfair\s{1,3}work\b|\bunfair\s{1,3}dismissal\b"
     r"|\bredundancy\s{1,3}pay\b|\bminimum\s{1,3}wage\b|\bworkers'?\s{1,3}comp",
     re.IGNORECASE,
@@ -227,8 +234,17 @@ _INSURANCE_RE = re.compile(
 _REGULATED_RES = (_MEDICAL_RE, _FINANCIAL_RE, _TAX_RE, _LEGAL_HR_RE, _INSURANCE_RE)
 # Clause boundaries of a multi-part message ("..., and what is Zero Trust?").
 _CLAUSE_SPLIT_RE = re.compile(
-    r"[?!;]\s{0,3}|\.\s{1,3}|,?\s{1,3}(?:and\s{1,3}also|also|and\s{1,3}(?=what|how|"
-    r"which|who|where|when|why|do|does|can|is|are)|plus)\s{1,3}",
+    r"[?!;]\s{0,3}|\.\s{1,3}|,?\s{1,3}(?:and\s{1,3}also|also|plus)\s{1,3}"
+    r"|,?\s{1,3}and\s{1,3}(?=(?:what|how|which|who|where|when|why|do|does|can|"
+    r"is|are)\b)",
+    re.IGNORECASE,
+)
+
+
+# ... plus ", then" ("tell me a joke, then tell me what Frontier includes").
+_CREATIVE_SPLIT_RE = re.compile(
+    rf"{_CLAUSE_SPLIT_RE.pattern}|,\s{{0,3}}(?:and\s{{1,3}})?then\s{{1,3}}"
+    r"|,\s{0,3}(?=(?:what|how|which|who|where|when|why|does|do|can|is|are)\b)",
     re.IGNORECASE,
 )
 
@@ -268,7 +284,14 @@ def _is_identity(text: str) -> bool:
 
 
 def _is_creative(text: str) -> bool:
-    return _CREATIVE_RE.search(text) is not None and _STORY_KB_RE.search(text) is None
+    """Every clause is a creative ask: "tell me a joke, then tell me what
+    Frontier includes" is retrieved (the joke part gets the off-topic line)."""
+    if _CREATIVE_RE.search(text) is None or _STORY_KB_RE.search(text) is not None:
+        return False
+    clauses = [
+        c for c in _CREATIVE_SPLIT_RE.split(text) if len(c.split()) >= _MIN_CLAUSE_WORDS
+    ]
+    return all(_CREATIVE_RE.search(c) is not None for c in clauses)
 
 
 def _is_translation(text: str) -> bool:

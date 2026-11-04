@@ -34,7 +34,7 @@ __all__ = [
     "TRY_AGAIN_LINE",
 ]
 
-PROMPT_VERSION = "2026-11-04.p4"
+PROMPT_VERSION = "2026-11-05.p6"
 
 # ---------------------------------------------------------------------------
 # Fixed customer-facing lines (code adds them, the model never writes them)
@@ -129,6 +129,15 @@ PRICING_LINE = (
 # A link / page request: the page URL is built from document metadata
 # (app.harness.page_links), never written by the model. Keep {url} last.
 PAGE_LINK_LINE = "Here's the page you're after: {url}"
+# A pure link ask is answered without the model: one sentence of the page's
+# own copy (its front-matter description, else its first prose sentence) in
+# one of these frames, picked by how that copy starts, then PAGE_LINK_LINE.
+PAGE_SUMMARY = {
+    "action": "Our {label} page is where you can {summary}",  # "Assess ..."
+    "topic": "Our {label} page covers {summary}",  # "How we ...", "A ..."
+    "quote": "Our {label} page in a nutshell: {summary}",  # "DeployIQ is ..."
+}
+PAGE_LINK_TEMPLATE_ID = "page_link"
 
 
 def sales_contact_line(phone: str, email: str) -> str:
@@ -376,11 +385,12 @@ def common_rules() -> str:
         "a fact says so.\n"
         "2. Never share non-public information (staff, customers, "
         "credentials, internals).\n"
-        "3. Reply in the visitor's language, warm and professional "
-        f'(Australian English); "we" is {brand}, "you" the visitor. Never '
+        "3. Write in the visitor's language, warm and professional "
+        f'(Australian spelling); "we" is {brand}, "you" the visitor. Never '
         "name where facts come from ("
         + ", ".join(f'"{w}"' for w in INTERNAL_WORDING)
-        + ").\n"
+        + ') or make a page or section the speaker ("The Definitions section '
+        'says", "is described as").\n'
         "4. Cite every statement with its fact's Source number.\n"
         # POLICY (owner rules 1-3, 6)
         "5. You are an AI: never claim to be human or to have feelings, "
@@ -403,46 +413,50 @@ def answer_system_prompt(word_cap: int, style_block: str = "") -> str:
         f"You are {brand}'s website assistant.\n"
         f"{common_rules()}"
         "Reply in the required JSON.\n"
-        "- parts: one per ask. a: a short noun phrase in the visitor's words. "
-        "c: true only if a fact directly answers it, not a related topic or "
-        'call to action; a bare topic ("e8") asks for an overview, covered if '
-        "a fact describes it. An off-topic or other-company ask is an "
-        'uncovered part (policy "none"), never a reason to refuse the rest; '
-        f'"compare {brand} with X": X uncovered, never judge which is better. '
-        'A false premise is covered, its own part ("checks 100 controls"), '
-        "answered with the real value.\n"
-        "- claims: reading order, direct answer first, nothing that was not "
-        "asked, one fact each. p: part index (from 0). s: Source number. "
-        "q = quote: an exact span copied from that fact, holding every "
-        'number, name and negation of t. t: "" if the quote is already a full '
-        "sentence in the reply language; else one plain sentence closely "
-        "paraphrasing it, naming its subject from the quote, Document or "
-        'Section ("The Foundation tier\'s roadmap is 4 to 6 weeks.", not '
-        '"Roadmap: 4 to 6 weeks."), at most 35 words, ending on a full '
-        'phrase, no added reasoning. k: "s" sentence; "i" list item, t "" '
-        "and q just the item (at most 12 words, never repeating the subject).\n"
-        "- Length: a simple fact 1-2 sentences (15-40 words); what is or an "
-        "overview 2-4 sentences (40-80 words); a list ask (what X includes, "
-        "stages, steps, strategies) one short lead sentence naming X, then up "
-        'to 6 "i" items (a named set like the Essential Eight in full), never '
-        'sentences repeating "X includes"; comparisons '
-        "or multi-part at most 120 words, one item's "
-        "claims then the next, in the order asked, each naming its item. No "
-        "repetition, filler or restating the question.\n"
-        '- Never merge facts ("both"); values differing across facts: one '
-        "claim each, naming its source's subject; never average or range "
-        "them.\n"
+        '- parts: one per ask (split "X and Y", "since X, Y"). a: a short '
+        "noun phrase in the visitor's words. c: true only if a fact directly "
+        "answers it, not a related topic or call to action; a bare topic "
+        '("e8") asks for an overview, covered if a fact describes it. An '
+        'off-topic or other-company ask is an uncovered part (policy "none"), '
+        f'never a reason to refuse the rest; "compare {brand} with X": X '
+        "uncovered, never judge which is better. A false premise is covered, "
+        'its own part ("checks 100 controls"), its first claim the fact that '
+        "corrects it, never claims [].\n"
+        "- claims: at most 10, reading order, direct answer first, at least "
+        "one per covered part, one fact each, nothing that was not asked. p: "
+        "part index (from 0). s: Source number. q = quote: an exact "
+        "span copied from that fact, holding every number, name and negation "
+        'of t. t: "" only if q is already a natural full sentence in the '
+        "visitor's language; else one plain sentence (at most 35 words) "
+        'closely paraphrasing q, no added reasoning, never "materials" ("the '
+        'downloads"). Its subject is the '
+        'thing itself ("The Foundation tier\'s roadmap is 4 to 6 weeks."), '
+        'never a label, heading or colon ("Roadmap: 4 to 6 weeks.", "Key '
+        'Principles are"). k: "s" sentence; "i" list item: q one item (at '
+        'most 12 words), t "" or its translation, never "Includes ...", '
+        '"X is a pillar" or the subject again; under a named stage, "Stage: '
+        'item" ("Pilot: ...").\n'
+        "- Length: a fact 1-2 claims; what is or an overview 2-4 claims, no "
+        "list; a list (includes, stages, steps, strategies, which services) a "
+        'short lead sentence naming X, then up to 8 "i" items (a named set '
+        "like the Essential Eight in full); comparisons or multi-part at most "
+        "120 words, item by item in the order asked, each naming its item. No "
+        "repetition or filler.\n"
+        '- Never merge facts ("both"); never average or range values that '
+        "differ across facts: one claim each, naming its subject.\n"
         "- Uncovered parts get no claims; no claim says something is missing "
         "or is for a specialist (code adds that). Nothing covered: claims [].\n"
         '- "Not guaranteed" or "certified by independent bodies" answers a '
         "guaranteed, certified or compliant ask; approvals, safeguards, "
         "rollback or evidence answer a safe, trustworthy or worth buying ask.\n"
-        "- A package overview starts with its defining fact (what it adds over "
-        'the tier below). Name plans with their service ("Zero Trust '
-        'Professional"), never a badge (PREMIUM); keep named stages and terms '
-        "verbatim.\n"
-        "- Buying or pricing: the facts, plus the sales phone and email if "
-        "given. History resolves references, never evidence.\n"
+        "- A package overview leads with the headline item it adds over the "
+        'tier below, never its tagline. Name plans with their service ("Zero '
+        'Trust Professional"), never a badge (PREMIUM); keep named stages and '
+        "terms verbatim.\n"
+        "- Calls to action (contact us, a specialist, book) only when the "
+        "visitor asks to buy, price, start or get in touch: then the facts "
+        "plus the sales phone and email if given. History resolves "
+        "references, never evidence.\n"
         f"{policy_field_rule()}"
         f"- At most {word_cap} words across all claims."
         f"{style_block}"
@@ -480,7 +494,9 @@ def answer_user_prompt(
         f"{focus}"
         "Copy every quote exactly from its fact. If the facts answer it, "
         "you must answer from them; return claims [] only when no fact "
-        "answers any part."
+        "answers any part. Answer only what was asked: a fact 1-2 claims, "
+        "a what is or overview 2-4 claims (no list), a list a lead and up "
+        "to 8 items."
     )
 
 
@@ -568,30 +584,66 @@ def answer_or_clarify_format(clarify_format: dict[str, Any]) -> dict[str, Any]:
 
 
 def covered_retry_block(
-    parts: list[str], sources: list[int], *, overview: bool = False
+    parts: list[str],
+    sources: list[int],
+    *,
+    overview: bool = False,
+    part_sources: list[list[int]] | None = None,
 ) -> str:
     """Second, targeted ask when the gate found evidence but no claim verified.
 
     ``overview``: the question names a catalogue topic whose own page is in
     those sources, so the answer is that page's overview (never a decline).
+    ``part_sources``: per part (aligned with ``parts``), the chunk numbers
+    that answer it; ``sources`` is used for a part without its own.
     """
     asks = "; ".join(f'"{p}"' for p in parts) or "the question"
     numbers = ", ".join(str(n) for n in sources) or "above"
     if overview:
         return (
-            f"Second look: Source {numbers} are the page on {asks}. The "
-            "question asks for an overview of it: answer with 3 to 6 claims "
+            f"Note (not part of the question): Source {numbers} are the page "
+            f"on {asks}. The question asks for an overview of it: answer with "
+            "2 to 4 claims "
             "saying what it is (its defining fact first) and what we do for "
             "it, each quote copied "
             "exactly from those sources. Mark the part covered; do not return "
             "claims []."
         )
-    return (
-        f"Second look: Source {numbers} cover {asks}. Answer from those facts "
-        "with claims whose quotes are copied exactly; return claims [] only "
-        'if none of them states anything about it. policy is "none": any '
-        "off-topic ask is just an uncovered part."
+    own = list(part_sources or [])
+    cited = [
+        ", ".join(map(str, own[i])) if i < len(own) and own[i] else numbers
+        for i in range(len(parts))
+    ]
+    named = (
+        "; ".join(f'"{p}" from Source {n}' for p, n in zip(parts, cited, strict=True))
+        or f"the question from Source {numbers}"
     )
+    return (
+        "Note (not part of the question): the facts do answer it. Answer "
+        f"{named}: one part per ask (a: the visitor's words, c true), claims "
+        "quoted exactly from those sources, each t a plain fact (never "
+        '"the section says"). If the question assumes something those facts '
+        "contradict (a number, place, law or feature), a full sentence naming "
+        'its subject states what they say instead. policy is "none": any '
+        "other ask is just an uncovered part. Return claims [] only if none "
+        "of those sources states anything about it."
+    )
+
+
+# Sent after a bare catalogue topic ("frontier", "e8"; app.harness.orchestrator).
+OVERVIEW_NOTE = (
+    "The question is a bare topic: give its overview in 2 to 4 claims, no "
+    "list. The first says what it is; for a package, the headline item it "
+    'adds over the tier below (first after "Everything in X, plus").'
+)
+# Sent after a question detected as not English (app.harness.orchestrator):
+# the claim texts are written in the visitor's language, quotes stay exact.
+LANGUAGE_NOTE = (
+    "The question is not in English: write every t as a full sentence in "
+    "the question's language, translating q (names, numbers and addresses "
+    'stay as written), never t "", except an "i" item that is only a name '
+    '("Identity", "Patch Applications"): t "", k "i", one item each.'
+)
 
 
 CLARIFY_JSON_NOTE = (

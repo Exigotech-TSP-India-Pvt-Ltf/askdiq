@@ -40,7 +40,13 @@ REGULATED_POLICY = (REGULATED_TEMPLATE, "regulated_advice")
 _GREETING_WORD = (
     r"(?:hi+|hello+|hey+|hiya|yo|howdy|greetings|sup|what'?s\s*up|"
     r"good\s*(?:morning|afternoon|evening|day)|there|again|team|guys|"
-    r"folks|everyone)"
+    r"folks|everyone|"
+    # greetings in other languages (the reply is in English)
+    r"hola|bonjour|ciao|hallo|ola|namaste|salaam|salam|shalom|kia\s*ora|"
+    r"konnichiwa|ni\s*hao|שלום|你好|"
+    r"こんにちは|مرحبا|"
+    r"привет|नमस्ते|"
+    r"안녕하세요)"
 )
 
 # Matches one or more greeting words/phrases in a row (e.g. "hi good
@@ -335,12 +341,12 @@ SUPPORT_CANCEL_REPLY = (
 )
 SUPPORT_BROKEN_REPLY = (
     "I'm really sorry, that's not the experience we want you to have. Please "
-    "contact our specialists through the Contact page on our website so they "
-    "can look into it straight away."
+    "contact our team through the Contact page on our website so they can look "
+    "into it straight away."
 )
 SUPPORT_FRUSTRATION_REPLY = (
     "Sorry it's not helping. Tell me a bit more about what you were after, or "
-    "our specialists can step in through the Contact page on our website."
+    "our team can step in through the Contact page on our website."
 )
 SUPPORT_MANAGER_REPLY = (
     "Understood. I can't transfer you from here, but our team can take it from "
@@ -350,11 +356,18 @@ CALLBACK_REPLY = (
     "I can't book calls from this chat, but our team will gladly get back to "
     "you if you send a request through the Contact page on our website."
 )
+CALLBACK_DETAILS_REPLY = (
+    "Thanks for the details. I can't pass them on or book calls from this chat, "
+    "so please send your request through the Contact page on our website and "
+    "our team will get back to you."
+)
+# Only for a pure "is it 100% secure / can you guarantee we won't be hacked"
+# ask (app.guardrails.intent); a guarantee the pages cover is retrieved.
 ASSURANCE_REPLY = (
-    "Nobody can honestly promise 100% security, and we wouldn't want to. What "
+    "No one can honestly promise 100% security, and we won't pretend to. What "
     "we do is keep a person in charge of every change, with checkpoints and "
-    "evidence along the way. If you'd like the detail, one of our specialists "
-    "can walk you through it."
+    "evidence along the way. Ask me how our assessments or Zero Trust approach "
+    "can lower your risk."
 )
 _ACK_VARIANTS: tuple[str, ...] = (
     "Sure. What would you like to know about {brand}?",
@@ -598,14 +611,38 @@ _PERSONA_RES: tuple[tuple[str, re.Pattern[str], bool], ...] = tuple(
 )
 
 
-def detect_persona(query: str) -> str | None:
+# Words that make a message about the assistant whatever came before.
+_ASSISTANT_WORD_RE = re.compile(
+    rf"\b(?:ai|a\.i|bot|chat\s{{0,2}}bot|assistant|llm|gpt|robot|machine|"
+    rf"human|person|name|languages?|chat|conversation|remember|feelings?|"
+    rf"{_VENDOR}|model)\b",
+    re.IGNORECASE,
+)
+_HISTORY_LOOKBACK_TURNS = 2
+
+
+def _product_conversation(history: list | None) -> bool:
+    """The last turns name a product or KB topic ("what is the CIS benchmark
+    assessment?"): an ambiguous "which version do you use?" follows it up."""
+    recent = list(history or [])[-_HISTORY_LOOKBACK_TURNS:]
+    return any(
+        ex.names_catalogue_term(str(getattr(turn, "content", "") or ""))
+        for turn in recent
+    )
+
+
+def detect_persona(query: str, history: list | None = None) -> str | None:
     """The persona intent of a question about the assistant itself, else None.
 
     Pure, bounded and anchored: a product question ("what can DeployIQ do for
-    Intune?") never matches, so it goes to retrieval.
+    Intune?") never matches, so it goes to retrieval. After a product answer
+    (``history``), a message without an assistant word ("which version do you
+    use?") is a follow-up, not a persona question.
     """
     text = _bounded(query, _MAX_PERSONA_CHARS)
     if text is None:
+        return None
+    if _ASSISTANT_WORD_RE.search(text) is None and _product_conversation(history):
         return None
     names_topic = ex.names_catalogue_term(text)
     for intent, pattern, skip_guard in _PERSONA_RES:
@@ -787,6 +824,7 @@ def all_acknowledgement_responses() -> tuple[str, ...]:
 # ---------------------------------------------------------------------------
 _REPLY_BY_KEY: dict[str, str] = {
     ex.CALLBACK: CALLBACK_REPLY,
+    ex.CALLBACK_DETAILS: CALLBACK_DETAILS_REPLY,
     ex.INCIDENT: INCIDENT_REPLY,
     ex.CANCEL: SUPPORT_CANCEL_REPLY,
     ex.BROKEN: SUPPORT_BROKEN_REPLY,

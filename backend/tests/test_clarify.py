@@ -363,6 +363,20 @@ def test_short_free_text_refines_but_new_questions_do_not() -> None:
     assert resolve_clarification_reply("2", None) is None
 
 
+@pytest.mark.parametrize(
+    "ask", ["what's the email address for your team?", "how do I reach you?"]
+)
+def test_contact_ask_after_a_card_is_a_new_question(ask: str) -> None:
+    # fin-clar-quote-unrelated: was glued onto the card's query and declined.
+    assert resolve_clarification_reply(ask, _clarify_history()) is None
+
+
+@pytest.mark.parametrize("junk", ["!!!", "asdfghjkl", "zxcvb nmmm ppplk", "???"])
+def test_junk_after_a_card_refines_nothing(junk: str) -> None:
+    # mt-vague-then-e8: "!!!" after the card was answered as a refinement.
+    assert resolve_clarification_reply(junk, _clarify_history()) is None
+
+
 def test_boost_puts_chosen_documents_first() -> None:
     sources = _spread_sources()
     boosted = boost_documents(sources, ["doc-partner"])

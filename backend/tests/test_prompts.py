@@ -191,8 +191,9 @@ def test_system_prompt_states_rules_once_and_styles_only_change_format():
         # No style block restates a refusal rule or the no-answer line.
         assert prompt_catalog.NO_ANSWER_LINE not in system
     # Each rule once, telegraphic: grounding + compliance policy (rules 5-7,
-    # policy field) + the owner's length rules. Was 857 words before the trim.
-    assert len(prompts.get_system_prompt("current", "general").split()) <= 630
+    # policy field) + the owner's length rules. Was 857 words before the trim;
+    # the claim-shape and answer-cap rules (2026-11-05.p5) brought it to ~670.
+    assert len(prompts.get_system_prompt("current", "general").split()) <= 700
 
 
 def test_answer_schema_uses_compact_keys_quote_before_text():
@@ -213,11 +214,13 @@ def test_answer_schema_uses_compact_keys_quote_before_text():
 
 def test_system_prompt_states_the_length_rules():
     system = prompts.get_system_prompt("current", "general")
+    # Counted in claims (one sentence each) since the quote-backed answer call.
     for needle in (
-        "1-2 sentences",
-        "2-4 sentences",
-        "up to 6",
+        "1-2 claims",
+        "2-4 claims",
+        "up to 8",
         "120 words",
         "at most 12 words",
+        "At most 150 words",
     ):
         assert needle in system

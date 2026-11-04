@@ -4993,10 +4993,20 @@
           "query": "which assessments do you run",
           "expect": "clarify",
           "accept": [
-            "clarify"
+            "clarify",
+            "answer"
           ],
           "must_contain": [],
-          "must_not_contain": []
+          "must_not_contain": [],
+          "routes": [
+            "/microsoft-365-security-baseline-assessment",
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/services",
+            "/essential-eight",
+            "/zero-trust",
+            "/get-started",
+            "/"
+          ]
         },
         {
           "query": "the first one",
@@ -5020,7 +5030,7 @@
           "must_not_contain": []
         }
       ],
-      "note": "clarify card then reply: ordinal reply",
+      "note": "clarify card then reply: ordinal reply | r4 correction: \"which assessments do you run\" is a list question, a list answer naming the assessments is correct (clarify optional).",
       "source": "final test-set builder 2026-11-04"
     },
     {

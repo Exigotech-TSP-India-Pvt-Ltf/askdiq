@@ -10,6 +10,7 @@ import openai
 from app.harness import orchestrator
 from app.harness import prompt_catalog as catalog
 from app.harness.decision import Route
+from app.retrieval.retriever import RetrievalResult
 from app.schemas.query import SourceChunk
 from tests.grounded_fakes import claim, claims_reply, patch_pipeline, run
 
@@ -291,3 +292,18 @@ async def test_bare_topic_with_empty_llm_output_gets_the_page_overview(monkeypat
     assert response.outcome == "answered"
     assert response.citations
     assert response.token_details["topic_overview"] is True
+
+
+async def test_pasted_page_url_reaches_retrieval_as_the_page_name(monkeypatch):
+    # fin-kb-paste-02: sanitising dropped the URL token before retrieval.
+    patch_pipeline(monkeypatch, [], ["{}"])
+    seen: list[str] = []
+
+    async def capture(_store, query, **_kwargs):
+        seen.append(query)
+        return RetrievalResult(sources=[], parts=[])
+
+    monkeypatch.setattr(orchestrator, "retrieve_parts", capture)
+    await run("https://deployiq.co/packages what's on this page?")
+    assert seen
+    assert seen[0].startswith("the packages page")

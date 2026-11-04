@@ -395,7 +395,8 @@ _URL_RE = re.compile(
 
 # Promotional/scam phrasing
 _PROMO_PHRASES_RE = re.compile(
-    r"\b(buy now|click here|limited time offer|act now|"
+    # "buy now" alone is a purchase ask; with a link it is promo (_URL_PROMO_RE).
+    r"\b(click here|limited time offer|act now|"
     r"make money fast|subscribe to my channel|"
     r"dm me|whatsapp me|claim your prize|you'?ve won|free gift|"
     r"guaranteed income|check out my channel)\b",
@@ -551,6 +552,9 @@ _DOMAIN_WORDS = frozenset(
 
 # Two-letter KB terms (zt = Zero Trust, e8 = Essential Eight) are questions.
 _ALLOWED_SHORT_TOKENS = {"hi", "yo", "ok", "no", "na", "zt", "e8"}
+# Vowelless interjections, after collapsing runs ("hmmm" -> "hm").
+_INTERJECTIONS = frozenset({"hm", "sh", "br", "gr", "pf", "ps", "pst", "tsk", "ph"})
+_ELONGATED_MIN_LEN = 4
 
 _KEYBOARD_SEQS = (
     "qwertyuiop",
@@ -692,6 +696,20 @@ def is_implausible_word(token: str) -> bool:
     )
 
 
+def is_elongated_mash(token: str) -> bool:
+    """A vowelless token with a 3+ letter run ("nmmm", "ppplk"): keyboard mash,
+    not emphasis. Interjections ("hmmm", "brrr", "pssst") are not mash."""
+    raw_letters = re.sub(r"[^a-z]", "", _clean_token(token).lower())
+    if len(raw_letters) < _ELONGATED_MIN_LEN or not _RUN_RE.search(raw_letters):
+        return False
+    collapsed = _collapse_runs(raw_letters)
+    return (
+        not _VOWEL_RE.search(raw_letters)
+        and len(set(collapsed)) >= 2
+        and collapsed not in _INTERJECTIONS
+    )
+
+
 def is_gibberish_token(token: str) -> bool:  # pylint: disable=too-many-return-statements  # ordered rule list
     """Check if an individual token looks like keyboard mash or gibberish."""
     original = _clean_token(token)
@@ -718,6 +736,10 @@ def is_gibberish_token(token: str) -> bool:  # pylint: disable=too-many-return-s
 
     # Elongation ("whaaaat", "tellllll") is emphasis, not noise.
     letters_only = _collapse_runs(raw_letters)
+
+    # 0. An elongated vowelless token ("nmmm", "ppplk") is mash, not emphasis.
+    if is_elongated_mash(original):
+        return True
 
     # 1. Keyboard mash sequences of length >= 3 (e.g. asd, qwe, zxc, asdfgh)
     if _is_keyboard_mash(letters_only):
@@ -997,10 +1019,11 @@ def check_spam(  # pylint: disable=too-many-return-statements  # ordered rule li
             return False, "spam_detected"
 
     # Gibberish words: mash/vowel/cluster rules plus pair plausibility
+    # (the raw token too: collapsing turns "nmmm" into a harmless "nm")
     gibberish_words = [
         w
-        for w in words
-        if (is_gibberish_token(w) or is_implausible_word(w))
+        for w, raw in zip(words, raw_words, strict=False)
+        if (is_gibberish_token(w) or is_implausible_word(w) or is_elongated_mash(raw))
         and not _is_typo_of_known_word(w)
     ]
 
@@ -1144,6 +1167,12 @@ def _security_check(check, query: str, raw: str | None) -> tuple[bool, str | Non
     if passed and raw is not None and raw != query:
         passed, flag = check(raw[:_MATCH_MAX_CHARS])
     return passed, flag
+
+
+def is_junk_input(query: str) -> bool:
+    """Gibberish, keyboard mash or punctuation only ("!!!", "asdfgh"): never
+    an answer to a clarification card (the junk template answers it)."""
+    return not check_spam(query[:_MATCH_MAX_CHARS])[0]
 
 
 def run_pre_checks(

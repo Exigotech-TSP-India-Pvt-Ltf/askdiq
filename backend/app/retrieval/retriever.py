@@ -12,6 +12,7 @@ part never declines the covered ones and parts are never folded together.
 
 from __future__ import annotations
 
+import difflib
 import math
 import re
 import time
@@ -23,12 +24,18 @@ from functools import lru_cache
 
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
+from app.governance.pii import redact_pii
 from app.guardrails.pre_checks import is_gibberish_token
 from app.harness.decision import PartVerdict, Route, RouteDecision
 from app.knowledge.links import citation_url
 from app.knowledge.settings_service import current_knowledge_settings
 from app.retrieval.embeddings import embed_text, embed_texts, embedding_timing_sink
-from app.retrieval.reranker import entity_documents, entity_mentions, rerank_async
+from app.retrieval.reranker import (
+    entity_documents,
+    entity_mentions,
+    looks_english,
+    rerank_async,
+)
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, SourceChunk
 
@@ -38,6 +45,24 @@ _SHORT_DOMAIN_TERMS = {"e8", "ai", "ip", "db"}
 _MAX_SCAN_CHARS = 2000
 
 logger = get_logger(__name__)
+
+# A self-introduced name ("my name is John Smith", "I'm John from Acme"):
+# masked in log lines with the phone numbers and emails redact_pii finds.
+_SELF_NAME_RE = re.compile(
+    r"\b((?i:my\s{1,3}name\s{1,3}is|my\s{1,3}name's|i'm|i\s{1,3}am|im|"
+    r"name\s{0,2}:|this\s{1,3}is))\s{1,3}[A-Z][a-z'-]{1,20}(?:\s{1,3}[A-Z][a-z'-]{1,20})?"
+)
+_LOG_TEXT_MAX_CHARS = 500
+
+
+def log_safe_text(text: str, limit: int = _LOG_TEXT_MAX_CHARS) -> str:
+    """Visitor text for a log line: personal data redacted (phone numbers,
+    emails, ... via redact_pii, keeping PII_ALLOWLIST, and self-introduced
+    names), then capped at ``limit`` characters."""
+    capped = (text or "")[:_LOG_TEXT_MAX_CHARS]
+    redacted = redact_pii(capped, allowlist=get_settings().pii_allowlist)[0]
+    return _SELF_NAME_RE.sub(r"\1 [REDACTED_NAME]", redacted)[:limit]
+
 
 # Referential language that signals a query only makes sense alongside prior
 # conversation turns (e.g. "what about ITS pricing?", "does IT support SSO?").
@@ -186,6 +211,13 @@ _ASK_SPLIT_RE = re.compile(
 )
 _MIN_LEFT_WORDS = 3
 _MIN_RIGHT_WORDS = 3
+_TOPIC_MAX_WORDS = 8
+# "When I fill in the form, what ...": a subordinate clause, not an ask.
+_CONTEXT_CLAUSE_RE = re.compile(
+    r"^(?:when|where|if|once|after|before|while|since|as)\s{1,3}"
+    r"(?:i|we|you|they|my|our|your|the|a|an)\b",
+    re.IGNORECASE,
+)
 _LIST_ITEM_MAX_WORDS = 5
 _MIN_LIST_ITEMS = 3
 _LIST_SPLIT_RE = re.compile(r"\s{0,3},\s{0,3}(?:and\s{1,3}|or\s{1,3})?", re.IGNORECASE)
@@ -219,6 +251,10 @@ _OPERAND_LEAD_RE = re.compile(
     re.IGNORECASE,
 )
 _OPERAND_MAX_WORDS = 6
+_SELF_OPERAND_RE = re.compile(
+    r"^(?:you(?:\s{1,3}guys)?|u|us|we|yourselves|it|this|that|they|them)$",
+    re.IGNORECASE,
+)
 _HAS_WORD_RE = re.compile(r"[A-Za-z0-9]")
 _WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'&+-]*")
 _PRONOUN_RE = re.compile(
@@ -391,9 +427,30 @@ def _is_ask(segment: str) -> bool:
     return segment.rstrip().endswith("?") or bool(_ASK_START_RE.match(segment))
 
 
+# Pleasantries before the ask ("thanks, bye - oh, does it cover Intune?") and
+# dictated punctuation ("... full stop", "... question mark").
+_LEAD_PLEASANTRY_RE = re.compile(
+    r"^(?:(?:hi|hello|hey|thanks|thank\s{1,3}you|ta|cheers|bye|goodbye|ok|okay|oh|"
+    r"um+|uh+|hmm+|er+m?|like|so|well|yeah|yes|great|cool|sorry|actually)"
+    r"[\s,.!:;]{1,5}(?:[-\N{EN DASH}\N{EM DASH}][\s,.!:;]{0,3})?)+(?=\S)",
+    re.IGNORECASE,
+)
+_DICTATED_PUNCT_RE = re.compile(
+    r"\s{1,3}(?:full\s{1,3}stop|question\s{1,3}mark|exclamation\s{1,3}mark|comma)\s{0,3}$",
+    re.IGNORECASE,
+)
+
+
+_CLEAN_EDGE_CHARS = " ,.;:-\N{EN DASH}\N{EM DASH}"
+
+
 def _clean(segment: str) -> str:
     text = _MARKER_RE.sub("", segment.strip())
-    return _LEAD_CONNECTOR_RE.sub("", text).strip(" ,.;:")
+    text = _LEAD_CONNECTOR_RE.sub("", text).strip(" ,.;:")
+    stripped = _LEAD_PLEASANTRY_RE.sub("", text)
+    if _HAS_WORD_RE.search(stripped) and len(_words(stripped)) >= 2:  # noqa: PLR2004
+        text = stripped
+    return _DICTATED_PUNCT_RE.sub("", text).strip(_CLEAN_EDGE_CHARS)
 
 
 def _hard_segments(text: str) -> list[tuple[str, bool]]:
@@ -406,7 +463,14 @@ def _hard_segments(text: str) -> list[tuple[str, bool]]:
             for p in _HARD_SPLIT_RE.split(line)
             if p and _HAS_WORD_RE.search(p)
         ]
-        raw.extend((p, marker or (len(pieces) > 1 and _is_ask(p))) for p in pieces)
+        # "zero trust basics; frontier package; your phone number": a
+        # semicolon list of short topics is one ask per topic.
+        topics = ";" in line and all(
+            len(_words(p)) <= _TOPIC_MAX_WORDS for p in line.split(";") if p.strip()
+        )
+        raw.extend(
+            (p, marker or topics or (len(pieces) > 1 and _is_ask(p))) for p in pieces
+        )
     if not any(_is_ask(p) or item for p, item in raw):
         return [(" ".join(p.strip() for p, _ in raw), False)]
     merged: list[tuple[str, bool]] = []
@@ -445,6 +509,9 @@ def _comparison_operands(segment: str) -> list[str] | None:
     cleaned = [o for o in cleaned if o and _HAS_WORD_RE.search(o)]
     if len(cleaned) < 2 or any(len(_words(o)) > _OPERAND_MAX_WORDS for o in cleaned):  # noqa: PLR2004
         return None
+    if any(_SELF_OPERAND_RE.match(o) for o in cleaned):
+        # "How are you different from a one-off auditor?": about us, one ask.
+        return None
     return list(dict.fromkeys(cleaned))
 
 
@@ -458,9 +525,14 @@ def _soft_split(segment: str) -> list[str]:
         for match in _ASK_SPLIT_RE.finditer(piece):
             left = piece[start : match.start()]
             right = piece[match.end() :]
+            # A leading context clause ("In the CIS assessment, what's ...",
+            # "For ISO 27001, what ...", "Hypothetically, if ..., could you
+            # ...") is not an ask of its own: it stays with the ask after it.
             if (
                 len(_words(left)) >= _MIN_LEFT_WORDS
                 and len(_words(right)) >= _MIN_RIGHT_WORDS
+                and _is_ask(_clean(left))
+                and not _CONTEXT_CLAUSE_RE.match(_clean(left))
             ):
                 current.append(left)
                 start = match.end()
@@ -759,7 +831,9 @@ _GOVERNING_LAW = "governing law"
 # the common non-English office/contact words stand on their own.
 _CONTACT_EN_RE = re.compile(
     r"\b(?:e-?mail(?:\s{1,3}address)?|phone(?:\s{1,3}number)?|telephone|"
-    r"contact\s{1,3}(?:details|info|information|number)|addresse?s?|offices?)\b",
+    r"contact\s{1,3}(?:details|info|information|number|address)|addresse?s?|offices?|"
+    r"mail\s{1,3}(?:you|us|address)|(?:your|ur)\s{1,3}mail|"
+    r"reach\s{1,3}(?:you|your|us|out)|(?:get|be|keep)\s{1,3}in\s{1,3}touch)\b",
     re.IGNORECASE,
 )
 _CONTACT_YOU_RE = re.compile(
@@ -781,11 +855,216 @@ _FREE_TRIAL_RE = re.compile(
 _FREE_TRIAL_TERMS = "free Security Posture Assessment snapshot"
 
 
+# A bare contact fragment ("what's the phone number", "email?") is ours: no
+# other party is named in it.
+_CONTACT_FRAGMENT_RE = re.compile(
+    r"\b(?:e-?mail(?:\s{1,3}address)?|phone(?:\s{1,3}number)?|telephone|number\s{1,3}to\s{1,3}(?:call|ring)|"
+    r"contact\s{1,3}(?:details|info|information|number))\b",
+    re.IGNORECASE,
+)
+_OTHER_PARTY_RE = re.compile(
+    r"\b(?:of|for|from|at)\s{1,3}(?!you\b|your\b|us\b)\w", re.IGNORECASE
+)
+_CONTACT_FRAGMENT_MAX_WORDS = 8
+# "gmail's email", "google's phone number": another party's contact details
+# ("what's" / "deploy iq's" are not another party).
+_OTHER_POSSESSIVE_RE = re.compile(
+    r"\b(?!(?:what|that|where|who|it|here|there|how|let|he|she|iq|deploy\s{0,3}iq|"
+    r"exigo)['\N{RIGHT SINGLE QUOTATION MARK}]s\b)"
+    r"[a-z][\w-]*['\N{RIGHT SINGLE QUOTATION MARK}]s\b",
+    re.IGNORECASE,
+)
+
+
 def _contact_ask(text: str) -> bool:
-    return _CONTACT_INTL_RE.search(text) is not None or (
+    if _OTHER_POSSESSIVE_RE.search(text) is not None:
+        return False
+    if _CONTACT_INTL_RE.search(text) is not None or (
         _CONTACT_EN_RE.search(text) is not None
         and _CONTACT_YOU_RE.search(text) is not None
+    ):
+        return True
+    return (
+        _CONTACT_FRAGMENT_RE.search(text) is not None
+        and len(_words(text)) <= _CONTACT_FRAGMENT_MAX_WORDS
+        and _OTHER_PARTY_RE.search(text) is None
     )
+
+
+def is_contact_ask(text: str) -> bool:
+    """Our own contact details: "what's your email?", "how do I reach you"."""
+    return _contact_ask(text)
+
+
+# A pasted link to one of our pages ("https://deployiq.co/packages what's on
+# this page?") is that page by name: "the packages page" (page scope).
+_SITE_URL_RE = re.compile(
+    r"(?:https?://)?(?:[\w-]{1,30}\.){0,3}deploy-?iq\.[a-z]{2,6}(?:\.[a-z]{2})?"
+    r"(?P<path>/[\w\-/]{0,120})?(?:[?#]\S{0,200})?",
+    re.IGNORECASE,
+)
+
+
+def _page_name_from_url(match: re.Match[str]) -> str:
+    slug = (match.group("path") or "/").strip("/").split("/")[0]
+    words = " ".join(slug.replace("_", "-").split("-")).strip()
+    return f"the {words or 'home'} page"
+
+
+def resolve_page_urls(text: str) -> str:
+    """Our page URLs in an ask become the page's name (retrieval only)."""
+    return _SITE_URL_RE.sub(_page_name_from_url, text)
+
+
+# Courtesy sentences around a long message's real ask ("Good afternoon, I hope
+# this message finds you well. ... Many thanks for your patience."): the
+# cross-encoder scores the whole text, and the padding sank an in-KB Essential
+# Eight question to -10.3. Retrieval drops them and resolves "it".
+_COURTESY_RE = re.compile(
+    r"^(?:good\s{1,3}(?:morning|afternoon|evening|day)|hi|hello|hey|dear|greetings|"
+    r"i\s{1,3}hope\s{1,3}(?:this|you|all)|(?:many\s{1,3}|thanks?\s{1,3})?thanks|thank\s{1,3}you|"
+    r"cheers|(?:kind\s{1,3}|best\s{1,3})?regards|best\s{1,3}wishes|sorry\s{1,3}to\s{1,3}bother|"
+    r"(?:could|can)\s{1,3}you\s{1,3}let\s{1,3}me\s{1,3}know|appreciate\s{1,3}(?:it|your))\b",
+    re.IGNORECASE,
+)
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s{1,3}")
+_COURTESY_MAX_WORDS = 12
+_LONG_ASK_WORDS = 25
+
+
+def distil_long_ask(text: str) -> str:
+    """A long message without its courtesy sentences, "it" resolved to the
+    service it names (retrieval/gate text only; short asks unchanged)."""
+    if len(_words(text)) <= _LONG_ASK_WORDS:
+        return text
+    sentences = [s for s in _SENTENCE_RE.split(text) if _HAS_WORD_RE.search(s)]
+    kept = [
+        s
+        for s in sentences
+        if not (_COURTESY_RE.match(s.strip()) and len(_words(s)) <= _COURTESY_MAX_WORDS)
+    ]
+    if not kept or len(kept) == len(sentences):
+        return text
+    distilled = " ".join(kept)
+    subject = _subject(distilled)
+    last = kept[-1]
+    if subject is not None and subject not in last and _PRONOUN_RE.search(last):
+        distilled = " ".join([*kept[:-1], _with_subject(last, subject)])
+    return distilled
+
+
+_TYPO_MIN_LEN = 5
+_TYPO_LONG_WORD = 8
+_TYPO_CUTOFF = 0.8
+_TYPO_WORD_RE = re.compile(rf"[A-Za-z]{{{_TYPO_MIN_LEN},}}")
+
+
+# Typo targets: the service / product / framework words visitors misspell.
+# Correcting toward any KB word rewrote real English ("weather" -> "whether",
+# "stages" -> "states"), so only these distinctive terms are targets.
+_DOMAIN_TERMS = frozenset(
+    [
+        "essential",
+        "eight",
+        "zero",
+        "trust",
+        "conditional",
+        "access",
+        "assessment",
+        "assessments",
+        "security",
+        "compliance",
+        "compliant",
+        "baseline",
+        "foundation",
+        "foundations",
+        "strengthen",
+        "frontier",
+        "fortify",
+        "governance",
+        "intune",
+        "defender",
+        "purview",
+        "sharepoint",
+        "exchange",
+        "onedrive",
+        "copilot",
+        "entra",
+        "microsoft",
+        "privacy",
+        "encryption",
+        "maturity",
+        "application",
+        "applications",
+        "patching",
+        "patch",
+        "benchmark",
+        "responsible",
+        "certification",
+        "certified",
+        "authentication",
+        "multifactor",
+        "deployiq",
+        "packages",
+        "package",
+        "platform",
+        "consultation",
+        "cybersecurity",
+        "mitigation",
+        "strategies",
+        "controls",
+        "identity",
+        "endpoint",
+        "endpoints",
+        "vulnerability",
+        "vulnerabilities",
+        "phishing",
+        "backups",
+        "backup",
+        "tenant",
+        "posture",
+        "readiness",
+        "pricing",
+        "implementation",
+        "hardening",
+        "onboarding",
+        "managed",
+        "detection",
+        "response",
+        "monitoring",
+        "framework",
+        "frameworks",
+        "policies",
+        "policy",
+    ]
+)
+
+
+def correct_typos(text: str, vocabulary: frozenset[str]) -> str:
+    """Misspelt service words ("esential eigth", "conditonal acess",
+    "securty assesment") -> the domain term (retrieval only). A word the KB
+    uses, or shorter than five letters, is never touched."""
+    if not vocabulary:
+        return text
+    targets = sorted(_DOMAIN_TERMS & vocabulary)
+    if not targets:
+        return text
+
+    def fix(match: re.Match[str]) -> str:
+        word = match.group(0)
+        low = word.lower()
+        if low in vocabulary or low in _FILLER:
+            return word
+        # Typos drop or swap letters ("esential", "eigth"): a shorter term
+        # is only a fix for a long word.
+        shortest = len(low) - 1 if len(low) >= _TYPO_LONG_WORD else len(low)
+        near = [
+            w for w in targets if w[0] == low[0] and shortest <= len(w) <= len(low) + 1
+        ]
+        found = difflib.get_close_matches(low, near, n=1, cutoff=_TYPO_CUTOFF)
+        return found[0] if found else word
+
+    return _TYPO_WORD_RE.sub(fix, text)
 
 
 def expand_retrieval_query(text: str) -> str:
@@ -835,6 +1114,7 @@ class PartRetrieval:  # pylint: disable=too-many-instance-attributes
     card_evidence: bool = False  # a named tier's card states the asked attribute
     ce_by_chunk: dict[str, float] = field(default_factory=dict)
     embedding: tuple[float, ...] = field(default=(), repr=False, compare=False)
+    non_english: bool = False  # gated on cosine (the cross-encoder is English-only)
 
 
 # Filled by retrieve() with every part (one for a single ask); read by the
@@ -909,8 +1189,16 @@ def part_covered(part: PartRetrieval, *, multi_part: bool = False) -> bool:
     if multi_part and asked_entity_missing(part):
         return False
     if part.max_ce is None:
-        return part.max_score >= settings.min_retrieval_score
-    strict = part_off_domain(part) or (
+        # No cross-encoder logit (reranker off, or a non-English ask scored
+        # on the multilingual embedding alone): a non-English ask needs the
+        # on-domain cosine (off-domain asks stay below it).
+        floor = (
+            settings.retrieval_offdomain_max_cosine
+            if part.non_english
+            else settings.min_retrieval_score
+        )
+        return part.max_score >= floor
+    strict = _low_cosine(part) or (
         multi_part and _PRICE_ASK_RE.search(_scan(part.query)) is not None
     )
     floor = (
@@ -1095,8 +1383,36 @@ def is_bare_reference(text: str) -> bool:
     return _BARE_REFERENCE_RE.match(_scan(text).strip()) is not None
 
 
-def part_off_domain(part: PartRetrieval) -> bool:
+# Commercial asks ("plans?", "quote pls", "can I pay by credit card?") are about
+# doing business with us: never off-topic, at worst not covered.
+_COMMERCIAL_RE = re.compile(
+    r"\b(?:plans?|packages?|pric(?:e|es|ing)|costs?|quotes?|quotation|buy|buying|"
+    r"purchas(?:e|ing)|pay|paying|payments?|invoices?|invoicing|billing|billed|"
+    r"credit\s{1,3}cards?|debit\s{1,3}cards?|bank\s{1,3}transfer|subscri(?:be|ption)s?|"
+    r"demo|trial|discounts?|refunds?|contracts?|fees?)\b",
+    re.IGNORECASE,
+)
+
+
+def is_commercial(text: str) -> bool:
+    """A price / plan / payment / purchase ask about doing business with us
+    (never off-topic): "the price of a burger" names another party's thing."""
+    scan = _scan(text)
+    if _COMMERCIAL_RE.search(scan) is None:
+        return False
+    return bool(
+        entity_mentions(scan)
+        or _CONTACT_YOU_RE.search(scan)
+        or _OTHER_PARTY_RE.search(scan) is None
+    )
+
+
+def _low_cosine(part: PartRetrieval) -> bool:
     return part.max_score < get_settings().retrieval_offdomain_max_cosine
+
+
+def part_off_domain(part: PartRetrieval) -> bool:
+    return _low_cosine(part) and not is_commercial(part.query)
 
 
 def decide_route(
@@ -1243,6 +1559,7 @@ async def retrieve_parts(  # pylint: disable=too-many-arguments,too-many-positio
     chunks for the ask, scored by the cross-encoder, ahead of the rest.
     """
     settings = get_settings()
+    query = resolve_page_urls(query)
     # Split from the user's own current message only, never from history.
     parts = (
         split_query(query)
@@ -1259,10 +1576,19 @@ async def retrieve_parts(  # pylint: disable=too-many-arguments,too-many-positio
         logger.info(
             "subquery_decomposition",
             subqueries_count=len(parts),
-            subqueries=[p.text for p in parts],
-            searches=[p.search for p in parts],
+            subqueries=[log_safe_text(p.text) for p in parts],
+            searches=[log_safe_text(p.search) for p in parts],
         )
-    searches = [expand_retrieval_query(p.search or p.text) for p in parts]
+    vocabulary_of = getattr(vector_store, "corpus_vocabulary", None)
+    vocabulary = await vocabulary_of() if callable(vocabulary_of) else frozenset()
+    if not isinstance(vocabulary, frozenset):
+        vocabulary = frozenset()
+    searches = [
+        expand_retrieval_query(
+            correct_typos(distil_long_ask(p.search or p.text), vocabulary)
+        )
+        for p in parts
+    ]
     per_part_k, cap = _part_budget(top_k, len(parts))
 
     embed_started = time.perf_counter()
@@ -1296,6 +1622,9 @@ async def retrieve_parts(  # pylint: disable=too-many-arguments,too-many-positio
             )
         found = _named_count_wins(part.text, found, vector_store)
         sources = tuple(_to_source(c, s, vector_store, allowed_hosts) for c, s in found)
+        non_english = not looks_english(search)
+        if non_english:
+            logits = {}
         ce_by_chunk = {str(k): v for k, v in logits.items()}
         results.append(
             PartRetrieval(
@@ -1310,10 +1639,13 @@ async def retrieve_parts(  # pylint: disable=too-many-arguments,too-many-positio
                 ),
                 sources=sources,
                 comparison=part.comparison,
-                bare_topic=_is_bare_topic(part.text, found, vector_store),
+                bare_topic=_is_bare_topic(
+                    correct_typos(part.text, vocabulary), found, vector_store
+                ),
                 card_evidence=_card_evidence(part.text, found),
                 ce_by_chunk=ce_by_chunk,
                 embedding=tuple(embedding),
+                non_english=non_english,
             )
         )
 
