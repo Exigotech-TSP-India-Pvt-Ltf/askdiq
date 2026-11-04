@@ -112,7 +112,7 @@ def test_mixed_sentence_marker_moves_after_factual_clause() -> None:
 def test_pure_absence_loses_marker() -> None:
     out, cites = verify_citations("Pricing isn't published for the plan [1].", [CHUNK])
     assert "[1]" not in out
-    assert cites == []
+    assert not cites
 
 
 def test_mixed_sentence_unsupported_fact_loses_marker() -> None:

@@ -692,7 +692,7 @@ def is_implausible_word(token: str) -> bool:
     )
 
 
-def is_gibberish_token(token: str) -> bool:
+def is_gibberish_token(token: str) -> bool:  # pylint: disable=too-many-return-statements  # ordered rule list
     """Check if an individual token looks like keyboard mash or gibberish."""
     original = _clean_token(token)
     cleaned = original.lower()
@@ -799,7 +799,7 @@ def check_unsafe_input(
     return True, None
 
 
-def check_sensitive_request(query: str) -> tuple[bool, str | None]:
+def check_sensitive_request(query: str) -> tuple[bool, str | None]:  # pylint: disable=too-many-return-statements  # ordered rule list
     """Block requests for credentials/secrets or staff personal contact details."""
     text = " ".join(query[:_SENSITIVE_MAX_CHARS].split())
     if _SECRET_TOKEN_RE.search(text):
@@ -940,7 +940,7 @@ def check_math(query: str) -> tuple[bool, str | None]:
     return True, None
 
 
-def check_spam(
+def check_spam(  # pylint: disable=too-many-return-statements  # ordered rule list
     query: str,
 ) -> tuple[bool, str | None]:
     """Detect junk input: gibberish, keyboard mash, ultra-short noise, or promo spam.

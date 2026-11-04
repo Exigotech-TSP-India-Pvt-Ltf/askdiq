@@ -1,6 +1,10 @@
 """Missing log sources (OWASP A09): every new trigger writes
 exactly one insert-only, PII-masked audit row without blocking the caller."""
 
+# pylint: disable=redefined-outer-name  # pytest fixtures are injected by name
+# pylint: disable=protected-access  # the audit queue and rate check are internals
+# pylint: disable=use-implicit-booleaness-not-comparison  # assert an exact empty list
+
 import gc
 import json
 import uuid
@@ -89,7 +93,7 @@ async def test_rate_limited_per_ip_does_not_use_ip_as_actor(captured):
 
 
 async def test_rate_limited_on_shared_state_path_writes_one_row(monkeypatch, captured):
-    class _OverLimitBackend:
+    class _OverLimitBackend:  # pylint: disable=too-few-public-methods  # backend stub
         async def incr_window(self, _key: str, _window_s: int) -> int:
             return 999
 

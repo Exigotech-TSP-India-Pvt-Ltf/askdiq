@@ -192,7 +192,7 @@ def test_system_prompt_states_rules_once_and_styles_only_change_format():
         assert prompt_catalog.NO_ANSWER_LINE not in system
     # Each rule once, telegraphic: grounding + compliance policy (rules 5-7,
     # policy field) + the owner's length rules. Was 857 words before the trim.
-    assert len(prompts.get_system_prompt("current", "general").split()) <= 620
+    assert len(prompts.get_system_prompt("current", "general").split()) <= 630
 
 
 def test_answer_schema_uses_compact_keys_quote_before_text():

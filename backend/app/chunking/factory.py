@@ -23,7 +23,7 @@ _semantic_embed_fn = embed_texts
 
 def get_strategy(
     name: str,
-    source_type: str = "text",  # noqa: ARG001 - public kwarg, callers pass it
+    source_type: str = "text",  # noqa: ARG001  # pylint: disable=unused-argument  # public kwarg, callers pass it
 ) -> ChunkingStrategy:
     if name == "auto":
         name = "section_tree"

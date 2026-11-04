@@ -24,6 +24,7 @@ from pathlib import Path
 # on sys.path[0], so `app` isn't importable without this.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# pylint: disable=wrong-import-position  # must follow the sys.path fix above
 from sqlalchemy import delete, select
 
 from app.core.config import get_settings

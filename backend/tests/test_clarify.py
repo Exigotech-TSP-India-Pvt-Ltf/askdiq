@@ -2,6 +2,8 @@
 generation and server-side validation, answer rewriting, the orchestrator
 path and the /query round trip."""
 
+# pylint: disable=use-implicit-booleaness-not-comparison  # assert an exact empty list
+
 from __future__ import annotations
 
 import json

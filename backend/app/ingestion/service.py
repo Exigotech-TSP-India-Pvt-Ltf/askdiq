@@ -7,6 +7,7 @@ Implements the three-phase ingestion architecture:
   with atomic audit logging.
 """
 
+import asyncio
 import time
 import uuid
 from datetime import datetime
@@ -90,7 +91,7 @@ def _title_meta(link: UploadLink) -> dict:
     return {"title": link.title} if link.title else {}
 
 
-def change_reasons(
+def change_reasons(  # pylint: disable=too-many-arguments  # keyword-only comparison inputs
     existing: Document,
     *,
     status: str,
@@ -140,7 +141,7 @@ def change_reasons(
     return reasons
 
 
-def provenance_extras(
+def provenance_extras(  # pylint: disable=too-many-arguments  # keyword-only provenance fields
     *,
     converted_from: str,
     original_size_bytes: int,
@@ -167,7 +168,7 @@ def provenance_extras(
     }
 
 
-def backfill_provenance(
+def backfill_provenance(  # pylint: disable=too-many-arguments  # keyword-only provenance fields
     meta: dict,
     *,
     converted_from: str,
@@ -203,7 +204,9 @@ def backfill_provenance(
     return {**extras, **meta}
 
 
-async def ingest_text(
+# 3-phase locked upsert kept in one function so the phases read in order;
+# splitting it is a tracked follow-up (behaviour-sensitive concurrency code).
+async def ingest_text(  # pylint: disable=too-many-arguments,too-many-locals,too-many-branches,too-many-statements
     db: AsyncSession,
     *,
     source_name: str,
@@ -246,7 +249,8 @@ async def ingest_text(
     )
 
     # 2. Deterministic normalization
-    normalized_content, pii_found = normalize_markdown(content)
+    # Cleanup + PII redaction is CPU-bound regex work: off the event loop.
+    normalized_content, pii_found = await asyncio.to_thread(normalize_markdown, content)
     new_doc_hash = doc_content_hash(normalized_content)
     if pii_found:
         logger.info("ingest_pii_detected", source=canonical_name, pii_types=pii_found)

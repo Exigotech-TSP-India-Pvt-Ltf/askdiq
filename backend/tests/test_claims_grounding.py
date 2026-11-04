@@ -642,21 +642,21 @@ def test_empty_text_claim_still_runs_every_check():
     assert answer.dropped[0][1] == "quote_not_in_source"
 
 
-def test_short_bullets_quoting_the_item_verify_and_cap_at_six():
+def test_short_bullets_quoting_the_item_verify_and_cap_at_eight():
     source = _source(
         "Frontier package\nEverything in Strengthen, plus:\n"
-        + "\n".join(f"- Feature number {w} included" for w in "abcdefgh")
+        + "\n".join(f"- Feature number {w} included" for w in "abcdefghij")
     )
     claims = [_c("Everything in Strengthen, plus:", t="Frontier adds to Strengthen.")]
-    claims += [_c(f"Feature number {w} included", k="i") for w in "abcdefgh"]
+    claims += [_c(f"Feature number {w} included", k="i") for w in "abcdefghij"]
     answer = ground_answer(
         parse_draft(_compact(claims, [{"a": "what Frontier includes", "c": True}])),
         [source],
         "What does the Frontier package include?",
     )
-    assert len(answer.kept) == 9  # all verified
+    assert len(answer.kept) == 11  # all verified
     bullets = [line for line in answer.text.splitlines() if line.startswith("- ")]
-    assert len(bullets) == 6
+    assert len(bullets) == 8
 
 
 def test_shared_bullet_lead_is_cut():
@@ -700,6 +700,24 @@ def test_sentences_repeating_one_lead_render_as_lead_plus_bullets():
     )
     assert "- 24/7 detection and response. [1]" in answer.text
     assert answer.text.count("The Frontier package includes") == 1
+
+
+def test_a_sentence_restating_the_reply_is_dropped():
+    source = _source(
+        "Frontier\nFrontier includes 24/7 managed detection and response.\n"
+        "24/7 managed detection and response is included in Frontier."
+    )
+    claims = [
+        _c("Frontier includes 24/7 managed detection and response."),
+        _c("24/7 managed detection and response is included in Frontier."),
+    ]
+    answer = ground_answer(
+        parse_draft(_compact(claims, [{"a": "what Frontier includes", "c": True}])),
+        [source],
+        "What does Frontier include?",
+    )
+    assert len(answer.kept) == 2
+    assert answer.text.count("managed detection") == 1
 
 
 def test_word_budget_drops_extra_claims_but_never_a_part(monkeypatch):

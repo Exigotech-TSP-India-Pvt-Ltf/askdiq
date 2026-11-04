@@ -268,7 +268,7 @@ def _normalize_number(number: str) -> str:
     return number.rstrip("0").rstrip(".") if "." in number else number
 
 
-class _ChunkIndex:
+class _ChunkIndex:  # pylint: disable=too-few-public-methods
     """Lazily computed lexical facts about one retrieved chunk."""
 
     def __init__(self, source: SourceChunk) -> None:
@@ -288,7 +288,7 @@ class _ChunkIndex:
         )
 
 
-class _Claim:
+class _Claim:  # pylint: disable=too-few-public-methods
     """One claim sentence: its content stems and the figures it asserts."""
 
     def __init__(self, text: str) -> None:

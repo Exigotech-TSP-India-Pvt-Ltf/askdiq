@@ -2,6 +2,8 @@
 abstention detection, ``EvalResult.passed`` gating, whole-word keyword
 matching, true recall, dataset integrity and the v2 cases."""
 
+# pylint: disable=use-implicit-booleaness-not-comparison  # assert an exact empty list
+
 from __future__ import annotations
 
 from collections import Counter
@@ -624,7 +626,7 @@ def test_query_too_long_reaches_the_pipeline_and_the_422_path_still_works():
         expect_http_status=422,
     )
     assert evaluator.schema_rejects(case.query)
-    result = evaluator._api_rejected_result(case, 0)
+    result = evaluator._api_rejected_result(case, 0)  # pylint: disable=protected-access
     assert result.passed and result.guardrail_flags == ["query_too_long"]
     # An in-range query is NOT rejected, so the same case would fail loudly.
     short = _case(
@@ -634,7 +636,7 @@ def test_query_too_long_reaches_the_pipeline_and_the_422_path_still_works():
         expect_flags_any=["query_too_long"],
         expect_http_status=422,
     )
-    assert evaluator._api_rejected_result(short, 0).passed is False
+    assert evaluator._api_rejected_result(short, 0).passed is False  # pylint: disable=protected-access
 
 
 def test_v3_vague_prompts_expect_the_goal_or_buying_card():

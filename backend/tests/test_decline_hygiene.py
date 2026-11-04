@@ -18,6 +18,7 @@ from app.harness.decline import (
     strip_source_references,
 )
 from app.schemas.query import Clarification, SourceChunk
+from tests.grounded_fakes import patch_pipeline
 
 CAT = (
     "I can't see that detail here, so it's best to check with one of our "
@@ -41,8 +42,6 @@ def _source(n: int = 1) -> SourceChunk:
 
 async def _run(monkeypatch, query: str, llm_text: str):
     # A plain-text reply: each sentence ships only if verbatim in its chunk.
-    from tests.grounded_fakes import patch_pipeline  # noqa: PLC0415
-
     patch_pipeline(monkeypatch, [_source(1), _source(2)], llm_text)
     return await orchestrator.run_query(
         query=query,
@@ -174,7 +173,7 @@ def test_clarification_response_has_no_sources() -> None:
             ],
         }
     )
-    response = orchestrator._clarification_response(
+    response = orchestrator._clarification_response(  # pylint: disable=protected-access
         clarification,
         request_id="r",
         latency_ms=1.0,

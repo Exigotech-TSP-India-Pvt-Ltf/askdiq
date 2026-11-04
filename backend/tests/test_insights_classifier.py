@@ -3,23 +3,39 @@
 The LLM is always a fake: no test reaches Azure.
 """
 
+# pylint: disable=redefined-outer-name  # pytest fixtures are injected by name
+# pylint: disable=too-many-lines  # DB half shares FakeLLM and the fixtures above
+
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
+import os
 import re
+import subprocess
+import sys
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.insights import classifier as classifier_mod
+from app.insights import jobs as insights_jobs
+from app.insights import triggers
 from app.insights.classifier import classify_turns
+from app.insights.jobs import (
+    BackfillPayload,
+    ClassifyPayload,
+    RollupPayload,
+    next_rollup_slot,
+)
 from app.insights.llm import (
     DATA_CLOSE,
     DATA_OPEN,
@@ -34,6 +50,7 @@ from app.insights.rules import (
     derive_handled,
     map_outcome,
 )
+from app.insights.service import InsightsService
 from app.insights.taxonomy import (
     DEFAULT_ENTRIES,
     DEFAULT_TAXONOMY,
@@ -42,8 +59,12 @@ from app.insights.taxonomy import (
     Intent,
     Issue,
 )
+from app.insights.triggers import classify_dedupe_key, enqueue_classification
 from app.insights.types import LlmUsage, TurnInput
 from app.jobs import queue
+from app.jobs.registry import get_handler, job_handler, unregister
+from app.jobs.worker import JobWorker  # also registers the built-in handlers
+from scripts.backfill_turn_insights import parse_args, run
 from tests.pg_helpers import new_engine, require_disposable_database, require_postgres
 
 settings = get_settings()
@@ -461,6 +482,7 @@ def test_model_output_outside_the_schema_is_rejected():
             "extra": "ignored",
         }
     )
+    # pylint: disable-next=unbalanced-tuple-unpacking  # one label per input turn
     first, second = validate_labels(content, turns, DEFAULT_TAXONOMY, "m")
     assert first.intent == "OTHER"
     assert first.bot_quality == "OK"
@@ -475,6 +497,7 @@ def test_model_output_outside_the_schema_is_rejected():
 @pytest.mark.parametrize("content", ["not json", "[]", '{"labels": "x"}', ""])
 def test_invalid_response_becomes_other_with_low_confidence(content):
     turn = _turn(outcome="ungrounded", grounded=False, flags=("no_retrieved_sources",))
+    # pylint: disable-next=unbalanced-tuple-unpacking  # one label per input turn
     (label,) = validate_labels(content, [turn], DEFAULT_TAXONOMY, "m")
     assert label.intent == "OTHER"
     assert label.bot_quality == "FB"  # deterministic outcome mapping
@@ -494,7 +517,7 @@ async def test_budget_exhausted_defers_without_calling_the_llm():
     result = await classify_turns(
         turns, DEFAULT_TAXONOMY, batch_size=10, budget_remaining=10, llm=llm
     )
-    assert llm.calls == []
+    assert not llm.calls
     assert len(result.deferred) == 3
     assert [lab.intent for lab in result.labels] == ["GRE"]  # rules still run
 
@@ -518,10 +541,6 @@ async def test_budget_stops_between_batches(monkeypatch):
 
 
 def test_job_payloads_are_validated():
-    from pydantic import ValidationError
-
-    from app.insights.jobs import BackfillPayload, ClassifyPayload, RollupPayload
-
     with pytest.raises(ValidationError):
         ClassifyPayload.model_validate({"message_id": "not-a-uuid"})
     with pytest.raises(ValidationError):
@@ -533,23 +552,16 @@ def test_job_payloads_are_validated():
 
 
 def test_rollup_slot_is_next_hour():
-    from app.insights.jobs import next_rollup_slot
-
     now = datetime(2026, 10, 15, 9, 41, 7)
     assert next_rollup_slot(now) == datetime(2026, 10, 15, 10, 0, 0)
 
 
 def test_insights_handlers_are_registered():
-    from app.jobs import handlers  # noqa: F401
-    from app.jobs.registry import get_handler
-
     for job_type in ("insights.classify", "insights.rollup", "insights.backfill"):
         assert get_handler(job_type) is not None
 
 
 def test_backfill_args_are_capped():
-    from scripts.backfill_turn_insights import parse_args
-
     args = parse_args(["--limit", "5", "--dry-run", "--since", "2026-07-01"])
     assert args.limit == 5
     assert args.dry_run is True
@@ -590,7 +602,6 @@ async def chat(engine, actor):
     ) -> list[uuid.UUID]:
         session_id = uuid.uuid4()
         assistant_ids: list[uuid.UUID] = []
-        now = datetime.utcnow()
         async with engine.begin() as conn:
             await conn.execute(
                 text(
@@ -598,7 +609,7 @@ async def chat(engine, actor):
                     "last_activity_at, expires_at, created_ip) VALUES "
                     "(:id, :e, 't', :now, :now, :now, :ip)"
                 ),
-                {"id": session_id, "e": actor, "now": now, "ip": ip},
+                {"id": session_id, "e": actor, "now": datetime.utcnow(), "ip": ip},
             )
             for index, (question, outcome, grounded, flags, at) in enumerate(turns):
                 aid = uuid.uuid4()
@@ -643,8 +654,6 @@ def fake_llm_model() -> str:
 
 @pytest.fixture
 async def service(engine, fake_llm_model, monkeypatch):
-    from app.insights.service import InsightsService
-
     monkeypatch.setattr(settings, "insights_daily_token_budget", 10**9)
     llm = FakeLLM(model=fake_llm_model)
     yield InsightsService(engine=engine, llm=llm), llm
@@ -753,9 +762,6 @@ async def test_budget_exhausted_defers_the_job(engine, chat, service, monkeypatc
 
 
 async def test_deferred_job_is_requeued_not_failed(engine):
-    from app.jobs.registry import job_handler, unregister
-    from app.jobs.worker import JobWorker
-
     job_type = f"test.defer.{uuid.uuid4().hex}"
     later = queue.utcnow() + timedelta(hours=3)
 
@@ -766,7 +772,8 @@ async def test_deferred_job_is_requeued_not_failed(engine):
     try:
         await queue.enqueue(job_type, {}, engine=engine)
         (job,) = await queue.claim(1, "w", [job_type], engine=engine)
-        await JobWorker(types=[job_type], engine=engine)._execute(job)
+        worker = JobWorker(types=[job_type], engine=engine)
+        await worker._execute(job)  # pylint: disable=protected-access  # one job, no loop
         async with engine.connect() as conn:
             row = (
                 await conn.execute(
@@ -786,8 +793,6 @@ async def test_deferred_job_is_requeued_not_failed(engine):
 
 
 async def test_classify_enqueue_dedupes_on_message_id(engine):
-    from app.insights.triggers import classify_dedupe_key, enqueue_classification
-
     mid = uuid.uuid4()
     try:
         first = await enqueue_classification(mid, engine=engine)
@@ -805,8 +810,6 @@ async def test_classify_enqueue_dedupes_on_message_id(engine):
 async def test_classify_handler_runs_through_the_job(
     engine, chat, service, monkeypatch
 ):
-    from app.insights import jobs as insights_jobs
-
     svc, _llm = service
     monkeypatch.setattr(insights_jobs, "InsightsService", lambda: svc)
 
@@ -871,10 +874,6 @@ async def _rollup(engine, days: list[date]) -> list[Any]:
 
 
 async def test_backfill_dry_run_prints_counts_and_writes_nothing(engine, chat):
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-    from scripts.backfill_turn_insights import run
-
     since = datetime(2002, 6, 1)
     await chat(
         [("What is DeployIQ?", "answered", True, [], since + timedelta(hours=1))]
@@ -912,10 +911,6 @@ async def test_backfill_dry_run_prints_counts_and_writes_nothing(engine, chat):
 
 def _alembic(*args: str) -> str:
     require_disposable_database()
-    import os
-    import subprocess
-    import sys
-
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [sys.executable, "-m", "alembic", *args],
         cwd=BACKEND_DIR,
@@ -961,10 +956,6 @@ async def test_classify_enqueue_is_part_of_the_exchange_transaction(
 ):
     """Outbox: the job exists only if the exchange commits; a queue error is
     contained in a SAVEPOINT and never loses the exchange."""
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-    from app.insights import triggers
-
     monkeypatch.setattr(settings, "insights_classify_on_write", True)
     rolled_back, committed = uuid.uuid4(), uuid.uuid4()
     keys = [triggers.classify_dedupe_key(m) for m in (rolled_back, committed)]
@@ -1003,8 +994,6 @@ async def test_classify_enqueue_is_part_of_the_exchange_transaction(
 
 
 async def test_classify_on_write_can_be_disabled(monkeypatch):
-    from app.insights import triggers
-
     calls: list[Any] = []
 
     async def fake_enqueue_in(*args, **kwargs):
@@ -1013,9 +1002,9 @@ async def test_classify_on_write_can_be_disabled(monkeypatch):
     monkeypatch.setattr(triggers, "enqueue_in", fake_enqueue_in)
     monkeypatch.setattr(settings, "insights_classify_on_write", False)
 
-    class NoDb:
+    class NoDb:  # pylint: disable=too-few-public-methods  # session stub
         def begin_nested(self):
             raise AssertionError("must not touch the session when disabled")
 
     await triggers.enqueue_classification_in_transaction(NoDb(), uuid.uuid4())
-    assert calls == []
+    assert not calls

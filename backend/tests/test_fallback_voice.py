@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.harness import ambiguity
 from app.harness.clarify import REPLY_HINT
 from app.harness.orchestrator import _fallback_answer
+from app.harness.prompt_catalog import NO_ANSWER_LINE, off_topic_line
 from app.schemas.query import SourceChunk
 
 _ALL_FLAGS = [
@@ -74,15 +75,11 @@ def test_off_scope_fallbacks_never_offer_a_specialist(flag: str) -> None:
 
 
 def test_off_topic_is_the_fixed_off_topic_line() -> None:
-    from app.harness.prompt_catalog import off_topic_line
-
     assert _fallback_answer(["off_topic"]) == off_topic_line()
 
 
 def test_default_ungrounded_wording() -> None:
     # Phase 2 contract: not answered from the KB -> the one fixed line.
-    from app.harness.prompt_catalog import NO_ANSWER_LINE
-
     text = _fallback_answer(["low_retrieval_confidence"])
     assert text == NO_ANSWER_LINE
 

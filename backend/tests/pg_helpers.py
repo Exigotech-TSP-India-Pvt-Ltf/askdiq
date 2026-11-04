@@ -44,7 +44,7 @@ async def require_postgres(engine: AsyncEngine) -> None:
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # re-raised in CI
         if os.environ.get("CI"):
             raise
         pytest.skip(f"Postgres not reachable locally: {type(exc).__name__}")

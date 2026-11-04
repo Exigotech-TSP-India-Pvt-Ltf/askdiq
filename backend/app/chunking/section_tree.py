@@ -20,12 +20,12 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 from app.chunking.base import ChunkingStrategy, ChunkResult
+from app.ingestion.cleanup import markdown_heading
 from app.knowledge.links import slugify_anchor
 
 BREADCRUMB_SEPARATOR = f" {chr(0x203A)} "  # "Page > Section > Sub-section" (U+203A)
 LIST_MARKERS = ("- ", "* ", "+ ")
 SENTENCE_END = ". "
-MAX_HEADING_LEVEL = 6
 LIST_SHARE = 0.5
 
 
@@ -52,19 +52,11 @@ class _Piece:
         return self.body.strip()
 
 
-def _heading(line: str) -> tuple[int, str] | None:
-    stripped = line.strip()
-    hashes = len(stripped) - len(stripped.lstrip("#"))
-    if 1 <= hashes <= MAX_HEADING_LEVEL and stripped[hashes : hashes + 1] == " ":
-        return hashes, stripped[hashes + 1 :].strip()
-    return None
-
-
 def _parse(text: str) -> _Node:
     root = _Node(0, "")
     stack = [root]
     for line in text.split("\n"):
-        found = _heading(line)
+        found = markdown_heading(line)
         if found is None:
             stack[-1].lines.append(line)
             continue
@@ -228,8 +220,8 @@ class SectionTreeChunker(ChunkingStrategy):
         root = _parse(text)
         page_title = self._page_title(meta, _lift_page_title(root))
         pieces = self._emit(root, ())
-        results = []
-        for index, piece in enumerate(pieces):
+        results: list[ChunkResult] = []
+        for piece in pieces:
             body = piece.body.strip()
             if not body:
                 continue
@@ -241,7 +233,7 @@ class SectionTreeChunker(ChunkingStrategy):
             results.append(
                 ChunkResult(
                     content=f"{crumb}\n\n{body}" if crumb else body,
-                    chunk_index=index,
+                    chunk_index=len(results),  # dense: empty pieces are skipped
                     metadata={
                         **meta,
                         "strategy": self.name,
@@ -253,6 +245,4 @@ class SectionTreeChunker(ChunkingStrategy):
                     },
                 )
             )
-        for position, result in enumerate(results):
-            result.chunk_index = position
         return results

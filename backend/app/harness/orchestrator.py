@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """The harness: structured orchestration around the model.
 
 Pipeline:
@@ -12,6 +13,7 @@ compliance request, is asked back before the low-confidence fallback
 (app.harness.ambiguity).
 """
 
+import asyncio
 import re
 import time
 from dataclasses import replace
@@ -128,7 +130,7 @@ def _fallback_answer(flags: list[str]) -> str:
     return fallback_line(flags)
 
 
-def _fallback_response(
+def _fallback_response(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     request_id: str,
     flags: list[str],
     latency_ms: float,
@@ -253,12 +255,12 @@ def _with_pricing_line(
     return f"{text[:at]}{PRICING_LINE} {text[at:]}"
 
 
-def _clarification_response(
+def _clarification_response(  # pylint: disable=too-many-arguments
     clarification: Clarification,
     *,
     request_id: str,
     latency_ms: float,
-    sources: list[SourceChunk],  # noqa: ARG001 - kept for callers; cards carry none
+    sources: list[SourceChunk],  # noqa: ARG001  # pylint: disable=unused-argument  # kept for callers; cards carry none
     confidence: float,
     follow_up_detected: bool,
     history_turns_sent: int,
@@ -335,7 +337,7 @@ def _canned_response(
     )
 
 
-def _policy_decline(
+def _policy_decline(  # pylint: disable=too-many-arguments
     policy: tuple[str, str],
     *,
     request_id: str,
@@ -412,7 +414,7 @@ def _classifier_reply(
 
 
 @with_page_link
-async def run_query(
+async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-return-statements,too-many-branches,too-many-statements
     query: str,
     top_k: int,
     filters: dict | None,
@@ -1009,7 +1011,8 @@ async def run_query(
         # never by a "don't have an answer" line (every gate part is covered).
         draft = _one_buying_part(draft, query)
     try:
-        grounded_answer = ground_answer(
+        grounded_answer = await asyncio.to_thread(
+            ground_answer,
             draft,
             sources,
             query,
@@ -1021,7 +1024,7 @@ async def run_query(
             gap_parts=[p.text for p in route_decision.uncovered_parts],
             sales_contact=sales,
         )
-    except Exception:  # noqa: BLE001 - a verifier bug is an error, never a silent no-answer
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught  # a verifier bug is an error, never a silent no-answer
         logger.exception("claim_verification_failed", request_id=request_id)
         token_details["outcome"] = "verification_error"
         return _fallback_response(
@@ -1078,7 +1081,8 @@ async def run_query(
     if topic and not grounded_answer.answered:
         # Deterministic last resort: the topic's page sentences, verbatim and
         # verified like any claim (gpt-5-mini cannot run at temperature 0).
-        grounded_answer = ground_answer(
+        grounded_answer = await asyncio.to_thread(
+            ground_answer,
             overview_draft(sources, topic, query),
             sources,
             query,
@@ -1271,7 +1275,7 @@ def _focus_sources(sources: list[SourceChunk], decision: RouteDecision) -> list[
     return (numbers or list(range(1, len(sources) + 1)))[:_MAX_FOCUS_SOURCES]
 
 
-async def _covered_retry(  # pylint: disable=too-many-arguments
+async def _covered_retry(  # pylint: disable=too-many-arguments,too-many-locals
     query: str,
     sources: list[SourceChunk],
     history: list[ChatTurn] | None,
@@ -1305,7 +1309,8 @@ async def _covered_retry(  # pylint: disable=too-many-arguments
         return None, usage
     if topic:
         draft = _all_parts_covered(draft, query)
-    result = ground_answer(
+    result = await asyncio.to_thread(
+        ground_answer,
         draft,
         sources,
         query,

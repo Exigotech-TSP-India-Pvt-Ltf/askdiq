@@ -227,7 +227,7 @@ def _declined(response: QueryResponse) -> bool:
     )
 
 
-async def attach_page_link(
+async def attach_page_link(  # pylint: disable=too-many-locals
     query: str,
     response: QueryResponse,
     vector_store: VectorStore,

@@ -128,6 +128,14 @@ def parse_judge_output(text: str) -> JudgeScores | None:
         return None
 
 
+def _judge_deployment() -> str:
+    """``azure_judge_deployment_name`` when set, else the generator deployment."""
+    return (
+        getattr(get_settings(), "azure_judge_deployment_name", None)
+        or current_model_settings().llm_deployment
+    )
+
+
 @lru_cache(maxsize=4)
 def _client_for(deployment: str) -> AsyncAzureOpenAI:
     settings = get_settings()
@@ -148,10 +156,7 @@ async def _judge(
     key_facts: list[str] | None,
 ) -> JudgeScores | None:
     settings = get_settings()
-    deployment = (
-        getattr(settings, "azure_judge_deployment_name", None)
-        or current_model_settings().llm_deployment
-    )
+    deployment = _judge_deployment()
     client = _client_for(deployment)
 
     messages = [
@@ -175,7 +180,7 @@ async def _judge(
                 kwargs["response_format"] = {"type": "json_object"}
             async with get_llm_breaker().guard():
                 response = await client.chat.completions.create(**kwargs)
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught  # retry w/o JSON mode
             logger.warning(
                 "judge_call_failed json_mode=%s error_type=%s error=%s",
                 use_json_mode,
@@ -203,6 +208,6 @@ async def judge_answer(
 
     try:
         return await _judge(question, context_chunks, answer, key_facts)
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # never raises
         logger.warning("judge_failed error_type=%s error=%s", type(exc).__name__, exc)
         return None

@@ -42,7 +42,7 @@ def claims_reply(claims: list[dict], parts: list[dict] | None = None) -> str:
     )
 
 
-def patch_pipeline(
+def patch_pipeline(  # pylint: disable=too-many-arguments  # options are keyword-only
     monkeypatch,
     sources: Sequence[SourceChunk],
     reply: str | BaseException | list[str | BaseException],
@@ -72,7 +72,8 @@ def patch_pipeline(
         covered = route in (Route.ANSWER, Route.PARTIAL)
         return RouteDecision(route, parts=(PartVerdict("q", covered),), buying=buying)
 
-    async def fake_llm(query, chunks, history=None, **kwargs):
+    # Mirrors call_llm's signature, so ``history`` is accepted but unused.
+    async def fake_llm(query, chunks, history=None, **kwargs):  # pylint: disable=unused-argument
         if calls is not None:
             calls.append({"query": query, "chunks": chunks, "kwargs": kwargs})
         current = replies.pop(0) if replies is not None else reply

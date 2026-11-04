@@ -245,7 +245,7 @@ def test_front_matter_is_read_and_stripped() -> None:
     assert parsed.meta == FileLinkMeta(
         url="https://docs.x.com/a", title="Guide", section_links=True
     )
-    assert parsed.warnings == ()
+    assert not parsed.warnings
 
 
 def test_front_matter_source_url_key_and_crlf() -> None:

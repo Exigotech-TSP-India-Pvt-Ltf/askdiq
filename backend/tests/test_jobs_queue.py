@@ -1,5 +1,7 @@
 """Job queue: enqueue/claim with SKIP LOCKED, retries, worker."""
 
+# pylint: disable=redefined-outer-name  # pytest fixtures are injected by name
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +17,8 @@ import pytest
 from sqlalchemy import text
 
 from app.core.config import get_settings
-from app.jobs import queue
+from app.core.state import PostgresState
+from app.jobs import handlers, queue
 from app.jobs.registry import (
     STATE_CLEANUP_JOB,
     get_handler,
@@ -73,8 +76,6 @@ def test_handler_registry_rejects_duplicates():
 
 
 def test_builtin_cleanup_handler_is_registered():
-    from app.jobs import handlers  # noqa: F401
-
     assert get_handler(STATE_CLEANUP_JOB) is not None
 
 
@@ -305,9 +306,6 @@ async def test_worker_respects_max_concurrency_and_drains_on_shutdown(engine, jo
 
 
 async def test_cleanup_job_removes_expired_shared_state(engine):
-    from app.core.state import PostgresState
-    from app.jobs import handlers
-
     backend = PostgresState(engine)
     await backend.put_once(f"cleanup-{uuid.uuid4()}", {"v": 1}, ttl=0.01)
     await asyncio.sleep(0.1)
@@ -325,8 +323,6 @@ async def test_cleanup_job_removes_expired_shared_state(engine):
 
 
 async def test_periodic_cleanup_is_enqueued_once_across_workers(engine):
-    from app.jobs import handlers  # noqa: F401
-
     async with engine.begin() as conn:
         await conn.execute(
             text("DELETE FROM jobs WHERE type = :t"), {"t": STATE_CLEANUP_JOB}
@@ -335,7 +331,7 @@ async def test_periodic_cleanup_is_enqueued_once_across_workers(engine):
         JobWorker(types=[], schedule_periodic=True, engine=engine) for _ in range(3)
     ]
     for worker in workers:
-        await worker._schedule_cleanup()
+        await worker._schedule_cleanup()  # pylint: disable=protected-access  # no loop
     async with engine.begin() as conn:
         pending = await conn.scalar(
             text(

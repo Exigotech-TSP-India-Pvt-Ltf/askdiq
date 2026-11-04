@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Conservative post-filter for stock AI openers and closers (OR-8).
 
 Only the very start and the very end of an answer are touched: a known stock
@@ -793,7 +794,7 @@ def _asks_beyond_docs(asked: str) -> bool:
     )
 
 
-def drop_stock_handoff(answer: str, question: str | None) -> str:
+def drop_stock_handoff(answer: str, question: str | None) -> str:  # pylint: disable=too-many-locals,too-many-branches
     """Drop a generic "check with one of our specialists" from a complete answer.
 
     Applies to the tail and to the middle. Kept (as exactly one sentence, the
@@ -1059,6 +1060,14 @@ def _dash_end(
     return 0
 
 
+def _is_number_range(seg: str, index: int, end: int, buf: list[str]) -> bool:
+    """A single en dash between two digits ("3–5"), read as a range."""
+
+    if seg[index] != "\N{EN DASH}" or end != index + 1:
+        return False
+    return bool(buf) and buf[-1].isdigit() and end < len(seg) and seg[end].isdigit()
+
+
 def _replace_dashes(seg: str, lead: str, *, spaced: bool) -> str:
     """Dashes become commas (or a colon after a bold term); ranges become "to"."""
 
@@ -1075,14 +1084,7 @@ def _replace_dashes(seg: str, lead: str, *, spaced: bool) -> str:
             has_text = has_text or not char.isspace()
             index += 1
             continue
-        if (
-            char == "\N{EN DASH}"
-            and end == index + 1
-            and buf
-            and buf[-1].isdigit()
-            and end < length
-            and seg[end].isdigit()
-        ):
+        if _is_number_range(seg, index, end, buf):
             buf.extend(" to ")
             index = end
             continue
@@ -1102,7 +1104,7 @@ def _split_quoted(seg: str) -> list[tuple[str, bool]]:
     start = 0
     inside = False
     for index, char in enumerate(seg):
-        opens = (char == '"' and not inside) or char == "\N{LEFT DOUBLE QUOTATION MARK}"
+        opens = not inside if char == '"' else char == "\N{LEFT DOUBLE QUOTATION MARK}"
         closes = inside and char in ('"', "\N{RIGHT DOUBLE QUOTATION MARK}")
         if opens:
             if index > start:

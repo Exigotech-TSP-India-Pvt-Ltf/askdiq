@@ -227,7 +227,9 @@ def test_quota_tracker_throttling_and_header_telemetry():
 
 
 @pytest.mark.asyncio
-async def test_online_eval_detects_secret_leak_and_inserts_audit(db_session):
+async def test_online_eval_detects_secret_leak_and_inserts_audit(
+    db_session,  # pylint: disable=unused-argument  # needs the DB set up
+):
     # Simulated leaked AWS key in assistant answer
     request_id = "test-secret-leak-req-1"
     synthetic_answer = (

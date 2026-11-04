@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Clarifying questions for genuinely ambiguous queries (outcome ``clarify``).
 
 Cheap gates decide whether the model may ask instead of answer, and the
@@ -30,7 +31,6 @@ boosted when it is answered.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from dataclasses import dataclass, field
@@ -40,7 +40,7 @@ from typing import Any
 from app.core.config import get_settings
 from app.guardrails.conversational import detect_conversational_intent
 from app.harness.prompt_catalog import NO_ANSWER_LINE
-from app.retrieval.reranker import entity_documents, entity_mentions, rerank
+from app.retrieval.reranker import entity_documents, entity_mentions, rerank_async
 from app.retrieval.retriever import (
     decompose_query,
     history_subject,
@@ -476,7 +476,7 @@ def _names_framework(low: str) -> bool:
     return ambiguity.strip_offerings(low) != low
 
 
-def clarify_eligible(
+def clarify_eligible(  # pylint: disable=too-many-return-statements
     query: str, history: list[ChatTurn] | None, *, follow_up: bool
 ) -> bool:
     """Rule gate (no I/O): may this question be answered with questions back?
@@ -1571,7 +1571,7 @@ def clarify_allowed(
 _DANGLING_RE = re.compile(r"\b(?:it|its|it's|they|them|this|that|those|these)\b", re.I)
 
 
-def decide_clarification(
+def decide_clarification(  # pylint: disable=too-many-arguments,too-many-locals,too-many-return-statements,too-many-branches
     query: str,
     history: list[ChatTurn] | None,
     *,
@@ -1661,7 +1661,7 @@ async def catalogue_documents(
     )
     logits: dict[Any, float] = {}
     if found:
-        await asyncio.to_thread(rerank, part.search or part.query, found, None, logits)
+        await rerank_async(part.search or part.query, found, None, logits)
     sources = [
         SourceChunk(
             chunk_id=str(chunk.id),

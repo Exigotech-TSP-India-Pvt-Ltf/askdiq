@@ -8,8 +8,10 @@ Supports:
 
 import asyncio
 import contextlib
+import functools
 import ipaddress
 import logging
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -111,26 +113,54 @@ def is_test_ip(ip: str | None, effective_test_ips: set[str] | None = None) -> bo
     if val in effective:
         return True
 
-    # Check for CIDR block matches with pre-parsed fast-path
-    if _cached_parsed_networks and effective_test_ips is None:
-        try:
-            addr = ipaddress.ip_address(val)
-            for net in _cached_parsed_networks:
-                if addr in net:
-                    return True
-        except ValueError:
-            pass
-    else:
-        for rule in effective:
-            if "/" in rule:
-                try:
-                    network = ipaddress.ip_network(rule, strict=False)
-                    if ipaddress.ip_address(val) in network:
-                        return True
-                except ValueError:
-                    pass
+    # CIDR rules: pre-parsed once per rule set, never per checked IP.
+    networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
+        tuple(_cached_parsed_networks)
+        if _cached_parsed_networks and effective_test_ips is None
+        else _parse_networks(frozenset(effective))
+    )
+    if not networks:
+        return False
+    try:
+        addr = ipaddress.ip_address(val)
+    except ValueError:
+        return False
+    return any(addr in net for net in networks)
 
-    return False
+
+@functools.lru_cache(maxsize=32)
+def _parse_networks(
+    rules: frozenset[str],
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """The valid CIDR networks among ``rules`` (cached per rule set)."""
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for rule in rules:
+        if "/" in rule:
+            with contextlib.suppress(ValueError):
+                networks.append(ipaddress.ip_network(rule, strict=False))
+    return tuple(networks)
+
+
+def classify_ips(
+    raw_ips: Iterable[object], effective_test_ips: frozenset[str]
+) -> tuple[set[str], set[str]]:
+    """Split distinct raw IP values into (test_ips, user_ips).
+
+    CPU-bound over every distinct IP: callers on the event loop run it in a
+    worker thread (``asyncio.to_thread``).
+    """
+    rules = set(effective_test_ips)
+    test_ips: set[str] = set()
+    user_ips: set[str] = set()
+    for raw_ip in raw_ips:
+        if not raw_ip:
+            continue
+        ip_str = str(raw_ip).strip()
+        if is_test_ip(ip_str, rules):
+            test_ips.add(ip_str)
+        else:
+            user_ips.add(ip_str)
+    return test_ips, user_ips
 
 
 def get_audience_filter(

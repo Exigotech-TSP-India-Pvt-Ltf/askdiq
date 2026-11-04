@@ -16,16 +16,18 @@ lexical/entity evidence is only a capped tie-breaker on top of the logit, so
 a named document can never push the real answer document out.
 """
 
+import asyncio
 import logging
 import math
 import re
 import threading
 import time
-from collections.abc import Mapping, Sequence
+import weakref
+from collections.abc import Callable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any
+from typing import Any, TypeVar
 
 from app.core.config import get_settings
 from app.models.db_models import Chunk
@@ -41,13 +43,46 @@ rerank_timing_sink: ContextVar[list[float] | None] = ContextVar(
 )
 
 
-_rerank_slots = threading.BoundedSemaphore(max(1, settings.rerank_max_concurrency))
+# One asyncio.Semaphore per event loop: excess reranks wait on the loop, not
+# inside a pool thread (a thread blocked on a slot is a thread lost).
+_loop_slots: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
 _encoder_lock = threading.Lock()
+_T = TypeVar("_T")
+
+
+def _rerank_slots() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    slots = _loop_slots.get(loop)
+    if slots is None:
+        slots = asyncio.Semaphore(max(1, settings.rerank_max_concurrency))
+        _loop_slots[loop] = slots
+    return slots
+
+
+async def run_in_rerank_slot(func: Callable[..., _T], /, *args: Any) -> _T:
+    """Run CPU-bound rerank work in a worker thread, at most
+    ``rerank_max_concurrency`` at once (callers over the cap wait on the loop)."""
+    async with _rerank_slots():
+        return await asyncio.to_thread(func, *args)
+
+
+async def rerank_async(
+    query: str,
+    candidates: list[tuple[Chunk, float]],
+    boosts: Sequence[float] | None = None,
+    logits_out: dict[Any, float] | None = None,
+) -> list[tuple[Chunk, float]]:
+    """``rerank`` off the event loop, inside a rerank slot."""
+    if not settings.enable_reranker or len(candidates) <= 1:
+        return candidates
+    return await run_in_rerank_slot(rerank, query, candidates, boosts, logits_out)
 
 
 @lru_cache(maxsize=1)
 def _load_encoder():
-    from app.retrieval.cross_encoder import TextCrossEncoder  # noqa: PLC0415 - heavy model dependency, loaded on first use
+    from app.retrieval.cross_encoder import TextCrossEncoder  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # heavy model dependency, loaded on first use
 
     return TextCrossEncoder(model_name=settings.reranker_model)
 
@@ -74,13 +109,14 @@ def preload_reranker() -> None:
     try:
         _get_encoder()
         logger.info("reranker_preload status=ok model=%s", settings.reranker_model)
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # startup preload must never crash the app
         logger.error("reranker_preload status=failed error=%s", exc)
 
 
 def is_reranker_loaded() -> bool:
     """Return True if the reranker model weights are loaded in memory."""
-    return _load_encoder.cache_info().currsize > 0
+    # pylint mis-infers the lru_cache wrapper's cache_info() signature.
+    return _load_encoder.cache_info().currsize > 0  # pylint: disable=too-many-function-args
 
 
 def rerank(
@@ -107,17 +143,17 @@ def rerank(
     try:
         encoder = _get_encoder()
         documents = [chunk.content for chunk, _ in candidates]
-        with _rerank_slots:
-            # Timed inside the slot: pure compute, excluding queue wait.
-            started = time.perf_counter()
-            raw_scores = list(
-                encoder.rerank(query, documents, batch_size=settings.rerank_batch_size)
-            )
-            compute_ms = (time.perf_counter() - started) * 1000
+        # Slot wait happens before the thread starts (run_in_rerank_slot):
+        # this is pure compute, excluding queue wait.
+        started = time.perf_counter()
+        raw_scores = list(
+            encoder.rerank(query, documents, batch_size=settings.rerank_batch_size)
+        )
+        compute_ms = (time.perf_counter() - started) * 1000
         sink = rerank_timing_sink.get()
         if sink is not None:
             sink.append(compute_ms)
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught  # retrieval never hard-fails
         logger.warning(
             "Reranker unavailable, falling back to cosine order", exc_info=True
         )
@@ -443,7 +479,7 @@ def _chunk_heading(chunk: Any) -> str:
     return str(meta.get("section_heading") or "")
 
 
-def compute_hybrid_signal(
+def compute_hybrid_signal(  # pylint: disable=too-many-locals
     query: str,
     candidates: Sequence[tuple[Any, float]],
     doc_names: Mapping[Any, str] | None = None,

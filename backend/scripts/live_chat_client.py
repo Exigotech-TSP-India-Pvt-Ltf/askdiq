@@ -118,7 +118,7 @@ def _in_env_dir(fn: Callable[[], Any]) -> Any:
 def _service_key() -> str:
     # Imported lazily so tests and library users only need it for real calls.
     def load() -> str:
-        from app.core.config import get_settings  # noqa: PLC0415
+        from app.core.config import get_settings  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         return get_settings().api_key_name
 
@@ -151,11 +151,11 @@ def fixed_lines() -> FixedLines:
     """Load the fallback contract from the app (cached; needs settings)."""
 
     def load() -> FixedLines:
-        from app.harness import prompt_catalog as cat  # noqa: PLC0415
+        from app.harness import prompt_catalog as cat  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         try:
             off_topic: str | None = cat.off_topic_line()
-        except Exception:  # noqa: BLE001 - settings unavailable
+        except Exception:  # noqa: BLE001 - settings unavailable  # pylint: disable=broad-exception-caught
             off_topic = None
         return FixedLines(
             no_answer=cat.NO_ANSWER_LINE,
@@ -177,7 +177,7 @@ def _base_url() -> str:
 
 def _shared_client() -> httpx.Client:
     """One lazily built, thread-safe client; timeout is set per request."""
-    global _CLIENT  # noqa: PLW0603
+    global _CLIENT  # noqa: PLW0603  # pylint: disable=global-statement
     with _CLIENT_LOCK:
         if _CLIENT is None:
             _CLIENT = httpx.Client()
@@ -215,7 +215,48 @@ def _post_with_retry(
             return resp, rate_limited
 
 
-def ask(
+def _query_payload(
+    query: str,
+    session_id: str | None,
+    new_session: bool,
+    clarification_answers: list[dict] | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"query": query}
+    if session_id:
+        payload["session_id"] = session_id
+    if new_session:
+        payload["new_session"] = True
+    if clarification_answers:
+        payload["clarification_answers"] = clarification_answers
+    return payload
+
+
+def _timed_post(
+    url: str,
+    payload: dict,
+    headers: dict,
+    timeout: float,
+    transport: httpx.BaseTransport | None,
+) -> tuple[httpx.Response, int, float]:
+    """``(response, rate_limited_count, wall_ms)`` for one paced POST."""
+    with _SEMAPHORE:
+        if transport is not None:
+            with httpx.Client(transport=transport) as client:
+                started = time.perf_counter()
+                resp, rate_limited = _post_with_retry(
+                    client, url, payload, headers, timeout
+                )
+        else:
+            client = _shared_client()  # built before the timer starts
+            started = time.perf_counter()
+            resp, rate_limited = _post_with_retry(
+                client, url, payload, headers, timeout
+            )
+        wall_ms = round((time.perf_counter() - started) * 1000, 1)
+    return resp, rate_limited, wall_ms
+
+
+def ask(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # public client API
     query: str,
     session_id: str | None = None,
     new_session: bool = False,
@@ -232,32 +273,14 @@ def ask(
     (sessions belong to the client id). Raises LiveClientError on non-2xx.
     """
     cid = client_id or _PROCESS_CLIENT_ID
-    payload: dict[str, Any] = {"query": query}
-    if session_id:
-        payload["session_id"] = session_id
-    if new_session:
-        payload["new_session"] = True
-    if clarification_answers:
-        payload["clarification_answers"] = clarification_answers
+    payload = _query_payload(query, session_id, new_session, clarification_answers)
     headers = {
         "X-API-Key": api_key if api_key is not None else _service_key(),
         "X-Client-Id": cid,
     }
-    url = f"{_base_url()}/query"
-    with _SEMAPHORE:
-        if transport is not None:
-            with httpx.Client(transport=transport) as client:
-                started = time.perf_counter()
-                resp, rate_limited = _post_with_retry(
-                    client, url, payload, headers, timeout
-                )
-        else:
-            client = _shared_client()  # built before the timer starts
-            started = time.perf_counter()
-            resp, rate_limited = _post_with_retry(
-                client, url, payload, headers, timeout
-            )
-        wall_ms = round((time.perf_counter() - started) * 1000, 1)
+    resp, rate_limited, wall_ms = _timed_post(
+        f"{_base_url()}/query", payload, headers, timeout, transport
+    )
     if resp.status_code >= 400:
         raise LiveClientError(
             f"/query returned HTTP {resp.status_code}: {resp.text[:300]}"
@@ -269,7 +292,7 @@ def ask(
     return data
 
 
-class ConversationRunner:
+class ConversationRunner:  # pylint: disable=too-few-public-methods  # one ask() per turn
     """Multi-turn conversation: own client id, session_id kept across turns.
 
     Calls are paced to ``calls_per_min`` (default 8, under the server's 10/min
@@ -382,7 +405,7 @@ def _fallback_for(flags: tuple[str, ...]) -> str | None:
     lines = fixed_lines()
     try:
         return _in_env_dir(lambda: lines.fallback_line(list(flags)))
-    except Exception:  # noqa: BLE001 - settings unavailable
+    except Exception:  # noqa: BLE001 - settings unavailable  # pylint: disable=broad-exception-caught
         return None
 
 
@@ -414,7 +437,7 @@ def _template_texts(
         return frozenset(), ()
 
     def load() -> tuple[frozenset[str], tuple[re.Pattern[str], ...]]:
-        from app.harness import prompt_catalog as cat  # noqa: PLC0415
+        from app.harness import prompt_catalog as cat  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         if template_id.startswith(_PERSONA_PREFIX):
             intent = template_id.removeprefix(_PERSONA_PREFIX)
@@ -428,7 +451,7 @@ def _template_texts(
 
     try:
         return _in_env_dir(load)
-    except Exception:  # noqa: BLE001 - settings unavailable
+    except Exception:  # noqa: BLE001 - settings unavailable  # pylint: disable=broad-exception-caught
         return frozenset(), ()
 
 
@@ -437,13 +460,13 @@ def _flag_template_id(flags: tuple[str, ...], outcome: str) -> str | None:
     """The app's template id for ``flags`` when the response logs none."""
 
     def load() -> str:
-        from app.harness import prompt_catalog as cat  # noqa: PLC0415
+        from app.harness import prompt_catalog as cat  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         return cat.refusal_template_id(list(flags), outcome)
 
     try:
         return _in_env_dir(load)
-    except Exception:  # noqa: BLE001 - settings unavailable
+    except Exception:  # noqa: BLE001 - settings unavailable  # pylint: disable=broad-exception-caught
         return None
 
 

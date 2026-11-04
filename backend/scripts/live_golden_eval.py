@@ -25,6 +25,9 @@ wrong-decline <= 3%, off-topic + attack pass = 100%. Exit 1 when a gate fails
 (unless ``--no-gate``) or when ``--baseline`` shows a regression.
 """
 
+# One self-contained release-gate script (cases, checks, report) by design.
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 import argparse
@@ -237,7 +240,7 @@ def percentile(values: list[float], pct: float) -> float | None:
 
 # ---------------------------------------------------------------- data classes
 @dataclass
-class TurnResult:
+class TurnResult:  # pylint: disable=too-many-instance-attributes  # report record
     query: str
     expect: str
     accept: list[str]
@@ -277,7 +280,9 @@ class CaseResult:
 
 
 # ---------------------------------------------------------------- classification
-def classify(resp: dict, tails: tuple[re.Pattern[str], ...] = ()) -> str:
+def classify(  # pylint: disable=too-many-return-statements  # one return per label
+    resp: dict, tails: tuple[re.Pattern[str], ...] = ()
+) -> str:
     """Map a /query response to answer/partial/not_covered/off_topic/clarify/canned/blocked.
 
     ``tails``: fixed lines appended to an answer (page link, sales, pricing);
@@ -337,7 +342,7 @@ def cited_chunks(answer: str, citations: list[dict]) -> list[tuple[str, set[str]
 
 
 # ---------------------------------------------------------------- fixed texts
-class ExpectedTexts:
+class ExpectedTexts:  # pylint: disable=too-many-instance-attributes  # one per fixed line
     """Fixed reply lines, read from the app at run time.
 
     ``app.harness.prompt_catalog`` first (``POLICY_TEMPLATES`` formatted with
@@ -361,6 +366,8 @@ class ExpectedTexts:
         _in_env_dir(self._load)
 
     def _load(self) -> None:
+        # Lazy, best-effort app imports: any of these modules may be mid-edit.
+        # pylint: disable=import-outside-toplevel,broad-exception-caught
         try:
             from app.harness import prompt_catalog as cat  # noqa: PLC0415
         except Exception:  # noqa: BLE001 - catalog may not exist yet
@@ -459,7 +466,7 @@ def _call_or_value(module: Any, fn_name: str, const_name: str) -> str | None:
 
 
 # ---------------------------------------------------------------- checks
-class Checker:
+class Checker:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
     """Per-turn rule checks (pure, no network except the optional link probe)."""
 
     def __init__(
@@ -469,7 +476,7 @@ class Checker:
         max_latency_ms: float,
         texts: ExpectedTexts,
     ) -> None:
-        import live_chat_client as lc  # noqa: PLC0415 - path set at runtime
+        import live_chat_client as lc  # noqa: PLC0415 - path set at runtime  # pylint: disable=import-outside-toplevel
 
         self.lc = lc
         self.site_host = site_host
@@ -593,19 +600,7 @@ class Checker:
         answer = norm(resp.get("answer") or "")
         kind = tr.observed
         if kind in ANSWERED:
-            if outcome != "answered":
-                errs.append(f"outcome={outcome}, want answered")
-            if grounded is not True:
-                errs.append(f"grounded={grounded}, want True")
-            if not resp.get("citations"):
-                errs.append("no citations")
-            body = strip_tails(answer, self.texts.tails)
-            leaked = [
-                t
-                for t in self.texts.all_fallbacks(include_variants=kind == ANSWER)
-                if norm(t) in body
-            ]
-            errs += [f"fallback text in answer: {t[:60]}" for t in leaked]
+            errs += self._answered_labels(resp, answer, kind)
         elif kind == NOT_COVERED:
             errs += _decline_basics(outcome, "ungrounded", grounded, conf, has_refs)
             if not self._is_no_answer(answer, buying=category == "buying"):
@@ -624,6 +619,24 @@ class Checker:
                 errs.append("grounded=True on a canned/clarify reply")
             if kind == CLARIFY:
                 errs += _clarify_doc_ids(resp)
+        return errs
+
+    def _answered_labels(self, resp: dict, answer: str, kind: str) -> list[str]:
+        errs: list[str] = []
+        outcome, grounded = resp.get("outcome"), resp.get("grounded")
+        if outcome != "answered":
+            errs.append(f"outcome={outcome}, want answered")
+        if grounded is not True:
+            errs.append(f"grounded={grounded}, want True")
+        if not resp.get("citations"):
+            errs.append("no citations")
+        body = strip_tails(answer, self.texts.tails)
+        leaked = [
+            t
+            for t in self.texts.all_fallbacks(include_variants=kind == ANSWER)
+            if norm(t) in body
+        ]
+        errs += [f"fallback text in answer: {t[:60]}" for t in leaked]
         return errs
 
     def _is_no_answer(self, answer: str, *, buying: bool) -> bool:
@@ -671,7 +684,7 @@ def _clarify_doc_ids(resp: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------- runner
-class Pacer:
+class Pacer:  # pylint: disable=too-few-public-methods  # one wait() per request
     """Process-wide request pacing (server limit: 30 queries/min per IP)."""
 
     def __init__(self, per_min: float) -> None:
@@ -690,9 +703,9 @@ class Pacer:
             time.sleep(slot - now)
 
 
-class Runner:
+class Runner:  # pylint: disable=too-few-public-methods  # one run_case() per case
     def __init__(self, args: argparse.Namespace, checker: Checker) -> None:
-        import live_chat_client as lc  # noqa: PLC0415
+        import live_chat_client as lc  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         self.lc = lc
         self.args = args
@@ -817,10 +830,9 @@ def _in_env_dir(fn: Callable[[], Any]) -> Any:
         os.chdir(previous)
 
 
-def run_judge(cases: list[dict], results: list[CaseResult], raw: dict) -> None:
-    """Claim-level faithfulness of answered turns against the returned sources."""
-    from app.evaluation.judge_extra import deep_judge  # noqa: PLC0415
-
+def _judge_jobs(
+    cases: list[dict], results: list[CaseResult], raw: dict
+) -> list[tuple[TurnResult, str, list[str], list]]:
     specs = {c["id"]: c for c in cases}
     jobs: list[tuple[TurnResult, str, list[str], list]] = []
     for res in results:
@@ -831,6 +843,16 @@ def run_judge(cases: list[dict], results: list[CaseResult], raw: dict) -> None:
             chunks = [str(s.get("content") or "") for s in resp.get("sources") or []]
             facts = specs[res.id]["turns"][idx].get("must_contain") or []
             jobs.append((tr, tr.query, chunks, [term_label(f) for f in facts]))
+    return jobs
+
+
+def run_judge(cases: list[dict], results: list[CaseResult], raw: dict) -> None:
+    """Claim-level faithfulness of answered turns against the returned sources."""
+    from app.evaluation.judge_extra import (  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        deep_judge,
+    )
+
+    jobs = _judge_jobs(cases, results, raw)
     sys.stdout.write(f"judging {len(jobs)} answered turns...\n")
 
     async def _all() -> list:
@@ -1045,7 +1067,13 @@ def markdown(report: dict) -> str:
         lines += ["", "## Baseline regressions", ""]
         lines += [f"- {r}" for r in report["regressions"]] or ["- none"]
     lines += ["", "## Failures", ""]
-    for case in report["cases"]:
+    lines += _failure_lines(report["cases"])
+    return "\n".join(lines) + "\n"
+
+
+def _failure_lines(cases: list[dict]) -> list[str]:
+    lines: list[str] = []
+    for case in cases:
         if case["passed"]:
             continue
         tag = " (KB conflict)" if case["conflict"] else ""
@@ -1058,7 +1086,7 @@ def markdown(report: dict) -> str:
             lines += [f"  - {f}" for f in t["failures"]]
             lines.append(f"  - answer: {answer}")
         lines.append("")
-    return "\n".join(lines) + "\n"
+    return lines
 
 
 # ---------------------------------------------------------------- selection / main
@@ -1091,10 +1119,10 @@ def resolve_site_host(arg: str | None) -> str | None:
     if arg:
         return urlparse(arg).hostname or arg if "//" in arg else arg
     try:
-        from app.core.config import get_settings  # noqa: PLC0415
+        from app.core.config import get_settings  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         return urlparse(_in_env_dir(lambda: get_settings().site_base_url)).hostname
-    except Exception:  # noqa: BLE001 - optional default only
+    except Exception:  # noqa: BLE001 - optional default only  # pylint: disable=broad-exception-caught
         return None
 
 
@@ -1134,30 +1162,43 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _utf8_streams() -> None:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+def _run_all(
+    runner: Runner, cases: list[dict], concurrency: int, judge: bool
+) -> list[CaseResult]:
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        results = list(pool.map(runner.run_case, cases))
+    if judge:
+        run_judge(cases, results, runner.raw)
+    return results
+
+
+def main(argv: list[str] | None = None) -> int:
+    _utf8_streams()
     args = parse_args(argv)
     concurrency = max(1, min(MAX_CONCURRENCY, args.concurrency))
     os.environ["LIVE_CLIENT_BASE_URL"] = args.base_url
     os.environ["LIVE_CLIENT_CONCURRENCY"] = str(concurrency)
-    doc = json.loads(args.cases.read_text(encoding="utf-8"))
-    cases = select_cases(doc["cases"], args)
+    cases = select_cases(
+        json.loads(args.cases.read_text(encoding="utf-8"))["cases"], args
+    )
     site_host = resolve_site_host(args.site_host)
     texts = ExpectedTexts()
-    checker = Checker(site_host, args.check_links, args.max_latency_ms, texts)
-    runner = Runner(args, checker)
+    runner = Runner(
+        args, Checker(site_host, args.check_links, args.max_latency_ms, texts)
+    )
     started = time.monotonic()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     sys.stdout.write(
         f"golden eval: {len(cases)} cases -> {args.base_url} "
         f"(concurrency {concurrency}, site host {site_host})\n"
     )
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        results = list(pool.map(runner.run_case, cases))
-    if args.judge:
-        run_judge(cases, results, runner.raw)
+    results = _run_all(runner, cases, concurrency, args.judge)
     summary = summarise(results, args.judge)
     report: dict[str, Any] = {
         "meta": {

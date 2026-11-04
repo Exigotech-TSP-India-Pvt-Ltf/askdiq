@@ -1,6 +1,9 @@
 """Clarifier quality: company facts and named entities are answered, back
 references and vague goals are asked back, history does not pollute subjects."""
 
+# pylint: disable=protected-access  # subject / slot helpers are internals
+# pylint: disable=use-implicit-booleaness-not-comparison  # assert an exact empty list
+
 from __future__ import annotations
 
 import time

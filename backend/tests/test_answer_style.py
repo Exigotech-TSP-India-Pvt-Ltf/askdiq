@@ -14,6 +14,7 @@ from app.harness import orchestrator, prompts, style
 from app.harness.ambiguity import AmbiguityKind, Assessment
 from app.harness.answer_shape import AnswerShape, detect_shape, refine_shape
 from app.harness.citations import MARKER_RE
+from app.harness.prompt_catalog import INTERNAL_WORDING, common_rules
 from app.harness.style import (
     BANNED_PHRASES,
     STYLE_PROFILES,
@@ -30,6 +31,7 @@ from app.harness.tone import (
     strip_stock_phrases,
 )
 from app.schemas.query import SourceChunk
+from tests.grounded_fakes import claim, claims_reply, patch_pipeline, run
 
 BUDGET_SECONDS = 0.5
 MIN_ACCURACY = 0.9
@@ -221,8 +223,6 @@ def test_only_the_detected_shape_block_is_injected(shape: AnswerShape) -> None:
 
 
 def test_adaptive_prompt_carries_tone_rules_and_banned_list() -> None:
-    from app.harness.prompt_catalog import INTERNAL_WORDING
-
     prompt = prompts.get_system_prompt(ResponseStyle.ADAPTIVE, AnswerShape.GENERAL)
     assert "Never write paragraphs" in prompt
     assert "no raw HTML, links" in prompt
@@ -386,8 +386,6 @@ def test_tone_filter_never_removes_or_alters_markers(answer: str) -> None:
 
 
 def test_prompt_composes_rules_contract_then_style() -> None:
-    from app.harness.prompt_catalog import common_rules
-
     blocks = STYLE_PROFILES[ResponseStyle.ADAPTIVE].shape_blocks
     for shape in AnswerShape:
         prompt = prompts.get_system_prompt(ResponseStyle.ADAPTIVE, shape)
@@ -439,8 +437,6 @@ def test_tone_filter_stays_fast_on_100kb(text: str) -> None:
 
 
 async def test_run_query_uses_style_shape_and_records_them(monkeypatch) -> None:
-    from tests.grounded_fakes import claim, claims_reply, patch_pipeline, run
-
     seen: list[str] = []
     source = _source("The Essential Eight is eight mitigation strategies.")
     patch_pipeline(
@@ -477,8 +473,6 @@ async def test_run_query_uses_style_shape_and_records_them(monkeypatch) -> None:
 
 
 async def test_run_query_with_style_and_citations(monkeypatch) -> None:
-    from tests.grounded_fakes import claim, claims_reply, patch_pipeline, run
-
     sources = [
         SourceChunk(
             chunk_id=f"00000000-0000-0000-0000-00000000001{i}",

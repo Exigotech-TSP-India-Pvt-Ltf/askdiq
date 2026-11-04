@@ -1,5 +1,7 @@
 """Session lifecycle and the auth migration; Postgres, runs in CI."""
 
+# pylint: disable=redefined-outer-name  # pytest fixtures are injected by name
+
 from __future__ import annotations
 
 import asyncio

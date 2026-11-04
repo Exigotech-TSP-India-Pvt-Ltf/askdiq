@@ -643,12 +643,13 @@ def lexical_support(
     return [_lexical_containment(claim, scopes, minimum) for claim in claims]
 
 
-def supported_claim_ratio(
+def supported_claim_ratio(  # pylint: disable=too-many-arguments  # optional lexical inputs
     claim_embeddings: list[list[float]],
     source_embeddings: list[list[float]],
     threshold: float,
     claims: list[str] | None = None,
     source_text: str = "",
+    *,
     lexical: list[float] | None = None,
 ) -> float:
     """Share of claims whose best chunk reaches `threshold`.
@@ -773,7 +774,7 @@ async def check_groundedness(
         answer_embedding, claim_embeddings, source_embeddings = await _embed_for_check(
             answer, claims if check_claims else [], sources
         )
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught  # fail closed on any embed error
         return False, 0.0, "groundedness_check_failed"
 
     similarities = (
@@ -791,7 +792,7 @@ async def check_groundedness(
             max(threshold - _CLAIM_THRESHOLD_MARGIN, 0.0),
             claims,
             " ".join(source.content for source in sources),
-            lexical,
+            lexical=lexical,
         )
         >= min_supported_ratio
     )

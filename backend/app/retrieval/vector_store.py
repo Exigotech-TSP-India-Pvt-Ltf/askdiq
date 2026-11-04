@@ -37,6 +37,7 @@ from app.retrieval.reranker import (
     pick_entity_documents,
     query_intent,
     rerank,
+    run_in_rerank_slot,
     trim_pool,
 )
 
@@ -136,7 +137,7 @@ class VectorStore:
         await self.session.commit()
         return {chunk_id: list(embedding) for chunk_id, embedding in rows}
 
-    async def similarity_search(
+    async def similarity_search(  # pylint: disable=too-many-locals
         self,
         query_embedding: list[float],
         top_k: int = 5,
@@ -253,44 +254,26 @@ class VectorStore:
         # STEP 5: Rerank the candidate pool before final selection
         # ---------------------------------------------------------
 
-        signal = HybridSignal()
-        if hybrid and query_text:
-            # String ops only (no embedding call): lexical + named-entity
-            # boost, then trim the pool back to its normal rerank size.
-            signal = compute_hybrid_signal(
-                query_text, candidates, self._document_names()
-            )
-            self.rank_boosts.update(signal.boosts)
-            candidates = trim_pool(candidates, signal, candidate_k)
-
-        order: dict[uuid.UUID, float] | None = None
-        if query_text:
-            boosts = [signal.boosts.get(chunk.id, 0.0) for chunk, _ in candidates]
-            logits: dict[uuid.UUID, float] = {}
-            # CPU-bound ONNX inference — off the event loop so it doesn't
-            # stall every other concurrent request behind it.
-            candidates = await asyncio.to_thread(
-                rerank, query_text, candidates, boosts, logits
-            )
-            self.last_ce_scores = logits
-            if logits:
-                # The cross-encoder order is final: selection never re-sorts
-                # by cosine (position rank, higher is better).
-                order = {
-                    chunk.id: float(-pos) for pos, (chunk, _s) in enumerate(candidates)
-                }
-
-        # ---------------------------------------------------------
-        # STEP 3: Cross-document quota selection
-        # ---------------------------------------------------------
-
-        return self._select_diverse_chunks(
+        # Hybrid signal, rerank and selection are CPU-bound: one worker
+        # thread (inside a rerank slot when the ONNX model runs) so they
+        # never stall other requests on the event loop.
+        job = _RankJob(
+            query_text=query_text,
             candidates=candidates,
+            names=self._document_names() if hybrid and query_text else {},
+            hybrid=hybrid,
+            candidate_k=candidate_k,
             top_k=top_k,
             max_documents=max_documents,
-            signal=signal,
-            order=order,
         )
+        if query_text and settings.enable_reranker:
+            selected, signal, logits = await run_in_rerank_slot(_rank_and_select, job)
+        else:
+            selected, signal, logits = await asyncio.to_thread(_rank_and_select, job)
+        self.rank_boosts.update(signal.boosts)
+        if query_text:
+            self.last_ce_scores = logits
+        return selected
 
     def _document_names(self) -> dict[uuid.UUID, str]:
         return {
@@ -298,7 +281,7 @@ class VectorStore:
             for doc_id, link in self.document_links.items()
         }
 
-    async def best_chunk_per_entity_document(
+    async def best_chunk_per_entity_document(  # pylint: disable=too-many-locals
         self,
         query_embedding: list[float],
         entities: list[str],
@@ -361,7 +344,7 @@ class VectorStore:
             found.append((chunk, 1 - dist))
         return found
 
-    async def chunks_in_documents(
+    async def chunks_in_documents(  # pylint: disable=too-many-locals
         self,
         query_embedding: list[float],
         document_ids: list[str],
@@ -446,7 +429,7 @@ class VectorStore:
             chunks.append(chunk)
         return chunks
 
-    async def _fetch_entity_chunks(
+    async def _fetch_entity_chunks(  # pylint: disable=too-many-locals
         self,
         query_embedding: list[float],
         query_text: str,
@@ -560,7 +543,7 @@ class VectorStore:
         return fetched
 
     @staticmethod
-    def _select_diverse_chunks(
+    def _select_diverse_chunks(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         candidates: list[tuple[Chunk, float]],
         top_k: int,
         max_documents: int | None = None,
@@ -708,3 +691,48 @@ class VectorStore:
         selected.sort(key=key, reverse=True)
 
         return selected
+
+
+class _RankJob(NamedTuple):
+    query_text: str | None
+    candidates: list[tuple[Chunk, float]]
+    names: dict[uuid.UUID, str]
+    hybrid: bool
+    candidate_k: int
+    top_k: int
+    max_documents: int | None
+
+
+def _rank_and_select(
+    job: _RankJob,
+) -> tuple[list[tuple[Chunk, float]], HybridSignal, dict[uuid.UUID, float]]:
+    """STEP 5 + STEP 3 (pure CPU, run in a worker thread): hybrid signal,
+    pool trim, cross-encoder rerank, cross-document quota selection."""
+    candidates = job.candidates
+    signal = HybridSignal()
+    if job.hybrid and job.query_text:
+        # String ops only (no embedding call): lexical + named-entity
+        # boost, then trim the pool back to its normal rerank size.
+        signal = compute_hybrid_signal(job.query_text, candidates, job.names)
+        candidates = trim_pool(candidates, signal, job.candidate_k)
+
+    order: dict[uuid.UUID, float] | None = None
+    logits: dict[uuid.UUID, float] = {}
+    if job.query_text:
+        boosts = [signal.boosts.get(chunk.id, 0.0) for chunk, _ in candidates]
+        candidates = rerank(job.query_text, candidates, boosts, logits)
+        if logits:
+            # The cross-encoder order is final: selection never re-sorts
+            # by cosine (position rank, higher is better).
+            order = {
+                chunk.id: float(-pos) for pos, (chunk, _s) in enumerate(candidates)
+            }
+
+    selected = VectorStore._select_diverse_chunks(  # pylint: disable=protected-access
+        candidates=candidates,
+        top_k=job.top_k,
+        max_documents=job.max_documents,
+        signal=signal,
+        order=order,
+    )
+    return selected, signal, logits

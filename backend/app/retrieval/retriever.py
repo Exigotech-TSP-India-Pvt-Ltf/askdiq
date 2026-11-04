@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Splits a message into its asks, retrieves per ask and gates relevance.
 
 Multi-part messages ("What is E8? And who is your CEO?", numbered lists,
@@ -11,7 +12,6 @@ part never declines the covered ones and parts are never folded together.
 
 from __future__ import annotations
 
-import asyncio
 import math
 import re
 import time
@@ -28,7 +28,7 @@ from app.harness.decision import PartVerdict, Route, RouteDecision
 from app.knowledge.links import citation_url
 from app.knowledge.settings_service import current_knowledge_settings
 from app.retrieval.embeddings import embed_text, embed_texts, embedding_timing_sink
-from app.retrieval.reranker import entity_documents, entity_mentions, rerank
+from app.retrieval.reranker import entity_documents, entity_mentions, rerank_async
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, SourceChunk
 
@@ -819,7 +819,7 @@ def expand_retrieval_query(text: str) -> str:
 
 
 @dataclass(frozen=True)
-class PartRetrieval:
+class PartRetrieval:  # pylint: disable=too-many-instance-attributes
     """What one ask of the message retrieved on its own."""
 
     query: str
@@ -963,7 +963,7 @@ def _is_bare_topic(text: str, found: list, vector_store: VectorStore) -> bool:
     rest = scan
     for start, end, _key in reversed(mentions):
         rest = rest[:start] + " " + rest[end:]
-    words = [w for w in _WORD_RE.findall(rest.lower())]
+    words = _WORD_RE.findall(rest.lower())
     if any(w not in _OVERVIEW_WORDS for w in words):
         return False
     names = {
@@ -1223,7 +1223,7 @@ async def route_sources(vector_store: VectorStore, route: str) -> list[SourceChu
     ]
 
 
-async def retrieve_parts(
+async def retrieve_parts(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
     vector_store: VectorStore,
     query: str,
     top_k: int = 5,
@@ -1326,7 +1326,7 @@ async def retrieve_parts(
     return RetrievalResult(sources=merged, parts=results)
 
 
-async def _with_preferred(  # noqa: PLR0913 - one retrieval step's full context
+async def _with_preferred(  # noqa: PLR0913  # pylint: disable=too-many-arguments,too-many-positional-arguments  # one retrieval step's full context
     vector_store: VectorStore,
     embedding: list[float],
     search: str,
@@ -1346,7 +1346,7 @@ async def _with_preferred(  # noqa: PLR0913 - one retrieval step's full context
     ]
     if extra:
         extra_logits: dict[uuid.UUID, float] = {}
-        extra = await asyncio.to_thread(rerank, search, extra, None, extra_logits)
+        extra = await rerank_async(search, extra, None, extra_logits)
         logits.update(extra_logits)
     preferred = set(document_ids)
     ranked = extra + [item for item in found if str(item[0].document_id) in preferred]
@@ -1387,7 +1387,7 @@ def covered_sources(
     return kept or result.sources
 
 
-async def retrieve(
+async def retrieve(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     vector_store: VectorStore,
     query: str,
     top_k: int = 5,

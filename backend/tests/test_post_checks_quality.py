@@ -373,7 +373,7 @@ def test_pure_arithmetic_query_is_detected_as_non_linguistic():
     # overlap heuristic alone can't flag it off-topic; the orchestrator's
     # off-scope + decline-sentence override (app.harness.orchestrator) and the
     # existing min_retrieval_score floor are the actual safety nets for it.
-    assert query_content_words("5+98 add this") == []
+    assert not query_content_words("5+98 add this")
 
 
 def test_offline_style_question_overlapping_product_name_stays_on_topic():

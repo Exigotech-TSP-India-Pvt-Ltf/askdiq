@@ -6,6 +6,10 @@ documents list fields, the session-detail citation refresh and the
 migration round trip.
 """
 
+# pytest fixtures are injected by name (some only for their setup side effect);
+# the policy cache is reset through its private state between tests.
+# pylint: disable=redefined-outer-name,unused-argument,protected-access
+
 from __future__ import annotations
 
 import asyncio

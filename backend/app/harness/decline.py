@@ -439,7 +439,7 @@ _IMPERATIVE_STARTS = frozenset(
 )
 
 
-class _Piece:
+class _Piece:  # pylint: disable=too-few-public-methods
     """A list item or a run of free text inside the text that follows a decline."""
 
     __slots__ = ("is_item", "orig", "removed", "text")
@@ -457,7 +457,7 @@ def _source_stems(sources_text: str) -> frozenset[str]:
     return frozenset(stems)
 
 
-class _Support:
+class _Support:  # pylint: disable=too-few-public-methods
     """Is an item backed by the retrieved sources (or a specialist hand-off)?"""
 
     def __init__(self, sources_text: str, query: str) -> None:
@@ -553,10 +553,10 @@ def _drop_orphan_lead_ins(pieces: list[_Piece]) -> None:
     """A "Here is how:" lead-in whose whole list was removed goes too."""
     for i in range(len(pieces) - 1):
         piece, nxt = pieces[i], pieces[i + 1]
+        if piece.is_item or piece.removed:
+            continue
         if (
-            not piece.is_item
-            and not piece.removed
-            and nxt.is_item
+            nxt.is_item
             and nxt.removed
             and piece.text.rstrip().endswith(":")
             and len(_sentence_spans(piece.text)) == 1
@@ -564,7 +564,7 @@ def _drop_orphan_lead_ins(pieces: list[_Piece]) -> None:
             piece.removed = True
 
 
-def strip_invented_after_decline(answer: str, sources_text: str, query: str) -> str:
+def strip_invented_after_decline(answer: str, sources_text: str, query: str) -> str:  # pylint: disable=too-many-locals
     """Drop steps / instructions after a decline that the sources do not support.
 
     After "I can't see that detail" only nothing, or the specialist hand-off, may

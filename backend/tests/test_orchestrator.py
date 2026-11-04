@@ -28,13 +28,14 @@ def _timeout() -> openai.APITimeoutError:
     return openai.APITimeoutError(request=httpx.Request("POST", "https://x"))
 
 
-async def _run(
+async def _run(  # pylint: disable=too-many-arguments  # keyword-only test knobs
     monkeypatch,
     *,
     pre_flags=None,
     sources=None,
     llm_side_effect=None,
-    post_checks_side_effect=None,  # noqa: ARG001 - the claim check replaced it
+    # Still passed by test_chatbot_contract; the claim check replaced it.
+    post_checks_side_effect=None,  # noqa: ARG001 # pylint: disable=unused-argument
     route=Route.ANSWER,
 ):
     """run_query with faked retrieval/gate and LLM replies (consumed in order)."""
@@ -272,11 +273,12 @@ async def test_unknown_topic_is_never_given_an_overview(monkeypatch):
 def test_topic_sources_need_a_bare_topic_named_by_the_chunk():
     decision = orchestrator.RouteDecision(Route.ANSWER)
     iso = [_source(), _topic_source()]
-    assert orchestrator._topic_sources("ISO 27001", iso, decision) == [2]
-    assert orchestrator._topic_sources("tell me about iso 27001", iso, decision) == [2]
-    assert orchestrator._topic_sources("ISO 27001 pricing", iso, decision) == []
-    assert orchestrator._topic_sources("e8", iso, decision) == []
-    assert orchestrator._topic_sources("SOC 2", iso, decision) == []
+    topic_sources = orchestrator._topic_sources  # pylint: disable=protected-access
+    assert topic_sources("ISO 27001", iso, decision) == [2]
+    assert topic_sources("tell me about iso 27001", iso, decision) == [2]
+    assert topic_sources("ISO 27001 pricing", iso, decision) == []
+    assert topic_sources("e8", iso, decision) == []
+    assert topic_sources("SOC 2", iso, decision) == []
 
 
 async def test_bare_topic_with_empty_llm_output_gets_the_page_overview(monkeypatch):

@@ -424,7 +424,8 @@ def answer_system_prompt(word_cap: int, style_block: str = "") -> str:
         "- Length: a simple fact 1-2 sentences (15-40 words); what is or an "
         "overview 2-4 sentences (40-80 words); a list ask (what X includes, "
         "stages, steps, strategies) one short lead sentence naming X, then up "
-        'to 6 "i" items, never sentences repeating "X includes"; comparisons '
+        'to 6 "i" items (a named set like the Essential Eight in full), never '
+        'sentences repeating "X includes"; comparisons '
         "or multi-part at most 120 words, one item's "
         "claims then the next, in the order asked, each naming its item. No "
         "repetition, filler or restating the question.\n"

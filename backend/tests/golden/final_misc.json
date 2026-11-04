@@ -6041,6 +6041,231 @@
       ],
       "note": "clarify card then reply: unrelated in-KB question",
       "source": "final test-set builder 2026-11-04"
+    },
+    {
+      "id": "mq-3-q",
+      "category": "fin_multipart",
+      "turns": [
+        {
+          "query": "What is Zero Trust? What does the Frontier package add? What is your phone number?",
+          "expect": "answer",
+          "accept": [
+            "answer",
+            "partial"
+          ],
+          "routes": [
+            "/zero-trust",
+            "/packages",
+            "/contact-us"
+          ],
+          "must_contain": [
+            "implicit trust",
+            "24/7",
+            "1300 394 468"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "3-part question: every covered part answered with its page cited; uncovered parts named.",
+      "source": "owner: multi-question messages"
+    },
+    {
+      "id": "mq-3-and",
+      "category": "fin_multipart",
+      "turns": [
+        {
+          "query": "Explain Essential Eight, what Zero Trust is and which laws govern your terms",
+          "expect": "answer",
+          "accept": [
+            "answer",
+            "partial"
+          ],
+          "routes": [
+            "/essential-eight",
+            "/zero-trust",
+            "/terms"
+          ],
+          "must_contain": [
+            "eight",
+            "implicit trust",
+            "New South Wales"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "3-part question: every covered part answered with its page cited; uncovered parts named.",
+      "source": "owner: multi-question messages"
+    },
+    {
+      "id": "mq-4-num",
+      "category": "fin_multipart",
+      "turns": [
+        {
+          "query": "1) What is Zero Trust\n2) What does Frontier include\n3) What's your phone number\n4) Which state's laws govern your terms",
+          "expect": "answer",
+          "accept": [
+            "answer",
+            "partial"
+          ],
+          "routes": [
+            "/zero-trust",
+            "/packages",
+            "/contact-us",
+            "/terms"
+          ],
+          "must_contain": [
+            "implicit trust",
+            "24/7",
+            "1300 394 468",
+            "New South Wales"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "4-part question: every covered part answered with its page cited; uncovered parts named.",
+      "source": "owner: multi-question messages"
+    },
+    {
+      "id": "mq-4-partial",
+      "category": "fin_multipart",
+      "turns": [
+        {
+          "query": "What is Essential Eight, who is your CEO, what does Frontier include and do you support Google Workspace?",
+          "expect": "partial",
+          "accept": [
+            "partial",
+            "answer"
+          ],
+          "routes": [
+            "/essential-eight",
+            "/packages"
+          ],
+          "must_contain": [
+            "eight",
+            "24/7"
+          ],
+          "must_not_contain": [],
+          "not_covered_parts": [
+            "CEO",
+            "Google Workspace"
+          ]
+        }
+      ],
+      "note": "1-part question: every covered part answered with its page cited; uncovered parts named.",
+      "source": "owner: multi-question messages"
+    },
+    {
+      "id": "mq-5-mixed",
+      "category": "fin_multipart",
+      "turns": [
+        {
+          "query": "What is Zero Trust? What is Essential Eight? What's in Frontier? Who is your CEO? What's the weather in Sydney?",
+          "expect": "partial",
+          "accept": [
+            "partial",
+            "answer"
+          ],
+          "routes": [
+            "/zero-trust",
+            "/essential-eight",
+            "/packages"
+          ],
+          "must_contain": [
+            "implicit trust",
+            "eight",
+            "24/7"
+          ],
+          "must_not_contain": [],
+          "not_covered_parts": [
+            "CEO",
+            "weather"
+          ]
+        }
+      ],
+      "note": "5-part question: every covered part answered with its page cited; uncovered parts named.",
+      "source": "owner: multi-question messages"
+    },
+    {
+      "id": "mq-5-semicolon",
+      "category": "fin_multipart",
+      "turns": [
+        {
+          "query": "zero trust basics; essential eight basics; frontier package; your phone number; governing law for your terms",
+          "expect": "answer",
+          "accept": [
+            "answer",
+            "partial"
+          ],
+          "routes": [
+            "/zero-trust",
+            "/essential-eight",
+            "/packages",
+            "/contact-us",
+            "/terms"
+          ],
+          "must_contain": [
+            "implicit trust",
+            "eight",
+            "24/7",
+            "1300 394 468",
+            "New South Wales"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "5-part question: every covered part answered with its page cited; uncovered parts named.",
+      "source": "owner: multi-question messages"
+    },
+    {
+      "id": "mq-5-bullets",
+      "category": "fin_multipart",
+      "turns": [
+        {
+          "query": "- What is Zero Trust?\n- What is Essential Eight?\n- What does Frontier include?\n- How do I contact you?\n- How much does Frontier cost?",
+          "expect": "partial",
+          "accept": [
+            "partial",
+            "answer"
+          ],
+          "routes": [
+            "/zero-trust",
+            "/essential-eight",
+            "/packages",
+            "/contact-us"
+          ],
+          "must_contain": [
+            "implicit trust",
+            "eight",
+            "24/7",
+            "1300 394 468"
+          ],
+          "must_not_contain": [],
+          "not_covered_parts": [
+            "cost"
+          ]
+        }
+      ],
+      "note": "5-part question: every covered part answered with its page cited; uncovered parts named.",
+      "source": "owner: multi-question messages"
+    },
+    {
+      "id": "mq-5-allout",
+      "category": "fin_multipart",
+      "turns": [
+        {
+          "query": "Who is your CEO? How many employees do you have? Do you support AWS? What's your SLA? What year were you founded?",
+          "expect": "not_covered",
+          "accept": [
+            "not_covered",
+            "answer"
+          ],
+          "routes": [],
+          "must_contain": [],
+          "must_not_contain": []
+        }
+      ],
+      "note": "5-part question: every covered part answered with its page cited; uncovered parts named.",
+      "source": "owner: multi-question messages"
     }
   ]
 }

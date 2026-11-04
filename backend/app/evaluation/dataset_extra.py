@@ -14,6 +14,9 @@ import-time ``build_extra_cases`` only consults that retired path (CLI
 start-up, no event loop running).
 """
 
+# Case data module: its length is the dataset itself, not logic to split.
+# pylint: disable=too-many-lines
+
 import asyncio
 import json
 import logging
@@ -59,7 +62,7 @@ OVERVIEW_FACT = "exigo"
 _NO_CONTACT_JARGON = ["knowledge base", "supplied context", "the documents"]
 
 
-def build_extra_cases(EvalCase) -> list:  # noqa: N803, RUF100
+def build_extra_cases(EvalCase) -> list:  # noqa: N803, RUF100  # pylint: disable=invalid-name
     def abstain(id_, query, category, **kw):
         return EvalCase(
             id=id_,
@@ -224,7 +227,9 @@ def build_extra_cases(EvalCase) -> list:  # noqa: N803, RUF100
     ]
 
     # Robustness variants of three clean base cases.
-    def variant(id_, base, query, perturbation, docs, kws):
+    def variant(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        id_, base, query, perturbation, docs, kws
+    ):
         return EvalCase(
             id=id_,
             query=query,
@@ -371,7 +376,7 @@ def read_promoted_json(path: Path = PROMOTED_JSON) -> list[dict[str, Any]]:
     return [c for c in raw if isinstance(c, dict)] if isinstance(raw, list) else []
 
 
-def _to_cases(EvalCase, records: Iterable[dict[str, Any]]) -> list:  # noqa: N803
+def _to_cases(EvalCase, records: Iterable[dict[str, Any]]) -> list:  # noqa: N803  # pylint: disable=invalid-name
     cases = []
     seen_queries: set[str] = set()
     for c in records:
@@ -395,9 +400,12 @@ def _to_cases(EvalCase, records: Iterable[dict[str, Any]]) -> list:  # noqa: N80
 
 async def _promoted_from_db(db: Any) -> list[dict[str, Any]]:
     # Lazy: keeps the CLI dataset import free of ORM/DB imports.
+    # pylint: disable=import-outside-toplevel
     from sqlalchemy import select  # noqa: PLC0415 - optional DB path
 
     from app.models.db_models import EvalPromotedCase  # noqa: PLC0415 - optional DB path
+
+    # pylint: enable=import-outside-toplevel
 
     rows = (
         await db.execute(
@@ -409,11 +417,12 @@ async def _promoted_from_db(db: Any) -> list[dict[str, Any]]:
             ).order_by(EvalPromotedCase.promoted_at, EvalPromotedCase.id)
         )
     ).all()
-    return [dict(r._mapping) for r in rows]
+    # Row._mapping is SQLAlchemy's public mapping view despite the underscore.
+    return [dict(r._mapping) for r in rows]  # pylint: disable=protected-access
 
 
 async def load_promoted_cases(
-    EvalCase,  # noqa: N803
+    EvalCase,  # noqa: N803  # pylint: disable=invalid-name
     db: Any = None,
     json_path: Path = PROMOTED_JSON,
 ) -> list:
@@ -425,7 +434,7 @@ async def load_promoted_cases(
 
 
 async def load_promoted_cases_with_source(
-    EvalCase,  # noqa: N803
+    EvalCase,  # noqa: N803  # pylint: disable=invalid-name
     db: Any = None,
     json_path: Path = PROMOTED_JSON,
 ) -> tuple[list, str]:
@@ -436,11 +445,11 @@ async def load_promoted_cases_with_source(
         if db is not None:
             records = await _promoted_from_db(db)
         else:
-            from app.core.database import AsyncSessionLocal  # noqa: PLC0415 - optional DB path
+            from app.core.database import AsyncSessionLocal  # noqa: PLC0415 - optional DB path  # pylint: disable=import-outside-toplevel
 
             async with AsyncSessionLocal() as session:
                 records = await _promoted_from_db(session)
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught  # falls back to JSON
         logger.warning("promoted_cases_db_unavailable", exc_info=True)
         records = []
     if records:
@@ -471,7 +480,7 @@ def merge_cases(cases: list, extra: Iterable) -> list:
 # ---------------------------------------------------------------------------
 
 
-def build_v2_cases(EvalCase) -> list:  # noqa: N803, RUF100
+def build_v2_cases(EvalCase) -> list:  # noqa: N803, RUF100  # pylint: disable=invalid-name
     """Cases for the intended behaviour after the chatbot-quality fixes.
 
     Ground truth is ``data/*.md``. Every answer-only keyword below is a fact
@@ -791,7 +800,7 @@ _EMAIL_ADDRESS = r"re:[a-z0-9._-]{1,30}@[a-z0-9.-]{1,40}\.[a-z]{2,}"
 _ASSURANCE = "claim:guaranteed|certified|100% safe|100% compliant|fully compliant"
 
 
-def build_v3_cases(EvalCase) -> list:  # noqa: N803, RUF100
+def build_v3_cases(EvalCase) -> list:  # noqa: N803, RUF100  # pylint: disable=invalid-name
     """Cases for the live findings: short facts, vague goals, off-topic, incident,
     pricing, contact, credentials, E8 phrasings and compliance clarification.
 

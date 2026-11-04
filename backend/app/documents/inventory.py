@@ -147,7 +147,23 @@ def _status(quarantined: bool, chunk_count: int) -> str:
     return "active"
 
 
-def build_summary(
+def _standardized(meta: dict, original_format: str | None) -> bool:
+    stored = meta.get("standardized")
+    if isinstance(stored, bool):
+        return stored
+    return original_format not in (None, "md")
+
+
+def _ingested_by(
+    meta: dict, last_ingest: LastIngest | None, actor_names: dict[str, str] | None
+) -> str | None:
+    actor = meta.get("last_ingested_by") or (last_ingest.actor if last_ingest else None)
+    if not actor:
+        return None
+    return (actor_names or {}).get(str(actor), str(actor))
+
+
+def build_summary(  # pylint: disable=too-many-arguments  # keyword-only optional aggregates
     doc: Document,
     chunks: ChunkAggregate,
     *,
@@ -169,21 +185,8 @@ def build_summary(
     ingested_at = parse_iso(meta.get("last_ingested_at")) or (
         as_utc(last_ingest.at) if last_ingest else None
     )
-    actor = meta.get("last_ingested_by") or (last_ingest.actor if last_ingest else None)
-    names = actor_names or {}
-    ingest_count = _int_or_none(meta.get("ingest_count")) or (
-        last_ingest.events if last_ingest else 1
-    )
     pii = meta.get("pii_redacted")
-    standardized = meta.get("standardized")
-    if not isinstance(standardized, bool):
-        standardized = original_format not in (None, "md")
-    strategies = chunks.strategies
     created = as_utc(doc.created_at) or datetime.now(UTC)
-    if canonical_bytes is not None:
-        canonical_size = canonical_bytes
-    else:
-        canonical_size = _int_or_none(meta.get("canonical_size_bytes"))
 
     return DocumentSummary(
         document_id=str(doc.id),
@@ -198,25 +201,28 @@ def build_summary(
         original_filename=original_filename,
         content_hash=full_hash[:SHORT_HASH_CHARS] if full_hash else None,
         original_sha256=meta.get("original_sha256") or None,
-        ingest_count=ingest_count,
+        ingest_count=_int_or_none(meta.get("ingest_count"))
+        or (last_ingest.events if last_ingest else 1),
         warnings=_str_list(meta.get("warnings")),
         quarantined=quarantined,
         content_sha256=full_hash,
         canonical_format="md",
-        standardized=standardized,
+        standardized=_standardized(meta, original_format),
         converter=meta.get("converter"),
         converter_version=meta.get("converter_version"),
         original_size_bytes=_int_or_none(meta.get("original_size_bytes")),
-        canonical_size_bytes=canonical_size,
+        canonical_size_bytes=canonical_bytes
+        if canonical_bytes is not None
+        else _int_or_none(meta.get("canonical_size_bytes")),
         canonical_available=canonical_bytes is not None,
         total_chunk_chars=chunks.total_chars,
-        chunk_strategies=strategies,
+        chunk_strategies=chunks.strategies,
         chunking_strategy=meta.get("chunking_strategy")
-        or (strategies[0] if len(strategies) == 1 else None),
+        or (chunks.strategies[0] if len(chunks.strategies) == 1 else None),
         embedding_model=meta.get("embedding_model"),
         embedding_dim=_int_or_none(meta.get("embedding_dim")),
         ingested_at=ingested_at,
-        ingested_by=names.get(str(actor), str(actor)) if actor else None,
+        ingested_by=_ingested_by(meta, last_ingest, actor_names),
         status=_status(quarantined, chunks.count),
         pii_redacted=_str_list(pii) if isinstance(pii, list) else None,
         pipeline_version=meta.get("pipeline_version"),

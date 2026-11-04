@@ -2,6 +2,8 @@
 report source), the ``eval.full_run`` job over a tiny fake case set
 (summary, progress, cancel, failure) and the migration round trip."""
 
+# pylint: disable=redefined-outer-name  # pytest fixtures are injected by name
+
 from __future__ import annotations
 
 import asyncio

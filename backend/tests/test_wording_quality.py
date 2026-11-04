@@ -8,6 +8,7 @@ import pytest
 
 from app.harness import orchestrator, prompts
 from app.harness.orchestrator import _fallback_response
+from app.harness.prompt_catalog import common_rules, off_topic_line
 from app.harness.prompts import NO_ANSWER_LINE
 from app.harness.style import (
     BANNED_PHRASES,
@@ -362,8 +363,6 @@ def test_spam_fallback_is_not_a_pitch() -> None:
 
 @pytest.mark.parametrize("shape", ["general", "quick_fact", "partial", "out_of_scope"])
 def test_shared_rules_appear_once_in_every_answer_prompt(shape: str) -> None:
-    from app.harness.prompt_catalog import common_rules
-
     prompt = prompts.get_system_prompt(ResponseStyle.ADAPTIVE, shape)
     assert prompt.count(common_rules()) == 1
     # The fixed lines are added by code from verified claims, never the model.
@@ -378,8 +377,6 @@ def test_user_prompt_repeats_the_empty_claims_rule() -> None:
 
 
 def test_off_topic_fallback_is_the_fixed_off_topic_line() -> None:
-    from app.harness.prompt_catalog import off_topic_line
-
     response = _fallback_response(request_id="r", flags=["off_topic"], latency_ms=1.0)
     assert response.answer == off_topic_line()
     assert response.sources == []

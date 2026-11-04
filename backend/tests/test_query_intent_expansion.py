@@ -88,25 +88,26 @@ def test_no_change_without_entity_or_intent_words():
     doc = uuid.uuid4()
     pool = [(_chunk(doc, "Our Purpose", "Exigo Tech is in Sydney."), 0.5)]
     signal = compute_hybrid_signal("Where is Exigo Tech headquartered?", pool, {})
-    assert signal.entity_doc_ids == ()
+    assert not signal.entity_doc_ids
     assert not signal.spread
-    assert query_intent("Where is Exigo Tech headquartered?").terms == ()
+    assert not query_intent("Where is Exigo Tech headquartered?").terms
 
 
 def test_fetch_trigger_needs_matching_heading_or_enough_chunks():
     doc = uuid.uuid4()
     names = {doc: "zero-trust.md"}
     three = [(_chunk(doc, h), 0.5) for h in ("A", "B", "C")]
-    assert entities_missing_from_pool(["zero trust"], three, names, 3) == []
+    assert not entities_missing_from_pool(["zero trust"], three, names, 3)
     intent = query_intent("What stages does it follow?")
     assert entities_missing_from_pool(["zero trust"], three, names, 3, intent) == [
         "zero trust"
     ]
     three.append((_chunk(doc, "Assess"), 0.4))
-    assert entities_missing_from_pool(["zero trust"], three, names, 3, intent) == []
+    assert not entities_missing_from_pool(["zero trust"], three, names, 3, intent)
 
 
 def _select(candidates, signal, top_k=5):
+    # pylint: disable-next=protected-access  # the ranking step under test
     return VectorStore._select_diverse_chunks(candidates, top_k, signal=signal)
 
 

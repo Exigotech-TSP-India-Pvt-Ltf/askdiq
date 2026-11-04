@@ -55,12 +55,29 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from app.evaluation.dataset_extra import (
-    NO_PRICE_FIGURES as _NO_PRICE_FIGURES,
-)
-from app.evaluation.dataset_extra import (
+    ABOUT,
+    BASELINE,
+    CIS,
+    CONTACT,
+    E8,
+    GET_STARTED,
+    HOME,
+    ISO27001,
+    OUR_VISION,
+    PACKAGES,
+    PLATFORM,
+    PRIVACY,
+    RAI,
+    SECURE_AI,
+    SERVICES,
+    TERMS,
+    ZT,
     build_extra_cases,
     build_v2_cases,
     build_v3_cases,
+)
+from app.evaluation.dataset_extra import (
+    NO_PRICE_FIGURES as _NO_PRICE_FIGURES,
 )
 
 CaseType = Literal[
@@ -80,7 +97,7 @@ CaseType = Literal[
 
 
 @dataclass
-class EvalCase:
+class EvalCase:  # pylint: disable=too-many-instance-attributes  # a case's fields
     id: str
     query: str
     case_type: CaseType
@@ -124,26 +141,10 @@ class EvalCase:
 
 
 # Source documents in the corpus, data/*.md (kept here so the dataset test can
-# catch typos). README.md and _global.md are not pages.
-ABOUT = "about-us.md"
+# catch typos). README.md and _global.md are not pages. The shared names come
+# from dataset_extra (imported above); these two are used only here.
 BOOKING = "booking.md"
-CIS = "cis-microsoft-365-foundations-benchmark-assessment.md"
-CONTACT = "contact-us.md"
-E8 = "essential-eight.md"
-GET_STARTED = "get-started.md"
-HOME = "home.md"
-ISO27001 = "iso-27001-microsoft-365-technical-controls.md"
 ISO42001 = "iso-42001-ai-management-system.md"
-BASELINE = "microsoft-365-security-baseline-assessment.md"
-OUR_VISION = "our-vision.md"
-PACKAGES = "packages.md"
-PLATFORM = "platform.md"
-PRIVACY = "privacy.md"
-RAI = "responsible-ai.md"
-SECURE_AI = "secure-ai.md"
-SERVICES = "services.md"
-TERMS = "terms.md"
-ZT = "zero-trust.md"
 
 ALL_DOCS = {
     ABOUT,

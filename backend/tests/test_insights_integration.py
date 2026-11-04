@@ -45,6 +45,7 @@ from app.insights.service import InsightsService
 from app.insights.triggers import CLASSIFY_JOB, classify_dedupe_key
 from app.jobs import queue
 from app.jobs.worker import JobWorker
+from app.retrieval.retriever import PartRetrieval, RetrievalResult
 from app.schemas.query import SourceChunk
 from main import app
 from tests.pg_helpers import new_engine, require_postgres
@@ -87,8 +88,17 @@ async def live(monkeypatch, fake_embed, fake_llm) -> AsyncIterator[dict[str, Any
         async with factory() as session:
             yield session
 
-    async def _retrieve(*_a: Any, **_k: Any) -> list[SourceChunk]:
-        return [_source()]
+    async def _retrieve(_store: Any, query: str, **_k: Any) -> RetrievalResult:
+        source = _source()
+        part = PartRetrieval(
+            query=query,
+            max_score=source.score,
+            chunk_ids=frozenset({source.chunk_id}),
+            contents=(source.content,),
+            document_ids=(source.document_id,),
+            sources=(source,),
+        )
+        return RetrievalResult(sources=[source], parts=[part])
 
     async def _post_checks(*_a: Any, **_k: Any) -> tuple[bool, float, list[str]]:
         return True, 0.95, []
@@ -97,7 +107,7 @@ async def live(monkeypatch, fake_embed, fake_llm) -> AsyncIterator[dict[str, Any
         return None
 
     service = InsightsService(engine=engine, llm=FakeLLM(model=model))
-    monkeypatch.setattr(orchestrator, "retrieve", _retrieve)
+    monkeypatch.setattr(orchestrator, "retrieve_parts", _retrieve)
     monkeypatch.setattr(orchestrator, "run_post_checks", _post_checks)
     monkeypatch.setattr(sessions, "AsyncSessionLocal", factory)
     monkeypatch.setattr(middleware, "AsyncSessionLocal", factory)

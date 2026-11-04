@@ -190,7 +190,8 @@ def _is_template_line(line: str) -> bool:
     return 0 <= start < end and 0 < end - start <= MAX_TEMPLATE_VAR_CHARS
 
 
-def _heading(line: str) -> tuple[int, str] | None:
+def markdown_heading(line: str) -> tuple[int, str] | None:
+    """``(level, title)`` for an ATX heading line (``## Title``), else ``None``."""
     stripped = line.strip()
     hashes = len(stripped) - len(stripped.lstrip("#"))
     if 1 <= hashes <= MAX_HEADING_LEVEL and stripped[hashes : hashes + 1] == " ":
@@ -295,7 +296,7 @@ def _section_action(title: str) -> tuple[str, str]:
 def _promote_bold_headings(lines: list[str]) -> list[str]:
     """No real headings (a .docx without heading styles): bold-only lines
     become ``##`` headings so the document keeps its sections."""
-    if sum(1 for line in lines if _heading(line)) >= MIN_HEADINGS_FOR_STRUCTURE:
+    if sum(1 for line in lines if markdown_heading(line)) >= MIN_HEADINGS_FOR_STRUCTURE:
         return lines
     out = []
     for line in lines:
@@ -369,7 +370,7 @@ def _dedupe_paragraphs(lines: list[str]) -> list[str]:
     out = []
     for line in lines:
         key = " ".join(_list_item(line.strip()).lower().split())
-        if len(key) >= MIN_DEDUPE_CHARS and not _heading(line):
+        if len(key) >= MIN_DEDUPE_CHARS and not markdown_heading(line):
             if key in seen:
                 continue
             seen.add(key)
@@ -392,14 +393,14 @@ def _drop_empty_sections(lines: list[str]) -> list[str]:
     bullet under its parent); a top-level label is dropped."""
     out = []
     for index, line in enumerate(lines):
-        found = _heading(line)
+        found = markdown_heading(line)
         if found is None:
             out.append(line)
             continue
         level = found[0]
         has_copy = False
         for later in lines[index + 1 :]:
-            nxt = _heading(later)
+            nxt = markdown_heading(later)
             if nxt is not None:
                 if nxt[0] <= level:
                     break
@@ -434,7 +435,7 @@ def _neutralise_samples(lines: list[str]) -> list[str]:
     index = 0
     while index < len(lines):
         line = lines[index]
-        found = _heading(line)
+        found = markdown_heading(line)
         if found is None:
             out.append(line)
             index += 1
@@ -442,7 +443,7 @@ def _neutralise_samples(lines: list[str]) -> list[str]:
         level = found[0]
         end = index + 1
         while end < len(lines):
-            nxt = _heading(lines[end])
+            nxt = markdown_heading(lines[end])
             if nxt is not None and nxt[0] <= level:
                 break
             end += 1
@@ -450,7 +451,7 @@ def _neutralise_samples(lines: list[str]) -> list[str]:
         # a sample deep inside must not wipe its parent.
         own: list[str] = []
         for s in lines[index + 1 : end]:
-            if _heading(s) is not None:
+            if markdown_heading(s) is not None:
                 break
             own.append(s)
         if any(_is_sample_marker(s) for s in own):
@@ -468,7 +469,7 @@ def clean_markdown(text: str) -> str:
     out: list[str] = []
     drop_level: int | None = None
     for raw in lines:
-        found = _heading(raw)
+        found = markdown_heading(raw)
         if found is not None:
             level, title = found
             if drop_level is not None and level > drop_level:

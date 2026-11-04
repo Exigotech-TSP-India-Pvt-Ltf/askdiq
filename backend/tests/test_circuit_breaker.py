@@ -3,6 +3,8 @@
 The Azure client is mocked; no network or database is used.
 """
 
+# pylint: disable=protected-access  # the modules' private clients are checked
+
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -22,6 +24,7 @@ from app.evaluation import judge
 from app.harness import orchestrator, prompts
 from app.retrieval import embeddings
 from app.schemas.query import SourceChunk
+from tests.grounded_fakes import patch_pipeline
 
 settings = get_settings()
 _REQUEST = httpx.Request("POST", "https://ci-test-resource.openai.azure.com/")
@@ -231,8 +234,6 @@ def _source() -> SourceChunk:
 
 
 async def _run_query_with_llm(monkeypatch, fake_call_llm) -> object:
-    from tests.grounded_fakes import patch_pipeline  # noqa: PLC0415
-
     patch_pipeline(monkeypatch, [_source()], "{}")
     monkeypatch.setattr(orchestrator, "call_llm", fake_call_llm)
     return await orchestrator.run_query(

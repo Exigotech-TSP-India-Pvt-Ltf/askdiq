@@ -1074,7 +1074,7 @@ def _last_was_goal_card(history: list[ChatTurn] | None) -> bool:
     return False
 
 
-def assess(
+def assess(  # pylint: disable=too-many-return-statements
     query: str,
     history: list[ChatTurn] | None,
     *,

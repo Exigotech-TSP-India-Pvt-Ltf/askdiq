@@ -17,9 +17,9 @@ from app.evaluation.judge import (
     _clamp_score,
     _client_for,
     _extract_json,
+    _judge_deployment,
 )
 from app.harness.prompt_catalog import deep_judge_prompt
-from app.model_settings.service import current_model_settings
 
 logger = logging.getLogger(__name__)
 
@@ -134,10 +134,7 @@ def parse_deep_output(text: str) -> DeepJudgeScores | None:
 
 async def _deep(question, chunks, answer, key_facts) -> DeepJudgeScores | None:
     settings = get_settings()
-    deployment = (
-        getattr(settings, "azure_judge_deployment_name", None)
-        or current_model_settings().llm_deployment
-    )
+    deployment = _judge_deployment()
     client = _client_for(deployment)
     common = {
         "model": deployment,
@@ -156,7 +153,7 @@ async def _deep(question, chunks, answer, key_facts) -> DeepJudgeScores | None:
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
             resp = await client.chat.completions.create(**kwargs)
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught  # retry w/o JSON mode
             logger.warning(
                 "deep_judge_call_failed json_mode=%s error=%s", json_mode, exc
             )
@@ -174,6 +171,6 @@ async def deep_judge(
 ) -> DeepJudgeScores | None:
     try:
         return await _deep(question, chunks, answer, key_facts)
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # never raises
         logger.warning("deep_judge_failed error=%s", exc)
         return None

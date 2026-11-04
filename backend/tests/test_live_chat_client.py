@@ -1,5 +1,7 @@
 """Unit tests for scripts/live_chat_client.py (mocked transport, no network)."""
 
+# pylint: disable=protected-access  # the script's shared client and pacing are internals
+
 import importlib.util
 import json
 import threading
@@ -59,7 +61,7 @@ def test_ask_sends_headers_and_returns_wall_time():
 def test_retries_then_succeeds():
     calls = []
 
-    def handler(request):
+    def handler(_request):
         calls.append(1)
         status = 429 if len(calls) < 3 else 200
         return httpx.Response(status, json=_ok())
@@ -75,7 +77,7 @@ def test_429_waits_15s_and_gives_up_after_four_tries(monkeypatch):
     monkeypatch.setattr(lc, "RATE_LIMIT_WAIT_S", 15.0)
     monkeypatch.setattr(lc.time, "sleep", sleeps.append)
 
-    def handler(request):
+    def handler(_request):
         calls.append(1)
         return httpx.Response(429, text="slow down")
 
@@ -117,7 +119,7 @@ def test_runners_use_distinct_client_ids():
     assert lc.ConversationRunner().client_id != lc.ConversationRunner().client_id
 
 
-class _Case:
+class _Case:  # pylint: disable=too-few-public-methods  # golden-case stub
     query = "How does DeployIQ deliver it?"
 
     def replay_turns(self):
@@ -146,7 +148,7 @@ def test_ask_case_replays_history_before_the_query():
 def test_gives_up_after_max_attempts():
     calls = []
 
-    def handler(request):
+    def handler(_request):
         calls.append(1)
         return httpx.Response(503, text="down")
 
@@ -158,7 +160,7 @@ def test_gives_up_after_max_attempts():
 def test_client_error_not_retried():
     calls = []
 
-    def handler(request):
+    def handler(_request):
         calls.append(1)
         return httpx.Response(401, text="no")
 

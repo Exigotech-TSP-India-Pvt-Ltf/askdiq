@@ -5,6 +5,8 @@ cosine scores are synthetic (generic documents score higher than the document
 the question names), so no embedding, DB or LLM call is involved.
 """
 
+# pylint: disable=protected-access  # the private ranking step is what is under test
+
 import random
 import uuid
 from pathlib import Path
@@ -63,7 +65,7 @@ def _heading(chunk: Chunk) -> str:
     return chunk.chunk_metadata.get("section_heading") or ""
 
 
-class _Rows:
+class _Rows:  # pylint: disable=too-few-public-methods  # result stub
     def __init__(self, rows: list[tuple]) -> None:
         self._rows = rows
 
@@ -229,7 +231,7 @@ def test_no_entity_means_no_entity_boost():
     pool = [(chunk, 0.5) for chunk in CORPUS["about-us.md"]]
     names = {DOC_IDS["about-us.md"]: "about-us.md"}
     signal = compute_hybrid_signal("Who is the team behind this?", pool, names)
-    assert signal.entity_doc_ids == ()
+    assert not signal.entity_doc_ids
     assert all(boost <= 0.08 + 1e-9 for boost in signal.boosts.values())
 
 
@@ -350,7 +352,7 @@ async def test_boosts_are_configurable(monkeypatch):
     pool = [(c, 0.5) for c in CORPUS["zero-trust.md"]]
     names = {DOC_IDS["zero-trust.md"]: "zero-trust.md"}
 
-    assert compute_hybrid_signal(Q_STAGES, pool, names).boosts == {}
+    assert not compute_hybrid_signal(Q_STAGES, pool, names).boosts
 
     monkeypatch.setattr(reranker.settings, "retrieval_entity_doc_boost", 0.25)
     boosts = compute_hybrid_signal(Q_STAGES, pool, names).boosts
@@ -393,10 +395,11 @@ def test_named_entities_catalogue():
     assert named_entities("What is DeployIQ?") == []
 
 
-class _FakeEncoder:
+class _FakeEncoder:  # pylint: disable=too-few-public-methods  # encoder stub
     def __init__(self, scores):
         self._scores = scores
 
+    # pylint: disable-next=unused-argument  # keyword the real encoder takes
     def rerank(self, _query, _documents, batch_size=None):
         return self._scores
 

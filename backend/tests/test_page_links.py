@@ -1,5 +1,7 @@
 """Page-link requests: detection, metadata-only page resolution, rendering."""
 
+# pylint: disable=redefined-outer-name  # pytest fixtures are injected by name
+
 from __future__ import annotations
 
 import asyncio
@@ -183,7 +185,7 @@ def fake_store(monkeypatch: pytest.MonkeyPatch) -> object:
     return object()
 
 
-class _FakeSettings:
+class _FakeSettings:  # pylint: disable=too-few-public-methods  # settings stub
     site_base_url = BASE
 
 
@@ -259,7 +261,7 @@ def test_non_link_question_unchanged(fake_store: object) -> None:
 def _wrapped_run(seen: dict) -> object:
     async def run_query(
         query: str,
-        vector_store: object,
+        vector_store: object,  # pylint: disable=unused-argument  # real signature
         boost_document_ids: list[str] | None = None,
         clarification_reply: bool = False,
     ) -> QueryResponse:

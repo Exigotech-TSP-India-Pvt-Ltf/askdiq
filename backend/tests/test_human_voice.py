@@ -13,7 +13,7 @@ from app.harness.style import (
     ResponseStyle,
     style_instructions,
 )
-from app.harness.tone import humanise, polish_answer
+from app.harness.tone import drop_unrequested_caveat, humanise, polish_answer
 
 BUDGET_SECONDS = 5.0  # generous: guards against quadratic blow-ups, not machine load
 SPECIALIST_CLOSING = "If you'd like, one of our specialists can help with this."
@@ -276,8 +276,6 @@ def test_voice_filter_is_linear(text: str) -> None:
 
 
 def test_current_not_covered_tail_dropped_when_unasked() -> None:
-    from app.harness.tone import drop_unrequested_caveat
-
     body = "We keep a person in charge of every change."
     tail = (
         "I can't see any pricing or timeline details here, so it's best to "

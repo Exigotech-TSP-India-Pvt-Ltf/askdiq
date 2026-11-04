@@ -258,7 +258,8 @@ async def _next_turn_index(db: AsyncSession, session_id: uuid.UUID) -> int:
     return result.scalar_one() + 1
 
 
-async def record_exchange(
+# Public persistence API: each column of the exchange is its own argument.
+async def record_exchange(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
     db: AsyncSession,
     session: ChatSession,
     user_text: str,
@@ -362,7 +363,7 @@ async def record_exchange(
     return str(user_message.id), str(assistant_message.id)
 
 
-async def _write_exchange(
+async def _write_exchange(  # pylint: disable=too-many-arguments
     *,
     user_email: str,
     session_id: uuid.UUID,
@@ -396,7 +397,7 @@ async def _write_exchange(
                 **exchange,
             )
             return
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught  # background write: log, never raise
             transient = _is_transient_db_error(exc)
             if transient and attempt < _WRITE_ATTEMPTS:
                 logger.warning(
@@ -437,7 +438,7 @@ async def _exchange_exists(assistant_message_id: uuid.UUID) -> bool:
         return await db.get(ChatMessageRecord, assistant_message_id) is not None
 
 
-async def _write_exchange_once(
+async def _write_exchange_once(  # pylint: disable=too-many-arguments
     *,
     user_email: str,
     session_id: uuid.UUID,
@@ -768,7 +769,7 @@ async def delete_exchange(
     await db.commit()
 
 
-async def record_feedback(
+async def record_feedback(  # pylint: disable=too-many-arguments,too-many-locals
     db: AsyncSession,
     *,
     session_id: str,

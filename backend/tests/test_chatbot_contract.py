@@ -242,7 +242,7 @@ def test_named_entities_are_not_clarify_eligible() -> None:
     assert not clarify_eligible(query, None, follow_up=False), _contract(
         "clarifier-never-on-facts", "app/harness/clarify.py", f"{query!r} eligible"
     )
-    assert plan_clarification(query, _spread_sources(), None, follow_up=False) == []
+    assert plan_clarification(query, _spread_sources(), None, follow_up=False) == []  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
 def test_folded_reply_is_never_the_partial_shape() -> None:

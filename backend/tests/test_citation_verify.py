@@ -1,5 +1,7 @@
 """Citation verification: a marker survives only if the cited chunk has the claim."""
 
+# pylint: disable=use-implicit-booleaness-not-comparison  # assert an exact empty list
+
 import time
 
 import pytest
@@ -8,6 +10,7 @@ from app.guardrails.post_checks import is_decline_sentence, is_refusal
 from app.harness import orchestrator
 from app.harness.citations import verify_and_select, verify_citations
 from app.schemas.query import SourceChunk
+from tests.grounded_fakes import patch_pipeline
 
 _ABOUT = (
     "Section: Our Purpose\n\nAbout Us\n\nSecurity delivery often slows down under "
@@ -236,8 +239,6 @@ def test_redos_time_budget_on_a_large_answer() -> None:
 
 async def _run(monkeypatch, llm_answer: str, sources: list[SourceChunk]):
     # A plain-text reply: each sentence ships only if verbatim in its chunk.
-    from tests.grounded_fakes import patch_pipeline  # noqa: PLC0415
-
     patch_pipeline(monkeypatch, sources, llm_answer)
     return await orchestrator.run_query(
         query="What does DeployIQ do about Essential Eight?",

@@ -18,6 +18,7 @@ from app.harness.decision import Route
 from app.retrieval.retriever import (
     PartRetrieval,
     QueryPart,
+    _is_bare_topic,
     _service_search,
     _standalone,
     decide_route,
@@ -385,16 +386,16 @@ def test_new_standalone_question_is_answered_as_such() -> None:
     )
 
 
-class _Link:
+class _Link:  # pylint: disable=too-few-public-methods  # store stub
     def __init__(self, name: str) -> None:
         self.source_name, self.title = name, ""
 
 
-class _Store:
+class _Store:  # pylint: disable=too-few-public-methods  # store stub
     document_links = {"zt-doc": _Link("zero-trust.md Zero Trust Services")}  # noqa: RUF012
 
 
-class _Chunk:
+class _Chunk:  # pylint: disable=too-few-public-methods  # chunk stub
     document_id = "zt-doc"
 
 
@@ -409,8 +410,6 @@ class _Chunk:
     ],
 )
 def test_bare_topic_is_covered_deterministically(text: str, bare: bool) -> None:
-    from app.retrieval.retriever import _is_bare_topic  # noqa: PLC0415
-
     assert _is_bare_topic(text, [(_Chunk(), 0.5)], _Store()) is bare
 
 

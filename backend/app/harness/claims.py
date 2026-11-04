@@ -85,14 +85,18 @@ _MAX_ASK_WORDS = 10
 _MIN_QUOTE_WORDS = 2
 _MIN_QUOTE_CJK_CHARS = 4
 _MAX_SENTENCES_PER_PARAGRAPH = 2
-# Length rules of the rendered reply (owner): at most 6 bullets per list; a
-# lead shared by every bullet of a run (2+ words, 2+ bullets) is cut.
-_MAX_LIST_ITEMS = 6
+# Length rules of the rendered reply (owner): the prompt asks for at most 6
+# bullets; code caps a list at 8 so a named set (the Essential Eight) stays
+# whole. A lead shared by every bullet of a run (2+ words, 2+ bullets) is cut.
+_MAX_LIST_ITEMS = 8
 _MIN_SHARED_RUN = 2
 _MIN_SHARED_WORDS = 2
 # 3+ sentences in a row opening with the same 3+ words: lead + bullets.
 _MIN_REPEATED_RUN = 3
 _MIN_REPEATED_LEAD = 3
+# A later sentence of the same part with under a third new content words
+# restates the reply (dropped).
+_MIN_NEW_SHARE = 1 / 3
 _ASK_MIN_SHARE = 0.5
 _ENGLISH_MIN_SHARE = 0.12
 _ENGLISH_MIN_WORDS = 6
@@ -715,13 +719,14 @@ def _value_reason(claim: Claim, span: _Chunk, local: _Chunk) -> str | None:
     named = _name_numbers(claim.text)
     backed = (
         all(
-            (local if n in named else span).index.has_number(n)
-            for n in figures.numbers
+            (local if n in named else span).index.has_number(n) for n in figures.numbers
         )
         and all(span.index.has_number(n) for n in _number_words(claim.text))
         and _unit_pairs(_words(claim.text)) <= span.pairs
         and not _unsupported_figures(claim.text, span.raw)
-        and (not figures.frameworks or bool(figures.frameworks & local.index.frameworks))
+        and (
+            not figures.frameworks or bool(figures.frameworks & local.index.frameworks)
+        )
     )
     if not backed:
         return "value_not_in_quote"
@@ -1099,10 +1104,20 @@ def _fit_length(kept: list[Claim], max_words: int) -> list[Claim]:
         shown.extend(_strip_shared_lead(run))
         run.clear()
 
+    seen: set[str] = set()
     for claim in _bulletise(kept):
         size = len(claim.text.split())
         if words + size > max_words and claim.part in parts_shown:
             continue
+        content = {w for w in _words(claim.text) if len(w) > _STEM_CHARS - 1}
+        if (
+            claim.kind != "item"
+            and claim.part in parts_shown
+            and content
+            and len(content - seen) < len(content) * _MIN_NEW_SHARE
+        ):
+            continue  # restates what the reply already said
+        seen |= content
         if claim.kind == "item":
             if len(run) >= _MAX_LIST_ITEMS:
                 continue

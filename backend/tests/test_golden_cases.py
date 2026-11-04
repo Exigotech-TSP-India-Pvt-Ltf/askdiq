@@ -2,6 +2,8 @@
 (no DB / LLM / network). This file replaced the retired
 ``data/promoted_test_cases.json``."""
 
+# pylint: disable=redefined-outer-name  # pytest fixtures are injected by name
+
 from __future__ import annotations
 
 import json
@@ -62,4 +64,4 @@ def test_golden_single_turn_queries_are_unique_per_category(
             dupes.append((seen[key], case["id"]))
         else:
             seen[key] = case["id"]
-    assert dupes == []
+    assert not dupes, dupes

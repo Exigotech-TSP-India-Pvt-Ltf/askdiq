@@ -5,6 +5,9 @@ session that emulates the main query and the entity-constrained query; no
 embedding, DB or LLM call is involved.
 """
 
+# pylint: disable=protected-access  # the store's fetch limit is an internal
+# pylint: disable=too-few-public-methods  # row / chunk stubs
+
 import re
 import uuid
 
@@ -226,7 +229,7 @@ def test_entities_missing_from_pool_counts_chunks():
     one = [(_C(doc), 0.5), (_C(other), 0.4)]
     two = [(_C(doc), 0.5), (_C(doc), 0.4)]
     assert entities_missing_from_pool(["zero trust"], one, names, 2) == ["zero trust"]
-    assert entities_missing_from_pool(["zero trust"], two, names, 2) == []
+    assert entities_missing_from_pool(["zero trust"], two, names, 2) == []  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
 def test_sql_patterns_match_catalogue_documents():
