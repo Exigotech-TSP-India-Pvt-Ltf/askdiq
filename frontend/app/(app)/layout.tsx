@@ -11,12 +11,16 @@ import { GateContent, useRouteGate } from "@/components/auth/RouteGate";
 import { AskDiqLauncher } from "@/components/askdiq/AskDiqLauncher";
 import { TourProvider } from "@/components/tour/TourProvider";
 import { TourLauncher } from "@/components/tour/TourLauncher";
+import { ChatbotAccessScreen, useChatbotBlocked } from "@/components/auth/ChatbotAccessScreen";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Route gate: login redirect, suspended page, Access Required in
   // place of dashboard routes for users without an approved role.
   const gate = useRouteGate();
+  const chatbotBlocked = useChatbotBlocked();
   if (gate.screen) return <>{gate.screen}</>;
+  // Signed in without one of the roles: only the access dialog, no shell behind it.
+  if (chatbotBlocked) return <ChatbotAccessScreen />;
 
   return (
     <MobileNavProvider>
