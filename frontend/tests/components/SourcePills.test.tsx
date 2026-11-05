@@ -91,7 +91,9 @@ describe("renderFormattedText source pills", () => {
 
   it("escapes everything (a crafted title or label is text, not markup)", () => {
     render(<Answer text="Claim.[1]" citations={[{ ...DEPLOYIQ, label: "<img src=x onerror=alert(1)>", title: "<b>x</b>" }]} />);
-    expect(document.querySelector("img")).toBeNull();
+    // Only the decorative citation icon is an <img>; the crafted label stays text.
+    expect(Array.from(document.querySelectorAll("img")).every((img) => img.hasAttribute("data-citation-icon"))).toBe(true);
+    expect(document.querySelector("img[onerror]")).toBeNull();
     expect(screen.getByRole("link", { name: /^Source: <img/ })).toBeInTheDocument();
   });
 });
@@ -107,7 +109,7 @@ describe("SourcePillCard", () => {
 
     fireEvent.mouseEnter(pill.parentElement as HTMLElement);
     expect(card).toBeVisible();
-    expect(card).toHaveTextContent("D");
+    expect(card.querySelector("img[data-citation-icon]")).toHaveAttribute("src", "/DEPLOYIQ_Icon_Master.svg");
     expect(card).toHaveTextContent("Essential Eight maturity");
     expect(card).toHaveTextContent("docs.deployiq.com.au");
     // Moving onto the card keeps it open (it sits inside the hover area).
@@ -126,10 +128,28 @@ describe("SourcePillCard", () => {
     expect(pill).toHaveAccessibleDescription(/Essential Eight maturity/);
   });
 
-  it("never loads a third-party favicon: a monogram, or a generic icon for a label without letters", () => {
+  it("shows the decorative DeployIQ icon in the pill and the card (never a third-party favicon)", () => {
     const { container } = render(<SourcePill citation={{ ...DEPLOYIQ, label: "--" }} />);
-    expect(container.querySelector("img")).toBeNull();
-    expect(container.querySelector("svg")).not.toBeNull();
+    const pill = screen.getByRole("link", { name: /^Source: --/ });
+    const card = screen.getByTestId("source-pill-card");
+    const pillIcon = pill.querySelector("img") as HTMLImageElement;
+    const cardIcon = card.querySelector("img") as HTMLImageElement;
+    for (const icon of [pillIcon, cardIcon]) {
+      expect(icon).toHaveAttribute("src", "/DEPLOYIQ_Icon_Master.svg");
+      expect(icon).toHaveAttribute("alt", "");
+      expect(icon).toHaveAttribute("aria-hidden", "true");
+    }
+    expect(pillIcon.className).toContain("h-3.5");
+    expect(cardIcon.className).toContain("h-6");
+    expect(container.querySelectorAll("img")).toHaveLength(2);
+    // The icon is decorative: the pill's name and text are just the label.
+    expect(pill).toHaveTextContent(/^--$/);
+  });
+
+  it("a link-less pill (button) also starts with the icon", () => {
+    render(<SourcePill citation={NO_LINK} />);
+    const pill = screen.getByRole("button", { name: "Source: Leave-Policy, Leave policy" });
+    expect(pill.firstElementChild).toHaveAttribute("src", "/DEPLOYIQ_Icon_Master.svg");
   });
 });
 
