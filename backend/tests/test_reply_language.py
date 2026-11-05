@@ -44,7 +44,7 @@ def test_reply_language_request(query: str, language: str, stripped: str) -> Non
 
 @pytest.mark.parametrize(
     "query",
-    ["What is Zero Trust?", "deployiq kya hai?", "explain in plain english"],
+    ["What is Zero Trust?", "explain in plain english"],
 )
 def test_no_reply_language(query: str) -> None:
     assert reply_language(query) is None
@@ -131,3 +131,27 @@ def test_danda_ends_a_sentence() -> None:
     from app.harness import claims  # noqa: PLC0415
 
     assert "।" in claims._TERMINAL  # noqa: SLF001  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize(
+    ("query", "language"),
+    [
+        ("deploy iq su che?", "Gujarati"),
+        ("zero trust shu chhe", "Gujarati"),
+        ("deployiq kya hai?", "Hindi"),
+        ("zero trust kaise kaam karta hai?", "Hindi"),
+    ],
+)
+def test_romanised_gujarati_and_hindi_questions(query: str, language: str) -> None:
+    from app.guardrails.task_type import reply_language  # noqa: PLC0415
+
+    assert reply_language(query) == language
+
+
+@pytest.mark.parametrize(
+    "query", ["che cosa è deploy iq?", "Was ist DeployIQ?", "who is the CEO?"]
+)
+def test_other_questions_keep_their_detection(query: str) -> None:
+    from app.guardrails.task_type import reply_language  # noqa: PLC0415
+
+    assert reply_language(query) is None

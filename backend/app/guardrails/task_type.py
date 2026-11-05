@@ -325,9 +325,39 @@ def reply_language(text: str) -> str | None:
     English."""
     found = _REPLY_LANGUAGE_RE.search(text)
     if found is None:
-        return None
+        return _romanised_language(text)
     language = (found.group("lang") or found.group("hinglish")).capitalize()
     return None if language == "English" else language
+
+
+# Gujarati / Hindi typed in Latin letters: "deploy iq su che?" was answered in
+# Italian ("che"), "deployiq kya hai?" in English. Bounded question phrases
+# only; anything else keeps the language detection it had.
+_ROMANISED_LANGUAGES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "Gujarati",
+        re.compile(
+            r"\b(?:su|shu|shun|shum)\s{1,3}(?:che|chhe|6e)\b"
+            r"|\b(?:ketlu|ketla|ketli|kevi\s{1,3}rite|kai\s{1,3}rite|kyare|kya\s{1,3}che)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "Hindi",
+        re.compile(
+            r"\bkya\s{1,3}(?:hai|hain|he|h)\b"
+            r"|\b(?:kaise|kitna|kitne|kitni|kaun|kyun|kahan)\b[^?.!]{0,40}"
+            r"\b(?:hai|hain|he|karte|karta|kare|milega|hoga)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+
+def _romanised_language(text: str) -> str | None:
+    return next(
+        (name for name, pattern in _ROMANISED_LANGUAGES if pattern.search(text)), None
+    )
 
 
 def is_reply_language(text: str) -> bool:

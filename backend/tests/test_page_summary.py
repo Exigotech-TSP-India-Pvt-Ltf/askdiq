@@ -79,3 +79,19 @@ def test_reply_language_is_not_an_off_question_term() -> None:
     terms = " ".join(_ask_terms(strip_reply_language("What is Zero Trust in German?")))
     assert "german" not in terms.lower()
     assert "zero trust" in terms.lower()
+
+
+@pytest.mark.parametrize(
+    ("query", "key"),
+    [
+        ("expand https://deployiq.co/secure-ai", "secure ai"),
+        ("describe the responsible ai page", "responsible ai"),
+        ("https://deployiq.co/secure-ai", "secure ai"),
+    ],
+)
+def test_expand_describe_and_bare_links_are_page_asks(query: str, key: str) -> None:
+    assert summary_page_keys(query) == [key]
+
+
+def test_a_named_topic_without_a_page_is_not_a_page_ask() -> None:
+    assert summary_page_keys("expand zero trust") == []

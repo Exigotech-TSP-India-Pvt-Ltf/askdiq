@@ -2049,7 +2049,8 @@ _PAGE_SUMMARY_RE = re.compile(
     r"overview|recap|gist|explain|break\s{1,3}(?:it\s{1,3})?down|walk\s{1,3}me\s{1,3}through|"
     r"key\s{1,3}(?:points|takeaways)|highlights|in\s{1,3}(?:short|brief)|"
     r"tell\s{1,3}me\s{1,3}more|more\s{1,3}(?:detail|details|info)|elaborate|"
-    r"expand\s{1,3}on|in\s{1,3}(?:more\s{1,3})?detail|simpler|simplify|rephrase|"
+    r"expand(?:\s{1,3}on)?|in\s{1,3}(?:more\s{1,3})?detail|simpler|simplify|rephrase|"
+    r"describe|details?\s{1,3}(?:of|on|about)|tell\s{1,3}me\s{1,3}about|go\s{1,3}through|"
     r"what(?:'s|\s{1,3}is)\s{1,3}(?:on|in)\s{1,3}(?:this|that|the|your))\b",
     re.IGNORECASE,
 )
@@ -2063,7 +2064,10 @@ def summary_page_keys(query: str, history: list[ChatTurn] | None = None) -> list
     """The one page a summarize/explain ask is about (this message, or the
     page the last user turn named when this one only points back at it)."""
     text = resolve_page_urls(_scan(query))
-    if _PAGE_SUMMARY_RE.search(text) is None:
+    # A message that is only one of our links ("https://deployiq.co/secure-ai")
+    # asks about that page.
+    bare_link = _SITE_URL_RE.fullmatch(_scan(query).strip(" ?!.")) is not None
+    if _PAGE_SUMMARY_RE.search(text) is None and not bare_link:
         return []
     keys = named_pages(text)
     if not keys and history and _PAGE_BACK_REF_RE.search(text):
