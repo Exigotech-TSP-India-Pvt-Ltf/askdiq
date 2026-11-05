@@ -1,5 +1,6 @@
 """Centralized application configuration."""
 
+import os
 import re
 from functools import lru_cache
 from typing import Literal, Self
@@ -16,6 +17,10 @@ MOCK_CLIENT_SECRET = "mock-idp-client-secret"  # noqa: S105 - dev-only mock valu
 MIN_SESSION_SECRET_BYTES = 32
 # Plain address (recipients) or "Name <address>" (sender); no spaces in the address.
 _EMAIL_RE = re.compile(r"^[^@\s<>,]+@[^@\s<>,]+\.[^@\s<>,]+$|<[^@\s<>,]+@[^@\s<>,]+>$")
+# GPT-5 (gpt-5-mini) chat-completions values; an invalid .env value fails at
+# startup instead of as an HTTP 400 on every LLM call.
+ReasoningEffort = Literal["minimal", "low", "medium", "high"]
+Verbosity = Literal["low", "medium", "high"]
 
 
 class Settings(BaseSettings):
@@ -64,19 +69,32 @@ class Settings(BaseSettings):
     azure_openai_endpoint: str
     azure_openai_api_version: str
     azure_deployment_name: str
-    # gpt-5-mini is a reasoning model and ONLY accepts temperature=1.0 —
-    # any other value makes the API call throw. Ground via the prompt instead.
-    azure_openai_temperature: float = 1.0
+    # No sampling settings on purpose: gpt-5-mini (a reasoning model) rejects
+    # temperature != 1, top_p, presence/frequency_penalty, logprobs,
+    # logit_bias and max_tokens with HTTP 400 ("Unsupported reasoning
+    # parameters", https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning).
+    # Consistency comes from the prompt, `reasoning_effort` and structured
+    # output (`response_format` json_schema), not from temperature.
     azure_openai_request_timeout: float = 60.0
     # Generous cap: reasoning tokens are spent BEFORE visible text, so too
-    # low a cap silently returns an empty answer.
-    llm_max_completion_tokens: int = 1400
-    # Reasoning effort ("minimal" | "low" | "medium" | "high") is the main
-    # latency lever for a reasoning model: fewer internal reasoning tokens
-    # before the visible answer means a materially faster response. Set to
-    # the lowest level — still enforced by the grounding rules/guardrails,
-    # so answer quality safety net is unchanged.
-    llm_reasoning_effort: str = "minimal"
+    # low a cap silently returns an empty answer. Measured on 305 successful
+    # answer calls: completion tokens p95 1062, p99 1309, max 1388
+    # (comparisons); 1500 leaves ~15% headroom over p99.
+    llm_max_completion_tokens: int = 1500
+    # `reasoning_effort` for answer/judge calls: the main latency lever.
+    # "minimal" emits ~0 reasoning tokens (fastest time-to-first-token);
+    # grounding rules/guardrails still apply. "minimal" exists only on the
+    # original GPT-5 models (gpt-5/-mini/-nano) — gpt-5.1+ reject it, so
+    # change this if the deployment (or a Settings > Models override) moves
+    # to a newer model. Source: Azure reasoning models doc (URL above),
+    # "GPT-5 and GPT-6 reasoning features".
+    llm_reasoning_effort: ReasoningEffort = "minimal"
+    # `verbosity` (GPT-5 only): hint for answer length/detail, independent
+    # of the word caps in the prompt. Listed for Chat Completions in the
+    # Azure REST reference (https://learn.microsoft.com/en-us/rest/api/
+    # microsoft-foundry/azureopenai/chat) and validated server-side on the
+    # dated api-version in use (2024-12-01-preview).
+    llm_verbosity: Verbosity = "low"
     answer_max_words: int = 150
     # Response style (OR-8, app/harness/style.py): "adaptive" structures every
     # answer by question type; "current" is the original prompt (the off
@@ -96,6 +114,42 @@ class Settings(BaseSettings):
     # column width (see alembic f9462f0a85c6).
     embedding_model: str = "text-embedding-3-small"
     embedding_dim: int = 1536
+
+    # --- Latency: embeddings (app/retrieval/embeddings.py) ---
+    # Interactive (query/guardrail) calls: short per-attempt timeout, SDK
+    # retries off, EMBEDDING_MAX_RETRIES app-level retries on transient errors.
+    # Bulk calls (ingest) keep OUTBOUND_TIMEOUT_SECONDS + AZURE_OPENAI_MAX_RETRIES.
+    embedding_timeout_seconds: float = Field(default=4.0, gt=0)
+    embedding_max_retries: int = Field(default=1, ge=0, le=3)
+    embedding_retry_backoff_seconds: float = Field(default=0.2, ge=0)
+    # Hedged request: fire a second identical request if the first has not
+    # returned after this long; first success wins, the other is cancelled.
+    embedding_hedge_enabled: bool = True
+    embedding_hedge_after_seconds: float = Field(default=1.5, gt=0)
+    # In-process LRU of interactive vectors (~6 KB each); 0 disables it.
+    embedding_cache_size: int = Field(default=1024, ge=0)
+    # Batches larger than this are treated as bulk (long timeout, no cache).
+    embedding_interactive_max_texts: int = Field(default=64, ge=1)
+
+    # --- Latency: chat-completion calls (wired by app/harness/prompts.py) ---
+    # The answer call is streamed, so this is a per-read timeout: the longest
+    # wait for the first token or between two chunks, not for the whole reply
+    # (a long comparison never times out while tokens flow; a stalled call is
+    # retried early). Measured: first token 1.3-2.8 s, gap between chunks
+    # <= 0.8 s.
+    llm_answer_timeout_seconds: float = Field(default=8.0, gt=0)
+    # Hard cap on one whole answer attempt (stream included). Successful
+    # answer calls: p99 11.2 s, max 20.1 s.
+    llm_answer_deadline_seconds: float = Field(default=30.0, gt=0)
+    # Stream the answer call (enables the per-read timeout above).
+    llm_answer_stream: bool = True
+    # SDK-level retries on the chat client (0: the app-level retry owns it).
+    llm_sdk_max_retries: int = Field(default=0, ge=0)
+    # App-level retries of a chat call on transient failures (timeout,
+    # connection, 429, 5xx). Separate from MAX_LLM_RETRIES, which re-asks
+    # on empty/ungrounded output.
+    llm_transport_retries: int = Field(default=1, ge=0, le=3)
+    llm_transport_retry_backoff_seconds: float = Field(default=0.3, ge=0)
 
     # Auth
     # Service key the Next.js proxy sends in `X-API-Key` (see app/auth/deps.py).
@@ -138,7 +192,9 @@ class Settings(BaseSettings):
     # cost scales with candidate count; this was the single largest
     # contributor to /query latency (~9.7s p50 at multiplier=5/min=25).
     retrieval_candidate_multiplier: int = 1
-    retrieval_candidate_min: int = 8
+    retrieval_candidate_min: int = (
+        10  # owner 2026-11-05: 10 (25 fixed more wrong-page asks, +1.2 s p50)
+    )
     # Hybrid lexical / named-entity signal added to the cosine score before
     # rerank (string ops on the retrieved pool only; no extra embedding call).
     retrieval_hybrid_enabled: bool = True
@@ -158,6 +214,12 @@ class Settings(BaseSettings):
     # embedding, no extra embedding call) and merge its top chunks in.
     retrieval_entity_fetch_enabled: bool = True
     retrieval_entity_fetch_k: int = Field(default=8, ge=1, le=16)
+    # Postgres full-text channel (websearch_to_tsquery, ts_rank_cd), fused with
+    # the cosine order by Reciprocal Rank Fusion before the rerank-pool trim.
+    # Off: on 659 golden asks content-hit@5 84.98% vs 84.83% off (+2 fixed, 1 broken),
+    # +40 ms p50; AND-matching rarely fits a natural question (2026-11-05).
+    retrieval_fts_enabled: bool = False
+    retrieval_fts_k: int = Field(default=10, ge=1, le=50)
     # Map question words (stages, covers, pricing, ...) to the heading/body
     # vocabulary the documents use; applied to the lexical boost and the entity
     # fetch ranking only (never to the embedding).
@@ -174,6 +236,47 @@ class Settings(BaseSettings):
     # of the query's content words occur in any retrieved chunk, the question is
     # treated as off-topic (pronounceable nonsense still retrieves generic chunks).
     offtopic_overlap_max_score: float = Field(default=0.30, ge=0.0, le=1.0)
+    # Relevance gate (app/retrieval/retriever.py decide_route), calibrated on
+    # the raw ms-marco-MiniLM-L-6-v2 cross-encoder logit of a part's best
+    # chunk, measured live on the 19-page KB with 76 labelled queries (30
+    # in-KB, 14 paraphrases, 12 adjacent-not-in-KB, 10 keyword traps, 10
+    # off-domain; set + script kept with the phase-4 calibration notes).
+    # Logits: in-KB 2.4..10.5 except terse pages (booking -0.3, terms -1.1,
+    # location -0.9); off-domain -10.6..-11.3; adjacent -11.2..0.3; traps
+    # -10.5..1.5. Casual paraphrases of real KB content ("would you ever flog my
+    # data", "what jurisdiction applies to the T&Cs") scored -11.3..-6.4: in the
+    # on-domain low zone neither the logit nor cosine separates them from
+    # adjacent negatives, so the pre-LLM decline is kept for clear misses only
+    # and the quote-backed generation decides the rest (owner rule: an answer
+    # in the KB MUST be given).
+    # - covered (sent to generation): logit >= retrieval_ce_covered_min. On 86
+    #   labelled queries: in-KB 30/30, paraphrase 21/24; declines off-domain
+    #   10/10, adjacent 5/12, traps 2/10 before the LLM.
+    # - relevant (clarification evidence; a price ask inside a multi-part
+    #   message): >= retrieval_ce_relevant_min (in-KB 30/30 bar 0, negatives
+    #   9/12 adjacent and 7/10 traps below it).
+    # - confident: >= retrieval_ce_confident_min (no negative seen, precision
+    #   1.0): "the evidence already answers it" / one service clearly leads.
+    # -10.5 (was -8.5); below retrieval_ce_strong_min = "weak match" note. A/B
+    # in_kb/colloq34/fuzz8/fuzz_neg: -8.5 80,20,5,3/3; -10.5 79-81,26,7,3/3;
+    # -12 81,30,7,2/3 (car-settings leak); not_covered 18/18 in all three.
+    retrieval_ce_covered_min: float = Field(default=-10.5, ge=-12.0, le=12.0)
+    retrieval_ce_strong_min: float = Field(default=-8.5, ge=-12.0, le=12.0)
+    retrieval_ce_relevant_min: float = Field(default=-3.0, ge=-12.0, le=12.0)
+    retrieval_ce_confident_min: float = Field(default=1.5, ge=-12.0, le=12.0)
+    # An uncovered part whose best cosine is below this is OFF_TOPIC (not about
+    # the business at all); otherwise NOT_COVERED (on-domain, no answer).
+    # Off-domain 0.066..0.222 vs lowest in-KB/paraphrase 0.264.
+    retrieval_offdomain_max_cosine: float = Field(default=0.25, ge=0.0, le=1.0)
+    # Multi-part asks: at most this many parts (never folded together), each
+    # with its own retrieval pass and at least retrieval_part_min_chunks chunks;
+    # the merged context holds at most retrieval_multi_part_max_chunks.
+    retrieval_max_parts: int = Field(default=8, ge=1, le=10)
+    retrieval_part_min_chunks: int = Field(default=2, ge=1, le=5)
+    retrieval_multi_part_max_chunks: int = Field(default=12, ge=2, le=20)
+    # Section-sibling expansion cap: total chunks sent to the model after a list
+    # ask's sections are expanded (groups are never cut in the middle).
+    retrieval_max_context_chunks: int = Field(default=10, ge=3, le=30)
     # Metadata keys a /query `filters` object may use. Unknown keys and non-scalar
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).
@@ -190,6 +293,11 @@ class Settings(BaseSettings):
     clarify_max_query_words: int = 4
     # Topics whose best score is within this margin of the top score compete.
     clarify_score_margin: float = 0.06
+    # Deterministic "which service?" card (app.harness.clarify): service pages
+    # whose best cross-encoder logit is within this many logits of the top one
+    # compete; a lead of at least this much means the question is about that
+    # one service (answered, no card).
+    clarify_ce_margin: float = Field(default=3.0, ge=0.0, le=20.0)
     # The best topic must score at least this for the model to be offered the
     # choice to clarify: low, flat scores mean the evidence is irrelevant to
     # the question (an off-topic "What is a cat?"), so asking "which one?"
@@ -232,11 +340,21 @@ class Settings(BaseSettings):
     # a few slow LLM calls and starves everything else.
     thread_pool_workers: int = 100
     # CPU-bound ONNX reranks run at most this many at once; more only
-    # oversubscribes cores and raises every request's latency.
-    rerank_max_concurrency: int = 4
+    # oversubscribes cores and raises every request's latency. Default: half
+    # the logical cores (each rerank uses RERANKER_INTRA_OP_THREADS threads).
+    rerank_max_concurrency: int = Field(
+        default_factory=lambda: max(1, (os.cpu_count() or 2) // 2), ge=1
+    )
+    # ONNX Runtime threads per cross-encoder session (app/retrieval/cross_encoder.py).
+    reranker_intra_op_threads: int = Field(default=2, ge=1)
+    reranker_inter_op_threads: int = Field(default=2, ge=1)
+    # (query, chunk) pairs are truncated to this many tokens before scoring.
+    reranker_max_tokens: int = Field(default=256, ge=32, le=512)
     # Pairs scored per ONNX call. 1 avoids padding every pair to the longest
     # one in the batch: measured 983 -> 601 ms for 12 chunks (i7-10510U).
-    rerank_batch_size: int = 1
+    # Re-measured with 256-token truncation and length-sorted, padding-trimmed
+    # sub-batches: single-pair runs still fastest (12 pairs: ~490 vs ~970 ms).
+    rerank_batch_size: int = Field(default=1, ge=1)
 
     # Chat sessions — history is stored per-session in the database (see
     # app.core.sessions) so different sessions never see each other's history.
@@ -284,6 +402,13 @@ class Settings(BaseSettings):
 
     # CORS configuration
     cors_allowed_origins: list[str] = ["http://localhost:3000"]
+
+    # Public website that knowledge documents link to (staging or live). A
+    # document with a ``route`` in its metadata cites SITE_BASE_URL + route,
+    # resolved per request, so switching sites needs no re-ingest.
+    site_base_url: str = "https://deployiq.co"
+    # KB page whose phone/email form the sales line on a buying ask.
+    sales_contact_route: str = "/contact-us"
 
     # Feature Rollout Flags
     ingest_server_conversion: bool = True
@@ -507,7 +632,7 @@ class Settings(BaseSettings):
     insights_answer_max_chars: int = 600
     # Empty = use AZURE_DEPLOYMENT_NAME.
     insights_model: str = ""
-    insights_reasoning_effort: str = "minimal"
+    insights_reasoning_effort: ReasoningEffort = "minimal"
     insights_completion_tokens_per_turn: int = 120
 
     # --- Resource telemetry (app.governance.resources / metrics_sampler) ---
@@ -880,7 +1005,7 @@ def get_settings() -> Settings:
 
 def configure_logging() -> None:
     """Configure root logging and structlog with background QueueListener."""
-    from app.core.logging_config import configure_logging as _cfg  # noqa: PLC0415 - avoids config<->logging import cycle
+    from app.core.logging_config import configure_logging as _cfg  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # avoids config<->logging import cycle
 
     settings = get_settings()
     _cfg(settings.log_level)

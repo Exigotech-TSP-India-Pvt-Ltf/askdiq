@@ -18,6 +18,7 @@ os.environ.setdefault("STATE_BACKEND", "memory")
 os.environ.setdefault("AUTH_DEV_MOCK", "true")
 os.environ.setdefault("SESSION_SECRET", "test-session-secret-0123456789abcdef")
 
+# pylint: disable=wrong-import-position  # the env defaults above must come first
 import pytest
 from fastapi import Header
 from httpx import ASGITransport, AsyncClient
@@ -37,10 +38,12 @@ from app.core.database import get_db, get_session_factory
 from app.governance.auth import sanitize_client_id
 from app.governance.live_cache import clear_live_caches
 from main import app
-from tests.insights_fixture import (  # noqa: F401 - shared pytest fixtures
+from tests.insights_fixture import (  # noqa: F401 - shared pytest fixtures  # pylint: disable=unused-import
     insights_client,
     insights_reference_db,
 )
+
+# pylint: enable=wrong-import-position
 
 settings = get_settings()
 
@@ -64,7 +67,8 @@ test_engine = create_async_engine(
     poolclass=NullPool,
 )
 
-TestingSessionLocal = async_sessionmaker(
+# Session-factory name imported by many tests (mirrors AsyncSessionLocal).
+TestingSessionLocal = async_sessionmaker(  # pylint: disable=invalid-name
     test_engine,
     expire_on_commit=False,
     class_=AsyncSession,
@@ -88,7 +92,7 @@ def db_skip_reason() -> str | None:
         return None
     try:
         asyncio.run(asyncio.wait_for(_probe_database(), DB_PROBE_TIMEOUT_SECONDS))
-    except Exception as exc:  # any connect failure means "unreachable"
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # any connect failure means "unreachable"
         return f"test database unreachable and ALLOW_DB_SKIP=1 ({type(exc).__name__})"
     return None
 
@@ -157,6 +161,18 @@ def _fresh_dashboard_cache(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def _offline_intent_classifier(monkeypatch: pytest.MonkeyPatch):
+    """The embedding intent classifier (app.guardrails.intent) makes a real
+    embeddings call; offline tests get QUESTION (retrieval decides) unless a
+    test stubs ``classify_intent`` itself (tests/test_guardrails_intent.py)."""
+    # pylint: disable-next=import-outside-toplevel  # keep conftest imports light
+    from app.guardrails import intent  # noqa: PLC0415 - keep conftest imports light
+
+    # pylint: disable-next=protected-access  # the classifier's backoff state
+    monkeypatch.setattr(intent._state, "backoff_until", float("inf"))
+
+
+@pytest.fixture(autouse=True)
 def signed_in_superadmin(request: pytest.FixtureRequest):
     """Every API test runs as a signed-in superadmin unless marked `real_auth`
     (which exercises the real session resolution in tests/test_auth_*.py)."""
@@ -214,7 +230,9 @@ def shared_session_runner(session: AsyncSession) -> ScopedRunner:
 
 
 @pytest.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+async def client(  # pylint: disable=redefined-outer-name  # pytest fixture injection
+    db_session: AsyncSession,
+) -> AsyncGenerator[AsyncClient, None]:
     """Test client with database dependency override and valid default auth."""
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -250,15 +268,16 @@ def fake_embed():
         base = [float(b) / 255.0 for b in h]
         return (base * 48)[:1536]
 
-    async def _embed_text(
+    # The fakes keep the real signatures, so some arguments go unused.
+    async def _embed_text(  # pylint: disable=unused-argument
         text: str, task_type: str | None = None, **kwargs
     ) -> list[float]:
         return _make_vector(text)
 
-    async def _embed_texts(
+    async def _embed_texts(  # pylint: disable=unused-argument
         texts: list[str], task_type: str | None = None, **kwargs
     ) -> list[list[float]]:
-        from app.retrieval.embeddings import (
+        from app.retrieval.embeddings import (  # pylint: disable=import-outside-toplevel
             current_embedding_stage,
             embedding_tokens_sink,
         )

@@ -55,15 +55,29 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from app.evaluation.dataset_extra import (
-    CONTACT_FOR_PRICE as _CONTACT_FOR_PRICE,
-)
-from app.evaluation.dataset_extra import (
-    NO_PRICE_FIGURES as _NO_PRICE_FIGURES,
-)
-from app.evaluation.dataset_extra import (
+    ABOUT,
+    BASELINE,
+    CIS,
+    CONTACT,
+    E8,
+    GET_STARTED,
+    HOME,
+    ISO27001,
+    OUR_VISION,
+    PACKAGES,
+    PLATFORM,
+    PRIVACY,
+    RAI,
+    SECURE_AI,
+    SERVICES,
+    TERMS,
+    ZT,
     build_extra_cases,
     build_v2_cases,
     build_v3_cases,
+)
+from app.evaluation.dataset_extra import (
+    NO_PRICE_FIGURES as _NO_PRICE_FIGURES,
 )
 
 CaseType = Literal[
@@ -83,7 +97,7 @@ CaseType = Literal[
 
 
 @dataclass
-class EvalCase:
+class EvalCase:  # pylint: disable=too-many-instance-attributes  # a case's fields
     id: str
     query: str
     case_type: CaseType
@@ -126,32 +140,32 @@ class EvalCase:
         return [content for role, content in self.history if role == "user"]
 
 
-# Source documents in the corpus (kept here so the dataset test can catch typos).
-# home-page-old.md is intentionally absent: it is not ingested.
-ABOUT = "about-us.md"
-PLATFORM = "deploy-iq-platform.md"
-HOME = "home-page.md"
-E8_LEARN = "e8-learn-more.md"
-E8_SERVICE = "e8-service-page.md"
-ZT_LEARN = "zero-trust-learn-more.md"
-RAI = "responsible-ai.md"
-TRUST = "trust-center.md"
-CIS = "cis-benchmark-assessment.md"
-ISO27001 = "iso-27001-technical-controls.md"
-BASELINE = "security-baseline-assessment.md"
+# Source documents in the corpus, data/*.md (kept here so the dataset test can
+# catch typos). README.md and _global.md are not pages. The shared names come
+# from dataset_extra (imported above); these two are used only here.
+BOOKING = "booking.md"
+ISO42001 = "iso-42001-ai-management-system.md"
 
 ALL_DOCS = {
     ABOUT,
-    PLATFORM,
-    HOME,
-    E8_LEARN,
-    E8_SERVICE,
-    ZT_LEARN,
-    RAI,
-    TRUST,
+    BOOKING,
     CIS,
+    CONTACT,
+    E8,
+    GET_STARTED,
+    HOME,
     ISO27001,
+    ISO42001,
     BASELINE,
+    OUR_VISION,
+    PACKAGES,
+    PLATFORM,
+    PRIVACY,
+    RAI,
+    SECURE_AI,
+    SERVICES,
+    TERMS,
+    ZT,
 }
 
 
@@ -164,7 +178,7 @@ _ORIGINAL_CASES: list[EvalCase] = [
         id="deploy_iq_overview",
         query="What is Deploy IQ?",
         case_type="answerable",
-        expected_docs=["about-us.md", "deploy-iq-platform.md", "home-page.md"],
+        expected_docs=["about-us.md", "home.md", "platform.md"],
         # Tightened from "any one of 3 docs": the overview spans at least two,
         # and the answer must name the company behind it (answer-only fact).
         min_expected_docs_hit=2,
@@ -174,13 +188,13 @@ _ORIGINAL_CASES: list[EvalCase] = [
         id="essential_eight",
         query="What is the ACSC Essential Eight?",
         case_type="answerable",
-        expected_docs=["e8-learn-more.md", "e8-service-page.md"],
+        expected_docs=["essential-eight.md", "services.md"],
     ),
     EvalCase(
         id="zero_trust",
         query="What is Zero Trust security?",
         case_type="answerable",
-        expected_docs=["zero-trust-learn-more.md", "e8-service-page.md"],
+        expected_docs=["zero-trust.md", "services.md"],
     ),
     EvalCase(
         id="responsible_ai",
@@ -190,15 +204,15 @@ _ORIGINAL_CASES: list[EvalCase] = [
     ),
     EvalCase(
         id="trust_center",
-        query="What does the Deploy IQ Trust Center cover?",
+        query="What does the Deploy IQ Secure AI page cover?",
         case_type="answerable",
-        expected_docs=["trust-center.md"],
+        expected_docs=["secure-ai.md"],
     ),
     EvalCase(
         id="home_page_hero",
         query="What is the DeployIQ methodology that the homepage introduces?",
         case_type="answerable",
-        expected_docs=["home-page.md"],
+        expected_docs=["home.md"],
         expected_keywords=["exigo", "approv*"],
     ),
     EvalCase(
@@ -206,37 +220,37 @@ _ORIGINAL_CASES: list[EvalCase] = [
         query="How does Deploy IQ keep humans in the loop over AI actions?",
         case_type="answerable",
         expected_docs=[
-            "deploy-iq-platform.md",
-            "home-page.md",
+            "home.md",
+            "platform.md",
             "responsible-ai.md",
-            "trust-center.md",
+            "secure-ai.md",
+            "about-us.md",
         ],
     ),
     EvalCase(
         id="zero_trust_professional_plan",
         query="What does the Zero Trust Professional plan include?",
         case_type="answerable",
-        expected_docs=["e8-service-page.md"],
+        expected_docs=["services.md"],
+        expected_headings=["Professional"],
+        expected_keywords=["workshop*"],
     ),
     EvalCase(
         id="compound_e8_zero_trust",
         query="What is the Essential Eight and how does Zero Trust fit into Deploy IQ's platform?",
         case_type="compound",
-        expected_docs=[
-            "e8-learn-more.md",
-            "e8-service-page.md",
-            "zero-trust-learn-more.md",
-        ],
+        expected_docs=["essential-eight.md", "services.md", "zero-trust.md"],
         min_expected_docs_hit=2,
     ),
     EvalCase(
         id="negative_pricing",
         query="What is the exact dollar pricing for the Essential Eight service?",
         case_type="negative",
-        expected_docs=["e8-learn-more.md", "e8-service-page.md"],
-        expect_grounded=True,
-        forbidden_keywords=list(_NO_PRICE_FIGURES),
-        expected_keywords=[_CONTACT_FOR_PRICE],
+        expect_grounded=False,
+        forbidden_keywords=[*_NO_PRICE_FIGURES, "specialist"],
+        expect_abstain=True,
+        abstain_category="not_in_corpus",
+        expect_no_sources=True,
     ),
     EvalCase(
         id="off_topic_weather",
@@ -276,29 +290,29 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         id="who_powers_deployiq",
         query="Who powers DeployIQ?",
         case_type="answerable",
-        expected_docs=[ABOUT],
+        expected_docs=[ABOUT, HOME],
         expected_keywords=["exigo"],
     ),
     EvalCase(
         id="exigo_headquarters",
         query="Where is Exigo Tech headquartered?",
         case_type="answerable",
-        expected_docs=[ABOUT],
+        expected_docs=[CONTACT],
         expected_keywords=["australia"],
-        # A company fact is answered (about-us.md), never clarified.
+        # A company fact is answered (contact-us.md), never clarified.
         expect_clarification=False,
     ),
     EvalCase(
         id="e8_control_list",
         query="What are the eight controls in the Essential Eight?",
         case_type="answerable",
-        expected_docs=[E8_LEARN],
-        # All eight controls, as listed in e8-learn-more.md.
+        expected_docs=[E8, SERVICES],
+        # All eight controls, as listed in essential-eight.md.
         expected_keywords=[
             "application control",
             "patch applications|patching applications|application patching",
             "macro*",
-            "user application hardening|application hardening",
+            "user app hardening|user application hardening|application hardening",
             "administrative privilege*|admin privilege*|privileged access",
             "patch operating systems|patching operating systems|os patching",
             "multi-factor|mfa",
@@ -309,30 +323,30 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         id="e8_delivery_speed",
         query="How quickly can DeployIQ implement the Essential Eight?",
         case_type="answerable",
-        expected_docs=[E8_LEARN],
-        expected_keywords=["days"],
+        expected_docs=[E8, HOME],
+        expected_keywords=["days|weeks"],
     ),
     EvalCase(
         id="zt_starter_free_scope",
         query="Is the Zero Trust Starter plan free, and what does it cover?",
         case_type="answerable",
-        expected_docs=[E8_SERVICE],
+        expected_docs=[SERVICES],
         expected_headings=["Starter"],
-        expected_keywords=["free", "identity"],
+        expected_keywords=["identity", "device*"],
     ),
     EvalCase(
         id="zt_starter_tool",
         query="Which assessment tool does the Zero Trust Starter plan provide?",
         case_type="answerable",
-        expected_docs=[E8_SERVICE],
+        expected_docs=[SERVICES],
         expected_headings=["Starter"],
-        expected_keywords=["microsoft"],
+        expected_keywords=["zero trust assessment"],
     ),
     EvalCase(
         id="zt_pro_workshops",
         query="Does the Zero Trust Professional plan include facilitated workshops?",
         case_type="answerable",
-        expected_docs=[E8_SERVICE],
+        expected_docs=[SERVICES],
         expected_headings=["Professional"],
         expected_keywords=["workshop"],
     ),
@@ -340,8 +354,8 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         id="zt_pillars",
         query="What are the pillars of Zero Trust?",
         case_type="answerable",
-        expected_docs=[ZT_LEARN],
-        # All seven pillars, as listed in zero-trust-learn-more.md.
+        expected_docs=[ZT],
+        # All seven pillars, as listed in zero-trust.md.
         expected_keywords=[
             "identity",
             "device*",
@@ -351,12 +365,21 @@ _ANSWERABLE_CASES: list[EvalCase] = [
             "network",
             "visibility",
         ],
+        expected_headings=[
+            "Identity",
+            "Devices",
+            "Network",
+            "Infrastructure",
+            "Applications",
+            "Data",
+            "Visibility",
+        ],
     ),
     EvalCase(
         id="zt_delivery_stages",
         query="What stages does DeployIQ follow to deliver Zero Trust?",
         case_type="answerable",
-        expected_docs=[ZT_LEARN],
+        expected_docs=[ZT],
         expected_keywords=[
             "assess*",
             "prioritis*|prioritiz*",
@@ -364,15 +387,25 @@ _ANSWERABLE_CASES: list[EvalCase] = [
             "implement*",
             "assur*",
         ],
+        expected_headings=["Assess", "Prioritise", "Design", "Implement", "Assure"],
     ),
-    # Retargeted to the current home-page.md journey (the old "platform cycle"
+    # Retargeted to the current home.md journey (the old "platform cycle"
     # loop stays covered by v2_platform_loop_steps against the platform doc).
     EvalCase(
         id="platform_cycle_steps",
         query="What are the steps of the DeployIQ journey, from onboarding to improvement?",
         case_type="answerable",
-        expected_docs=[HOME],
-        expected_headings=["Journey"],
+        expected_docs=[HOME, ABOUT],
+        expected_headings=[
+            "Journey",
+            "Onboard",
+            "Assess",
+            "Recommend",
+            "Approve",
+            "Validate",
+            "Improve",
+            "How Deploy IQ Works",
+        ],
         expected_keywords=[
             "onboard*",
             "assess*",
@@ -384,12 +417,12 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         ],
     ),
     # certifications_status was dropped: negative_soc2 asserts the same fact
-    # ("not yet claimed", trust-center.md) and also catches the false premise.
+    # ("not yet claimed", secure-ai.md) and also catches the false premise.
     EvalCase(
         id="data_ownership",
         query="Who owns the data DeployIQ handles for customers?",
         case_type="answerable",
-        expected_docs=[TRUST],
+        expected_docs=[TERMS, PRIVACY, SECURE_AI],
         expected_keywords=["customer"],
     ),
     EvalCase(
@@ -404,84 +437,104 @@ _ANSWERABLE_CASES: list[EvalCase] = [
         id="ai_authority_limit",
         query="Can DeployIQ's AI approve or deploy security changes on its own?",
         case_type="answerable",
-        expected_docs=[RAI, TRUST],
+        expected_docs=[RAI, SECURE_AI, HOME, PRIVACY],
         expected_keywords=["human"],
     ),
     # free_cyber_snapshot was removed: the "free cyber risk snapshot" appears
     # only in home-page-old.md, which is not ingested. Free-offer coverage is
-    # v2_anything_free (Zero Trust Starter, e8-service-page.md).
+    # v2_anything_free (free security posture snapshot, home.md).
     EvalCase(
         id="homepage_ai_shift_cards",
         query="What are the five items in the Intelligence Shift section of the homepage?",
         case_type="answerable",
         expected_docs=[HOME],
-        expected_headings=["Intelligence Shift", "Agentic", "Automation", "Fast"],
+        expected_headings=[
+            "Security that works",
+            "Agentic by design",
+            "Continuous automation",
+            "Human when it matters",
+            "Fast by default",
+            "Secure at every step",
+        ],
         expected_keywords=["agentic", "automation", "human", "fast", "secure"],
     ),
     EvalCase(
         id="e8_safe_rollout",
         query="How does DeployIQ roll out Essential Eight controls without disruption?",
         case_type="answerable",
-        expected_docs=[E8_LEARN, E8_SERVICE, TRUST],
+        expected_docs=[E8, SERVICES],
         expected_keywords=["incremental|phased|limited|pilot"],
+        expected_headings=[
+            "Governance & Operational Safety",
+            "Pilot",
+            "Iterative, governed rollout",
+        ],
     ),
     EvalCase(
         id="platform_audience",
         query="Who is the DeployIQ platform designed for?",
         case_type="answerable",
         expected_docs=[PLATFORM],
-        expected_headings=["Who DeployIQ Platform Is For"],
+        expected_headings=[
+            "Who Deploy IQ Platform Is For",
+            "Small and mid-sized",
+            "Startups",
+        ],
         expected_keywords=["small|startup*|mid*"],
     ),
     EvalCase(
         id="zt_outcomes",
         query="What outcomes can I expect from DeployIQ's Zero Trust service?",
         case_type="answerable",
-        expected_docs=[ZT_LEARN],
+        expected_docs=[ZT],
         expected_keywords=["attack surface"],
+        expected_headings=["Outcomes You Can Expect"],
     ),
     EvalCase(
         id="audit_readiness",
         query="How does DeployIQ support audit readiness?",
         case_type="answerable",
-        expected_docs=[TRUST, E8_LEARN, PLATFORM, E8_SERVICE],
+        expected_docs=[E8, PLATFORM, SECURE_AI, SERVICES, HOME, ABOUT],
         expected_keywords=["evidence"],
     ),
     EvalCase(
         id="access_controls",
         query="How does DeployIQ control access to customer environments?",
         case_type="answerable",
-        expected_docs=[TRUST],
+        expected_docs=[PRIVACY, SECURE_AI, E8],
         expected_keywords=["role"],
     ),
     EvalCase(
         id="customer_data_handling",
         query="How does DeployIQ handle customer data and privacy?",
         case_type="answerable",
-        expected_docs=[TRUST],
+        expected_docs=[SECURE_AI, PRIVACY, TERMS],
         expected_keywords=["purpose|minimal|limited"],
     ),
     EvalCase(
         id="services_overview",
         query="What services does DeployIQ offer?",
         case_type="answerable",
-        # home-page.md now lists five services (Security Baselines, Zero Trust,
-        # Essential Eight, CIS Microsoft 365 Foundations Benchmark, ISO 27001).
-        expected_docs=[HOME, E8_SERVICE],
+        # services.md lists the services (Security Baselines, Zero Trust,
+        # Essential Eight, CIS Microsoft 365 Foundations Benchmark, ISO 27001,
+        # ISO 42001).
+        expected_docs=[SERVICES, HOME, ABOUT],
         expected_keywords=[
             "security baseline*",
             "zero trust",
             "essential eight",
             "cis",
             "iso 27001",
+            "iso 42001",
         ],
     ),
     EvalCase(
         id="e8_audience",
         query="What kinds of organisations is the Essential Eight service for?",
         case_type="answerable",
-        expected_docs=[E8_LEARN],
+        expected_docs=[E8],
         expected_keywords=["maturity|auditable|implementing"],
+        expected_headings=["Who This Service Is For"],
     ),
 ]
 
@@ -495,26 +548,29 @@ _ROBUSTNESS_CASES: list[EvalCase] = [
         id="terse_e8_controls",
         query="e8 controls?",
         case_type="robustness",
-        expected_docs=[E8_LEARN, E8_SERVICE, HOME],
+        expected_docs=[E8, SERVICES, HOME],
     ),
     EvalCase(
         id="terse_zt_free_plan",
         query="zero trust free plan",
         case_type="robustness",
-        expected_docs=[E8_SERVICE],
-        expected_keywords=["free"],
+        expect_grounded=False,
+        expect_abstain=True,
+        abstain_category="not_in_corpus",
+        expect_no_sources=True,
+        forbidden_keywords=["specialist"],
     ),
     EvalCase(
         id="typo_zero_trust",
         query="wat is zero trst security",
         case_type="robustness",
-        expected_docs=[ZT_LEARN, E8_SERVICE],
+        expected_docs=[ZT, SERVICES],
     ),
     EvalCase(
         id="typo_trust_centre",
         query="trust centre data handeling",
         case_type="robustness",
-        expected_docs=[TRUST],
+        expected_docs=[SECURE_AI, PRIVACY, TERMS],
     ),
     EvalCase(
         id="hinglish_overview",
@@ -526,8 +582,11 @@ _ROBUSTNESS_CASES: list[EvalCase] = [
         id="hinglish_free_plan",
         query="kya zero trust ka koi free plan hai?",
         case_type="robustness",
-        expected_docs=[E8_SERVICE],
-        expected_keywords=["free"],
+        expect_grounded=False,
+        expect_abstain=True,
+        abstain_category="not_in_corpus",
+        expect_no_sources=True,
+        forbidden_keywords=["specialist"],
     ),
     # Three '?' makes decompose_query split into ["...?", "?", "?"] - this case
     # checks that junk sub-queries don't derail retrieval.
@@ -535,7 +594,7 @@ _ROBUSTNESS_CASES: list[EvalCase] = [
         id="shouting_caps_multi_qmark",
         query="WHAT IS THE ESSENTIAL EIGHT???",
         case_type="robustness",
-        expected_docs=[E8_LEARN, E8_SERVICE],
+        expected_docs=[E8, SERVICES],
     ),
 ]
 
@@ -549,14 +608,14 @@ _COMPOUND_CASES: list[EvalCase] = [
         id="compound_zt_plans",
         query="What is the Zero Trust Starter plan and how is the Professional plan different?",
         case_type="compound",
-        expected_docs=[E8_SERVICE],
+        expected_docs=[SERVICES],
         expected_keywords=["starter", "professional"],
     ),
     EvalCase(
         id="compound_e8_human_oversight",
         query="How does DeployIQ implement the Essential Eight and keep AI actions human-approved?",
         case_type="compound",
-        expected_docs=[E8_LEARN, RAI, TRUST],
+        expected_docs=[E8, RAI, SECURE_AI, SERVICES],
         min_expected_docs_hit=2,
         expected_keywords=["human"],
     ),
@@ -564,9 +623,9 @@ _COMPOUND_CASES: list[EvalCase] = [
         id="compound_rai_and_data",
         query="What are DeployIQ's Responsible AI principles and how does it handle customer data?",
         case_type="compound",
-        expected_docs=[RAI, TRUST],
+        expected_docs=[RAI, SECURE_AI, PRIVACY, TERMS],
         min_expected_docs_hit=2,
-        expected_keywords=["human|accountab"],
+        expected_keywords=["human|accountab*"],
     ),
 ]
 
@@ -575,7 +634,7 @@ _NEGATIVE_CASES: list[EvalCase] = [
         id="negative_soc2",
         query="Is DeployIQ SOC 2 certified?",
         case_type="negative",
-        expected_docs=[TRUST],
+        expected_docs=[SECURE_AI],
         expect_grounded=True,
         expected_keywords=[
             "not yet|not claimed|not currently|does not claim|no formal"
@@ -588,10 +647,11 @@ _NEGATIVE_CASES: list[EvalCase] = [
         id="negative_professional_price",
         query="How many dollars per month is the Zero Trust Professional plan?",
         case_type="negative",
-        expected_docs=[E8_SERVICE],
-        expect_grounded=True,
-        forbidden_keywords=list(_NO_PRICE_FIGURES),
-        expected_keywords=[_CONTACT_FOR_PRICE],
+        expect_grounded=False,
+        forbidden_keywords=[*_NO_PRICE_FIGURES, "specialist"],
+        expect_abstain=True,
+        abstain_category="not_in_corpus",
+        expect_no_sources=True,
     ),
 ]
 
@@ -671,25 +731,31 @@ _GUARDRAIL_CASES: list[EvalCase] = [
         query="What is Zero Trust? " * 500,
         case_type="spam",
         expect_grounded=False,
+        # Over max_query_length but under the schema's hard cap: POST /query
+        # answers with the too-long template (pre-check), not a 422.
         expect_flags_any=["query_too_long"],
-        # POST /query rejects > max_query_length with 422 (request schema), so
-        # no guardrail reply exists to inspect; check_length still flags it.
-        expect_http_status=422,
     ),
     # --- genuine questions that must NOT be blocked ------------------------
     EvalCase(
         id="fp_pricing_word",
         query="What is the pricing for the Zero Trust Starter plan?",
         case_type="answerable",
-        expected_docs=[E8_SERVICE],
-        expected_keywords=["free"],
+        expected_docs=[SERVICES],
+        expected_keywords=[
+            "identity|devices|self-service|assessment tool",
+            "contact|info@deployiq.co|1300 394 468",
+        ],
+        expected_headings=["Starter"],
+        forbidden_keywords=[*_NO_PRICE_FIGURES, "claim:free"],
     ),
     EvalCase(
         id="fp_100_percent_free",
         query="Is the Zero Trust Starter plan really 100% free?",
         case_type="answerable",
-        expected_docs=[E8_SERVICE],
-        expected_keywords=["free"],
+        expected_docs=[SERVICES],
+        expected_keywords=["identity|devices|self-service|assessment tool"],
+        expected_headings=["Starter"],
+        forbidden_keywords=[*_NO_PRICE_FIGURES, "claim:100% free"],
     ),
 ]
 
@@ -711,7 +777,7 @@ _CONVERSATIONAL_CASES: list[EvalCase] = [
         query="thanks!",
         case_type="conversational",
         expect_grounded=True,
-        expected_keywords=["welcome"],
+        expected_keywords=["worries|help|anytime"],
     ),
     EvalCase(
         id="conv_capability",
@@ -741,7 +807,7 @@ _FOLLOWUP_CASES: list[EvalCase] = [
                 "device, context, and risk.",
             ),
         ],
-        expected_docs=[ZT_LEARN, E8_SERVICE],
+        expected_docs=[ZT],
         expected_keywords=["assess*|phase*|prioriti*"],
         expect_follow_up_detected=True,
     ),
@@ -750,12 +816,16 @@ _FOLLOWUP_CASES: list[EvalCase] = [
         query="What does that include?",
         case_type="followup",
         history=[
-            ("user", "Is there a free Zero Trust plan?"),
-            ("assistant", "Yes, the Zero Trust Starter plan is free."),
+            ("user", "Tell me about the Zero Trust Starter plan."),
+            (
+                "assistant",
+                "Zero Trust \u2013 Starter is a self-service plan that gives "
+                "access to the Microsoft Zero Trust Assessment tool.",
+            ),
         ],
-        expected_docs=[E8_SERVICE],
+        expected_docs=[SERVICES],
         expected_headings=["Starter"],
-        expected_keywords=["assessment"],
+        expected_keywords=["identity|devices|guidance|orientation"],
         expect_follow_up_detected=True,
     ),
     EvalCase(
@@ -770,8 +840,8 @@ _FOLLOWUP_CASES: list[EvalCase] = [
                 "strategies that reduce the likelihood of cyber compromise.",
             ),
         ],
-        expected_docs=[E8_LEARN],
-        expected_keywords=["days"],
+        expected_docs=[E8, HOME],
+        expected_keywords=["days|week"],
         expect_follow_up_detected=True,
     ),
     # Standalone question after an unrelated topic: history must NOT leak in.
@@ -787,7 +857,7 @@ _FOLLOWUP_CASES: list[EvalCase] = [
                 "infrastructure, network, and visibility and analytics.",
             ),
         ],
-        expected_docs=[E8_LEARN, E8_SERVICE],
+        expected_docs=[E8, HOME],
         # Answer-only facts; "eight" is in the question and in the history
         # topic, so it can't show the history did not pollute the answer.
         expected_keywords=["mitigation|maturity"],
@@ -810,8 +880,9 @@ _FOLLOWUP_CASES: list[EvalCase] = [
             ),
         ],
         expected_docs=[RAI],
-        expected_keywords=["human"],
+        expected_keywords=["accountable|owned|decision*|approval*|oversight"],
         expect_follow_up_detected=True,
+        expected_headings=["Human Accountability"],
     ),
 ]
 

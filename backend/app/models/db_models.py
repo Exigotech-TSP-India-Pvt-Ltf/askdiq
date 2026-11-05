@@ -124,6 +124,19 @@ class Chunk(Base):
     __tablename__ = "chunks"
     __table_args__ = (  # <-- NEW
         Index("ix_chunks_document_hash", "document_id", "content_hash"),
+        # Retrieval's two searches (migration a1b2c3d4e5f7): full-text on the
+        # exact query expression, and HNSW for cosine-distance ordering.
+        Index(
+            "ix_chunks_content_fts",
+            text("to_tsvector('english', content)"),
+            postgresql_using="gin",
+        ),
+        Index(
+            "ix_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

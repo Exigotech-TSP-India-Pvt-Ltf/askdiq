@@ -38,9 +38,10 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 
@@ -86,17 +87,16 @@ class LiveClientError(RuntimeError):
     """Request failed after retries (message never contains headers or keys)."""
 
 
-@cache
-def _service_key() -> str:
-    # Imported lazily so tests and library users only need it for real calls.
+def _in_env_dir(fn: Callable[[], Any]) -> Any:
+    """Run ``fn`` with the backend on ``sys.path`` and cwd at a dir with ``.env``.
+
+    Settings load ``.env`` relative to the cwd. A git worktree has none, so
+    use the first backend dir that has one (existence check only; the file is
+    never read here).
+    """
     backend_dir = Path(__file__).resolve().parents[1]
     if str(backend_dir) not in sys.path:
         sys.path.insert(0, str(backend_dir))
-    from app.core.config import get_settings  # noqa: PLC0415
-
-    # Settings load ``.env`` relative to the cwd. A git worktree has none, so
-    # run get_settings() from the first backend dir that has one (existence
-    # check only; the file is never read here).
     candidates = [
         os.environ.get("LIVE_CLIENT_BACKEND_DIR"),
         str(Path.cwd()),
@@ -105,13 +105,70 @@ def _service_key() -> str:
     ]
     env_dir = next((d for d in candidates if d and (Path(d) / ".env").is_file()), None)
     if env_dir is None:
-        return get_settings().api_key_name
+        return fn()
     previous = Path.cwd()
     os.chdir(env_dir)
     try:
-        return get_settings().api_key_name
+        return fn()
     finally:
         os.chdir(previous)
+
+
+@cache
+def _service_key() -> str:
+    # Imported lazily so tests and library users only need it for real calls.
+    def load() -> str:
+        from app.core.config import get_settings  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        return get_settings().api_key_name
+
+    return _in_env_dir(load)
+
+
+class FixedLines(NamedTuple):
+    """Fixed customer-facing lines from ``app.harness.prompt_catalog``."""
+
+    no_answer: str
+    try_again: str
+    off_topic: str | None
+    sales: re.Pattern[str]
+    partial: re.Pattern[str]
+    fallback_line: Callable[[list[str]], str]
+
+
+_SLOT = "\x00"
+
+
+def _slot_pattern(text_with_slots: str) -> re.Pattern[str]:
+    """Regex for a fixed line whose ``_SLOT`` markers are free text."""
+    pieces = text_with_slots.split(_SLOT)
+    body = r".+?".join(re.escape(p) for p in pieces)
+    return re.compile(rf"{body}(?=\s|$)", re.IGNORECASE)
+
+
+@cache
+def fixed_lines() -> FixedLines:
+    """Load the fallback contract from the app (cached; needs settings)."""
+
+    def load() -> FixedLines:
+        from app.harness import prompt_catalog as cat  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        try:
+            off_topic: str | None = cat.off_topic_line()
+        except Exception:  # noqa: BLE001 - settings unavailable  # pylint: disable=broad-exception-caught
+            off_topic = None
+        return FixedLines(
+            no_answer=cat.NO_ANSWER_LINE,
+            try_again=cat.TRY_AGAIN_LINE,
+            off_topic=off_topic,
+            sales=_slot_pattern(
+                cat.SALES_CONTACT_LINE.format(phone=_SLOT, email=_SLOT)
+            ),
+            partial=_slot_pattern(cat.partial_line([_SLOT])),
+            fallback_line=cat.fallback_line,
+        )
+
+    return _in_env_dir(load)
 
 
 def _base_url() -> str:
@@ -120,7 +177,7 @@ def _base_url() -> str:
 
 def _shared_client() -> httpx.Client:
     """One lazily built, thread-safe client; timeout is set per request."""
-    global _CLIENT  # noqa: PLW0603
+    global _CLIENT  # noqa: PLW0603  # pylint: disable=global-statement
     with _CLIENT_LOCK:
         if _CLIENT is None:
             _CLIENT = httpx.Client()
@@ -158,7 +215,48 @@ def _post_with_retry(
             return resp, rate_limited
 
 
-def ask(
+def _query_payload(
+    query: str,
+    session_id: str | None,
+    new_session: bool,
+    clarification_answers: list[dict] | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"query": query}
+    if session_id:
+        payload["session_id"] = session_id
+    if new_session:
+        payload["new_session"] = True
+    if clarification_answers:
+        payload["clarification_answers"] = clarification_answers
+    return payload
+
+
+def _timed_post(
+    url: str,
+    payload: dict,
+    headers: dict,
+    timeout: float,
+    transport: httpx.BaseTransport | None,
+) -> tuple[httpx.Response, int, float]:
+    """``(response, rate_limited_count, wall_ms)`` for one paced POST."""
+    with _SEMAPHORE:
+        if transport is not None:
+            with httpx.Client(transport=transport) as client:
+                started = time.perf_counter()
+                resp, rate_limited = _post_with_retry(
+                    client, url, payload, headers, timeout
+                )
+        else:
+            client = _shared_client()  # built before the timer starts
+            started = time.perf_counter()
+            resp, rate_limited = _post_with_retry(
+                client, url, payload, headers, timeout
+            )
+        wall_ms = round((time.perf_counter() - started) * 1000, 1)
+    return resp, rate_limited, wall_ms
+
+
+def ask(  # pylint: disable=too-many-arguments,too-many-positional-arguments  # public client API
     query: str,
     session_id: str | None = None,
     new_session: bool = False,
@@ -175,32 +273,14 @@ def ask(
     (sessions belong to the client id). Raises LiveClientError on non-2xx.
     """
     cid = client_id or _PROCESS_CLIENT_ID
-    payload: dict[str, Any] = {"query": query}
-    if session_id:
-        payload["session_id"] = session_id
-    if new_session:
-        payload["new_session"] = True
-    if clarification_answers:
-        payload["clarification_answers"] = clarification_answers
+    payload = _query_payload(query, session_id, new_session, clarification_answers)
     headers = {
         "X-API-Key": api_key if api_key is not None else _service_key(),
         "X-Client-Id": cid,
     }
-    url = f"{_base_url()}/query"
-    with _SEMAPHORE:
-        if transport is not None:
-            with httpx.Client(transport=transport) as client:
-                started = time.perf_counter()
-                resp, rate_limited = _post_with_retry(
-                    client, url, payload, headers, timeout
-                )
-        else:
-            client = _shared_client()  # built before the timer starts
-            started = time.perf_counter()
-            resp, rate_limited = _post_with_retry(
-                client, url, payload, headers, timeout
-            )
-        wall_ms = round((time.perf_counter() - started) * 1000, 1)
+    resp, rate_limited, wall_ms = _timed_post(
+        f"{_base_url()}/query", payload, headers, timeout, transport
+    )
     if resp.status_code >= 400:
         raise LiveClientError(
             f"/query returned HTTP {resp.status_code}: {resp.text[:300]}"
@@ -212,7 +292,7 @@ def ask(
     return data
 
 
-class ConversationRunner:
+class ConversationRunner:  # pylint: disable=too-few-public-methods  # one ask() per turn
     """Multi-turn conversation: own client id, session_id kept across turns.
 
     Calls are paced to ``calls_per_min`` (default 8, under the server's 10/min
@@ -316,6 +396,129 @@ def _asserts(answer: str, word: str) -> bool:
     )
 
 
+def _norm(text: str) -> str:
+    return " ".join(text.split())
+
+
+@cache
+def _fallback_for(flags: tuple[str, ...]) -> str | None:
+    lines = fixed_lines()
+    try:
+        return _in_env_dir(lambda: lines.fallback_line(list(flags)))
+    except Exception:  # noqa: BLE001 - settings unavailable  # pylint: disable=broad-exception-caught
+        return None
+
+
+def _residue(
+    answer: str, exact: set[str | None], patterns: tuple[re.Pattern[str], ...]
+) -> str:
+    """What is left of ``answer`` after removing the fixed lines."""
+    text = _norm(answer)
+    for line in sorted((x for x in exact if x), key=len, reverse=True):
+        text = text.replace(_norm(line), " ")
+    for pattern in patterns:
+        text = pattern.sub(" ", text)
+    return text.strip(" .")
+
+
+_PERSONA_PREFIX = "persona_"
+
+
+@cache
+def _template_texts(
+    template_id: str | None,
+) -> tuple[frozenset[str], tuple[re.Pattern[str], ...]]:
+    """Approved POLICY / PERSONA text(s) of a logged ``refusal_template`` id.
+
+    Returns exact texts plus slot patterns (the privacy reply's link). Unknown
+    ids, the ``partial`` line and unavailable settings give nothing.
+    """
+    if not template_id or template_id == "partial":
+        return frozenset(), ()
+
+    def load() -> tuple[frozenset[str], tuple[re.Pattern[str], ...]]:
+        from app.harness import prompt_catalog as cat  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        if template_id.startswith(_PERSONA_PREFIX):
+            intent = template_id.removeprefix(_PERSONA_PREFIX)
+            if intent not in cat.PERSONA_TEMPLATES:
+                return frozenset(), ()
+            linked = _slot_pattern(cat.persona_template(intent, privacy_url=_SLOT))
+            return frozenset({cat.persona_template(intent)}), (linked,)
+        if template_id in cat.POLICY_TEMPLATES:
+            return frozenset({cat.policy_template(template_id)}), ()
+        return frozenset(), ()
+
+    try:
+        return _in_env_dir(load)
+    except Exception:  # noqa: BLE001 - settings unavailable  # pylint: disable=broad-exception-caught
+        return frozenset(), ()
+
+
+@cache
+def _flag_template_id(flags: tuple[str, ...], outcome: str) -> str | None:
+    """The app's template id for ``flags`` when the response logs none."""
+
+    def load() -> str:
+        from app.harness import prompt_catalog as cat  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        return cat.refusal_template_id(list(flags), outcome)
+
+    try:
+        return _in_env_dir(load)
+    except Exception:  # noqa: BLE001 - settings unavailable  # pylint: disable=broad-exception-caught
+        return None
+
+
+def _fallback_text_problems(
+    answer: str, flags: list[str], kind: str, template_id: str | None = None
+) -> list[str]:
+    """A decline must be made only of the fixed catalog lines for its flags
+    (or the approved POLICY / PERSONA template logged as ``refusal_template``)."""
+    lines = fixed_lines()
+    expected = {_fallback_for(tuple(flags))}
+    if kind == "fallback":
+        expected |= {lines.no_answer, lines.try_again}
+    elif "off_topic" in flags:
+        expected.add(lines.off_topic)
+    templates, template_patterns = _template_texts(template_id)
+    expected |= templates
+    if _residue(answer, expected, (lines.sales, *template_patterns)):
+        return [f"{kind} reply is not a fixed catalog line: {_norm(answer)[:80]}"]
+    return []
+
+
+def _label_problems(resp: dict, kind: str) -> list[str]:
+    """Owner label contract: declines ungrounded/0/no refs, answers grounded+cited."""
+    grounded = resp.get("grounded")
+    sources = resp.get("sources") or []
+    citations = resp.get("citations") or []
+    problems: list[str] = []
+    if kind in {"fallback", "refusal"}:
+        if grounded is not False:
+            problems.append(f"{kind} grounded={grounded}, want False")
+        if float(resp.get("confidence") or 0) != 0:
+            problems.append(f"{kind} confidence={resp.get('confidence')}, want 0")
+        if sources:
+            problems.append(f"{kind} has {len(sources)} sources")
+        if citations:
+            problems.append(f"{kind} has {len(citations)} citations")
+    elif kind == "answer" and resp.get("outcome") == "answered":
+        if grounded is not True:
+            problems.append(f"answered grounded={grounded}, want True")
+        if not citations:
+            problems.append("answered reply has no citations")
+    elif kind == "clarify" and grounded is True:
+        problems.append("clarify grounded=True")
+    return problems
+
+
+def _answered_is_only_fallback(answer: str) -> bool:
+    lines = fixed_lines()
+    exact = {lines.no_answer, lines.try_again, lines.off_topic}
+    return not _residue(answer, exact, (lines.partial, lines.sales))
+
+
 def check_answer(
     resp: dict, rules: dict | None = None, query: str | None = None
 ) -> list[str]:
@@ -323,7 +526,16 @@ def check_answer(
 
     rules (all optional): ``kind`` to force "answer"/"fallback"/"refusal"/"clarify"
     instead of auto-detecting, ``allow_assurance`` (bool), ``allow_internal``
-    (bool), ``min_options`` (int, default 2).
+    (bool), ``min_options`` (int, default 2), ``check_labels`` (bool, default
+    True: grounded / confidence / sources / citations contract).
+
+    Fallback and refusal text must be the fixed lines from
+    ``app.harness.prompt_catalog`` (``fallback_line(flags)``, ``NO_ANSWER_LINE``,
+    ``TRY_AGAIN_LINE``, ``off_topic_line()``, optionally with the
+    ``SALES_CONTACT_LINE``) or the POLICY / PERSONA template (regulated_advice,
+    identity, persona_*, off_topic, unsafe, ...) named by the response's
+    ``token_details.refusal_template``; an "answered" reply must not be only
+    those lines.
 
     Assurance words only count when asserted: not in a negated clause ("we don't
     have details showing ... certified") and not echoed from the visitor's
@@ -345,9 +557,17 @@ def check_answer(
             for w in ASSURANCE_WORDS
             if _asserts(answer, w) and not (query and _has(query, w))
         ]
-    if kind == "fallback" and "specialist" not in answer.lower():
-        problems.append("fallback reply does not mention 'specialist'")
-    if kind == "refusal" and resp.get("sources"):
+    flags = [str(f) for f in resp.get("guardrail_flags") or []]
+    if kind in {"fallback", "refusal"} and answer.strip():
+        template_id = (resp.get("token_details") or {}).get(
+            "refusal_template"
+        ) or _flag_template_id(tuple(flags), str(resp.get("outcome") or ""))
+        problems += _fallback_text_problems(answer, flags, kind, template_id)
+    if kind == "answer" and answer.strip() and _answered_is_only_fallback(answer):
+        problems.append(f"answer is only fallback text: {_norm(answer)[:80]}")
+    if rules.get("check_labels", True):
+        problems += _label_problems(resp, kind)
+    elif kind == "refusal" and resp.get("sources"):
         problems.append(f"refusal has {len(resp['sources'])} sources")
     if kind == "clarify":
         problems += check_clarification(resp, int(rules.get("min_options", 2)))
@@ -360,6 +580,11 @@ def _print_summary(resp: dict) -> None:
     out(f"outcome: {resp.get('outcome')}\n")
     out(f"flags: {resp.get('guardrail_flags') or []}\n")
     out(f"sources: {len(resp.get('sources') or [])}\n")
+    out(
+        f"labels: grounded={resp.get('grounded')} "
+        f"confidence={resp.get('confidence')} "
+        f"citations={len(resp.get('citations') or [])}\n"
+    )
     questions = (resp.get("clarification") or {}).get("questions") or []
     if questions:
         out(f"clarification headers: {[q.get('header') for q in questions]}\n")

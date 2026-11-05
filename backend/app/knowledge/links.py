@@ -231,6 +231,31 @@ def usable_url(url: str | None, allowed_hosts: Iterable[str]) -> str | None:
     return url if link_status(url, allowed_hosts) is LinkStatus.OK else None
 
 
+def site_page_url(base_url: str, route: str | None) -> str | None:
+    """``base_url`` + a site-relative ``route`` (``/zero-trust``), else ``None``.
+
+    Only a path is accepted: a route carrying a scheme, host (``//``) or
+    whitespace is ignored so a document can never point off the configured site.
+    """
+    if not isinstance(route, str) or not route.startswith("/"):
+        return None
+    if route.startswith("//") or "://" in route or any(c.isspace() for c in route):
+        return None
+    try:
+        url = validate_source_url(f"{base_url.rstrip('/')}{route}", ())
+    except LinkError:
+        return None
+    return url
+
+
+def document_url(
+    stored_url: str | None, route: str | None, base_url: str
+) -> str | None:
+    """The link a document cites: the configured site page for a routed
+    document, else the stored ``source_url``."""
+    return site_page_url(base_url, route) or stored_url
+
+
 # --- section anchors ----------------------------------------------------------
 
 

@@ -112,7 +112,7 @@ def test_mixed_sentence_marker_moves_after_factual_clause() -> None:
 def test_pure_absence_loses_marker() -> None:
     out, cites = verify_citations("Pricing isn't published for the plan [1].", [CHUNK])
     assert "[1]" not in out
-    assert cites == []
+    assert not cites
 
 
 def test_mixed_sentence_unsupported_fact_loses_marker() -> None:
@@ -131,5 +131,6 @@ def test_mixed_verification_linear_time() -> None:
 
 def test_prompt_rules_present() -> None:
     prompt = prompts.SYSTEM_PROMPT
-    assert "Don't mention pricing, timelines or what you don't have" in prompt
-    assert "short bullets" in prompt
+    assert "nothing that was not asked" in prompt
+    # A list item is its own claim kind ("i"), one item per quote.
+    assert '"i" list item' in prompt

@@ -19,6 +19,12 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from app.core.config import get_settings
+from app.harness.prompt_catalog import (
+    BANNED_PHRASES,
+    INTERNAL_WORDING,
+    SHAPE_BLOCKS,
+    TONE_BLOCK,
+)
 
 if TYPE_CHECKING:
     from app.harness.answer_shape import AnswerShape
@@ -31,40 +37,10 @@ class ResponseStyle(StrEnum):
     ADAPTIVE = "adaptive"
 
 
-# Words that reveal how an answer was built; customers never see them. This
-# is the "never use" list shown to the model only: the post-filter in
-# app.harness.tone matches narrower first-person source references, because
-# bare "the documents" / "knowledge base" are also ordinary product words.
-INTERNAL_WORDING: tuple[str, ...] = (
-    "supplied context",
-    "provided context",
-    "the context",
-    "the documents",
-    "knowledge base",
-    "provided information",
-)
-
-# Stock AI phrases the answer must never contain (owner's banned list).
-BANNED_PHRASES: tuple[str, ...] = (
-    "As an AI",
-    "The provided context does not state",
-    "Based on the information provided",
-    "According to the documents",
-    "I hope this helps",
-    "Feel free to reach out",
-    "Great question!",
-    "Delve",
-    "It's important to note",
-    "Comprehensive",
-    "Leverage",
-    "Seamless",
-    "Robust",
-    "In today's evolving landscape",
-    "I'm sorry, but I cannot",
-    "Certainly!",
-    *INTERNAL_WORDING,
-    "materials",
-)
+# Prompt text lives in app.harness.prompt_catalog (one place); re-exported
+# here for existing importers. The post-filter in app.harness.tone matches
+# narrower first-person source references, because bare "the documents" /
+# "knowledge base" are also ordinary product words.
 
 # What a customer is told when something is not covered: one natural line
 # that hands over to a human. Three variants, picked by a stable hash of the
@@ -88,61 +64,11 @@ def not_covered_sentence(question: str | None = None) -> str:
     return NOT_COVERED_VARIANTS[digest[0] % len(NOT_COVERED_VARIANTS)]
 
 
-_TONE_BLOCK = (
-    "Style: write like a helpful colleague. Answer in the first sentence, in "
-    'plain words; never open with "We" plus a corporate verb (deliver, '
-    "implement, provide). Use contractions and short sentences. A simple "
-    "fact gets 1-2 sentences, no headings or bullets; bullets only for 3+ "
-    "parallel items. Never write paragraphs of more than 2 sentences, and "
-    'never write "Based on", "Next step:", "Key points" or any form-style '
-    "label, or repeat a sentence or a closing. Offer at most one next step, "
-    'once, only when it helps. Say "we" for {brand} and "you" for the '
-    "reader, never the product name. Use commas or full stops, never "
-    'dashes; Australian spelling (programme); no jargon (say "a person '
-    'approves it"); no raw HTML, no links, no code fences '
-    "unless the facts quote code. Keep any citation marker at the end of the "
-    "claim it supports, including inside bullets and table cells. If "
-    "something isn't covered, say so once, naturally, and offer a "
-    "specialist. Never use these phrases: {banned}."
-)
-
+# Format and length only: grounding and refusal rules live in
+# prompt_catalog.common_rules() and are never restated here.
+_TONE_BLOCK = TONE_BLOCK
 # One format instruction per AnswerShape value; only the detected one is sent.
-_SHAPE_BLOCKS: dict[str, str] = {
-    "definition": (
-        "Format: 1-3 short, plain sentences that answer directly. Add 3 or "
-        "more bullets only if the facts are really a list."
-    ),
-    "how_to": (
-        "Format: one lead sentence, then numbered steps (1., 2., 3.), one "
-        "action per step, in order, at most 7 steps."
-    ),
-    "comparison": (
-        "Format: one lead sentence with the main difference, then a Markdown "
-        "pipe table with a header row, a separator row (| --- |), one row per "
-        "aspect and one column per option, at most 5 columns, short cells. "
-        "Leave out any aspect the facts don't cover."
-    ),
-    "quick_fact": (
-        "Format: the direct answer in one sentence (yes, no, or the fact), "
-        "only if the facts state it, then at most one supporting sentence. "
-        "If the facts don't state it, say what we do and point to a "
-        "specialist."
-    ),
-    "partial": (
-        "Format: say what we do in 1-2 sentences, then one short natural "
-        "sentence that the rest is best checked with a specialist. Don't "
-        "open with what we can't confirm and don't use a label."
-    ),
-    "out_of_scope": (
-        "Format: one warm line saying that is outside what we cover here, "
-        "then offer a chat with one of our specialists in natural words. "
-        "Nothing else."
-    ),
-    "general": (
-        "Format: 1-3 short, plain sentences; add 3 or more bullets only if "
-        "the facts are really a list."
-    ),
-}
+_SHAPE_BLOCKS: dict[str, str] = SHAPE_BLOCKS
 
 # Steps and tables need more room than the default word cap.
 _LONG_SHAPES = frozenset({"how_to", "comparison"})
@@ -187,7 +113,8 @@ def style_instructions(
     settings = get_settings()
     tone = profile.tone_block.format(
         brand=settings.brand_name,
-        banned="; ".join(f'"{p}"' for p in BANNED_PHRASES),
+        # Internal wording is already banned by the shared rules.
+        banned="; ".join(f'"{p}"' for p in BANNED_PHRASES if p not in INTERNAL_WORDING),
     )
     block = profile.shape_blocks.get(str(shape or "general"))
     return f" {tone} {block or profile.shape_blocks['general']}"

@@ -16,9 +16,9 @@
   },
   "dependencies": {
     "@swc/helpers": "^0.5.23",
-    "lucide-react": "^1.61.0",
+    "lucide-react": "^1.66.0",
     "mammoth": "^1.13.0",
-    "motion": "14.6.0",
+    "motion": "14.9.0",
     "next": "15.5.28",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -38,7 +38,7 @@
     "eslint": "8.57.1",
     "eslint-config-next": "15.5.28",
     "jsdom": "^29.1.1",
-    "postcss": "8.5.31",
+    "postcss": "8.5.32",
     "tailwindcss": "^4.3.3",
     "typescript": "5.9.3",
     "vite": "^8.3.5",
@@ -48,7 +48,10 @@
     "next": {
       "postcss": "8.5.31"
     },
-    "glob": "^10.5.0",
+    "glob": "^14.0.3",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
+    },
     "postcss-selector-parser": "^7.1.6"
   }
 }

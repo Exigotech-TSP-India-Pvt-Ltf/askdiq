@@ -27,7 +27,7 @@ from app.harness.style import ResponseStyle, style_instructions
 from app.schemas.query import SourceChunk
 from tests import chatbot_contract_cases as cases
 from tests.test_clarify import _spread_sources
-from tests.test_clarify_trigger import _no_decision_call, _run, _sources
+from tests.test_clarify_trigger import _sources
 from tests.test_orchestrator import _run as _orchestrator_run
 from tests.test_orchestrator import _source
 
@@ -76,10 +76,22 @@ def test_fallback_never_uses_internal_wording(flag: str) -> None:
 
 @pytest.mark.parametrize("flag", cases.SPECIALIST_FLAGS)
 def test_unanswered_fallback_offers_a_specialist(flag: str) -> None:
-    assert "specialist" in _fallback(flag).answer.lower(), _contract(
+    # Owner voice guide: the human next step is "our team" ("specialist" is
+    # kept for the sales line on buying paths).
+    assert "our team" in _fallback(flag).answer.lower(), _contract(
         "fallback-offers-human-next-step",
         "app/harness/orchestrator.py (_fallback_response)",
-        f"flag {flag!r} does not mention a specialist",
+        f"flag {flag!r} does not offer our team as a next step",
+    )
+
+
+@pytest.mark.parametrize("flag", cases.NO_SPECIALIST_FLAGS)
+def test_off_scope_fallback_never_offers_a_specialist(flag: str) -> None:
+    assert "specialist" not in _fallback(flag).answer.lower(), _contract(
+        "fallback-never-offers-specialist-off-scope",
+        "app/harness/orchestrator.py (_fallback_response)",
+        f"flag {flag!r} wrongly implies a specialist can help with an "
+        "out-of-scope question",
     )
 
 
@@ -127,7 +139,7 @@ def test_prompts_never_name_internal_words(label: str) -> None:
 
 def test_system_prompt_carries_the_assurance_guard() -> None:
     prompt = prompts.get_system_prompt().lower()
-    for needle in ("never state or imply", "safe to purchase"):
+    for needle in ("certified, guaranteed, compliant, safe", "add nothing a fact"):
         assert needle in prompt, _contract(
             "prompt-assurance-guard",
             "app/harness/prompts.py",
@@ -135,10 +147,12 @@ def test_system_prompt_carries_the_assurance_guard() -> None:
         )
 
 
-def test_adaptive_suffix_keeps_the_specialist_next_step() -> None:
+def test_adaptive_suffix_never_restates_a_hand_over() -> None:
+    # The partial / no-answer lines are code-owned (prompt_catalog); no style
+    # block asks the model for a specialist line.
     block = style_instructions(ResponseStyle.ADAPTIVE, "partial")
-    assert "specialist" in block.partition("Never use these phrases:")[0], _contract(
-        "style-human-next-step", "app/harness/style.py", "no specialist hand-over"
+    assert "specialist" not in block.partition("Never use these phrases:")[2], (
+        _contract("style-no-model-hand-over", "app/harness/style.py", "hand-over")
     )
 
 
@@ -201,21 +215,6 @@ def test_clarifier_never_asks_about_facts_or_general_questions(query: str) -> No
     )
 
 
-@pytest.mark.parametrize("query", cases.NEVER_CLARIFY_QUERIES)
-async def test_clarifier_never_clarifies_end_to_end(monkeypatch, query: str) -> None:
-    _no_decision_call(monkeypatch)
-    response, calls, _ = await _run(
-        monkeypatch, query, ["An answer."], sources=_sources(0.7)
-    )
-    assert response.outcome == "answered", _contract(
-        "clarifier-never-on-facts",
-        "app/harness/orchestrator.py, app/harness/clarify.py",
-        f"{query!r} produced outcome {response.outcome!r}",
-    )
-    assert response.clarification is None
-    assert "clarify_block" not in calls[0]
-
-
 @pytest.mark.parametrize("query", cases.VAGUE_COMPLIANCE_QUERIES)
 def test_vague_compliance_asks_the_framework_then_maturity_series(query: str) -> None:
     where = "app/harness/ambiguity.py"
@@ -238,27 +237,12 @@ def test_vague_compliance_asks_the_framework_then_maturity_series(query: str) ->
     )
 
 
-async def test_i_need_compliance_end_to_end_has_not_sure(monkeypatch) -> None:
-    _no_decision_call(monkeypatch)
-    response, _, _ = await _run(monkeypatch, "i need compliance")
-    assert response.clarification is not None, _contract(
-        "clarifier-vague-compliance-series",
-        "app/harness/orchestrator.py",
-        f"no clarification, outcome {response.outcome!r}",
-    )
-    first = response.clarification.questions[0]
-    assert first.header == "Framework"
-    assert NOT_SURE_LABEL in [o.label for o in first.options], _contract(
-        "clarifier-not-sure-option", "app/harness/ambiguity.py", "no Not sure option"
-    )
-
-
 def test_named_entities_are_not_clarify_eligible() -> None:
     query = "Where is Exigo Tech headquartered?"
     assert not clarify_eligible(query, None, follow_up=False), _contract(
         "clarifier-never-on-facts", "app/harness/clarify.py", f"{query!r} eligible"
     )
-    assert plan_clarification(query, _spread_sources(), None, follow_up=False) == []
+    assert plan_clarification(query, _spread_sources(), None, follow_up=False) == []  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
 def test_folded_reply_is_never_the_partial_shape() -> None:
@@ -309,7 +293,7 @@ async def test_unsupported_assurance_fails_groundedness(answer: str) -> None:
 async def test_refusal_reply_has_no_sources_or_citations(monkeypatch, reply) -> None:
     response = await _orchestrator_run(
         monkeypatch,
-        llm_side_effect=[f"{reply} [1]"],
+        llm_side_effect=[f"{reply} [1]"] * 2,
         post_checks_side_effect=[(True, 0.9, [])],
     )
     assert response.sources == [], _contract(

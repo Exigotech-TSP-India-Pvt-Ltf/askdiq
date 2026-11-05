@@ -307,7 +307,7 @@ How golden cases are used by evaluation:
 
 - **Run now** calls `POST /admin/feedback/golden/{case_id}/run`, which queues the job `eval.golden_run`. The job is deduplicated per case: a second click while one is queued returns `already_queued` (toast **Already queued**). The worker runs the real query pipeline (`evaluate_case` in `backend/app/evaluation/evaluator.py`). It then stores `last_run_at`, `last_run_passed` and `last_run_detail` (grounded, confidence, guardrail flags, latency, error).
 - **Pass rule**: promoted cases carry no expected documents, keywords or flags, so `passed` reduces to "the new answer's groundedness equals `expect_grounded`, and there was no error". The stored `reference_answer` is **not** compared with the new answer.
-- The offline evaluation CLI (`backend/scripts/run_evaluation.py`) merges every promoted case into its dataset through `load_promoted_cases`. That function reads the DB and falls back to `data/promoted_test_cases.json`.
+- The offline evaluation CLI (`backend/scripts/run_evaluation.py`) merges every promoted case into its dataset through `load_promoted_cases`. That function reads the DB (the `eval_promoted_cases` table is the source of truth). Its fallback to `data/promoted_test_cases.json` is kept only for tolerance: the file is retired and returns no cases when absent. The legacy case now lives in the live golden set `backend/tests/golden/golden_cases.json` (id `nc-mtls-config`).
 - Job chip next to **Run now**: **Queued** → **Running…** → **Passed** / **Failed**. If nothing changes after 40 polls of 3 s (about 2 minutes), the chip reads **Still running**. A failed enqueue shows **Could not queue**. The UI polls the golden list because there is no job-status endpoint.
 
 ### Preference Data tab

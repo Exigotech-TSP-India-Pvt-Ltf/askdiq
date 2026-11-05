@@ -30,7 +30,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.guardrails.post_checks import citation_stems, is_decline_sentence
-from app.knowledge.links import brand_label, chunk_anchor, citation_url, link_host
+from app.knowledge.links import (
+    brand_label,
+    chunk_anchor,
+    citation_url,
+    document_url,
+    link_host,
+)
 from app.knowledge.settings_service import current_knowledge_settings
 from app.models.db_models import Document
 from app.schemas.query import Citation, SourceChunk
@@ -185,6 +191,26 @@ def build_citation(number: int, source: SourceChunk) -> Citation:
     )
 
 
+def with_backing_chunks(
+    cited: Sequence[SourceChunk], backing: Iterable[SourceChunk]
+) -> list[SourceChunk]:
+    """``cited`` plus every other ``backing`` chunk of a cited document.
+
+    ``cited`` holds one chunk per citation in citation order, so
+    ``sources[n - 1]`` stays the chunk of citation ``n``; the further chunks
+    of those documents that back a shown claim follow, de-duplicated by chunk
+    id. A chunk of an uncited document is never added.
+    """
+    out = list(cited)
+    documents = {s.document_id for s in out}
+    seen = {s.chunk_id for s in out}
+    for source in backing:
+        if source.document_id in documents and source.chunk_id not in seen:
+            seen.add(source.chunk_id)
+            out.append(source)
+    return out
+
+
 def apply_citations(
     answer: str, sources: Sequence[SourceChunk]
 ) -> tuple[str, list[Citation]]:
@@ -262,7 +288,7 @@ def _normalize_number(number: str) -> str:
     return number.rstrip("0").rstrip(".") if "." in number else number
 
 
-class _ChunkIndex:
+class _ChunkIndex:  # pylint: disable=too-few-public-methods
     """Lazily computed lexical facts about one retrieved chunk."""
 
     def __init__(self, source: SourceChunk) -> None:
@@ -282,7 +308,7 @@ class _ChunkIndex:
         )
 
 
-class _Claim:
+class _Claim:  # pylint: disable=too-few-public-methods
     """One claim sentence: its content stems and the figures it asserts."""
 
     def __init__(self, text: str) -> None:
@@ -393,7 +419,7 @@ def _after_factual(unit: str, markers: str) -> str | None:
     return f"{plain[:end]}{markers}{rest}"
 
 
-class _Verifier:
+class _Verifier:  # pylint: disable=too-many-instance-attributes
     def __init__(
         self,
         sources: Sequence[SourceChunk],
@@ -407,6 +433,7 @@ class _Verifier:
         self.index: dict[int, _ChunkIndex] = {}
         self.numbers: dict[str, int] = {}  # document_id -> new number
         self.selected: list[SourceChunk] = []
+        self.backing: list[SourceChunk] = []  # every chunk behind a kept marker
 
     def chunk(self, number: int) -> _ChunkIndex:
         if number not in self.index:
@@ -457,6 +484,7 @@ class _Verifier:
         out: list[int] = []
         for number in numbers:
             source = self.sources[number - 1]
+            self.backing.append(source)
             new = self.numbers.get(source.document_id)
             if new is None:
                 self.selected.append(source)
@@ -509,7 +537,8 @@ def verify_and_select(
 
     Numbers are reassigned from 1 in order of first appearance, one per
     document, so ``citations[i].n == i + 1`` and ``sources[i]`` is the chunk of
-    citation ``i + 1``.
+    citation ``i + 1``. The other chunks behind a kept marker follow (see
+    :func:`with_backing_chunks`), so every excerpt a claim rests on is returned.
     """
     if "[" not in answer:
         return VerifiedCitations(answer)
@@ -526,7 +555,11 @@ def verify_and_select(
         build_citation(number, source)
         for number, source in enumerate(verifier.selected, start=1)
     ]
-    return VerifiedCitations("".join(rewritten), citations, verifier.selected)
+    return VerifiedCitations(
+        "".join(rewritten),
+        citations,
+        with_backing_chunks(verifier.selected, verifier.backing),
+    )
 
 
 def verify_citations(
@@ -580,11 +613,13 @@ async def _document_links(
             Document.section_links,
             Document.source_name,
             Document.doc_metadata["title"].as_string(),
+            Document.doc_metadata["route"].as_string(),
         ).where(Document.id.in_(ids))
     )
+    base_url = get_settings().site_base_url
     return {
-        str(doc_id): (url, bool(sections), name, title)
-        for doc_id, url, sections, name, title in rows.all()
+        str(doc_id): (document_url(url, route, base_url), bool(sections), name, title)
+        for doc_id, url, sections, name, title, route in rows.all()
     }
 
 

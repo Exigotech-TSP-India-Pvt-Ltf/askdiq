@@ -48,6 +48,7 @@ MANAGE = Permission.USERS_MANAGE
 EXPECTED_WRITES: dict[tuple[str, str], str] = {
     ("POST", "/ingest"): Permission.DOCUMENTS_WRITE,
     ("POST", "/ingest/file"): Permission.DOCUMENTS_WRITE,
+    ("POST", "/ingest/preview"): Permission.DOCUMENTS_WRITE,
     ("DELETE", "/documents/{document_id}"): Permission.DOCUMENTS_WRITE,
     ("PATCH", "/documents/{document_id}"): Permission.KNOWLEDGE_LINKS,
     ("PUT", "/knowledge/settings"): Permission.KNOWLEDGE_LINKS,

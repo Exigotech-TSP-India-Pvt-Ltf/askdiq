@@ -3,16 +3,20 @@
 import asyncio
 import time
 from http import HTTPStatus
+from types import SimpleNamespace
 from typing import Any
 
+import httpx
+import openai
 import tiktoken
 from openai import AsyncAzureOpenAI
 
-from app.core.circuit import CircuitOpenError, get_llm_breaker
+from app.core.circuit import get_llm_breaker, is_transient_failure
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.core.quota import quota_monitor
-from app.harness.citations import citation_instruction, source_header, strip_markers
+from app.harness import prompt_catalog as catalog
+from app.harness.citations import source_header, strip_markers
 from app.harness.style import ResponseStyle, active_style, style_instructions, word_cap
 from app.model_settings.service import current_model_settings
 from app.retrieval.retriever import needs_conversation_context
@@ -33,6 +37,14 @@ _client = AsyncAzureOpenAI(
 )
 
 
+# The answer call has its own timeout and no SDK retries: transient failures
+# are retried once by _create_with_transport_retry (one retry layer).
+_answer_client = _client.with_options(
+    max_retries=settings.llm_sdk_max_retries,
+    timeout=settings.llm_answer_timeout_seconds,
+)
+
+
 def get_chat_client() -> AsyncAzureOpenAI:
     """Shared Azure chat client (one connection pool for every LLM caller)."""
     return _client
@@ -48,60 +60,16 @@ def count_tokens(text: str) -> int:
 
 _MAX_HISTORY_TURNS = 6
 
+# Re-exported: the fixed lines live in app.harness.prompt_catalog.
+NO_ANSWER_LINE = catalog.NO_ANSWER_LINE
+
 
 def get_system_prompt(
     style: ResponseStyle | str | None = None, shape: str | None = None
 ) -> str:
-    """Grounding rules; a style adds its tone and per-shape format (OR-8)."""
-    brand = settings.brand_name
-    return (
-        f"You are {brand}'s website assistant. You talk to visitors and potential "
-        "customers in warm, professional Australian English by default. Answer only from "
-        "the facts you are given; never guess or add unsupported facts, "
-        "estimates, or advice. Each fact carries source labels for citation "
-        "only. Never name where your facts come from: never write "
-        '"context", "documents", "sources provided", "knowledge base", '
-        '"materials" or "provided information". Silently omit unsupported '
-        "parts. Lead with what we do. If something is not covered, say so "
-        "once, in plain words like \"I don't have that detail, but one of our "
-        'specialists can help", and never write "I can\'t see". After '
-        "saying that, add no steps or advice; just point to a specialist. "
-        "Never add disclaimers about "
-        "topics the visitor did not ask about, and offer at most one "
-        "specialist step, once. Don't mention pricing, timelines or what you "
-        "don't have unless the visitor asked. Reply in the visitor's language "
-        "(Chinese, Hindi, German...) using the same facts. Never call "
-        f"{brand} the best or compare it with other vendors: say you can only "
-        f"speak for {brand} and describe what it does. "
-        "Only mention a specialist when the "
-        "visitor asked for something you could not answer; never add it to a "
-        "complete answer. Never run 3 or more parallel "
-        "items together in one long comma list; write them as short bullets "
-        "(one per plan, framework or step). If the "
-        "facts state a limit outright, report it in plain customer words. "
-        "Never state or imply that the product is safe to purchase, "
-        "guaranteed, certified, compliant, secure or risk-free, and never "
-        "give timelines, ROI, pricing or discounts, unless a given fact says "
-        f"so verbatim; {brand} implements, and customers or independent "
-        "bodies certify. For questions like whether it is safe to buy or "
-        "trust, answer with what the facts say (human approval of every "
-        "change, rollback, guardrails, evidence) and point to talking to a "
-        "specialist. When pricing, purchase or a quote is asked and no fact "
-        "states a price, say pricing is not published and point to a "
-        'specialist; never call anything "free" unless a fact says so for '
-        "that exact plan. If the visitor is unsure and asks you to help them "
-        "choose or recommend, give a short recommendation based on their "
-        "maturity or goal using only the facts, or direct them to talk to "
-        "one of our specialists. Never wrap sentences in square brackets; brackets "
-        "are only for citation markers. Use conversation history only to "
-        "resolve references, never as evidence. Answer every supported part, "
-        f"lead with the direct answer, and keep {brand} as the active subject "
-        "where supported. Preserve named stages, outcome labels, and "
-        "canonical terms from the facts verbatim when a question asks about "
-        "them; do not replace them with generic paraphrases. Use concise "
-        f"wording and at most {word_cap(style, shape)} words. "
-        f"{citation_instruction()}"
-        f"{style_instructions(style, shape)}"
+    """Shared rules + answer contract; a style adds only format/length (OR-8)."""
+    return catalog.answer_system_prompt(
+        word_cap(style, shape), style_instructions(style, shape)
     )
 
 
@@ -252,6 +220,7 @@ def _build_prompt(
     context_chunks: list[str | SourceChunk],
     history: list[ChatTurn] | None = None,
     clarify_block: str = "",
+    focus_block: str = "",
 ) -> tuple[str, int]:
     """Return (prompt, context_token_count) from a single context pass.
 
@@ -261,14 +230,8 @@ def _build_prompt(
     context = _format_context(context_chunks)
     history_block = _format_history(query, history)
 
-    prompt = (
-        "Answer the question using only the facts below, without ever "
-        "mentioning where they come from. Silently omit unsupported parts.\n\n"
-        f"{history_block}"
-        f"Context:\n{context}\n\n"
-        f"{clarify_block}"
-        f"Question: {query}\n\n"
-        "Answer:"
+    prompt = catalog.answer_user_prompt(
+        history_block, context, query, clarify_block, focus_block
     )
     return prompt, len(_TOKEN_ENCODING.encode(context))
 
@@ -281,18 +244,122 @@ def build_prompt(
     return _build_prompt(query, context_chunks, history)[0]
 
 
+_CALL_ERRORS = (openai.OpenAIError, httpx.HTTPError, TimeoutError)
+
+
+def _record_failure(model: str, exc: BaseException) -> None:
+    status_code = getattr(exc, "status_code", None)
+    is_429 = status_code == HTTPStatus.TOO_MANY_REQUESTS or "429" in str(exc)
+    quota_monitor.record_chat(0, is_error=True, is_429=is_429)
+    if is_429:
+        logger.error("llm_throttle_429", model=model, error=str(exc))
+
+
+def _ttft_ms(response: Any) -> float | None:
+    """Time to first token of a streamed reply (None when not streamed)."""
+    ttft = getattr(response, "ttft_ms", None)
+    return round(ttft, 2) if isinstance(ttft, (int, float)) else None
+
+
+async def _collect_stream(stream: openai.AsyncStream[Any], t_start: float) -> Any:
+    """Assemble a streamed completion into the non-streamed response shape."""
+    parts: list[str] = []
+    finish_reason: str | None = None
+    usage: Any = None
+    ttft_ms: float | None = None
+    try:
+        async for chunk in stream:
+            if getattr(chunk, "usage", None) is not None:
+                usage = chunk.usage
+            for choice in chunk.choices or ():
+                delta = getattr(choice, "delta", None)
+                text = getattr(delta, "content", None) if delta else None
+                if text:
+                    if ttft_ms is None:
+                        ttft_ms = (time.perf_counter() - t_start) * 1000
+                    parts.append(text)
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+    finally:
+        await stream.close()
+    choice = SimpleNamespace(
+        message=SimpleNamespace(content="".join(parts)), finish_reason=finish_reason
+    )
+    return SimpleNamespace(choices=[choice], usage=usage, ttft_ms=ttft_ms)
+
+
+async def _answer_attempt(
+    model: str, messages: list[dict[str, str]], response_format: dict[str, Any]
+) -> Any:
+    """One answer completion. Streamed (``llm_answer_stream``), the client's
+    timeout bounds the wait for the first token and between chunks, so a long
+    reply never times out while tokens flow and a stalled one fails early."""
+    stream_kwargs: dict[str, Any] = (
+        {"stream": True, "stream_options": {"include_usage": True}}
+        if settings.llm_answer_stream
+        else {}
+    )
+    t_start = time.perf_counter()
+    response = await _answer_client.chat.completions.create(
+        model=model,
+        messages=messages,  # type: ignore[arg-type]
+        reasoning_effort=settings.llm_reasoning_effort,
+        verbosity=settings.llm_verbosity,
+        max_completion_tokens=settings.llm_max_completion_tokens,
+        response_format=response_format,  # type: ignore[arg-type]
+        **stream_kwargs,
+    )
+    if isinstance(response, openai.AsyncStream):
+        return await _collect_stream(response, t_start)
+    return response
+
+
+async def _create_with_transport_retry(
+    model: str, messages: list[dict[str, str]], response_format: dict[str, Any]
+) -> Any:
+    """The answer completion, retried ``llm_transport_retries`` times on
+    transient failures only (timeout, connection, 429, 5xx).
+
+    This is the ONLY retry layer for transport errors: the SDK client does not
+    retry (``llm_sdk_max_retries``) and the orchestrator re-asks only on empty
+    output. An open breaker fails fast with ``CircuitOpenError`` (no retry).
+    """
+    retries = settings.llm_transport_retries
+    for attempt in range(retries + 1):
+        try:
+            async with get_llm_breaker().guard():
+                return await asyncio.wait_for(
+                    _answer_attempt(model, messages, response_format),
+                    timeout=settings.llm_answer_deadline_seconds,
+                )
+        except _CALL_ERRORS as exc:  # CircuitOpenError is not one: no retry
+            _record_failure(model, exc)
+            if attempt >= retries or not is_transient_failure(exc):
+                raise
+            logger.warning(
+                "llm_transport_retry",
+                attempt=attempt + 1,
+                error_type=type(exc).__name__,
+            )
+            await asyncio.sleep(settings.llm_transport_retry_backoff_seconds)
+    raise RuntimeError("unreachable")  # pragma: no cover - loop always returns/raises
+
+
 async def call_llm(
     query: str,
     context_chunks: list[str | SourceChunk],
     history: list[ChatTurn] | None = None,
     clarify_block: str = "",
     response_format: dict[str, Any] | None = None,
+    focus_block: str = "",
 ) -> tuple[str, dict[str, int] | None]:
     """Generate a grounded RAG answer with the configured Azure deployment.
 
+    The reply is strict JSON: quote-backed claims (``prompt_catalog.
+    answer_format``), checked by app.harness.claims before anything ships.
     ``clarify_block`` and ``response_format`` are passed only when the query
-    qualifies for clarifying questions (see app.harness.clarify); the reply is
-    then strict JSON (an answer, or questions back) instead of plain text.
+    qualifies for clarifying questions (see app.harness.clarify); the schema
+    then also allows questions back instead of claims.
 
     Returns ``(answer_text, usage)`` where ``usage`` is the *actual*
     token accounting reported by Azure OpenAI in the response
@@ -304,47 +371,27 @@ async def call_llm(
 
     # Tokenizing is CPU work — keep it off the event loop.
     prompt, context_tokens = await asyncio.to_thread(
-        _build_prompt, query, context_chunks, history, clarify_block
+        _build_prompt, query, context_chunks, history, clarify_block, focus_block
     )
 
     model = current_model_settings().llm_deployment
     t_start = time.perf_counter()
-    try:
-        # Fails fast with CircuitOpenError while Azure is unhealthy; the
-        # orchestrator turns that into its graceful `llm_failed` outcome.
-        async with get_llm_breaker().guard():
-            response = await _client.chat.completions.create(
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": get_system_prompt(*active_style()),
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
-                reasoning_effort=settings.llm_reasoning_effort,
-                **({"response_format": response_format} if response_format else {}),
-            )
-    except CircuitOpenError:
-        raise
-    except Exception as exc:
-        status_code = getattr(exc, "status_code", None)
-        is_429 = status_code == HTTPStatus.TOO_MANY_REQUESTS or "429" in str(exc)
-        quota_monitor.record_chat(0, is_error=True, is_429=is_429)
-        if is_429:
-            logger.error(
-                "llm_throttle_429",
-                model=model,
-                error=str(exc),
-            )
-        raise
+    messages = [
+        {"role": "system", "content": get_system_prompt(*active_style())},
+        {"role": "user", "content": prompt},
+    ]
+    response = await _create_with_transport_retry(
+        model, messages, response_format or catalog.answer_format()
+    )
 
     llm_latency_ms = (time.perf_counter() - t_start) * 1000
     usage_obj = getattr(response, "usage", None)
     content = response.choices[0].message.content if response.choices else None
+    finish_reason = (
+        getattr(response.choices[0], "finish_reason", None)
+        if response.choices
+        else None
+    )
 
     if usage_obj is not None:
 
@@ -391,12 +438,15 @@ async def call_llm(
         "llm_call_completed",
         model=model,
         latency_ms=round(llm_latency_ms, 2),
+        ttft_ms=_ttft_ms(response),
         non_empty=bool(content and content.strip()),
         prompt_tok=usage["prompt_tokens"] if usage else 0,
         comp_tok=usage["completion_tokens"] if usage else 0,
         reasoning_tok=usage["reasoning_tokens"] if usage else 0,
         cached_tok=usage["cached_tokens"] if usage else 0,
         context_tok=context_tokens,
+        prompt_version=catalog.PROMPT_VERSION,
+        finish_reason=finish_reason,
     )
 
     return content or "", usage

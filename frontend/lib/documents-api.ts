@@ -102,6 +102,41 @@ export interface UploadResult extends IngestResult {
   canonical_size_bytes?: number | null;
 }
 
+/** Where `POST /ingest/preview` found the link (form field > file metadata > stored link). */
+export const LINK_SOURCES = ["form", "front_matter_url", "front_matter_route", "docx", "stored"] as const;
+export type LinkSource = (typeof LINK_SOURCES)[number];
+export type PreviewContentStatus = "new" | "unchanged" | "changed";
+
+/** Document the upload would update or replace. */
+export interface ExistingDocumentRef {
+  id: string;
+  name: string;
+  link: string | null;
+}
+
+/** `POST /ingest/preview` (`IngestPreviewResponse`): the link an upload would get and what it would change. */
+export interface IngestPreview {
+  detected_link: string | null;
+  link_source: LinkSource | null;
+  canonical_name: string;
+  /** Same canonical name, else the document already using the link. */
+  existing_document: (ExistingDocumentRef & { matched_by?: "name" | "link" }) | null;
+  /** Another document already citing the link (`/ingest/file` 409s unless replaced). */
+  link_in_use_by?: ExistingDocumentRef | null;
+  replace_required?: boolean;
+  content_status: PreviewContentStatus;
+  chunks_estimate: number;
+  warnings: string[];
+  quarantined?: boolean;
+}
+
+/** 409 of `POST /ingest/file`: the link already belongs to a document with a different name. */
+export const LINK_IN_USE_CODE = "document_link_in_use";
+
+export function isLinkInUseError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.status === 409 && err.code === LINK_IN_USE_CODE;
+}
+
 /** `PATCH /documents/{id}` body (permission `knowledge:links`). */
 export interface DocumentLinkUpdate {
   source_url: string | null;
@@ -219,18 +254,81 @@ export async function getCanonicalMarkdown(token: string, id: string, signal?: A
   }
 }
 
-/** `POST /ingest/file`. Flags and the optional `source_url` go as form fields (what the endpoint reads). */
+/**
+ * `POST /ingest/file`. Flags, the optional `source_url` and `replace_document_id`
+ * (confirmed replacement of the document that already owns the link) go as form fields.
+ */
 export function uploadDocument(
   token: string,
   file: File,
-  options: { dryRun?: boolean; force?: boolean; sourceUrl?: string | null } = {},
+  options: { dryRun?: boolean; force?: boolean; sourceUrl?: string | null; replaceDocumentId?: string | null } = {},
 ) {
   const form = new FormData();
   form.append("file", file);
   if (options.dryRun) form.append("dry_run", "true");
   if (options.force) form.append("force", "true");
   if (options.sourceUrl) form.append("source_url", options.sourceUrl);
+  if (options.replaceDocumentId) form.append("replace_document_id", options.replaceDocumentId);
   return send<UploadResult>("/ingest/file", { token, method: "POST", body: form });
+}
+
+/** `POST /ingest/preview`; `null` when this backend has no preview endpoint yet (the dialog then uses the dry run). */
+export async function previewUpload(token: string, file: File, sourceUrl?: string | null): Promise<IngestPreview | null> {
+  const form = new FormData();
+  form.append("file", file);
+  if (sourceUrl) form.append("source_url", sourceUrl);
+  try {
+    return await send<IngestPreview>("/ingest/preview", { token, method: "POST", body: form });
+  } catch (err) {
+    if (isNotDeployed(err) || (err instanceof ApiError && err.status === 404)) return null;
+    throw err;
+  }
+}
+
+/** Plain-language origin of a previewed link. */
+export function linkSourceLabel(source: LinkSource | null | undefined): string {
+  switch (source) {
+    case "form":
+      return "entered in this form";
+    case "front_matter_url":
+      return "the file's front matter (url:)";
+    case "front_matter_route":
+      return "the file's front matter (route:)";
+    case "docx":
+      return "the Word file's properties";
+    case "stored":
+      return "the link already stored for this document";
+    default:
+      return "unknown";
+  }
+}
+
+/** The document a different-name upload with the same link would replace (needs an explicit confirm). */
+export function replaceTarget(
+  p: Pick<IngestPreview, "existing_document" | "link_in_use_by" | "canonical_name">,
+): ExistingDocumentRef | null {
+  if (p.link_in_use_by) return p.link_in_use_by;
+  const existing = p.existing_document;
+  return existing && existing.name !== p.canonical_name ? existing : null;
+}
+
+export function replacesOtherDocument(
+  p: Pick<IngestPreview, "existing_document" | "link_in_use_by" | "canonical_name">,
+): boolean {
+  return replaceTarget(p) !== null;
+}
+
+/** What the confirmed upload will do, as one sentence. */
+export function previewOutcome(p: IngestPreview): string {
+  const existing = p.existing_document;
+  const target = replaceTarget(p);
+  if (target) return `Same link as ${target.name}: will replace ${target.name} (its chunks are removed).`;
+  if (p.content_status === "unchanged") return `Matches ${existing?.name ?? p.canonical_name}: unchanged, nothing to re-ingest.`;
+  if (p.content_status === "changed") {
+    return `Matches ${existing?.name ?? p.canonical_name}: will replace the old version; old chunks removed.`;
+  }
+  const n = p.chunks_estimate;
+  return `New document: about ${n} chunk${n === 1 ? "" : "s"} will be embedded.`;
 }
 
 /** `PATCH /documents/{id}`: edit the document's link (superadmin; audited, no re-embed). */

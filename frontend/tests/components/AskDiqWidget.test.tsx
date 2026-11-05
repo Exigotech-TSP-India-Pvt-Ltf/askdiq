@@ -234,7 +234,7 @@ describe("AskDIQ drawer", () => {
     const dialog = screen.getByRole("dialog", { name: "AskDIQ" });
     expect(within(dialog).getByText("What is E8?")).toBeInTheDocument();
     expect(within(dialog).getByText("Essential Eight is a set of mitigations.")).toBeInTheDocument();
-    expect(within(dialog).getByRole("list", { name: "Sources" })).toHaveTextContent("e8-guide.md");
+    expect(within(dialog).getByRole("list", { name: "Sources" })).toHaveTextContent("E8 Guide");
     expect(dialog.querySelectorAll("time").length).toBeGreaterThanOrEqual(2);
     expect(within(dialog).getByRole("button", { name: /^helpful response$/i })).toBeInTheDocument();
     expect(within(dialog).getAllByRole("button", { name: "Copy message" }).length).toBeGreaterThan(0);
@@ -419,7 +419,7 @@ describe("source chips", () => {
       metadata: name ? { source_name: name } : {},
     });
     const chips = sourceChips([src("1", "a", 0.2, "a.md"), src("2", "b", 0.9), src("3", "a", 0.8, "a.md")]);
-    expect(chips.map((c) => c.name)).toEqual(["Knowledge base", "a.md"]);
+    expect(chips.map((c) => c.name)).toEqual(["Knowledge base", "A"]);
     expect(chips[0].excerpt.length).toBeLessThanOrEqual(161);
   });
 

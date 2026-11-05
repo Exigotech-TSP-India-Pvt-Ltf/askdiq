@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines  # one ingestion pipeline, split is a tracked follow-up
 """Atomic, concurrency-safe document ingestion service (Tasks 1.4.5 & 1.4.6).
 
 Implements the three-phase ingestion architecture:
@@ -5,10 +6,18 @@ Implements the three-phase ingestion architecture:
 - Phase B: No DB connection held (text normalization, structure chunking, batched embeddings 16-32)
 - Phase C: Short write transaction under advisory lock pg_advisory_xact_lock(hashtext(lower(name)))
   with atomic audit logging.
+
+Admin uploads (the ``/ingest`` routes) also pass :class:`UploadRules`: the
+website pages' cross-page de-duplication applied to the upload only, one
+document per page link (409 ``document_link_in_use``) and an explicit,
+audited replace of the document that uses the link.
 """
 
+import asyncio
 import time
 import uuid
+from collections.abc import Collection, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import delete, func, select, text, update
@@ -17,8 +26,10 @@ from sqlalchemy.orm import undefer
 
 from app.chunking.factory import get_strategy
 from app.core.config import get_settings
+from app.core.exceptions import ConflictError, DomainError
 from app.core.logging_config import get_logger
 from app.governance.audit import record_audit_event
+from app.ingestion.cleanup import clean_markdown
 from app.ingestion.naming import canonical_source_name
 from app.ingestion.normalizer import (
     DOC_HASH_VERSION,
@@ -27,13 +38,16 @@ from app.ingestion.normalizer import (
     doc_content_hash,
     normalize_markdown,
 )
+from app.ingestion.quality import dedupe_upload, duplicate_warning
 from app.knowledge.ingest_links import (
     LinkDecision,
+    LinkSource,
     SourceUrlRequiredError,
     UploadLink,
     decide_link,
+    link_key,
 )
-from app.knowledge.links import link_host
+from app.knowledge.links import document_url, link_host, site_page_url
 from app.model_settings.service import current_model_settings
 from app.models.db_models import Chunk, Document
 from app.retrieval.embeddings import embed_texts
@@ -53,6 +67,229 @@ REASON_FORCED = "forced"
 REASON_CHUNKS_MISSING = "chunks_missing"
 # Metadata only: the stored source link changed (no re-chunk, no re-embed).
 REASON_SOURCE_URL = "source_url_changed"
+
+CODE_LINK_IN_USE = "document_link_in_use"
+CODE_REPLACE_MISMATCH = "replace_document_mismatch"
+AUDIT_DOCUMENT_DELETE = "document_delete"
+REPLACED_REASON = "replaced_by_upload"
+# Preview ``content_status`` per ingest status.
+CONTENT_STATUS = {"new": "new", "unchanged": "unchanged"}
+CONTENT_CHANGED = "changed"
+
+
+@dataclass(frozen=True, slots=True)
+class UploadRules:
+    """Rules for admin uploads; scripts (website pages, seeds) pass none.
+
+    ``dedupe``: drop paragraphs / list items another, more specific document
+    already carries (``quality.dedupe_upload``; other documents are never
+    changed). ``unique_link``: one document per page link.
+    ``replace_document_id``: the document using that link, deleted with its
+    chunks in the same transaction once the upload is stored.
+    """
+
+    dedupe: bool = True
+    unique_link: bool = True
+    replace_document_id: uuid.UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StoredPage:
+    """A stored document with the link it cites (route page or source URL)."""
+
+    id: uuid.UUID
+    name: str
+    link: str | None
+    route: str | None
+
+    def ref(self) -> dict:
+        return {"id": str(self.id), "name": self.name, "link": self.link}
+
+
+class DocumentLinkInUseError(ConflictError):
+    """Another document already uses the upload's link (409)."""
+
+    code = CODE_LINK_IN_USE
+
+    def __init__(self, existing: StoredPage) -> None:
+        super().__init__(
+            f"'{existing.name}' already uses this link. Upload it under that "
+            f"name, or send replace_document_id={existing.id} to replace it.",
+            extra={"existing_document": existing.ref()},
+        )
+
+
+class ReplaceDocumentMismatchError(DomainError):
+    """``replace_document_id`` is not the document using the upload's link."""
+
+    status_code = 422
+    code = CODE_REPLACE_MISMATCH
+
+    def __init__(self, owner: StoredPage | None) -> None:
+        detail = "replace_document_id must be the document that uses this link" + (
+            f" ('{owner.name}', {owner.id})." if owner else "; none does."
+        )
+        super().__init__(
+            detail, extra={"existing_document": owner.ref() if owner else None}
+        )
+
+
+async def stored_pages(
+    db: AsyncSession, exclude: Collection[uuid.UUID] = ()
+) -> list[StoredPage]:
+    """Every document (oldest first) with its cited link, minus ``exclude``."""
+    route = Document.doc_metadata["route"].as_string()
+    query = select(Document.id, Document.source_name, Document.source_url, route)
+    if exclude:
+        query = query.where(Document.id.notin_(list(exclude)))
+    rows = (
+        await db.execute(query.order_by(Document.created_at, Document.source_name))
+    ).all()
+    base = settings.site_base_url
+    return [
+        StoredPage(doc_id, name, document_url(url, rte, base), rte)
+        for doc_id, name, url, rte in rows
+    ]
+
+
+def link_owner(pages: list[StoredPage], url: str | None) -> StoredPage | None:
+    """The first stored document citing the same page as ``url``."""
+    key = link_key(url)
+    if key is None:
+        return None
+    return next((p for p in pages if link_key(p.link) == key), None)
+
+
+async def _corpus_texts(
+    db: AsyncSession, exclude: Collection[uuid.UUID]
+) -> dict[str, tuple[str, str | None]]:
+    """Stored canonical Markdown and route of every other document."""
+    route = Document.doc_metadata["route"].as_string()
+    query = select(Document.source_name, Document.canonical_markdown, route).where(
+        Document.canonical_markdown.is_not(None)
+    )
+    if exclude:
+        query = query.where(Document.id.notin_(list(exclude)))
+    return {name: (body, rte) for name, body, rte in (await db.execute(query)).all()}
+
+
+def _clean_and_dedupe(
+    name: str,
+    content: str,
+    route: str | None,
+    others: Mapping[str, tuple[str, str | None]],
+) -> tuple[str, list[dict]]:
+    """The website pages' order: clean-up, then cross-page de-duplication."""
+    return dedupe_upload(name, clean_markdown(content), route, others)
+
+
+def _check_link(
+    pages: list[StoredPage],
+    url: str | None,
+    replace_id: uuid.UUID | None,
+    *,
+    dry_run: bool,
+    warnings: list[str],
+) -> tuple[StoredPage | None, StoredPage | None]:
+    """``(document using the link, document to replace)``.
+
+    Raises on a conflict or a mismatched replace; a dry run (preview) only
+    warns, so the admin can decide.
+    """
+    owner = link_owner(pages, url)
+    if replace_id is not None and (owner is None or owner.id != replace_id):
+        if not dry_run:
+            raise ReplaceDocumentMismatchError(owner)
+        warnings.append(f"{CODE_REPLACE_MISMATCH}: replace_document_id is ignored")
+    if owner is not None and owner.id != replace_id:
+        if not dry_run:
+            raise DocumentLinkInUseError(owner)
+        warnings.append(
+            f"{CODE_LINK_IN_USE}: '{owner.name}' already uses this link; "
+            "replace it or keep one document per page"
+        )
+    return owner, owner if owner is not None and owner.id == replace_id else None
+
+
+def _page_meta(
+    link: UploadLink, decision: LinkDecision, replaced: StoredPage | None
+) -> dict:
+    """Route / description stored like the website pages' front matter.
+
+    The route is stored only when the document cites that route's page, so
+    it never overrides a kept or different link. A replaced document's route
+    carries over when it is the same page.
+    """
+    meta: dict = {}
+    if link.route and decision.url and decision.url == link.url:
+        meta["route"] = link.route
+    elif (
+        replaced is not None
+        and replaced.route
+        and decision.url
+        and link_key(site_page_url(settings.site_base_url, replaced.route))
+        == link_key(decision.url)
+    ):
+        meta["route"] = replaced.route
+    if link.description:
+        meta["description"] = link.description
+    return meta
+
+
+def _link_source(decision: LinkDecision, link: UploadLink) -> str | None:
+    if not decision.url:
+        return None
+    if link.url and decision.url == link.url and link.source:
+        return str(link.source)
+    return str(LinkSource.STORED)
+
+
+async def _lock_name(db: AsyncSession, name: str) -> None:
+    await db.scalar(
+        text("SELECT pg_advisory_xact_lock(hashtext(lower(:name)))"), {"name": name}
+    )
+
+
+async def _delete_replaced(  # pylint: disable=too-many-arguments  # keyword-only audit context
+    db: AsyncSession,
+    target: StoredPage,
+    *,
+    new_document_id: uuid.UUID,
+    new_name: str,
+    actor: str,
+    request_id: str,
+    client_ip: str | None,
+) -> int:
+    """Delete the replaced document and its chunks (caller commits); audited."""
+    old = await db.get(Document, target.id)
+    if old is None:
+        return 0
+    removed = (
+        await db.scalar(
+            select(func.count(Chunk.id)).where(Chunk.document_id == target.id)
+        )
+        or 0
+    )
+    await db.execute(delete(Chunk).where(Chunk.document_id == target.id))
+    await db.delete(old)
+    await record_audit_event(
+        db,
+        request_id=request_id,
+        actor=actor,
+        action=AUDIT_DOCUMENT_DELETE,
+        detail={
+            "document_id": str(target.id),
+            "source_name": target.name,
+            "chunks_removed": removed,
+            "reason": REPLACED_REASON,
+            "replaced_by_document_id": str(new_document_id),
+            "replaced_by_source_name": new_name,
+            "link_host": link_host(target.link),
+        },
+        ip_address=client_ip,
+        commit=False,
+    )
+    return removed
 
 
 def _link_decision(
@@ -90,7 +327,7 @@ def _title_meta(link: UploadLink) -> dict:
     return {"title": link.title} if link.title else {}
 
 
-def change_reasons(
+def change_reasons(  # pylint: disable=too-many-arguments  # keyword-only comparison inputs
     existing: Document,
     *,
     status: str,
@@ -140,7 +377,7 @@ def change_reasons(
     return reasons
 
 
-def provenance_extras(
+def provenance_extras(  # pylint: disable=too-many-arguments  # keyword-only provenance fields
     *,
     converted_from: str,
     original_size_bytes: int,
@@ -167,7 +404,7 @@ def provenance_extras(
     }
 
 
-def backfill_provenance(
+def backfill_provenance(  # pylint: disable=too-many-arguments  # keyword-only provenance fields
     meta: dict,
     *,
     converted_from: str,
@@ -203,7 +440,9 @@ def backfill_provenance(
     return {**extras, **meta}
 
 
-async def ingest_text(
+# 3-phase locked upsert kept in one function so the phases read in order;
+# splitting it is a tracked follow-up (behaviour-sensitive concurrency code).
+async def ingest_text(  # pylint: disable=too-many-arguments,too-many-locals,too-many-branches,too-many-statements
     db: AsyncSession,
     *,
     source_name: str,
@@ -225,6 +464,7 @@ async def ingest_text(
     link: UploadLink | None = None,
     require_source_url: bool = False,
     can_change_link: bool = False,
+    rules: UploadRules | None = None,
 ) -> dict:
     """Upsert document by canonical source name with 3-phase concurrency safety.
 
@@ -232,6 +472,8 @@ async def ingest_text(
     ``require_source_url`` from Settings > Knowledge links; scripts (seeds)
     leave it off. ``can_change_link`` (``knowledge:links``) lets a re-upload
     replace an existing link; otherwise the stored one is kept with a warning.
+    ``rules`` (admin uploads): cross-page de-duplication of the upload, one
+    document per link (``DocumentLinkInUseError``) and replace-by-id.
     """
     started = time.perf_counter()
     request_id = request_id or f"ingest-{uuid.uuid4().hex[:12]}"
@@ -245,11 +487,12 @@ async def ingest_text(
         "ingest_started", source=canonical_name, char_len=len(content), force=force
     )
 
-    # 2. Deterministic normalization
-    normalized_content, pii_found = normalize_markdown(content)
-    new_doc_hash = doc_content_hash(normalized_content)
-    if pii_found:
-        logger.info("ingest_pii_detected", source=canonical_name, pii_types=pii_found)
+    # 2. Deterministic normalization (an upload's dedupe needs Phase A first).
+    # Cleanup + PII redaction is CPU-bound regex work: off the event loop.
+    dedupe = rules is not None and rules.dedupe
+    normalized: tuple[str, list[str]] | None = None
+    if not dedupe:
+        normalized = await asyncio.to_thread(normalize_markdown, content)
 
     # -------------------------------------------------------------------------
     # PHASE A: Short Read Transaction
@@ -260,6 +503,29 @@ async def ingest_text(
         .options(undefer(Document.canonical_markdown))
         .where(func.lower(Document.source_name) == func.lower(canonical_name))
     )
+    link = link or UploadLink()
+    replace_id = rules.replace_document_id if rules else None
+    if existing is not None and replace_id == existing.id:
+        replace_id = None  # the same document: an in-place update
+    own_ids = {existing.id} if existing is not None else set()
+
+    duplicates: list[dict] = []
+    if dedupe:
+        # Same order as the website pages: clean-up, cross-page dedupe, normalize.
+        others = await _corpus_texts(db, own_ids | ({replace_id} - {None}))
+        own_route = link.route or (
+            (existing.doc_metadata or {}).get("route") if existing else None
+        )
+        content, duplicates = await asyncio.to_thread(
+            _clean_and_dedupe, canonical_name, content, own_route, others
+        )
+        warnings_list.extend(duplicate_warning(d) for d in duplicates)
+    if normalized is None:
+        normalized = await asyncio.to_thread(normalize_markdown, content)
+    normalized_content, pii_found = normalized
+    new_doc_hash = doc_content_hash(normalized_content)
+    if pii_found:
+        logger.info("ingest_pii_detected", source=canonical_name, pii_types=pii_found)
 
     existing_chunk_rows = []
     if existing is not None:
@@ -271,7 +537,6 @@ async def ingest_text(
             )
         ).all()
 
-    link = link or UploadLink()
     decision = _link_decision(
         existing,
         link,
@@ -279,6 +544,22 @@ async def ingest_text(
         can_change_link=can_change_link,
         dry_run=dry_run,
     )
+    owner = replaced = None
+    if rules is not None and rules.unique_link:
+        owner, replaced = _check_link(
+            await stored_pages(db, own_ids),
+            decision.url,
+            replace_id,
+            dry_run=dry_run,
+            warnings=warnings_list,
+        )
+    page_meta = _page_meta(link, decision, replaced)
+    upload_fields: dict = {
+        "link_source": _link_source(decision, link),
+        "duplicates_removed": duplicates,
+        "link_in_use_by": owner.ref() if owner is not None else None,
+        "replaced_document": replaced.ref() if replaced is not None else None,
+    }
 
     existing_chunks_by_hash: dict[str, list[uuid.UUID]] = {}
     for cid, chash in existing_chunk_rows:
@@ -306,6 +587,7 @@ async def ingest_text(
                     pii_found=pii_found,
                 ),
                 **_title_meta(link),
+                **page_meta,
                 "last_checked_at": datetime.utcnow().isoformat(),
             }
             if decision.changed:
@@ -320,6 +602,17 @@ async def ingest_text(
                 )
                 .values(canonical_markdown=normalized_content)
             )
+            if replaced is not None:
+                await _lock_name(db, replaced.name)
+                upload_fields["replaced_chunks_removed"] = await _delete_replaced(
+                    db,
+                    replaced,
+                    new_document_id=existing.id,
+                    new_name=canonical_name,
+                    actor=actor,
+                    request_id=request_id,
+                    client_ip=client_ip,
+                )
             await record_audit_event(
                 db,
                 request_id=request_id,
@@ -340,6 +633,7 @@ async def ingest_text(
                     "embedding_tokens": 0,
                     "change_reasons": [REASON_SOURCE_URL] if decision.changed else [],
                     "link_host": link_host(decision.url),
+                    "replaced_document_id": replaced.ref()["id"] if replaced else None,
                 },
                 ip_address=client_ip,
                 commit=True,
@@ -356,6 +650,7 @@ async def ingest_text(
             "previous_content_hash": existing.content_hash,
             "change_reasons": [REASON_SOURCE_URL] if decision.changed else [],
             **_link_fields(decision, link),
+            **upload_fields,
             "chunk_count": len(existing_chunk_rows),
             "chunks_added": 0,
             "chunks_kept": len(existing_chunk_rows),
@@ -383,6 +678,7 @@ async def ingest_text(
         {
             "source_name": canonical_name,
             "source_type": source_type,
+            **({"page_title": link.title} if link.title else {}),
         },
     )
     chunk_ms = (time.perf_counter() - chunk_start) * 1000
@@ -458,6 +754,7 @@ async def ingest_text(
             "previous_content_hash": previous_hash,
             "change_reasons": reasons,
             **_link_fields(decision, link),
+            **upload_fields,
             "chunk_count": len(chunk_results),
             "chunks_added": len(to_add_hashes),
             "chunks_kept": len(kept_hashes),
@@ -495,11 +792,23 @@ async def ingest_text(
     # -------------------------------------------------------------------------
     # PHASE C: Short Write Transaction Under Advisory Lock
     # -------------------------------------------------------------------------
-    # Advisory lock automatically releases when transaction ends
-    await db.scalar(
-        text("SELECT pg_advisory_xact_lock(hashtext(lower(:name)))"),
-        {"name": canonical_name},
-    )
+    # Advisory locks automatically release when the transaction ends; names
+    # are locked in sorted order, the link last, so lockers never deadlock.
+    lock_names = {canonical_name.lower()}
+    if replaced is not None:
+        lock_names.add(replaced.name.lower())
+    for name in sorted(lock_names):
+        await _lock_name(db, name)
+    if rules is not None and rules.unique_link and decision.url:
+        await _lock_name(db, f"link:{link_key(decision.url)}")
+        # Re-check under the lock: a concurrent upload may have taken the link.
+        _check_link(
+            await stored_pages(db, own_ids),
+            decision.url,
+            replaced.id if replaced else None,
+            dry_run=False,
+            warnings=[],
+        )
 
     # Re-fetch document inside lock to verify concurrency
     current_doc = await db.scalar(
@@ -528,6 +837,7 @@ async def ingest_text(
         "warnings": warnings_list,
         "quarantined": quarantined,
         **_title_meta(link),
+        **page_meta,
         **provenance_extras(
             converted_from=converted_from,
             original_size_bytes=original_size_bytes,
@@ -595,6 +905,18 @@ async def ingest_text(
             )
         )
 
+    if replaced is not None:
+        await db.flush()
+        upload_fields["replaced_chunks_removed"] = await _delete_replaced(
+            db,
+            replaced,
+            new_document_id=document.id,
+            new_name=canonical_name,
+            actor=actor,
+            request_id=request_id,
+            client_ip=client_ip,
+        )
+
     # Record mutation audit event in the SAME transaction (fail closed)
     await record_audit_event(
         db,
@@ -622,6 +944,7 @@ async def ingest_text(
             "document_id": str(document.id),
             "total_chunks": len(new_chunks),
             "link_host": link_host(decision.url),
+            "replaced_document_id": replaced.ref()["id"] if replaced else None,
         },
         ip_address=client_ip,
         commit=False,
@@ -652,6 +975,7 @@ async def ingest_text(
         "previous_content_hash": previous_hash,
         "change_reasons": reasons,
         **_link_fields(decision, link),
+        **upload_fields,
         "chunk_count": len(chunk_results),
         "chunks_added": len(to_add_hashes),
         "chunks_kept": len(kept_hashes),
@@ -667,4 +991,76 @@ async def ingest_text(
         "started": started,
         "chunk_ms": chunk_ms,
         "embed_ms": embed_ms,
+    }
+
+
+async def preview_upload(  # pylint: disable=too-many-arguments,too-many-locals  # keyword-only upload inputs
+    db: AsyncSession,
+    *,
+    source_name: str,
+    content: str,
+    link: UploadLink,
+    rules: UploadRules,
+    require_source_url: bool,
+    can_change_link: bool,
+    converted_from: str = "md",
+    chunking_strategy: str = "auto",
+    warnings: list[str] | None = None,
+    quarantined: bool = False,
+) -> dict:
+    """What ``/ingest/file`` would do with this upload; changes nothing.
+
+    Runs the real pipeline as a dry run (clean-up, de-duplication,
+    normalize, hash, chunking) and adds the matched documents.
+    """
+    result = await ingest_text(
+        db,
+        source_name=source_name,
+        content=content,
+        chunking_strategy=chunking_strategy,
+        original_filename=source_name,
+        converted_from=converted_from,
+        warnings=warnings,
+        quarantined=quarantined,
+        dry_run=True,
+        link=link,
+        require_source_url=require_source_url,
+        can_change_link=can_change_link,
+        rules=rules,
+    )
+    named: Document | None = result["document"]
+    in_use = result["link_in_use_by"]
+    existing = None
+    if named is not None:
+        meta = named.doc_metadata or {}
+        existing = {
+            "id": str(named.id),
+            "name": named.source_name,
+            "link": document_url(
+                named.source_url, meta.get("route"), settings.site_base_url
+            ),
+            "matched_by": "name",
+        }
+    elif in_use is not None:
+        existing = {**in_use, "matched_by": "link"}
+    out_warnings = [*result["warnings"], *result["link_warnings"]]
+    if named is None and require_source_url and not result["source_url"]:
+        required = SourceUrlRequiredError()
+        out_warnings.append(f"{required.code}: {required.message}")
+    return {
+        "canonical_name": result["source_name"],
+        "detected_link": result["source_url"],
+        "link_source": result["link_source"],
+        "file_link": link.detected_url,
+        "existing_document": existing,
+        "link_in_use_by": in_use,
+        "replace_required": in_use is not None and result["replaced_document"] is None,
+        "content_status": CONTENT_STATUS.get(result["status"], CONTENT_CHANGED),
+        "content_hash": result["content_hash"],
+        "chunks_estimate": result["chunk_count"],
+        "chunks_added": result["chunks_added"],
+        "chunks_removed": result["chunks_removed"],
+        "duplicates_removed": result["duplicates_removed"],
+        "warnings": out_warnings,
+        "quarantined": quarantined,
     }
