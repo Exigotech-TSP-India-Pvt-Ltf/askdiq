@@ -2045,7 +2045,9 @@ async def retrieve(  # pylint: disable=too-many-arguments,too-many-positional-ar
 # whole context, in page order. Ranking alone let other pages' chunks (the
 # Packages page for the Services page) into the summary.
 _PAGE_SUMMARY_RE = re.compile(
-    r"\b(?:summari[sz](?:e|es|ing)|summary|sum\s{1,3}(?:it\s{1,3})?up|tl\s{0,2};?\s{0,2}dr|"
+    # "summarize" and its usual misspellings (summurize, sumarize, summerize).
+    r"\b(?:sum{1,2}[aeiouy]{0,2}r[iy]{0,2}[sz](?:e|es|ed|ing)?|sum{1,2}[ae]?ry|"
+    r"sum\s{1,3}(?:it\s{1,3})?up|tl\s{0,2};?\s{0,2}dr|"
     r"overview|recap|gist|explain|break\s{1,3}(?:it\s{1,3})?down|walk\s{1,3}me\s{1,3}through|"
     r"key\s{1,3}(?:points|takeaways)|highlights|in\s{1,3}(?:short|brief)|"
     r"tell\s{1,3}me\s{1,3}more|more\s{1,3}(?:detail|details|info)|elaborate|"
@@ -2091,8 +2093,10 @@ def summary_page_document(
 def trust_page_summary(decision: RouteDecision) -> RouteDecision:
     """ "Summarise the About Us page": the named page is the evidence, so a
     summary ask the gate scored just low ("give me a summary of ..." matches
-    no single chunk well) is answered from that page, never declined."""
-    if decision.route is not Route.NOT_COVERED:
+    no single chunk well) is answered from that page, never declined. A typo
+    ("summurize this: https://deployiq.co/") can push it below the off-domain
+    floor too; it still names one of our pages, so it is never off-topic."""
+    if decision.route not in (Route.NOT_COVERED, Route.OFF_TOPIC):
         return decision
     parts = tuple(
         PartVerdict(v.text, True, v.score, v.document_ids) for v in decision.parts

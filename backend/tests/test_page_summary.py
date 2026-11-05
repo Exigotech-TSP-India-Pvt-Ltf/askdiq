@@ -55,8 +55,12 @@ def test_a_low_scored_page_summary_is_answered() -> None:
         Route.NOT_COVERED, parts=(PartVerdict("summary", False, -10.6, ("d",)),)
     )
     assert trust_page_summary(low).route is Route.ANSWER
+    # A misspelt page summary can score below the off-domain floor; the
+    # orchestrator only calls this when the named page was retrieved.
     off = RouteDecision(Route.OFF_TOPIC, parts=(PartVerdict("x", False, -14.0, ()),))
-    assert trust_page_summary(off) is off
+    assert trust_page_summary(off).route is Route.ANSWER
+    answered = RouteDecision(Route.ANSWER, parts=(PartVerdict("x", True, 2.0, ()),))
+    assert trust_page_summary(answered) is answered
 
 
 @pytest.mark.parametrize(
@@ -95,3 +99,16 @@ def test_expand_describe_and_bare_links_are_page_asks(query: str, key: str) -> N
 
 def test_a_named_topic_without_a_page_is_not_a_page_ask() -> None:
     assert summary_page_keys("expand zero trust") == []
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "summurize this : https://deployiq.co/",
+        "sumarize https://deployiq.co/services",
+        "summerize the packages page",
+        "give me a sumary of the privacy policy",
+    ],
+)
+def test_misspelt_summarize_is_still_a_page_ask(query: str) -> None:
+    assert len(summary_page_keys(query)) == 1
