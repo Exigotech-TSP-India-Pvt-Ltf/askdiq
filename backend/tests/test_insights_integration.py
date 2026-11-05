@@ -35,6 +35,7 @@ from app.core.config import get_settings
 from app.core.database import get_db, read_only_session
 from app.governance import online_eval
 from app.harness import orchestrator
+from app.harness.decision import PartVerdict, Route, RouteDecision
 from app.insights import jobs as insights_jobs
 from app.insights.analytics_repository import (
     InsightsAnalyticsRepository,
@@ -65,11 +66,21 @@ def person_id(email: str) -> str:
     return hashlib.sha256((salt + email.lower()).encode()).hexdigest()[:16]
 
 
-def _source() -> SourceChunk:
+# The page text per question (keyword): the reply quotes it, so claim
+# verification grounds it and it answers the terms of the question.
+_FACTS = {
+    "maturity": "DeployIQ maps controls to Essential Eight maturity levels.",
+    "jira": "DeployIQ integrates with Jira for ticketing.",
+}
+_DEFAULT_FACT = "DeployIQ maps controls to the Essential Eight."
+
+
+def _source(query: str = "") -> SourceChunk:
+    fact = next((v for k, v in _FACTS.items() if k in query.lower()), _DEFAULT_FACT)
     return SourceChunk(
         chunk_id="00000000-0000-0000-0000-000000000001",
         document_id="00000000-0000-0000-0000-000000000002",
-        content="DeployIQ maps controls to the Essential Eight.",
+        content=fact,
         score=0.9,
         metadata={"source_name": "security.md"},
         embedding=[0.05] * 1536,
@@ -89,7 +100,7 @@ async def live(monkeypatch, fake_embed, fake_llm) -> AsyncIterator[dict[str, Any
             yield session
 
     async def _retrieve(_store: Any, query: str, **_k: Any) -> RetrievalResult:
-        source = _source()
+        source = _source(query)
         part = PartRetrieval(
             query=query,
             max_score=source.score,
@@ -100,15 +111,23 @@ async def live(monkeypatch, fake_embed, fake_llm) -> AsyncIterator[dict[str, Any
         )
         return RetrievalResult(sources=[source], parts=[part])
 
-    async def _post_checks(*_a: Any, **_k: Any) -> tuple[bool, float, list[str]]:
-        return True, 0.95, []
+    def _route(_parts: Any, *, buying: bool = False) -> RouteDecision:
+        return RouteDecision(
+            Route.ANSWER, parts=(PartVerdict("q", True),), buying=buying
+        )
 
     async def _no_schedule(**_kw: Any) -> None:
         return None
 
     service = InsightsService(engine=engine, llm=FakeLLM(model=model))
     monkeypatch.setattr(orchestrator, "retrieve_parts", _retrieve)
-    monkeypatch.setattr(orchestrator, "run_post_checks", _post_checks)
+    monkeypatch.setattr(orchestrator, "decide_route", _route)
+    monkeypatch.setattr(orchestrator, "clarify_allowed", lambda *_a, **_k: False)
+
+    async def _llm(_query: str, chunks: Any, *_a: Any, **_k: Any) -> Any:
+        return chunks[0].content, {"prompt_tokens": 10, "completion_tokens": 5}
+
+    monkeypatch.setattr(orchestrator, "call_llm", _llm)
     monkeypatch.setattr(sessions, "AsyncSessionLocal", factory)
     monkeypatch.setattr(middleware, "AsyncSessionLocal", factory)
     monkeypatch.setattr(online_eval, "AsyncSessionLocal", factory)

@@ -193,8 +193,9 @@ def test_system_prompt_states_rules_once_and_styles_only_change_format():
     # Each rule once, telegraphic: grounding + compliance policy (rules 5-7,
     # policy field) + the owner's length rules. Was 857 words before the trim;
     # the claim-shape and answer-cap rules (2026-11-05.p5) brought it to ~670;
-    # the answer-relevance / false-premise / overview / named-term / same-subject rules (p9-p10) to ~870.
-    assert len(prompts.get_system_prompt("current", "general").split()) <= 880
+    # the answer-relevance / false-premise / overview / named-term / same-subject rules (p9-p10) to ~870;
+    # the later language / page-summary rules to ~900.
+    assert len(prompts.get_system_prompt("current", "general").split()) <= 920
 
 
 def test_answer_prompt_marks_only_direct_answers_covered():

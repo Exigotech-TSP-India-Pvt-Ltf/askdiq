@@ -140,7 +140,11 @@ async def test_where_are_you_based_part_retrieves_company_chunk(monkeypatch):
     async def fake_embed(_q):
         return [0.0]
 
+    async def fake_embed_many(texts, **_k):
+        return [[0.0] for _ in texts]
+
     monkeypatch.setattr(retriever, "embed_query", fake_embed)
+    monkeypatch.setattr(retriever, "embed_texts", fake_embed_many)
     sink: list[PartRetrieval] = []
     token = part_retrieval_sink.set(sink)
     try:
