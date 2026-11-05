@@ -132,3 +132,16 @@ def test_yes_no_ask_about_a_third_party_needs_a_claim_naming_it():
     named = answer("The Essential Eight is a set of eight strategies.")
     assert _subject_unanswered("Is Essential Eight mandatory?", named) is None
     assert _subject_unanswered("Is DeployIQ certified?", answer("No.")) is None
+
+
+def test_weak_gate_match_tells_generation_to_require_an_explicit_answer():
+    from app.harness.decision import PartVerdict, Route, RouteDecision  # noqa: PLC0415
+    from app.harness.orchestrator import _weak_match_block  # noqa: PLC0415
+
+    weak = PartVerdict("Do you offer penetration testing services?", True, -9.57)
+    strong = PartVerdict("What is Zero Trust?", True, 11.2)
+    note = _weak_match_block(RouteDecision(Route.ANSWER, parts=(weak, strong)))
+    assert '"Do you offer penetration testing services?"' in note
+    assert "What is Zero Trust?" not in note
+    assert "no answer" in note
+    assert _weak_match_block(RouteDecision(Route.ANSWER, parts=(strong,))) == ""

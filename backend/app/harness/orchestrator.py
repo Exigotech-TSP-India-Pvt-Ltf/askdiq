@@ -92,6 +92,7 @@ from app.harness.prompt_catalog import (
     policy_template,
     refusal_template_id,
     reply_policy,
+    weak_match_note,
 )
 from app.harness.prompts import _MAX_HISTORY_TURNS, NO_ANSWER_LINE, call_llm
 from app.harness.style import resolve_style, use_style
@@ -878,8 +879,11 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
     # A bare catalogue topic whose own page was retrieved ("ISO 27001", "e8")
     # is covered by definition (see _topic_sources): asked as an overview.
     topic = _topic_sources(query, sources, route_decision)
+    weak_note = "" if topic else _weak_match_block(route_decision)
     focus_block = "\n".join(
-        b for b in (OVERVIEW_NOTE if topic else "", _language_note(query)) if b
+        b
+        for b in (OVERVIEW_NOTE if topic else "", weak_note, _language_note(query))
+        if b
     )
     max_attempts = settings.max_llm_retries + 1
     for attempt in range(max_attempts):
@@ -1164,6 +1168,15 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
     )
 
     if not grounded_answer.answered:
+        # A weakly matched regulated-advice ask ("my obligations under the
+        # Privacy Act") declined after generation gets its approved template,
+        # as on the pre-LLM decline path.
+        policy_line = pre_llm_policy(query, regulated=True)
+        if policy_line is not None:
+            token_details["grounding"] = grounded_answer.details()
+            return _policy_decline(
+                policy_line, token_details=token_details, **policy_kwargs
+            )
         # Nothing verified: the fixed no-answer line only (no draft text,
         # no sources, no citations, confidence 0).
         failed = [r for _c, r in grounded_answer.dropped if r not in _NOT_FAILURES]
@@ -1471,6 +1484,17 @@ def _premise_parts_covered(draft: Draft, query: str) -> Draft:
     return Draft(draft.action, parts, draft.claims, draft.mode)
 
 
+def _weak_match_block(decision: RouteDecision) -> str:
+    """``weak_match_note`` for the covered parts the gate matched only
+    weakly (cross-encoder logit below ``retrieval_ce_strong_min``), else ""."""
+    weak = [
+        p.text
+        for p in decision.covered_parts
+        if p.score < settings.retrieval_ce_strong_min
+    ]
+    return weak_match_note(weak) if weak else ""
+
+
 def _needs_covered_retry(
     result: GroundedAnswer, decision: RouteDecision, topic: list[int]
 ) -> bool:
@@ -1592,9 +1616,10 @@ async def _covered_retry(  # pylint: disable=too-many-arguments,too-many-locals
         overview=bool(topic),
         part_sources=_part_sources(asks, sources, decision),
     )
-    language = _language_note(query)
-    if language:
-        block = f"{block}\n{language}"
+    weak = "" if topic else _weak_match_block(decision)
+    for note in (weak, _language_note(query)):
+        if note:
+            block = f"{block}\n{note}"
     try:
         raw_reply, usage = await call_llm(query, sources, history, focus_block=block)
     except _LLM_ERRORS as exc:

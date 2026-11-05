@@ -249,7 +249,11 @@ class Settings(BaseSettings):
     #   9/12 adjacent and 7/10 traps below it).
     # - confident: >= retrieval_ce_confident_min (no negative seen, precision
     #   1.0): "the evidence already answers it" / one service clearly leads.
-    retrieval_ce_covered_min: float = Field(default=-8.5, ge=-12.0, le=12.0)
+    # -10.5 (was -8.5); below retrieval_ce_strong_min = "weak match" note. A/B
+    # in_kb/colloq34/fuzz8/fuzz_neg: -8.5 80,20,5,3/3; -10.5 79-81,26,7,3/3;
+    # -12 81,30,7,2/3 (car-settings leak); not_covered 18/18 in all three.
+    retrieval_ce_covered_min: float = Field(default=-10.5, ge=-12.0, le=12.0)
+    retrieval_ce_strong_min: float = Field(default=-8.5, ge=-12.0, le=12.0)
     retrieval_ce_relevant_min: float = Field(default=-3.0, ge=-12.0, le=12.0)
     retrieval_ce_confident_min: float = Field(default=1.5, ge=-12.0, le=12.0)
     # An uncovered part whose best cosine is below this is OFF_TOPIC (not about

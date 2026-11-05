@@ -34,7 +34,7 @@ __all__ = [
     "TRY_AGAIN_LINE",
 ]
 
-PROMPT_VERSION = "2026-11-05.p11"
+PROMPT_VERSION = "2026-11-05.p13"
 
 # ---------------------------------------------------------------------------
 # Fixed customer-facing lines (code adds them, the model never writes them)
@@ -648,6 +648,23 @@ def covered_retry_block(
         "other ask is just an uncovered part. A source that only shares "
         "the topic, a related fact or an inference is no answer: c false, "
         "and claims [] if no part is answered."
+    )
+
+
+def weak_match_note(asks: list[str]) -> str:
+    """Sent for asks the retrieval gate matched only weakly (cross-encoder
+    below the strong floor): the facts are often a neighbouring topic."""
+    named = "; ".join(f'"{a}"' for a in asks) or "the question"
+    return (
+        f"Note (not part of the question): the facts only weakly match {named}, "
+        "often because it is worded casually. First check its subject. If it "
+        "is about us, our service, this chat or the visitor's own data, "
+        "tenant or account, a source stating the answer in other words "
+        'answers it ("which country is my info held in": where data is '
+        "stored). If it is about something else (another company or "
+        "product, or anything outside the Microsoft 365 environments we "
+        "work in), or the sources only cover a neighbouring topic, it is no "
+        "answer: c false and no claims for it."
     )
 
 

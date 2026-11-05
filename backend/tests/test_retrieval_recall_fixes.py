@@ -325,9 +325,12 @@ def test_third_party_purchase_is_not_commercial(query: str, commercial: bool) ->
     [
         (-8.96, 0.331, True),  # "where would my data physically be stored?"
         (-9.21, 0.397, True),  # "is data encrypted end to end?"
-        (-9.57, 0.436, False),  # "do you offer penetration testing?"
+        # Since the -10.5 floor these reach generation as a "weak match"
+        # (app.harness.prompt_catalog.weak_match_note), which declines them.
+        (-9.57, 0.436, True),  # "do you offer penetration testing?"
+        (-10.53, 0.35, False),  # "does a real person eyeball ...?" (just below)
+        (-8.88, 0.315, True),  # "what time is it in Sydney?"
         (-11.1, 0.319, False),  # "can a robot change my car settings?"
-        (-8.88, 0.315, False),  # "what time is it in Sydney?"
     ],
 )
 def test_borderline_band(ce: float, cos: float, covered: bool) -> None:
