@@ -34,7 +34,7 @@ __all__ = [
     "TRY_AGAIN_LINE",
 ]
 
-PROMPT_VERSION = "2026-11-05.p6"
+PROMPT_VERSION = "2026-11-05.p11"
 
 # ---------------------------------------------------------------------------
 # Fixed customer-facing lines (code adds them, the model never writes them)
@@ -414,16 +414,32 @@ def answer_system_prompt(word_cap: int, style_block: str = "") -> str:
         f"{common_rules()}"
         "Reply in the required JSON.\n"
         '- parts: one per ask (split "X and Y", "since X, Y"). a: a short '
-        "noun phrase in the visitor's words. c: true only if a fact directly "
-        "answers it, not a related topic or call to action; a bare topic "
-        '("e8") asks for an overview, covered if a fact describes it. An '
+        'noun phrase ("our CEO"), never the question. c: true if a fact '
+        "answers that ask: a fact ask, the fact itself (hours for opening "
+        'hours); an overview, why or what-X-does ask ("tell me about X", '
+        '"what does X focus on", a bare topic "e8"), facts describing X; a '
+        "list ask, facts naming its items; a false premise (below), the fact "
+        "correcting it (it names what is true instead: our offices, not "
+        "Perth). Otherwise the fact must name what the ask names (PCI DSS, SOC "
+        "2, MFA fatigue) and be about the same subject (a fact about us "
+        "never answers an ask about Microsoft): c false if facts are about "
+        "a broader or related thing (MFA for MFA fatigue, other frameworks "
+        "for PCI DSS or NIST), only share the topic, give a related fact (an "
+        "address for a distance) or a call to action. An "
         'off-topic or other-company ask is an uncovered part (policy "none"), '
         f'never a reason to refuse the rest; "compare {brand} with X": X '
-        "uncovered, never judge which is better. A false premise is covered, "
-        'its own part ("checks 100 controls"), its first claim the fact that '
-        "corrects it, never claims [].\n"
+        "uncovered, never judge which is better. A false premise is covered "
+        '(a plan, number, owner or feature a fact contradicts: "why does '
+        'Starter include workshops", "since Starter covers all pillars"), '
+        "c true even though the ask cannot be answered as put; the first "
+        'claim the fact saying what is true ("Workshops are in '
+        'Professional", not "Starter does not include workshops"), never '
+        "claims [].\n"
         "- claims: at most 10, reading order, direct answer first, at least "
-        "one per covered part, one fact each, nothing that was not asked. p: "
+        "one per covered part with its key facts, one fact each, nothing "
+        'that was not asked, never inferred ("could include"), never a bare '
+        '"Yes." or "Not on its own." alone. Keep the asked term '
+        '("Copilot"); an acronym ask gets its full form. p: '
         "part index (from 0). s: Source number. q = quote: an exact "
         "span copied from that fact, holding every number, name and negation "
         'of t. t: "" only if q is already a natural full sentence in the '
@@ -432,13 +448,15 @@ def answer_system_prompt(word_cap: int, style_block: str = "") -> str:
         'downloads"). Its subject is the '
         'thing itself ("The Foundation tier\'s roadmap is 4 to 6 weeks."), '
         'never a label, heading or colon ("Roadmap: 4 to 6 weeks.", "Key '
-        'Principles are"). k: "s" sentence; "i" list item: q one item (at '
+        'Principles are") or layout ("The page explains", "is listed '
+        'under"). k: "s" sentence; "i" list item: q one item (at '
         'most 12 words), t "" or its translation, never "Includes ...", '
         '"X is a pillar" or the subject again; under a named stage, "Stage: '
         'item" ("Pilot: ...").\n'
         "- Length: a fact 1-2 claims; what is or an overview 2-4 claims, no "
-        "list; a list (includes, stages, steps, strategies, which services) a "
-        'short lead sentence naming X, then up to 8 "i" items (a named set '
+        "list; a list (includes, stages, steps, strategies, which X) a "
+        'short lead sentence naming X, then up to 8 "i" items, every item '
+        "the facts name, never one example (a named set "
         "like the Essential Eight in full); comparisons or multi-part at most "
         "120 words, item by item in the order asked, each naming its item. No "
         "repetition or filler.\n"
@@ -619,14 +637,17 @@ def covered_retry_block(
         or f"the question from Source {numbers}"
     )
     return (
-        "Note (not part of the question): the facts do answer it. Answer "
-        f"{named}: one part per ask (a: the visitor's words, c true), claims "
-        "quoted exactly from those sources, each t a plain fact (never "
-        '"the section says"). If the question assumes something those facts '
-        "contradict (a number, place, law or feature), a full sentence naming "
-        'its subject states what they say instead. policy is "none": any '
-        "other ask is just an uncovered part. Return claims [] only if none "
-        "of those sources states anything about it."
+        "Note (not part of the question): re-read the facts, they may "
+        f"answer {named}. If the question assumes something those facts "
+        "contradict (a number, plan, owner, place, law or feature), it is "
+        "covered: the first claim, a full sentence naming its subject, "
+        "states what they say instead. Otherwise c true only if a source "
+        "states the answer to that very question. One part per ask (a: a "
+        "noun phrase of the visitor's words), claims quoted exactly, each t "
+        'a plain fact (never "the section says"). policy is "none": any '
+        "other ask is just an uncovered part. A source that only shares "
+        "the topic, a related fact or an inference is no answer: c false, "
+        "and claims [] if no part is answered."
     )
 
 

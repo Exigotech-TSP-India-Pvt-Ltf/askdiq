@@ -273,3 +273,62 @@ def test_unsure_pool_reranks_the_reserve(monkeypatch: pytest.MonkeyPatch) -> Non
 )
 def test_filler_never_hides_the_ambiguous_term(query: str, term: str) -> None:
     assert ambiguous_term(query) == term
+
+
+# --- borderline band, follow-ups, commercial (final-run gate misses) --------
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "What is a zero-day exploit?",
+        "How far is Sydney from Canberra?",
+        "Which laptop should I buy?",
+        "can a robot change my car settings?",
+    ],
+)
+def test_off_domain_asks_are_not_rewritten(query: str) -> None:
+    assert expand_retrieval_query(query) == query
+
+
+def test_named_service_email_follow_up_is_not_a_contact_ask() -> None:
+    assert "Contact Us" not in expand_retrieval_query(
+        "what about email (Security Baseline Assessment)"
+    )
+    assert "Contact Us" in expand_retrieval_query("email?")
+
+
+def test_pronoun_part_resolves_to_our_name() -> None:
+    parts = split_query("Is DeployIQ an AI-native venture, and who funds it?")
+    assert [p.search for p in parts] == [
+        "Is DeployIQ an AI-native venture",
+        "who funds DeployIQ?",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("query", "commercial"),
+    [
+        ("Which laptop should I buy under $1500?", False),
+        ("Where can I buy a cheap iPhone?", False),
+        ("which package should I buy?", True),
+        ("can I buy a plan?", True),
+        ("how do I buy zero trust?", True),
+    ],
+)
+def test_third_party_purchase_is_not_commercial(query: str, commercial: bool) -> None:
+    assert is_commercial(query) is commercial
+
+
+@pytest.mark.parametrize(
+    ("ce", "cos", "covered"),
+    [
+        (-8.96, 0.331, True),  # "where would my data physically be stored?"
+        (-9.21, 0.397, True),  # "is data encrypted end to end?"
+        (-9.57, 0.436, False),  # "do you offer penetration testing?"
+        (-11.1, 0.319, False),  # "can a robot change my car settings?"
+        (-8.88, 0.315, False),  # "what time is it in Sydney?"
+    ],
+)
+def test_borderline_band(ce: float, cos: float, covered: bool) -> None:
+    assert part_covered(_part("q", ce=ce, cos=cos)) is covered

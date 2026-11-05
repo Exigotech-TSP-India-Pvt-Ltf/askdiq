@@ -144,6 +144,7 @@ GAP_PHRASES = (
 )
 EXTRA_INTERNAL = ("retrieved", "chunk", "[source", "provided context", "the context")
 _MARKER_RE = re.compile(r"\[\d{1,2}\]")
+_PAGE_FRAME_RE = re.compile(r"\bOur [^.:\n]{1,60} page in a nutshell:\s*")
 _MARKER_RUN_RE = re.compile(r"((?:\s*\[\d{1,2}\])+)")
 _DIGITS_RE = re.compile(r"\d{1,2}")
 _SENTENCE_RE = re.compile(r"[^.!?\n]+")
@@ -153,6 +154,8 @@ _PLACEHOLDER_RE = re.compile(r"\\\{\w+\\\}")
 # Lines code appends to an answer (``app.harness.prompt_catalog``): not claims,
 # so they are removed before the judge scores faithfulness.
 FIXED_LINE_NAMES = (
+    "NO_ANSWER_LINE",
+    "TRY_AGAIN_LINE",
     "PRICING_LINE",
     "SALES_CONTACT_LINE",
     "PARTIAL_LINE",
@@ -484,6 +487,8 @@ class ExpectedTexts:  # pylint: disable=too-many-instance-attributes  # one per 
         judge may score "the citation is [1]" as a claim.
         """
         prose = _MARKER_RE.sub("", answer)
+        # The page-link frame ("Our Terms page in a nutshell: ...") is fixed text.
+        prose = _PAGE_FRAME_RE.sub("", prose)
         return without_fixed_lines(prose, self.fixed_lines)
 
     def for_flags(self, flags: list[str], template_id: str | None = None) -> set[str]:
@@ -960,6 +965,8 @@ def run_judge(
             if not claim.get("supported"):
                 tr.fabricated.append(f"unsupported: {claim.get('claim')}")
                 tr.failures.append(f"unsupported claim: {claim.get('claim')}")
+        # Claims refine_claims dropped as "not in the answer": surfaced for review.
+        tr.warnings.extend(f"judge dropped: {c}" for c in score.dropped_claims)
 
 
 # ---------------------------------------------------------------- summary / gates

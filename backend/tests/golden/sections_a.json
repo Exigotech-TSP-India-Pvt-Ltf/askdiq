@@ -183,14 +183,20 @@
             "Zero Trust",
             "Essential Eight",
             "Security Baseline",
-            "ISO 27001",
+            [
+              "ISO 27001",
+              "ISO/IEC 27001"
+            ],
             "CIS",
-            "ISO 42001"
+            [
+              "ISO 42001",
+              "ISO/IEC 42001"
+            ]
           ],
           "must_not_contain": []
         }
       ],
-      "note": "section 'partner' of /about-us",
+      "note": "section 'partner' of /about-us | r3 corrected: must_contain",
       "source": "sections_a builder (static, cleaned KB)"
     },
     {
@@ -212,14 +218,14 @@
           "must_contain": [
             [
               "maturity gaps",
-              "maturity"
-            ],
-            "evidence"
+              "maturity",
+              "phased"
+            ]
           ],
           "must_not_contain": []
         }
       ],
-      "note": "section 'partner' of /about-us",
+      "note": "section 'partner' of /about-us | r3 corrected: must_contain",
       "source": "sections_a builder (static, cleaned KB)"
     },
     {
@@ -480,13 +486,14 @@
           "must_contain": [
             [
               "Kick-off & Discovery",
-              "Kick-off"
+              "Kick-off",
+              "Principal Security Consultation"
             ]
           ],
           "must_not_contain": []
         }
       ],
-      "note": "section 'card' of /booking",
+      "note": "section 'card' of /booking | r3 corrected: must_contain",
       "source": "sections_a builder (static, cleaned KB)"
     },
     {
@@ -1309,12 +1316,16 @@
             "/"
           ],
           "must_contain": [
-            "illustrative"
+            [
+              "illustrative",
+              "sample",
+              "not real"
+            ]
           ],
           "must_not_contain": []
         }
       ],
-      "note": "section 'score' of /essential-eight",
+      "note": "section 'score' of /essential-eight | r3 corrected: must_contain",
       "source": "sections_a builder (static, cleaned KB)"
     },
     {
@@ -1535,6 +1546,7 @@
             [
               "AI-prioritized",
               "AI-prioritised",
+              "risk-prioritised",
               "prioritized",
               "human-validated"
             ]
@@ -1542,7 +1554,7 @@
           "must_not_contain": []
         }
       ],
-      "note": "section 'recs' of /get-started",
+      "note": "section 'recs' of /get-started | r3 corrected: must_contain",
       "source": "sections_a builder (static, cleaned KB)"
     },
     {
@@ -2520,13 +2532,16 @@
             "/services"
           ],
           "must_contain": [
-            "ISO 27001",
+            [
+              "ISO 27001",
+              "ISO/IEC 27001"
+            ],
             "Microsoft 365"
           ],
           "must_not_contain": []
         }
       ],
-      "note": "section 'intro' of /iso-27001-microsoft-365-technical-controls",
+      "note": "section 'intro' of /iso-27001-microsoft-365-technical-controls | r3 corrected: must_contain",
       "source": "sections_a builder (static, cleaned KB)"
     },
     {

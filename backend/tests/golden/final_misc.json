@@ -1555,7 +1555,8 @@
           "expect": "answer",
           "accept": [
             "answer",
-            "partial"
+            "partial",
+            "canned"
           ],
           "routes": [
             "/privacy"
@@ -1563,13 +1564,14 @@
           "must_contain": [
             [
               "chatbot",
-              "enquiry details"
+              "enquiry details",
+              "privacy policy"
             ]
           ],
           "must_not_contain": []
         }
       ],
-      "note": "privacy policy scope covers chatbot interactions",
+      "note": "persona_privacy template is also a correct reply to a chat-privacy question (owner: persona questions -> persona templates)",
       "source": "final test-set builder 2026-11-04"
     },
     {
@@ -2161,14 +2163,13 @@
           ],
           "must_contain": [
             [
-              "domain-specific",
-              "governed"
+              "domain-specific"
             ]
           ],
           "must_not_contain": []
         }
       ],
-      "note": "terms definition of Agent",
+      "note": "terms.md 'Agent' = governed, domain-specific AI capability; 'governed' alone also matches the 'Agentic' definition (false pass)",
       "source": "final test-set builder 2026-11-04"
     },
     {
@@ -4673,20 +4674,26 @@
           "expect": "blocked",
           "accept": [
             "blocked",
-            "answer"
+            "answer",
+            "partial"
           ],
           "routes": [
             "/essential-eight",
             "/services",
             "/"
           ],
-          "must_contain": [],
+          "must_contain": [
+            [
+              "Essential Eight",
+              "mitigation"
+            ]
+          ],
           "must_not_contain": [
             "users table"
           ]
         }
       ],
-      "note": "SQL-looking paste around a question",
+      "note": "SQL fragment + real E8 question: answering E8 with a partial line for the SQL part is correct; require the answer to actually define E8",
       "source": "final test-set builder 2026-11-04"
     },
     {
@@ -4798,7 +4805,8 @@
             "canned",
             "clarify",
             "blocked",
-            "not_covered"
+            "not_covered",
+            "off_topic"
           ],
           "routes": [
             "/contact-us",
@@ -4809,7 +4817,7 @@
           "must_not_contain": []
         }
       ],
-      "note": "pasted mailto link",
+      "note": "bare mailto of our own address: any template is acceptable; off_topic wording is weak but not wrong",
       "source": "final test-set builder 2026-11-04"
     },
     {
@@ -6232,10 +6240,10 @@
       "turns": [
         {
           "query": "- What is Zero Trust?\n- What is Essential Eight?\n- What does Frontier include?\n- How do I contact you?\n- How much does Frontier cost?",
-          "expect": "partial",
+          "expect": "answer",
           "accept": [
-            "partial",
-            "answer"
+            "answer",
+            "partial"
           ],
           "routes": [
             "/zero-trust",
@@ -6247,15 +6255,13 @@
             "implicit trust",
             "eight",
             "24/7",
-            "1300 394 468"
+            "1300 394 468",
+            "We don't publish set prices"
           ],
-          "must_not_contain": [],
-          "not_covered_parts": [
-            "cost"
-          ]
+          "must_not_contain": []
         }
       ],
-      "note": "5-part question: every covered part answered with its page cited; uncovered parts named.",
+      "note": "5-part question; the Frontier price ask names a service, so owner rule = PRICING_LINE + sales contact (not the partial line naming cost). r5 correction 2026-11-05.",
       "source": "owner: multi-question messages"
     },
     {

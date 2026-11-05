@@ -192,8 +192,28 @@ def test_system_prompt_states_rules_once_and_styles_only_change_format():
         assert prompt_catalog.NO_ANSWER_LINE not in system
     # Each rule once, telegraphic: grounding + compliance policy (rules 5-7,
     # policy field) + the owner's length rules. Was 857 words before the trim;
-    # the claim-shape and answer-cap rules (2026-11-05.p5) brought it to ~670.
-    assert len(prompts.get_system_prompt("current", "general").split()) <= 700
+    # the claim-shape and answer-cap rules (2026-11-05.p5) brought it to ~670;
+    # the answer-relevance / false-premise / overview / named-term / same-subject rules (p9-p10) to ~870.
+    assert len(prompts.get_system_prompt("current", "general").split()) <= 880
+
+
+def test_answer_prompt_marks_only_direct_answers_covered():
+    from app.harness import prompt_catalog
+
+    system = prompts.get_system_prompt("current", "general")
+    for needle in (
+        "true if a fact answers that ask",
+        "never the question",
+        "never inferred",
+        "saying what is true",
+        "Keep the asked term",
+    ):
+        assert needle in system
+    retry = prompt_catalog.covered_retry_block(["opening hours"], [1])
+    # The re-ask never tells the model the facts answer it (it then stretched
+    # a related fact into an answer).
+    assert "do answer it" not in retry
+    assert "c false" in retry
 
 
 def test_answer_schema_uses_compact_keys_quote_before_text():

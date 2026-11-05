@@ -440,14 +440,18 @@
           "query": "Is security awareness training included in the Baseline package?",
           "expect": "answer",
           "must_contain": [
-            "Foundation"
+            [
+              "Foundation",
+              "not included",
+              "isn't included"
+            ]
           ],
           "routes": [
             "/packages"
           ]
         }
       ],
-      "note": "Section: Compare Packages",
+      "note": "Section: Compare Packages | corrected by r4 final2 review",
       "source": "data/packages.md section 'Compare Packages'"
     },
     {
@@ -485,11 +489,13 @@
             ]
           ],
           "routes": [
-            "/packages"
+            "/packages",
+            "/about-us",
+            "/"
           ]
         }
       ],
-      "note": "Section: How It Works",
+      "note": "Section: How It Works | corrected by r4 final2 review",
       "source": "data/packages.md section 'How It Works'"
     },
     {
@@ -1566,7 +1572,8 @@
             [
               "named human ownership",
               "human ownership",
-              "named human"
+              "named human",
+              "named humans"
             ]
           ],
           "routes": [
@@ -1574,7 +1581,7 @@
           ]
         }
       ],
-      "note": "Section: Governance and Oversight",
+      "note": "Section: Governance and Oversight | corrected by r4 final2 review",
       "source": "data/secure-ai.md section 'Governance and Oversight'"
     },
     {
@@ -1747,11 +1754,12 @@
             ]
           ],
           "routes": [
-            "/services"
+            "/services",
+            "/responsible-ai"
           ]
         }
       ],
-      "note": "Section: Hero",
+      "note": "Section: Hero | corrected by r4 final2 review",
       "source": "data/services.md section 'Hero'"
     },
     {
@@ -2621,10 +2629,14 @@
           ],
           "routes": [
             "/zero-trust"
+          ],
+          "must_not_contain": [
+            "set prices",
+            "specialists can help"
           ]
         }
       ],
-      "note": "Section: Security That Pays You Back",
+      "note": "Section: Security That Pays You Back | corrected by r4 final2 review",
       "source": "data/zero-trust.md section 'Security That Pays You Back'"
     },
     {

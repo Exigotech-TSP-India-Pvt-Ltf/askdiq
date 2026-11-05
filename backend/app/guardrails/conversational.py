@@ -437,6 +437,10 @@ _VENDOR = (
     r"deepseek|bing|watson|alexa|siri|(?:a|an)\s{1,3}llm|llm|"
     r"(?:a\s{1,3})?(?:large\s{1,3})?language\s{1,3}model)"
 )
+# "GPT-4 or Claude", "gpt-4, claude or gemini".
+_VENDOR_ALTS = (
+    rf"{_VENDOR}(?:\s{{0,3}}(?:,\s{{0,3}})?(?:or|and|,)\s{{0,3}}{_VENDOR}){{0,3}}"
+)
 _LANGUAGE = (
     r"(?:english|spanish|french|german|italian|portuguese|chinese|mandarin|"
     r"cantonese|japanese|korean|hindi|arabic|vietnamese|thai|indonesian|greek|"
@@ -451,12 +455,14 @@ _PERSONA_PATTERNS: tuple[tuple[str, str, bool], ...] = (
     # (intent, pattern body, skip the catalogue guard)
     (
         PERSONA_MODEL,
+        # "..., GPT-4 or Claude?" may trail any model ask; "GPT or Claude?" alone.
+        r"(?:(?:"
         rf"(?:(?:are|r)\s{{1,3}}{_P_YOU}\s{{1,3}}(?:(?:just|really|actually|basically)"
-        rf"\s{{1,3}})?(?:a\s{{1,3}}|an\s{{1,3}})?{_VENDOR}(?:\s{{1,3}}(?:based|powered))?"
+        rf"\s{{1,3}})?(?:a\s{{1,3}}|an\s{{1,3}})?{_VENDOR_ALTS}(?:\s{{1,3}}(?:based|powered))?"
         rf"|(?:are|r)\s{{1,3}}{_P_YOU}\s{{1,3}}(?:built|based|powered|running|made|run)"
-        rf"\s{{1,3}}(?:on|with|by|using)\s{{1,3}}{_VENDOR}"
+        rf"\s{{1,3}}(?:on|with|by|using)\s{{1,3}}{_VENDOR_ALTS}"
         rf"|(?:is|does)\s{{1,3}}{_P_THIS}\s{{1,3}}(?:use|using|run(?:ning)?\s{{1,3}}on|"
-        rf"built\s{{1,3}}on|powered\s{{1,3}}by|based\s{{1,3}}on)\s{{1,3}}{_VENDOR}"
+        rf"built\s{{1,3}}on|powered\s{{1,3}}by|based\s{{1,3}}on)\s{{1,3}}{_VENDOR_ALTS}"
         r"|(?:what|which)\s{1,3}(?:ai\s{1,3})?(?:model|llm|ai|gpt|language\s{1,3}model|"
         r"engine|version|tech(?:nology)?)(?:\s{1,3}(?:model|version))?\s{1,3}"
         rf"(?:are|r|do|is|does)\s{{1,3}}{_P_THIS}(?:\s{{1,3}}(?:running|using|use|based|"
@@ -467,7 +473,10 @@ _PERSONA_PATTERNS: tuple[tuple[str, str, bool], ...] = (
         r"(?:model|llm|underlying\s{1,3}model|tech(?:nology)?(?:\s{1,3}stack)?|"
         r"architecture|engine)"
         rf"|how\s{{1,3}}(?:are|were)\s{{1,3}}{_P_YOU}\s{{1,3}}(?:built|made|trained|"
-        r"programmed|coded))",
+        r"programmed|coded)))"
+        rf"(?:[\s,:-]{{1,3}}(?:like\s{{1,3}})?{_VENDOR_ALTS})?"
+        rf"|(?:(?:is|does)\s{{1,3}}{_P_THIS}\s{{1,3}}(?:(?:a|an)\s{{1,3}})?)?"
+        rf"{_VENDOR}(?:\s{{0,3}},?\s{{0,3}}(?:or\s{{1,3}})?{_VENDOR}){{1,3}})",
         True,
     ),
     (

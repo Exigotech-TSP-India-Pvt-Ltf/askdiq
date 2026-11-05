@@ -3696,7 +3696,11 @@
           "query": "What is your ISO 27001 technical controls service and how is it different from getting ISO 27001 certified?",
           "expect": "answer",
           "must_contain": [
-            "Annex A",
+            [
+              "Annex A",
+              "technological controls",
+              "technical aspects"
+            ],
             [
               "certification body",
               "independent",
@@ -3724,6 +3728,10 @@
             [
               "1300 394 468",
               "info@deployiq.co"
+            ],
+            [
+              "We don't publish set prices",
+              "quote"
             ]
           ],
           "must_not_contain": [
@@ -3735,15 +3743,6 @@
           "routes": [
             "/essential-eight",
             "/contact-us"
-          ],
-          "not_covered_parts": [
-            [
-              "cost",
-              "price",
-              "pricing",
-              "charge",
-              "fee"
-            ]
           ]
         }
       ],
@@ -3811,6 +3810,10 @@
             [
               "1300 394 468",
               "info@deployiq.co"
+            ],
+            [
+              "We don't publish set prices",
+              "quote"
             ]
           ],
           "must_not_contain": [
@@ -3822,15 +3825,6 @@
           "routes": [
             "/packages",
             "/contact-us"
-          ],
-          "not_covered_parts": [
-            [
-              "cost",
-              "price",
-              "pricing",
-              "charge",
-              "fee"
-            ]
           ]
         }
       ]
@@ -4826,10 +4820,11 @@
           "expect": "answer",
           "must_contain": [
             [
+              "independent bodies certify",
+              "certification body",
               "not yet",
-              "not claimed",
               "aren't",
-              "not"
+              "not certified"
             ]
           ],
           "must_not_contain": [
@@ -4840,6 +4835,10 @@
             "/secure-ai",
             "/iso-27001-microsoft-365-technical-controls",
             "/about-us"
+          ],
+          "accept": [
+            "answer",
+            "partial"
           ]
         }
       ],
@@ -6796,7 +6795,11 @@
           "query": "what is the CIS benchmark assessment?",
           "expect": "answer",
           "must_contain": [
-            "CIS"
+            [
+              "CIS",
+              "Foundations Benchmark",
+              "Center for Internet Security"
+            ]
           ],
           "routes": [
             "/cis-microsoft-365-foundations-benchmark-assessment",
@@ -8726,11 +8729,17 @@
           "query": "Is Huntress better than DeployIQ?",
           "expect": "not_covered",
           "accept": [
-            "not_covered"
+            "not_covered",
+            "partial"
           ],
           "must_not_contain": [
             "huntress is better",
             "deployiq is better"
+          ],
+          "not_covered_parts": [
+            [
+              "Huntress"
+            ]
           ]
         }
       ],
@@ -8848,11 +8857,17 @@
           "expect": "not_covered",
           "accept": [
             "not_covered",
-            "off_topic"
+            "off_topic",
+            "partial"
           ],
           "must_not_contain": [
             "okta is better",
             "entra is better"
+          ],
+          "not_covered_parts": [
+            [
+              "Okta"
+            ]
           ]
         }
       ],
@@ -10434,7 +10449,8 @@
             "/responsible-ai",
             "/secure-ai",
             "/platform",
-            "/our-vision"
+            "/our-vision",
+            "/terms"
           ]
         }
       ],

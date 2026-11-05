@@ -14,6 +14,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
+from app.ingestion.cleanup import SAMPLE_SECTION_TEXT
+
 MIN_SHARED_CHARS = 60
 MIN_CHUNK_CHARS = 120
 MAX_CHUNK_CHARS = 1600
@@ -42,8 +44,10 @@ def _key(line: str) -> str:
     return " ".join(text.lower().split())
 
 
-def _is_heading(line: str) -> bool:
-    return line.lstrip().startswith("#")
+def _always_kept(line: str) -> bool:
+    """Headings and sample framing stay on every page: the framing tells the
+    reader that page's figures are illustrative."""
+    return line.lstrip().startswith("#") or SAMPLE_SECTION_TEXT in line
 
 
 def dedupe_across_pages(
@@ -57,7 +61,7 @@ def dedupe_across_pages(
     for name, text in pages.items():
         for line in text.split("\n"):
             key = _key(line)
-            if len(key) < MIN_SHARED_CHARS or _is_heading(line):
+            if len(key) < MIN_SHARED_CHARS or _always_kept(line):
                 continue
             owner = owners.get(key)
             if owner is None or rank[name] > rank[owner]:
@@ -69,7 +73,7 @@ def dedupe_across_pages(
         for line in text.split("\n"):
             key = _key(line)
             owner = owners.get(key)
-            if owner is not None and owner != name and not _is_heading(line):
+            if owner is not None and owner != name and not _always_kept(line):
                 removals.append({"page": name, "kept_on": owner, "text": key[:120]})
                 continue
             kept.append(line)

@@ -101,9 +101,10 @@ _BUYING_CUE_RE = re.compile(
     r"\b(?:prices?|priced|pricing|costs?|costing|quotes?|quotation|buy|buying|"
     r"purchas(?:e|es|ed|ing)|sign\s{0,2}(?:me\s{1,3}|us\s{1,3})?up|subscribe|"
     # "book a demo" is buying, "confirm a booking" is not; "how much is
-    # Frontier?" is a price ask, "by how much did ransomware drop?" is not.
-    r"demo|trial|book|engage|get\s{1,3}started|"
-    r"(?<!by\s)how\s{1,3}much\s{1,3}(?:is|are|does|do|would|will|for|to|it|per)|"
+    # Frontier?" is a price ask; "by how much did ransomware drop?" and "how
+    # much do insider threats drop?" are not ("how much does it cost" has "cost").
+    r"demo|trial|book|engage|get\s{1,3}started|charge[sd]?|"
+    r"(?<!by\s)how\s{1,3}much\s{1,3}(?:is|are|would|will|for|to|it|per)|"
     r"next\s{1,3}steps?|order|budget|afford(?:able)?|rates?|fees?|"
     r"go\s{1,3}ahead|onboard(?:ing)?)\b",
     re.IGNORECASE,
@@ -115,7 +116,7 @@ _WORD_RE = re.compile(r"[^\W_]{1,40}")
 _EXPLICIT_BUYING_CUE_RE = re.compile(
     r"\b(?:prices?|priced|pricing|costs?|costing|quotes?|quotation|buy|buying|"
     r"purchas(?:e|es|ed|ing)|sign\s{0,2}(?:me\s{1,3}|us\s{1,3})?up|subscribe|"
-    r"(?<!by\s)how\s{1,3}much\s{1,3}(?:is|are|does|do|would|will|for|to|it|per)|"
+    r"(?<!by\s)how\s{1,3}much\s{1,3}(?:is|are|would|will|for|to|it|per)|charge[sd]?|"
     r"order|budget|afford(?:able)?|rates?|fees?)\b",
     re.IGNORECASE,
 )

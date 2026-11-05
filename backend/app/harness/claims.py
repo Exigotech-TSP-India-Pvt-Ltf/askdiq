@@ -69,6 +69,7 @@ from app.core.config import get_settings
 from app.guardrails.post_checks import (
     _unsupported_figures,
     is_decline_sentence,
+    is_product_negative,
     unsupported_claims,
 )
 from app.harness.citations import (
@@ -150,6 +151,11 @@ _RANGE_RE = re.compile(
 _NAME_NUMBER_RE = re.compile(
     r"\b[A-Z][A-Za-z&/]{1,30}[ ]{1,2}\d[\d.]{0,12}|\b[A-Za-z]{1,10}\d[\w.]{0,12}"
 )
+# A capitalised number word ending a name ("Essential Eight", "Top Ten").
+_NAME_WORD_NUMBER_RE = re.compile(
+    r"\b([A-Z][a-z]{1,30})[ ]{1,2}(Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten"
+    r"|Eleven|Twelve)\b"
+)
 
 _RSQUO = "\N{RIGHT SINGLE QUOTATION MARK}"
 _QUOTE_LABEL_RE = re.compile(r"[(\[]?\s{0,3}\bquote\s{0,3}:", re.IGNORECASE)
@@ -194,7 +200,7 @@ _CONTACT_FRAMING = frozenset(
     {
         "phone", "number", "call", "ring", "email", "mail", "address", "reach",
         "contact", "write", "visit", "office", "team", "line", "details",
-        "enquiries", "us", "via", "using", "send",
+        "enquiries", "us", "via", "using", "send", "book",
     }
 )  # fmt: skip
 # A heading-like line of a chunk (sub-heading / row label), at most 4 words.
@@ -216,7 +222,38 @@ _LOWER_LEADS = frozenset(
 # The question words before a gate sub-question's subject ("and what's ...").
 _GAP_LEAD_RE = re.compile(
     r"^(?:(?:and|also|plus|but)[,\s]{1,3})?"
-    r"(?:what(?:['\u2019]s|\s{1,3}(?:is|are|was|were))\s{1,3})?",
+    r"(?:wh(?:at|o)(?:['\u2019]s|\s{1,3}(?:is|are|was|were))\s{1,3})?",
+    re.IGNORECASE,
+)
+# A part still worded as a question, rewritten as the noun phrase the partial
+# line names ("is X as good as Y" -> "how X compares with Y").
+_ASK_REWRITES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(pattern, re.IGNORECASE), repl)
+    for pattern, repl in (
+        (
+            r"^(?:is|are)\s{1,3}(.+?)\s{1,3}(?:as good as|better than|worse than"
+            r"|cheaper than|the same as|similar to|different from|comparable to)"
+            r"\s{1,3}(.+)$",
+            r"how \1 compares with \2",
+        ),
+        (r"^how far (?:is|are)\s{1,3}(.+?)\s{1,3}from\s{1,3}(.+)$", r"the distance from \1 to \2"),
+        (r"^how many\s{1,3}(.+?)\s{1,3}(?:does|do|did)\s{1,3}(.+?)\s{1,3}have$", r"the number of \1 at \2"),
+        (r"^how many\s{1,3}(.+)$", r"the number of \1"),
+        (r"^what (?:does|do)\s{1,3}(.+?)\s{1,3}stand for$", r"what \1 stands for"),
+        (r"^what (?:does|do)\s{1,3}(.+?)\s{1,3}mean$", r"what \1 means"),
+        (r"^(where|when)\s{1,3}(is|are)\s{1,3}(.+)$", r"\1 \3 \2"),
+        (
+            r"^(.+?)\s{1,3}like(\s{1,3}(?:today|tomorrow|now|right now|this week"
+            r"|this weekend))?$",
+            r"\1\2",
+        ),
+    )
+)  # fmt: skip
+_ASK_YOUR_RE = re.compile(r"\b([Yy])our(s?)\b")
+# A label that is still a raw question ("how does ransomware encrypt files").
+_RAW_QUESTION_RE = re.compile(
+    r"^(?:(?:who|what|when|where|why|how|which)\s{1,3})?"
+    r"(?:is|are|was|were|does|do|did|can|could|will|would|should|has|have)\b",
     re.IGNORECASE,
 )
 
@@ -313,7 +350,9 @@ _ENGLISH_WORDS = frozenset(
     ]
 )
 _ANSWER_WORDS = frozenset({"no", "yes"})
-_CLAUSE_SPLIT_RE = re.compile(r"[,;]")
+_CONJUNCTIONS = frozenset({"and", "or", "nor", "but", "vs", "versus"})
+_CLAUSE_SPLIT_RE = re.compile(r"[,;]|[.!?](?=\s)")
+_RESTATED_CLAUSE_SHARE = 0.5
 _NEGATORS = frozenset(
     [
         "no",
@@ -766,9 +805,11 @@ def _unit_pairs(words: list[str]) -> set[tuple[str, str]]:
 
 
 def _negation_parity(text: str) -> int:
-    """Odd/even negators, past a leading answer word ("No, they aren't ...")."""
+    """Odd/even negators, past a leading answer word ("No, they aren't ...");
+    a leading determiner ("No technical expertise required") still counts."""
     words = text.lower().replace(_RSQUO, "'").split()
-    if words and words[0].strip(".,;:!") in _ANSWER_WORDS:
+    lead = words[0].strip(".,;:!") if words else ""
+    if lead in _ANSWER_WORDS and (lead != words[0] or len(words) == 1):
         words = words[1:]
     count = 0
     for word in words:
@@ -778,15 +819,25 @@ def _negation_parity(text: str) -> int:
     return count % 2
 
 
-def _negation_parities(claim: str, quote: str) -> set[int]:
-    """Parity of the whole quote and of the clause the claim restates (most
-    shared words): a quote negating two clauses ("are not Services ..., are
-    not tailored") backs a claim that restates one of them."""
+def _restated_parity(claim: str, text: str) -> int:
+    """Negation parity of the clauses of ``text`` the claim restates.
+
+    A clause is restated when at least half of its words are in the claim
+    (else the one sharing the most words). "are not Services ..., are not
+    tailored" backs "they aren't tailored"; "Not on its own. We deliver X."
+    does not back "We do not deliver X" (the "Not" is another clause's).
+    """
+    clauses = [c for c in _CLAUSE_SPLIT_RE.split(text) if _words(c)]
+    if len(clauses) <= 1:
+        return _negation_parity(text)
     words = set(_words(claim))
-    clause = max(
-        _CLAUSE_SPLIT_RE.split(quote), key=lambda c: len(words & set(_words(c)))
-    )
-    return {_negation_parity(quote), _negation_parity(clause)}
+
+    def shared(clause: str) -> float:
+        own = set(_words(clause))
+        return len(words & own) / len(own)
+
+    restated = [c for c in clauses if shared(c) >= _RESTATED_CLAUSE_SHARE]
+    return _negation_parity(" ".join(restated or [max(clauses, key=shared)]))
 
 
 def _names(text: str) -> list[tuple[str, bool]]:
@@ -863,15 +914,31 @@ def _name_numbers(text: str) -> set[str]:
     }
 
 
+def _named_number_words(text: str) -> tuple[str, list[str]]:
+    """(``text`` without them, digits of) number words that end a name
+    ("Essential Eight": capitalised, after a capitalised non-function word)."""
+    names: list[str] = []
+
+    def cut(match: re.Match[str]) -> str:
+        if match.group(1).lower() in _NOT_NAMES | _ENGLISH_WORDS:
+            return match.group(0)
+        names.extend(_number_words(match.group(2)))
+        return match.group(1)
+
+    return _NAME_WORD_NUMBER_RE.sub(cut, text), names
+
+
 def _value_reason(claim: Claim, span: _Chunk, local: _Chunk) -> str | None:
     """Values sit in the quote's own units; name numbers / frameworks nearby."""
     figures = _Claim(claim.text)
     named = _name_numbers(claim.text)
+    plain, named_words = _named_number_words(claim.text)
     backed = (
         all(
             (local if n in named else span).index.has_number(n) for n in figures.numbers
         )
-        and all(span.index.has_number(n) for n in _number_words(claim.text))
+        and all(span.index.has_number(n) for n in _number_words(plain))
+        and all(local.index.has_number(n) for n in named_words)
         and _unit_pairs(_words(claim.text)) <= span.pairs
         and not _unsupported_figures(claim.text, span.raw)
         and (
@@ -884,6 +951,20 @@ def _value_reason(claim: Claim, span: _Chunk, local: _Chunk) -> str | None:
     if not _ranges(claim.text) <= _ranges(span.raw):
         return "merged_values"
     return None
+
+
+def _spelled_out(name: str, text: str) -> bool:
+    """An acronym the quote spells out ("ISMS" over "Information Security
+    Management System"): consecutive capitalised words with its initials."""
+    if not (name.isupper() and name.isalpha() and 2 <= len(name) <= 6):  # noqa: PLR2004
+        return False
+    words = re.findall(r"[A-Za-z]+", text)
+    size = len(name)
+    return any(
+        all(w[:1].isupper() for w in words[i : i + size])
+        and "".join(w[0] for w in words[i : i + size]) == name
+        for i in range(len(words) - size + 1)
+    )
 
 
 def _subject_reason(  # pylint: disable=too-many-arguments
@@ -908,6 +989,8 @@ def _subject_reason(  # pylint: disable=too-many-arguments
     ]
     for name, initial in named:
         if _norm(name) in brand or span.has_word(name) or local.has_word(name):
+            continue
+        if _spelled_out(name, span.raw):
             continue
         if not initial or not local.has_stem(name):
             return "subject_not_local"
@@ -1007,11 +1090,13 @@ def _singular(word: str) -> str:
 @dataclass(frozen=True, slots=True)
 class _Asked:
     """What the question names: its text, the retrieved labels it names
-    (``labels``) and those that are one page part's subject (``audiences``)."""
+    (``labels``) and those that are one page part's subject (``audiences``).
+    ``pages``: each retrieved document's chunks joined, by document id."""
 
     query: str
     labels: tuple[frozenset[str], ...]
     audiences: tuple[frozenset[str], ...]
+    pages: dict[str, str] = field(default_factory=dict)
 
 
 def _chunk_labels(chunk: _Chunk) -> list[frozenset[str]]:
@@ -1080,6 +1165,10 @@ def _other_subject_reason(
     if any(a <= claim_words for a in asked):
         return None
     query_words = {_singular(w) for w in _words(query)}
+    # A chunk that never names the asked subject ("Customer Data" asked, a
+    # privacy list of "information" uses): any of its labels in the claim is
+    # another subject, verb or not.
+    covers_asked = any(a <= chunk.singular_words for a in asked)
     # The label is the claim's subject: the claim says something about it
     # (a bare list item "Support" is that label, not a claim about it).
     others = [
@@ -1087,9 +1176,10 @@ def _other_subject_reason(
         for label in _chunk_labels(chunk)
         if label <= claim_words
         and not label & query_words
-        # "Call / 1300 394 468": a value line is no subject label.
-        and not all(w.isdigit() for w in label)
+        # "Call / 1300 394 468", "- 30 minutes": a value line is no subject.
+        and not all(w.isdigit() or w in _UNITS for w in label)
         and len(claim_words - label - _ENGLISH_WORDS) >= _MIN_SHARED_WORDS
+        and (not covers_asked or _names_label(claim, chunk, label))
     ]
     if not others:
         return None
@@ -1098,8 +1188,34 @@ def _other_subject_reason(
     return "other_subject"
 
 
+def _names_label(claim: Claim, chunk: _Chunk, label: frozenset[str]) -> bool:
+    """The claim names the label as a subject: capitalised ("The Baseline
+    package"), or the label heads the part of the page the quote is in.
+    "approves ... before agents apply it" over a far "4. Approve / 5. Apply"
+    step list uses the words as verbs, not as those steps."""
+    capitalised = {
+        _singular(w.lower()) for w in _TOKEN_RE.findall(claim.text) if w[:1].isupper()
+    }
+    if label <= capitalised:
+        return True
+    spans = chunk.quote_spans(claim.quote)
+    if not spans:
+        return True
+    for first, _last in spans:
+        before = "\n".join(chunk.units[max(0, first - _LOCAL_WINDOW) : first])
+        lead = chunk.block_lead(first, _LOCAL_WINDOW)
+        context = chunk.view(f"\n{before}\n{lead}")
+        scope = {_singular(w) for w in _words(chunk.scope)}
+        if label <= scope or label in _chunk_labels(context):
+            return True
+    return False
+
+
 def _audience_reason(
-    claim: Claim, chunk: _Chunk, audiences: Sequence[frozenset[str]]
+    claim: Claim,
+    chunk: _Chunk,
+    audiences: Sequence[frozenset[str]],
+    asked: _Asked | None = None,
 ) -> str | None:
     """A claim naming a subject of the question quotes that subject's part."""
     claim_words = {_singular(w) for w in _words(claim.text)}
@@ -1107,9 +1223,45 @@ def _audience_reason(
     if not named:
         return None
     for local in _local_texts(claim, chunk):
-        if all(a <= local for a in named):
+        # "The Baseline stage" for "the Baseline maturity stage": "stage"
+        # only qualifies the asked label the quote's part is about.
+        heads = [
+            a
+            for a in (asked.labels if asked else ())
+            if a <= local and a <= claim_words
+        ]
+        missing = [a for a in named if not a <= local]
+        if not missing or (
+            asked is not None
+            and all(
+                any(
+                    _qualifies(h, a, claim.text) and _qualifies(h, a, asked.query)
+                    for h in heads
+                )
+                for a in missing
+            )
+        ):
             return None
     return "subject_not_local"
+
+
+def _qualifies(head: frozenset[str], word: frozenset[str], text: str) -> bool:
+    """``word`` follows ``head`` in ``text`` with at most one word between
+    and no conjunction ("Baseline maturity stage"; not "startups and
+    enterprises")."""
+    words = [_singular(w) for w in _words(text)]
+    for index, current in enumerate(words):
+        if current not in head:
+            continue
+        after = words[index + 1 : index + 3]
+        for gap, candidate in enumerate(after):
+            if (
+                candidate in word
+                and len(word) == 1
+                and not any(w in _CONJUNCTIONS for w in after[:gap])
+            ):
+                return True
+    return False
 
 
 def _query_subjects(
@@ -1164,12 +1316,44 @@ def _echo_overlap(claim: Claim, chunk: _Chunk, query: str) -> bool:
     )
 
 
+def _answered_no(claim: Claim, chunk: _Chunk) -> bool:
+    """ "We don't certify ..." over "No. We focus on ...": the chunk asks
+    "Will DeployIQ certify us ...?" right before the quote's leading "No.",
+    and the claim negates that question's own verb, not another word of
+    the quote ("We don't focus on ISO 42001" is still a mismatch)."""
+    if not re.match(r"\s{0,4}no\s{0,2}[.!]", claim.quote, re.IGNORECASE):
+        return False
+    lowered = claim.text.lower().replace(_RSQUO, "'")
+    negator = re.search(r"\b(?:not|never|no)\b|n't\b", lowered)
+    if negator is None:
+        return False
+    clause = _CLAUSE_SPLIT_RE.split(lowered[negator.end() :])[0]
+    negated = {w[:_STEM_CHARS] for w in _words(clause) if len(w) >= _MIN_SUBJECT_CHARS}
+    for first, _last in chunk.quote_spans(claim.quote):
+        question = chunk.units[first - 1].strip() if first else ""
+        if not question.endswith("?"):
+            continue
+        names = {_norm(n) for n, _initial in _names(question)}
+        asked = {
+            w[:_STEM_CHARS]
+            for w in _words(question)
+            if len(w) >= _MIN_SUBJECT_CHARS and w not in names and not w.isdigit()
+        }
+        if negated & asked:
+            return True
+    return False
+
+
 def _english_reason(
-    claim: Claim, chunk: _Chunk, evidence: str, query: str = ""
+    claim: Claim, chunk: _Chunk, evidence: str, query: str = "", page: str = ""
 ) -> str | None:
     brand = _brand_words()
     for name, initial in _names(claim.text):
         if _norm(name) in brand or chunk.has_word(name):
+            continue
+        # "Email info@... to book" over "Mail info@...": a framing word
+        # around the quote's own contact value, not a name.
+        if _norm(name) in _CONTACT_FRAMING and _framed_contact(claim, chunk):
             continue
         if not initial or not chunk.has_stem(name):
             return "name_not_in_source"
@@ -1186,11 +1370,14 @@ def _english_reason(
     ):
         return "low_overlap"
     parity = _negation_parity(claim.text)
-    if parity not in _negation_parities(claim.text, claim.quote) | {
-        _negation_parity(evidence)
-    }:
+    if parity not in {
+        _restated_parity(claim.text, claim.quote),
+        _restated_parity(claim.text, evidence),
+    } and not _answered_no(claim, chunk):
         return "negation_mismatch"
-    if unsupported_claims(claim.text, evidence):
+    # "The free assessment takes only 5 minutes" over "Takes only 5 minutes":
+    # "free" may come from the same page, about the same subject.
+    if unsupported_claims(claim.text, evidence, page_text=page):
         return "assurance_not_in_quote"
     # "Both" / "all of them" generalises one source over several subjects.
     if _GENERALISER_RE.search(claim.text) and not _GENERALISER_RE.search(evidence):
@@ -1231,15 +1418,18 @@ def _check(
     if reason is None:
         reason = _figure_reason(figures, chunk)
     if reason is None:
+        query = asked.query if asked else ""
+        doc = chunk.source.document_id
+        page = asked.pages.get(str(doc), "") if asked and doc else ""
         reason = (
-            _english_reason(claim, chunk, evidence, asked.query if asked else "")
+            _english_reason(claim, chunk, evidence, query, page)
             if english
             else _other_language_reason(claim, chunk)
         )
     if reason is None:
         reason = _local_reason(figures, chunk, english, subjects)
     if reason is None and asked is not None:
-        reason = _audience_reason(claim, chunk, asked.audiences)
+        reason = _audience_reason(claim, chunk, asked.audiences, asked)
         if reason is None:
             reason = _other_subject_reason(claim, chunk, asked.labels, asked.query)
     return reason
@@ -1267,6 +1457,31 @@ def _is_decline(text: str) -> bool:
     return is_decline_sentence(text) and _CONTACT_RE.search(text) is None
 
 
+_QUOTE_NEGATOR_RE = re.compile(r"\b(?:not|no|never|without|excludes?)\b|n't\b", re.I)
+
+
+def _quoted_negative(claim: Claim, cited: str) -> bool:
+    """ "Baseline does not include 24/7 MDR" over "MDR: ... not included in
+    Baseline": a product fact the quote itself negates, not a decline. The
+    quote must not be an absence line, and the claim's content words must
+    be the quote's or the cited chunk's (stem match); the negation is then
+    verified like any other claim's."""
+    quote = claim.quote.replace(_RSQUO, "'")
+    if (
+        not is_product_negative(claim.text)
+        or not _QUOTE_NEGATOR_RE.search(quote)
+        or is_decline_sentence(quote, handoff=False)
+    ):
+        return False
+    stems = {w[:_STEM_CHARS] for w in _words(f"{quote} {cited}")}
+    content = [
+        w
+        for w in _words(claim.text)
+        if len(w) >= _MIN_SUBJECT_CHARS and w not in _ENGLISH_WORDS | _NOT_NAMES
+    ]
+    return bool(content) and all(w[:_STEM_CHARS] in stems for w in content)
+
+
 def _clean_text(claim: Claim) -> Claim:
     raw = claim.text
     # A quote pasted into the text ("... (quote: ...)") is cut, never shipped.
@@ -1291,6 +1506,15 @@ def _clean_text(claim: Claim) -> Claim:
     return Claim(text, claim.source, claim.quote, claim.part, claim.kind)
 
 
+def _pages(chunks: Sequence[_Chunk]) -> dict[str, str]:
+    """Each retrieved document's chunks (with their headings), joined."""
+    pages: dict[str, list[str]] = {}
+    for chunk in chunks:
+        if chunk.source.document_id:
+            pages.setdefault(str(chunk.source.document_id), []).append(chunk.raw)
+    return {doc: "\n".join(texts) for doc, texts in pages.items()}
+
+
 def _verify(
     draft: Draft, chunks: list[_Chunk], english: bool, query: str = ""
 ) -> tuple[list[Claim], list[tuple[Claim, str]]]:
@@ -1298,10 +1522,11 @@ def _verify(
     dropped: list[tuple[Claim, str]] = []
     seen: set[str] = set()
     labels = tuple(_asked_labels(query, chunks))
-    asked = _Asked(query, labels, tuple(_audiences(labels, chunks)))
+    asked = _Asked(query, labels, tuple(_audiences(labels, chunks)), _pages(chunks))
     for original in draft.claims:
         claim = _clean_text(original)
-        reason = _precheck(claim, draft.parts, seen)
+        cited = chunks[claim.source - 1].raw if 1 <= claim.source <= len(chunks) else ""
+        reason = _precheck(claim, draft.parts, seen, cited)
         if reason is None and _echoes_question(claim.text, query):
             reason = "label_only"
         subjects = _query_subjects(query, draft.parts, claim.part, chunks)
@@ -1319,6 +1544,7 @@ def _verify(
             number = _find_source(claim, chunks, english, subjects, asked)
             if number:
                 claim, reason = _with_source(claim, number), None
+        reason = reason or _fragment_reason(claim, chunks, query)
         if reason is None:
             seen.add(_norm(claim.text))
             kept.append(claim)
@@ -1340,23 +1566,44 @@ def _echoes_question(text: str, query: str) -> bool:
     return bool(content) and content <= {_singular(w) for w in _words(query)}
 
 
+def _page_term(text: str, phrase: str, cited: str) -> bool:
+    """Every use of ``phrase`` in ``text`` is the cited chunk's own term: the
+    content word before it comes with it ("Downloadable Materials"), never
+    a function word ("the materials say")."""
+    words, target = _norm(text).split(), _norm(phrase).split()
+    page = f" {_norm(cited)} "
+    found = False
+    for index in range(1, len(words) - len(target) + 1):
+        if words[index : index + len(target)] != target:
+            continue
+        found = True
+        term = " ".join(words[index - 1 : index + len(target)])
+        if words[index - 1] in _ENGLISH_WORDS | _NOT_NAMES or f" {term} " not in page:
+            return False
+    return found and words[: len(target)] != target
+
+
 def _precheck(  # pylint: disable=too-many-return-statements
-    claim: Claim, parts: list[Part], seen: set[str]
+    claim: Claim, parts: list[Part], seen: set[str], cited: str = ""
 ) -> str | None:
     if not claim.text:
         return "empty"
     lowered = claim.text.lower()
     quote = claim.quote.lower()
-    if any(p in lowered and p not in quote for p in _BANNED_LOWER):
+    if any(
+        p in lowered and p not in quote and not _page_term(lowered, p, cited)
+        for p in _BANNED_LOWER
+    ):
         # Banned stock / internal wording ("the materials say") never ships;
-        # the page's own words ("Downloadable Materials") are a fact, not
-        # stock wording. The claim is dropped, nothing is rewritten.
+        # the page's own words ("Downloadable Materials", in the quote or
+        # the cited chunk) are a fact, not stock wording. The claim is
+        # dropped, nothing is rewritten.
         return "banned_wording"
     if _norm(claim.text) in seen:
         return "duplicate"
     if _DANGLING_END_RE.search(claim.text):
         return "truncated"
-    if _is_decline(claim.text):
+    if _is_decline(claim.text) and not _quoted_negative(claim, cited):
         return "decline"
     if parts and not (0 <= claim.part < len(parts) and parts[claim.part].covered):
         return "uncovered_part"
@@ -1415,7 +1662,23 @@ def _noun_phrase(label: str, query: str) -> str | None:
         noun = nouns[-1][:-1]
         article = "an" if noun[:1] in "aeiou" else "a"
         label = f"{article} {noun}{label[head.end() :]}"
-    return label or None
+    return _question_phrase(label)
+
+
+def _question_phrase(label: str) -> str | None:
+    """A question-worded label as a noun phrase in our voice ("your CEO" ->
+    "our CEO", "the weather like today" -> "the weather today"); ``None``
+    when it is still a raw question ("how does ransomware encrypt files")."""
+    for pattern, repl in _ASK_REWRITES:
+        if pattern.match(label):
+            label = pattern.sub(repl, label, count=1)
+            break
+    label = _ASK_YOUR_RE.sub(
+        lambda m: f"{'O' if m.group(1) == 'Y' else 'o'}ur{m.group(2)}", label
+    ).strip(" ,;-")
+    if not label or _RAW_QUESTION_RE.match(label):
+        return None
+    return label
 
 
 def uncovered_parts(draft: Draft, kept: list[Claim], query: str) -> list[str] | None:
@@ -1450,8 +1713,13 @@ def _named_gaps(
     named = [label for label in labels if label]
     gaps = [g for g in (_gap_label(t, query) for t in gap_parts) if g]
     if gaps and (None in labels or not named):
-        seen = {label.lower() for label in named}
-        named += [g for g in gaps if g.lower() not in seen]
+        for gap in gaps:
+            # "Google Workspace" is already in "Google Workspace support".
+            words = set(_norm(gap).split())
+            if not any(
+                words <= (seen := set(_norm(n).split())) or seen <= words for n in named
+            ):
+                named.append(gap)
         return named
     return None if None in labels else named
 
@@ -1469,10 +1737,15 @@ def _unbacked_asks(
     brand = _brand_words()
     backing = [chunks[c.source - 1] for c in kept if 1 <= c.source <= len(chunks)]
     taken = set(_norm(" ".join(named)).split())
+    # A gate sub-question may be a bare name ("Huntress"): its capital is a
+    # name when the question has it mid-sentence ("Is Huntress better ...").
+    mid_names = {_norm(n) for n, initial in _names(query) if not initial}
     out: list[str] = []
     for ask in dict.fromkeys(" ".join(a.split()) for a in asks):
         names = [
-            n for n, initial in _names(ask) if not initial and _norm(n) not in brand
+            n
+            for n, initial in _names(ask)
+            if (not initial or _norm(n) in mid_names) and _norm(n) not in brand
         ]
         unbacked = [n for n in names if not any(c.has_word(n) for c in backing)]
         if not unbacked or any(_norm(n) in taken for n in unbacked):
@@ -1633,16 +1906,16 @@ def _shared_tail(claims: list[Claim]) -> int:
 
 
 def _bulletise_tail(kept: list[Claim]) -> list[Claim]:
-    """3+ sentences in a row ending the same way ("X is one of Deploy IQ's
-    Responsible AI principles."): the first sentence, then the others' heads
-    as bullets."""
+    """3+ sentences (or bullets) in a row ending the same way ("X is one of
+    Deploy IQ's Responsible AI principles."): the first as a sentence, then
+    the others' heads as bullets."""
     out: list[Claim] = []
     index = 0
     while index < len(kept):
         end = index + 1
         while (
             end < len(kept)
-            and kept[end].kind == kept[index].kind == "sentence"
+            and kept[end].kind == kept[index].kind
             and kept[end].part == kept[index].part
             and _shared_tail(kept[index : end + 1]) >= _MIN_SHARED_TAIL
         ):
@@ -1652,8 +1925,14 @@ def _bulletise_tail(kept: list[Claim]) -> list[Claim]:
         heads = (
             [c.text.rstrip(_TERMINAL).split()[:-shared] for c in run] if shared else []
         )
-        if shared and all(heads):
-            out.append(run[0])
+        # A head cut before its complement ("Application allowlisting is")
+        # keeps the sentences.
+        if (
+            shared
+            and all(heads)
+            and not any(_DANGLING_TAIL_RE.search(" ".join(h)) for h in heads)
+        ):
+            out.append(_as_kind(run[0], "sentence"))
             out.extend(
                 _as_kind(c, "item", " ".join(h).rstrip(" ,;"))
                 for c, h in zip(run[1:], heads[1:], strict=True)
@@ -1713,14 +1992,278 @@ def _restates(claim: Claim, keys: set[str], seen: set[str]) -> bool:
 
 
 def _is_fragment(claim: Claim) -> bool:
-    """A bare page label as a sentence ("Call.", "Sydney Office.")."""
+    """A bare page label as a sentence ("Call.", "Sydney Office.", a
+    verbless unpunctuated "30 minutes")."""
     words = claim.text.rstrip(_TERMINAL).split()
+    if claim.kind != "sentence" or _CONTACT_RE.search(claim.text):
+        return False
+    if len(words) <= _FRAGMENT_MAX_WORDS and all(
+        w[:1].isupper() or not w[:1].isalpha() for w in words
+    ):
+        return True
     return (
-        claim.kind == "sentence"
-        and len(words) <= _FRAGMENT_MAX_WORDS
-        and not _CONTACT_RE.search(claim.text)
-        and all(w[:1].isupper() or not w[:1].isalpha() for w in words)
+        _is_label(claim.text)
+        and len(words) <= _HEADLINE_MAX_WORDS
+        and not _has_finite_verb(claim.text)
     )
+
+
+# A page heading / badge / eyebrow written as a sentence ("Your security
+# maturity path.", "30 minutes.", "What you get."): short, no finite verb.
+_HEADLINE_MAX_WORDS = 6
+_SHARD_MAX_WORDS = 3
+_WH_HEADLINE_MAX_WORDS = 4
+_MIN_TITLE_WORDS = 3
+_MIN_VERB_S_CHARS = 4
+_FINITE_WORDS = frozenset(
+    {
+        "is", "are", "was", "were", "am", "be", "been", "has", "have", "had",
+        "do", "does", "did", "can", "could", "will", "would", "should", "may",
+        "might", "must", "shall", "isn't", "aren't", "doesn't", "don't",
+        "won't", "can't", "get", "gets", "got", "need", "help", "make", "take",
+        "give", "keep", "use", "provide", "offer", "include", "cover", "run",
+        "work", "stay", "go", "come", "let", "ensure", "deliver", "support",
+    }
+)  # fmt: skip
+_SUBJECT_PRONOUNS = frozenset({"i", "we", "you", "they", "he", "she", "it"})
+_CTA_LEADS = frozenset(
+    {"see", "explore", "discover", "learn", "view", "browse", "find", "read",
+     "check", "compare", "meet"}
+)  # fmt: skip
+_WH_LEADS = frozenset({"what", "how", "why", "where", "who", "when", "which"})
+_VALUE_CUE_RE = re.compile(
+    r"\b(?:how\s{1,3}(?:long|much|many|fast|quick(?:ly)?|soon|often)|duration|"
+    r"timeline|minutes?|hours?|days?|weeks?|months?|cost|price|when)\b",
+    re.IGNORECASE,
+)
+_HEADING_CUE_RE = re.compile(
+    r"\b(?:tagline|slogan|motto|headline|heading|title|eyebrow|badge|label|"
+    r"called|named|who|whom)\b",
+    re.IGNORECASE,
+)
+_QUERY_FILLER = frozenset({"get", "got", "only", "not", "page", "offer", "offered"})
+_LINE_LABEL_RE = re.compile(r"^[A-Za-z][\w ]{0,20}:\s{1,3}")  # "Eyebrow: ..."
+_BOLD_RE = re.compile(r"\*\*([^*\n]{1,160})\*\*")
+_SHARD_SPLIT_RE = re.compile(r"(?<=[.!?])\s{1,4}")
+_EDGE_PUNCT = ".,;:!?()[]\"'“”"
+
+
+def _verb_s(token: str) -> bool:
+    """A third-person verb form ("offers"), not "access" / "status" / "IQ's"."""
+    return (
+        len(token) >= _MIN_VERB_S_CHARS
+        and token.isalpha()
+        and token.endswith("s")
+        and not token.endswith(("ss", "us", "is", "ics"))
+    )
+
+
+def _has_finite_verb(text: str) -> bool:
+    """Heuristic: an auxiliary / common verb, a pronoun subject, or an "-s"
+    verb that is not the phrase's last word ("Technical controls, not ...")."""
+    raw = text.split()
+    tokens = [w.strip(_EDGE_PUNCT).lower() for w in raw]
+    for index, token in enumerate(tokens):
+        if token in _FINITE_WORDS:
+            return True
+        if token in _SUBJECT_PRONOUNS and index + 1 < len(tokens):
+            return True
+        closes = index + 1 == len(tokens) or raw[index][-1:] in ",;:"
+        if _verb_s(token) and (index == 0 or not closes):
+            return True
+    return False
+
+
+def _standalone(quote: str, chunk: _Chunk) -> bool:
+    """The quote is a whole line, bullet, heading or bold span of the chunk."""
+    target = _norm(quote)
+    if not target:
+        return False
+    for line in chunk.source.content.split("\n"):
+        plain = _BULLET_RE.sub("", line.strip()).lstrip("# ")
+        segments = [m.group(1) for m in _BOLD_RE.finditer(plain)]
+        plain = _EMPHASIS_RE.sub("", plain).strip()
+        segments += [plain, _LINE_LABEL_RE.sub("", plain)]
+        if any(_norm(s) == target for s in segments):
+            return True
+    return False
+
+
+def _asks_for(text: str, query: str) -> bool:
+    """The question asks for exactly this value ("how long?" + "30 minutes")
+    or names one of its words."""
+    if _HEADING_CUE_RE.search(query):
+        return True
+    if _DIGIT_RE.search(text) and _VALUE_CUE_RE.search(query):
+        return True
+    stop = _ENGLISH_WORDS | _NOT_NAMES | _QUERY_FILLER | _brand_words()
+    content = {_singular(w) for w in _words(text) if w not in stop and not w.isdigit()}
+    return bool(content & {_singular(w) for w in _words(query) if w not in stop})
+
+
+def _title_case(words: list[str]) -> bool:
+    """A page title: 3+ words, every word with letters capitalised."""
+    alpha = [w for w in words if any(ch.isalpha() for ch in w)]
+    return len(alpha) >= _MIN_TITLE_WORDS and all(w[:1].isupper() for w in alpha)
+
+
+def _fragment_reason(claim: Claim, chunks: Sequence[_Chunk], query: str) -> str | None:
+    """ "heading_fragment" for a page heading / badge / eyebrow written as a
+    sentence (list items are fine; the asked-for value is kept). Only a claim
+    citing one of ``chunks`` (1-based ``source``) is judged."""
+    if not 1 <= claim.source <= len(chunks):
+        return None
+    chunk = chunks[claim.source - 1]
+    text = claim.text.strip()
+    words = text.rstrip(_TERMINAL).split()
+    if (
+        claim.kind != "sentence"
+        or not words
+        or len(words) > _HEADLINE_MAX_WORDS
+        or _CONTACT_RE.search(text)
+        or text.endswith("?")
+    ):
+        return None
+    shards = [s for s in _SHARD_SPLIT_RE.split(text) if s]
+    if len(shards) > 1 and all(
+        len(s.split()) <= _SHARD_MAX_WORDS and not _has_finite_verb(s) for s in shards
+    ):
+        return "heading_fragment"  # "Human-approved. AI AUTOMATION."
+    # A bare label ("Identity") may be one row of a list (rendering decides).
+    if _is_label(text) or not _standalone(claim.quote, chunk) or _asks_for(text, query):
+        return None
+    lead = words[0].strip(_EDGE_PUNCT).lower()
+    headline = (
+        lead in _CTA_LEADS
+        or (lead in _WH_LEADS and len(words) <= _WH_HEADLINE_MAX_WORDS)
+        or _title_case(words)  # "Stop Threats Before They Run."
+    )
+    # "Clear alignment to intent and obligations" under "What Deploy IQ
+    # Platform Enables", asked "What does the platform enable?": the asked
+    # section's own rows are the answer, not stray headings.
+    row = not headline and (_has_finite_verb(text) or _section_asked(chunk, query))
+    return None if row else "heading_fragment"
+
+
+def _section_asked(chunk: _Chunk, query: str) -> bool:
+    """The chunk's section heading names nothing the question does not."""
+    heading = str((chunk.source.metadata or {}).get("section_heading") or "")
+    brand = _brand_words()
+
+    def stems(text: str) -> set[str]:
+        return {
+            w[:_STEM_CHARS]
+            for w in _words(text)
+            if len(w) >= _MIN_SUBJECT_CHARS
+            and w not in _ENGLISH_WORDS | _NOT_NAMES
+            and w not in brand
+        }
+
+    wanted = stems(heading)
+    return bool(wanted) and wanted <= stems(query)
+
+
+# Near-duplicates: one fact from two sources ("info@... [1] Contact: info@...").
+_DUPLICATE_SHARE = 0.8
+_CONTACT_EXTRA_STEMS = 1
+_SUBJECT_WORDS = 2
+# A claim / bullet cut before its complement ("Application allowlisting is").
+_DANGLING_TAIL_RE = re.compile(
+    r"\b(?:is|are|was|were|be|been|of|the|an|and|or|as|including|includes?|"
+    r"such\s{1,2}as|with|by|plus)\s{0,2}[.,;:]?\s{0,2}$",
+    re.IGNORECASE,
+)
+
+
+_SUFFIXES = ("ing", "ed", "es", "s")
+
+
+def _stem(word: str) -> str:
+    """ "used" / "uses" -> "us", "governed" -> "gover" (light, for overlap)."""
+    for suffix in _SUFFIXES:
+        if len(word) >= len(suffix) + 2 and word.endswith(suffix):
+            return word[: -len(suffix)][:_STEM_CHARS]
+    return word[:_STEM_CHARS]
+
+
+def _stems(text: str) -> set[str]:
+    stop = _ENGLISH_WORDS | _NOT_NAMES | _brand_words()
+    return {_stem(w) for w in _words(text) if w not in stop}
+
+
+def _duplicates(claim: Claim, shown: Sequence[Claim]) -> bool:
+    """A sentence restating a shown sentence: ≥80% shared stems, all its stems
+    already said, the same email / phone, or the same values and subject."""
+    if claim.kind == "item":
+        return False
+    stems = _stems(claim.text)
+    contact = _contact_values(claim.text)
+    values = {w for w in _words(claim.text) if w.isdigit()}
+    subject = _words(claim.text)[:_SUBJECT_WORDS]
+    for prior in shown:
+        if prior.kind == "item":
+            continue
+        other = _stems(prior.text)
+        if stems and (
+            stems <= other
+            or len(stems & other) >= _DUPLICATE_SHARE * len(stems | other)
+        ):
+            return True
+        if contact and contact <= _contact_values(prior.text):
+            value_stems = set().union(*(_stems(v) for v in contact))
+            if len(stems - other - value_stems) <= _CONTACT_EXTRA_STEMS:
+                return True
+        if (
+            values
+            and values <= {w for w in _words(prior.text) if w.isdigit()}
+            and subject == _words(prior.text)[:_SUBJECT_WORDS]
+        ):
+            return True
+    return False
+
+
+def _cap(shown: list[Claim], max_words: int) -> list[Claim]:
+    """Hard caps on the reply: ``max_words`` words and ``_MAX_LIST_ITEMS``
+    bullets per part; the latest claim of a part with others goes first."""
+    out = list(shown)
+
+    def items_of(part: int) -> int:
+        return sum(c.kind == "item" and c.part == part for c in out)
+
+    while True:
+        crowded = {c.part for c in out if items_of(c.part) > _MAX_LIST_ITEMS}
+        if not crowded and sum(len(c.text.split()) for c in out) <= max_words:
+            return out
+        spare = [
+            i
+            for i, c in enumerate(out)
+            if sum(o.part == c.part for o in out) > 1
+            and (not crowded or (c.kind == "item" and c.part in crowded))
+        ]
+        if not spare:
+            return out
+        del out[spare[-1]]
+
+
+def _tidy_ends(shown: list[Claim]) -> list[Claim]:
+    """A lead ending in ":" with no list after it ends in "."; a claim cut
+    before its complement ("... are", "... every stage:" alone) is dropped
+    (unless it is the reply's only claim)."""
+    out: list[Claim] = []
+    for index, claim in enumerate(shown):
+        text = claim.text.rstrip()
+        listed = index + 1 < len(shown) and shown[index + 1].kind == "item"
+        if text.endswith(":") and listed and claim.kind != "item":
+            out.append(claim)  # a list's lead
+            continue
+        text = text.rstrip(" :")
+        if text and _DANGLING_TAIL_RE.search(text) is None:
+            out.append(
+                claim if text == claim.text else _as_kind(claim, claim.kind, text)
+            )
+        elif len(shown) == 1:
+            out.append(claim)
+    return out
 
 
 def _settle_lone_items(shown: list[Claim]) -> list[Claim]:
@@ -1750,18 +2293,47 @@ def _strip_item_leads(shown: list[Claim]) -> list[Claim]:
         if claim is not None and claim.kind == "item":
             run.append(claim)
             continue
-        cut = _strip_shared_lead(run)
-        shared = _shared_lead(run) if run and cut is not run else 0
-        led = bool(out) and bool(run) and out[-1].part == run[0].part
-        lead = " ".join(run[0].text.split()[:shared]).rstrip(" ,;:") if run else ""
-        # "The control area is:" reads as one item, not a list's lead.
-        if shared >= _MIN_LEAD_WORDS and not led and not _SINGULAR_LEAD_RE.search(lead):
-            out.append(_as_kind(run[0], "sentence", f"{lead}:"))
-        out.extend(cut)
+        for index, group in enumerate(_lead_groups(run)):
+            _emit_group(out, group, index)
         run = []
         if claim is not None:
             out.append(claim)
     return out
+
+
+_PRONOUN_LEADS = frozenset({"it", "they", "this", "these", "its", "their"})
+
+
+def _lead_groups(run: list[Claim]) -> list[list[Claim]]:
+    """``run`` split into consecutive bullets repeating one lead ("The
+    Strengthen solution includes ..." x3, then "It adds ..." x5)."""
+    groups: list[list[Claim]] = []
+    for claim in run:
+        last = groups[-1] if groups else None
+        if last is not None and _shared_lead([*last, claim]) >= _MIN_SHARED_WORDS:
+            last.append(claim)
+        else:
+            groups.append([claim])
+    return groups
+
+
+def _emit_group(out: list[Claim], group: list[Claim], index: int) -> None:
+    """One lead group of a list, its repeated lead cut. The list's first group
+    without a sentence of its part before it keeps the lead once as a lead
+    sentence; a later group's pronoun lead ("It adds") continues the list; a
+    later group's own subject ("The Frontier package includes") gets a lead
+    sentence, or keeps its lead when it is too short for one."""
+    cut = _strip_shared_lead(group)
+    shared = _shared_lead(group) if cut is not group else 0
+    lead = " ".join(group[0].text.split()[:shared]).rstrip(" ,;:")
+    pronoun = bool(shared) and lead.split()[0].lower() in _PRONOUN_LEADS
+    led = (bool(out) and out[-1].part == group[0].part) if index == 0 else pronoun
+    # "The control area is:" reads as one item, not a list's lead.
+    if shared >= _MIN_LEAD_WORDS and not led and not _SINGULAR_LEAD_RE.search(lead):
+        out.append(_as_kind(group[0], "sentence", f"{lead}:"))
+    elif index and not led:
+        cut = group
+    out.extend(cut)
 
 
 def _labels_as_items(kept: list[Claim]) -> list[Claim]:
@@ -1790,6 +2362,78 @@ def _labels_as_items(kept: list[Claim]) -> list[Claim]:
     return out
 
 
+# A run-on series ("The service includes A, B, C, ... and J."): a list.
+_MIN_SERIES_ITEMS = 5
+_SERIES_LEAD_RE = re.compile(
+    r"^(.{3,120}?\b(?:includes?|covers?|offers?|provides?|delivers?|features?|"
+    r"comprises?|that|such\s{1,2}as|including))\s{1,3}(\S.*)$",
+    re.IGNORECASE,
+)
+_SERIES_SPLIT_RE = re.compile(r",\s{1,3}(?:and\s{1,3}|or\s{1,3})?|;\s{1,3}")
+# 5+ sentences in a row of one part and source: a lead and bullets.
+_MIN_PROSE_RUN = 5
+
+
+def _is_series(text: str) -> bool:
+    """ "A, B, C and D": an "and" / "or" joins only the last entry. "a
+    governed, continuous system that connects X, Y, and Z into structured,
+    traceable action" is prose with commas, not a list."""
+    joins = [
+        bool(re.search(r"\b(?:and|or)\b", m.group(0)))
+        for m in _SERIES_SPLIT_RE.finditer(text)
+    ]
+    return not any(joins[:-1])
+
+
+def _split_series(kept: list[Claim]) -> list[Claim]:
+    """A sentence listing 5+ comma-separated things after a lead verb: the
+    lead ("The service includes:") then one item per entry (same words, a
+    one-word entry joins the next: "scoped, phased implementation")."""
+    out: list[Claim] = []
+    for claim in kept:
+        found = _SERIES_LEAD_RE.match(claim.text.rstrip(_TERMINAL))
+        if claim.kind != "sentence" or found is None or not _is_series(found.group(2)):
+            out.append(claim)
+            continue
+        entries: list[str] = []
+        for raw in _SERIES_SPLIT_RE.split(found.group(2)):
+            piece = raw.strip()
+            if entries and len(entries[-1].split()) == 1:
+                entries[-1] = f"{entries[-1]}, {piece}"
+            elif piece:
+                entries.append(piece)
+        if len(entries) < _MIN_SERIES_ITEMS:
+            out.append(claim)
+            continue
+        out.append(_as_kind(claim, "sentence", f"{found.group(1)}:"))
+        out.extend(_as_kind(claim, "item", e[:1].upper() + e[1:]) for e in entries)
+    return out
+
+
+def _prose_as_list(kept: list[Claim]) -> list[Claim]:
+    """5+ sentences in a row of one part and source (a page's list told as
+    prose): the first stays the lead, the others become bullets."""
+    out: list[Claim] = []
+    index = 0
+    while index < len(kept):
+        end = index
+        while (
+            end < len(kept)
+            and kept[end].kind == "sentence"
+            and kept[end].part == kept[index].part
+            and kept[end].source == kept[index].source
+        ):
+            end += 1
+        if end - index >= _MIN_PROSE_RUN:
+            out.append(kept[index])
+            out.extend(_as_kind(c, "item") for c in kept[index + 1 : end])
+            index = end
+        else:
+            out.append(kept[index])
+            index += 1
+    return out
+
+
 def _fit_length(  # pylint: disable=too-many-locals
     kept: list[Claim],
     max_words: int,
@@ -1799,24 +2443,22 @@ def _fit_length(  # pylint: disable=too-many-locals
     restructures only; every shipped word is a verified claim's).
 
     One list per part, after its lead sentence; at most ``_MAX_LIST_ITEMS``
-    bullets in the reply (shared bullet lead removed); restated facts and bare
+    bullets per part (shared bullet lead removed); restated facts and bare
     label fragments dropped; about ``max_words`` words. Each answered part
     keeps its first claim, so a long answer never turns a covered part into
     a gap: the words of the later parts' first claims are reserved, so the
     budget trims within parts instead of crowding out a later one.
     """
-    claims = _group_parts(
-        _bulletise_tail(
-            _bulletise(_split_steps(_merge_labels(_labels_as_items(kept), follows)))
-        )
-    )
+    steps = _split_series(_split_steps(_merge_labels(_labels_as_items(kept), follows)))
+    claims = _group_parts(_prose_as_list(_bulletise_tail(_bulletise(steps))))
     solid = {c.part for c in claims if not _is_fragment(c)}
     firsts: dict[int, int] = {}
     for claim in claims:
         if not (_is_fragment(claim) and claim.part in solid):
             firsts.setdefault(claim.part, len(claim.text.split()))
     shown: list[Claim] = []
-    words = items = 0
+    words = 0
+    items: dict[int, int] = {}
     parts_shown: set[int] = set()
     seen: set[str] = set()
     for claim in claims:
@@ -1829,16 +2471,19 @@ def _fit_length(  # pylint: disable=too-many-locals
             n for p, n in firsts.items() if p not in parts_shown and p != claim.part
         )
         over = words + size + reserved > max_words or (
-            claim.kind == "item" and items >= _MAX_LIST_ITEMS
+            claim.kind == "item" and items.get(claim.part, 0) >= _MAX_LIST_ITEMS
         )
         if not first and (over or _restates(claim, keys, seen)):
             continue
+        if _duplicates(claim, shown):
+            continue  # said already (another part's claim / another source)
         seen |= keys
         shown.append(claim)
         words += size
-        items += claim.kind == "item"
+        items[claim.part] = items.get(claim.part, 0) + (claim.kind == "item")
         parts_shown.add(claim.part)
-    return _strip_item_leads(_settle_lone_items(shown))
+    listed = _tidy_ends(_strip_item_leads(_settle_lone_items(shown)))
+    return _tidy_ends(_cap(listed, max_words))
 
 
 def _is_label(text: str) -> bool:
@@ -1878,10 +2523,14 @@ def _render(  # pylint: disable=too-many-locals
             blocks.append(list(items))
             items.clear()
 
+    last_part: int | None = None
     for claim in kept:
         n = marker(claim)
+        part, last_part = last_part, claim.part
         if claim.kind == "item":
             flush_paragraph()
+            if part != claim.part:
+                flush_items()  # each part's list on its own
             prefix = f"{len(items) + 1}." if numbered else "-"
             items.append(f"{prefix} {claim.text.rstrip()} [{n}]")
             continue

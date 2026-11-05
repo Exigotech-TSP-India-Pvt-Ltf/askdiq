@@ -24,7 +24,7 @@ from app.governance.pii import redact_pii
 from app.ingestion.cleanup import clean_markdown
 
 DOC_HASH_VERSION = "v1"
-PIPELINE_VERSION = "v4"
+PIPELINE_VERSION = "v5"  # v5: card-per-chunk sections, sample framing kept
 
 
 def normalize_markdown(raw: str | bytes) -> tuple[str, list[str]]:

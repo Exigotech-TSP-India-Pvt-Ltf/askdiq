@@ -192,7 +192,9 @@ def test_route_answer_partial_not_covered_off_topic() -> None:
     assert partial.route is Route.PARTIAL
     assert [v.covered for v in partial.parts] == [True, False]
     assert partial.parts[1].document_ids == ()
-    assert decide_route([_part("SOC 2?", -9.0, cos=0.41)]).route is Route.NOT_COVERED
+    # Below the borderline band (CE >= -9.4 with cosine >= 0.33 reaches generation).
+    assert decide_route([_part("SOC 2?", -9.8, cos=0.41)]).route is Route.NOT_COVERED
+    assert decide_route([_part("SOC 2?", -9.0, cos=0.25)]).route is Route.NOT_COVERED
     assert decide_route([_part("burger", -11.2, cos=0.07)]).route is Route.OFF_TOPIC
 
 
@@ -363,7 +365,9 @@ def test_every_pointer_reply_resolves_to_its_option(reply: str, doc: str) -> Non
     resolved = resolve_clarification_reply(reply, _card_history())
     assert resolved is not None
     assert resolved.document_ids == [doc]
-    assert resolved.query.startswith("How do I get compliant?")
+    # The picked option leads the retrieval query; the original ask follows.
+    assert resolved.query.endswith("How do I get compliant?")
+    assert resolved.original_query == "How do I get compliant?"
 
 
 def test_not_sure_and_long_free_text_resolve() -> None:

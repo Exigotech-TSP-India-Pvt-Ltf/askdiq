@@ -23,18 +23,23 @@ from app.harness.clarify import (
     clarification_streak,
     clarify_eligible,
     content_word_count,
+    decide_clarification,
     parse_decision,
     plan_clarification,
     render_clarification_text,
     resolve_clarification_reply,
     select_candidates,
 )
+from app.harness.decision import PartVerdict, Route, RouteDecision
 from app.insights.rules import map_outcome
 from app.insights.taxonomy import BotQuality
+from app.retrieval.retriever import trust_clarified
 from app.schemas.query import (
     ChatTurn,
     Clarification,
     ClarificationAnswer,
+    ClarificationOption,
+    ClarificationQuestion,
     QueryResponse,
     SourceChunk,
 )
@@ -375,6 +380,160 @@ def test_contact_ask_after_a_card_is_a_new_question(ask: str) -> None:
 def test_junk_after_a_card_refines_nothing(junk: str) -> None:
     # mt-vague-then-e8: "!!!" after the card was answered as a refinement.
     assert resolve_clarification_reply(junk, _clarify_history()) is None
+
+
+def _service_history(original: str, labels: list[str]) -> list[ChatTurn]:
+    clar = Clarification(
+        preamble="",
+        questions=[
+            ClarificationQuestion(
+                id="Q1",
+                header="Service",
+                question="Which service is your question about?",
+                options=[
+                    ClarificationOption(
+                        id=f"O{i}", label=label, document_ids=[f"doc-{i}"]
+                    )
+                    for i, label in enumerate(labels, 1)
+                ],
+            )
+        ],
+        original_query=original,
+    )
+    return [
+        ChatTurn(role="user", content=original),
+        ChatTurn(
+            role="assistant",
+            content=render_clarification_text(clar),
+            outcome=CLARIFY_OUTCOME,
+            clarification=clar,
+        ),
+    ]
+
+
+_M365 = [
+    "Microsoft 365 Security Packages",
+    "Microsoft 365 Security Baseline Assessment",
+]
+_CERT = ["ISO 27001 Technical Controls in Microsoft 365", "Essential Eight Compliance"]
+_BUY = ["Microsoft 365 Security Packages", "Zero Trust Services"]
+
+
+@pytest.mark.parametrize(
+    ("original", "labels", "reply"),
+    [("plans?", _BUY, "qzxv plorb wibble"), ("whats ur pricing", _BUY, "plorb wibble")],
+)
+def test_word_shaped_gibberish_after_a_card_refines_nothing(
+    original: str, labels: list[str], reply: str
+) -> None:
+    # fin-clar-plans-nonsense / fin-clar-price-nonsense: was trusted at CE -11.
+    assert (
+        resolve_clarification_reply(reply, _service_history(original, labels)) is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("original", "labels", "reply", "expected", "doc"),
+    [
+        # fin-clar-m365-first: vague original -> the option itself is asked.
+        (
+            "m365 help",
+            _M365,
+            "first",
+            "What is Microsoft 365 Security Packages and what does it include?",
+            "doc-1",
+        ),
+        # fin-clar-cert-other: a typed service name picks the option.
+        (
+            "do you do certification",
+            _CERT,
+            "I actually meant Essential Eight",
+            "What is Essential Eight Compliance and what does it include?",
+            "doc-2",
+        ),
+        # fin-clar-assess-pickcis: the card's own topic word is vague too.
+        (
+            "assessment options?",
+            _M365,
+            "Microsoft 365 Security Baseline Assessment",
+            "What is Microsoft 365 Security Baseline Assessment and what does it "
+            "include?",
+            "doc-2",
+        ),
+        # A real ask is kept after the option.
+        (
+            "How do I get compliant?",
+            _CERT,
+            "1",
+            "ISO 27001 Technical Controls in Microsoft 365: How do I get compliant?",
+            "doc-1",
+        ),
+        # A price ask is kept, after the option.
+        ("pricing", _BUY, "2", "Zero Trust Services: pricing", "doc-2"),
+        # fin-clar-price-name: the tier the label lacks leads the query.
+        (
+            "pricing",
+            _BUY,
+            "the Strengthen package",
+            "Strengthen (Microsoft 365 Security Packages): pricing",
+            "doc-1",
+        ),
+    ],
+)
+def test_option_pick_leads_the_query_with_the_option(
+    original: str, labels: list[str], reply: str, expected: str, doc: str
+) -> None:
+    resolved = resolve_clarification_reply(reply, _service_history(original, labels))
+    assert resolved is not None and resolved.free_text is False
+    assert resolved.query == expected
+    assert resolved.document_ids == [doc]
+
+
+def test_nonsense_far_below_the_covered_floor_is_not_trusted() -> None:
+    def gate(score: float) -> RouteDecision:
+        return RouteDecision(
+            Route.NOT_COVERED,
+            parts=(PartVerdict("plans? plorb wibble)", False, score),),
+        )
+
+    floor = settings.retrieval_ce_covered_min
+    assert trust_clarified(gate(floor - 2.5)).route is Route.NOT_COVERED
+    assert trust_clarified(gate(floor - 0.5)).route is Route.ANSWER
+
+
+@pytest.mark.parametrize(
+    ("query", "ask"),
+    [
+        ("Where can I buy a cheap iPhone?", False),
+        ("Which laptop should I buy under $1500?", False),
+        ("quote pls", True),
+        ("whats ur pricing", True),
+        ("I want to buy", True),
+        ("how much is it?", True),
+    ],
+)
+def test_buying_card_only_for_our_services(query: str, ask: bool) -> None:
+    # tx-ot-shopping-01/02: a third-party purchase got the "which service?" card.
+    decision = decide_clarification(
+        query,
+        None,
+        sources=[],
+        ce_by_chunk={},
+        max_ce=-11.0,
+        route="not_covered",
+        buying=True,
+        clarification_reply=False,
+        parts=1,
+    )
+    assert decision.ask is ask
+
+
+def test_real_free_text_still_refines() -> None:
+    resolved = resolve_clarification_reply(
+        "for a small dental clinic", _service_history("pricing", _BUY)
+    )
+    assert resolved is not None and resolved.free_text is True
+    assert resolved.query == "pricing (for a small dental clinic)"
 
 
 def test_boost_puts_chosen_documents_first() -> None:

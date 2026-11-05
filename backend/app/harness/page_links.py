@@ -10,11 +10,14 @@ writes a URL.
 
 ``with_page_link`` wraps :func:`app.harness.orchestrator.run_query` (the one
 hook). A pure link ask (every topic word names one page) is answered without
-the model: one sentence of the page's own copy (``PAGE_SUMMARY``) plus the
-link line, citing that page. A link ask inside a longer question keeps the
-full answer path: an answered reply gets the line (and the page's citation);
-a declined reply whose page exists becomes the link line alone (the link is
-a metadata fact). Without such a page the reply is left unchanged.
+the model: one sentence of the page's body text (``PAGE_SUMMARY``), citing
+the chunk that sentence is in, plus the link line. The front-matter
+description is never quoted: it can claim what the body does not. A link
+ask inside a longer question keeps the full answer path: an answered reply
+gets the line (and the page's citation); a declined reply whose page exists
+becomes the link line alone (the link is a metadata fact). Without such a
+page the reply is left unchanged. A booking ask ("book a discovery call")
+gets the booking page's line after its answer.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ import functools
 import inspect
 import re
 import time
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -126,7 +129,6 @@ class SitePage:
     document_id: str
     route: str
     title: str
-    description: str = ""
 
 
 def _is_link_text(text: str) -> bool:
@@ -200,17 +202,16 @@ async def site_pages(vector_store: VectorStore) -> list[SitePage]:
     """Every non-quarantined document that has a site route."""
     route = Document.doc_metadata["route"].as_string()
     title = Document.doc_metadata["title"].as_string()
-    description = Document.doc_metadata["description"].as_string()
     stmt = (
-        select(Document.id, route, title, description)
+        select(Document.id, route, title)
         .where(route.is_not(None))
         .where(Document.id.not_in(quarantined_document_ids()))
     )
     rows = (await vector_store.session.execute(stmt)).all()
     await vector_store.session.commit()
     return [
-        SitePage(str(doc_id), doc_route, doc_title or "", doc_description or "")
-        for doc_id, doc_route, doc_title, doc_description in rows
+        SitePage(str(doc_id), doc_route, doc_title or "")
+        for doc_id, doc_route, doc_title in rows
         if isinstance(doc_route, str) and doc_route.startswith("/")
     ]
 
@@ -252,14 +253,19 @@ async def attach_page_link(  # pylint: disable=too-many-locals
     response: QueryResponse,
     vector_store: VectorStore,
     page: SitePage | None = None,
+    *,
+    link_ask: bool | None = None,
 ) -> QueryResponse:
     """``response`` plus the asked page's link line, when the page exists.
 
     ``page``: already resolved from the question (else resolved here, ties
-    broken by the reply's cited and retrieved documents).
+    broken by the reply's cited and retrieved documents). ``link_ask``: the
+    question asks for that page (default: :func:`is_page_link_request`).
     """
     answered = response.outcome in _APPEND_OUTCOMES
-    if not (answered or _declined(response)) or not is_page_link_request(query):
+    if link_ask is None:
+        link_ask = is_page_link_request(query)
+    if not (answered or _declined(response)) or not link_ask:
         return response
     if page is None:
         preferred = _unique(
@@ -351,6 +357,11 @@ def with_page_link(
             }
         response = await run(**bound)
         try:
+            if page is None and _is_booking_ask(query, bound):
+                page = resolve_page(_BOOKING_WORD, await site_pages(vector_store))
+                return await attach_page_link(
+                    query, response, vector_store, page, link_ask=page is not None
+                )
             return await attach_page_link(query, response, vector_store, page)
         except SQLAlchemyError:
             logger.exception("page_link_failed")
@@ -360,6 +371,28 @@ def with_page_link(
 
 
 _BRAND_SUFFIX_RE = re.compile(r"\s{0,3}[-|]\s{0,3}deploy\s{0,2}iq\s{0,3}$", re.I)
+
+_BOOKING_WORD = "booking"
+# The message is the booking itself ("book a discovery call", "can I book a
+# session"), anchored at its start, so a question about a booking ("who will
+# I speak with if I book a session?") never matches.
+_BOOKING_ASK_RE = re.compile(
+    r"^(?:(?:please|pls|ok|okay|yes|great|sure|hi|hey)[\s,!.]{1,3})?"
+    r"(?:i(?:'d|\s{1,3}would)\s{1,3}like\s{1,3}to\s{1,3}|"
+    r"i\s{1,3}(?:want|need|wish)\s{1,3}to\s{1,3}|i\s{1,3}wanna\s{1,3}|"
+    r"(?:can|could|may)\s{1,3}(?:i|we)\s{1,3}|let\s{1,3}me\s{1,3}|"
+    r"help\s{1,3}me\s{1,3}|how\s{1,3}(?:do|can)\s{1,3}(?:i|we)\s{1,3})?"
+    r"book\s{1,3}(?:(?:a|an|the|my|our|in)\s{1,3})?(?:[a-z-]{1,20}\s{1,3}){0,2}"
+    r"(?:call|session|consultation|meeting|demo|appointment|chat)s?\b"
+)
+
+
+def _is_booking_ask(query: str, arguments: dict[str, Any]) -> bool:
+    """A fresh message that asks to book a call (not a link ask)."""
+    if arguments.get("clarification_reply") or is_page_link_request(query):
+        return False
+    text = normalise_input(query or "")[:MAX_QUERY_CHARS].lower().strip()
+    return bool(_BOOKING_ASK_RE.match(text))
 
 
 def page_question(page: SitePage) -> str:
@@ -413,40 +446,44 @@ async def _link_target(
 # --- the model-free reply ---------------------------------------------------------
 
 MAX_LINK_REPLY_WORDS = 40
-_PROSE_MIN_WORDS = 8
+# A quoted sentence has at least this many words: shorter lines are
+# taglines ("Collaborate on your new business idea.").
+_PROSE_MIN_WORDS = 10
 _PROSE_SCAN_CHARS = 4000
 _LABEL_MAX_WORDS = 4
-_ING = "ing"
 # First words of call-to-action copy ("Assess and harden ...").
 _ACTION_VERBS = frozenset(
     {
         "achieve", "assess", "book", "browse", "build", "check", "compare",
-        "connect", "contact", "discover", "discuss", "download", "explore",
-        "find", "get", "harden", "implement", "join", "learn", "manage",
-        "meet", "plan", "protect", "read", "request", "review", "schedule",
-        "secure", "see", "start", "strengthen", "talk", "understand", "view",
+        "configure", "connect", "contact", "discover", "discuss", "download",
+        "explore", "find", "get", "harden", "implement", "join", "learn",
+        "manage", "meet", "plan", "protect", "read", "request", "review",
+        "schedule", "secure", "see", "speak", "start", "strengthen", "talk",
+        "understand", "view",
     }
 )  # fmt: skip
 _TOPIC_LEADS = frozenset({"a", "an", "the", "how", "what", "why", "who", "when"})
-# A verb among the first words: the copy is a whole sentence ("DeployIQ is
-# ..."), quoted as is; other copy is a noun phrase the "covers" frame takes.
-_FINITE_VERBS = frozenset(
-    {
-        "is", "are", "was", "were", "has", "have", "uses", "helps", "gives",
-        "offers", "provides", "delivers", "lets", "makes", "brings", "keeps",
-        "works", "means", "includes", "combines", "connects", "supports",
-    }
-)  # fmt: skip
-_VERB_WINDOW = 6
 _MARKER_WORDS = 1  # the " [1]" after the sentence
 _SENTENCE_END = ".!?"
+_STATEMENT_END = ".!"  # a question is a heading, never a summary
 _ELLIPSIS = "…"
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _LABEL_CUT_RE = re.compile(r"\s(?:for|in)\s")
+# Where a long sentence's main clause ends ("X is Y: a, b and c").
+_CLAUSE_HEAD_RE = re.compile(r":\s|;\s|\s[-–—]\s")  # noqa: RUF001  # dashes
 _OUR_RE = re.compile(r"^our\s+", re.I)
 _LETTERS_RE = re.compile(r"[^a-z]")
 _MD_LINK_RE = re.compile(r"\[([^\]\n]{1,200})\]\([^)\s]{1,500}\)")
 _NOT_PROSE_START = frozenset("-*+|>#!_(`[")
+# Breadcrumb and label lines ("Page › Section", "A | B").
+_NOT_PROSE_MARKS = ("›", " | ")  # noqa: RUF001  # the ingest breadcrumb mark
+# A sentence about the page itself ("This policy explains ...", "These Terms
+# ... govern ..."): it says what the page is about, so it is preferred.
+_SELF_DESCRIBING_RE = re.compile(
+    r"^(?:this|these)\s(?:\S{1,40}\s){0,4}?"
+    r"(?:explains?|covers?|describes?|outlines?|sets\s+out|governs?)\s",
+    re.IGNORECASE,
+)
 
 
 def _words(text: str) -> int:
@@ -464,16 +501,32 @@ def page_label(page: SitePage) -> str:
     return _OUR_RE.sub("", label) or label
 
 
-def _first_prose_sentence(text: str) -> str | None:
-    """The first real sentence of page text (no headings, bullets or notes)."""
+def _prose_sentences(text: str) -> Iterator[str]:
+    """The real sentences of page text, in order (no headings, breadcrumbs,
+    bullets, questions or taglines)."""
     for raw in text[:_PROSE_SCAN_CHARS].split("\n"):
         line = _MD_LINK_RE.sub(r"\1", raw).replace("**", "").strip()
         if not line or line[0] in _NOT_PROSE_START or line[0].isdigit():
             continue
-        sentence = _SENTENCE_SPLIT_RE.split(line, maxsplit=1)[0]
-        if _words(sentence) >= _PROSE_MIN_WORDS and sentence[-1] in _SENTENCE_END:
-            return sentence
-    return None
+        if any(mark in line for mark in _NOT_PROSE_MARKS):
+            continue
+        for sentence in _SENTENCE_SPLIT_RE.split(line):
+            if _words(sentence) >= _PROSE_MIN_WORDS and sentence[-1] in _STATEMENT_END:
+                yield sentence
+
+
+def _first_prose_sentence(text: str) -> str | None:
+    """The first real sentence of page text."""
+    return next(_prose_sentences(text), None)
+
+
+def summary_sentence(texts: Sequence[str]) -> tuple[str, int] | None:
+    """The body sentence a link reply quotes, and the index of the text it is
+    in: the first sentence about the page itself ("This policy explains
+    ..."), else the first real sentence (the page's lead paragraph)."""
+    found = [(s, i) for i, text in enumerate(texts) for s in _prose_sentences(text)]
+    about = (f for f in found if _SELF_DESCRIBING_RE.match(f[0]))
+    return next(about, found[0] if found else None)
 
 
 def _fit(text: str, budget: int) -> str:
@@ -488,6 +541,9 @@ def _fit(text: str, budget: int) -> str:
     if kept:
         return " ".join(kept)
     first = sentences[0].rstrip(_SENTENCE_END + " ")
+    head = _CLAUSE_HEAD_RE.split(first, maxsplit=1)[0]
+    if _PROSE_MIN_WORDS <= _words(head) <= budget:
+        return head + "."
     while _words(first) > budget and ", " in first:
         first = first.rsplit(", ", 1)[0]
     if _words(first) > budget:
@@ -505,17 +561,15 @@ def _lower_first(text: str) -> str:
 
 def _summary_kind(copy: str) -> str:
     """Which ``PAGE_SUMMARY`` frame fits how ``copy`` starts."""
-    words = [_LETTERS_RE.sub("", w.lower()) for w in copy.split()[:_VERB_WINDOW]]
-    lead = words[0] if words else ""
+    words = copy.split(maxsplit=1)
+    lead = _LETTERS_RE.sub("", words[0].lower()) if words else ""
     if lead in _ACTION_VERBS:
         return "action"
-    if lead in _TOPIC_LEADS or (len(lead) > len(_ING) and lead.endswith(_ING)):
-        return "topic"
-    return "quote" if _FINITE_VERBS.intersection(words) else "topic"
+    return "topic" if lead in _TOPIC_LEADS else "quote"
 
 
 def page_summary(page: SitePage, copy: str, link_line: str) -> str:
-    """One short sentence of ``copy`` (the page's own words) framed as a reply,
+    """One short sentence of ``copy`` (the page's body text) framed as a reply,
     within ``MAX_LINK_REPLY_WORDS`` together with ``link_line``."""
     copy = " ".join(copy.split())
     kind = _summary_kind(copy)
@@ -534,17 +588,10 @@ def page_summary(page: SitePage, copy: str, link_line: str) -> str:
     return frame.format(label=label, summary=summary)
 
 
-def _summary_copy(
-    page: SitePage, chunks: Sequence[SourceChunk]
-) -> tuple[str | None, SourceChunk]:
-    """The page copy a reply quotes and the chunk it cites."""
-    if page.description.strip():
-        return page.description, chunks[0]
-    for chunk in chunks:
-        sentence = _first_prose_sentence(chunk.content)
-        if sentence:
-            return sentence, chunk
-    return None, chunks[0]
+def _summary_copy(chunks: Sequence[SourceChunk]) -> tuple[str | None, SourceChunk]:
+    """The body sentence a reply quotes and the chunk it is in (cited)."""
+    found = summary_sentence([chunk.content for chunk in chunks])
+    return (found[0], chunks[found[1]]) if found else (None, chunks[0])
 
 
 async def page_link_reply(
@@ -555,14 +602,14 @@ async def page_link_reply(
     started: float,
 ) -> QueryResponse | None:
     """A pure link ask answered without the model: one sentence of the page's
-    own copy, citing that page, plus the link line. None when the page has no
+    body text, citing the chunk it is in, plus the link line. None when the page has no
     URL or no chunks (the caller falls back to the answer path)."""
     url = site_page_url(get_settings().site_base_url, page.route)
     chunks = await route_sources(vector_store, page.route) if url else []
     if url is None or not chunks:
         return None
     line = PAGE_LINK_LINE.format(url=url)
-    copy, source = _summary_copy(page, chunks)
+    copy, source = _summary_copy(chunks)
     answer = f"{page_summary(page, copy, line)} [1] {line}" if copy else line
     citation = build_citation(1, source).model_copy(update={"url": url, "anchor": None})
     details: dict[str, Any] = {
@@ -571,7 +618,7 @@ async def page_link_reply(
         "page_link": {
             "route": page.route,
             "document_id": page.document_id,
-            "copy": "description" if page.description.strip() else "page_text",
+            "copy": "page_text" if copy else "none",
         },
         TOKEN_DETAILS_KEY: citation_records([citation]),
     }

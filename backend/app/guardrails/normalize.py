@@ -122,6 +122,28 @@ _NEWLINES_RE = re.compile(r"\s{0,50}\n\s{0,50}")
 _TOKEN_RE = re.compile(r"\S{1,200}")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r" {1,3}(?=[?!.,](?:\s|$))")
 
+# Expletives / frustration interjections opening a message ("damn it,",
+# "ugh", "wtf", "ffs", "bloody hell"), up to four in a row, each followed by
+# punctuation/space. Retrieval text only (strip_leading_interjections).
+_INTERJECTION = (
+    r"(?:(?:god\s{0,2})?damn(?:\s{0,2}it)?|dammit|darn(?:\s{1,3}it)?|"
+    r"u{1,5}g{1,5}h{1,5}|a{1,5}r{1,5}g{1,5}h{1,5}|gah{1,5}|sigh|sheesh|jeez|geez|"
+    r"wtf|ffs|fml|omfg|omg|smh|"
+    r"bloody\s{1,3}hell|bloody\s{1,3}oath|hell|"
+    r"oh\s{1,3}(?:my\s{1,3}god|for\s{1,3}god'?s\s{1,3}sake|come\s{1,3}on|"
+    r"man|boy|god)|"
+    r"for\s{1,3}(?:fuck|god|pete|heaven|christ)'?s?\s{1,3}sake|"
+    r"for\s{1,3}crying\s{1,3}out\s{1,3}loud|"
+    r"(?:fuck(?:ing)?|f\*{1,3}k|frick(?:ing)?|freaking)(?:\s{1,3}(?:hell|me))?|"
+    r"shit|crap|bugger(?:\s{1,3}me)?|screw\s{1,3}(?:it|this)|"
+    r"come\s{1,3}on|c'?mon)"
+)
+_LEADING_INTERJECTION_RE = re.compile(
+    rf"^\s{{0,3}}(?:{_INTERJECTION}(?:[\s,.!?:;-]{{1,6}}|$)){{1,4}}",
+    re.IGNORECASE,
+)
+_WORD_RE = re.compile(r"[^\W\d_]{2}")
+
 # Quote characters that wrap a whole message ("…", “…”, ‘…’, «…», `…`).
 _WRAP_QUOTES = "\"'`\u201c\u201d\u2018\u2019\u00ab\u00bb\u201e\u201a"
 _SMART_QUOTES = str.maketrans(
@@ -238,6 +260,20 @@ def normalise_input(text: str) -> str:
     # empty query (the embedding call rejects it); the text as typed reaches
     # the gates, whose junk check answers with the unclear-input template.
     return _collapse_whitespace(text) or raw.strip()
+
+
+def strip_leading_interjections(text: str) -> str:
+    """'damn it, what is CIS?' -> 'what is CIS?' for RETRIEVAL text only.
+
+    Leading expletives / frustration interjections dilute the search
+    embedding; the gates (abuse, frustration) and logs keep the text as
+    typed. A message that is only an interjection is returned unchanged.
+    """
+    match = _LEADING_INTERJECTION_RE.match(text[:MAX_NORMALISE_CHARS])
+    if match is None:
+        return text
+    rest = text[match.end() :].lstrip()
+    return rest if _WORD_RE.search(rest) else text
 
 
 def fold_accents(text: str) -> str:

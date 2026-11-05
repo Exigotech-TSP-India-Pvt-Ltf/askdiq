@@ -100,6 +100,7 @@ from app.retrieval.retriever import (
     covered_sources,
     decide_route,
     decompose_query,
+    is_contact_ask,
     log_safe_text,
     needs_conversation_context,
     resolve_page_urls,
@@ -132,7 +133,9 @@ NO_ANSWER = NO_ANSWER_LINE
 # What the answer call may raise; anything else is a bug and propagates.
 _LLM_ERRORS = (openai.OpenAIError, CircuitOpenError, TimeoutError, httpx.HTTPError)
 # Dropped-claim reasons that are not a failed check (nothing was asserted).
-_NOT_FAILURES = frozenset({"decline", "uncovered_part", "empty", "duplicate"})
+_NOT_FAILURES = frozenset(
+    {"decline", "uncovered_part", "empty", "duplicate", "off_question"}
+)
 
 
 def _fallback_answer(flags: list[str]) -> str:
@@ -1032,6 +1035,7 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
     # still verify).
     if topic:
         draft = _all_parts_covered(draft, query)
+    draft = _premise_parts_covered(draft, query)
     if buying_answer:
         # Price / "how do I buy" is answered by the pricing and sales lines,
         # never by a "don't have an answer" line (every gate part is covered).
@@ -1043,10 +1047,9 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
             sources,
             query,
             numbered=shape.value == "how_to",
-            # The gate found an ask the KB does not cover and the model listed
-            # fewer parts than the gate: name "the rest" rather than drop it.
-            gate_uncovered=route_decision.route is Route.PARTIAL
-            and len(draft.parts) < len(route_decision.parts),
+            # The gate found an ask the KB does not cover: the partial line
+            # names it even if the model claimed every part it listed.
+            gate_uncovered=route_decision.route is Route.PARTIAL,
             gap_parts=[p.text for p in route_decision.uncovered_parts],
             sales_contact=sales,
         )
@@ -1122,6 +1125,31 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
             sources=topic,
             kept=len(grounded_answer.kept),
         )
+
+    if (
+        grounded_answer.answered
+        and not (topic or buying_answer or clarification_reply or follow_up_detected)
+        and route_decision.route is Route.ANSWER
+        and len(route_decision.parts) == 1
+    ):
+        missing_terms = _unanswered_terms(query, grounded_answer, sources)
+        # One ask only: a multi-part reply names its gaps in the partial line.
+        subject = _subject_unanswered(query, grounded_answer)
+        if subject:
+            missing_terms = [*missing_terms, subject]
+        if missing_terms:
+            # "How do you handle PCI DSS?" answered with framework facts that
+            # never name PCI DSS: a stretched answer, so the no-answer line.
+            logger.info(
+                "off_question_answer", request_id=request_id, terms=missing_terms
+            )
+            token_details["off_question_terms"] = missing_terms
+            grounded_answer = GroundedAnswer(
+                NO_ANSWER,
+                dropped=[(c, "off_question") for c in grounded_answer.kept],
+                mode=grounded_answer.mode,
+                parts=grounded_answer.parts,
+            )
 
     token_details["grounding"] = grounded_answer.details()
     total_ms = (time.perf_counter() - start) * 1000
@@ -1318,6 +1346,131 @@ def _all_parts_covered(draft: Draft, query: str) -> Draft:
     return Draft(draft.action, parts, draft.claims, draft.mode)
 
 
+# A question built on a premise about us ("Since Starter covers all seven
+# pillars, ...", "Why does Baseline include 24/7 MDR?").
+_PREMISE_RE = re.compile(
+    r"^\s{0,4}(?:since|given that|as)\s|^\s{0,4}why\s{1,3}(?:does|do|did|is|are)\s|"
+    r",\s{0,2}(?:since|given that)\s",
+    re.IGNORECASE,
+)
+
+
+_TERM_RE = re.compile(r"[A-Za-z][A-Za-z0-9'&+.\-]*|[.!?]")
+_BACKING_WORD_RE = re.compile(r"[a-z0-9]+")
+_TERM_PREFIX = 4
+_MAX_DEFINE_WORDS = 4
+# "What is MFA fatigue?": a definition ask whose subject the facts must name.
+_DEFINE_RE = re.compile(
+    r"^\s{0,4}what(?:['\u2019]s|\s{1,3}is|\s{1,3}are)\s{1,3}(?:an?\s{1,3}|the\s{1,3})?"
+    r"([^?]{1,80}?)\s{0,3}\??\s{0,3}$",
+    re.IGNORECASE,
+)
+_NOT_TERMS = frozenset(
+    {
+        "i", "deployiq", "deploy", "iq", "exigo", "tech", "the", "a", "an",
+        "of", "for", "in", "on", "and", "or", "to", "with", "your", "our",
+        "you", "we", "us", "do", "does", "is", "are",
+    }
+)  # fmt: skip
+
+
+def _ask_terms(query: str) -> list[str]:
+    """The names a single ask turns on: mid-sentence capitalised words and
+    acronyms ("PCI", "DSS", "SOC"), plus a definition ask's subject words
+    ("MFA fatigue"). Aliases with digits ("e8", "M365") are left out."""
+    brand = set(_BACKING_WORD_RE.findall(get_settings().brand_name.lower()))
+    terms: list[str] = []
+    initial = True
+    for piece in _TERM_RE.findall(query):
+        if piece in ".!?":
+            initial = True
+            continue
+        bare = piece.strip(".'").removesuffix("'s").removesuffix("'S")
+        for word in filter(None, bare.split("-")):
+            low = word.lower()
+            if (
+                not initial
+                and word[:1].isupper()
+                and len(word) > 1
+                and not any(ch.isdigit() for ch in word)
+                and low not in _NOT_TERMS | brand
+            ):
+                terms.append(low)
+        initial = False
+    match = _DEFINE_RE.match(query)
+    if match:
+        words = _BACKING_WORD_RE.findall(match.group(1).lower())
+        if len(words) <= _MAX_DEFINE_WORDS and not set(words) & (_NOT_TERMS | brand):
+            terms += [w for w in words if not any(ch.isdigit() for ch in w)]
+    return list(dict.fromkeys(terms))
+
+
+def _unanswered_terms(
+    query: str, answer: GroundedAnswer, sources: list[SourceChunk]
+) -> list[str]:
+    """The ask's terms that no kept claim's chunk names (prefix match, so
+    plurals and typos still count); [] for a premise question or a contact
+    ask ("an office in Perth?" is answered by the offices we do have)."""
+    if _PREMISE_RE.search(query) or is_contact_ask(query):
+        return []
+    text = " ".join(
+        f"{_source_name(sources[c.source - 1])} {sources[c.source - 1].content}"
+        for c in answer.kept
+        if 0 < c.source <= len(sources)
+    ).lower()
+    words = set(_BACKING_WORD_RE.findall(text))
+    prefixes = {w[:_TERM_PREFIX] for w in words if len(w) >= _TERM_PREFIX}
+    out: list[str] = []
+    for term in _ask_terms(query):
+        parts = _BACKING_WORD_RE.findall(term)
+        if not all(
+            p in words if len(p) < _TERM_PREFIX else p[:_TERM_PREFIX] in prefixes
+            for p in parts
+        ):
+            out.append(term)
+    return out
+
+
+# A yes/no ask about a named third party ("is Microsoft certified ...?").
+_NAMED_SUBJECT_RE = re.compile(
+    r"^\s{0,4}(?i:is|are|does|do|can|will|has|have|was)\s{1,3}"
+    r"((?:[A-Z][\w&+-]{0,30}\s{0,2}){1,4})"
+)
+
+
+def _subject_unanswered(query: str, answer: GroundedAnswer) -> str | None:
+    """The named subject of a yes/no ask that no kept claim's text names:
+    "Not on its own." about DeployIQ never answers "is Microsoft certified
+    for ISO 27001?". ``None`` when there is no such subject or it is named."""
+    match = _NAMED_SUBJECT_RE.match(query)
+    if match is None:
+        return None
+    brand = set(_BACKING_WORD_RE.findall(get_settings().brand_name.lower()))
+    words = [
+        w
+        for w in _BACKING_WORD_RE.findall(match.group(1).lower())
+        if w not in _NOT_TERMS | brand and not w.isdigit()
+    ]
+    if not words:
+        return None
+    said = set(_BACKING_WORD_RE.findall(" ".join(c.text for c in answer.kept).lower()))
+    return None if said & set(words) else " ".join(words)
+
+
+def _premise_parts_covered(draft: Draft, query: str) -> Draft:
+    """A premise question's parts the model wrote claims for but marked
+    uncovered ("Starter's coverage is limited to identity and devices"):
+    those claims are the correction, so the parts count as covered (each
+    claim is still verified against its quote)."""
+    if not _PREMISE_RE.search(query):
+        return draft
+    claimed = {c.part for c in draft.claims}
+    if not any(not p.covered and i in claimed for i, p in enumerate(draft.parts)):
+        return draft
+    parts = [Part(p.ask, p.covered or i in claimed) for i, p in enumerate(draft.parts)]
+    return Draft(draft.action, parts, draft.claims, draft.mode)
+
+
 def _needs_covered_retry(
     result: GroundedAnswer, decision: RouteDecision, topic: list[int]
 ) -> bool:
@@ -1454,12 +1607,17 @@ async def _covered_retry(  # pylint: disable=too-many-arguments,too-many-locals
         return None, usage
     if topic:
         draft = _all_parts_covered(draft, query)
+    draft = _premise_parts_covered(draft, query)
+    # The re-ask only asks for the covered parts: the gate's uncovered ones
+    # ("Huntress" in "is Huntress better than DeployIQ?") stay named gaps.
+    gate_gap = decision.route is Route.PARTIAL
     result = await asyncio.to_thread(
         ground_answer,
         draft,
         sources,
         query,
         numbered=numbered,
+        gate_uncovered=gate_gap,
         gap_parts=[p.text for p in decision.uncovered_parts],
         # The re-ask must answer what it asked: an ask naming something no
         # kept claim's chunk mentions ("AWS regions") stays a gap.
@@ -1482,6 +1640,7 @@ async def _covered_retry(  # pylint: disable=too-many-arguments,too-many-locals
             sources,
             query,
             numbered=numbered,
+            gate_uncovered=gate_gap,
             gap_parts=[p.text for p in decision.uncovered_parts],
             named_asks=asks,
             sales_contact=sales,

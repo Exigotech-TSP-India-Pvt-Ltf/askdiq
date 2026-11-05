@@ -137,6 +137,17 @@ def test_negation_is_checked_against_the_restated_clause(
     assert result.answered is answered
 
 
+def test_negation_from_another_sentence_does_not_back_a_claim() -> None:
+    # "Not" belongs to the first sentence; the claim reverses the second.
+    quote = "Not on its own. We deliver the Essential Eight uplift."
+    draft = parse_draft(
+        _reply([_claim("We do not deliver the Essential Eight uplift.", quote)])
+    )
+    assert draft is not None
+    result = ground_answer(draft, [_source(quote)], "do you deliver it?")
+    assert not result.answered
+
+
 def test_supported_claims_render_with_renumbered_markers() -> None:
     result = _ground(
         [
@@ -1234,3 +1245,553 @@ def test_items_framed_in_the_questions_words_and_page_numerals_verify():
         "Control area two is Cryptography.",
     ]
     assert _reasons(answer) == ["low_overlap", "figure_not_in_source"]
+
+
+def _page_source(content: str, n: int, doc: int) -> SourceChunk:
+    return SourceChunk(
+        chunk_id=f"00000000-0000-0000-0000-0000000002{n:02d}",
+        document_id=f"00000000-0000-0000-0000-0000000003{doc:02d}",
+        content=content,
+        score=0.8,
+        metadata={"source_name": f"page{doc}.md"},
+    )
+
+
+def _ground_sources(claims: list[dict], sources: list[SourceChunk], query: str):
+    draft = parse_draft(_reply(claims))
+    assert draft is not None
+    return ground_answer(draft, sources, query)
+
+
+# The chunk's breadcrumb names the free assessment; the quote does not.
+GET_STARTED = (
+    "Get Started > Get Your Free Security Posture Assessment\n\n"
+    "Your Security Score\nTakes only 5 minutes"
+)
+FREE_ASSESSMENT = "The free security posture assessment takes only 5 minutes."
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        # get-started-free-02: "free" is on the same page, about the assessment.
+        (FREE_ASSESSMENT, None),
+        # Same page, another subject: the workshop is never called free.
+        (
+            "The free onboarding workshop takes only 5 minutes.",
+            "assurance_not_in_quote",
+        ),
+    ],
+)
+def test_free_is_backed_by_the_same_page_about_the_same_subject(
+    text: str, reason: str | None
+) -> None:
+    answer = _ground_sources(
+        [_claim(text, "Takes only 5 minutes")],
+        [_page_source(GET_STARTED, 1, 1)],
+        "Is the assessment free?",
+    )
+    assert _reasons(answer) == ([reason] if reason else [])
+
+
+@pytest.mark.parametrize(
+    ("hero", "query"),
+    [
+        # Another page saying "free" never backs it ...
+        ("Pricing\n\nGet Your Free Security Posture Assessment", "How long is it?"),
+        # ... nor does the question saying it.
+        ("Pricing\n\nPlans", "Is the free security posture assessment free?"),
+    ],
+)
+def test_free_from_another_page_or_the_question_is_dropped(
+    hero: str, query: str
+) -> None:
+    score = (
+        "Get Started > Your Security Score\n\nYour Security Score\nTakes only 5 minutes"
+    )
+    answer = _ground_sources(
+        [_claim(FREE_ASSESSMENT, "Takes only 5 minutes")],
+        [_page_source(score, 1, 1), _page_source(hero, 2, 2)],
+        query,
+    )
+    assert not answer.answered
+
+
+@pytest.mark.parametrize(
+    ("text", "kept"),
+    [
+        # home-snapshot-13: "No" is a determiner here, not an answer word.
+        ("The snapshot requires no technical expertise.", True),
+        ("The snapshot requires technical expertise.", False),
+    ],
+)
+def test_leading_no_determiner_counts_as_negation(text: str, kept: bool) -> None:
+    page = "Snapshot\n\nSecurity Posture Snapshot\nNo technical expertise required"
+    answer = _ground_sources(
+        [_claim(text, "No technical expertise required")],
+        [_page_source(page, 1, 1)],
+        "Do I need technical expertise for the snapshot?",
+    )
+    assert answer.answered is kept
+
+
+TERMS_DOWNLOADS = (
+    "Terms > 12 Downloads\n\nDownloadable Materials are provided as is. Users are "
+    "solely responsible for reviewing, testing (including in non-production "
+    "environments), and determining suitability before use."
+)
+TERMS_QUOTE = (
+    "Users are solely responsible for reviewing, testing (including in "
+    "non-production environments), and determining suitability before use."
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "kept"),
+    [
+        # terms-13: the cited chunk's own term, not stock wording.
+        (
+            "Users are solely responsible for reviewing and testing Downloadable "
+            "Materials before use.",
+            True,
+        ),
+        (
+            "The materials say users are solely responsible for testing before use.",
+            False,
+        ),
+        ("Users are solely responsible for testing these materials before use.", False),
+        ("Materials: users are solely responsible for testing before use.", False),
+    ],
+)
+def test_banned_word_is_allowed_only_as_the_cited_chunks_term(
+    text: str, kept: bool
+) -> None:
+    answer = _ground_sources(
+        [_claim(text, TERMS_QUOTE)],
+        [_page_source(TERMS_DOWNLOADS, 1, 1)],
+        "Should I test downloadable scripts?",
+    )
+    assert answer.answered is kept
+    if not kept:
+        assert _reasons(answer) == ["banned_wording"]
+
+
+E8_REPORT = (
+    "Essential Eight > Continuous Validation\n\n- Continuous evidence collection\n\n"
+    "Overall Essential Eight Score\n"
+    "This section shows an illustrative sample to explain the report, not real results."
+)
+E8_QUOTE = (
+    "This section shows an illustrative sample to explain the report, not real results."
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "kept"),
+    [
+        # essential-eight-score-16: "Eight" names the score heading above the quote.
+        (
+            "The Overall Essential Eight Score is an illustrative sample, not real results.",
+            True,
+        ),
+        # A count that is no name still sits in the quote's own words.
+        ("The report shows eight illustrative samples, not real results.", False),
+        (
+            "The Overall Essential Nine Score is an illustrative sample, not real results.",
+            False,
+        ),
+    ],
+)
+def test_number_word_of_a_name_is_checked_near_the_quote(text: str, kept: bool) -> None:
+    answer = _ground_sources(
+        [_claim(text, E8_QUOTE)],
+        [_page_source(E8_REPORT, 1, 1)],
+        "Are the Essential Eight Score figures real?",
+    )
+    assert answer.answered is kept
+
+
+ISO42001_FAQ = (
+    "ISO 42001 > Frequently asked questions\n\nWill DeployIQ certify us against "
+    "ISO 42001?\nNo. We focus on technical controls within your Microsoft 365 "
+    "environment. Certification is carried out by an accredited certification body."
+)
+ISO42001_QUOTE = (
+    "No. We focus on technical controls within your Microsoft 365 environment. "
+    "Certification is carried out by an accredited certification body."
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "kept"),
+    [
+        # iso42001-why-07 / mt-42001-certify: the page answers the question "No."
+        ("DeployIQ does not certify organisations against ISO 42001.", True),
+        (
+            "We don't perform certification; an accredited certification body does.",
+            True,
+        ),
+        # Negating another word of the quote is still a mismatch.
+        (
+            "We do not focus on technical controls within your Microsoft 365 environment.",
+            False,
+        ),
+        ("We do not focus on ISO 42001.", False),
+    ],
+)
+def test_no_answer_backs_negating_the_faq_question(text: str, kept: bool) -> None:
+    answer = _ground_sources(
+        [_claim(text, ISO42001_QUOTE)],
+        [_page_source(ISO42001_FAQ, 1, 1)],
+        "Will you certify us?",
+    )
+    assert answer.answered is kept
+
+
+def test_negation_without_a_no_answer_is_still_a_mismatch() -> None:
+    page = (
+        "ISO 42001 > FAQ\n\nWe focus on technical controls within your Microsoft 365."
+    )
+    answer = _ground_sources(
+        [
+            _claim(
+                "We do not focus on technical controls within your Microsoft 365.",
+                "We focus on technical controls within your Microsoft 365.",
+            )
+        ],
+        [_page_source(page, 1, 1)],
+        "Will you certify us?",
+    )
+    assert _reasons(answer) == ["negation_mismatch"]
+
+
+BOOKING = (
+    "Book your session\n\nSession Details\n- Kick-off & Discovery\n- 30 minutes\n"
+    "- Web conference details to follow"
+)
+CONTACT_CALL = "Contact us\n\nCall\n1300 394 468"
+
+
+@pytest.mark.parametrize(
+    ("text", "kept"),
+    [
+        # para-kickoff: "30 minutes" is a value line, not another subject.
+        ("The kick-off and discovery session is 30 minutes.", True),
+        # A named other label of the page is still another subject.
+        ("The session details web conference takes 30 minutes.", False),
+    ],
+)
+def test_value_line_is_not_another_subject(text: str, kept: bool) -> None:
+    answer = _ground_sources(
+        [_claim(text, "30 minutes")],
+        [_page_source(BOOKING, 1, 1), _page_source(CONTACT_CALL, 2, 2)],
+        "how long's the kick-off call?",
+    )
+    assert answer.answered is kept
+
+
+ISO27001_SCOPE = (
+    "ISO 27001 > Scope\n\nISO 27001 is based on a complete Information Security "
+    "Management System: policy, risk assessment, people and physical controls, "
+    "internal audit, and an independent certification audit. Our scope is narrower "
+    "and technical: the Annex A controls in Microsoft 365, on which your ISMS relies."
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "kept"),
+    [
+        # i27-not-handled: "ISMS" is the quote's "Information Security Management System".
+        (
+            "ISO 27001 covers a complete ISMS: policy, risk assessment and internal audit.",
+            True,
+        ),
+        # An acronym the quote does not spell out is still another subject.
+        (
+            "ISO 27001 covers a complete SOC: policy, risk assessment and internal audit.",
+            False,
+        ),
+    ],
+)
+def test_acronym_spelled_out_in_the_quote_is_its_subject(text: str, kept: bool) -> None:
+    quote = (
+        "ISO 27001 is based on a complete Information Security Management System: "
+        "policy, risk assessment, people and physical controls, internal audit"
+    )
+    answer = _ground_sources(
+        [_claim(text, quote)],
+        [_page_source(ISO27001_SCOPE, 1, 1)],
+        "Which parts of ISO 27001 do you not handle?",
+    )
+    assert answer.answered is kept
+
+
+NOT_ON_ITS_OWN = (
+    "Not on its own. We deliver the technical controls and the evidence behind "
+    "them. Compliance also depends on your policies, processes and people"
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "quote", "kept"),
+    [
+        # i27-not-handled: the claim restates the quote's un-negated sentence.
+        (
+            "We deliver the technical controls and the evidence behind them.",
+            NOT_ON_ITS_OWN,
+            True,
+        ),
+        # A negation no sentence of the quote makes is still a mismatch.
+        (
+            "We do not deliver the technical controls and the evidence behind them.",
+            NOT_ON_ITS_OWN.removeprefix("Not on its own. "),
+            False,
+        ),
+    ],
+)
+def test_negation_is_checked_per_sentence_of_the_quote(
+    text: str, quote: str, kept: bool
+) -> None:
+    page = f"ISO 27001 > FAQ\n\nWill this make us compliant?\n{NOT_ON_ITS_OWN}."
+    answer = _ground_sources(
+        [_claim(text, quote)],
+        [_page_source(page, 1, 1)],
+        "Which parts of ISO 27001 do you not handle?",
+    )
+    assert answer.answered is kept
+
+
+PACKAGE_TABLE = (
+    "Packages > Compare\n\nCompare packages\n"
+    "24/7 Managed Detection & Response: included in Frontier; not included in "
+    "Baseline, Foundation, Strengthen."
+)
+MDR_QUOTE = (
+    "24/7 Managed Detection & Response: included in Frontier; not included in "
+    "Baseline, Foundation, Strengthen."
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        # fp-baseline-mdr: what a package does not include is a fact, not a decline.
+        (
+            "The Baseline package does not include 24/7 Managed Detection & Response.",
+            None,
+        ),
+        # A source-absence line stays a decline ...
+        ("The page does not include details on Baseline response.", "decline"),
+        ("We don't have details on Baseline Managed Detection & Response.", "decline"),
+        # ... and the negation is still verified.
+        (
+            "Frontier does not include 24/7 Managed Detection & Response.",
+            "negation_mismatch",
+        ),
+    ],
+)
+def test_product_negative_backed_by_its_quote_is_not_a_decline(
+    text: str, reason: str | None
+) -> None:
+    answer = _ground_sources(
+        [_claim(text, MDR_QUOTE)],
+        [_page_source(PACKAGE_TABLE, 1, 1)],
+        "Why does the Baseline package include 24/7 MDR?",
+    )
+    assert _reasons(answer) == ([reason] if reason else [])
+
+
+BASELINE_HOME = (
+    "Home > Not sure which service fits? > Baseline\n\nRecommended solution\n\n"
+    "Expected outcome: A clear view of your exposure.\n\n"
+    "- Aligned framework: CIS Controls IG1\n- Typical roadmap: 1-2 weeks"
+)
+MATURITY_PATH = "Home > Security maturity path\n\nStage\nBaseline\nFoundation"
+
+
+@pytest.mark.parametrize(
+    ("text", "query", "kept"),
+    [
+        # home-baseline-stage: "stage" only qualifies the asked "Baseline".
+        (
+            "The Baseline stage is aligned to the CIS Controls IG1 framework.",
+            "What framework is the Baseline maturity stage aligned to?",
+            True,
+        ),
+        # Two subjects joined by "and" still both need their own part.
+        (
+            "The Baseline and the stage are aligned to the CIS Controls IG1 framework.",
+            "What framework are the Baseline and stage aligned to?",
+            False,
+        ),
+    ],
+)
+def test_audience_word_qualifying_the_asked_label(
+    text: str, query: str, kept: bool
+) -> None:
+    answer = _ground_sources(
+        [_claim(text, "- Aligned framework: CIS Controls IG1")],
+        [_page_source(BASELINE_HOME, 1, 1), _page_source(MATURITY_PATH, 2, 2)],
+        query,
+    )
+    assert answer.answered is kept
+
+
+ONBOARD_JOURNEY = (
+    "About > How Deploy IQ Works\n\nThe same governed journey, with human approval:\n\n"
+    "1. Onboard\n2. Assess\n3. Recommend\n4. Approve\n5. Apply\n6. Validate\n7. Improve\n\n"
+    "Your team confirms the connection scope and target standard, reviews the "
+    "remediation plan and approves each recommendation before agents apply it."
+)
+JOURNEY_QUOTE = (
+    "Your team confirms the connection scope and target standard, reviews the "
+    "remediation plan and approves each recommendation before agents apply it."
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "kept"),
+    [
+        # home-onboard-step: "approves ... apply" are verbs, not the far steps.
+        (JOURNEY_QUOTE, True),
+        # Naming another step as the subject is still another subject.
+        (
+            "In the Approve step your team confirms the connection scope and target "
+            "standard and reviews the remediation plan.",
+            False,
+        ),
+    ],
+)
+def test_step_words_used_as_verbs_are_not_another_subject(
+    text: str, kept: bool
+) -> None:
+    answer = _ground_sources(
+        [_claim(text, JOURNEY_QUOTE)],
+        [_page_source(ONBOARD_JOURNEY, 1, 1)],
+        "What happens in the Onboard step of the DeployIQ journey?",
+    )
+    assert answer.answered is kept
+
+
+PRIVACY_USES = (
+    "Privacy Policy > 3 How We Use Information\n\nDeploy IQ uses information to:\n\n"
+    "- respond to enquiries\n- assess environment context\n- scope and deliver services\n"
+    "- maintain business records"
+)
+TERMS_DATA = (
+    "Terms > 6 Data Handling\n\nCustomer Data\n"
+    "Deploy IQ processes Customer Data only for delivering the Services."
+)
+
+
+def test_off_question_list_from_a_chunk_without_the_asked_term_is_dropped() -> None:
+    # terms-09: the privacy list is about "information", never "Customer Data".
+    quote = (
+        "Deploy IQ uses information to: - respond to enquiries - assess environment "
+        "context - scope and deliver services - maintain business records"
+    )
+    answer = _ground_sources(
+        [
+            _claim(
+                "Deploy IQ uses information to respond to enquiries, assess "
+                "environment context, scope and deliver services and maintain "
+                "business records.",
+                quote,
+            )
+        ],
+        [_page_source(PRIVACY_USES, 1, 1), _page_source(TERMS_DATA, 2, 2)],
+        "What does Deploy IQ use our Customer Data for?",
+    )
+    assert _reasons(answer) == ["other_subject"]
+
+
+PLATFORM_ENABLES = (
+    "Platform > What Deploy IQ Platform Enables\n\n"
+    "Clear alignment to intent and obligations\n"
+    "Security decisions and actions are anchored to organisational goals.\n\n"
+    "Deploy IQ provides a governed, continuous security and compliance system that "
+    "connects business objectives, regulatory requirements, and real-world "
+    "environment signals into structured, traceable action."
+)
+
+
+def _platform_source() -> SourceChunk:
+    source = _page_source(PLATFORM_ENABLES, 1, 1)
+    source.metadata["section_heading"] = "What Deploy IQ Platform Enables"
+    return source
+
+
+@pytest.mark.parametrize(
+    ("query", "kept"),
+    [
+        # plat-enables: the asked section's own row is the answer ...
+        ("What does the Deploy IQ platform enable?", True),
+        # ... but under another question it is a stray heading.
+        ("How do I book a consultation?", False),
+    ],
+)
+def test_row_of_the_asked_section_is_not_a_heading_fragment(
+    query: str, kept: bool
+) -> None:
+    quote = "Clear alignment to intent and obligations"
+    answer = _ground_sources(
+        [_claim("Clear alignment to intent and obligations.", quote)],
+        [_platform_source()],
+        query,
+    )
+    assert answer.answered is kept
+
+
+def test_prose_with_commas_is_not_split_into_bullets() -> None:
+    # plat-enables: "a governed, continuous ... X, Y, and Z into structured,
+    # traceable action" is one sentence, not a five-item list.
+    sentence = (
+        "Deploy IQ provides a governed, continuous security and compliance system "
+        "that connects business objectives, regulatory requirements, and real-world "
+        "environment signals into structured, traceable action."
+    )
+    answer = _ground_sources(
+        [_claim(sentence, sentence)],
+        [_platform_source()],
+        "What does the Deploy IQ platform enable?",
+    )
+    assert "\n- " not in answer.text
+    assert answer.text.startswith(sentence)
+
+
+def test_real_series_is_still_split_into_bullets() -> None:
+    page = (
+        "Services > Scope\n\nThe service includes identity hardening, email "
+        "protection, endpoint compliance, backup validation, and audit reporting."
+    )
+    sentence = (
+        "The service includes identity hardening, email protection, endpoint "
+        "compliance, backup validation, and audit reporting."
+    )
+    answer = _ground_sources(
+        [_claim(sentence, sentence)],
+        [_page_source(page, 1, 1)],
+        "What does the service include?",
+    )
+    assert "\n- Identity hardening" in answer.text
+
+
+MAIL_PAGE = "Contact Us\n\nCall\n1300 394 468\n\nMail\ninfo@deployiq.co"
+
+
+@pytest.mark.parametrize(
+    ("text", "kept"),
+    [
+        # buy-book: "Email" frames the quote's own address ("Mail info@...").
+        ("Email info@deployiq.co to book.", True),
+        # A name the chunk does not have is still dropped.
+        ("Email Telstra at info@deployiq.co to book.", False),
+    ],
+)
+def test_contact_framing_word_is_not_a_name(text: str, kept: bool) -> None:
+    answer = _ground_sources(
+        [_claim(text, "Mail info@deployiq.co")],
+        [_page_source(MAIL_PAGE, 1, 1)],
+        "How do I book a consultation?",
+    )
+    assert answer.answered is kept

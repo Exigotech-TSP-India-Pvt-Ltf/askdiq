@@ -277,30 +277,43 @@ def _wrapped_run(seen: dict) -> object:
     return page_links.with_page_link(run_query)
 
 
+_CRUMB = chr(0x203A)  # the ingest's "Page › Section" breadcrumb mark
+_PRIVACY_LEAD = (
+    "This policy explains how we collect, use and protect your personal information."
+)
+
+
 def test_wrapper_answers_link_ask_without_the_model(
     fake_store: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    pages = [
-        SitePage(p.document_id, p.route, p.title, "How we collect and use data.")
-        for p in PAGES
-    ]
+    heading = _chunk("d17", "/privacy").model_copy(
+        update={"chunk_id": "c-head", "content": "Privacy Policy\n\nShort tagline."}
+    )
+    lead = _chunk("d17", "/privacy").model_copy(
+        update={
+            "chunk_id": "c-lead",
+            "content": f"Privacy Policy {_CRUMB} Scope\n\n{_PRIVACY_LEAD}",
+        }
+    )
 
-    async def described(_store: object) -> list[SitePage]:
-        return pages
+    async def chunks(_store: object, _route: str) -> list[SourceChunk]:
+        return [heading, lead]
 
-    monkeypatch.setattr(page_links, "site_pages", described)
+    monkeypatch.setattr(page_links, "route_sources", chunks)
     seen: dict = {}
     run = _wrapped_run(seen)
     out = asyncio.run(run(query="url for the privacy policy", vector_store=fake_store))
     url = f"{BASE}/privacy"
     assert not seen  # no answer pipeline, no LLM call
     assert out.answer == (
-        "Our Privacy Policy page covers how we collect and use data. [1] "
+        f"Our Privacy Policy page in a nutshell: {_PRIVACY_LEAD} [1] "
         + PAGE_LINK_LINE.format(url=url)
     )
     assert (out.outcome, out.grounded, out.confidence) == ("answered", True, 1.0)
     assert [c.url for c in out.citations] == [url]
-    assert [s.document_id for s in out.sources] == ["d17"]
+    # The cited source is the chunk the quoted sentence is in.
+    assert [s.chunk_id for s in out.sources] == ["c-lead"]
+    assert _PRIVACY_LEAD in out.sources[0].content
     assert out.token_details["refusal_template"] == "page_link"
     assert out.token_details["page_link"]["route"] == "/privacy"
 
@@ -389,20 +402,65 @@ _PAGE_FILES = sorted(
 )
 
 
+_REPLY_MIN_WORDS = 20
+
+
 @pytest.mark.parametrize("path", _PAGE_FILES, ids=lambda p: p.stem)
-def test_every_site_page_reply_is_short(path: Path) -> None:
+def test_every_site_page_reply_is_short_body_text(path: Path) -> None:
     parsed = parse_site_page(path.read_text(encoding="utf-8"))
     assert parsed.route
-    page = SitePage("d", parsed.route, parsed.title or "", parsed.description or "")
-    url = f"{BASE}{parsed.route}"
-    line = PAGE_LINK_LINE.format(url=url)
-    copy = parsed.description or page_links._first_prose_sentence(parsed.body)  # noqa: SLF001  # pylint: disable=protected-access
-    assert copy, "every page has a description or a prose sentence"
-    reply = f"{page_links.page_summary(page, copy, line)} [1] {line}"
-    assert len(reply.split()) <= page_links.MAX_LINK_REPLY_WORDS
+    page = SitePage("d", parsed.route, parsed.title or "")
+    line = PAGE_LINK_LINE.format(url=f"{BASE}{parsed.route}")
+    found = page_links.summary_sentence([parsed.body])
+    assert found, "every page has a prose sentence"
+    sentence = found[0]
+    body = " ".join(parsed.body.replace("**", "").split())
+    assert " ".join(sentence.split()) in body
+    summary = page_links.page_summary(page, sentence, line)
+    reply = f"{summary} [1] {line}"
+    assert _REPLY_MIN_WORDS <= len(reply.split()) <= page_links.MAX_LINK_REPLY_WORDS
     assert reply.startswith("Our ")
     assert "Our Our" not in reply
     assert "Deploy IQ page" not in reply
+    # The quoted words are the body's (a cut sentence is a prefix of it).
+    quoted = summary.split(": ", 1)[1] if "in a nutshell: " in summary else None
+    if quoted:
+        assert sentence.startswith(quoted.rstrip(".…"))
+
+
+def test_summary_prefers_a_sentence_about_the_page() -> None:
+    about = (
+        "This document explains how Deploy IQ approaches security, governance "
+        "and data handling."
+    )
+    texts = [
+        "Secure AI\n\nTrust at Deploy IQ is built on transparency, governance "
+        "and disciplined execution.",
+        f"Secure AI {_CRUMB} Intro\n\n{about}",
+    ]
+    assert page_links.summary_sentence(texts) == (about, 1)
+
+
+def test_summary_skips_breadcrumbs_questions_and_taglines() -> None:
+    question = "What does the Microsoft 365 baseline assessment actually cover for you?"
+    text = (
+        "Contact Us\n\nCollaborate on your new business idea.\n\n"
+        f"Page {_CRUMB} Our assessment covers the five areas that matter to you.\n"
+        f"{question}\n"
+        "Managing change with human-in-the-loop | Nothing is applied without "
+        "your sign-off.\n"
+        "Start today. We evaluate your tenant across five areas that matter most to you."
+    )
+    assert page_links.summary_sentence([text]) == (
+        "We evaluate your tenant across five areas that matter most to you.",
+        0,
+    )
+    assert (
+        page_links.summary_sentence(
+            ["Contact Us\n\nCollaborate on your new business idea."]
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -411,13 +469,27 @@ def test_every_site_page_reply_is_short(path: Path) -> None:
         ("Assess your tenant.", "Our Zero Trust Services page is where you can assess your tenant."),
         ("How we protect data.", "Our Zero Trust Services page covers how we protect data."),
         ("A governed system", "Our Zero Trust Services page covers a governed system."),
-        ("ISO controls for AI.", "Our Zero Trust Services page covers ISO controls for AI."),
+        ("ISO controls for AI.", "Our Zero Trust Services page in a nutshell: ISO controls for AI."),
+        ("Supporting AI controls.", "Our Zero Trust Services page in a nutshell: Supporting AI controls."),
         ("DeployIQ is a partner.", "Our Zero Trust Services page in a nutshell: DeployIQ is a partner."),
     ],
 )  # fmt: skip
 def test_summary_frames(copy: str, expected: str) -> None:
     line = PAGE_LINK_LINE.format(url=f"{BASE}/zero-trust")
     assert page_links.page_summary(PAGES[3], copy, line) == expected
+
+
+def test_long_copy_keeps_its_main_clause() -> None:
+    copy = (
+        "DeployIQ is Exigo Tech's deployment methodology for Microsoft 365 security "
+        "and compliance: AI agents assess, recommend and apply changes against CIS, "
+        "Essential Eight, ISO 27001 and Zero Trust, and nothing changes without sign-off."
+    )
+    line = PAGE_LINK_LINE.format(url=f"{BASE}/")
+    assert page_links.page_summary(PAGES[0], copy, line) == (
+        "Our home page in a nutshell: DeployIQ is Exigo Tech's deployment "
+        "methodology for Microsoft 365 security and compliance."
+    )
 
 
 def test_long_copy_is_cut_at_a_clause() -> None:
@@ -444,11 +516,41 @@ def test_page_label(route: str, title: str, label: str) -> None:
 def test_first_prose_sentence_skips_headings_and_bullets() -> None:
     text = (
         "Advancing Global Security Faster Than Ever\n\n- Left ring: controls\n\n"
-        "DeployIQ is Exigo Tech's AI-native venture with one mission. More text."
+        "DeployIQ is Exigo Tech's AI-native venture with one global mission. More text."
     )
     assert page_links._first_prose_sentence(text) == (  # noqa: SLF001  # pylint: disable=protected-access
-        "DeployIQ is Exigo Tech's AI-native venture with one mission."
+        "DeployIQ is Exigo Tech's AI-native venture with one global mission."
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "book a discovery call",
+        "I would like to book a consultation",
+        "can I book a session?",
+        "please book a demo for me",
+    ],
+)
+def test_booking_ask_gets_the_booking_link(fake_store: object, query: str) -> None:
+    seen: dict = {}
+    out = asyncio.run(_wrapped_run(seen)(query=query, vector_store=fake_store))
+    assert seen["query"] == query  # answered by the normal path
+    assert out.answer.endswith(PAGE_LINK_LINE.format(url=f"{BASE}/booking"))
+    assert out.citations[-1].url == f"{BASE}/booking"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "who will I speak with if I book a session?",
+        "what happens when I book a call?",
+        "how much does it cost to book?",
+    ],
+)
+def test_question_about_booking_gets_no_link(fake_store: object, query: str) -> None:
+    out = asyncio.run(_wrapped_run({})(query=query, vector_store=fake_store))
+    assert "http" not in out.answer
 
 
 def test_wrapper_leaves_other_questions_alone(fake_store: object) -> None:

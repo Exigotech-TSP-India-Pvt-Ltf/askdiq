@@ -39,7 +39,14 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.guardrails.conversational import detect_conversational_intent
-from app.guardrails.pre_checks import is_junk_input
+from app.guardrails.pre_checks import (
+    _COMMON_WORDS,
+    _KNOWN_TERMS,
+    ALLOWED_ACRONYMS,
+    _is_vocabulary_word,
+    is_gibberish_token,
+    is_junk_input,
+)
 from app.harness.prompt_catalog import NO_ANSWER_LINE
 from app.retrieval.reranker import entity_documents, entity_mentions, rerank_async
 from app.retrieval.retriever import (
@@ -948,6 +955,99 @@ def _goal_query(last: Clarification, entries: list[dict[str, object]]) -> str | 
     return compose_query(pick, [context]) if context else pick
 
 
+def _only_vague(original: str) -> bool:
+    """The original says nothing beyond the card's topic ("m365 help", "plans?")."""
+    if _BUYING_RE.search(_scan(original)):
+        return False  # "whats ur pricing": the price ask is kept next to the pick
+    vague = _VAGUE_WORDS | _TERM_FILLER
+    term = ambiguous_term(original)  # the card's own topic word ("assessment")
+    if term is not None and " " not in term:
+        vague |= {term}
+    return all(w in vague or w in _TERM_FAMILIES for w in _content_words(original))
+
+
+def lead_with(subject: str, original: str) -> str:
+    """``subject`` first, so retrieval and the cross-encoder lead with it."""
+    room = max(_MAX_QUERY_CHARS - len(subject) - 2, 0)
+    return f"{subject}: {original.strip()[:room]}"
+
+
+def _extra_terms(reply: str, option: str) -> list[str]:
+    """Product words of a typed pick its option label lacks ("Strengthen")."""
+    label_words = {w.lower() for w in _WORD_RE.findall(option)}
+    return list(
+        dict.fromkeys(
+            m.group(0)
+            for m in _PRODUCT_TERM_RE.finditer(_scan(reply))
+            if not {w.lower() for w in _WORD_RE.findall(m.group(0))} <= label_words
+        )
+    )
+
+
+def _pick_query(
+    original: str, entries: list[dict[str, object]], reply: str = ""
+) -> str | None:
+    """One option picked: the query leads with the option, not the vague ask.
+
+    "m365 help" + "Microsoft 365 Security Packages" -> "What is Microsoft 365
+    Security Packages and what does it include?"; "pricing" + "Zero Trust Services" -> "Zero Trust
+    Services: pricing"; a typed pick naming a tier the label lacks ("the
+    Strengthen package") leads with it. Several answers or an "Other" text
+    keep the suffix form.
+    """
+    if len(entries) != 1 or entries[0].get("other_text"):
+        return None
+    labels = [str(label) for label in entries[0]["labels"]]  # type: ignore[attr-defined]
+    if not labels or NOT_SURE_LABEL in labels:
+        return None
+    option = " and ".join(labels)
+    extra = _extra_terms(reply, option)
+    if extra:
+        option = f"{' '.join(extra)} ({option})"
+    if _only_vague(original):
+        return f"What is {option} and what does it include?"
+    return lead_with(option, original)
+
+
+def _known_word(word: str, card_words: frozenset[str]) -> bool:
+    low = word.lower()
+    if is_gibberish_token(word):
+        return False
+    return (
+        low in card_words
+        or low in _STOPWORDS
+        or low in _VAGUE_WORDS
+        or low in _GENERIC_WORDS
+        or low in _BUYING_WORDS
+        or low in _TERM_FILLER
+        or low in _COMMON_WORDS
+        or low in _KNOWN_TERMS
+        or low in ALLOWED_ACRONYMS
+        or _is_vocabulary_word(low)
+    )
+
+
+def is_noise_reply(text: str, clarification: Clarification) -> bool:
+    """Word-shaped gibberish ("qzxv plorb wibble"): no known word at all.
+
+    ``is_junk_input`` misses short pronounceable nonsense; a reply naming a
+    service or product, or any real / card word, is never noise.
+    """
+    scan = _scan(text)
+    if names_product(scan):
+        return False
+    words = [w for w in _WORD_RE.findall(scan) if w.isalpha()]
+    if not words:
+        return False
+    card_words = frozenset(
+        w.lower()
+        for q in clarification.questions
+        for o in q.options
+        for w in _WORD_RE.findall(f"{o.label} {o.description}")
+    )
+    return not any(_known_word(w, card_words) for w in words)
+
+
 def resolve_clarification_reply(
     query: str,
     history: list[ChatTurn] | None,
@@ -976,9 +1076,9 @@ def resolve_clarification_reply(
         doc_ids = list(
             dict.fromkeys(d for e in entries for d in e["document_ids"])  # type: ignore[attr-defined]
         )
-        goal_query = _goal_query(last, entries)
         return ResolvedReply(
-            query=goal_query
+            query=_goal_query(last, entries)
+            or _pick_query(last.original_query, entries, "" if answers else query)
             or compose_query(last.original_query, [_part(e) for e in entries]),
             original_query=last.original_query,
             answers=entries,
@@ -988,8 +1088,10 @@ def resolve_clarification_reply(
         answers
         or not query.strip()
         or detect_conversational_intent(query) is not None
-        # "!!!" / keyboard mash refines nothing: the junk template answers it.
+        # "!!!" / keyboard mash / "qzxv plorb wibble" refines nothing: the
+        # junk template answers it.
         or is_junk_input(query)
+        or is_noise_reply(query, last)
     ):
         return None
     if _NOT_SURE_RE.search(_scan(query)) and len(query.split()) <= _MAX_POINTER_WORDS:
@@ -1007,10 +1109,15 @@ def resolve_clarification_reply(
         # "where are you based?": a standalone question is answered as such.
         return None
     # Free text of any length refines the original question; the card's
-    # option pages are searched for it.
+    # option pages are searched for it. A short reply naming a product ("the
+    # Strengthen package") leads the query, so retrieval finds that section.
     offered = [o for q in last.questions for o in q.options]
+    text = _clip(query, _MAX_OTHER_CHARS)
+    short = len(text.split()) <= _MAX_POINTER_WORDS
     return ResolvedReply(
-        query=compose_query(last.original_query, [_clip(query, _MAX_OTHER_CHARS)]),
+        query=lead_with(text, last.original_query)
+        if short and names_product(text)
+        else compose_query(last.original_query, [text]),
         original_query=last.original_query,
         document_ids=list(dict.fromkeys(d for o in offered for d in o.document_ids)),
         free_text=True,
@@ -1600,6 +1707,18 @@ def clarify_allowed(
     )
 
 
+# Chat padding around a purchase ask ("whats ur pricing", "buy now").
+_BUY_FILLER = frozenset(
+    ["ur", "u", "now", "where", "today", "asap", "right", "away", "me", "us", "go"]
+)
+
+
+def _names_other_thing(residual: list[str]) -> bool:
+    """Non-purchase words beyond padding ("cheap iphone", "laptop under 1500")."""
+    padding = _BUY_FILLER | _TERM_FILLER | _VAGUE_WORDS | _GENERIC_WORDS
+    return any(w not in padding for w in residual)
+
+
 _DANGLING_RE = re.compile(r"\b(?:it|its|it's|they|them|this|that|those|these)\b", re.I)
 
 
@@ -1643,6 +1762,10 @@ def decide_clarification(  # pylint: disable=too-many-arguments,too-many-locals,
             return ClarifyDecision(reason="buying_answerable")
         if route == "off_topic" and residual:
             return ClarifyDecision(reason="off_topic")
+        if route == "not_covered" and _names_other_thing(residual):
+            # "where can I buy a cheap iPhone?": nothing in the KB and the ask
+            # is about something else, so no "which service?" card.
+            return ClarifyDecision(reason="not_covered")
         return ClarifyDecision(
             ask=True, buying=True, docs=tuple(docs), reason="buying_without_service"
         )

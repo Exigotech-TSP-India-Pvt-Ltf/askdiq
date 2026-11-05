@@ -39,6 +39,7 @@ MAX_TEMPLATE_VAR_CHARS = 40
 MAX_HEADING_LEVEL = 6
 BOLD_WRAP_CHARS = 4
 MIN_TABLE_ROWS = 2
+MIN_REPEATED_LIST_ITEMS = 3
 
 # Label sections that describe UI only: dropped with everything under them.
 DROP_SECTIONS = (
@@ -64,6 +65,13 @@ MERGE_SECTIONS = (
     "journey progress banner",
     "quick links",
 )
+# A named diagram label ("[Hero diagram: Orchestration cycle]") is its own
+# section; a positional one ("[Infographic: hero, right-hand side]") merges.
+VISUAL_KINDS = ("hero diagram", "diagram", "infographic")
+POSITIONAL_WORDS = ("hero", "side", "left", "right", "top", "bottom")
+# A UI note marking a mobile-only re-rendering of copy shown above it: the
+# line (a toggle label) is dropped; the repeated list is de-duplicated.
+MOBILE_ONLY_NOTE = "_(mobile only"
 # A sub-heading (this level or deeper) with no copy of its own is itself the
 # copy (e.g. a list of key points written as headings): kept as a bullet.
 MIN_BULLET_HEADING_LEVEL = 3
@@ -122,8 +130,13 @@ def _remove_spans(line: str, opener: str, closer: str, keep=None) -> str:
 
 
 def _note_replacement(inner: str) -> str | None:
+    """An illustrative/sample note is kept as ``(its own words)``: it tells
+    the reader the figures that follow are a sample."""
     lowered = inner.lower()
-    return ILLUSTRATIVE_NOTE if any(w in lowered for w in ILLUSTRATIVE_WORDS) else None
+    if not any(w in lowered for w in ILLUSTRATIVE_WORDS):
+        return None
+    words = " ".join(inner.split()).rstrip(".")
+    return f"({words})" if words else ILLUSTRATIVE_NOTE
 
 
 def _drop_images(line: str) -> str:
@@ -207,7 +220,8 @@ def _clean_line(raw: str) -> str | None:
     line = _remove_spans(raw, EDITOR_OPEN, EDITOR_CLOSE)
     line = _remove_spans(line, NOTE_OPEN, NOTE_CLOSE, keep=_note_replacement)
     item = _list_item(line.strip())
-    if item.startswith(CTA_MARKER):
+    is_mobile_copy = raw.lstrip().lower().startswith(MOBILE_ONLY_NOTE)
+    if is_mobile_copy or item.startswith(CTA_MARKER):
         return None
     lowered = line.lower()
     if any(marker in lowered for marker in UI_SPEC_MARKERS):
@@ -281,6 +295,20 @@ def _label(text: str) -> str | None:
     return label
 
 
+def _visual_title(label: str) -> str | None:
+    """``Hero diagram: Orchestration cycle`` -> ``Orchestration cycle``: a
+    named diagram is a section of its own; a positional one ("hero,
+    right-hand side") is not."""
+    kind, colon, name = label.partition(":")
+    name = name.strip()
+    lowered = name.lower()
+    if not colon or kind.strip().lower() not in VISUAL_KINDS or not name:
+        return None
+    if any(word in lowered for word in POSITIONAL_WORDS):
+        return None
+    return name
+
+
 def _section_action(title: str) -> tuple[str, str]:
     """(``drop`` | ``merge`` | ``keep``, heading text) for one heading."""
     label = _label(title)
@@ -288,6 +316,8 @@ def _section_action(title: str) -> tuple[str, str]:
     lowered = plain.lower()
     if any(lowered.startswith(name) for name in DROP_SECTIONS):
         return "drop", plain
+    if label is not None and (visual := _visual_title(plain)):
+        return "keep", visual
     if label is not None and any(lowered.startswith(n) for n in MERGE_SECTIONS):
         return "merge", plain
     return "keep", plain
@@ -378,6 +408,43 @@ def _dedupe_paragraphs(lines: list[str]) -> list[str]:
     return out
 
 
+def _item_key(line: str) -> str | None:
+    """Words of a list item without its marker or numbering (``01 Onboard —
+    X`` and ``1. Onboard: X`` match), or ``None`` for a non-list line."""
+    stripped = line.strip()
+    number = stripped.partition(" ")[0]
+    is_numbered = number[:1].isdigit() and number.endswith((".", ")"))
+    if _list_item(stripped) == stripped and not is_numbered:
+        return None
+    words = "".join(c if c.isalnum() else " " for c in stripped.lower()).split()
+    while words and words[0].isdigit():
+        words.pop(0)
+    return " ".join(words)
+
+
+def _dedupe_section_lists(lines: list[str]) -> list[str]:
+    """Drop a list repeated item-for-item within the same section (a desktop
+    and a mobile rendering of one list); short items count here, unlike in
+    ``_dedupe_paragraphs``, because the whole list must match."""
+    out: list[str] = []
+    seen: set[tuple[str, ...]] = set()
+    block: list[str] = []
+    for line in [*lines, ""]:
+        if _item_key(line) is not None:
+            block.append(line)
+            continue
+        if block:
+            keys = tuple(_item_key(item) or "" for item in block)
+            if len(block) < MIN_REPEATED_LIST_ITEMS or keys not in seen:
+                out.extend(block)
+            seen.add(keys)
+            block = []
+        if markdown_heading(line):
+            seen = set()
+        out.append(line)
+    return out[:-1]
+
+
 def _collapse_blank_lines(lines: list[str]) -> list[str]:
     out = []
     for line in lines:
@@ -423,8 +490,24 @@ SAMPLE_SECTION_TEXT = (
 
 
 def _is_sample_marker(line: str) -> bool:
+    """A whole-line illustrative note ``(Illustrative sample score card)`` or
+    a ``Sample …`` line."""
     text = line.strip()
-    return text == ILLUSTRATIVE_NOTE or text.lower().startswith(SAMPLE_LINE_STARTS)
+    lowered = text.lower()
+    if SAMPLE_SECTION_TEXT in text:  # already framed: cleaning is idempotent
+        return True
+    if text.startswith("(") and text.endswith(")"):
+        return any(word in lowered for word in ILLUSTRATIVE_WORDS)
+    return lowered.startswith(SAMPLE_LINE_STARTS)
+
+
+def sample_framing(marker: str) -> str:
+    """The marker's own words plus the fixed sample sentence, e.g.
+    ``Illustrative sample score card. This section shows …``."""
+    if SAMPLE_SECTION_TEXT in marker:
+        return marker.strip()
+    words = marker.strip().strip("()").strip().rstrip(".")
+    return f"{words}. {SAMPLE_SECTION_TEXT}" if words else SAMPLE_SECTION_TEXT
 
 
 def _neutralise_samples(lines: list[str]) -> list[str]:
@@ -454,8 +537,9 @@ def _neutralise_samples(lines: list[str]) -> list[str]:
             if markdown_heading(s) is not None:
                 break
             own.append(s)
-        if any(_is_sample_marker(s) for s in own):
-            out.extend([line, "", SAMPLE_SECTION_TEXT, ""])
+        marker = next((s for s in own if _is_sample_marker(s)), None)
+        if marker is not None:
+            out.extend([line, "", sample_framing(marker), ""])
             index = end
             continue
         out.append(line)
@@ -463,32 +547,60 @@ def _neutralise_samples(lines: list[str]) -> list[str]:
     return out
 
 
+def _fold_point(out: list[str], level: int) -> int | None:
+    """Where a merged label's copy goes: the end of its parent's own text.
+
+    The parent is the last heading shallower than ``level``; when a deeper
+    section was emitted after it (e.g. a hero diagram), appending would file
+    the copy under that section, so it is inserted before it instead.
+    ``None`` means append.
+    """
+    parent = -1
+    for index in range(len(out) - 1, -1, -1):
+        found = markdown_heading(out[index])
+        if found is not None and found[0] < level:
+            parent = index
+            break
+    for index in range(parent + 1, len(out)):
+        if markdown_heading(out[index]) is not None:
+            return index
+    return None
+
+
 def clean_markdown(text: str) -> str:
     """The cleaned, meaning-preserving Markdown for one document."""
     lines = _promote_bold_headings(text.split("\n"))
     out: list[str] = []
     drop_level: int | None = None
+    fold_at: int | None = None
     for raw in lines:
         found = markdown_heading(raw)
         if found is not None:
             level, title = found
             if drop_level is not None and level > drop_level:
                 continue
-            drop_level = None
+            drop_level = fold_at = None
             action, plain = _section_action(title)
             if action == "drop":
                 drop_level = level
-            elif action == "keep" and plain:
+            elif action == "merge":
+                fold_at = _fold_point(out, level)
+            elif plain:
                 out.append(f"{'#' * level} {plain}")
             continue
         if drop_level is not None:
             continue
         cleaned = _clean_line(raw)
-        if cleaned is not None:
+        if cleaned is None:
+            continue
+        if fold_at is None:
             out.append(cleaned)
+        else:
+            out.insert(fold_at, cleaned)
+            fold_at += 1
     out = _linearise_tables(out)
     out = _neutralise_samples(out)
-    out = _dedupe_paragraphs(out)
+    out = _dedupe_paragraphs(_dedupe_section_lists(out))
     # Removing an empty sub-section can empty its parent: repeat until stable.
     while (pruned := _drop_empty_sections(out)) != out:
         out = pruned

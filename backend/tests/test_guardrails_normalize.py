@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from app.guardrails.normalize import normalise_input
+from app.guardrails.normalize import normalise_input, strip_leading_interjections
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
 
 
@@ -214,3 +214,51 @@ def test_pronounceable_nonsense_is_still_spam() -> None:
 def test_lone_punctuation_gets_the_unclear_template(raw: str) -> None:
     # kb-sym-28: never an empty query, never an embedding call.
     assert "unclear_input" in run_pre_checks(normalise_input(raw), 500, raw=raw)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            "damn it, just tell me what CIS benchmark version you use",
+            "just tell me what CIS benchmark version you use",
+        ),
+        ("Ugh. what is zero trust?", "what is zero trust?"),
+        ("uggghhh what is zero trust?", "what is zero trust?"),
+        ("wtf, how much is the CIS assessment", "how much is the CIS assessment"),
+        ("FFS what does E8 cover", "what does E8 cover"),
+        ("bloody hell, is Intune included?", "is Intune included?"),
+        ("ugh, damn it... what is E8?", "what is E8?"),
+        ("for god's sake, what is CIS", "what is CIS"),
+    ],
+)
+def test_leading_interjections_are_stripped_for_retrieval(
+    raw: str, expected: str
+) -> None:
+    # tx-abuse-05: the expletive prefix diluted the search embedding.
+    assert strip_leading_interjections(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "damn it",
+        "ugh!!!",
+        "wtf?",
+        "hello, what is CIS?",
+        "Hellman key exchange",
+        "shitake mushrooms",
+        "what the hell is zero trust",
+        "damnation",
+        "",
+    ],
+)
+def test_other_text_is_left_as_typed(raw: str) -> None:
+    assert strip_leading_interjections(raw) == raw
+
+
+def test_interjection_strip_is_linear_on_hostile_input() -> None:
+    hostile = "ugh, " * 2000 + "!" * 2000
+    started = time.perf_counter()
+    strip_leading_interjections(hostile)
+    assert time.perf_counter() - started < 0.5

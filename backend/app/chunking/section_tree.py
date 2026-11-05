@@ -6,7 +6,9 @@ tree. A section is kept whole with everything under it while it fits
 in one chunk with its own heading. A larger section splits at its
 sub-headings first; only a single oversized leaf is packed by paragraph,
 then by list item / line, then by sentence. Neighbouring pieces under the
-same parent that are too small to stand alone are merged.
+same parent that are too small to stand alone are merged. A section made of
+three or more sibling cards (sub-headings with their own copy) is always
+split: one chunk per card, plus the intro naming the cards.
 
 Every chunk starts with its breadcrumb (``Page › Section › Sub-section``),
 so the embedded text and the prompt both say what the chunk is about, and
@@ -27,6 +29,10 @@ BREADCRUMB_SEPARATOR = f" {chr(0x203A)} "  # "Page > Section > Sub-section" (U+2
 LIST_MARKERS = ("- ", "* ", "+ ")
 SENTENCE_END = ". "
 LIST_SHARE = 0.5
+MIN_CARDS = 3
+# A card's own copy must be a sentence or so; one-phrase cards ("Autonomous:
+# Human-in-loop") read better together, as one list-like section.
+MIN_CARD_CHARS = 40
 
 
 @dataclass
@@ -45,6 +51,7 @@ class _Piece:
     path: tuple[str, ...]
     title: str
     body: str
+    alone: bool = False  # a card-set intro: never merged with siblings
 
     def text(self, with_title: bool) -> str:
         if with_title and self.title:
@@ -86,6 +93,21 @@ def _render(node: _Node) -> str:
         child_text = _render(child)
         parts.append(f"{child.title}\n{child_text}".strip())
     return "\n\n".join(p for p in parts if p).strip()
+
+
+def _is_card_set(node: _Node) -> bool:
+    """A section made of >= ``MIN_CARDS`` sibling sub-sections that each
+    carry their own copy (cards, stages, carousel items): each card retrieves
+    best alone, so it is never merged with its siblings."""
+    return len(node.children) >= MIN_CARDS and all(
+        len(" ".join(child.lines).strip()) >= MIN_CARD_CHARS for child in node.children
+    )
+
+
+def _holds_card_set(node: _Node) -> bool:
+    """A card set somewhere below ``node``: it is split even when the whole
+    of ``node`` would fit in one chunk."""
+    return any(_is_card_set(c) or _holds_card_set(c) for c in node.children)
 
 
 class SectionTreeChunker(ChunkingStrategy):
@@ -141,8 +163,10 @@ class SectionTreeChunker(ChunkingStrategy):
         return packed
 
     def _emit(self, node: _Node, path: tuple[str, ...]) -> list[_Piece]:
+        if path and _is_card_set(node):
+            return self._emit_cards(node, path)
         whole = _render(node)
-        if len(whole) <= self.max_chars:
+        if len(whole) <= self.max_chars and not _holds_card_set(node):
             return [_Piece(path, node.title, whole)] if whole else []
         pieces = [
             _Piece(path, node.title, part)
@@ -151,6 +175,23 @@ class SectionTreeChunker(ChunkingStrategy):
         for child in node.children:
             pieces.extend(self._emit(child, (*path, child.title)))
         return self._merge_small(pieces, path)
+
+    def _emit_cards(self, node: _Node, path: tuple[str, ...]) -> list[_Piece]:
+        """One chunk per card, each under its own breadcrumb; the section's
+        intro is a chunk of its own and names the cards (unless its copy
+        already does), so "what are the …" still finds the whole set."""
+        intro = "\n".join(node.lines).strip()
+        titles = [child.title for child in node.children]
+        if not all(title.lower() in intro.lower() for title in titles):
+            intro = "\n\n".join(
+                part for part in (intro, "\n".join(f"- {t}" for t in titles)) if part
+            )
+        pieces = [
+            _Piece(path, node.title, part, alone=True) for part in self._pack(intro)
+        ]
+        for child in node.children:
+            pieces.extend(self._emit(child, (*path, child.title)))
+        return pieces
 
     def _merge_small(
         self, pieces: list[_Piece], parent: tuple[str, ...]
@@ -175,6 +216,8 @@ class SectionTreeChunker(ChunkingStrategy):
         return merged
 
     def _mergeable(self, last: _Piece, piece: _Piece, parent: tuple[str, ...]) -> bool:
+        if last.alone or piece.alone:
+            return False
         if min(len(last.body), len(piece.body)) >= self.min_chars:
             return False
         if last.title.endswith("?") or piece.title.endswith("?"):

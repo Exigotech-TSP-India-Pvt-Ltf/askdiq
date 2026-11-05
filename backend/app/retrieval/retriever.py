@@ -25,6 +25,7 @@ from functools import lru_cache
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.governance.pii import redact_pii
+from app.guardrails.normalize import strip_leading_interjections
 from app.guardrails.pre_checks import is_gibberish_token
 from app.harness.decision import PartVerdict, Route, RouteDecision
 from app.knowledge.links import citation_url
@@ -640,6 +641,14 @@ def _with_subject(text: str, subject: str) -> str:
     return replaced if count else f"{text.rstrip(' ?')} ({subject})"
 
 
+_OUR_NAME_RE = re.compile(r"\b(?:deploy\s{0,3}iq|exigo\s{1,3}tech)\b", re.IGNORECASE)
+
+
+def _our_name(text: str) -> str | None:
+    found = _OUR_NAME_RE.search(text)
+    return found.group(0) if found else None
+
+
 def split_query(query: str) -> list[QueryPart]:
     """Cheap rule-based split of a message into its asks (no LLM call).
 
@@ -687,7 +696,9 @@ def split_query(query: str) -> list[QueryPart]:
                 part.text, _with_subject(part.search, subject), part.comparison
             )
         carried.append(part)
-        subject = own or subject
+        # Our own name is the subject only when no service was named ("Is
+        # DeployIQ AI-native, and who funds it?" -> "who funds DeployIQ?").
+        subject = own or subject or _our_name(part.text)
 
     if len(carried) > settings.retrieval_max_parts:
         logger.info(
@@ -884,10 +895,13 @@ def _contact_ask(text: str) -> bool:
         and _CONTACT_YOU_RE.search(text) is not None
     ):
         return True
+    # "what about email (Security Baseline Assessment)": a follow-up about a
+    # named service's email area, not our email address.
     return (
         _CONTACT_FRAGMENT_RE.search(text) is not None
         and len(_words(text)) <= _CONTACT_FRAGMENT_MAX_WORDS
         and _OTHER_PARTY_RE.search(text) is None
+        and not entity_mentions(text)
     )
 
 
@@ -1206,7 +1220,28 @@ def part_covered(part: PartRetrieval, *, multi_part: bool = False) -> bool:
         if strict
         else settings.retrieval_ce_covered_min
     )
-    return part.max_ce >= floor
+    return part.max_ce >= floor or (not strict and _borderline(part))
+
+
+# Borderline band: a colloquial in-KB ask ("where would my data physically be
+# stored?" -8.96 / 0.331, "is data encrypted end to end?" -9.21 / 0.397)
+# scores a weak logit on the page that answers it but keeps a strong dense
+# match. It goes to generation, which covers a part only when a quoted fact
+# answers it. Picked on 34 colloquial in-KB asks vs 128 negatives: a -10.5
+# floor routed 7 more in-KB asks but live generation answered "do you offer
+# penetration testing?" (-9.57 / 0.436) from adjacent service text; -9.4
+# keeps 4 and adds no negative (off-domain asks also stay below the cosine:
+# time in Sydney -8.88 / 0.315, car settings 0.319, Netflix data 0.301).
+_BORDERLINE_CE_MIN = -9.4
+_BORDERLINE_COS_MIN = 0.33
+
+
+def _borderline(part: PartRetrieval) -> bool:
+    return (
+        part.max_ce is not None
+        and part.max_ce >= _BORDERLINE_CE_MIN
+        and part.max_score >= _BORDERLINE_COS_MIN
+    )
 
 
 # What a bare-topic ask may add around the topic ("tell me about ISO 27001").
@@ -1394,11 +1429,60 @@ _COMMERCIAL_RE = re.compile(
 )
 
 
+# "Which laptop should I buy?", "buy a new phone": the bought thing is named
+# and it is not one of ours (plans, packages, services, assessments).
+_BUY_OBJECT_RE = re.compile(
+    r"\b(?:which|what)\s{1,3}([a-z][\w-]{1,30})\s{1,3}(?:should|shall|do|can|could|would|to)\b"
+    r"[^?.]{0,20}\b(?:buy|purchase)\b|"
+    r"\b(?:buy|buying|purchase|purchasing)\s{1,3}(?:a|an|the|some|new|me\s{1,3}a)\s{1,3}"
+    r"(?:new\s{1,3})?([a-z][\w-]{1,30})",
+    re.IGNORECASE,
+)
+_OUR_OFFERINGS = frozenset(
+    [
+        "plan",
+        "plans",
+        "package",
+        "packages",
+        "service",
+        "services",
+        "assessment",
+        "assessments",
+        "subscription",
+        "subscriptions",
+        "licence",
+        "license",
+        "licenses",
+        "licences",
+        "tier",
+        "snapshot",
+        "one",
+        "deployiq",
+        "deploy",
+        "option",
+        "offering",
+        "product",
+        "tool",
+        "platform",
+    ]
+)
+
+
+def _third_party_purchase(scan: str) -> bool:
+    match = _BUY_OBJECT_RE.search(scan)
+    if match is None:
+        return False
+    obj = (match.group(1) or match.group(2) or "").lower()
+    return obj not in _OUR_OFFERINGS and obj not in _FILLER
+
+
 def is_commercial(text: str) -> bool:
     """A price / plan / payment / purchase ask about doing business with us
     (never off-topic): "the price of a burger" names another party's thing."""
     scan = _scan(text)
     if _COMMERCIAL_RE.search(scan) is None:
+        return False
+    if not entity_mentions(scan) and _third_party_purchase(scan):
         return False
     return bool(
         entity_mentions(scan)
@@ -1456,9 +1540,19 @@ def decide_route(
     return RouteDecision(route, parts=tuple(verdicts), reason=reason, buying=buying)
 
 
+# How far below the covered logit a reply to a KB-built card is still trusted:
+# real option picks lead with the option's own name and score well above it;
+# nonsense glued onto the card's query ("plans? plorb wibble", CE -11.0) does not.
+_CLARIFIED_CE_MARGIN = 1.5
+
+
 def trust_clarified(decision: RouteDecision) -> RouteDecision:
-    """A reply to a KB-built card: NOT_COVERED becomes ANSWER (never OFF_TOPIC)."""
+    """A reply to a KB-built card: NOT_COVERED becomes ANSWER (never OFF_TOPIC),
+    unless its best logit is far below the covered floor."""
     if decision.route is not Route.NOT_COVERED:
+        return decision
+    floor = get_settings().retrieval_ce_covered_min - _CLARIFIED_CE_MARGIN
+    if any(v.score < floor for v in decision.parts):
         return decision
     parts = tuple(
         PartVerdict(v.text, True, v.score, v.document_ids) for v in decision.parts
@@ -1585,7 +1679,10 @@ async def retrieve_parts(  # pylint: disable=too-many-arguments,too-many-positio
         vocabulary = frozenset()
     searches = [
         expand_retrieval_query(
-            correct_typos(distil_long_ask(p.search or p.text), vocabulary)
+            correct_typos(
+                distil_long_ask(strip_leading_interjections(p.search or p.text)),
+                vocabulary,
+            )
         )
         for p in parts
     ]
