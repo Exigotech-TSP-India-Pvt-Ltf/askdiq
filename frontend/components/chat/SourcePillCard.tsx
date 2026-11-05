@@ -1,6 +1,7 @@
 "use client";
 
 import type { Citation } from "@/lib/types";
+import { displayTitle, linkText } from "@/lib/citation-text";
 
 /** First-party DeployIQ icon shown on citations (never a third-party favicon). */
 export const CITATION_ICON_SRC = "/DEPLOYIQ_Icon_Master.svg";
@@ -15,7 +16,7 @@ export function CitationIcon({ className }: { className: string }) {
       aria-hidden="true"
       data-citation-icon
       draggable={false}
-      className={`shrink-0 rounded-full object-contain ${className}`}
+      className={`shrink-0 object-contain ${className}`}
     />
   );
 }
@@ -35,6 +36,8 @@ export interface SourcePillCardProps {
  * available while it is closed.
  */
 export function SourcePillCard({ id, open, citation }: SourcePillCardProps) {
+  const title = displayTitle(citation.title);
+  const link = linkText(citation.url) ?? citation.host ?? "No link for this source";
   return (
     <span
       id={id}
@@ -46,10 +49,12 @@ export function SourcePillCard({ id, open, citation }: SourcePillCardProps) {
       <span className="flex items-center gap-2.5 rounded-xl border border-line bg-surface-elevated px-3 py-2 shadow-lg dark:border-white/10">
         <CitationIcon className="h-6 w-6" />
         <span className="flex min-w-0 flex-col">
-          <span className="truncate text-xs font-medium text-fg" title={citation.title}>
-            {citation.title}
+          <span className="truncate text-xs font-medium text-fg" title={title}>
+            {title}
           </span>
-          <span className="truncate text-[11px] text-fg-subtle">{citation.host ?? "No link for this source"}</span>
+          <span className="truncate text-[11px] text-fg-subtle" title={link}>
+            {link}
+          </span>
         </span>
       </span>
     </span>

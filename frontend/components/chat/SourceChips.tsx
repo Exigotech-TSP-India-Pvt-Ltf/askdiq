@@ -3,6 +3,7 @@
 import { ExternalLink, FileText } from "lucide-react";
 import type { Citation, QueryResponse, SourceChunk } from "@/lib/types";
 import { safeHttpsUrl } from "@/lib/safe-url";
+import { displayTitle, linkText } from "@/lib/citation-text";
 import { focusRing } from "@/components/ui/styles";
 
 /** Chips shown under an answer; more than this collapse into "+N". */
@@ -34,10 +35,12 @@ export function sourceChips(
   for (const source of [...(sources ?? [])].sort((a, b) => b.score - a.score)) {
     if (seen.has(source.document_id)) continue;
     const raw = source.metadata?.source_name;
-    const name = typeof raw === "string" && raw.trim() ? raw.trim() : "Knowledge base";
     const text = source.content.replace(/\s+/g, " ").trim();
     const citation = cited.get(source.document_id);
     const url = safeHttpsUrl(citation ? citation.url : source.url);
+    // Visitors see the page link, never a knowledge-base file name.
+    const name =
+      linkText(url) ?? (typeof raw === "string" && raw.trim() ? displayTitle(raw) : "Knowledge base");
     seen.set(source.document_id, {
       documentId: source.document_id,
       name,
@@ -48,7 +51,8 @@ export function sourceChips(
   for (const c of citations ?? []) {
     if (seen.has(c.document_id)) continue;
     const url = safeHttpsUrl(c.url);
-    seen.set(c.document_id, { documentId: c.document_id, name: c.title || c.label, excerpt: "", ...(url ? { url } : {}) });
+    const name = linkText(url) ?? displayTitle(c.title || c.label);
+    seen.set(c.document_id, { documentId: c.document_id, name, excerpt: "", ...(url ? { url } : {}) });
   }
   const chips = [...seen.values()];
   if (!cited.size) return chips;

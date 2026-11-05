@@ -9,6 +9,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { renderFormattedText } from "@/lib/format-text";
 import { SourcePill } from "@/components/chat/SourcePill";
+import { SourcePillCard } from "@/components/chat/SourcePillCard";
 import { SourceChips, sourceChips } from "@/components/chat/SourceChips";
 import { MessageBubble } from "@/components/MessageBubble";
 import type { ChatMessage, Citation, SourceChunk } from "@/lib/types";
@@ -161,14 +162,14 @@ describe("SourceChips links and pill jump", () => {
 
   it("a chip is a link only for a safe https URL", () => {
     render(<SourceChips sources={[...sources, { ...sources[1], document_id: "doc-x", url: "javascript:alert(1)" }]} />);
-    const link = screen.getByRole("link", { name: "e8.md, opens in a new tab" });
+    const link = screen.getByRole("link", { name: "docs.deployiq.com.au/e8, opens in a new tab" });
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
     expect(link).toHaveAttribute("target", "_blank");
     expect(screen.getAllByRole("link")).toHaveLength(1);
   });
 
   it("history messages without chunks get one chip per citation; cited documents come first", () => {
-    expect(sourceChips(undefined, [NO_LINK, DEPLOYIQ]).map((c) => c.name)).toEqual(["Leave policy", "Essential Eight maturity"]);
+    expect(sourceChips(undefined, [NO_LINK, DEPLOYIQ]).map((c) => c.name)).toEqual(["Leave policy", "docs.deployiq.com.au/e8"]);
     expect(sourceChips(sources, [NO_LINK]).map((c) => c.documentId)).toEqual(["doc-2", "doc-1"]);
   });
 
@@ -198,5 +199,32 @@ describe("SourceChips links and pill jump", () => {
     render(<MessageBubble message={message} />);
     expect(screen.getByText("Plain answer [1].")).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Sources" })).not.toBeInTheDocument();
+  });
+});
+
+describe("citation text", () => {
+  it("shows links and page titles, never knowledge-base file names", async () => {
+    const { displayTitle, linkText } = await import("@/lib/citation-text");
+    expect(linkText("https://staging.deployiq.co/our-vision")).toBe("staging.deployiq.co/our-vision");
+    expect(linkText("https://staging.deployiq.co/services/#our-services")).toBe("staging.deployiq.co/services");
+    expect(linkText("https://staging.deployiq.co/")).toBe("staging.deployiq.co");
+    expect(linkText(null)).toBeNull();
+    expect(displayTitle("our-vision.md")).toBe("Our Vision");
+    expect(displayTitle("Services - Deploy IQ")).toBe("Services - Deploy IQ");
+    expect(displayTitle("")).toBe("Source");
+  });
+
+  it("the card shows the page title and its link", () => {
+    render(
+      <SourcePillCard
+        id="c"
+        open
+        citation={{ n: 1, document_id: "d", title: "our-vision.md", url: "https://staging.deployiq.co/our-vision", label: "deployiq", host: "staging.deployiq.co" }}
+      />,
+    );
+    const card = screen.getByTestId("source-pill-card");
+    expect(card).toHaveTextContent("Our Vision");
+    expect(card).toHaveTextContent("staging.deployiq.co/our-vision");
+    expect(card).not.toHaveTextContent(".md");
   });
 });
