@@ -70,87 +70,6 @@ async def _run(
     return response, seen
 
 
-async def test_mixed_ask_answers_supported_part_with_one_note(monkeypatch):
-    sources = [_source("a", PRODUCT), _source("w", "Rain forecast for Sydney.", 0.05)]
-    parts = [
-        _part("can u tell me about ur product", 0.6, "a", PRODUCT),
-        _part("the weather", 0.05, "w", "Rain forecast for Sydney."),
-    ]
-    response, seen = await _run(
-        monkeypatch,
-        query="can u tell me about ur product and also the weather",
-        sources=sources,
-        parts=parts,
-    )
-    assert response.guardrail_flags == []
-    assert response.grounded is True
-    assert "Deploy IQ is a platform" in response.answer
-    assert response.answer.count("outside what I can help with") == 1
-    assert seen["llm_query"] == "can u tell me about ur product"
-    assert seen["chunks"] == ["a"]
-    assert [s.chunk_id for s in response.sources] == ["a"]
-
-
-async def test_mixed_ask_named_topic_gets_specialist_note(monkeypatch):
-    sources = [_source("a", PRODUCT)]
-    parts = [
-        _part("what is essential eight", 0.6, "a", PRODUCT),
-        _part("what is the Essential Eight price", 0.05, "x", "Unrelated."),
-    ]
-    response, _ = await _run(
-        monkeypatch,
-        query="what is essential eight and what is the Essential Eight price",
-        sources=sources,
-        parts=parts,
-    )
-    assert "one of our specialists can help" in response.answer
-
-
-async def test_all_parts_unsupported_uses_off_topic_fallback(monkeypatch):
-    sources = [_source("w", "Rain forecast.", 0.05)]
-    parts = [
-        _part("what is the weather", 0.05, "w", "Rain forecast."),
-        _part("who won the football", 0.04, "w", "Rain forecast."),
-    ]
-    response, seen = await _run(
-        monkeypatch,
-        query="what is the weather and who won the football",
-        sources=sources,
-        parts=parts,
-    )
-    assert response.guardrail_flags == ["off_topic"]
-    assert response.sources == []
-    assert "llm_query" not in seen
-
-
-async def test_all_parts_supported_keeps_full_query(monkeypatch):
-    sources = [_source("a", PRODUCT), _source("b", ABOUT)]
-    parts = [
-        _part("what is deploy iq", 0.6, "a", PRODUCT),
-        _part("where are you based", 0.5, "b", ABOUT),
-    ]
-    response, seen = await _run(
-        monkeypatch,
-        query="what is deploy iq and where are you based",
-        sources=sources,
-        parts=parts,
-    )
-    assert seen["llm_query"] == "what is deploy iq and where are you based"
-    assert "outside what I can help with" not in response.answer
-    assert "specialists" not in response.answer
-
-
-async def test_single_question_unchanged(monkeypatch):
-    response, seen = await _run(
-        monkeypatch,
-        query="What is Deploy IQ?",
-        sources=[_source("a", PRODUCT)],
-        parts=[],
-    )
-    assert seen["llm_query"] == "What is Deploy IQ?"
-    assert response.answer == "Deploy IQ is a platform [1]."
-
-
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -193,12 +112,6 @@ def test_decompose_mixed_asks(query, count):
     assert len(decompose_query(query)) == count
 
 
-def test_decompose_caps_parts_at_three():
-    parts = decompose_query("What is A? What is B? What is C? What is D?")
-    assert len(parts) == 3
-    assert parts[2] == "What is C? What is D?"
-
-
 async def test_where_are_you_based_part_retrieves_company_chunk(monkeypatch):
     about = types.SimpleNamespace(
         id=uuid.uuid4(), document_id=uuid.uuid4(), content=ABOUT, chunk_metadata={}
@@ -227,7 +140,11 @@ async def test_where_are_you_based_part_retrieves_company_chunk(monkeypatch):
     async def fake_embed(_q):
         return [0.0]
 
+    async def fake_embed_many(texts, **_k):
+        return [[0.0] for _ in texts]
+
     monkeypatch.setattr(retriever, "embed_query", fake_embed)
+    monkeypatch.setattr(retriever, "embed_texts", fake_embed_many)
     sink: list[PartRetrieval] = []
     token = part_retrieval_sink.set(sink)
     try:

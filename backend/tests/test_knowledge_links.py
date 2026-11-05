@@ -245,7 +245,7 @@ def test_front_matter_is_read_and_stripped() -> None:
     assert parsed.meta == FileLinkMeta(
         url="https://docs.x.com/a", title="Guide", section_links=True
     )
-    assert parsed.warnings == ()
+    assert not parsed.warnings
 
 
 def test_front_matter_source_url_key_and_crlf() -> None:
@@ -476,7 +476,9 @@ def test_context_headers_are_numbered_and_prompt_asks_for_markers() -> None:
     context = _format_context([_source(1, "a"), "plain", _source(3, "b")])
     assert "[Source 1 | Document: a.md | Section: Section 1]" in context
     assert "[Source 3 | Document: b.md | Section: Section 3]" in context
-    assert "Never write URLs" in get_system_prompt()
+    # Links are built by code (app.harness.page_links); the prompt asks for
+    # Source-number markers only.
+    assert "Source number" in get_system_prompt()
 
 
 @pytest.mark.parametrize(

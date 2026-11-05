@@ -1,5 +1,6 @@
 """Request/response schemas for document ingestion and listing."""
 
+import uuid
 from datetime import date, datetime
 from typing import Literal
 
@@ -8,6 +9,29 @@ from pydantic import BaseModel, Field
 from app.knowledge.links import MAX_URL_LENGTH
 
 LinkStatusValue = Literal["ok", "missing", "not_allowed"]
+LinkSourceValue = Literal[
+    "form", "front_matter_url", "front_matter_route", "docx", "stored"
+]
+REPLACE_DOCUMENT_DESCRIPTION = (
+    "Id of the document that already uses this upload's link (the 409 "
+    "`document_link_in_use` names it). The upload is stored, then that "
+    "document and its chunks are deleted in the same transaction (audited)."
+)
+
+
+class DocumentRef(BaseModel):
+    """A stored document: id, canonical name and the link it cites."""
+
+    id: str
+    name: str
+    link: str | None = None
+
+
+class DuplicateRemoved(BaseModel):
+    """A paragraph / list item dropped because another page already has it."""
+
+    text: str = Field(description="The removed line (normalized, first 120 chars).")
+    kept_on: str = Field(description="The more specific document that keeps it.")
 
 
 class IngestRequest(BaseModel):
@@ -36,6 +60,9 @@ class IngestRequest(BaseModel):
             "The public https page this document comes from (allow-list in "
             "Settings > Knowledge links). Overrides a `url:` front-matter key."
         ),
+    )
+    replace_document_id: uuid.UUID | None = Field(
+        default=None, description=REPLACE_DOCUMENT_DESCRIPTION
     )
 
 
@@ -84,6 +111,63 @@ class IngestResponse(BaseModel):
     )
     section_links: bool = False
     link_status: LinkStatusValue = "missing"
+    link_source: LinkSourceValue | None = Field(
+        default=None, description="Where `source_url` came from."
+    )
+    duplicates_removed: list[DuplicateRemoved] = Field(
+        default_factory=list,
+        description=(
+            "Lines dropped from the upload because another, more specific "
+            "document already carries them (also listed in `warnings`)."
+        ),
+    )
+    replaced_document: DocumentRef | None = Field(
+        default=None,
+        description="The document deleted by `replace_document_id`, if any.",
+    )
+    replaced_chunks_removed: int = 0
+
+
+class ExistingDocument(DocumentRef):
+    matched_by: Literal["name", "link"]
+
+
+class IngestPreviewResponse(BaseModel):
+    """``POST /ingest/preview``: what ``/ingest/file`` would do (no changes)."""
+
+    canonical_name: str
+    detected_link: str | None = Field(
+        default=None,
+        description="The link the upload would store (form > file > stored).",
+    )
+    link_source: LinkSourceValue | None = None
+    file_link: str | None = Field(
+        default=None, description="A valid link found in the file itself."
+    )
+    existing_document: ExistingDocument | None = Field(
+        default=None,
+        description=(
+            "The document this upload updates (same canonical name), else the "
+            "document already using its link."
+        ),
+    )
+    link_in_use_by: DocumentRef | None = Field(
+        default=None,
+        description=(
+            "Another document already citing the detected link: /ingest/file "
+            "returns 409 `document_link_in_use` unless `replace_document_id` "
+            "is this id."
+        ),
+    )
+    replace_required: bool = False
+    content_status: Literal["new", "unchanged", "changed"]
+    content_hash: str
+    chunks_estimate: int
+    chunks_added: int = 0
+    chunks_removed: int = 0
+    duplicates_removed: list[DuplicateRemoved] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    quarantined: bool = False
 
 
 class DocumentSummary(BaseModel):

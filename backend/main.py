@@ -37,6 +37,7 @@ from app.core.middleware import LatencyMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.tasks import drain as drain_background_tasks
 from app.governance.stream import get_governance_hub
+from app.guardrails import intent as intent_classifier
 from app.harness.prompts import call_llm
 from app.jobs.runtime import start_platform_services
 from app.knowledge.settings_service import refresh_knowledge_settings
@@ -57,7 +58,7 @@ async def _startup_azure_health_check() -> None:
     try:
         await embed_text("DeployIQ startup health check")
         logger.info("startup_health_check embedding=ok")
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # never blocks startup
         logger.error("startup_health_check embedding=failed error=%s", exc)
 
     try:
@@ -69,7 +70,7 @@ async def _startup_azure_health_check() -> None:
             "startup_health_check llm=%s",
             "ok" if answer.strip() else "empty",
         )
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # never blocks startup
         logger.error("startup_health_check llm=failed error=%s", exc)
 
 
@@ -87,6 +88,12 @@ async def lifespan(_app: FastAPI):
     await refresh_model_settings(get_session_factory())
     # Settings > Knowledge links (citation links on the first /query).
     await refresh_knowledge_settings(get_session_factory())
+    # Intent-classifier example vectors, embedded in the background (never
+    # blocks or fails startup; a failed build is retried lazily per request).
+    try:
+        intent_classifier.warm_up()
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # never fails startup
+        logger.error("intent_warm_up_failed error=%s", exc)
     await _startup_azure_health_check()
     await asyncio.to_thread(preload_reranker)
     # Event bus (LISTEN/NOTIFY) and, if JOBS_WORKER_ENABLED, the job worker.

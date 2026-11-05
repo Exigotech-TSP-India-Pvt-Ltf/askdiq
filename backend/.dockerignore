@@ -32,3 +32,5 @@ data/archive/
 
 # Knowledge-base sources are ingested by the entrypoint (scripts/prestart.py).
 !data/real_docs/*.md
+# The site pages scripts/ingest_real_docs.py discovers (data/*.md).
+!data/*.md

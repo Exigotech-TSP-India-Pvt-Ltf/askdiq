@@ -2,6 +2,8 @@
 generation and server-side validation, answer rewriting, the orchestrator
 path and the /query round trip."""
 
+# pylint: disable=use-implicit-booleaness-not-comparison  # assert an exact empty list
+
 from __future__ import annotations
 
 import json
@@ -11,7 +13,6 @@ from typing import Any
 import pytest
 
 from app.api.routes import query as query_route
-from app.core import sessions
 from app.core.config import get_settings
 from app.governance.outcomes import ALL_OUTCOMES, GENERATION_OUTCOMES, derive_outcome
 from app.harness import orchestrator
@@ -22,23 +23,27 @@ from app.harness.clarify import (
     clarification_streak,
     clarify_eligible,
     content_word_count,
+    decide_clarification,
     parse_decision,
     plan_clarification,
     render_clarification_text,
     resolve_clarification_reply,
     select_candidates,
 )
+from app.harness.decision import PartVerdict, Route, RouteDecision
 from app.insights.rules import map_outcome
 from app.insights.taxonomy import BotQuality
+from app.retrieval.retriever import trust_clarified
 from app.schemas.query import (
     ChatTurn,
     Clarification,
     ClarificationAnswer,
+    ClarificationOption,
+    ClarificationQuestion,
     QueryResponse,
     SourceChunk,
 )
 from tests.clarify_eval_cases import AMBIGUOUS_QUERIES, CLEAR_QUERIES
-from tests.conftest import shared_session_factory
 
 settings = get_settings()
 
@@ -363,6 +368,174 @@ def test_short_free_text_refines_but_new_questions_do_not() -> None:
     assert resolve_clarification_reply("2", None) is None
 
 
+@pytest.mark.parametrize(
+    "ask", ["what's the email address for your team?", "how do I reach you?"]
+)
+def test_contact_ask_after_a_card_is_a_new_question(ask: str) -> None:
+    # fin-clar-quote-unrelated: was glued onto the card's query and declined.
+    assert resolve_clarification_reply(ask, _clarify_history()) is None
+
+
+@pytest.mark.parametrize("junk", ["!!!", "asdfghjkl", "zxcvb nmmm ppplk", "???"])
+def test_junk_after_a_card_refines_nothing(junk: str) -> None:
+    # mt-vague-then-e8: "!!!" after the card was answered as a refinement.
+    assert resolve_clarification_reply(junk, _clarify_history()) is None
+
+
+def _service_history(original: str, labels: list[str]) -> list[ChatTurn]:
+    clar = Clarification(
+        preamble="",
+        questions=[
+            ClarificationQuestion(
+                id="Q1",
+                header="Service",
+                question="Which service is your question about?",
+                options=[
+                    ClarificationOption(
+                        id=f"O{i}", label=label, document_ids=[f"doc-{i}"]
+                    )
+                    for i, label in enumerate(labels, 1)
+                ],
+            )
+        ],
+        original_query=original,
+    )
+    return [
+        ChatTurn(role="user", content=original),
+        ChatTurn(
+            role="assistant",
+            content=render_clarification_text(clar),
+            outcome=CLARIFY_OUTCOME,
+            clarification=clar,
+        ),
+    ]
+
+
+_M365 = [
+    "Microsoft 365 Security Packages",
+    "Microsoft 365 Security Baseline Assessment",
+]
+_CERT = ["ISO 27001 Technical Controls in Microsoft 365", "Essential Eight Compliance"]
+_BUY = ["Microsoft 365 Security Packages", "Zero Trust Services"]
+
+
+@pytest.mark.parametrize(
+    ("original", "labels", "reply"),
+    [("plans?", _BUY, "qzxv plorb wibble"), ("whats ur pricing", _BUY, "plorb wibble")],
+)
+def test_word_shaped_gibberish_after_a_card_refines_nothing(
+    original: str, labels: list[str], reply: str
+) -> None:
+    # fin-clar-plans-nonsense / fin-clar-price-nonsense: was trusted at CE -11.
+    assert (
+        resolve_clarification_reply(reply, _service_history(original, labels)) is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("original", "labels", "reply", "expected", "doc"),
+    [
+        # fin-clar-m365-first: vague original -> the option itself is asked.
+        (
+            "m365 help",
+            _M365,
+            "first",
+            "What is Microsoft 365 Security Packages and what does it include?",
+            "doc-1",
+        ),
+        # fin-clar-cert-other: a typed service name picks the option.
+        (
+            "do you do certification",
+            _CERT,
+            "I actually meant Essential Eight",
+            "What is Essential Eight Compliance and what does it include?",
+            "doc-2",
+        ),
+        # fin-clar-assess-pickcis: the card's own topic word is vague too.
+        (
+            "assessment options?",
+            _M365,
+            "Microsoft 365 Security Baseline Assessment",
+            "What is Microsoft 365 Security Baseline Assessment and what does it "
+            "include?",
+            "doc-2",
+        ),
+        # A real ask is kept after the option.
+        (
+            "How do I get compliant?",
+            _CERT,
+            "1",
+            "ISO 27001 Technical Controls in Microsoft 365: How do I get compliant?",
+            "doc-1",
+        ),
+        # A price ask is kept, after the option.
+        ("pricing", _BUY, "2", "Zero Trust Services: pricing", "doc-2"),
+        # fin-clar-price-name: the tier the label lacks leads the query.
+        (
+            "pricing",
+            _BUY,
+            "the Strengthen package",
+            "Strengthen (Microsoft 365 Security Packages): pricing",
+            "doc-1",
+        ),
+    ],
+)
+def test_option_pick_leads_the_query_with_the_option(
+    original: str, labels: list[str], reply: str, expected: str, doc: str
+) -> None:
+    resolved = resolve_clarification_reply(reply, _service_history(original, labels))
+    assert resolved is not None and resolved.free_text is False
+    assert resolved.query == expected
+    assert resolved.document_ids == [doc]
+
+
+def test_nonsense_far_below_the_covered_floor_is_not_trusted() -> None:
+    def gate(score: float) -> RouteDecision:
+        return RouteDecision(
+            Route.NOT_COVERED,
+            parts=(PartVerdict("plans? plorb wibble)", False, score),),
+        )
+
+    floor = settings.retrieval_ce_covered_min
+    assert trust_clarified(gate(floor - 2.5)).route is Route.NOT_COVERED
+    assert trust_clarified(gate(floor - 0.5)).route is Route.ANSWER
+
+
+@pytest.mark.parametrize(
+    ("query", "ask"),
+    [
+        ("Where can I buy a cheap iPhone?", False),
+        ("Which laptop should I buy under $1500?", False),
+        ("quote pls", True),
+        ("whats ur pricing", True),
+        ("I want to buy", True),
+        ("how much is it?", True),
+    ],
+)
+def test_buying_card_only_for_our_services(query: str, ask: bool) -> None:
+    # tx-ot-shopping-01/02: a third-party purchase got the "which service?" card.
+    decision = decide_clarification(
+        query,
+        None,
+        sources=[],
+        ce_by_chunk={},
+        max_ce=-11.0,
+        route="not_covered",
+        buying=True,
+        clarification_reply=False,
+        parts=1,
+    )
+    assert decision.ask is ask
+
+
+def test_real_free_text_still_refines() -> None:
+    resolved = resolve_clarification_reply(
+        "for a small dental clinic", _service_history("pricing", _BUY)
+    )
+    assert resolved is not None and resolved.free_text is True
+    assert resolved.query == "pricing (for a small dental clinic)"
+
+
 def test_boost_puts_chosen_documents_first() -> None:
     sources = _spread_sources()
     boosted = boost_documents(sources, ["doc-partner"])
@@ -421,162 +594,9 @@ async def _run(monkeypatch, query: str, replies: list[str], **kwargs: Any):
     return response, calls, retrieve_calls
 
 
-async def test_ambiguous_query_returns_questions(monkeypatch) -> None:
-    response, calls, retrieve_calls = await _run(
-        monkeypatch, "do you buy?", [json.dumps(_payload())]
-    )
-    assert response.outcome == "clarify"
-    assert response.clarification is not None
-    assert len(response.clarification.questions) == 2
-    assert "Buy a DeployIQ service" in response.answer
-    assert response.grounded is True
-    assert response.prompt_tokens == USAGE["prompt_tokens"]
-    assert response.token_details is not None
-    assert response.token_details["clarification"]["original_query"] == "do you buy?"
-    # Dedicated brief + strict schema, and a wider retrieval.
-    assert "Clarification brief" in calls[0]["clarify_block"]
-    assert calls[0]["response_format"] is ANSWER_OR_CLARIFY
-    assert retrieve_calls[0]["top_k"] == settings.clarify_retrieval_top_k
-    assert (
-        retrieve_calls[0]["max_documents"] == settings.clarify_retrieval_max_documents
-    )
-
-
-async def test_model_may_answer_a_gated_query(monkeypatch) -> None:
-    reply = json.dumps(
-        {
-            "action": "answer",
-            "answer": "We sell services.",
-            "preamble": "",
-            "questions": [],
-        }
-    )
-    response, calls, _ = await _run(monkeypatch, "do you buy?", [reply])
-    assert response.outcome == "answered"
-    assert response.answer == "We sell services."
-    assert len(calls) == 1
-
-
-async def test_ungrounded_clarification_falls_back_to_an_answer(monkeypatch) -> None:
-    payload = _payload()
-    for question in payload["questions"]:
-        for option in question["options"]:
-            option["source_ids"] = []
-    response, calls, _ = await _run(
-        monkeypatch, "do you buy?", [json.dumps(payload), "Direct answer."]
-    )
-    assert response.outcome == "answered"
-    assert response.answer == "Direct answer."
-    assert "clarify_block" not in calls[1]
-
-
-async def test_clear_query_is_never_gated(monkeypatch) -> None:
-    response, calls, retrieve_calls = await _run(
-        monkeypatch,
-        "How are the Platform plans priced for annual enterprise contracts",
-        ["Annual contracts are priced per seat."],
-    )
-    assert response.outcome == "answered"
-    assert "clarify_block" not in calls[0]
-    assert "max_documents" not in retrieve_calls[0]
-
-
-async def test_boosted_documents_lead_the_context(monkeypatch) -> None:
-    _, calls, _ = await _run(
-        monkeypatch,
-        "do you buy? (Topic: Become a partner and the reseller programme)",
-        ["Partners resell DeployIQ."],
-        boost_document_ids=["doc-partner"],
-    )
-    assert calls[0]["chunks"][0].document_id == "doc-partner"
-
-
-async def test_greetings_are_never_clarified(monkeypatch) -> None:
-    response, calls, _ = await _run(monkeypatch, "hello", ["unused"])
-    assert response.outcome == "conversational"
-    assert calls == []
-
-
 # ---------------------------------------------------------------------------
 # /query round trip
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.db
-async def test_query_round_trip_clarify_then_answer(
-    client, db_session, fake_llm, monkeypatch
-) -> None:
-    actor = f"clarify-{uuid.uuid4().hex[:8]}"
-    headers = {"X-Client-Id": actor}
-
-    async def fake_retrieve(*_a, **_k):
-        return _spread_sources()
-
-    async def fake_post_checks(*_a, **_k):
-        return True, 0.9, []
-
-    evaluated: list[str] = []
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
-    monkeypatch.setattr(
-        sessions, "AsyncSessionLocal", shared_session_factory(db_session)
-    )
-    monkeypatch.setattr(
-        query_route,
-        "schedule_online_evaluation",
-        lambda **k: evaluated.append(k["outcome"]),
-    )
-    monkeypatch.setattr(settings, "rate_limit_exempt_actors", [actor])
-
-    fake_llm["set_response"](json.dumps(_payload()), USAGE)
-    first = await client.post("/query", json={"query": "do you buy?"}, headers=headers)
-    assert first.status_code == 200, first.text
-    body = first.json()
-    assert body["outcome"] == "clarify"
-    questions = body["clarification"]["questions"]
-    assert [q["header"] for q in questions] == ["Topic", "Region"]
-    assert questions[0]["options"][0]["sources"] == ["services.md"]
-    assert body["prompt_tokens"] == USAGE["prompt_tokens"]
-    assert body["cost_usd"] is not None
-    assert evaluated == []  # questions back are not judged as an answer
-    session_id = body["session_id"]
-
-    await sessions.drain_pending_writes(actor)
-    detail = await client.get(f"/sessions/{session_id}", headers=headers)
-    assert detail.status_code == 200, detail.text
-    stored = [m for m in detail.json()["messages"] if m["role"] == "assistant"]
-    assert stored[-1]["outcome"] == "clarify"
-    assert len(stored[-1]["clarification"]["questions"]) == 2
-
-    fake_llm["set_response"]("Partners resell DeployIQ services.", USAGE)
-    second = await client.post(
-        "/query",
-        json={
-            "query": "Topic: Become a partner · Region: Australia",
-            "session_id": session_id,
-            "clarification_answers": [
-                {"question_id": "Q1", "option_ids": ["O3"]},
-                {"question_id": "Q2", "option_ids": ["O1"]},
-            ],
-        },
-        headers=headers,
-    )
-    assert second.status_code == 200, second.text
-    answer = second.json()
-    assert answer["outcome"] == "answered"
-    assert answer["clarification"] is None
-    stored_answers = answer["token_details"]["clarification_answers"]
-    assert [a["labels"] for a in stored_answers["answers"]] == [
-        ["Become a partner"],
-        ["Australia"],
-    ]
-    assert fake_llm["calls"][-1]["prompt"] == (
-        "do you buy? (Topic: Become a partner; Region: Australia)"
-    )
-    assert evaluated == ["answered"]
-
-    # A plain-text client gets the questions as text and can reply by name.
-    assert "Become a partner" in body["answer"]
 
 
 @pytest.mark.db

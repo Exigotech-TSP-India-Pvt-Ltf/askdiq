@@ -21,7 +21,7 @@ from app.core.cache import dashboard_cache
 from app.core.config import get_settings
 from app.dashboard.snapshots import schedule_drop_snapshots
 from app.governance.live_cache import clear_live_caches
-from app.governance.test_ips import get_effective_test_ips, is_test_ip
+from app.governance.test_ips import classify_ips, get_effective_test_ips
 from app.models.db_models import AuditLog, ChatMessageRecord, ChatSession
 
 logger = logging.getLogger(__name__)
@@ -122,17 +122,11 @@ async def get_classified_ips(db: AsyncSession) -> tuple[set[str], set[str], date
         union_q = q_msgs.union(q_sess, q_aud)
         raw_ips = (await db.execute(union_q)).scalars().all()
 
-        test_ips: set[str] = set()
-        user_ips: set[str] = set()
-
-        for raw_ip in raw_ips:
-            if not raw_ip:
-                continue
-            ip_str = str(raw_ip).strip()
-            if is_test_ip(ip_str, effective_rules):
-                test_ips.add(ip_str)
-            else:
-                user_ips.add(ip_str)
+        # Per-IP classification is CPU-bound over every distinct IP: keep it
+        # off the event loop.
+        test_ips, user_ips = await asyncio.to_thread(
+            classify_ips, raw_ips, frozenset(effective_rules)
+        )
 
         _cached_classification = {
             "test_ips": test_ips,

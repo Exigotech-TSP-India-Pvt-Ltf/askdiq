@@ -43,12 +43,14 @@ async def test_ingestion_new_then_unchanged(db_session, fake_embed):
 async def test_ingestion_one_section_edited_only_diff_embedded(db_session, fake_embed):
     """When one section is modified, only new chunks are embedded, and unchanged chunk ids are preserved."""
     doc_name = "architecture_overview.md"
+    # Each section is too long to share a chunk (section-tree max_chars), so
+    # the page is two chunks and an edit to one section re-embeds only it.
+    overview = "Deploy IQ provides governed enterprise compliance. " * 14
     content_v1 = (
-        "# Deploy IQ Platform\n\n"
-        "## Platform Overview\n\n"
-        "Deploy IQ provides governed enterprise compliance.\n\n"
+        f"# Deploy IQ Platform\n\n## Platform Overview\n\n{overview}\n\n"
         "## Architecture\n\n"
-        "Architecture is distributed across microservices.\n"
+        + "Architecture is distributed across microservices. " * 14
+        + "\n"
     )
     r1 = await ingest_text(
         db_session,
@@ -62,11 +64,10 @@ async def test_ingestion_one_section_edited_only_diff_embedded(db_session, fake_
 
     # Modify only the second section
     content_v2 = (
-        "# Deploy IQ Platform\n\n"
-        "## Platform Overview\n\n"
-        "Deploy IQ provides governed enterprise compliance.\n\n"
+        f"# Deploy IQ Platform\n\n## Platform Overview\n\n{overview}\n\n"
         "## Architecture\n\n"
-        "Architecture utilizes event-driven serverless functions with PostgreSQL.\n"
+        + "Architecture utilizes event-driven serverless functions. " * 14
+        + "\n"
     )
     r2 = await ingest_text(
         db_session,

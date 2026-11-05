@@ -60,7 +60,7 @@ def chunks(items: Sequence[TurnInput], size: int) -> list[list[TurnInput]]:
     return [list(items[i : i + size]) for i in range(0, len(items), size)]
 
 
-async def classify_turns(
+async def classify_turns(  # pylint: disable=too-many-locals
     turns: Sequence[TurnInput],
     taxonomy: Taxonomy,
     *,
@@ -75,7 +75,8 @@ async def classify_turns(
     batch are returned in ``deferred``.
     """
     call = llm or azure_classifier_llm
-    rule_labels, pending = split_by_rule(turns, taxonomy)
+    # Regex rule pass over the whole batch is CPU-bound: off the event loop.
+    rule_labels, pending = await asyncio.to_thread(split_by_rule, turns, taxonomy)
     result = ClassificationResult(labels=rule_labels)
     remaining = budget_remaining
     batches = chunks(pending, batch_size)

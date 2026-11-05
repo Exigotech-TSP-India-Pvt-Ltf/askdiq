@@ -49,7 +49,7 @@ def test_prompt_omits_examples_and_enforces_context_budget(monkeypatch):
         "What does DeployIQ do?",
         ["DeployIQ provides governed security implementation. " * 20],
     )
-    context = prompt.split("Context:\n", 1)[1].split("\n\nQuestion:", 1)[0]
+    context = prompt.split("Facts:\n", 1)[1].split("\n\nQuestion:", 1)[0]
 
     assert "Example 1" not in prompt
     assert "Example 2" not in prompt
@@ -93,7 +93,7 @@ def test_format_context_with_source_chunk_metadata():
     assert "Plain string chunk without metadata." in context
 
 
-async def test_call_llm_omits_temperature_and_max_completion_tokens(monkeypatch):
+async def test_call_llm_caps_output_and_requests_quote_backed_json(monkeypatch):
     from unittest.mock import MagicMock
 
     mock_response = MagicMock()
@@ -112,7 +112,7 @@ async def test_call_llm_omits_temperature_and_max_completion_tokens(monkeypatch)
         captured_kwargs.update(kwargs)
         return mock_response
 
-    monkeypatch.setattr(prompts._client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(prompts._answer_client.chat.completions, "create", fake_create)
 
     answer, usage = await prompts.call_llm("What is DeployIQ?", ["Some context"])
 
@@ -126,5 +126,122 @@ async def test_call_llm_omits_temperature_and_max_completion_tokens(monkeypatch)
         "cached_tokens": 0,
     }
     assert "temperature" not in captured_kwargs
-    assert "max_completion_tokens" not in captured_kwargs
+    assert (
+        captured_kwargs["max_completion_tokens"]
+        == prompts.settings.llm_max_completion_tokens
+    )
     assert "reasoning_effort" in captured_kwargs
+    schema = captured_kwargs["response_format"]["json_schema"]
+    assert schema["strict"] is True
+    assert set(schema["schema"]["required"]) == {"policy", "parts", "claims"}
+
+
+async def test_streamed_answer_is_assembled_with_usage_and_ttft():
+    from types import SimpleNamespace
+
+    def chunk(text=None, finish=None, usage=None):
+        choices = (
+            [SimpleNamespace(delta=SimpleNamespace(content=text), finish_reason=finish)]
+            if text is not None or finish
+            else []
+        )
+        return SimpleNamespace(choices=choices, usage=usage)
+
+    usage = SimpleNamespace(prompt_tokens=5, completion_tokens=3, total_tokens=8)
+
+    class FakeStream:
+        closed = False
+
+        def __aiter__(self):
+            async def gen():
+                for c in (
+                    chunk(),  # Azure prompt-filter chunk: no choices
+                    chunk('{"claims"'),
+                    chunk(": []}", finish="stop"),
+                    chunk(usage=usage),
+                ):
+                    yield c
+
+            return gen()
+
+        async def close(self):
+            FakeStream.closed = True
+
+    response = await prompts._collect_stream(FakeStream(), 0.0)
+
+    assert response.choices[0].message.content == '{"claims": []}'
+    assert response.choices[0].finish_reason == "stop"
+    assert response.usage is usage
+    assert response.ttft_ms is not None
+    assert FakeStream.closed
+
+
+def test_answer_client_does_not_retry_under_the_orchestrator():
+    # One retry layer only: the orchestrator retries transient errors once.
+    assert prompts._answer_client.max_retries == 0
+
+
+def test_system_prompt_states_rules_once_and_styles_only_change_format():
+    from app.harness import prompt_catalog
+
+    rules = prompt_catalog.common_rules()
+    for style, shape in (("current", "general"), ("adaptive", "quick_fact")):
+        system = prompts.get_system_prompt(style, shape)
+        assert system.count(rules) == 1
+        # No style block restates a refusal rule or the no-answer line.
+        assert prompt_catalog.NO_ANSWER_LINE not in system
+    # Each rule once, telegraphic: grounding + compliance policy (rules 5-7,
+    # policy field) + the owner's length rules. Was 857 words before the trim;
+    # the claim-shape and answer-cap rules (2026-11-05.p5) brought it to ~670;
+    # the answer-relevance / false-premise / overview / named-term / same-subject rules (p9-p10) to ~870;
+    # the later language / page-summary rules to ~900.
+    assert len(prompts.get_system_prompt("current", "general").split()) <= 920
+
+
+def test_answer_prompt_marks_only_direct_answers_covered():
+    from app.harness import prompt_catalog
+
+    system = prompts.get_system_prompt("current", "general")
+    for needle in (
+        "true if a fact answers that ask",
+        "never the question",
+        "never inferred",
+        "saying what is true",
+        "Keep the asked term",
+    ):
+        assert needle in system
+    retry = prompt_catalog.covered_retry_block(["opening hours"], [1])
+    # The re-ask never tells the model the facts answer it (it then stretched
+    # a related fact into an answer).
+    assert "do answer it" not in retry
+    assert "c false" in retry
+
+
+def test_answer_schema_uses_compact_keys_quote_before_text():
+    from app.harness import prompt_catalog
+
+    schema = prompt_catalog.answer_format()["json_schema"]["schema"]
+    claim = schema["properties"]["claims"]["items"]
+    part = schema["properties"]["parts"]["items"]
+    assert claim["required"] == ["p", "s", "q", "t", "k"]
+    assert list(claim["properties"]) == ["p", "s", "q", "t", "k"]
+    assert claim["properties"]["k"]["enum"] == ["s", "i"]
+    assert part["required"] == ["a", "c"]
+    # Every compact key is documented in the prompt.
+    system = prompts.get_system_prompt("current", "general")
+    for key in ("a:", "c:", "p:", "s:", "q =", "t:", "k:"):
+        assert key in system
+
+
+def test_system_prompt_states_the_length_rules():
+    system = prompts.get_system_prompt("current", "general")
+    # Counted in claims (one sentence each) since the quote-backed answer call.
+    for needle in (
+        "1-2 claims",
+        "2-4 claims",
+        "up to 8",
+        "120 words",
+        "at most 12 words",
+        "At most 150 words",
+    ):
+        assert needle in system

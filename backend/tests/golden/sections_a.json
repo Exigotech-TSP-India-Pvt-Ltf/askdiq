@@ -1,0 +1,3183 @@
+{
+  "version": 1,
+  "ground_truth": "backend/data/*.md (19 website pages), cleaned via app.ingestion.cleanup.clean_markdown",
+  "notes": "Section-coverage cases (part A: first 10 pages alphabetically). conflict=true cases touch known KB conflicts and use value_routes.",
+  "cases": [
+    {
+      "id": "sec-a-about-us-intro-01",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "What exactly is DeployIQ, in one sentence?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/"
+          ],
+          "must_contain": [
+            "Exigo Tech"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'intro' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-intro-02",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "Which frameworks does the About page say your AI agents work across?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/"
+          ],
+          "must_contain": [
+            "Security Baselines",
+            "CIS",
+            "Essential Eight",
+            "ISO 27001",
+            "Zero Trust"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'intro' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-mission-03",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "What is DeployIQ's mission statement?",
+          "expect": "answer",
+          "routes": [
+            "/about-us"
+          ],
+          "must_contain": [
+            "Exigo Tech",
+            "repeatable"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'mission' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-mission-04",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "Who do you work alongside during an engagement?",
+          "expect": "answer",
+          "routes": [
+            "/about-us"
+          ],
+          "must_contain": [
+            "IT team",
+            "ISMS owner",
+            [
+              "independent assessor",
+              "assessor"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'mission' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-purpose-05",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "What is the purpose of DeployIQ?",
+          "expect": "answer",
+          "routes": [
+            "/about-us"
+          ],
+          "must_contain": [
+            "clear",
+            "actionable",
+            "accountable"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'purpose' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-deliver-06",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "What do you actually deliver to clients?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/packages"
+          ],
+          "must_contain": [
+            "assessments",
+            [
+              "recommendations",
+              "risk-prioritised"
+            ],
+            [
+              "hardening",
+              "rollback"
+            ],
+            [
+              "validation",
+              "drift"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'deliver' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-deliver-07",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "Do you provide rollback and evidence when you harden our tenant?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/",
+            "/secure-ai",
+            "/zero-trust"
+          ],
+          "must_contain": [
+            "rollback",
+            "evidence"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'deliver' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-partner-08",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "Which services can I start with as my Microsoft 365 technical partner?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/services"
+          ],
+          "must_contain": [
+            "Zero Trust",
+            "Essential Eight",
+            "Security Baseline",
+            [
+              "ISO 27001",
+              "ISO/IEC 27001"
+            ],
+            "CIS",
+            [
+              "ISO 42001",
+              "ISO/IEC 42001"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'partner' of /about-us | r3 corrected: must_contain",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-partner-09",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "What does your Essential Eight service do, briefly?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/",
+            "/essential-eight",
+            "/packages",
+            "/responsible-ai",
+            "/secure-ai",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "maturity gaps",
+              "maturity",
+              "phased"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'partner' of /about-us | r3 corrected: must_contain",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-certify-10",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "Does DeployIQ certify organisations or do independent bodies do that?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/iso-42001-ai-management-system",
+            "/microsoft-365-security-baseline-assessment",
+            "/packages",
+            "/services",
+            "/terms"
+          ],
+          "must_contain": [
+            [
+              "certification body",
+              "independent"
+            ]
+          ],
+          "must_not_contain": [
+            "we certify"
+          ]
+        }
+      ],
+      "note": "section 'certify' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-certify-11",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "For ISO 27001, what stays the responsibility of our ISMS owner?",
+          "expect": "answer",
+          "routes": [
+            "/about-us"
+          ],
+          "must_contain": [
+            "policy",
+            "risk treatment",
+            [
+              "organisational",
+              "people",
+              "physical"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'certify' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-how-12",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "How does Deploy IQ work, step by step?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/",
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/iso-42001-ai-management-system",
+            "/microsoft-365-security-baseline-assessment",
+            "/packages"
+          ],
+          "must_contain": [
+            "Onboard",
+            "Assess",
+            "Recommend",
+            "Approve",
+            "Apply",
+            "Validate",
+            "Improve"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'how' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-how-13",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "Are changes logged and can they be rolled back?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/"
+          ],
+          "must_contain": [
+            "rollback",
+            [
+              "audit logging",
+              "logged"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'how' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-who-14",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "Which kinds of organisations or teams do you support?",
+          "expect": "answer",
+          "routes": [
+            "/about-us"
+          ],
+          "must_contain": [
+            [
+              "Security and IT leaders",
+              "IT leaders"
+            ],
+            "ISMS owners"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'who' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-who-15",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "Is DeployIQ suitable for teams trying to improve Essential Eight maturity?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/",
+            "/essential-eight",
+            "/get-started",
+            "/iso-42001-ai-management-system",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            "Essential Eight"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'who' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-trust-16",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "How do you handle trust and governance during an engagement?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/packages",
+            "/platform",
+            "/privacy",
+            "/responsible-ai",
+            "/secure-ai",
+            "/services",
+            "/terms"
+          ],
+          "must_contain": [
+            [
+              "human review",
+              "approval"
+            ],
+            [
+              "scoped access",
+              "safeguards",
+              "evidence"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'trust' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-about-us-getstarted-17",
+      "category": "sec_about-us",
+      "turns": [
+        {
+          "query": "How can I get started with DeployIQ?",
+          "expect": "answer",
+          "routes": [
+            "/about-us",
+            "/",
+            "/get-started"
+          ],
+          "must_contain": [
+            [
+              "free security posture snapshot",
+              "free security posture assessment",
+              "free"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'getstarted' of /about-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-booking-intro-01",
+      "category": "sec_booking",
+      "turns": [
+        {
+          "query": "Who will I speak with if I book a session?",
+          "expect": "answer",
+          "routes": [
+            "/booking",
+            "/about-us",
+            "/get-started",
+            "/zero-trust"
+          ],
+          "must_contain": [
+            [
+              "security and compliance expert",
+              "Principal Security Consultation",
+              "expert"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'intro' of /booking",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-booking-card-02",
+      "category": "sec_booking",
+      "turns": [
+        {
+          "query": "What type of session is offered on the booking page?",
+          "expect": "answer",
+          "routes": [
+            "/booking"
+          ],
+          "must_contain": [
+            [
+              "Kick-off & Discovery",
+              "Kick-off",
+              "Principal Security Consultation"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'card' of /booking | r3 corrected: must_contain",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-booking-details-03",
+      "category": "sec_booking",
+      "turns": [
+        {
+          "query": "How will the booked session be held - in person or online?",
+          "expect": "answer",
+          "routes": [
+            "/booking"
+          ],
+          "must_contain": [
+            [
+              "web conference",
+              "Web conference details"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'details' of /booking",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-booking-details-04",
+      "category": "sec_booking",
+      "turns": [
+        {
+          "query": "How many minutes is the kick-off and discovery session?",
+          "expect": "answer",
+          "routes": [
+            "/booking"
+          ],
+          "must_contain": [
+            [
+              "30 minutes",
+              "thirty minutes"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'details' of /booking",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-booking-tz-05",
+      "category": "sec_booking",
+      "turns": [
+        {
+          "query": "Which time zone are bookings scheduled in?",
+          "expect": "answer",
+          "routes": [
+            "/booking"
+          ],
+          "must_contain": [
+            [
+              "AUS Eastern Standard Time",
+              "Eastern Standard Time",
+              "AEST"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'tz' of /booking",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-cis-microsoft-365-foundations-benchmark-assessment-intro-01",
+      "category": "sec_cis-microsoft-365-foundations-benchmark-assessment",
+      "turns": [
+        {
+          "query": "What is the CIS Microsoft 365 Foundations Benchmark Assessment?",
+          "expect": "answer",
+          "routes": [
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/",
+            "/about-us",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            "CIS",
+            [
+              "Foundations Benchmark",
+              "benchmark"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'intro' of /cis-microsoft-365-foundations-benchmark-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-cis-microsoft-365-foundations-benchmark-assessment-cover-02",
+      "category": "sec_cis-microsoft-365-foundations-benchmark-assessment",
+      "turns": [
+        {
+          "query": "Which areas are covered in the CIS Microsoft 365 benchmark assessment? List them.",
+          "expect": "answer",
+          "routes": [
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/services"
+          ],
+          "must_contain": [
+            "Identity",
+            [
+              "Defender",
+              "Microsoft Defender"
+            ],
+            [
+              "Exchange",
+              "SharePoint",
+              "Teams"
+            ],
+            [
+              "Intune",
+              "Purview",
+              "Admin Center"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'cover' of /cis-microsoft-365-foundations-benchmark-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-cis-microsoft-365-foundations-benchmark-assessment-identity-03",
+      "category": "sec_cis-microsoft-365-foundations-benchmark-assessment",
+      "turns": [
+        {
+          "query": "What does the Identity (Entra) part of the CIS assessment look at?",
+          "expect": "answer",
+          "routes": [
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/microsoft-365-security-baseline-assessment",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "sign-in",
+              "access security"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'identity' of /cis-microsoft-365-foundations-benchmark-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-cis-microsoft-365-foundations-benchmark-assessment-defender-04",
+      "category": "sec_cis-microsoft-365-foundations-benchmark-assessment",
+      "turns": [
+        {
+          "query": "What does the Microsoft Defender area of the CIS assessment cover?",
+          "expect": "answer",
+          "routes": [
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            "threat protection",
+            [
+              "mail",
+              "endpoints",
+              "cloud apps"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'defender' of /cis-microsoft-365-foundations-benchmark-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-cis-microsoft-365-foundations-benchmark-assessment-exo-05",
+      "category": "sec_cis-microsoft-365-foundations-benchmark-assessment",
+      "turns": [
+        {
+          "query": "In the CIS benchmark assessment, what's checked for Exchange, SharePoint and Teams?",
+          "expect": "answer",
+          "routes": [
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/microsoft-365-security-baseline-assessment",
+            "/packages",
+            "/privacy",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "collaboration",
+              "sharing"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'exo' of /cis-microsoft-365-foundations-benchmark-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-cis-microsoft-365-foundations-benchmark-assessment-admin-06",
+      "category": "sec_cis-microsoft-365-foundations-benchmark-assessment",
+      "turns": [
+        {
+          "query": "What does the Admin Center, Intune & Purview section of the CIS assessment cover?",
+          "expect": "answer",
+          "routes": [
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/",
+            "/about-us",
+            "/essential-eight",
+            "/iso-42001-ai-management-system",
+            "/packages",
+            "/platform",
+            "/privacy",
+            "/responsible-ai",
+            "/secure-ai",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "governance",
+              "data controls"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'admin' of /cis-microsoft-365-foundations-benchmark-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-cis-microsoft-365-foundations-benchmark-assessment-how-07",
+      "category": "sec_cis-microsoft-365-foundations-benchmark-assessment",
+      "turns": [
+        {
+          "query": "What are the steps of the CIS Benchmark assessment?",
+          "expect": "answer",
+          "routes": [
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/",
+            "/about-us",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/iso-42001-ai-management-system",
+            "/microsoft-365-security-baseline-assessment",
+            "/packages"
+          ],
+          "must_contain": [
+            "Onboard",
+            "Assess",
+            "Recommend",
+            "Approve",
+            "Apply",
+            "Validate",
+            "Improve"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'how' of /cis-microsoft-365-foundations-benchmark-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-cis-microsoft-365-foundations-benchmark-assessment-why-08",
+      "category": "sec_cis-microsoft-365-foundations-benchmark-assessment",
+      "turns": [
+        {
+          "query": "Why choose Deploy IQ for the CIS Microsoft 365 Benchmark rather than a one-off audit?",
+          "expect": "answer",
+          "routes": [
+            "/cis-microsoft-365-foundations-benchmark-assessment"
+          ],
+          "must_contain": [
+            [
+              "continually compare",
+              "always changing",
+              "up to date"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'why' of /cis-microsoft-365-foundations-benchmark-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-contact-us-info-01",
+      "category": "sec_contact-us",
+      "turns": [
+        {
+          "query": "What's the street address of your Brisbane office?",
+          "expect": "answer",
+          "routes": [
+            "/contact-us"
+          ],
+          "must_contain": [
+            "Eagle Street",
+            [
+              "4000",
+              "QLD"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'info' of /contact-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-contact-us-info-02",
+      "category": "sec_contact-us",
+      "turns": [
+        {
+          "query": "Which Australian cities do you have offices in?",
+          "expect": "answer",
+          "routes": [
+            "/contact-us"
+          ],
+          "must_contain": [
+            "Sydney",
+            "Melbourne",
+            "Brisbane"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'info' of /contact-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-contact-us-info-03",
+      "category": "sec_contact-us",
+      "turns": [
+        {
+          "query": "What is the postcode of the Sydney office?",
+          "expect": "answer",
+          "routes": [
+            "/contact-us",
+            "/privacy",
+            "/terms"
+          ],
+          "must_contain": [],
+          "must_not_contain": [],
+          "value_routes": [
+            {
+              "value": "2153",
+              "routes": [
+                "/contact-us"
+              ]
+            },
+            {
+              "value": "2145",
+              "routes": [
+                "/privacy",
+                "/terms"
+              ]
+            }
+          ]
+        }
+      ],
+      "note": "section 'info' of /contact-us",
+      "source": "sections_a builder (static, cleaned KB)",
+      "conflict": true
+    },
+    {
+      "id": "sec-a-contact-us-info-04",
+      "category": "sec_contact-us",
+      "turns": [
+        {
+          "query": "What phone number and email address can I use to reach DeployIQ?",
+          "expect": "answer",
+          "routes": [
+            "/contact-us",
+            "/privacy",
+            "/terms"
+          ],
+          "must_contain": [
+            "1300 394 468",
+            "info@deployiq.co"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'info' of /contact-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-contact-us-form-05",
+      "category": "sec_contact-us",
+      "turns": [
+        {
+          "query": "When I fill in the 'Request we contact you' form, what enquiry types can I pick from?",
+          "expect": "answer",
+          "routes": [
+            "/contact-us"
+          ],
+          "must_contain": [
+            "Sales",
+            "Support",
+            "Careers"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'form' of /contact-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-contact-us-form-06",
+      "category": "sec_contact-us",
+      "turns": [
+        {
+          "query": "Can I send a careers enquiry through the contact form?",
+          "expect": "answer",
+          "routes": [
+            "/contact-us"
+          ],
+          "must_contain": [
+            "Careers"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'form' of /contact-us",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-intro-01",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "How quickly can DeployIQ get us Essential Eight compliance-ready?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/"
+          ],
+          "must_contain": [],
+          "must_not_contain": [],
+          "value_routes": [
+            {
+              "value": [
+                "1-2 weeks",
+                "1–2 weeks",
+                "1 to 2 weeks",
+                "one to two weeks"
+              ],
+              "routes": [
+                "/essential-eight"
+              ]
+            },
+            {
+              "value": [
+                "4–8 weeks",
+                "4-8 weeks",
+                "4 to 8 weeks"
+              ],
+              "routes": [
+                "/"
+              ]
+            }
+          ]
+        }
+      ],
+      "note": "section 'intro' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)",
+      "conflict": true
+    },
+    {
+      "id": "sec-a-essential-eight-intro-02",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "What percentage of scoped Essential Eight controls do you deliver?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight"
+          ],
+          "must_contain": [
+            [
+              "100%",
+              "100 per cent",
+              "100 percent"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'intro' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-what-03",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "Can you explain what the ACSC Essential Eight framework is?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/"
+          ],
+          "must_contain": [
+            [
+              "eight mitigation strategies",
+              "mitigation strategies"
+            ],
+            [
+              "maturity levels",
+              "maturity"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'what' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-what-04",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "What is the goal of the Essential Eight mitigation strategies?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight"
+          ],
+          "must_contain": [
+            [
+              "cyber compromise",
+              "reduce the likelihood",
+              "limit the impact"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'what' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-strategies-05",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "Why is patching operating systems one of the Essential Eight?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/get-started"
+          ],
+          "must_contain": [
+            [
+              "vulnerabilities",
+              "patch*"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'strategies' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-strategies-06",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "What does user application hardening involve?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/zero-trust"
+          ],
+          "must_contain": [
+            [
+              "disabling unnecessary features",
+              "attack surface",
+              "risky content"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'strategies' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-strategies-07",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "Why should admin privileges be restricted?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight"
+          ],
+          "must_contain": [
+            [
+              "privilege escalation",
+              "compromised accounts"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'strategies' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-strategies-08",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "How do regular backups help in the Essential Eight?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/zero-trust"
+          ],
+          "must_contain": [
+            [
+              "business continuity",
+              "ransomware"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'strategies' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-maturity-09",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "What target maturity level is displayed on the Essential Eight page?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight"
+          ],
+          "must_contain": [
+            "ML3"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'maturity' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-how-10",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "How do AI agents and human experts split the work in your Essential Eight delivery?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/",
+            "/about-us",
+            "/get-started",
+            "/packages",
+            "/platform",
+            "/terms"
+          ],
+          "must_contain": [
+            "AI agents",
+            [
+              "human experts",
+              "validate"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'how' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-how-11",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "What does an iterative, governed rollout of controls mean?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/secure-ai"
+          ],
+          "must_contain": [
+            [
+              "limited scope",
+              "scaled only after validation",
+              "refined"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'how' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-how-12",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "How does Secure AI apply to your Essential Eight agents?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight"
+          ],
+          "must_contain": [
+            [
+              "role-based access",
+              "controlled scope",
+              "approved boundaries"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'how' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-governance-13",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "What happens in the Pilot phase of an Essential Eight rollout?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "incremental",
+              "limited initial scope"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'governance' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-governance-14",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "What are the three phases of your governance and operational safety approach?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight"
+          ],
+          "must_contain": [
+            "Pilot",
+            "Validate",
+            "Scale"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'governance' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-continuous-15",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "How do you keep Essential Eight controls audit-ready over time?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/",
+            "/about-us",
+            "/packages"
+          ],
+          "must_contain": [
+            [
+              "control drift",
+              "drift"
+            ],
+            [
+              "evidence collection",
+              "evidence"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'continuous' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-score-16",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "Are the Overall Essential Eight Score figures on your page real customer results?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/"
+          ],
+          "must_contain": [
+            [
+              "illustrative",
+              "sample",
+              "not real"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'score' of /essential-eight | r3 corrected: must_contain",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-who-17",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "Who is the Essential Eight service designed for?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/",
+            "/about-us",
+            "/packages",
+            "/privacy",
+            "/responsible-ai",
+            "/secure-ai",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "maturity levels",
+              "maturity"
+            ],
+            [
+              "governance",
+              "audit-ready",
+              "evidence"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'who' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-who-18",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "Do you support organisations at any Essential Eight maturity level?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/privacy",
+            "/responsible-ai",
+            "/secure-ai",
+            "/services",
+            "/terms",
+            "/zero-trust"
+          ],
+          "must_contain": [
+            [
+              "any Essential Eight maturity level",
+              "any"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'who' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-essential-eight-compare-19",
+      "category": "sec_essential-eight",
+      "turns": [
+        {
+          "query": "Why should I understand my current Essential Eight maturity level?",
+          "expect": "answer",
+          "routes": [
+            "/essential-eight",
+            "/",
+            "/about-us",
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/packages",
+            "/platform",
+            "/services",
+            "/zero-trust"
+          ],
+          "must_contain": [
+            [
+              "prioritising remediation",
+              "prioritise",
+              "reducing risk",
+              "gaps"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'compare' of /essential-eight",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-steps-01",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "What are the steps listed on the Get Started page?",
+          "expect": "answer",
+          "routes": [
+            "/get-started"
+          ],
+          "must_contain": [
+            "Free Assessment",
+            "Create Account",
+            [
+              "Know your Security Posture",
+              "Security Posture"
+            ],
+            [
+              "Talk to an Expert",
+              "Expert"
+            ],
+            [
+              "Implementation & Reports",
+              "Implementation"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'steps' of /get-started",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-free-02",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "How many minutes does it take to discover my security vulnerabilities with the free assessment?",
+          "expect": "answer",
+          "routes": [
+            "/get-started",
+            "/"
+          ],
+          "must_contain": [
+            [
+              "5 minutes",
+              "five minutes"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'free' of /get-started",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-score-03",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "What does the Security Score show me?",
+          "expect": "answer",
+          "routes": [
+            "/get-started",
+            "/",
+            "/about-us",
+            "/essential-eight",
+            "/services",
+            "/zero-trust"
+          ],
+          "must_contain": [
+            [
+              "security posture",
+              "vulnerabilities",
+              "risk score"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'score' of /get-started",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-compliance-04",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "Which framework does the Compliance Score track alignment with?",
+          "expect": "answer",
+          "routes": [
+            "/get-started",
+            "/",
+            "/about-us",
+            "/essential-eight",
+            "/iso-42001-ai-management-system",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            "Essential Eight"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'compliance' of /get-started",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-recs-05",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "Are the recommendations AI-generated or reviewed by humans?",
+          "expect": "answer",
+          "routes": [
+            "/get-started",
+            "/",
+            "/packages"
+          ],
+          "must_contain": [
+            [
+              "AI-prioritized",
+              "AI-prioritised",
+              "risk-prioritised",
+              "prioritized",
+              "human-validated"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'recs' of /get-started | r3 corrected: must_contain",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-activity-06",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "What can I track under Recent Activity & Assessments?",
+          "expect": "answer",
+          "routes": [
+            "/get-started"
+          ],
+          "must_contain": [
+            [
+              "completed scans",
+              "workshop outputs",
+              "implemented policies"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'activity' of /get-started",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-workshops-07",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "Can I schedule workshops with DeployIQ experts?",
+          "expect": "answer",
+          "routes": [
+            "/get-started",
+            "/privacy",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "workshops",
+              "Workshops & Consulting"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'workshops' of /get-started",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-support-08",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "What's available under Support & Resources?",
+          "expect": "answer",
+          "routes": [
+            "/get-started",
+            "/about-us"
+          ],
+          "must_contain": [
+            [
+              "guides",
+              "support team"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'support' of /get-started",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-zt-09",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "How is Zero Trust described on the Get Started page?",
+          "expect": "answer",
+          "routes": [
+            "/get-started",
+            "/",
+            "/essential-eight",
+            "/zero-trust"
+          ],
+          "must_contain": [
+            [
+              "security architecture assessment",
+              "architecture"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'zt' of /get-started",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-e8-10",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "What is E8 Compliance on the Get Started page?",
+          "expect": "answer",
+          "routes": [
+            "/get-started"
+          ],
+          "must_contain": [
+            [
+              "Essential Eight compliance management",
+              "compliance management"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'e8' of /get-started",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-get-started-support247-11",
+      "category": "sec_get-started",
+      "turns": [
+        {
+          "query": "Is expert security assistance available around the clock?",
+          "expect": "answer",
+          "routes": [
+            "/get-started",
+            "/responsible-ai",
+            "/",
+            "/packages"
+          ],
+          "must_contain": [
+            [
+              "24/7",
+              "round-the-clock"
+            ]
+          ],
+          "must_not_contain": [],
+          "value_routes": [
+            {
+              "value": "24/7",
+              "routes": [
+                "/get-started",
+                "/responsible-ai",
+                "/",
+                "/packages"
+              ]
+            }
+          ]
+        }
+      ],
+      "note": "section 'support247' of /get-started | r3 correction: KB conflict: 24/7 means expert assistance (get-started:113), posture visibility (home:113) and Frontier MDR (packages:92)",
+      "source": "sections_a builder (static, cleaned KB)",
+      "conflict": true
+    },
+    {
+      "id": "sec-a-home-hero-01",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What's DeployIQ's tagline?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/get-started"
+          ],
+          "must_contain": [
+            [
+              "Powered by AI",
+              "Perfected by Humans"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'hero' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-hero-02",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Which standards is DeployIQ built around?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/about-us"
+          ],
+          "must_contain": [
+            "Essential Eight",
+            "ISO 27001",
+            "Zero Trust"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'hero' of / | r3 correction: home hero (home.md:24) lists CIS, Essential Eight, ISO 27001 and Zero Trust; about-us:19 adds Security Baselines; neither names ISO 42001",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-hero-03",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What happens in the Apply step on the home page?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "implemented automatically",
+              "approves",
+              "approval",
+              "guardrails"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'hero' of / | r3 correction: KB conflict home.md:44/54 \"Changes implemented automatically\" vs journey copy \"A person approves each recommendation individually; only then do agents execute\"; accept either",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-intel-04",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What are the five principles of 'The Intelligence Shift'?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "Agentic by design",
+              "Agentic"
+            ],
+            [
+              "Continuous automation"
+            ],
+            [
+              "Human when it matters"
+            ],
+            [
+              "Fast by default"
+            ],
+            [
+              "Secure at every step"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'intel' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-agentic-05",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What does 'agentic by design' mean for DeployIQ?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/about-us",
+            "/platform",
+            "/terms"
+          ],
+          "must_contain": [
+            "AI agents",
+            [
+              "guardrails",
+              "rollback",
+              "approvals"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'agentic' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-continuous-06",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Do I have to pull data manually for the continuous assessment?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "zero-touch",
+              "no manual data pulls",
+              "live signals"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'continuous' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-continuous-07",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Do you check all the frameworks in one pass?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "one pass",
+              "every framework at once"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'continuous' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-human-08",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Will I understand why the system recommends something?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/iso-42001-ai-management-system",
+            "/privacy",
+            "/responsible-ai",
+            "/secure-ai",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "transparency",
+              "explainable"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'human' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-fast-09",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "How fast can I see my cyber gaps and priorities?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/booking",
+            "/get-started"
+          ],
+          "must_contain": [
+            [
+              "minutes",
+              "not weeks"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'fast' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-secure-10",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Is data encrypted end to end?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "end-to-end encryption",
+              "encryption"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'secure' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-posture-11",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Is the Overall Security Posture Assessment Score on the home page from a real customer?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/essential-eight"
+          ],
+          "must_contain": [
+            "illustrative"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'posture' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-posture-12",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "How quickly can I see my overall security posture profile?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "seconds",
+              "instant",
+              "5 minutes",
+              "minutes"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'posture' of / | r3 correction: KB conflict home.md:148 \"in Seconds\"/\"instant\" vs home.md:179 + get-started \"Takes only 5 minutes\"",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-snapshot-13",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Do I need technical expertise to run the free security posture snapshot?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/about-us"
+          ],
+          "must_contain": [
+            [
+              "No technical expertise required",
+              "technical expertise"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'snapshot' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-snapshot-14",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What do I get from the free security posture snapshot?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/get-started",
+            "/iso-42001-ai-management-system",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "visibility",
+              "security posture",
+              "posture"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'snapshot' of / | r3 correction: get-started \"Free Security Posture Assessment\" is the same offer; route should be accepted",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-maturity-15",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What are the four stages of the security maturity path?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/packages"
+          ],
+          "must_contain": [
+            "Baseline",
+            "Foundation",
+            "Strengthen",
+            [
+              "Fortify",
+              "Frontier"
+            ]
+          ],
+          "must_not_contain": [],
+          "value_routes": [
+            {
+              "value": "Fortify",
+              "routes": [
+                "/"
+              ]
+            },
+            {
+              "value": "Frontier",
+              "routes": [
+                "/packages"
+              ]
+            }
+          ]
+        }
+      ],
+      "note": "section 'maturity' of /",
+      "source": "sections_a builder (static, cleaned KB)",
+      "conflict": true
+    },
+    {
+      "id": "sec-a-home-maturity-16",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What is the Strengthen stage about?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/about-us",
+            "/essential-eight",
+            "/get-started",
+            "/platform",
+            "/responsible-ai"
+          ],
+          "must_contain": [
+            [
+              "continuous monitoring",
+              "control testing",
+              "vulnerability management",
+              "Validated"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'maturity' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-maturity-17",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What does the Baseline stage focus on?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "cyber hygiene",
+              "rapid assessment"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'maturity' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-programs-18",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Which framework programs can I choose from on the home page?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/about-us",
+            "/iso-42001-ai-management-system",
+            "/services"
+          ],
+          "must_contain": [
+            "Essential Eight",
+            [
+              "CIS Controls",
+              "CIS"
+            ],
+            [
+              "ISO 27001"
+            ],
+            [
+              "ISO 42001"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'programs' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-programs-19",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What does the CIS Controls program include?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/about-us",
+            "/platform",
+            "/privacy",
+            "/secure-ai"
+          ],
+          "must_contain": [
+            [
+              "Implementation Group",
+              "Prioritized CIS safeguards",
+              "safeguards"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'programs' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-programs-20",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What does the ISO 27001 readiness program give me?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "ISMS scope",
+              "gap analysis"
+            ],
+            [
+              "Risk treatment",
+              "Audit-ready evidence"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'programs' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-fit-21",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "I'm not sure which service fits us - how do I find my starting point?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/essential-eight",
+            "/packages"
+          ],
+          "must_contain": [
+            [
+              "challenge",
+              "maturity stage",
+              "framework"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'fit' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-fit-22",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Which framework is the Baseline solution aligned to, and how long is its roadmap?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "CIS Controls IG1",
+              "IG1"
+            ],
+            [
+              "1-2 weeks",
+              "1–2 weeks",
+              "1 to 2 weeks",
+              "one to two weeks"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'fit' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-fit-23",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What do I get with the Strengthen solution?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "Configuration checks"
+            ],
+            [
+              "Risk-based findings"
+            ],
+            [
+              "Guided fixes"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'fit' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-fit-24",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What is the expected outcome of the Fortify solution?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/about-us",
+            "/essential-eight",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "Audit-ready technical controls",
+              "audit-ready"
+            ],
+            [
+              "ISMS owner",
+              "evidence"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'fit' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-fit-25",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "How long does the ISO 27001 Readiness roadmap typically take?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "6–10 weeks",
+              "6-10 weeks",
+              "6 to 10 weeks",
+              "six to ten weeks"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'fit' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-fit-26",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What's included in the Foundation recommended solution?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            [
+              "Identity and access review"
+            ],
+            [
+              "Network architecture guidance"
+            ],
+            [
+              "Maturity roadmap"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'fit' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-journey-27",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What is the approval gate for the Assess stage?",
+          "expect": "answer",
+          "routes": [
+            "/"
+          ],
+          "must_contain": [
+            "scope"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'journey' of / | r3 correction: must_contain too literal; answer said \"the standard and scope are confirmed\"",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-journey-28",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "Which target standards can I select in the Assess stage?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/about-us",
+            "/services"
+          ],
+          "must_contain": [
+            "Essential Eight",
+            "CIS",
+            "ISO 27001",
+            "Zero Trust",
+            [
+              "Security Baselines",
+              "Security Baseline"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'journey' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-journey-29",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "How are credentials handled during onboarding?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/packages"
+          ],
+          "must_contain": [
+            [
+              "scoped and encrypted",
+              "encrypted"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'journey' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-journey-30",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "What happens in the Improve stage of the journey?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/essential-eight",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/our-vision",
+            "/platform",
+            "/responsible-ai",
+            "/zero-trust"
+          ],
+          "must_contain": [
+            [
+              "new recommendations",
+              "adapting",
+              "continuously"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'journey' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-home-ready-31",
+      "category": "sec_home",
+      "turns": [
+        {
+          "query": "How fast can I get my free cyber risk snapshot?",
+          "expect": "answer",
+          "routes": [
+            "/",
+            "/booking",
+            "/get-started"
+          ],
+          "must_contain": [
+            [
+              "minutes",
+              "5 minutes"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'ready' of /",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-27001-microsoft-365-technical-controls-intro-01",
+      "category": "sec_iso-27001-microsoft-365-technical-controls",
+      "turns": [
+        {
+          "query": "What does your ISO 27001 technical controls service do?",
+          "expect": "answer",
+          "routes": [
+            "/iso-27001-microsoft-365-technical-controls",
+            "/",
+            "/about-us",
+            "/iso-42001-ai-management-system",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "ISO 27001",
+              "ISO/IEC 27001"
+            ],
+            "Microsoft 365"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'intro' of /iso-27001-microsoft-365-technical-controls | r3 corrected: must_contain",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-27001-microsoft-365-technical-controls-which-02",
+      "category": "sec_iso-27001-microsoft-365-technical-controls",
+      "turns": [
+        {
+          "query": "What is a full ISO 27001 ISMS made up of, compared with your scope?",
+          "expect": "answer",
+          "routes": [
+            "/iso-27001-microsoft-365-technical-controls",
+            "/",
+            "/about-us",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "risk assessment",
+              "policy"
+            ],
+            [
+              "internal audit",
+              "certification audit"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'which' of /iso-27001-microsoft-365-technical-controls",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-27001-microsoft-365-technical-controls-which-03",
+      "category": "sec_iso-27001-microsoft-365-technical-controls",
+      "turns": [
+        {
+          "query": "List the ISO 27001 control areas you handle in Microsoft 365.",
+          "expect": "answer",
+          "routes": [
+            "/iso-27001-microsoft-365-technical-controls",
+            "/services"
+          ],
+          "must_contain": [
+            "Access Control",
+            "Cryptography",
+            "Logging",
+            "Secure Configuration",
+            [
+              "Network & Application Security",
+              "Network"
+            ],
+            [
+              "Backup & Data Protection",
+              "Backup"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'which' of /iso-27001-microsoft-365-technical-controls",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-27001-microsoft-365-technical-controls-access-04",
+      "category": "sec_iso-27001-microsoft-365-technical-controls",
+      "turns": [
+        {
+          "query": "What does Access Control & Identity include for ISO 27001?",
+          "expect": "answer",
+          "routes": [
+            "/iso-27001-microsoft-365-technical-controls",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "Conditional Access"
+            ],
+            [
+              "MFA"
+            ],
+            [
+              "privileged role",
+              "Entra ID"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'access' of /iso-27001-microsoft-365-technical-controls",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-27001-microsoft-365-technical-controls-secure-05",
+      "category": "sec_iso-27001-microsoft-365-technical-controls",
+      "turns": [
+        {
+          "query": "What is covered under Secure Configuration?",
+          "expect": "answer",
+          "routes": [
+            "/iso-27001-microsoft-365-technical-controls",
+            "/microsoft-365-security-baseline-assessment",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "Hardened tenant",
+              "endpoint",
+              "application settings"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'secure' of /iso-27001-microsoft-365-technical-controls",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-27001-microsoft-365-technical-controls-network-06",
+      "category": "sec_iso-27001-microsoft-365-technical-controls",
+      "turns": [
+        {
+          "query": "What does Network & Application Security cover in your ISO 27001 work?",
+          "expect": "answer",
+          "routes": [
+            "/iso-27001-microsoft-365-technical-controls",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "Defender policies",
+              "Defender"
+            ],
+            [
+              "conditional access for apps",
+              "secure collaboration"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'network' of /iso-27001-microsoft-365-technical-controls",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-27001-microsoft-365-technical-controls-backup-07",
+      "category": "sec_iso-27001-microsoft-365-technical-controls",
+      "turns": [
+        {
+          "query": "How is backup handled in your ISO 27001 technical controls?",
+          "expect": "answer",
+          "routes": [
+            "/iso-27001-microsoft-365-technical-controls",
+            "/",
+            "/microsoft-365-security-baseline-assessment",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "independent recovery",
+              "Resilient",
+              "recovery"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'backup' of /iso-27001-microsoft-365-technical-controls",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-27001-microsoft-365-technical-controls-how-08",
+      "category": "sec_iso-27001-microsoft-365-technical-controls",
+      "turns": [
+        {
+          "query": "Who owns the policy and risk decisions in the ISO 27001 implementation?",
+          "expect": "answer",
+          "routes": [
+            "/iso-27001-microsoft-365-technical-controls",
+            "/",
+            "/about-us",
+            "/services"
+          ],
+          "must_contain": [
+            "ISMS owner"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'how' of /iso-27001-microsoft-365-technical-controls",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-27001-microsoft-365-technical-controls-why-09",
+      "category": "sec_iso-27001-microsoft-365-technical-controls",
+      "turns": [
+        {
+          "query": "Why work with Deploy IQ on ISO 27001 technical controls?",
+          "expect": "answer",
+          "routes": [
+            "/iso-27001-microsoft-365-technical-controls",
+            "/",
+            "/about-us",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "continuously assessed",
+              "audit-ready"
+            ],
+            [
+              "certification body",
+              "ISMS owner"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'why' of /iso-27001-microsoft-365-technical-controls",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-42001-ai-management-system-intro-01",
+      "category": "sec_iso-42001-ai-management-system",
+      "turns": [
+        {
+          "query": "What is your ISO 42001 technical controls service about?",
+          "expect": "answer",
+          "routes": [
+            "/iso-42001-ai-management-system",
+            "/",
+            "/about-us",
+            "/essential-eight",
+            "/platform",
+            "/services",
+            "/terms"
+          ],
+          "must_contain": [
+            [
+              "AI tools",
+              "agents"
+            ],
+            [
+              "visible",
+              "secured",
+              "governed"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'intro' of /iso-42001-ai-management-system",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-42001-ai-management-system-cover-02",
+      "category": "sec_iso-42001-ai-management-system",
+      "turns": [
+        {
+          "query": "What are the four areas of your ISO 42001 technical support?",
+          "expect": "answer",
+          "routes": [
+            "/iso-42001-ai-management-system",
+            "/",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "AI Visibility",
+              "visibility"
+            ],
+            [
+              "Access & Oversight",
+              "oversight"
+            ],
+            [
+              "Data Protection"
+            ],
+            [
+              "Activity Records",
+              "activity"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'cover' of /iso-42001-ai-management-system",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-42001-ai-management-system-visibility-03",
+      "category": "sec_iso-42001-ai-management-system",
+      "turns": [
+        {
+          "query": "Can you show us which AI tools are being used in our Microsoft 365 tenant?",
+          "expect": "answer",
+          "routes": [
+            "/iso-42001-ai-management-system",
+            "/",
+            "/about-us",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "AI tools and agents",
+              "AI Visibility",
+              "in use"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'visibility' of /iso-42001-ai-management-system",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-42001-ai-management-system-activity-04",
+      "category": "sec_iso-42001-ai-management-system",
+      "turns": [
+        {
+          "query": "Do you log AI activity for audits?",
+          "expect": "answer",
+          "routes": [
+            "/iso-42001-ai-management-system",
+            "/",
+            "/about-us",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "Logging",
+              "Activity Records",
+              "log AI activity",
+              "logs AI activity",
+              "logged"
+            ],
+            [
+              "audit preparation",
+              "transparency",
+              "review"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'activity' of /iso-42001-ai-management-system | final3 r3 corrected: accept \"log AI activity\" wording (page: Logging of AI activity to support transparency...)",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-42001-ai-management-system-dataprot-05",
+      "category": "sec_iso-42001-ai-management-system",
+      "turns": [
+        {
+          "query": "How do you protect the data AI tools work with?",
+          "expect": "answer",
+          "routes": [
+            "/iso-42001-ai-management-system",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "Classification",
+              "classif*",
+              "classified and protected"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'dataprot' of /iso-42001-ai-management-system",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-42001-ai-management-system-how-06",
+      "category": "sec_iso-42001-ai-management-system",
+      "turns": [
+        {
+          "query": "Is every AI governance control reviewed by us before it's actioned?",
+          "expect": "answer",
+          "routes": [
+            "/iso-42001-ai-management-system",
+            "/",
+            "/about-us",
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/microsoft-365-security-baseline-assessment",
+            "/packages",
+            "/platform",
+            "/privacy",
+            "/responsible-ai",
+            "/secure-ai",
+            "/services",
+            "/terms"
+          ],
+          "must_contain": [
+            [
+              "reviewed by your team",
+              "reviewed",
+              "approval"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'how' of /iso-42001-ai-management-system",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-42001-ai-management-system-why-07",
+      "category": "sec_iso-42001-ai-management-system",
+      "turns": [
+        {
+          "query": "Why is DeployIQ well placed to help with ISO 42001?",
+          "expect": "answer",
+          "routes": [
+            "/iso-42001-ai-management-system"
+          ],
+          "must_contain": [
+            [
+              "AI-agent-driven platform",
+              "AI-agent-driven",
+              "approval-first"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'why' of /iso-42001-ai-management-system",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-iso-42001-ai-management-system-faq-08",
+      "category": "sec_iso-42001-ai-management-system",
+      "turns": [
+        {
+          "query": "Which parts of ISO/IEC 42001 stay with our organisation?",
+          "expect": "answer",
+          "routes": [
+            "/iso-42001-ai-management-system",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/privacy",
+            "/services"
+          ],
+          "must_contain": [
+            "policy",
+            [
+              "risk assessment",
+              "risk ownership"
+            ],
+            [
+              "roles",
+              "certification"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'faq' of /iso-42001-ai-management-system",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-microsoft-365-security-baseline-assessment-intro-01",
+      "category": "sec_microsoft-365-security-baseline-assessment",
+      "turns": [
+        {
+          "query": "How many controls and focus areas are in the Microsoft 365 Security Baseline?",
+          "expect": "answer",
+          "routes": [
+            "/microsoft-365-security-baseline-assessment",
+            "/packages"
+          ],
+          "must_contain": [
+            [
+              "5 focus areas",
+              "five areas",
+              "five focus areas",
+              "5"
+            ]
+          ],
+          "must_not_contain": [],
+          "value_routes": [
+            {
+              "value": "42",
+              "routes": [
+                "/microsoft-365-security-baseline-assessment"
+              ]
+            },
+            {
+              "value": "39",
+              "routes": [
+                "/packages"
+              ]
+            }
+          ]
+        }
+      ],
+      "note": "section 'intro' of /microsoft-365-security-baseline-assessment",
+      "source": "sections_a builder (static, cleaned KB)",
+      "conflict": true
+    },
+    {
+      "id": "sec-a-microsoft-365-security-baseline-assessment-cover-02",
+      "category": "sec_microsoft-365-security-baseline-assessment",
+      "turns": [
+        {
+          "query": "Do you explain baseline findings in plain language?",
+          "expect": "answer",
+          "routes": [
+            "/microsoft-365-security-baseline-assessment",
+            "/packages"
+          ],
+          "must_contain": [
+            [
+              "plain-language",
+              "plain language"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'cover' of /microsoft-365-security-baseline-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-microsoft-365-security-baseline-assessment-identity-03",
+      "category": "sec_microsoft-365-security-baseline-assessment",
+      "turns": [
+        {
+          "query": "What does Identity & Access cover in the security baseline?",
+          "expect": "answer",
+          "routes": [
+            "/microsoft-365-security-baseline-assessment",
+            "/packages",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "Sign-in security",
+              "sign-in"
+            ],
+            [
+              "multi-factor authentication",
+              "MFA"
+            ],
+            [
+              "admin protection",
+              "admin"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'identity' of /microsoft-365-security-baseline-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-microsoft-365-security-baseline-assessment-endpoint-04",
+      "category": "sec_microsoft-365-security-baseline-assessment",
+      "turns": [
+        {
+          "query": "What's the difference between Endpoint Management and Endpoint Protection in the baseline assessment?",
+          "expect": "answer",
+          "routes": [
+            "/microsoft-365-security-baseline-assessment",
+            "/services"
+          ],
+          "must_contain": [
+            [
+              "hardened configuration",
+              "configuration"
+            ],
+            [
+              "Threat detection",
+              "detection and response"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'endpoint' of /microsoft-365-security-baseline-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-microsoft-365-security-baseline-assessment-how-05",
+      "category": "sec_microsoft-365-security-baseline-assessment",
+      "turns": [
+        {
+          "query": "What are the steps of the Security Baseline Assessment process?",
+          "expect": "answer",
+          "routes": [
+            "/microsoft-365-security-baseline-assessment",
+            "/",
+            "/about-us",
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/iso-27001-microsoft-365-technical-controls",
+            "/iso-42001-ai-management-system",
+            "/packages"
+          ],
+          "must_contain": [
+            "Onboard",
+            "Assess",
+            "Recommend",
+            "Approve",
+            "Apply",
+            "Validate",
+            "Improve"
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'how' of /microsoft-365-security-baseline-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    },
+    {
+      "id": "sec-a-microsoft-365-security-baseline-assessment-why-06",
+      "category": "sec_microsoft-365-security-baseline-assessment",
+      "turns": [
+        {
+          "query": "How do you help us stay ahead of configuration drift after the baseline assessment?",
+          "expect": "answer",
+          "routes": [
+            "/microsoft-365-security-baseline-assessment",
+            "/about-us"
+          ],
+          "must_contain": [
+            [
+              "continually rechecked",
+              "rechecked",
+              "configuration drift"
+            ]
+          ],
+          "must_not_contain": []
+        }
+      ],
+      "note": "section 'why' of /microsoft-365-security-baseline-assessment",
+      "source": "sections_a builder (static, cleaned KB)"
+    }
+  ]
+}

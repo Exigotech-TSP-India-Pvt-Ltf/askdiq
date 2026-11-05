@@ -12,13 +12,14 @@ import math
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 
+from app.core.config import get_settings
 from app.core.events import (
     TOPIC_CACHE_INVALIDATE,
     TOPIC_CONSOLE_CHANGED,
@@ -182,8 +183,29 @@ _SKIP_JOB_SQL = text(
 )
 
 
+_JOB_ALIVE_SQL = text(
+    "SELECT EXISTS (SELECT 1 FROM jobs WHERE id = :id AND status = 'running' "
+    "AND locked_at >= :cutoff)"
+)
+_CLOSE_JOB_SQL = text(
+    "UPDATE jobs SET status = 'done', finished_at = :now, locked_by = NULL, "
+    "locked_at = NULL, last_error = 'cancelled' "
+    "WHERE id = :id AND status IN ('queued', 'running')"
+)
+
+
+async def _worker_alive(db: AsyncSession, run: EvalRun) -> bool:
+    """Whether a worker still holds the run's job with a fresh heartbeat."""
+    if run.job_id is None:
+        return False
+    cutoff = utcnow() - timedelta(seconds=get_settings().jobs_lock_timeout_seconds)
+    return bool(await db.scalar(_JOB_ALIVE_SQL, {"id": run.job_id, "cutoff": cutoff}))
+
+
 async def request_cancel(db: AsyncSession, run: EvalRun) -> EvalRun:
-    """Queued: cancelled at once. Running: the worker stops within seconds."""
+    """Queued: cancelled at once. Running: the worker stops within seconds;
+    when no live worker holds the job (crash, restart, hang) it is cancelled
+    at once so the run never sticks on "Stopping"."""
     if run.status == EvalRunStatus.QUEUED.value:
         run.status = EvalRunStatus.CANCELLED.value
         run.finished_at = utcnow()
@@ -193,6 +215,13 @@ async def request_cancel(db: AsyncSession, run: EvalRun) -> EvalRun:
             await db.execute(_SKIP_JOB_SQL, {"id": run.job_id, "now": run.finished_at})
     elif run.status == EvalRunStatus.RUNNING.value:
         run.cancel_requested = True
+        if not await _worker_alive(db, run):
+            run.status = EvalRunStatus.CANCELLED.value
+            run.finished_at = utcnow()
+            if run.job_id is not None:
+                await db.execute(
+                    _CLOSE_JOB_SQL, {"id": run.job_id, "now": run.finished_at}
+                )
     else:
         raise EvalRunStateError(f"Run is already {run.status}")
     await db.flush()

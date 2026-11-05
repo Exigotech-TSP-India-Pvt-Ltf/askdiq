@@ -140,11 +140,11 @@ async def test_phase6_concurrency_load_stress_nonblocking(monkeypatch):
     from httpx import ASGITransport
 
     from app.core.database import get_db
-    from app.harness import orchestrator
     from app.models.db_models import ChatSession
     from app.schemas.query import SourceChunk
     from main import app
     from tests.conftest import TestingSessionLocal
+    from tests.grounded_fakes import claim, claims_reply, patch_pipeline
 
     # Provide per-request isolated DB sessions to accurately simulate production concurrency
     async def per_request_db():
@@ -166,35 +166,19 @@ async def test_phase6_concurrency_load_stress_nonblocking(monkeypatch):
     async def fake_embed_texts(texts, stage="query"):
         return [[0.01] * 1536 for _ in texts]
 
-    async def fake_retrieve(*a, **k):
-        return [
-            SourceChunk(
-                chunk_id="00000000-0000-0000-0000-000000000001",
-                document_id="00000000-0000-0000-0000-000000000002",
-                content="DeployIQ security baseline applies to all organisations.",
-                score=0.95,
-                metadata={"source_name": "baseline.md"},
-                embedding=[0.01] * 1536,
-            )
-        ]
-
-    async def fake_post_checks(*a, **k):
-        return True, 0.95, []
-
-    async def fake_call_llm(query, sources, history):
-        return "Essential Eight compliance requires multi-factor authentication.", {
-            "prompt_tokens": 40,
-            "completion_tokens": 20,
-            "total_tokens": 60,
-            "reasoning_tokens": 5,
-            "visible_tokens": 15,
-            "cached_tokens": 0,
-        }
-
+    # Retrieval, route gate, intent and the quote-backed answer call are the
+    # current pipeline's doubles (retrieve/run_post_checks no longer exist).
+    fact = "DeployIQ security baseline applies to all organisations."
+    source = SourceChunk(
+        chunk_id="00000000-0000-0000-0000-000000000001",
+        document_id="00000000-0000-0000-0000-000000000002",
+        content=fact,
+        score=0.95,
+        metadata={"source_name": "baseline.md"},
+        embedding=[0.01] * 1536,
+    )
     monkeypatch.setattr("app.retrieval.embeddings.embed_texts", fake_embed_texts)
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
-    monkeypatch.setattr("app.harness.orchestrator.call_llm", fake_call_llm)
+    patch_pipeline(monkeypatch, [source], claims_reply([claim(fact)]))
 
     transport = ASGITransport(app=app)
     try:

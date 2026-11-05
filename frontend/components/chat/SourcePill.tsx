@@ -5,9 +5,9 @@ import type { Citation } from "@/lib/types";
 import { safeHttpsUrl } from "@/lib/safe-url";
 import { focusRing } from "@/components/ui/styles";
 import { focusSourceChip } from "./SourceChips";
-import { SourcePillCard } from "./SourcePillCard";
+import { CitationIcon, SourcePillCard } from "./SourcePillCard";
 
-const PILL = `inline-flex max-w-40 items-center rounded-full bg-surface-muted px-2 text-[11px] font-medium leading-5 text-fg-muted no-underline transition-colors hover:bg-brand-50 hover:text-fg motion-reduce:transition-none dark:hover:bg-white/8 ${focusRing}`;
+const PILL = `inline-flex max-w-40 items-center gap-1 rounded-full bg-surface-muted pl-1 pr-2 text-[11px] font-medium leading-5 text-fg-muted no-underline transition-colors hover:bg-brand-50 hover:text-fg motion-reduce:transition-none dark:hover:bg-white/8 ${focusRing}`;
 
 /** Visible pill text: the server label, else the title. */
 function pillLabel(citation: Citation): string {
@@ -56,6 +56,7 @@ export function SourcePill({ citation }: { citation: Citation }) {
     >
       {href ? (
         <a {...shared} href={href} target="_blank" rel="noopener noreferrer">
+          <CitationIcon className="h-3.5 w-3.5" />
           <span className="truncate">{label}</span>
         </a>
       ) : (
@@ -67,6 +68,7 @@ export function SourcePill({ citation }: { citation: Citation }) {
             focusSourceChip(event.currentTarget, citation.document_id);
           }}
         >
+          <CitationIcon className="h-3.5 w-3.5" />
           <span className="truncate">{label}</span>
         </button>
       )}

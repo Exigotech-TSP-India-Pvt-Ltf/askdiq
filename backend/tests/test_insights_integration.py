@@ -35,6 +35,7 @@ from app.core.config import get_settings
 from app.core.database import get_db, read_only_session
 from app.governance import online_eval
 from app.harness import orchestrator
+from app.harness.decision import PartVerdict, Route, RouteDecision
 from app.insights import jobs as insights_jobs
 from app.insights.analytics_repository import (
     InsightsAnalyticsRepository,
@@ -45,6 +46,7 @@ from app.insights.service import InsightsService
 from app.insights.triggers import CLASSIFY_JOB, classify_dedupe_key
 from app.jobs import queue
 from app.jobs.worker import JobWorker
+from app.retrieval.retriever import PartRetrieval, RetrievalResult
 from app.schemas.query import SourceChunk
 from main import app
 from tests.pg_helpers import new_engine, require_postgres
@@ -64,11 +66,21 @@ def person_id(email: str) -> str:
     return hashlib.sha256((salt + email.lower()).encode()).hexdigest()[:16]
 
 
-def _source() -> SourceChunk:
+# The page text per question (keyword): the reply quotes it, so claim
+# verification grounds it and it answers the terms of the question.
+_FACTS = {
+    "maturity": "DeployIQ maps controls to Essential Eight maturity levels.",
+    "jira": "DeployIQ integrates with Jira for ticketing.",
+}
+_DEFAULT_FACT = "DeployIQ maps controls to the Essential Eight."
+
+
+def _source(query: str = "") -> SourceChunk:
+    fact = next((v for k, v in _FACTS.items() if k in query.lower()), _DEFAULT_FACT)
     return SourceChunk(
         chunk_id="00000000-0000-0000-0000-000000000001",
         document_id="00000000-0000-0000-0000-000000000002",
-        content="DeployIQ maps controls to the Essential Eight.",
+        content=fact,
         score=0.9,
         metadata={"source_name": "security.md"},
         embedding=[0.05] * 1536,
@@ -87,18 +99,35 @@ async def live(monkeypatch, fake_embed, fake_llm) -> AsyncIterator[dict[str, Any
         async with factory() as session:
             yield session
 
-    async def _retrieve(*_a: Any, **_k: Any) -> list[SourceChunk]:
-        return [_source()]
+    async def _retrieve(_store: Any, query: str, **_k: Any) -> RetrievalResult:
+        source = _source(query)
+        part = PartRetrieval(
+            query=query,
+            max_score=source.score,
+            chunk_ids=frozenset({source.chunk_id}),
+            contents=(source.content,),
+            document_ids=(source.document_id,),
+            sources=(source,),
+        )
+        return RetrievalResult(sources=[source], parts=[part])
 
-    async def _post_checks(*_a: Any, **_k: Any) -> tuple[bool, float, list[str]]:
-        return True, 0.95, []
+    def _route(_parts: Any, *, buying: bool = False) -> RouteDecision:
+        return RouteDecision(
+            Route.ANSWER, parts=(PartVerdict("q", True),), buying=buying
+        )
 
     async def _no_schedule(**_kw: Any) -> None:
         return None
 
     service = InsightsService(engine=engine, llm=FakeLLM(model=model))
-    monkeypatch.setattr(orchestrator, "retrieve", _retrieve)
-    monkeypatch.setattr(orchestrator, "run_post_checks", _post_checks)
+    monkeypatch.setattr(orchestrator, "retrieve_parts", _retrieve)
+    monkeypatch.setattr(orchestrator, "decide_route", _route)
+    monkeypatch.setattr(orchestrator, "clarify_allowed", lambda *_a, **_k: False)
+
+    async def _llm(_query: str, chunks: Any, *_a: Any, **_k: Any) -> Any:
+        return chunks[0].content, {"prompt_tokens": 10, "completion_tokens": 5}
+
+    monkeypatch.setattr(orchestrator, "call_llm", _llm)
     monkeypatch.setattr(sessions, "AsyncSessionLocal", factory)
     monkeypatch.setattr(middleware, "AsyncSessionLocal", factory)
     monkeypatch.setattr(online_eval, "AsyncSessionLocal", factory)

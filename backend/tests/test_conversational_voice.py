@@ -11,11 +11,13 @@ from app.guardrails.conversational import (
     all_greeting_responses,
     all_thanks_responses,
     detect_conversational_intent,
+    detect_persona,
     get_capability_response,
     get_farewell_response,
     get_greeting_response,
     get_thanks_response,
 )
+from app.schemas.query import ChatTurn
 
 _BANNED = (
     "feel free",
@@ -99,3 +101,20 @@ def test_small_talk_is_recognised(query: str, all_fn) -> None:
 )
 def test_real_questions_still_pass_through(query: str) -> None:
     assert detect_conversational_intent(query) is None
+
+
+@pytest.mark.parametrize("query", ["שלום", "hola", "Bonjour!", "kia ora", "你好"])
+def test_greetings_in_other_languages(query: str) -> None:
+    # kb-uni-10: "shalom" in Hebrew got the off-topic reply.
+    assert detect_conversational_intent(query) in all_greeting_responses()
+
+
+def test_persona_after_a_product_answer_is_a_follow_up() -> None:
+    history = [
+        ChatTurn(role="user", content="what is the CIS benchmark assessment?"),
+        ChatTurn(role="assistant", content="The CIS Benchmark assessment ..."),
+    ]
+    # mt-cis-version-thanks T2: "which version" is the benchmark version.
+    assert detect_persona("which version do you use?", history) is None
+    assert detect_persona("which version do you use?") is not None
+    assert detect_persona("what model are you?", history) is not None

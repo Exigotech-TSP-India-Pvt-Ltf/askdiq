@@ -284,7 +284,7 @@ Run from `backend/` with the venv interpreter.
 | Path | Purpose |
 |---|---|
 | `data/real_docs/*.md` | The knowledge-base corpus (11 DeployIQ / Exigo Tech Markdown docs: home, about us, platform, E8 x2, zero trust, responsible AI, trust center, CIS benchmark, ISO 27001 controls, security baseline). |
-| `data/promoted_test_cases.json` | Golden cases promoted from feedback, used by evaluation. |
+| `tests/golden/golden_cases.json` | Live golden set (replaces the retired `data/promoted_test_cases.json`; promoted cases now live in the `eval_promoted_cases` table). See [Live golden eval](12-live-golden-eval.md). |
 
 ### `backend/tests/`
 

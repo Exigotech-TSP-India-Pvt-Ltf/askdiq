@@ -43,14 +43,19 @@ ALL_FALLBACK_FLAGS: tuple[str, ...] = (
     "groundedness_check_failed",
 )
 
-# Not covered / low confidence / off topic / LLM failure: must hand over to a
-# human ("one of our specialists").
-SPECIALIST_FLAGS: tuple[str, ...] = (
-    "low_retrieval_confidence",
+# Not covered / low confidence / LLM failure: must hand over to a human ("one
+# of our specialists"). off_topic/no_sources are deliberately excluded: those
+# mean the question itself is unrelated to us (personal, medical, employee, or
+# any other out-of-scope topic), and a specialist must never be implied to
+# help with something outside what we do.
+SPECIALIST_FLAGS: tuple[str, ...] = ("llm_call_failed", "empty_llm_output")
+
+# Not answered from the KB (Phase 2 owner contract): the fixed no-answer or
+# off-topic line, never a specialist hand-off.
+NO_SPECIALIST_FLAGS: tuple[str, ...] = (
     "off_topic",
     "no_sources",
-    "llm_call_failed",
-    "empty_llm_output",
+    "low_retrieval_confidence",
     "possible_hallucination",
 )
 

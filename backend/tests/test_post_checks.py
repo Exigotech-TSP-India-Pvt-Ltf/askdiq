@@ -8,8 +8,59 @@ from app.guardrails.post_checks import (
     check_groundedness,
     check_has_sources,
     run_post_checks,
+    unsupported_claims,
 )
 from app.schemas.query import SourceChunk
+
+
+@pytest.mark.parametrize(
+    ("answer", "source", "page", "flagged"),
+    [
+        # "free" may come from the same page, about the same subject ...
+        (
+            "The free assessment takes 5 minutes.",
+            "Takes 5 minutes",
+            "Free Assessment",
+            [],
+        ),
+        # ... another subject on that page never backs it ...
+        (
+            "The free workshop takes 5 minutes.",
+            "Takes 5 minutes",
+            "Free Assessment",
+            ["free"],
+        ),
+        # ... and no other assurance is read from the page.
+        (
+            "The assessment is guaranteed.",
+            "The assessment",
+            "We guarantee results.",
+            ["guaranteed"],
+        ),
+    ],
+)
+def test_only_free_is_backed_by_the_page(
+    answer: str, source: str, page: str, flagged: list[str]
+) -> None:
+    assert unsupported_claims(answer, source, page_text=page) == flagged
+
+
+@pytest.mark.parametrize(
+    ("answer", "flagged"),
+    [
+        # "independent bodies certify" backs the process ...
+        ("Independent bodies carry out certification.", []),
+        # ... never an assurance that we are certified.
+        ("DeployIQ is certified.", ["certified"]),
+    ],
+)
+def test_certify_backs_certification_not_certified(
+    answer: str, flagged: list[str]
+) -> None:
+    assert (
+        unsupported_claims(answer, "We implement; independent bodies certify.")
+        == flagged
+    )
 
 
 def _source(content: str, score: float = 0.8) -> SourceChunk:

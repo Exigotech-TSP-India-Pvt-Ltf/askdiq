@@ -17,22 +17,28 @@ import { Modal } from "@/components/ui/Modal";
 import { fadeUp, progressFill, useMotionVariants } from "@/lib/motion";
 import { focusRing, iconButton, primaryButton, secondaryButton } from "@/components/ui/styles";
 import { FormatBadge } from "@/components/documents/FormatBadge";
+import { SourceUrlField, UploadLinkConfirm, type SourceUrlFieldProps } from "@/components/documents/UploadLinkConfirm";
 import {
   MAX_UPLOAD_BYTES,
   UPLOAD_ACCEPT,
   changeReasonText,
   fileExtension,
   formatBytes,
+  isLinkInUseError,
   isSourceUrlError,
+  previewUpload,
+  replaceTarget,
+  replacesOtherDocument,
   strategyLabel,
   uploadDocument,
   uploadErrorMessage,
   validateUploadFile,
+  type IngestPreview,
   type UploadResult,
 } from "@/lib/documents-api";
 import { useApiQuery } from "@/lib/query-cache";
 import { KNOWLEDGE_SETTINGS_KEY, settingsApi, type KnowledgeSettingsRead } from "@/lib/settings-api";
-import { MAX_SOURCE_URL_CHARS, validateSourceUrl } from "@/lib/safe-url";
+import { displayUrl, safeHttpsUrl, validateSourceUrl } from "@/lib/safe-url";
 
 /** Primary action that clearly reads as unavailable until a file passed the check (VA-51). */
 const PRIMARY_DISABLED =
@@ -57,6 +63,13 @@ function confirmLabel(status: UploadResult["status"]): string {
   return "Apply changes";
 }
 
+function linkConfirmLabel(p: IngestPreview): string {
+  if (replacesOtherDocument(p)) return "Replace document";
+  if (p.content_status === "unchanged") return "Re-check document";
+  if (p.content_status === "changed") return "Apply changes";
+  return "Ingest document";
+}
+
 function previewSummary(p: UploadResult): string {
   if (p.status === "unchanged") {
     return "Content is identical to the stored version: nothing is re-embedded. Re-checking stores the canonical Markdown if it is missing.";
@@ -67,6 +80,30 @@ function previewSummary(p: UploadResult): string {
   return `${why}: ${p.chunks_added} new, ${p.chunks_kept} unchanged and ${p.chunks_removed} removed chunks.`;
 }
 
+/** The stored link after ingest (opened only when it is a safe https URL). */
+function FinalLink({ url }: { url: string | null }) {
+  if (!url) return <span className="text-fg-subtle">No link</span>;
+  const href = safeHttpsUrl(url);
+  if (!href) {
+    return (
+      <span className="block truncate" title={url}>
+        {displayUrl(url)}
+      </span>
+    );
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={url}
+      className={`block truncate font-medium text-brand-700 underline-offset-2 hover:underline dark:text-brand-300 ${focusRing}`}
+    >
+      {displayUrl(url)}
+    </a>
+  );
+}
+
 export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogProps) {
   const titleId = useId();
   const descId = useId();
@@ -75,7 +112,14 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
   const variants = useMotionVariants(fadeUp);
   const [phase, setPhase] = useState<Phase>("idle");
   const [file, setFile] = useState<File | null>(null);
+  /** Dry-run result: only used when the backend has no `/ingest/preview` yet. */
   const [preview, setPreview] = useState<UploadResult | null>(null);
+  const [linkPreview, setLinkPreview] = useState<IngestPreview | null>(null);
+  const [editingLink, setEditingLink] = useState(false);
+  const [linkConfirmed, setLinkConfirmed] = useState(false);
+  const [replaceConfirmed, setReplaceConfirmed] = useState(false);
+  const [checkingLink, setCheckingLink] = useState(false);
+  const [linkInUse, setLinkInUse] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -83,7 +127,7 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
   const [urlBlurred, setUrlBlurred] = useState(false);
   const [urlServerError, setUrlServerError] = useState<string | null>(null);
   const urlId = useId();
-  const busy = phase === "previewing" || phase === "ingesting";
+  const busy = phase === "previewing" || phase === "ingesting" || checkingLink;
 
   // Allow-list and the required-URL switch; loaded only while the dialog is open.
   // A failure (or an older backend) leaves the server as the only check.
@@ -94,14 +138,49 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
   );
   const allowedHosts = knowledge.data?.allowed_hosts ?? null;
   // Required only for a new document: a re-upload keeps its stored link.
-  const urlRequired = Boolean(knowledge.data?.require_source_url) && preview?.status === "new";
+  const isNewDocument = linkPreview
+    ? linkPreview.content_status === "new" && !linkPreview.existing_document
+    : preview?.status === "new";
+  const urlRequired = Boolean(knowledge.data?.require_source_url) && isNewDocument;
   const urlCheck = validateSourceUrl(sourceUrl, { allowedHosts, required: urlRequired });
   const urlError = urlServerError ?? (!urlCheck.ok && (sourceUrl.trim() !== "" || urlBlurred) ? urlCheck.error : null);
+
+  // With a link preview the link sent is the one the preview ran for, confirmed
+  // by the admin (or none when nothing was detected and none is required).
+  const detectedLink = linkPreview?.detected_link ?? null;
+  const linkChecked = sourceUrl.trim() === (detectedLink ?? "");
+  const canCheckLink = urlCheck.ok && urlCheck.url !== null && !linkChecked;
+  const linkReady = linkPreview
+    ? urlCheck.ok && linkChecked && (detectedLink ? !editingLink && linkConfirmed : true)
+    : urlCheck.ok;
+  const needsReplace = linkPreview ? replacesOtherDocument(linkPreview) : false;
+  const ready =
+    phase === "preview" && Boolean(preview || linkPreview) && linkReady && (!needsReplace || replaceConfirmed);
+
+  const urlField: Omit<SourceUrlFieldProps, "disabled"> = {
+    id: urlId,
+    value: sourceUrl,
+    required: urlRequired,
+    error: urlError,
+    serverError: Boolean(urlServerError),
+    allowedHosts,
+    onChange: (value) => {
+      setSourceUrl(value);
+      setUrlServerError(null);
+    },
+    onBlur: () => setUrlBlurred(true),
+  };
 
   const reset = useCallback(() => {
     setPhase("idle");
     setFile(null);
     setPreview(null);
+    setLinkPreview(null);
+    setEditingLink(false);
+    setLinkConfirmed(false);
+    setReplaceConfirmed(false);
+    setCheckingLink(false);
+    setLinkInUse(null);
     setResult(null);
     setError(null);
     setSourceUrl("");
@@ -124,6 +203,12 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
     }
     setPhase("previewing");
     try {
+      const previewed = await previewUpload(token, next);
+      if (previewed) {
+        applyLinkPreview(previewed, false);
+        setPhase("preview");
+        return;
+      }
       const checked = await uploadDocument(token, next, { dryRun: true });
       setPreview(checked);
       // Pre-fill from the file's metadata (or the stored link of a re-upload).
@@ -136,18 +221,65 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
     }
   }
 
+  /** Shows a link preview; `confirmed` when the admin already chose its link. */
+  function applyLinkPreview(p: IngestPreview, confirmed: boolean) {
+    setLinkPreview(p);
+    setPreview(null);
+    setSourceUrl(p.detected_link ?? "");
+    setEditingLink(!p.detected_link);
+    setLinkConfirmed(confirmed && Boolean(p.detected_link));
+    setReplaceConfirmed(false);
+    setUrlServerError(null);
+  }
+
+  /** Re-runs the preview for an edited link (it may match another document). */
+  async function checkLink() {
+    if (!file || !urlCheck.ok || !urlCheck.url) return;
+    setCheckingLink(true);
+    setError(null);
+    setUrlServerError(null);
+    setLinkInUse(null);
+    try {
+      const previewed = await previewUpload(token, file, urlCheck.url);
+      if (previewed) applyLinkPreview(previewed, true);
+    } catch (err) {
+      if (isSourceUrlError(err)) setUrlServerError(err.message);
+      else setError(uploadErrorMessage(err));
+    } finally {
+      setCheckingLink(false);
+    }
+  }
+
+  /** 409 `document_link_in_use`: re-preview to name the document and ask to replace it. */
+  async function askToReplace(upload: File, url: string | null, message: string) {
+    try {
+      const previewed = await previewUpload(token, upload, url);
+      if (previewed && replacesOtherDocument(previewed)) {
+        applyLinkPreview(previewed, true);
+        setLinkInUse(message);
+        return;
+      }
+    } catch {
+      // fall back to the server message
+    }
+    setError(message);
+  }
+
   async function ingest() {
     if (!file || !urlCheck.ok) return;
     setPhase("ingesting");
     setError(null);
     setUrlServerError(null);
+    setLinkInUse(null);
+    const replaceDocumentId = linkPreview && needsReplace && replaceConfirmed ? (replaceTarget(linkPreview)?.id ?? null) : null;
     try {
-      const res = await uploadDocument(token, file, { sourceUrl: urlCheck.url });
+      const res = await uploadDocument(token, file, { sourceUrl: urlCheck.url, replaceDocumentId });
       setResult(res);
       setPhase("done");
       onUploaded(res);
     } catch (err) {
       if (isSourceUrlError(err)) setUrlServerError(err.message);
+      else if (isLinkInUseError(err)) await askToReplace(file, urlCheck.url, err.message);
       else setError(uploadErrorMessage(err));
       setPhase("preview");
     }
@@ -259,41 +391,37 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
           </div>
         ) : null}
 
+        {linkPreview && (phase === "preview" || phase === "ingesting") ? (
+          <UploadLinkConfirm
+            preview={linkPreview}
+            editing={editingLink}
+            linkConfirmed={linkConfirmed}
+            replaceConfirmed={replaceConfirmed}
+            checking={checkingLink}
+            disabled={phase === "ingesting"}
+            canCheck={canCheckLink}
+            field={urlField}
+            onConfirmLink={() => setLinkConfirmed(true)}
+            onEdit={() => setEditingLink(true)}
+            onCancelEdit={() => {
+              setSourceUrl(detectedLink ?? "");
+              setUrlServerError(null);
+              setEditingLink(false);
+            }}
+            onCheck={() => void checkLink()}
+            onReplaceConfirmedChange={setReplaceConfirmed}
+          />
+        ) : null}
+
+        {linkInUse ? (
+          <p role="alert" className="flex items-start gap-2 rounded-lg bg-status-warn-bg px-3 py-2 text-xs text-status-warn-fg">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+            <span>{linkInUse} Confirm the replacement above to continue.</span>
+          </p>
+        ) : null}
+
         {preview && (phase === "preview" || phase === "ingesting") ? (
-          <div className="space-y-1">
-            <label htmlFor={urlId} className="block text-xs font-semibold text-fg">
-              Source URL{urlRequired ? <span className="font-normal text-fg-subtle"> (required)</span> : <span className="font-normal text-fg-subtle"> (optional)</span>}
-            </label>
-            <input
-              id={urlId}
-              type="url"
-              inputMode="url"
-              autoComplete="url"
-              spellCheck={false}
-              maxLength={MAX_SOURCE_URL_CHARS}
-              value={sourceUrl}
-              disabled={phase === "ingesting"}
-              placeholder="https://docs.example.com/page"
-              aria-invalid={Boolean(urlError)}
-              aria-required={urlRequired}
-              aria-describedby={`${urlId}-hint${urlError ? ` ${urlId}-error` : ""}`}
-              onChange={(e) => {
-                setSourceUrl(e.target.value);
-                setUrlServerError(null);
-              }}
-              onBlur={() => setUrlBlurred(true)}
-              className={`w-full rounded-lg border border-line bg-surface-card px-3 py-2 text-xs text-fg placeholder:text-fg-subtle aria-invalid:border-status-danger ${focusRing}`}
-            />
-            <p id={`${urlId}-hint`} className="text-[11px] text-fg-subtle">
-              The page answers link to when they cite this document (https only
-              {allowedHosts?.length ? `; allowed domains: ${allowedHosts.join(", ")}` : ""}).
-            </p>
-            {urlError ? (
-              <p id={`${urlId}-error`} role={urlServerError ? "alert" : undefined} className="text-[11px] font-medium text-status-danger-fg">
-                {urlError}
-              </p>
-            ) : null}
-          </div>
+          <SourceUrlField {...urlField} disabled={phase === "ingesting"} />
         ) : null}
 
         <AnimatePresence mode="wait" initial={false}>
@@ -308,7 +436,9 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
               className="flex items-center gap-2 text-xs text-fg-muted"
             >
               <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" strokeWidth={1.75} aria-hidden="true" />
-              {phase === "previewing"
+              {checkingLink
+                ? "Checking the link…"
+                : phase === "previewing"
                 ? isDocx
                   ? "Converting to Markdown and previewing chunks…"
                   : "Normalizing Markdown and previewing chunks…"
@@ -374,11 +504,15 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
               <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-fg-muted">
                 <dt>Stored as</dt>
                 <dd className="truncate font-medium text-fg">{result.source_name}</dd>
+                <dt>Linked to</dt>
+                <dd className="min-w-0 text-fg" data-testid="upload-final-link">
+                  <FinalLink url={result.source_url ?? null} />
+                </dd>
                 <dt>Status</dt>
                 <dd className="font-medium text-fg">{result.status}</dd>
                 <dt>Chunks</dt>
                 <dd className="text-fg">
-                  +{result.chunks_added} new · {result.chunks_kept} kept · −{result.chunks_removed} removed
+                  +{result.chunks_added} added · {result.chunks_kept} kept · −{result.chunks_removed} removed
                 </dd>
                 {result.change_reasons?.length ? (
                   <>
@@ -436,13 +570,13 @@ export function UploadDialog({ open, token, onClose, onUploaded }: UploadDialogP
             <button
               type="button"
               onClick={() => void ingest()}
-              disabled={phase !== "preview" || !preview || !urlCheck.ok}
+              disabled={!ready}
               className={`${primaryButton} ${PRIMARY_DISABLED}`}
             >
               {phase === "ingesting" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.75} aria-hidden="true" />
               ) : null}
-              {preview ? confirmLabel(preview.status) : "Ingest document"}
+              {linkPreview ? linkConfirmLabel(linkPreview) : preview ? confirmLabel(preview.status) : "Ingest document"}
             </button>
           </>
         )}

@@ -24,20 +24,17 @@ Every option is grounded in the retrieved knowledge base: service/framework
 options are the retrieved documents (by title), and detail options are kept
 only when a retrieved chunk covers them. An option whose best retrieval score
 clearly leads is tagged ``recommended`` (``clarify.recommend_option``). A borderline request (only two open
-details) is confirmed by one cheap LLM call with a timeout; on timeout or any
-error the question is answered as usual.
+details) is answered; nothing here calls the LLM. Legacy: the request path uses
+app.harness.clarify.decide_clarification; this module supplies shape hints
+(``assess``) and ``is_concrete_off_scope``.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
 
-from app.core.circuit import get_llm_breaker
 from app.core.config import get_settings
 from app.core.logging_config import get_logger
 from app.evaluation.quality import injection_in_chunks
@@ -64,8 +61,6 @@ from app.harness.clarify import (
     metadata_text,
     recommend_option,
 )
-from app.harness.prompts import get_chat_client
-from app.model_settings.service import current_model_settings
 from app.schemas.query import (
     ChatTurn,
     Clarification,
@@ -1079,7 +1074,7 @@ def _last_was_goal_card(history: list[ChatTurn] | None) -> bool:
     return False
 
 
-def assess(
+def assess(  # pylint: disable=too-many-return-statements
     query: str,
     history: list[ChatTurn] | None,
     *,
@@ -1506,115 +1501,6 @@ def slot_clarification(
     )
 
 
-# ---------------------------------------------------------------------------
-# The one cheap decision call (borderline requests only)
-# ---------------------------------------------------------------------------
-
-DECISION_FORMAT: dict[str, Any] = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "clarify_decision",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["action", "slots"],
-            "properties": {
-                "action": {"type": "string", "enum": ["answer", "clarify"]},
-                "slots": {"type": "array", "items": {"type": "string"}},
-            },
-        },
-    },
-}
-
-
-def _decision_messages(query: str, slot_ids: tuple[str, ...]) -> list[dict[str, str]]:
-    brand = get_settings().brand_name
-    details = "\n".join(
-        f"- {sid}: "
-        + (
-            "which compliance framework or service"
-            if sid == FRAMEWORK_SLOT
-            else _SLOTS_BY_ID[sid].question
-        )
-        for sid in slot_ids
-    )
-    return [
-        {
-            "role": "system",
-            "content": (
-                f"You decide whether {brand}'s website assistant must ask the "
-                "visitor for details before answering. Reply in the required JSON."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Visitor question: {query}\n\nDetails the question leaves open:\n"
-                f"{details}\n\n"
-                'Set action "clarify" and list the detail ids (from the list '
-                "above) only if a useful answer genuinely depends on them. Set "
-                'action "answer" and slots [] if a general answer would serve '
-                "the visitor well."
-            ),
-        },
-    ]
-
-
-async def _complete(
-    messages: list[dict[str, str]],
-) -> tuple[str, dict[str, int] | None]:
-    """One small structured completion (patched in tests)."""
-    settings = get_settings()
-    async with get_llm_breaker().guard():
-        response = await get_chat_client().chat.completions.create(
-            model=current_model_settings().llm_deployment,
-            messages=messages,  # type: ignore[arg-type]
-            reasoning_effort=settings.llm_reasoning_effort,  # type: ignore[arg-type]
-            max_completion_tokens=settings.clarify_decision_max_tokens,
-            response_format=DECISION_FORMAT,  # type: ignore[arg-type]
-        )
-    usage_obj = getattr(response, "usage", None)
-    usage = (
-        {
-            "prompt_tokens": int(getattr(usage_obj, "prompt_tokens", 0) or 0),
-            "completion_tokens": int(getattr(usage_obj, "completion_tokens", 0) or 0),
-        }
-        if usage_obj is not None
-        else None
-    )
-    content = response.choices[0].message.content if response.choices else None
-    return content or "", usage
-
-
-async def confirm_slots(
-    query: str, slot_ids: tuple[str, ...]
-) -> tuple[tuple[str, ...] | None, dict[str, int] | None]:
-    """Slots the model confirms (``()`` = answer), ``None`` on timeout/error."""
-    settings = get_settings()
-    try:
-        raw, usage = await asyncio.wait_for(
-            _complete(_decision_messages(query, slot_ids)),
-            timeout=settings.clarify_decision_timeout_seconds,
-        )
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        logger.warning("clarify_decision_failed", error_type=type(exc).__name__)
-        return None, None
-    try:
-        payload = json.loads(raw)
-    except ValueError:
-        return None, usage
-    if not isinstance(payload, dict) or payload.get("action") != "clarify":
-        return (), usage
-    raw_slots = payload.get("slots")
-    picked = (
-        {s for s in raw_slots if isinstance(s, str)}
-        if isinstance(raw_slots, list)
-        else set()
-    )
-    return tuple(s for s in slot_ids if s in picked), usage
-
-
 async def rule_clarification(
     assessment: Assessment, query: str, sources: list[SourceChunk]
 ) -> RuleClarification:
@@ -1637,16 +1523,8 @@ async def rule_clarification(
             service_clarification(query, clean, assessment.kind), decision="rules"
         )
     slots = assessment.missing_slots
-    usage: dict[str, int] | None = None
-    decision = "rules"
+    # Deterministic only (no LLM confirmation): a borderline request with
+    # fewer open details is answered.
     if len(slots) < _DETERMINISTIC_SLOTS and not assessment.deterministic:
-        confirmed, usage = await confirm_slots(query, slots)
-        if not confirmed:
-            return RuleClarification(
-                usage=usage,
-                decision="llm_failed" if confirmed is None else "llm_answer",
-            )
-        slots, decision = confirmed, "llm_clarify"
-    return RuleClarification(
-        slot_clarification(query, slots, clean), usage=usage, decision=decision
-    )
+        return RuleClarification(decision="borderline_answer")
+    return RuleClarification(slot_clarification(query, slots, clean), decision="rules")

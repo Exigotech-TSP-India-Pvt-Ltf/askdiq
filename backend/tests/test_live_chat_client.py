@@ -1,5 +1,7 @@
 """Unit tests for scripts/live_chat_client.py (mocked transport, no network)."""
 
+# pylint: disable=protected-access  # the script's shared client and pacing are internals
+
 import importlib.util
 import json
 import threading
@@ -7,6 +9,8 @@ from pathlib import Path
 
 import httpx
 import pytest
+
+from app.harness.prompt_catalog import partial_line, sales_contact_line
 
 _PATH = Path(__file__).resolve().parents[1] / "scripts" / "live_chat_client.py"
 _spec = importlib.util.spec_from_file_location("live_chat_client", _PATH)
@@ -24,6 +28,9 @@ def _ok(**over):
     base = {
         "answer": "DeployIQ is a deployment tool.",
         "sources": [{"chunk_id": "c"}],
+        "citations": [{"n": 1, "url": "https://example.com/deployiq"}],
+        "grounded": True,
+        "confidence": 0.9,
         "outcome": "answered",
         "guardrail_flags": [],
         "session_id": "s1",
@@ -54,7 +61,7 @@ def test_ask_sends_headers_and_returns_wall_time():
 def test_retries_then_succeeds():
     calls = []
 
-    def handler(request):
+    def handler(_request):
         calls.append(1)
         status = 429 if len(calls) < 3 else 200
         return httpx.Response(status, json=_ok())
@@ -70,7 +77,7 @@ def test_429_waits_15s_and_gives_up_after_four_tries(monkeypatch):
     monkeypatch.setattr(lc, "RATE_LIMIT_WAIT_S", 15.0)
     monkeypatch.setattr(lc.time, "sleep", sleeps.append)
 
-    def handler(request):
+    def handler(_request):
         calls.append(1)
         return httpx.Response(429, text="slow down")
 
@@ -112,7 +119,7 @@ def test_runners_use_distinct_client_ids():
     assert lc.ConversationRunner().client_id != lc.ConversationRunner().client_id
 
 
-class _Case:
+class _Case:  # pylint: disable=too-few-public-methods  # golden-case stub
     query = "How does DeployIQ deliver it?"
 
     def replay_turns(self):
@@ -141,7 +148,7 @@ def test_ask_case_replays_history_before_the_query():
 def test_gives_up_after_max_attempts():
     calls = []
 
-    def handler(request):
+    def handler(_request):
         calls.append(1)
         return httpx.Response(503, text="down")
 
@@ -153,7 +160,7 @@ def test_gives_up_after_max_attempts():
 def test_client_error_not_retried():
     calls = []
 
-    def handler(request):
+    def handler(_request):
         calls.append(1)
         return httpx.Response(401, text="no")
 
@@ -213,25 +220,72 @@ def test_empty_answer():
     assert "empty answer" in lc.check_answer(_ok(answer="  "))
 
 
-def test_fallback_needs_specialist():
-    resp = _ok(outcome="ungrounded", sources=[], answer="I could not find that.")
-    assert any("specialist" in p for p in lc.check_answer(resp))
+def _decline(**over):
+    base = {"sources": [], "citations": [], "grounded": False, "confidence": 0.0}
+    return _ok(**{**base, **over})
+
+
+def test_fallback_must_be_catalog_line():
+    lines = lc.fixed_lines()
+    resp = _decline(outcome="ungrounded", answer=lines.no_answer)
+    assert lc.response_kind(resp) == "fallback"
+    assert lc.check_answer(resp) == []
     resp["answer"] = "Please contact a specialist."
+    assert any("fixed catalog line" in p for p in lc.check_answer(resp))
+    resp["answer"] = lines.try_again
     assert lc.check_answer(resp) == []
 
 
-def test_refusal_must_have_no_sources():
-    resp = _ok(outcome="blocked", guardrail_flags=["spam_detected"])
+def test_fallback_may_add_sales_contact():
+    lines = lc.fixed_lines()
+    sales = sales_contact_line("1300 000 000", "a@b.com")
+    assert lines.sales.fullmatch(sales)
+    resp = _decline(outcome="ungrounded", answer=f"{lines.no_answer} {sales}")
+    assert lc.check_answer(resp) == []
+
+
+def test_decline_labels():
+    lines = lc.fixed_lines()
+    resp = _ok(outcome="ungrounded", answer=lines.no_answer, confidence=1.0)
+    problems = lc.check_answer(resp)
+    assert any("grounded=True" in p for p in problems)
+    assert any("confidence=1.0" in p for p in problems)
+    assert any("sources" in p for p in problems)
+    assert any("citations" in p for p in problems)
+    assert lc.check_answer(resp, {"check_labels": False}) == []
+
+
+def test_answered_labels_and_fallback_leak():
+    assert any("grounded" in p for p in lc.check_answer(_ok(grounded=False)))
+    assert any("citations" in p for p in lc.check_answer(_ok(citations=[])))
+    only = _ok(answer=lc.fixed_lines().no_answer)
+    assert any("only fallback" in p for p in lc.check_answer(only))
+    partial = _ok(answer=f"DeployIQ ships apps [1]. {partial_line(['pricing'])}")
+    assert lc.check_answer(partial) == []
+    greeting = _decline(outcome="conversational", grounded=True, answer="Hi there.")
+    assert lc.check_answer(greeting) == []
+
+
+def test_refusal_must_be_flag_line_without_sources():
+    spam = lc.fixed_lines().fallback_line(["spam_detected"])
+    resp = _decline(
+        outcome="blocked",
+        guardrail_flags=["spam_detected"],
+        answer=spam,
+        sources=[{"chunk_id": "c"}],
+    )
     assert lc.response_kind(resp) == "refusal"
     assert any("sources" in p for p in lc.check_answer(resp))
     resp["sources"] = []
     assert lc.check_answer(resp) == []
+    resp["answer"] = lc.fixed_lines().no_answer
+    assert any("fixed catalog line" in p for p in lc.check_answer(resp))
 
 
 def test_clarification_structure():
     question = {"id": "Q1", "question": "Which?", "options": [{"id": "O1"}]}
-    resp = _ok(outcome="clarify", sources=[], clarification={"questions": [question]})
+    resp = _decline(outcome="clarify", clarification={"questions": [question]})
     assert any("1 options" in p for p in lc.check_answer(resp))
     question["options"].append({"id": "O2"})
     assert lc.check_answer(resp) == []
-    assert lc.check_answer(_ok(outcome="clarify", sources=[]))
+    assert lc.check_answer(_decline(outcome="clarify"))

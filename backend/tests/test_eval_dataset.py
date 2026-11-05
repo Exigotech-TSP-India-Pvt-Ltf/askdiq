@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.evaluation.dataset import ALL_DOCS, CIS, EVAL_CASES
 from app.evaluation.metrics import _matches
+from app.schemas.query import QUERY_HARD_MAX_LENGTH
 
 
 def test_case_ids_are_unique():
@@ -77,14 +78,15 @@ def test_variants_point_at_existing_cases_and_abstentions_are_ungrounded():
 
 
 def test_extended_categories_are_covered():
-    # Updated: partial / ambiguous / contradictory cases no longer expect a
-    # refusal, so the category is read from every case that carries one.
+    # Updated: partial / ambiguous cases no longer expect a refusal, so the
+    # category is read from every case that carries one. No page mentions
+    # SOC 2, so the contradictory-premise case is a not_in_corpus abstention.
     cats = {c.abstain_category for c in EVAL_CASES if c.abstain_category}
     assert {
         "not_in_corpus",
         "partially_answerable",
         "ambiguous",
-        "contradictory_documents",
+        "regulated_advice",
         "out_of_scope",
         "real_time",
         "no_permission",
@@ -103,12 +105,12 @@ def test_extended_categories_are_covered():
     assert "repeated_question" not in perts
 
 
-_DOCS_DIR = Path(__file__).resolve().parents[1] / "data" / "real_docs"
+_DOCS_DIR = Path(__file__).resolve().parents[1] / "data"
 _NO_KB_KEYWORDS = {"negative", "abstention", "safety", "clarification", "spam"}
 
 
 def _kb_text(names: list[str]) -> str:
-    # real_docs markdown backslash-escapes punctuation ("v7\.0\.0")
+    # the page markdown may backslash-escape punctuation ("v7\.0\.0")
     return "\n".join(
         (_DOCS_DIR / n).read_text(encoding="utf-8").replace("\\", "") for n in names
     )
@@ -146,7 +148,9 @@ def test_replay_turns_returns_the_history_user_turns_in_order():
 # Canned replies and refusals have no KB keyword to verify against the docs.
 _V3_NO_KB_KEYWORDS = _NO_KB_KEYWORDS | {"conversational", "off_topic"}
 V3_CASE_COUNT = 30
-DATASET_CASE_COUNT = 150
+# 149: the legacy data/promoted_test_cases.json (1 case) is retired; that case
+# now lives in tests/golden/golden_cases.json (nc-mtls-config).
+DATASET_CASE_COUNT = 149
 
 
 def _v3_cases():
@@ -189,10 +193,12 @@ def test_v3_expected_keywords_occur_in_expected_docs():
     assert len(checked) >= 6
 
 
-def test_v3_cis_recommendation_count_is_in_the_cis_doc():
+def test_v3_cis_recommendation_count_is_not_in_the_cis_doc():
+    # The CIS page no longer states a recommendation count: never invent one.
     case = next(c for c in _v3_cases() if c.id == "v3_cis_recommendation_count")
-    assert case.expected_keywords == ["160"] and case.expected_docs == [CIS]
-    assert "160" in _kb_text([CIS])
+    assert case.expect_abstain and not case.expected_docs
+    assert "160" in case.forbidden_keywords
+    assert "160" not in _kb_text([CIS])
 
 
 def test_v3_clarification_cases_have_headers_and_no_sources():
@@ -220,7 +226,7 @@ def test_v3_cases_are_well_formed():
         assert not (case.expect_clarification and case.allow_clarification), case.id
 
 
-def test_query_too_long_expects_the_422_path():
+def test_query_too_long_expects_the_too_long_template_not_422():
     case = next(c for c in EVAL_CASES if c.id == "query_too_long")
-    assert case.expect_http_status == 422
-    assert len(case.query) > 2000
+    assert case.expect_http_status is None
+    assert 2000 < len(case.query) <= QUERY_HARD_MAX_LENGTH

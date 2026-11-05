@@ -1,5 +1,7 @@
 """Citation verification: a marker survives only if the cited chunk has the claim."""
 
+# pylint: disable=use-implicit-booleaness-not-comparison  # assert an exact empty list
+
 import time
 
 import pytest
@@ -8,6 +10,7 @@ from app.guardrails.post_checks import is_decline_sentence, is_refusal
 from app.harness import orchestrator
 from app.harness.citations import verify_and_select, verify_citations
 from app.schemas.query import SourceChunk
+from tests.grounded_fakes import patch_pipeline
 
 _ABOUT = (
     "Section: Our Purpose\n\nAbout Us\n\nSecurity delivery often slows down under "
@@ -107,7 +110,9 @@ def test_renumbering_has_no_gaps_and_dedupes_by_document() -> None:
     assert lines[0].endswith("context. [1]")
     assert lines[1].endswith("rapidly. [2]")
     assert [c.n for c in result.citations] == [1, 2]
-    assert [s.chunk_id for s in result.sources] == ["c3", "c2"]
+    # sources[n - 1] is citation n's chunk; c4 (same document, also backs the
+    # claim) follows so every excerpt the answer rests on is returned.
+    assert [s.chunk_id for s in result.sources] == ["c3", "c2", "c4"]
     assert {c.document_id for c in result.citations} == {
         s.document_id for s in result.sources
     }
@@ -235,24 +240,8 @@ def test_redos_time_budget_on_a_large_answer() -> None:
 
 
 async def _run(monkeypatch, llm_answer: str, sources: list[SourceChunk]):
-    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *_a, **_k: [])
-
-    async def fake_retrieve(*_a, **_k):
-        return sources
-
-    async def fake_call_llm(_query, _chunks, _history=None):
-        return llm_answer, {
-            "prompt_tokens": 1,
-            "completion_tokens": 1,
-            "total_tokens": 2,
-        }
-
-    async def fake_post_checks(*_a, **_k):
-        return True, 0.85, []
-
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "call_llm", fake_call_llm)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
+    # A plain-text reply: each sentence ships only if verbatim in its chunk.
+    patch_pipeline(monkeypatch, sources, llm_answer)
     return await orchestrator.run_query(
         query="What does DeployIQ do about Essential Eight?",
         top_k=6,
@@ -304,7 +293,7 @@ async def test_marker_bearing_pure_decline_takes_the_refusal_branch(
         "We don't have details on that here. [1] Talk to one of our specialists.",
         sources,
     )
-    assert response.token_details["declined"] is True
+    assert response.outcome == "ungrounded"
     assert response.sources == [] and response.citations == []
     assert "[" not in response.answer
 

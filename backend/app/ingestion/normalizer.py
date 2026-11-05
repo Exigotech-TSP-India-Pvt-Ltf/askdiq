@@ -5,10 +5,11 @@ Fixed execution order:
 1. Decode UTF-8 (strict, BOM stripped)
 2. CRLF/CR -> LF
 3. Unicode NFC normalization
+3b. Knowledge clean-up (markup, UI notes, tables -> sentences; app.ingestion.cleanup)
 4. Trim trailing whitespace per line
 5. Collapse >= 3 blank lines down to 2 newlines
 6. Single trailing newline
-7. redact_pii
+7. redact_pii (PII_ALLOWLIST keeps the company's own public contact details)
 8. strip_boilerplate_lines
 9. Canonical hash generation with DOC_HASH_VERSION and PIPELINE_VERSION
 """
@@ -18,10 +19,12 @@ import re
 import unicodedata
 
 from app.chunking.cleaning import strip_boilerplate_lines
+from app.core.config import get_settings
 from app.governance.pii import redact_pii
+from app.ingestion.cleanup import clean_markdown
 
 DOC_HASH_VERSION = "v1"
-PIPELINE_VERSION = "v3"
+PIPELINE_VERSION = "v6"  # v6: a label paragraph stays with what it introduces
 
 
 def normalize_markdown(raw: str | bytes) -> tuple[str, list[str]]:
@@ -38,6 +41,9 @@ def normalize_markdown(raw: str | bytes) -> tuple[str, list[str]]:
     # 3. Unicode NFC normalization
     text = unicodedata.normalize("NFC", text)
 
+    # 3b. Knowledge clean-up: on-page copy only, tables as sentences
+    text = clean_markdown(text)
+
     # 4. Trim trailing whitespace per line
     lines = [line.rstrip(" \t") for line in text.split("\n")]
     text = "\n".join(lines)
@@ -49,7 +55,7 @@ def normalize_markdown(raw: str | bytes) -> tuple[str, list[str]]:
     text = text.strip()
 
     # 7. Redact PII
-    text, pii_found = redact_pii(text)
+    text, pii_found = redact_pii(text, allowlist=get_settings().pii_allowlist)
 
     # 8. Strip boilerplate lines (e.g. copyright notices, metadata headers)
     text = strip_boilerplate_lines(text)

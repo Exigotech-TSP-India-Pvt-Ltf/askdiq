@@ -1,0 +1,2705 @@
+{
+  "version": 1,
+  "ground_truth": "backend/data/*.md (19 website pages), cleaned via app.ingestion.cleanup.clean_markdown",
+  "notes": "Section-coverage cases (set B): 1-2 natural visitor questions per H2/H3 section of our-vision, packages, platform, privacy, responsible-ai, secure-ai, services, terms, zero-trust. Expected routes = source page plus other pages stating the same fact.",
+  "cases": [
+    {
+      "id": "sec-b-our-vision-01-vision-for-the-future-of-security",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "Is DeployIQ an AI-native venture, and who funds it?",
+          "expect": "answer",
+          "must_contain": [
+            "AI-native",
+            "Exigo Tech"
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: Vision for the Future of Security",
+      "source": "data/our-vision.md section 'Vision for the Future of Security'"
+    },
+    {
+      "id": "sec-b-our-vision-02-vision-chips",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "What three themes sit underneath DeployIQ's no-tradeoffs vision?",
+          "expect": "answer",
+          "must_contain": [
+            "Responsible AI",
+            "Secure AI",
+            [
+              "Learning Loops",
+              "learning loop"
+            ]
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: Vision chips",
+      "source": "data/our-vision.md section 'Vision chips'"
+    },
+    {
+      "id": "sec-b-our-vision-03-speed-vs-quality",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "Do I have to pick between fast delivery and solid security with you?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "both",
+              "robust security"
+            ]
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: Speed vs Quality",
+      "source": "data/our-vision.md section 'Speed vs Quality'"
+    },
+    {
+      "id": "sec-b-our-vision-04-scale-vs-precision",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "How does DeployIQ deal with the scale versus precision trade-off?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "automated precision",
+              "automated",
+              "scales"
+            ]
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: Scale vs Precision",
+      "source": "data/our-vision.md section 'Scale vs Precision'"
+    },
+    {
+      "id": "sec-b-our-vision-05-innovation-vs-stability",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "How can we innovate quickly without losing stability?",
+          "expect": "answer",
+          "must_contain": [
+            "guardrails"
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: Innovation vs Stability",
+      "source": "data/our-vision.md section 'Innovation vs Stability'"
+    },
+    {
+      "id": "sec-b-our-vision-06-the-shared-learning-loop-exigo-tech",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "What does Exigo Tech bring to the shared learning loop?",
+          "expect": "answer",
+          "must_contain": [
+            "Enterprise delivery",
+            "Operational maturity",
+            [
+              "Real-world security data",
+              "security data"
+            ]
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: The Shared Learning Loop / Exigo Tech",
+      "source": "data/our-vision.md section 'The Shared Learning Loop / Exigo Tech'"
+    },
+    {
+      "id": "sec-b-our-vision-07-the-shared-learning-loop-deployiq",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "What does DeployIQ contribute to its learning loop with Exigo Tech?",
+          "expect": "answer",
+          "must_contain": [
+            "AI innovation",
+            "Rapid experimentation",
+            [
+              "Breakthrough models",
+              "breakthrough"
+            ]
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: The Shared Learning Loop / DeployIQ",
+      "source": "data/our-vision.md section 'The Shared Learning Loop / DeployIQ'"
+    },
+    {
+      "id": "sec-b-our-vision-08-what-this-means-for-customers",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "What does DeployIQ's vision actually mean for customers like us?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "Enterprise-grade quality",
+              "enterprise speed",
+              "enterprise-grade"
+            ],
+            [
+              "startup speed",
+              "startup agility"
+            ]
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: What This Means for Customers",
+      "source": "data/our-vision.md section 'What This Means for Customers'"
+    },
+    {
+      "id": "sec-b-our-vision-09-continuous-improvement-through-shared-in",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "How does DeployIQ keep up with new threats over time?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "every deployment",
+              "shared intelligence"
+            ]
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: Continuous improvement through shared intelligence",
+      "source": "data/our-vision.md section 'Continuous improvement through shared intelligence'"
+    },
+    {
+      "id": "sec-b-our-vision-10-building-the-future-of-security",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "Why does DeployIQ exist?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "AI-led",
+              "purpose"
+            ]
+          ],
+          "routes": [
+            "/our-vision",
+            "/about-us"
+          ]
+        }
+      ],
+      "note": "Section: Building the Future of Security | r3 correction: about-us \"Our purpose is to make Microsoft 365 security clear, actionable and accountable\" is a valid answer to why DeployIQ exists",
+      "source": "data/our-vision.md section 'Building the Future of Security'"
+    },
+    {
+      "id": "sec-b-our-vision-11-continuous-autonomous-global-scale",
+      "category": "sec_our-vision",
+      "turns": [
+        {
+          "query": "What do Continuous, Autonomous and Global Scale mean in DeployIQ's vision?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "Always-on",
+              "always on"
+            ],
+            [
+              "Human-in-loop",
+              "human-in-the-loop",
+              "human in the loop"
+            ],
+            [
+              "Protection everywhere",
+              "everywhere"
+            ]
+          ],
+          "routes": [
+            "/our-vision"
+          ]
+        }
+      ],
+      "note": "Section: Continuous / Autonomous / Global Scale",
+      "source": "data/our-vision.md section 'Continuous / Autonomous / Global Scale'"
+    },
+    {
+      "id": "sec-b-packages-01-your-security-maturity-path",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Do your Microsoft 365 packages build on each other?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "builds on",
+              "build on",
+              "everything in"
+            ]
+          ],
+          "routes": [
+            "/packages",
+            "/"
+          ]
+        }
+      ],
+      "note": "Section: Your security maturity path; auto-added routes ['/']",
+      "source": "data/packages.md section 'Your security maturity path'"
+    },
+    {
+      "id": "sec-b-packages-02-baseline",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Which standard are the Baseline package findings cross-referenced to?",
+          "expect": "answer",
+          "must_contain": [
+            "CIS"
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Baseline",
+      "source": "data/packages.md section 'Baseline'"
+    },
+    {
+      "id": "sec-b-packages-03-baseline",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Do you walk us through the results of the Baseline package?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "walkthrough",
+              "review the results",
+              "priorities"
+            ]
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Baseline",
+      "source": "data/packages.md section 'Baseline'"
+    },
+    {
+      "id": "sec-b-packages-04-foundation",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "What secure sign-in controls come with the Foundation package?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "multi-factor authentication",
+              "MFA"
+            ],
+            "Conditional Access"
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Foundation",
+      "source": "data/packages.md section 'Foundation'"
+    },
+    {
+      "id": "sec-b-packages-05-foundation",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Which package adds device management through Intune?",
+          "expect": "answer",
+          "must_contain": [
+            "Foundation"
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Foundation",
+      "source": "data/packages.md section 'Foundation'"
+    },
+    {
+      "id": "sec-b-packages-06-strengthen",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Which package includes data loss prevention with Microsoft Purview?",
+          "expect": "answer",
+          "must_contain": [
+            "Strengthen"
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Strengthen",
+      "source": "data/packages.md section 'Strengthen'"
+    },
+    {
+      "id": "sec-b-packages-07-strengthen",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "What is risk-based access in your Strengthen package?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "session risk",
+              "user and session risk"
+            ]
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Strengthen",
+      "source": "data/packages.md section 'Strengthen'"
+    },
+    {
+      "id": "sec-b-packages-08-frontier",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Which package is built for organisations adopting Copilot and AI agents?",
+          "expect": "answer",
+          "must_contain": [
+            "Frontier"
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Frontier",
+      "source": "data/packages.md section 'Frontier'"
+    },
+    {
+      "id": "sec-b-packages-09-frontier",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "What does continuous posture improvement mean in the Frontier package?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "regular reviews",
+              "reviews"
+            ]
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Frontier",
+      "source": "data/packages.md section 'Frontier'"
+    },
+    {
+      "id": "sec-b-packages-10-compare-packages",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Is security awareness training included in the Baseline package?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "Foundation",
+              "not included",
+              "isn't included"
+            ]
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Compare Packages | corrected by r4 final2 review",
+      "source": "data/packages.md section 'Compare Packages'"
+    },
+    {
+      "id": "sec-b-packages-11-compare-packages",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Which packages include approval before every change?",
+          "expect": "answer",
+          "must_contain": [
+            "Baseline",
+            "Foundation",
+            "Strengthen",
+            "Frontier"
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Compare Packages",
+      "source": "data/packages.md section 'Compare Packages'"
+    },
+    {
+      "id": "sec-b-packages-12-how-it-works",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "How many stages are in the journey every package follows?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "7",
+              "seven"
+            ]
+          ],
+          "routes": [
+            "/packages",
+            "/about-us",
+            "/"
+          ]
+        }
+      ],
+      "note": "Section: How It Works | corrected by r4 final2 review",
+      "source": "data/packages.md section 'How It Works'"
+    },
+    {
+      "id": "sec-b-packages-13-why-work-with-us",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Are you just a one-off auditor?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "technical partner",
+              "partner"
+            ]
+          ],
+          "routes": [
+            "/packages",
+            "/about-us",
+            "/cis-microsoft-365-foundations-benchmark-assessment",
+            "/microsoft-365-security-baseline-assessment",
+            "/services"
+          ]
+        }
+      ],
+      "note": "Section: Why Work With Us; auto-added routes ['/about-us', '/cis-microsoft-365-foundations-benchmark-assessment', '/microsoft-365-security-baseline-assessment', '/services']",
+      "source": "data/packages.md section 'Why Work With Us'"
+    },
+    {
+      "id": "sec-b-packages-14-why-work-with-us",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "How do your packages stop configuration drift from catching us out at audit time?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "reassess*",
+              "drift"
+            ]
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: Why Work With Us",
+      "source": "data/packages.md section 'Why Work With Us'"
+    },
+    {
+      "id": "sec-b-packages-15-faq",
+      "category": "sec_packages",
+      "turns": [
+        {
+          "query": "Who carries out the formal Essential Eight assessment if we use your packages?",
+          "expect": "answer",
+          "must_contain": [
+            "independent"
+          ],
+          "routes": [
+            "/packages"
+          ]
+        }
+      ],
+      "note": "Section: FAQ",
+      "source": "data/packages.md section 'FAQ'"
+    },
+    {
+      "id": "sec-b-platform-01-hero-infographic",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "What do the AI agents on the Deploy IQ platform assess?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "CIS control gaps",
+              "CIS"
+            ],
+            [
+              "signals",
+              "Microsoft 365"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: Hero infographic",
+      "source": "data/platform.md section 'Hero infographic'"
+    },
+    {
+      "id": "sec-b-platform-02-hero-infographic",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "What outcomes does the Deploy IQ platform deliver for Microsoft 365?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "Hardened Microsoft 365",
+              "hardened"
+            ],
+            [
+              "Continuous Validation",
+              "validation"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: Hero infographic",
+      "source": "data/platform.md section 'Hero infographic'"
+    },
+    {
+      "id": "sec-b-platform-03-platform-overview-traceable-action",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "What does Traceable Action mean on the Deploy IQ platform?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "visible",
+              "accountable",
+              "oversight"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: Platform Overview / Traceable Action",
+      "source": "data/platform.md section 'Platform Overview / Traceable Action'"
+    },
+    {
+      "id": "sec-b-platform-04-platform-overview-continuous-system",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "What is the Continuous System part of the platform?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "orchestration",
+              "posture aligned",
+              "aligned"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: Platform Overview / Continuous System",
+      "source": "data/platform.md section 'Platform Overview / Continuous System'"
+    },
+    {
+      "id": "sec-b-platform-05-what-deploy-iq-platform-enables",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "How are controls deployed through the Deploy IQ platform?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "workflows",
+              "defined workflows"
+            ],
+            [
+              "checkpoints",
+              "approvals"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: What Deploy IQ Platform Enables",
+      "source": "data/platform.md section 'What Deploy IQ Platform Enables'"
+    },
+    {
+      "id": "sec-b-platform-06-what-deploy-iq-platform-enables",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "Does the platform produce evidence for audits?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "traceability",
+              "evidence",
+              "documentation"
+            ]
+          ],
+          "routes": [
+            "/platform",
+            "/secure-ai",
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: What Deploy IQ Platform Enables. Same fact on secure-ai.md:107 ('Evidence is produced as work occurs') and responsible-ai.md:84 ('Evidence generation to support audit, assurance, and compliance').",
+      "source": "data/platform.md section 'What Deploy IQ Platform Enables'"
+    },
+    {
+      "id": "sec-b-platform-07-what-organisations-gain",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "Will using the Deploy IQ platform get our environment ready for compliance assessments?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "compliance assessments",
+              "ready"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: What Organisations Gain",
+      "source": "data/platform.md section 'What Organisations Gain'"
+    },
+    {
+      "id": "sec-b-platform-08-how-our-platform-works-understand",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "What happens in the Understand stage of the platform cycle?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "context baseline",
+              "intent",
+              "obligations"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: How Our Platform Works / Understand",
+      "source": "data/platform.md section 'How Our Platform Works / Understand'"
+    },
+    {
+      "id": "sec-b-platform-09-how-our-platform-works",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "What supports the Deploy IQ platform cycle behind the scenes?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "Deploy IQ Engine",
+              "governed agents"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: How Our Platform Works",
+      "source": "data/platform.md section 'How Our Platform Works'"
+    },
+    {
+      "id": "sec-b-platform-10-who-deploy-iq-platform-is-for-startups",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "Is the Deploy IQ platform suitable for startups?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "scalable",
+              "startups"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: Who Deploy IQ Platform Is For / Startups",
+      "source": "data/platform.md section 'Who Deploy IQ Platform Is For / Startups'"
+    },
+    {
+      "id": "sec-b-platform-11-who-deploy-iq-platform-is-for-mature-tea",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "What does the platform offer mature security teams?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "consistent execution",
+              "distributed responsibilities",
+              "complex environments"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: Who Deploy IQ Platform Is For / Mature teams",
+      "source": "data/platform.md section 'Who Deploy IQ Platform Is For / Mature teams'"
+    },
+    {
+      "id": "sec-b-platform-12-trust-governance-and-responsible-ai",
+      "category": "sec_platform",
+      "turns": [
+        {
+          "query": "How is AI governed on the Deploy IQ platform?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "guardrails",
+              "explicit controls"
+            ],
+            [
+              "human review",
+              "approval"
+            ]
+          ],
+          "routes": [
+            "/platform"
+          ]
+        }
+      ],
+      "note": "Section: Trust, Governance and Responsible AI",
+      "source": "data/platform.md section 'Trust, Governance and Responsible AI'"
+    },
+    {
+      "id": "sec-b-privacy-01-intro",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "What does the Deploy IQ privacy policy cover?",
+          "expect": "answer",
+          "must_contain": [
+            "personal information",
+            [
+              "cookies",
+              "cookie",
+              "chatbot",
+              "website"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: Intro. A scope-section answer (website, forms, chatbot, services data) is also correct for 'what does it cover'.",
+      "source": "data/privacy.md section 'Intro'"
+    },
+    {
+      "id": "sec-b-privacy-02-1-scope",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "Does your privacy policy apply to chatbot conversations?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "chatbot",
+              "forms"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 1 Scope",
+      "source": "data/privacy.md section '1 Scope'"
+    },
+    {
+      "id": "sec-b-privacy-03-2-1-information-provided-directly",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "What personal details do you collect when I fill in a form?",
+          "expect": "answer",
+          "must_contain": [
+            "email address",
+            "phone number",
+            [
+              "company",
+              "role"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 2.1 Information Provided Directly",
+      "source": "data/privacy.md section '2.1 Information Provided Directly'"
+    },
+    {
+      "id": "sec-b-privacy-04-2-2-information-collected-automatically",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "What does your website collect automatically from visitors?",
+          "expect": "answer",
+          "must_contain": [
+            "IP address",
+            [
+              "browser type",
+              "device information"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 2.2 Information Collected Automatically",
+      "source": "data/privacy.md section '2.2 Information Collected Automatically'"
+    },
+    {
+      "id": "sec-b-privacy-05-3-how-we-use-information",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "How do you use the information you collect?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "respond to enquiries",
+              "enquiries"
+            ],
+            [
+              "deliver services",
+              "scope"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 3 How We Use Information",
+      "source": "data/privacy.md section '3 How We Use Information'"
+    },
+    {
+      "id": "sec-b-privacy-06-3-how-we-use-information",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "Do you use aggregated or de-identified data?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "service improvement",
+              "internally"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 3 How We Use Information",
+      "source": "data/privacy.md section '3 How We Use Information'"
+    },
+    {
+      "id": "sec-b-privacy-07-4-1-governance-principles",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "What governance principles apply to how you handle my information?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "approval points",
+              "ownership"
+            ],
+            [
+              "traceable",
+              "traceable actions"
+            ]
+          ],
+          "routes": [
+            "/privacy",
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: 4.1 Governance Principles; auto-added routes ['/responsible-ai']",
+      "source": "data/privacy.md section '4.1 Governance Principles'"
+    },
+    {
+      "id": "sec-b-privacy-08-4-2-customer-environment-data",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "What customer environment data might you process during an engagement?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "operational posture",
+              "identity",
+              "device"
+            ],
+            [
+              "compliance",
+              "maturity indicators"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 4.2 Customer Environment Data",
+      "source": "data/privacy.md section '4.2 Customer Environment Data'"
+    },
+    {
+      "id": "sec-b-privacy-09-4-3-human-oversight-and-ai-boundaries",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "Does your AI make binding decisions?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "binding decisions",
+              "binding"
+            ]
+          ],
+          "routes": [
+            "/privacy",
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: 4.3 Human Oversight and AI Boundaries",
+      "source": "data/privacy.md section '4.3 Human Oversight and AI Boundaries'"
+    },
+    {
+      "id": "sec-b-privacy-10-4-4-access-controls",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "What access controls protect information I give you?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "least-privilege",
+              "least privilege"
+            ],
+            [
+              "role-based",
+              "role based"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 4.4 Access Controls",
+      "source": "data/privacy.md section '4.4 Access Controls'"
+    },
+    {
+      "id": "sec-b-privacy-11-5-1-what-cookies-do",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "Why does the Deploy IQ website use cookies?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "function",
+              "security",
+              "performance"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 5.1 What Cookies Do",
+      "source": "data/privacy.md section '5.1 What Cookies Do'"
+    },
+    {
+      "id": "sec-b-privacy-12-5-3-managing-cookies",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "How can I block or remove your cookies?",
+          "expect": "answer",
+          "must_contain": [
+            "browser settings"
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 5.3 Managing Cookies",
+      "source": "data/privacy.md section '5.3 Managing Cookies'"
+    },
+    {
+      "id": "sec-b-privacy-13-10-website-disclaimer",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "Is the content on your website a complete risk assessment or a guarantee of outcomes?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "general information",
+              "not"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 10 Website Disclaimer",
+      "source": "data/privacy.md section '10 Website Disclaimer'"
+    },
+    {
+      "id": "sec-b-privacy-14-11-terms-of-use",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "Where are your full service terms set out?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "engagement agreements",
+              "engagement agreement"
+            ]
+          ],
+          "routes": [
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 11 Terms of Use",
+      "source": "data/privacy.md section '11 Terms of Use'"
+    },
+    {
+      "id": "sec-b-privacy-15-12-contact-us",
+      "category": "sec_privacy",
+      "turns": [
+        {
+          "query": "What office address is listed in your privacy policy?",
+          "expect": "answer",
+          "must_contain": [
+            "Norwest"
+          ],
+          "routes": [
+            "/privacy",
+            "/terms",
+            "/contact-us"
+          ],
+          "value_routes": [
+            {
+              "value": "2145",
+              "routes": [
+                "/privacy",
+                "/terms"
+              ]
+            },
+            {
+              "value": "2153",
+              "routes": [
+                "/contact-us"
+              ]
+            }
+          ]
+        }
+      ],
+      "note": "Section: 12 Contact Us",
+      "source": "data/privacy.md section '12 Contact Us'"
+    },
+    {
+      "id": "sec-b-responsible-ai-01-intro",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "What does Responsible AI mean at Deploy IQ?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "accountab*",
+              "responsible for outcomes"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai",
+            "/essential-eight",
+            "/platform",
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Intro; auto-added routes ['/essential-eight', '/platform', '/secure-ai'] | r3 correction: responsible-ai copy \"humans remain responsible for outcomes\" expresses accountability",
+      "source": "data/responsible-ai.md section 'Intro'"
+    },
+    {
+      "id": "sec-b-responsible-ai-02-ai-accelerates-outcomes",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "When AI is used, who stays accountable?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "human",
+              "humans"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: AI accelerates outcomes",
+      "source": "data/responsible-ai.md section 'AI accelerates outcomes'"
+    },
+    {
+      "id": "sec-b-responsible-ai-03-human-accountability",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "What does the Human Accountability principle cover?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "risk acceptance",
+              "change approvals",
+              "accountable roles"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: Human Accountability",
+      "source": "data/responsible-ai.md section 'Human Accountability'"
+    },
+    {
+      "id": "sec-b-responsible-ai-04-reliability-and-safety",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "Are AI-assisted outputs checked before they affect security changes?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "reviewed and validated",
+              "validated",
+              "reviewed"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: Reliability and Safety",
+      "source": "data/responsible-ai.md section 'Reliability and Safety'"
+    },
+    {
+      "id": "sec-b-responsible-ai-05-transparency-and-traceability",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "Can we audit how AI influenced a recommendation?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "audited",
+              "traceable",
+              "examined"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: Transparency and Traceability",
+      "source": "data/responsible-ai.md section 'Transparency and Traceability'"
+    },
+    {
+      "id": "sec-b-responsible-ai-06-augmentation-not-replacement",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "Does Deploy IQ's AI replace professional judgement?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "augments",
+              "augmentation"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: Augmentation, Not Replacement",
+      "source": "data/responsible-ai.md section 'Augmentation, Not Replacement'"
+    },
+    {
+      "id": "sec-b-responsible-ai-07-how-deploy-iq-uses-ai-responsibly",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "Why does Deploy IQ use AI in security delivery?",
+          "expect": "answer",
+          "must_contain": [
+            "speed",
+            [
+              "broad knowledge",
+              "multiple dimensions"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: How Deploy IQ Uses AI Responsibly",
+      "source": "data/responsible-ai.md section 'How Deploy IQ Uses AI Responsibly'"
+    },
+    {
+      "id": "sec-b-responsible-ai-08-ai-in-practice",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "What does Deploy IQ apply AI to?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "patterns",
+              "dependencies",
+              "trade-offs"
+            ],
+            [
+              "assessment",
+              "analysis"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: AI in Practice",
+      "source": "data/responsible-ai.md section 'AI in Practice'"
+    },
+    {
+      "id": "sec-b-responsible-ai-09-evaluated-and-controlled-execution",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "What has to happen before an AI-influenced change is scaled?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "validat*"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai",
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Evaluated and Controlled Execution",
+      "source": "data/responsible-ai.md section 'Evaluated and Controlled Execution'"
+    },
+    {
+      "id": "sec-b-responsible-ai-10-human-oversight-and-governance",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "Is Deploy IQ's Responsible AI just a policy statement?",
+          "expect": "answer",
+          "must_contain": [
+            "operational controls"
+          ],
+          "routes": [
+            "/responsible-ai",
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Human Oversight and Governance",
+      "source": "data/responsible-ai.md section 'Human Oversight and Governance'"
+    },
+    {
+      "id": "sec-b-responsible-ai-11-start-your-trusted-security-journey",
+      "category": "sec_responsible-ai",
+      "turns": [
+        {
+          "query": "Will we keep control and transparency with AI-powered security delivery?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "control",
+              "transparency"
+            ]
+          ],
+          "routes": [
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: Start Your Trusted Security Journey",
+      "source": "data/responsible-ai.md section 'Start Your Trusted Security Journey'"
+    },
+    {
+      "id": "sec-b-secure-ai-01-intro",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "What does the Deploy IQ Secure AI page explain?",
+          "expect": "answer",
+          "must_contain": [
+            "governance",
+            [
+              "data handling",
+              "AI usage"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Intro",
+      "source": "data/secure-ai.md section 'Intro'"
+    },
+    {
+      "id": "sec-b-secure-ai-02-our-approach-to-trust",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "How does Deploy IQ establish trust with customers?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "decision ownership",
+              "accountability"
+            ],
+            [
+              "proportionate",
+              "controlled"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Our Approach to Trust",
+      "source": "data/secure-ai.md section 'Our Approach to Trust'"
+    },
+    {
+      "id": "sec-b-secure-ai-03-no-autonomous-high-risk-actions",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "Does Deploy IQ take autonomous high-risk actions in our environment?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "no autonomous",
+              "not"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: No autonomous high-risk actions",
+      "source": "data/secure-ai.md section 'No autonomous high-risk actions'"
+    },
+    {
+      "id": "sec-b-secure-ai-04-security-by-design",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "Can Deploy IQ's access to our systems be revoked?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "revoke",
+              "revocable"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Security by Design",
+      "source": "data/secure-ai.md section 'Security by Design'"
+    },
+    {
+      "id": "sec-b-secure-ai-05-security-by-design",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "How often are access permissions reviewed?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "regular*"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ],
+          "accept": [
+            "answer",
+            "partial",
+            "not_covered"
+          ]
+        }
+      ],
+      "note": "Section: Security by Design | r3 correction: secure-ai:45 says only \"Regular access reviews\" - no frequency in KB; accept answer that says regular, or partial/not_covered",
+      "source": "data/secure-ai.md section 'Security by Design'"
+    },
+    {
+      "id": "sec-b-secure-ai-06-governance-and-oversight",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "Is governance the same in simple and complex environments?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "proportionate",
+              "lightweight"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Governance and Oversight",
+      "source": "data/secure-ai.md section 'Governance and Oversight'"
+    },
+    {
+      "id": "sec-b-secure-ai-07-governance-and-oversight",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "Who owns the decisions and outcomes in a Deploy IQ engagement?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "named human ownership",
+              "human ownership",
+              "named human",
+              "named humans"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Governance and Oversight | corrected by r4 final2 review",
+      "source": "data/secure-ai.md section 'Governance and Oversight'"
+    },
+    {
+      "id": "sec-b-secure-ai-08-evaluated-and-controlled-delivery",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "Do you roll out changes everywhere at once?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "limited scope",
+              "validation criteria"
+            ]
+          ],
+          "routes": [
+            "/secure-ai",
+            "/essential-eight"
+          ]
+        }
+      ],
+      "note": "Section: Evaluated and Controlled Delivery; auto-added routes ['/essential-eight']",
+      "source": "data/secure-ai.md section 'Evaluated and Controlled Delivery'"
+    },
+    {
+      "id": "sec-b-secure-ai-09-data-handling-and-privacy",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "Is our data kept separate from other customers' data?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "separat*"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Data Handling and Privacy",
+      "source": "data/secure-ai.md section 'Data Handling and Privacy'"
+    },
+    {
+      "id": "sec-b-secure-ai-10-auditability-and-evidence",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "What audit evidence does Deploy IQ produce?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "decisions and approvals",
+              "documented decisions"
+            ],
+            [
+              "validation",
+              "evaluation"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Auditability and Evidence",
+      "source": "data/secure-ai.md section 'Auditability and Evidence'"
+    },
+    {
+      "id": "sec-b-secure-ai-11-support-for-executive-and-audit-reportin",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "Is evidence put together after the work is done?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "as work occurs",
+              "not retroactively"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Support for executive and audit reporting",
+      "source": "data/secure-ai.md section 'Support for executive and audit reporting'"
+    },
+    {
+      "id": "sec-b-secure-ai-12-compliance-and-assurance-positioning",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "Will Deploy IQ pursue formal certifications in future?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "platform matures",
+              "pursued"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Compliance and Assurance Positioning",
+      "source": "data/secure-ai.md section 'Compliance and Assurance Positioning'"
+    },
+    {
+      "id": "sec-b-secure-ai-13-transparency-and-continuous-improvement",
+      "category": "sec_secure-ai",
+      "turns": [
+        {
+          "query": "What does Deploy IQ regularly review and improve?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "AI usage boundaries",
+              "evaluation criteria"
+            ],
+            [
+              "approval mechanisms",
+              "governance"
+            ]
+          ],
+          "routes": [
+            "/secure-ai"
+          ]
+        }
+      ],
+      "note": "Section: Transparency and Continuous Improvement",
+      "source": "data/secure-ai.md section 'Transparency and Continuous Improvement'"
+    },
+    {
+      "id": "sec-b-services-01-hero",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "Are your security services suitable for greenfield environments?",
+          "expect": "answer",
+          "must_contain": [
+            "greenfield"
+          ],
+          "routes": [
+            "/services"
+          ]
+        }
+      ],
+      "note": "Section: Hero",
+      "source": "data/services.md section 'Hero'"
+    },
+    {
+      "id": "sec-b-services-02-hero",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "How does Deploy IQ use AI across its security services?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "AI-assisted insight",
+              "AI-assisted"
+            ],
+            [
+              "prioritisation",
+              "analysis"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/responsible-ai"
+          ]
+        }
+      ],
+      "note": "Section: Hero | corrected by r4 final2 review",
+      "source": "data/services.md section 'Hero'"
+    },
+    {
+      "id": "sec-b-services-03-our-services-essential-eight",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "Whose Essential Eight framework do you implement?",
+          "expect": "answer",
+          "must_contain": [
+            "ACSC"
+          ],
+          "routes": [
+            "/services",
+            "/essential-eight"
+          ]
+        }
+      ],
+      "note": "Section: Our Services / Essential Eight",
+      "source": "data/services.md section 'Our Services / Essential Eight'"
+    },
+    {
+      "id": "sec-b-services-04-microsoft-365-security-compliance",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "Does your ISO 27001 service cover anything outside Microsoft 365?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "Microsoft 365 scope only",
+              "Microsoft 365"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/iso-27001-microsoft-365-technical-controls"
+          ]
+        }
+      ],
+      "note": "Section: Microsoft 365 Security & Compliance",
+      "source": "data/services.md section 'Microsoft 365 Security & Compliance'"
+    },
+    {
+      "id": "sec-b-services-05-zero-trust-starter",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "Are the Zero Trust Starter materials ready to use as they are?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "reviewed and tested",
+              "as-is",
+              "as is"
+            ]
+          ],
+          "routes": [
+            "/services"
+          ]
+        }
+      ],
+      "note": "Section: Zero Trust - Starter",
+      "source": "data/services.md section 'Zero Trust - Starter'"
+    },
+    {
+      "id": "sec-b-services-06-zero-trust-professional",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "Is ongoing management available with the Zero Trust Professional plan?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "ongoing management",
+              "optional"
+            ]
+          ],
+          "routes": [
+            "/services"
+          ]
+        }
+      ],
+      "note": "Section: Zero Trust - Professional",
+      "source": "data/services.md section 'Zero Trust - Professional'"
+    },
+    {
+      "id": "sec-b-services-07-essential-eight-security-and-compliance",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "What are the stages of your Essential Eight service?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "Assessment & Planning",
+              "Pilot"
+            ],
+            [
+              "Prioritisation",
+              "Validate"
+            ],
+            [
+              "Implementation",
+              "Scale"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/essential-eight"
+          ]
+        }
+      ],
+      "note": "Section: Essential Eight Security and Compliance | r3 correction: KB has two stage sets: services.md:154-160 Assessment & Planning/Prioritisation/Implementation vs essential-eight.md:143-152 Pilot/Validate/Scale; accept either",
+      "source": "data/services.md section 'Essential Eight Security and Compliance'"
+    },
+    {
+      "id": "sec-b-services-08-essential-eight-comprehensive-delivery",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "Does your Essential Eight service cover policy as well as technical controls?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "policy artefacts",
+              "policy"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/essential-eight"
+          ]
+        }
+      ],
+      "note": "Section: Essential Eight Comprehensive Delivery",
+      "source": "data/services.md section 'Essential Eight Comprehensive Delivery'"
+    },
+    {
+      "id": "sec-b-services-09-security-baseline-endpoint-management",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "What does Endpoint Management cover in the Security Baseline Assessment?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "uniform",
+              "hardened configuration",
+              "hardened"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/microsoft-365-security-baseline-assessment"
+          ]
+        }
+      ],
+      "note": "Section: Security Baseline / Endpoint Management",
+      "source": "data/services.md section 'Security Baseline / Endpoint Management'"
+    },
+    {
+      "id": "sec-b-services-10-iso-27001-network-application-security",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "What does Network & Application Security cover in your ISO 27001 service?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "Defender",
+              "Defender policies"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/iso-27001-microsoft-365-technical-controls"
+          ]
+        }
+      ],
+      "note": "Section: ISO 27001 / Network & Application Security",
+      "source": "data/services.md section 'ISO 27001 / Network & Application Security'"
+    },
+    {
+      "id": "sec-b-services-11-iso-27001-access-control-identity",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "What does the Access Control & Identity area of your ISO 27001 service include?",
+          "expect": "answer",
+          "must_contain": [
+            "Conditional Access",
+            [
+              "MFA",
+              "multi-factor"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/iso-27001-microsoft-365-technical-controls"
+          ]
+        }
+      ],
+      "note": "Section: ISO 27001 / Access Control & Identity",
+      "source": "data/services.md section 'ISO 27001 / Access Control & Identity'"
+    },
+    {
+      "id": "sec-b-services-12-cis-microsoft-defender",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "Which CIS benchmark area covers threat protection across mail, endpoints and cloud apps?",
+          "expect": "answer",
+          "must_contain": [
+            "Microsoft Defender"
+          ],
+          "routes": [
+            "/services",
+            "/cis-microsoft-365-foundations-benchmark-assessment"
+          ]
+        }
+      ],
+      "note": "Section: CIS / Microsoft Defender",
+      "source": "data/services.md section 'CIS / Microsoft Defender'"
+    },
+    {
+      "id": "sec-b-services-13-cis-admin-center-intune-purview",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "What does the Admin Center, Intune & Purview area of the CIS assessment cover?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "tenant-wide governance",
+              "data controls",
+              "governance"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/cis-microsoft-365-foundations-benchmark-assessment"
+          ]
+        }
+      ],
+      "note": "Section: CIS / Admin Center, Intune & Purview",
+      "source": "data/services.md section 'CIS / Admin Center, Intune & Purview'"
+    },
+    {
+      "id": "sec-b-services-14-iso-42001-activity-records",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "What does Activity Records mean in your ISO 42001 service?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "logging",
+              "AI activity"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/iso-42001-ai-management-system"
+          ]
+        }
+      ],
+      "note": "Section: ISO 42001 / Activity Records",
+      "source": "data/services.md section 'ISO 42001 / Activity Records'"
+    },
+    {
+      "id": "sec-b-services-15-iso-42001-ai-visibility",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "How does your ISO 42001 service help us see which AI tools are in use?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "AI Visibility",
+              "AI tools and agents",
+              "which AI tools"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/iso-42001-ai-management-system",
+            "/"
+          ]
+        }
+      ],
+      "note": "Section: ISO 42001 / AI Visibility; auto-added routes ['/']",
+      "source": "data/services.md section 'ISO 42001 / AI Visibility'"
+    },
+    {
+      "id": "sec-b-services-16-ready-to-improve-your-security-posture-s",
+      "category": "sec_services",
+      "turns": [
+        {
+          "query": "How does Deploy IQ make security improvement safer?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "controlled execution",
+              "explicit governance",
+              "prioritisation"
+            ]
+          ],
+          "routes": [
+            "/services",
+            "/platform",
+            "/responsible-ai",
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Ready to Improve Your Security Posture Safely?; auto-added routes ['/platform', '/responsible-ai', '/zero-trust']",
+      "source": "data/services.md section 'Ready to Improve Your Security Posture Safely?'"
+    },
+    {
+      "id": "sec-b-terms-01-definitions-deploy-iq",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "Which company delivers Deploy IQ according to your terms?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "Deploy IQ Pty Ltd"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: Definitions / Deploy IQ",
+      "source": "data/terms.md section 'Definitions / Deploy IQ'"
+    },
+    {
+      "id": "sec-b-terms-02-definitions-human-in-the-loop",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "What does Human-in-the-Loop mean in your terms and conditions?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "objectives",
+              "approve or reject",
+              "oversight"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: Definitions / Human-in-the-Loop",
+      "source": "data/terms.md section 'Definitions / Human-in-the-Loop'"
+    },
+    {
+      "id": "sec-b-terms-03-definitions-agentic",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "How autonomous are Deploy IQ's AI agents?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "bounded",
+              "final authority",
+              "never fully independent",
+              "human review"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: Definitions / Agentic",
+      "source": "data/terms.md section 'Definitions / Agentic'"
+    },
+    {
+      "id": "sec-b-terms-04-definitions-deliverables",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "What kinds of deliverables can we receive from Deploy IQ?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "reports",
+              "documentation"
+            ],
+            [
+              "evidence packages",
+              "configurations",
+              "recommendations"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: Definitions / Deliverables",
+      "source": "data/terms.md section 'Definitions / Deliverables'"
+    },
+    {
+      "id": "sec-b-terms-05-1-introduction",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "Can Deploy IQ change its terms and conditions?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "at any time",
+              "update"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: 1. Introduction",
+      "source": "data/terms.md section '1. Introduction'"
+    },
+    {
+      "id": "sec-b-terms-06-3-customer-responsibilities",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "What are customers responsible for under your terms?",
+          "expect": "answer",
+          "must_contain": [
+            "accurate",
+            [
+              "recommendations",
+              "approving"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: 3. Customer Responsibilities",
+      "source": "data/terms.md section '3. Customer Responsibilities'"
+    },
+    {
+      "id": "sec-b-terms-07-4-deliverables",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "Can we use Deploy IQ deliverables outside our organisation?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "internal organisational use",
+              "internal"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: 4. Deliverables",
+      "source": "data/terms.md section '4. Deliverables'"
+    },
+    {
+      "id": "sec-b-terms-08-4-deliverables",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "Are deliverables suitable for submitting to regulators or auditors?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "compliance attainment",
+              "contract scope",
+              "contract"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: 4. Deliverables",
+      "source": "data/terms.md section '4. Deliverables'"
+    },
+    {
+      "id": "sec-b-terms-09-6-data-handling-and-privacy",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "What does Deploy IQ use our Customer Data for?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "delivering the Services",
+              "delivering",
+              "required by law"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: 6. Data Handling and Privacy",
+      "source": "data/terms.md section '6. Data Handling and Privacy'"
+    },
+    {
+      "id": "sec-b-terms-10-7-third-party-dependencies",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "Are you responsible if a third-party tool you use goes down?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "not responsible"
+            ]
+          ],
+          "routes": [
+            "/terms",
+            "/privacy"
+          ]
+        }
+      ],
+      "note": "Section: 7. Third-Party Dependencies; auto-added routes ['/privacy']",
+      "source": "data/terms.md section '7. Third-Party Dependencies'"
+    },
+    {
+      "id": "sec-b-terms-11-8-service-limitations",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "Do you guarantee uninterrupted delivery?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "external dependencies",
+              "not guarantee",
+              "does not guarantee"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: 8. Service Limitations",
+      "source": "data/terms.md section '8. Service Limitations'"
+    },
+    {
+      "id": "sec-b-terms-12-9-liability",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "Is Deploy IQ's total liability capped?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "capped",
+              "statement of work",
+              "customer agreement"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: 9. Liability",
+      "source": "data/terms.md section '9. Liability'"
+    },
+    {
+      "id": "sec-b-terms-13-12-downloads",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "Should I test your downloadable scripts before running them in production?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "non-production",
+              "testing",
+              "reviewing"
+            ]
+          ],
+          "routes": [
+            "/terms"
+          ]
+        }
+      ],
+      "note": "Section: 12. Downloads",
+      "source": "data/terms.md section '12. Downloads'"
+    },
+    {
+      "id": "sec-b-terms-14-13-contact",
+      "category": "sec_terms",
+      "turns": [
+        {
+          "query": "What contact email is listed in your terms and conditions?",
+          "expect": "answer",
+          "must_contain": [
+            "info@deployiq.co"
+          ],
+          "routes": [
+            "/terms",
+            "/privacy",
+            "/contact-us"
+          ]
+        }
+      ],
+      "note": "Section: 13. Contact",
+      "source": "data/terms.md section '13. Contact'"
+    },
+    {
+      "id": "sec-b-zero-trust-01-hero",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "What does Deploy IQ help organisations do with Zero Trust?",
+          "expect": "answer",
+          "must_contain": [
+            "assess",
+            "prioriti*",
+            "implement"
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Hero",
+      "source": "data/zero-trust.md section 'Hero'"
+    },
+    {
+      "id": "sec-b-zero-trust-02-what-is-zero-trust",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "What does Zero Trust focus on instead of perimeter security?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "micro-segmentation",
+              "segmentation"
+            ],
+            [
+              "least privilege"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: What Is Zero Trust?",
+      "source": "data/zero-trust.md section 'What Is Zero Trust?'"
+    },
+    {
+      "id": "sec-b-zero-trust-03-what-is-zero-trust",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "Does Zero Trust apply to hybrid and on-prem environments?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "hybrid",
+              "on-prem",
+              "cloud"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: What Is Zero Trust?",
+      "source": "data/zero-trust.md section 'What Is Zero Trust?'"
+    },
+    {
+      "id": "sec-b-zero-trust-04-zero-trust-pillars-devices",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "What does the Devices pillar of Zero Trust mean?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "security health",
+              "health"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Zero Trust Pillars / Devices",
+      "source": "data/zero-trust.md section 'Zero Trust Pillars / Devices'"
+    },
+    {
+      "id": "sec-b-zero-trust-05-zero-trust-pillars-network",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "What does the Network pillar cover in Zero Trust?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "lateral movement",
+              "segmentation"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Zero Trust Pillars / Network",
+      "source": "data/zero-trust.md section 'Zero Trust Pillars / Network'"
+    },
+    {
+      "id": "sec-b-zero-trust-06-why-zero-trust-matters",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "Why does Zero Trust matter for my organisation?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "attack surface"
+            ],
+            [
+              "lateral movement",
+              "sensitive data",
+              "risk, not location"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Why Zero Trust Matters",
+      "source": "data/zero-trust.md section 'Why Zero Trust Matters'"
+    },
+    {
+      "id": "sec-b-zero-trust-07-how-deploy-iq-delivers-zero-trust",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "Is Deploy IQ's Zero Trust just a one-off assessment?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "structured",
+              "risk-aware",
+              "not a one-off"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: How Deploy IQ Delivers Zero Trust",
+      "source": "data/zero-trust.md section 'How Deploy IQ Delivers Zero Trust'"
+    },
+    {
+      "id": "sec-b-zero-trust-08-our-delivery-approach-prioritise",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "How do you prioritise Zero Trust controls?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "threat likelihood",
+              "likelihood"
+            ],
+            [
+              "exposure",
+              "dependencies",
+              "change complexity"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Our Delivery Approach / Prioritise",
+      "source": "data/zero-trust.md section 'Our Delivery Approach / Prioritise'"
+    },
+    {
+      "id": "sec-b-zero-trust-09-our-delivery-approach-implement",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "How are Zero Trust controls implemented without disrupting the business?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "phases",
+              "phased"
+            ],
+            [
+              "rollback",
+              "validation",
+              "testing"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Our Delivery Approach / Implement",
+      "source": "data/zero-trust.md section 'Our Delivery Approach / Implement'"
+    },
+    {
+      "id": "sec-b-zero-trust-10-what-makes-deploy-iq-different",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "Do you sell Zero Trust as a product?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "operational security uplift",
+              "controlled"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: What Makes Deploy IQ Different",
+      "source": "data/zero-trust.md section 'What Makes Deploy IQ Different'"
+    },
+    {
+      "id": "sec-b-zero-trust-11-security-that-pays-you-back",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "How much do insider threats drop with Zero Trust?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "55%",
+              "55 percent",
+              "55 per cent"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ],
+          "must_not_contain": [
+            "set prices",
+            "specialists can help"
+          ]
+        }
+      ],
+      "note": "Section: Security That Pays You Back | corrected by r4 final2 review",
+      "source": "data/zero-trust.md section 'Security That Pays You Back'"
+    },
+    {
+      "id": "sec-b-zero-trust-12-who-this-service-is-for",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "Is the Zero Trust service suitable for small businesses?",
+          "expect": "answer",
+          "must_contain": [
+            [
+              "any size",
+              "small businesses",
+              "large enterprises"
+            ]
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Who This Service Is For",
+      "source": "data/zero-trust.md section 'Who This Service Is For'"
+    },
+    {
+      "id": "sec-b-zero-trust-13-ready-to-strengthen-your-security-postur",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "Is Zero Trust a one-time project?",
+          "expect": "answer",
+          "must_contain": [
+            "journey"
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Ready to Strengthen Your Security Posture?",
+      "source": "data/zero-trust.md section 'Ready to Strengthen Your Security Posture?'"
+    },
+    {
+      "id": "sec-b-zero-trust-14-security-that-pays-you-back",
+      "category": "sec_zero-trust",
+      "turns": [
+        {
+          "query": "Who compiled the Zero Trust statistics on your site?",
+          "expect": "answer",
+          "must_contain": [
+            "ZeroThreat"
+          ],
+          "routes": [
+            "/zero-trust"
+          ]
+        }
+      ],
+      "note": "Section: Security That Pays You Back",
+      "source": "data/zero-trust.md section 'Security That Pays You Back'"
+    }
+  ]
+}

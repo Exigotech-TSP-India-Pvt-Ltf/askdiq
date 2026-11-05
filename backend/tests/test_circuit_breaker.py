@@ -3,6 +3,8 @@
 The Azure client is mocked; no network or database is used.
 """
 
+# pylint: disable=protected-access  # the modules' private clients are checked
+
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -22,6 +24,7 @@ from app.evaluation import judge
 from app.harness import orchestrator, prompts
 from app.retrieval import embeddings
 from app.schemas.query import SourceChunk
+from tests.grounded_fakes import patch_pipeline
 
 settings = get_settings()
 _REQUEST = httpx.Request("POST", "https://ci-test-resource.openai.azure.com/")
@@ -175,6 +178,9 @@ def test_outbound_clients_have_explicit_timeouts() -> None:
     assert judge_client.timeout == settings.azure_openai_request_timeout
     for client in (prompts._client, embeddings._embedding_client, judge_client):
         assert client.max_retries == settings.azure_openai_max_retries
+    # The answer call: its own timeout, no SDK retries (one app-level retry).
+    assert prompts._answer_client.timeout == settings.llm_answer_timeout_seconds
+    assert prompts._answer_client.max_retries == settings.llm_sdk_max_retries
 
 
 # --- call_llm integration -----------------------------------------------------
@@ -186,17 +192,32 @@ async def test_call_llm_timeout_trips_breaker_then_fails_fast(monkeypatch) -> No
     monkeypatch.setattr(prompts, "get_llm_breaker", lambda: breaker)
     # Keep the process-wide quota telemetry untouched by this test.
     monkeypatch.setattr(quota_monitor, "record_chat", MagicMock())
+    monkeypatch.setattr(prompts.settings, "llm_transport_retries", 1)
+    monkeypatch.setattr(prompts.settings, "llm_transport_retry_backoff_seconds", 0)
     create = AsyncMock(side_effect=_timeout_error())
-    monkeypatch.setattr(prompts._client.chat.completions, "create", create)
+    monkeypatch.setattr(prompts._answer_client.chat.completions, "create", create)
 
-    for _ in range(2):
-        with pytest.raises(openai.APITimeoutError):
-            await prompts.call_llm("What is DeployIQ?", ["DeployIQ is a platform."])
+    # One call = the attempt + one transport retry: two failures open it.
+    with pytest.raises(openai.APITimeoutError):
+        await prompts.call_llm("What is DeployIQ?", ["DeployIQ is a platform."])
+    assert create.await_count == 2
     assert breaker.state is CircuitState.OPEN
 
     with pytest.raises(CircuitOpenError):
         await prompts.call_llm("What is DeployIQ?", ["DeployIQ is a platform."])
     assert create.await_count == 2  # open breaker never reached Azure
+
+
+async def test_call_llm_does_not_retry_client_errors(monkeypatch) -> None:
+    breaker = _breaker(FakeClock(), threshold=5)
+    monkeypatch.setattr(prompts, "get_llm_breaker", lambda: breaker)
+    monkeypatch.setattr(quota_monitor, "record_chat", MagicMock())
+    create = AsyncMock(side_effect=_bad_request())
+    monkeypatch.setattr(prompts._answer_client.chat.completions, "create", create)
+
+    with pytest.raises(openai.BadRequestError):
+        await prompts.call_llm("What is DeployIQ?", ["DeployIQ is a platform."])
+    assert create.await_count == 1
 
 
 # --- Graceful llm_failed outcome ----------------------------------------------
@@ -213,12 +234,7 @@ def _source() -> SourceChunk:
 
 
 async def _run_query_with_llm(monkeypatch, fake_call_llm) -> object:
-    monkeypatch.setattr(orchestrator, "run_pre_checks", lambda *_a, **_k: [])
-
-    async def fake_retrieve(*_a, **_k):
-        return [_source()]
-
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
+    patch_pipeline(monkeypatch, [_source()], "{}")
     monkeypatch.setattr(orchestrator, "call_llm", fake_call_llm)
     return await orchestrator.run_query(
         query="What is Deploy IQ?",
@@ -242,7 +258,10 @@ async def test_mocked_llm_timeout_yields_llm_failed_outcome(monkeypatch) -> None
     assert response.outcome == "llm_failed"
     assert "llm_call_failed" in response.guardrail_flags
     assert response.grounded is False
-    assert calls == settings.max_llm_retries + 1
+    assert response.confidence == 0.0
+    assert response.sources == [] and response.citations == []
+    # Transport retries live inside call_llm: the orchestrator never stacks them.
+    assert calls == 1
 
 
 async def test_open_breaker_yields_llm_failed_without_retry(monkeypatch) -> None:

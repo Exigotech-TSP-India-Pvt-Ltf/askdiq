@@ -2,9 +2,10 @@
 abstention detection, ``EvalResult.passed`` gating, whole-word keyword
 matching, true recall, dataset integrity and the v2 cases."""
 
+# pylint: disable=use-implicit-booleaness-not-comparison  # assert an exact empty list
+
 from __future__ import annotations
 
-import json
 from collections import Counter
 from pathlib import Path
 
@@ -17,7 +18,6 @@ from app.evaluation import style_quality as sq
 from app.evaluation.dataset import ALL_DOCS, EVAL_CASES, EvalCase
 from app.evaluation.dataset_extra import (
     NO_PRICE_FIGURES,
-    PROMOTED_JSON,
     _to_cases,
     merge_cases,
 )
@@ -37,9 +37,10 @@ from app.guardrails.conversational import (
     get_contact_response,
 )
 from app.guardrails.pre_checks import run_pre_checks
+from app.schemas.query import QUERY_HARD_MAX_LENGTH
 
 _BACKEND = Path(__file__).resolve().parent.parent
-_REAL_DOCS = _BACKEND / "data" / "real_docs"
+_REAL_DOCS = _BACKEND / "data"
 _BY_ID = {c.id: c for c in EVAL_CASES}
 
 
@@ -313,9 +314,9 @@ def test_expected_docs_exist_in_all_docs_and_on_disk():
         assert not unknown, f"{case.id}: {unknown}"
     # the three framework docs are part of the corpus
     assert {
-        "cis-benchmark-assessment.md",
-        "iso-27001-technical-controls.md",
-        "security-baseline-assessment.md",
+        "cis-microsoft-365-foundations-benchmark-assessment.md",
+        "iso-27001-microsoft-365-technical-controls.md",
+        "microsoft-365-security-baseline-assessment.md",
     } <= ALL_DOCS
 
 
@@ -391,39 +392,48 @@ def test_complete_lists_where_the_kb_lists_them():
     assert m.missing_keywords("identity, network and data", pillars)
 
 
-def test_pricing_negatives_forbid_figures_and_require_contact():
+def test_pricing_negatives_forbid_figures_and_the_specialist_hand_off():
+    # No prices are published: a not-covered reply, never a figure and never
+    # a specialist hand-off.
     for case_id in ("negative_pricing", "negative_professional_price"):
         case = _BY_ID[case_id]
-        assert case.expected_keywords == ["contact|specialist|not published"]
+        assert case.expect_abstain and case.expected_keywords == []
         assert any(f.startswith("re:") for f in case.forbidden_keywords)
-        assert m.forbidden_found("Starter is free.", case.forbidden_keywords) == []
+        assert m.forbidden_found("No prices are listed.", case.forbidden_keywords) == []
         assert m.forbidden_found("It is $99 per month", case.forbidden_keywords)
+        assert m.forbidden_found("Talk to a specialist.", case.forbidden_keywords)
 
 
 def test_refusals_are_no_longer_the_expected_outcome_of_these_cases():
     ambiguous = _BY_ID["abstain_ambiguous"]
-    assert not ambiguous.expect_abstain and ambiguous.allow_clarification
+    # Cost without a service asks which service (clarification card).
+    assert not ambiguous.expect_abstain and ambiguous.expect_clarification is True
+    assert ambiguous.expect_clarification_headers == ["Service"]
     assert _BY_ID["abstain_ambiguous_it"].allow_clarification
     partial = _BY_ID["abstain_partial"]
     assert not partial.expect_abstain and partial.expect_grounded
     assert any("mitigation" in k for k in partial.expected_keywords)
+    # No page mentions SOC 2: the contradictory premise is not covered.
     contradictory = _BY_ID["abstain_contradictory"]
-    assert not contradictory.expect_abstain
-    assert (
-        contradictory.expected_keywords
-        and "not yet" in contradictory.expected_keywords[0]
-    )
+    assert contradictory.expect_abstain and not contradictory.expected_docs
+    assert contradictory.abstain_category == "not_in_corpus"
 
 
 def test_home_page_cases_match_the_current_home_page():
-    home = (_REAL_DOCS / "home-page.md").read_text(encoding="utf-8").lower()
+    home = (_REAL_DOCS / "home.md").read_text(encoding="utf-8").lower()
     shift = _BY_ID["homepage_ai_shift_cards"]
     assert "intelligence shift" in home and len(shift.expected_keywords) == 5
     for kw in ("agentic", "automation", "fast", "secure"):
         assert kw in home
     services = _BY_ID["services_overview"].expected_keywords
-    assert len(services) == 5
-    for needle in ("security baselines", "zero trust", "essential eight", "iso 27001"):
+    assert len(services) == 6
+    for needle in (
+        "security baselines",
+        "zero trust",
+        "essential eight",
+        "iso 27001",
+        "iso 42001",
+    ):
         assert needle in home
 
 
@@ -445,12 +455,16 @@ def test_v2_cases_load_and_are_well_formed():
 
 
 def test_v2_company_facts_and_free_offer():
-    assert _V2["v2_company_based"].expected_keywords == ["australia"]
+    assert _V2["v2_company_based"].expected_keywords == [
+        "australia|sydney|melbourne|brisbane"
+    ]
     assert _V2["v2_company_based"].expect_clarification is False
     assert _BY_ID["exigo_headquarters"].expect_clarification is False
+    # The free offer is the security posture snapshot, not the Starter plan.
     free = _V2["v2_anything_free"]
-    assert free.expected_docs == ["e8-service-page.md"]
-    assert "starter" in free.expected_keywords
+    assert free.expected_docs[0] == "home.md"
+    assert "free" in free.expected_keywords
+    assert m.forbidden_found("The Starter plan is free.", free.forbidden_keywords)
 
 
 def test_v2_off_topic_cat_and_not_covered_replies():
@@ -464,7 +478,10 @@ def test_v2_off_topic_cat_and_not_covered_replies():
         == []
     )
     assert m.forbidden_found("Not in my knowledge base.", cat.forbidden_keywords)
-    assert _V2["v2_not_covered_integration"].expected_keywords == ["specialist"]
+    # Not-covered replies never hand off to a specialist.
+    not_covered = _V2["v2_not_covered_integration"]
+    assert not_covered.expected_keywords == []
+    assert "specialist" in not_covered.forbidden_keywords
 
 
 def test_v2_safe_to_purchase_gates():
@@ -514,20 +531,23 @@ def test_v2_compliance_cases_expect_a_clarification_series():
 
 
 def test_v2_framework_cases_point_at_the_new_docs():
+    # The benchmark version is stated on the home page.
+    assert _V2["v2_cis_benchmark_version"].expected_docs == ["home.md"]
     assert (
-        _V2["v2_cis_benchmark_version"].expected_docs[0]
-        == "cis-benchmark-assessment.md"
+        _V2["v2_iso27001_scope"].expected_docs[0]
+        == "iso-27001-microsoft-365-technical-controls.md"
     )
     assert (
-        _V2["v2_iso27001_scope"].expected_docs[0] == "iso-27001-technical-controls.md"
+        _V2["v2_baseline_control_count"].expected_docs[0]
+        == "microsoft-365-security-baseline-assessment.md"
     )
-    assert _V2["v2_baseline_control_count"].expected_docs == [
-        "security-baseline-assessment.md"
-    ]
-    # Facts really are in the docs.
-    cis = (_REAL_DOCS / "cis-benchmark-assessment.md").read_text(encoding="utf-8")
-    base = (_REAL_DOCS / "security-baseline-assessment.md").read_text(encoding="utf-8")
-    assert "160" in cis and "7.0.0" in cis and "42" in base
+    # Facts really are in the docs; the CIS recommendation count is not.
+    assert _V2["v2_cis_recommendation_count"].expect_abstain
+    cis = _REAL_DOCS / "cis-microsoft-365-foundations-benchmark-assessment.md"
+    base = _REAL_DOCS / "microsoft-365-security-baseline-assessment.md"
+    home = (_REAL_DOCS / "home.md").read_text(encoding="utf-8")
+    assert "160" not in cis.read_text(encoding="utf-8") and "7.0.0" in home
+    assert "42" in base.read_text(encoding="utf-8")
 
 
 def test_v2_answer_keywords_are_present_in_the_ground_truth():
@@ -561,13 +581,6 @@ def test_promoted_cases_are_deduped_by_query():
     assert [c.id for c in merge_cases(base, extra)] == ["x", "z"]
 
 
-def test_promoted_json_has_no_duplicate_queries():
-    path = _BACKEND / PROMOTED_JSON
-    records = json.loads(path.read_text(encoding="utf-8"))
-    queries = [" ".join(r["query"].lower().split()) for r in records]
-    assert len(queries) == len(set(queries))
-
-
 def test_run_summary_lists_known_issues_and_gates():
     flagged = _case(id="known_one", known_issue="a real bug")
     report = EvaluationReport(
@@ -599,12 +612,21 @@ def test_run_summary_lists_known_issues_and_gates():
 _V3 = {c.id: c for c in EVAL_CASES if c.id.startswith("v3_")}
 
 
-def test_v3_query_too_long_expects_the_422_path_not_a_guardrail_reply():
-    case = _BY_ID["query_too_long"]
-    assert case.expect_http_status == 422
-    assert evaluator.schema_rejects(case.query)
+def test_query_too_long_reaches_the_pipeline_and_the_422_path_still_works():
+    # Over max_query_length but under the schema's hard cap: a guardrail reply.
+    assert _BY_ID["query_too_long"].expect_http_status is None
+    assert not evaluator.schema_rejects(_BY_ID["query_too_long"].query)
     assert not evaluator.schema_rejects("What is Zero Trust?")
-    result = evaluator._api_rejected_result(case, 0)
+    # Beyond the hard cap the schema rejects it; the 422 evaluator path holds.
+    case = _case(
+        query="x" * (QUERY_HARD_MAX_LENGTH + 1),
+        case_type="spam",
+        expect_grounded=False,
+        expect_flags_any=["query_too_long"],
+        expect_http_status=422,
+    )
+    assert evaluator.schema_rejects(case.query)
+    result = evaluator._api_rejected_result(case, 0)  # pylint: disable=protected-access
     assert result.passed and result.guardrail_flags == ["query_too_long"]
     # An in-range query is NOT rejected, so the same case would fail loudly.
     short = _case(
@@ -614,10 +636,10 @@ def test_v3_query_too_long_expects_the_422_path_not_a_guardrail_reply():
         expect_flags_any=["query_too_long"],
         expect_http_status=422,
     )
-    assert evaluator._api_rejected_result(short, 0).passed is False
+    assert evaluator._api_rejected_result(short, 0).passed is False  # pylint: disable=protected-access
 
 
-def test_v3_vague_prompts_expect_the_goal_card():
+def test_v3_vague_prompts_expect_the_goal_or_buying_card():
     queries = {
         "i need help",
         "tell me something",
@@ -631,7 +653,9 @@ def test_v3_vague_prompts_expect_the_goal_card():
     assert {c.query for c in vague} == queries
     for case in vague:
         assert case.expect_clarification is True
-        assert case.expect_clarification_headers == ["Goal"]
+        # Buying without a service gets the buying card (which service).
+        header = "Service" if case.query == "what should we buy" else "Goal"
+        assert case.expect_clarification_headers == [header]
         assert case.expect_no_sources
 
 
@@ -645,24 +669,22 @@ def test_v3_off_topic_incident_pricing_and_contact_gates():
         assert m.forbidden_found("See the materials", case.forbidden_keywords)
     for case_id in ("v3_incident_hacked", "v3_incident_breached"):
         case = _V3[case_id]
-        assert case.expect_no_sources and case.expected_keywords == ["specialist"]
+        assert case.expect_no_sources and case.expected_keywords == ["Contact page"]
         assert m.missing_keywords(INCIDENT_REPLY, case.expected_keywords) == []
         assert m.forbidden_found(INCIDENT_REPLY, case.forbidden_keywords) == []
+    # Pricing without a service asks which service; never a figure, and the
+    # Starter plan is not stated as free.
     for case_id in ("v3_pricing_quote", "v3_pricing_prices"):
         case = _V3[case_id]
-        assert m.missing_keywords(PRICING_REPLY, case.expected_keywords) == []
-        assert m.forbidden_found(PRICING_REPLY, case.forbidden_keywords) == []
+        assert case.expect_clarification is True and case.expected_keywords == []
+        assert case.expect_clarification_headers == ["Service"]
         assert m.forbidden_found("It is $99 per month.", case.forbidden_keywords)
-        # "free" outside the Starter plan is an invented offer
-        assert m.forbidden_found(
-            "A specialist can help. The audit is free.", case.forbidden_keywords
-        )
-        assert m.missing_keywords("A specialist can quote.", case.expected_keywords)
+        assert m.forbidden_found("The Starter plan is free.", case.forbidden_keywords)
+    # Contact details are answered from the Contact Us page.
     phone = _V3["v3_contact_phone"]
-    reply = get_contact_response()
-    assert m.missing_keywords(reply, phone.expected_keywords) == []
-    assert m.forbidden_found(reply, phone.forbidden_keywords) == []
-    assert m.forbidden_found("Call 1300 123 456.", phone.forbidden_keywords)
+    assert phone.expected_docs == ["contact-us.md"]
+    assert m.missing_keywords("Call us on 1300 394 468.", phone.expected_keywords) == []
+    assert m.forbidden_found(get_contact_response(), phone.forbidden_keywords) == []
 
 
 def test_v3_refusal_and_assurance_cases():
@@ -676,7 +698,7 @@ def test_v3_refusal_and_assurance_cases():
         assert run_pre_checks(case.query, 2000) == ["application_secret_request"]
     slack = _V3["v3_not_covered_slack"]
     assert slack.expect_clarification is False and slack.expect_no_sources
-    assert slack.expected_keywords == ["specialist"]
+    assert slack.expected_keywords == [] and "specialist" in slack.forbidden_keywords
     for case_id in ("v3_no_compliance_guarantee", "v3_safe_to_purchase_starter"):
         forbidden = _V3[case_id].forbidden_keywords
         assert m.forbidden_found("We guarantee it, fully certified.", forbidden)

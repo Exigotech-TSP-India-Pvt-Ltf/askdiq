@@ -28,7 +28,9 @@ _MAX_ANALYSED_CHARS = 4000
 _NEGATIVE_ANSWER_RE = re.compile(
     r"\b(?:do(?:es)?\s+not|don'?t|doesn'?t|cannot|can'?t|can\s+not|unable\s+to)"
     r"\s+(?:currently\s+|specifically\s+)?"
-    r"(?:have|provide|contain|specify|include|mention|cover|list|state|publish|confirm)\b|"
+    # "You don't have to choose" is not a decline.
+    r"(?:have(?!\s+to\b)|provide|contain|specify|include|mention|cover|list|state"
+    r"|publish|confirm)\b|"
     r"\bno\s+(?:specific\s+)?information\b|"
     r"\bnot\s+(?:yet\s+)?(?:provided|available|specified|claimed|listed|covered"
     r"|mentioned|stated)\b",
@@ -104,6 +106,32 @@ _HANDOFF_EXTRA_RE = re.compile(
     re.IGNORECASE,
 )
 _DECLINE_SENTENCE_MAX_WORDS = 45
+# "Baseline does not include 24/7 MDR": what a product includes, not what the
+# sources say ("The page does not include pricing" is still a decline).
+_PRODUCT_NEGATIVE_RE = re.compile(
+    r"\b(?:do(?:es)?\s+not|doesn'?t|don'?t)\s+(?:currently\s+)?(?:include|cover)\b",
+    re.IGNORECASE,
+)
+_SOURCE_WORDS_RE = re.compile(
+    r"\b(?:page|section|site|website|documents?|context|information|details?"
+    r"|specifics|materials)\b",
+    re.IGNORECASE,
+)
+
+
+def is_product_negative(text: str) -> bool:
+    """A sentence stating what a product does not include, with no other
+    decline / absence / hand-off wording and no word about the sources."""
+    plain = _MARKER_RE.sub("", text[:_MAX_ANALYSED_CHARS])
+    plain = plain.replace("\N{RIGHT SINGLE QUOTATION MARK}", "'")
+    return (
+        _PRODUCT_NEGATIVE_RE.search(plain) is not None
+        and _SOURCE_WORDS_RE.search(plain) is None
+        and not any(
+            r.search(plain)
+            for r in (_DECLINE_PHRASE_RE, _ABSENCE_RE, _HANDOFF_RE, _HANDOFF_EXTRA_RE)
+        )
+    )
 
 
 def is_decline_sentence(text: str, *, handoff: bool = True) -> bool:
@@ -196,8 +224,14 @@ _UNITS = r"(?:minutes?|hours?|days?|weeks?)"
 _SAFE = r"\bsafe(?:ly)?\b"
 _GUARANTEE = r"\bguarantee(?:d|s|ing)?\b"
 _CERT = r"\bcertif(?:ied|ication|ications)\b"
+_CERTIFIED = r"\bcertified\b"
+_CERTIFICATION = r"\bcertifications?\b"
+# "independent bodies certify" backs "bodies carry out certification" (the
+# process), never "we are certified" (an assurance about us).
+_CERTIFICATION_SUPPORT = rf"{_CERT}|\bcertif(?:y|ies|ying)\b"
 _COMPLIANT = r"\bcompliant\b|\bcompliance[- ]ready\b"
 _COMPLIANT_SUPPORT = r"\bcompliant\b|\bcompliance\b"
+_ALWAYS_ON = r"\b24\s?/\s?7\b|\b24\s?x\s?7\b|\b(?:a?round)[- ]the[- ]clock\b"
 _ROI = r"\broi\b|\breturn\s+on\s+investment\b"
 _SLA = r"\bslas?\b|\bservice\s+level\s+agreements?\b"
 _DISCOUNT = r"\bdiscounts?\b|\bpromo(?:tions?|tional)?\b"
@@ -322,14 +356,15 @@ _CLAIM_RULES: tuple[tuple[str, _Support | None], ...] = (
     ),
     (r"\bsafely\b", _regex_support(_SAFELY_SUPPORT)),
     (_GUARANTEE, _regex_support(_GUARANTEE)),
-    (_CERT, _regex_support(_CERT)),
+    (_CERTIFIED, _regex_support(_CERT)),
+    (_CERTIFICATION, _regex_support(_CERTIFICATION_SUPPORT)),
     (_COMPLIANT, _regex_support(_COMPLIANT_SUPPORT)),
     (r"\brisk[- ]free\b", None),
     (r"\b100\s?percent\b", None),
-    (
-        r"\b24\s?/\s?7\b|\b24\s?x\s?7\b|\bround[- ]the[- ]clock\b|\b24[ -]?hours?\b",
-        None,
-    ),
+    # "24/7", "24x7" and "round-the-clock" are one assurance: either backs
+    # the others ("24/7 Managed Detection & Response: round-the-clock ...").
+    (_ALWAYS_ON, _regex_support(_ALWAYS_ON)),
+    (r"\b24[ -]?hours?\b", None),
     (_ROI, _regex_support(_ROI)),
     (_WITHIN, _within_support),
     (
@@ -357,14 +392,27 @@ def _prepare_sources(source_text: str) -> _Sources:
     return _Sources(_normalize_text(raw), tuple(s for s in sentences if s))
 
 
-def unsupported_claims(answer: str, source_text: str) -> list[str]:
-    """Commercial/assurance claims in `answer` that the sources never make."""
+def unsupported_claims(
+    answer: str, source_text: str, *, page_text: str = ""
+) -> list[str]:
+    """Commercial/assurance claims in `answer` that the sources never make.
+
+    ``page_text``: the rest of the source's page. Only "free" may be backed
+    there ("Takes only 5 minutes" under "Get Your Free ... Assessment"), and
+    only by a sentence about the same subject; every other claim needs
+    ``source_text``.
+    """
     answer = " ".join(answer[:_MAX_ANALYSED_CHARS].split())
     sources = _prepare_sources(source_text)
+    page = _prepare_sources(f"{source_text}\n{page_text}") if page_text else sources
     unsupported: set[str] = set()
     for pattern, support in _COMPILED_CLAIM_RULES:
+        scope = page if support is _free_support else sources
         for match in itertools.islice(pattern.finditer(answer), _MAX_CLAIM_HITS):
-            if not support(match, answer, sources):
+            # "We don't guarantee X" makes no assurance claim.
+            if _negated(answer.lower(), match.start()):
+                continue
+            if not support(match, answer, scope):
                 unsupported.add(_normalize_text(match.group(0)))
     return sorted(unsupported)
 
@@ -640,12 +688,13 @@ def lexical_support(
     return [_lexical_containment(claim, scopes, minimum) for claim in claims]
 
 
-def supported_claim_ratio(
+def supported_claim_ratio(  # pylint: disable=too-many-arguments  # optional lexical inputs
     claim_embeddings: list[list[float]],
     source_embeddings: list[list[float]],
     threshold: float,
     claims: list[str] | None = None,
     source_text: str = "",
+    *,
     lexical: list[float] | None = None,
 ) -> float:
     """Share of claims whose best chunk reaches `threshold`.
@@ -770,7 +819,7 @@ async def check_groundedness(
         answer_embedding, claim_embeddings, source_embeddings = await _embed_for_check(
             answer, claims if check_claims else [], sources
         )
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught  # fail closed on any embed error
         return False, 0.0, "groundedness_check_failed"
 
     similarities = (
@@ -788,7 +837,7 @@ async def check_groundedness(
             max(threshold - _CLAIM_THRESHOLD_MARGIN, 0.0),
             claims,
             " ".join(source.content for source in sources),
-            lexical,
+            lexical=lexical,
         )
         >= min_supported_ratio
     )

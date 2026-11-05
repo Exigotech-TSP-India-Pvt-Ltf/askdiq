@@ -13,7 +13,7 @@ from app.harness.style import (
     ResponseStyle,
     style_instructions,
 )
-from app.harness.tone import humanise, polish_answer
+from app.harness.tone import drop_unrequested_caveat, humanise, polish_answer
 
 BUDGET_SECONDS = 5.0  # generous: guards against quadratic blow-ups, not machine load
 SPECIALIST_CLOSING = "If you'd like, one of our specialists can help with this."
@@ -74,7 +74,8 @@ def test_buzzword_pair_is_simplified() -> None:
         ("Robust checks run daily.", "Strong checks run daily."),
         ("It is seamless.", "It is smooth."),
         ("We leverage your data.", "We use your data."),
-        ("A comprehensive view.", "A full view."),
+        # The page's own degree word is kept (never overstated as "full").
+        ("A comprehensive view.", "A comprehensive view."),
         ("Let's delve into the plan.", "Let's look at the plan."),
     ],
 )
@@ -223,11 +224,13 @@ def test_adaptive_prompt_carries_the_human_style_rules(needle: str) -> None:
 
 
 @pytest.mark.parametrize("shape", ["partial", "out_of_scope"])
-def test_hand_over_shapes_use_natural_specialist_words(shape: str) -> None:
+def test_hand_over_shapes_never_restate_the_hand_over(shape: str) -> None:
+    # The partial / no-answer lines are added by code (prompt_catalog), so a
+    # style block never asks the model for a specialist line.
     block = style_instructions(ResponseStyle.ADAPTIVE, shape).partition(
         "Never use these phrases:"
     )[2]
-    assert "specialist" in block
+    assert "specialist" not in block
     assert "starting" not in block
 
 
@@ -274,8 +277,6 @@ def test_voice_filter_is_linear(text: str) -> None:
 
 
 def test_current_not_covered_tail_dropped_when_unasked() -> None:
-    from app.harness.tone import drop_unrequested_caveat
-
     body = "We keep a person in charge of every change."
     tail = (
         "I can't see any pricing or timeline details here, so it's best to "

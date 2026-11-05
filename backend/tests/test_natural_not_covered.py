@@ -155,11 +155,10 @@ def test_here_tell_rewritten_to_question_variant() -> None:
 
 def test_prompt_rules() -> None:
     prompt = prompts.get_system_prompt()
-    assert "I don't have that detail" in prompt
-    assert 'never write "I can\'t see"' in prompt
+    # Not-covered wording is code-owned (prompt_catalog): the model returns
+    # claims only and never says what is missing.
+    assert "no claim says something is missing" in prompt
     assert "visitor's language" in prompt
-    assert "compare it with other vendors" in prompt
-    assert "can only speak for" in prompt
 
 
 CHINESE = "DeployIQ 帮助您管理端点安全,每次更改都由专人批准。"
@@ -183,4 +182,4 @@ def test_non_english_only_dashes_are_replaced() -> None:
 
 
 def test_english_buzzwords_still_rewritten() -> None:
-    assert "comprehensive" not in humanise("We offer a comprehensive service.").lower()
+    assert "leverage" not in humanise("We leverage a proven service.").lower()

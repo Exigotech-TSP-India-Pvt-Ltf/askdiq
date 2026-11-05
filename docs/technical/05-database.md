@@ -474,7 +474,9 @@ Indexes: `ix_message_feedback_message_id`, `ix_message_feedback_session_id`, `ix
 ### eval_promoted_cases
 
 Model `EvalPromotedCase`. Golden regression cases promoted from feedback. Migration `5712ebd9d3c9`
-also imports the legacy file `backend/data/promoted_test_cases.json` into this table.
+also imports the legacy file `backend/data/promoted_test_cases.json` into this table when it
+exists. That file is retired (removed from the repo), so the import is skipped; its one case
+lives in the live golden set `backend/tests/golden/golden_cases.json` (id `nc-mtls-config`).
 
 | Column | Type | Null | Default | Notes |
 |---|---|---|---|---|
@@ -775,7 +777,7 @@ Note the file name with a space and an upper-case first letter: `A1b2c3d4e5f6 ad
 | 18 | `4c1e9a7d2b65` | `a9b0c1d2e3f4` | 2026-10-15 | Insights tables + taxonomy seed |
 | 19 | `bd75f2033c21` | `4c1e9a7d2b65` | 2026-10-16 | `CREATE STATISTICS stx_chat_messages_session_turn` + `ANALYZE chat_messages` |
 | 20 | `b0c1d2e3f4a5` | `bd75f2033c21` | 2026-10-15 | `brand_assets`, `brand_settings` + seed row |
-| 21 | `5712ebd9d3c9` | `b0c1d2e3f4a5` | 2026-10-15 | Feedback triage columns, `eval_promoted_cases`, imports `backend/data/promoted_test_cases.json` |
+| 21 | `5712ebd9d3c9` | `b0c1d2e3f4a5` | 2026-10-15 | Feedback triage columns, `eval_promoted_cases`, imports `backend/data/promoted_test_cases.json` when present (file retired; skipped) |
 | 22 | `72125f44984d` | `5712ebd9d3c9` | 2026-10-15 | Keyset/join indexes, `CREATE INDEX CONCURRENTLY IF NOT EXISTS` in an autocommit block |
 | 23 | `254857d10a20` | `72125f44984d` | 2026-10-16 | `documents.canonical_markdown`. **Code head on `preview/view`.** |
 
@@ -796,7 +798,7 @@ Create Date headers are not monotonic with the chain (e.g. #19 is dated after #2
 | 4 | `4c1e9a7d2b65` | Insights tables + seed |
 | 5 | `bd75f2033c21` | Extended statistics + `ANALYZE chat_messages` (brief load) |
 | 6 | `b0c1d2e3f4a5` | Branding tables + seed row |
-| 7 | `5712ebd9d3c9` | Feedback triage columns; reads `backend/data/promoted_test_cases.json` from the image |
+| 7 | `5712ebd9d3c9` | Feedback triage columns; reads `backend/data/promoted_test_cases.json` from the image if present (file retired; a missing file is skipped) |
 | 8 | `72125f44984d` | Concurrent index builds (no write lock; runs outside a transaction) |
 | 9 | `254857d10a20` | Adds nullable `documents.canonical_markdown` (existing docs stay NULL until re-ingested) |
 

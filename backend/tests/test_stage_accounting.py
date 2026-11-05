@@ -24,6 +24,7 @@ from app.harness import orchestrator
 from app.models.db_models import ChatMessageRecord
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import SourceChunk
+from tests.grounded_fakes import patch_pipeline
 
 
 def _make_source(
@@ -37,6 +38,16 @@ def _make_source(
         metadata={"source_name": "security.md"},
         embedding=[0.05] * 1536,
     )
+
+
+def _pipeline(monkeypatch, content: str, llm=None) -> None:
+    """Offline pipeline around one source; the reply must quote ``content``.
+
+    ``llm`` (default: the ``fake_llm`` fixture's) keeps its own token usage.
+    """
+    llm = llm or orchestrator.call_llm
+    patch_pipeline(monkeypatch, [_make_source(content)], "")
+    monkeypatch.setattr(orchestrator, "call_llm", llm)
 
 
 @pytest.mark.asyncio
@@ -84,17 +95,11 @@ async def test_query_stage_tokens_and_cost_persisted(
 
     monkeypatch.setattr("app.core.sessions.AsyncSessionLocal", TestingSessionLocal)
 
-    async def fake_retrieve(*a, **k):
-        return [_make_source()]
-
-    async def fake_post_checks(*a, **k):
-        return True, 0.95, []
-
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
+    answer = "DeployIQ implements Zero Trust architecture and Australian compliance."
+    _pipeline(monkeypatch, answer)
 
     fake_llm["set_response"](
-        "DeployIQ implements Zero Trust architecture and Australian compliance.",
+        answer,
         {
             "prompt_tokens": 120,
             "completion_tokens": 80,
@@ -146,12 +151,9 @@ async def test_retry_accumulation(
     """Verify multiple LLM attempts accumulate usage instead of overwriting."""
     attempt_count = 0
 
-    async def fake_retrieve(*_a, **_k):
-        return [_make_source()]
+    answer = "DeployIQ provides continuous governance and auditability."
 
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-
-    async def mock_call_llm(query, sources, history):
+    async def mock_call_llm(query, sources, history, **_kwargs):
         nonlocal attempt_count
         attempt_count += 1
         if attempt_count == 1:
@@ -165,7 +167,7 @@ async def test_retry_accumulation(
                 "cached_tokens": 0,
             }
         # Second attempt succeeds
-        return "DeployIQ provides continuous governance and auditability.", {
+        return answer, {
             "prompt_tokens": 100,
             "completion_tokens": 60,
             "total_tokens": 160,
@@ -174,7 +176,7 @@ async def test_retry_accumulation(
             "cached_tokens": 0,
         }
 
-    monkeypatch.setattr("app.harness.orchestrator.call_llm", mock_call_llm)
+    _pipeline(monkeypatch, answer, mock_call_llm)
 
     stage_timings = {}
     response = await orchestrator.run_query(
@@ -201,12 +203,11 @@ async def test_failure_path_cost_retention(
 ):
     """Verify ungrounded or empty answers still carry accumulated tokens and outcome."""
 
-    async def fake_retrieve(*_a, **_k):
-        return [_make_source()]
+    llm_calls = 0
 
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-
-    async def mock_call_llm_ungrounded(query, sources, history):
+    async def mock_call_llm_ungrounded(query, sources, history, **_kwargs):
+        nonlocal llm_calls
+        llm_calls += 1
         return "Invented unsupported answer with $999999 cost.", {
             "prompt_tokens": 80,
             "completion_tokens": 40,
@@ -216,7 +217,9 @@ async def test_failure_path_cost_retention(
             "cached_tokens": 0,
         }
 
-    monkeypatch.setattr("app.harness.orchestrator.call_llm", mock_call_llm_ungrounded)
+    _pipeline(
+        monkeypatch, "DeployIQ security architecture content", mock_call_llm_ungrounded
+    )
 
     stage_timings = {}
     response = await orchestrator.run_query(
@@ -230,9 +233,11 @@ async def test_failure_path_cost_retention(
 
     assert response.grounded is False
     assert response.outcome in ("ungrounded", "blocked")
-    assert response.prompt_tokens == 80
-    assert response.completion_tokens == 40
-    assert response.reasoning_tokens == 10
+    # A covered but unverified reply may be re-asked: every attempt's usage is kept.
+    assert llm_calls >= 1
+    assert response.prompt_tokens == 80 * llm_calls
+    assert response.completion_tokens == 40 * llm_calls
+    assert response.reasoning_tokens == 10 * llm_calls
     assert response.token_details is not None
 
 
@@ -250,17 +255,11 @@ async def test_admin_cost_breakdown_multi_tier(
 
     monkeypatch.setattr("app.core.sessions.AsyncSessionLocal", TestingSessionLocal)
 
-    async def fake_retrieve(*a, **k):
-        return [_make_source()]
-
-    async def fake_post_checks(*a, **k):
-        return True, 0.95, []
-
-    monkeypatch.setattr(orchestrator, "retrieve", fake_retrieve)
-    monkeypatch.setattr(orchestrator, "run_post_checks", fake_post_checks)
+    answer = "DeployIQ architecture documentation answer."
+    _pipeline(monkeypatch, answer)
 
     fake_llm["set_response"](
-        "DeployIQ architecture documentation answer.",
+        answer,
         {
             "prompt_tokens": 100,
             "completion_tokens": 50,
