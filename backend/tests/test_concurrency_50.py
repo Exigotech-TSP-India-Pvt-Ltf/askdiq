@@ -30,6 +30,7 @@ from app.core.database import get_db
 from app.governance import online_eval
 from app.insights.triggers import CLASSIFY_JOB
 from app.models.db_models import ChatMessageRecord, ChatSession
+from app.retrieval.retriever import PartRetrieval, RetrievalResult
 from app.schemas.query import SourceChunk
 from main import app
 from tests.loop_guard import LoopBlockingDetector
@@ -64,8 +65,16 @@ def _sources() -> list[SourceChunk]:
     ]
 
 
-async def _fake_retrieve(*_args, **_kwargs) -> list[SourceChunk]:
-    return _sources()
+async def _fake_retrieve(*_args, **_kwargs) -> RetrievalResult:
+    sources = _sources()
+    part = PartRetrieval(
+        query=QUESTION,
+        max_score=0.9,
+        chunk_ids=frozenset(s.chunk_id for s in sources),
+        contents=tuple(s.content for s in sources),
+        sources=tuple(sources),
+    )
+    return RetrievalResult(sources=sources, parts=[part])
 
 
 async def _slow_llm(*_args, **_kwargs):
@@ -166,7 +175,7 @@ async def conc_env(fake_embed, monkeypatch) -> AsyncGenerator[dict, None]:
     app.dependency_overrides[get_db] = _get_db
     with ExitStack() as stack:
         stack.enter_context(
-            patch("app.harness.orchestrator.retrieve", side_effect=_fake_retrieve)
+            patch("app.harness.orchestrator.retrieve_parts", side_effect=_fake_retrieve)
         )
         stack.enter_context(
             patch("app.harness.orchestrator.call_llm", side_effect=_slow_llm)
