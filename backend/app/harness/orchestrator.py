@@ -47,7 +47,11 @@ from app.guardrails.intent import (
 )
 from app.guardrails.normalize import normalise_input
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
-from app.guardrails.task_type import strip_reply_language, task_type_policy
+from app.guardrails.task_type import (
+    reply_language,
+    strip_reply_language,
+    task_type_policy,
+)
 from app.harness.ambiguity import assess
 from app.harness.answer_shape import detect_shape, refine_shape
 from app.harness.citations import (
@@ -77,6 +81,7 @@ from app.harness.clarify import (
     clarify_allowed,
     decide_clarification,
     is_buying,
+    is_foreign_price_ask,
     render_clarification_text,
     service_card,
 )
@@ -92,6 +97,7 @@ from app.harness.prompt_catalog import (
     POLICY_TEMPLATE_IDS,
     PRICING_LINE,
     PROMPT_VERSION,
+    REPLY_LANGUAGE_NOTE,
     covered_retry_block,
     fallback_line,
     policy_template,
@@ -715,6 +721,8 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
         buying = is_buying(query) and not is_booking_info_question(query)
     # "Talk to sales about X" is a buying ask whatever the classifier says.
     buying = buying or _SALES_ASK_RE.search(query) is not None
+    # "Was kostet Zero Trust?": the classifier knows English price words only.
+    buying = buying or is_foreign_price_ask(query)
     # A pick on the buying "which service?" card keeps that turn's intent.
     buying = buying or (clarification_reply and clarified_buying(history))
     split_asks = [] if clarification_reply else decompose_query(effective_query)
@@ -1543,7 +1551,7 @@ def _unanswered_terms(
     question not in English is skipped: its nouns are capitalised ("Wie
     lange dauert die kostenlose Sicherheitsbewertung?") and the English
     pages never name them."""
-    if _PREMISE_RE.search(query) or is_contact_ask(query) or _language_note(query):
+    if _PREMISE_RE.search(query) or is_contact_ask(query) or _foreign_question(query):
         return []
     text = " ".join(
         f"{_source_name(sources[c.source - 1])} {sources[c.source - 1].content}"
@@ -1701,7 +1709,17 @@ def _focus_sources(sources: list[SourceChunk], decision: RouteDecision) -> list[
 
 
 def _language_note(query: str) -> str:
-    """``LANGUAGE_NOTE`` for a question not written in English, else ""."""
+    """The reply-language note: an explicit request ("..., in Gujarati",
+    "russian mein jawaab do") names its language; else ``LANGUAGE_NOTE`` for
+    a question not written in English, else ""."""
+    language = reply_language(query)
+    if language:
+        return REPLY_LANGUAGE_NOTE.format(language=language)
+    return LANGUAGE_NOTE if _foreign_question(query) else ""
+
+
+def _foreign_question(query: str) -> bool:
+    """The question itself is not written in English."""
     words = _LETTER_WORD_RE.findall(query.lower())
     short_foreign = (
         len(words) >= _MIN_FOREIGN_WORDS
@@ -1711,8 +1729,7 @@ def _language_note(query: str) -> str:
             or any(w in _FOREIGN_FUNCTION_WORDS for w in words)
         )
     )
-    foreign = short_foreign or not looks_english(query)
-    return LANGUAGE_NOTE if foreign else ""
+    return short_foreign or not looks_english(query)
 
 
 def _cut_json(raw: str, draft: Draft) -> bool:

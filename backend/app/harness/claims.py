@@ -167,7 +167,8 @@ _EMAIL_RE = re.compile(r"\b[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){1,4}\b")
 _CONTACT_PAGE_KEYS = ("source_name", "page_title", "route", "section_path")
 _YES_NO_RE = re.compile(r"^\s{0,4}(?:yes|no)\s{0,2}[,.!;:]\s{1,4}(?=\S)", re.I)
 _QUOTE_CHARS = str.maketrans("", "", '"\u201c\u201d')
-_TERMINAL = ".!?:\u3002\uff01\uff1f"
+# Sentence ends: Latin, CJK, Devanagari danda / double danda, Arabic, Urdu.
+_TERMINAL = ".!?:\u3002\uff01\uff1f\u0964\u0965\u061f\u06d4"
 _LABEL_MAX_WORDS = 5
 _BANNED_LOWER = tuple(p.lower() for p in BANNED_PHRASES)
 _STEM_CHARS = 5
@@ -1574,6 +1575,14 @@ def _item_name_reason(claim: Claim, chunk: _Chunk) -> str | None:
         return None
     if f" {name} " in f" {_norm(claim.quote)} ":
         return None
+    # "There are seven stages: A, B, ..." - a lead-in counting the quote's own
+    # list (as "The seven stages are A, B, ..."), not one item's name.
+    counts = _list_counts(claim, chunk)
+    if counts and any(
+        _NUMBER_WORDS.get(m.group(0).lower(), m.group(0)) in counts
+        for m in _COUNT_TOKEN_RE.finditer(match.group(1))
+    ):
+        return None
     leaf = _norm(_HEADING_NUMBER_RE.sub("", _crumb_text(chunk).strip()))
     if leaf == name:
         return None
@@ -2759,7 +2768,7 @@ def _emit_group(out: list[Claim], group: list[Claim], index: int) -> None:
     sentence, or keeps its lead when it is too short for one."""
     cut = _strip_shared_lead(group)
     shared = _shared_lead(group) if cut is not group else 0
-    lead = " ".join(group[0].text.split()[:shared]).rstrip(" ,;:")
+    lead = " ".join(group[0].text.split()[:shared]).rstrip(" ,;:\u0964\u0965")
     pronoun = bool(shared) and lead.split()[0].lower() in _PRONOUN_LEADS
     led = (bool(out) and out[-1].part == group[0].part) if index == 0 else pronoun
     # "The control area is:" reads as one item, not a list's lead.

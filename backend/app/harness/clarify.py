@@ -1517,6 +1517,26 @@ def service_documents(
     return sorted(best.values(), key=lambda d: (-d.score, d.label))
 
 
+# "Was kostet Zero Trust?", "¿Cuánto cuesta?", "kitna price hai": a price ask
+# in another language gets the pricing / sales line like an English one. The
+# Indic spellings use no \b: their vowel signs are not word characters.
+_FOREIGN_PRICE_RE = re.compile(
+    r"\b(?:kostet|kosten|preis(?:e|en)?|precio|precios|cuesta|cuestan|prix|"
+    r"co[uû]te|prezzo|prezzi|pre[cç]o|custa|kitna|kitne|keemat|kimat|daam|"
+    r"stoimost\w{0,3}|tsena)\b|"
+    r"стоимост|цен[аы]|"
+    r"сколько\s{1,3}стоит|"
+    r"कीमत|दाम|किंमत|"
+    r"કિંમત",
+    re.IGNORECASE,
+)
+
+
+def is_foreign_price_ask(query: str) -> bool:
+    """A price question worded in another language (see _FOREIGN_PRICE_RE)."""
+    return _FOREIGN_PRICE_RE.search(query) is not None
+
+
 def is_buying(query: str) -> bool:
     """Fallback buying-intent check (price, quote, buy, demo, sign up)."""
     return _BUYING_RE.search(_scan(query)) is not None

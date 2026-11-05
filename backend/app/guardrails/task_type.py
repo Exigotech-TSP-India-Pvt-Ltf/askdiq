@@ -302,7 +302,13 @@ _REPLY_LANGUAGE_RE = re.compile(
     r"(?:(?:can|could|would)\s{1,3}you\s{1,3}(?:please\s{1,3})?)?"
     r"(?:(?:explain|answer|reply|respond|write|say|tell\s{1,3}me|describe)"
     r"(?:\s{1,3}(?:it|this|that|me))?\s{1,3})?"
-    rf"in\s{{1,3}}{_LANGUAGE}(?:\s{{1,3}}(?:please|language))?\s{{0,3}}[.!?]{{0,3}}\s{{0,3}}$",
+    rf"(?:in\s{{1,3}}(?P<lang>{_LANGUAGE})(?:\s{{1,3}}(?:please|language))?"
+    # Romanised Hindi: "..., russian mein jawaab do" / "hindi me batao".
+    rf"|(?P<hinglish>{_LANGUAGE})\s{{1,3}}(?:mein|mai|main|me|mei)\s{{1,3}}"
+    r"(?:jawaa?b|jawab|uttar|batao|bataiye|bataye|bataen|samjhao|samjhaiye|"
+    r"likho|likhiye|bolo|boliye)"
+    r"(?:\s{1,3}(?:do|dijiye|dena|karo|kijiye|please|pls))?)"
+    r"\s{0,3}[.!?।]{0,3}\s{0,3}$",
     re.IGNORECASE,
 )
 
@@ -311,6 +317,17 @@ def strip_reply_language(text: str) -> str:
     """The message without a trailing reply-language instruction."""
     stripped = _REPLY_LANGUAGE_RE.sub("", text).strip()
     return stripped or text
+
+
+def reply_language(text: str) -> str | None:
+    """The language a trailing reply-language instruction asks for ("What is
+    Zero Trust in Gujarati?" -> "Gujarati"); ``None`` without one or for
+    English."""
+    found = _REPLY_LANGUAGE_RE.search(text)
+    if found is None:
+        return None
+    language = (found.group("lang") or found.group("hinglish")).capitalize()
+    return None if language == "English" else language
 
 
 def is_reply_language(text: str) -> bool:

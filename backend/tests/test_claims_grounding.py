@@ -322,7 +322,12 @@ def _patch_pipeline(
             raise reply
         return reply, {"prompt_tokens": 10, "completion_tokens": 5}
 
+    async def no_contact_page(*_a, **_k):
+        # A buying ask fetches the KB contact page by route; this KB has none.
+        return []
+
     monkeypatch.setattr(orchestrator, "classify_intent", fake_intent)
+    monkeypatch.setattr(orchestrator, "route_sources", no_contact_page)
     monkeypatch.setattr(orchestrator, "retrieve_parts", fake_retrieve)
     monkeypatch.setattr(orchestrator, "decide_route", fake_route)
     monkeypatch.setattr(orchestrator, "clarify_allowed", lambda *_a, **_k: False)
@@ -924,6 +929,24 @@ def test_a_count_of_the_quotes_own_list_verifies():
 
 
 @pytest.mark.parametrize(
+    "text",
+    [
+        "Onboarding: Onboard, Assess, Recommend, Approve, Apply, Validate and Improve.",
+        "There are six stages: Onboard, Assess, Recommend, Approve, Apply, "
+        "Validate and Improve.",
+    ],
+)
+def test_a_lead_in_that_is_not_the_lists_count_is_still_an_item_name(text):
+    answer = _answer(
+        [_c("Onboard Assess Recommend Approve Apply Validate Improve", t=text)],
+        [_source(JOURNEY, name="packages.md")],
+        "How many stages are in the journey?",
+    )
+    assert not answer.answered
+    assert [reason for _, reason in answer.dropped] == ["item_name_not_heading"]
+
+
+@pytest.mark.parametrize(
     ("text", "reason"),
     [
         (
@@ -1177,7 +1200,8 @@ def test_fixed_lines_count_towards_the_word_cap(monkeypatch):
             "not sure, suggest I talk to a specialist",
             None,
         ),
-        ("thanks, bye - oh", "thanks, bye - oh", None),
+        # Not the whole question: a part restating it is answered by any claim.
+        ("thanks, bye - oh", "What is the assessment? thanks, bye - oh", None),
     ],
 )
 def test_partial_line_names_a_noun_phrase_or_nothing(ask, query, expected):

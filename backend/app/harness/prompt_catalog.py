@@ -34,7 +34,7 @@ __all__ = [
     "TRY_AGAIN_LINE",
 ]
 
-PROMPT_VERSION = "2026-11-05.p14"
+PROMPT_VERSION = "2026-11-05.p15"
 
 # ---------------------------------------------------------------------------
 # Fixed customer-facing lines (code adds them, the model never writes them)
@@ -686,6 +686,15 @@ LANGUAGE_NOTE = (
     "the question's language, translating q (names, numbers and addresses "
     'stay as written), never t "", except an "i" item that is only a name '
     '("Identity", "Patch Applications"): t "", k "i", one item each.'
+)
+# Sent after an explicit reply-language request ("What is Zero Trust in
+# Gujarati?", "russian mein jawaab do"); ``{language}`` is the named language.
+REPLY_LANGUAGE_NOTE = (
+    "The visitor asked for the reply in {language}: write every t as a full "
+    "sentence in {language} only (no words of any other language), "
+    "translating q (names, numbers and addresses stay as written), never "
+    't "", except an "i" item that is only a name ("Identity", "Patch '
+    'Applications"): t "", k "i", one item each.'
 )
 
 

@@ -876,6 +876,35 @@ _PRODUCT_EXPANSIONS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         ),
     )
 )
+# Catalogue names written in Devanagari / Gujarati script ("झिरो ट्रस्ट म्हणजे
+# काय?"): the English pages never contain them, so retrieval searches the
+# English name. Retrieval only, never shown; deliberately a short fixed list
+# (no general transliteration). No \b: Indic vowel signs are not \w.
+_NATIVE_NAME_EXPANSIONS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(pattern), phrase)
+    for pattern, phrase in (
+        (r"(?:झ|ज़|ज)[ीि]रो\s{0,3}ट्रस्ट|(?:ઝ|જ)[ીિ]રો\s{0,3}ટ્રસ્ટ", "Zero Trust"),
+        (
+            r"[एइ]से(?:ं|न्)शि?यल\s{0,3}(?:एट|एइट|ऐट)"
+            r"|[એઇ]સે(?:ં|ન્)શિ?યલ\s{0,3}(?:એટ|એઇટ|એઈટ)",
+            "Essential Eight",
+        ),
+        (
+            r"(?:डि|डे)प्ल(?:ॉ|ो)य(?:\s{0,3}आ[ईइ]\s{0,2}क्य[ुू])?"
+            r"|(?:ડિ|ડે)પ્લ(?:ૉ|ો)ય(?:\s{0,3}આ[ઈઇ]\s{0,2}ક્યુ?ૂ?)?",
+            "Deploy IQ",
+        ),
+        (
+            r"मा[इई]क्रोस(?:ॉ|ो)फ्ट\s{0,3}(?:365|३६५)|માઇ?ક્રોસ(?:ૉ|ો)ફ્ટ\s{0,3}(?:365|૩૬૫)",
+            "Microsoft 365",
+        ),
+        (r"आ[ईइ]\s{0,2}एस\s{0,2}ओ\s{0,3}(?:27001|२७००१)", "ISO 27001"),
+        (r"આ[ઈઇ]\s{0,2}એસ\s{0,2}ઓ\s{0,3}(?:27001|૨૭૦૦૧)", "ISO 27001"),
+        (r"आ[ईइ]\s{0,2}एस\s{0,2}ओ\s{0,3}(?:42001|४२००१)", "ISO 42001"),
+        (r"આ[ઈઇ]\s{0,2}એસ\s{0,2}ઓ\s{0,3}(?:42001|૪૨૦૦૧)", "ISO 42001"),
+        (r"सी\s{0,2}आ[ईइ]\s{0,2}एस|સી\s{0,2}આ[ઈઇ]\s{0,2}એસ", "CIS"),
+    )
+)
 # Casual paraphrases the cross-encoder cannot bridge: "who owns you guys?"
 # (logit -9.6; "who owns Deploy IQ?" 7.1) and "what jurisdiction applies to
 # the T&Cs?" (-10.3; with the pages' "governing law" wording -0.9).
@@ -1192,7 +1221,12 @@ def expand_retrieval_query(text: str) -> str:
     based" question also carries the company-fact vocabulary so the about-us
     chunk is retrieved on its own merit.
     """
-    expanded = _ML_RE.sub(lambda m: f"maturity level {_LEVEL_WORDS[m.group(1)]}", text)
+    expanded = text
+    for pattern, phrase in _NATIVE_NAME_EXPANSIONS:
+        expanded = pattern.sub(phrase, expanded)
+    expanded = _ML_RE.sub(
+        lambda m: f"maturity level {_LEVEL_WORDS[m.group(1)]}", expanded
+    )
     if _E8_RE.search(expanded) and not _E8_FULL_RE.search(expanded):
         expanded = _E8_RE.sub("Essential Eight", expanded)
     if _LOCATION_RE.search(expanded) and _LOCATION_TERMS not in expanded:
