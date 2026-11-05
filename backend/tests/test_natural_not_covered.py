@@ -182,4 +182,4 @@ def test_non_english_only_dashes_are_replaced() -> None:
 
 
 def test_english_buzzwords_still_rewritten() -> None:
-    assert "comprehensive" not in humanise("We offer a comprehensive service.").lower()
+    assert "leverage" not in humanise("We leverage a proven service.").lower()

@@ -883,7 +883,7 @@ _BUZZWORDS: tuple[tuple[str, str], ...] = (
     ("delves into", "looks at"),
     ("delving into", "looking at"),
     ("delve into", "look at"),
-    ("comprehensive", "full"),
+    # No ("comprehensive", "full"): it overstates the page's own wording.
     ("seamlessly", "smoothly"),
     ("seamless", "smooth"),
     ("leveraging", "using"),

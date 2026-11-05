@@ -3,6 +3,8 @@
 ``dedupe_across_pages`` keeps a repeated paragraph or list item only on the
 most specific page (the longest route: ``/zero-trust`` over ``/services``
 over ``/``), so one fact is retrieved from one place.
+``dedupe_upload`` applies the same rule to one uploaded document against the
+stored ones, changing only the upload.
 
 ``chunk_report`` lists what a reviewer must look at after an ingest: chunk
 counts and sizes, chunks that are too small or too large, leftover markup or
@@ -79,6 +81,35 @@ def dedupe_across_pages(
             kept.append(line)
         deduped[name] = "\n".join(kept)
     return deduped, removals
+
+
+def dedupe_upload(
+    name: str,
+    text: str,
+    route: str | None,
+    others: Mapping[str, tuple[str, str | None]],
+) -> tuple[str, list[dict]]:
+    """``(upload text, removals)``: the ``dedupe_across_pages`` rule for one page.
+
+    ``others`` maps every other document's name to ``(stored Markdown,
+    route)``. A paragraph or list item that another, more specific page
+    already carries is dropped from the upload; the other documents are
+    never changed (their de-duplicated text is discarded).
+    """
+    pages = {other: body for other, (body, _) in others.items() if other != name}
+    routes = {other: rte for other, (_, rte) in others.items() if other != name}
+    pages[name] = text
+    routes[name] = route
+    deduped, removals = dedupe_across_pages(pages, routes)
+    return deduped[name], [r for r in removals if r["page"] == name]
+
+
+def duplicate_warning(removal: Mapping[str, str]) -> str:
+    """The response warning for one line dropped by ``dedupe_upload``."""
+    return (
+        f'duplicate_removed: "{removal["text"]}" is already on '
+        f"{removal['kept_on']} (kept on the most specific page)"
+    )
 
 
 @dataclass

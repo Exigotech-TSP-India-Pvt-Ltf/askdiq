@@ -99,6 +99,18 @@ COMPANY_FACT_RE = re.compile(
     r"e-?mail|call you|offices?|abn)\b",
     re.IGNORECASE,
 )
+# "What services do you have?" asks for the whole catalogue: answered with
+# the list, never "which service is your question about?". Bounded gaps only.
+CATALOGUE_RE = re.compile(
+    r"\b(?:services|offerings|solutions|products|packages)\b.{0,30}?"
+    r"\b(?:you|u|deploy ?iq)\b.{0,20}?\b(?:have|offer|provide|sell|got|deliver)\b|"
+    r"\bwhat (?:do|does) (?:you|u|deploy ?iq) (?:offer|provide|sell|deliver)\b|"
+    r"\b(?:what|which) (?:are|r) (?:all )?(?:of )?(?:your|the) "
+    r"(?:services|offerings|solutions|products|packages)\b|"
+    r"\b(?:list|show me|tell me) (?:all )?(?:of )?(?:your|the) "
+    r"(?:services|offerings|solutions|products|packages)\b",
+    re.IGNORECASE,
+)
 # "How does it work?" with no history in a one-product assistant: answered
 # generally about the product, not by asking which service is meant.
 GENERIC_PRODUCT_RE = re.compile(
@@ -406,6 +418,7 @@ def is_company_or_generic(query: str) -> bool:
     scan = _scan(query)
     return (
         COMPANY_FACT_RE.search(scan) is not None
+        or CATALOGUE_RE.search(scan) is not None
         or is_generic_product_question(scan)
         or INCIDENT_RE.search(scan) is not None
     )
@@ -1096,8 +1109,16 @@ def resolve_clarification_reply(
         return None
     if _NOT_SURE_RE.search(_scan(query)) and len(query.split()) <= _MAX_POINTER_WORDS:
         everything = [o for q in last.questions for o in q.options]
+        # The offered options name what to choose between, so retrieval and
+        # the answer stay on their pages.
+        choices = " or ".join(
+            dict.fromkeys(o.label for o in everything if o.label != NOT_SURE_LABEL)
+        )
         return ResolvedReply(
-            query=compose_query(last.original_query, [_NOT_SURE_HINT]),
+            query=compose_query(
+                last.original_query,
+                [f"{_NOT_SURE_HINT}: {choices}" if choices else _NOT_SURE_HINT],
+            ),
             original_query=last.original_query,
             answers=[_entry(last.questions[0], [], query.strip()[:_MAX_OTHER_CHARS])],
             document_ids=list(
@@ -1111,9 +1132,9 @@ def resolve_clarification_reply(
     # Free text of any length refines the original question; the card's
     # option pages are searched for it. A short reply naming a product ("the
     # Strengthen package") leads the query, so retrieval finds that section.
-    offered = [o for q in last.questions for o in q.options]
     text = _clip(query, _MAX_OTHER_CHARS)
     short = len(text.split()) <= _MAX_POINTER_WORDS
+    offered = _offered_for(last, text if short else "")
     return ResolvedReply(
         query=lead_with(text, last.original_query)
         if short and names_product(text)
@@ -1122,6 +1143,20 @@ def resolve_clarification_reply(
         document_ids=list(dict.fromkeys(d for o in offered for d in o.document_ids)),
         free_text=True,
     )
+
+
+def _offered_for(clarification: Clarification, text: str) -> list[ClarificationOption]:
+    """The card options a free-text reply refines.
+
+    A short reply naming a service none of the options is about ("Essential
+    Eight" on a card without it) refines none of them: its own page is
+    retrieved, not the card's pages. ``text`` is empty for a long reply.
+    """
+    offered = [o for q in clarification.questions for o in q.options]
+    keys = {k for _s, _e, k in entity_mentions(_scan(text))}
+    if not keys:
+        return offered
+    return [o for o in offered if keys & {k for _s, _e, k in entity_mentions(o.label)}]
 
 
 _MAX_POINTER_WORDS = 8
@@ -1485,6 +1520,18 @@ def service_documents(
 def is_buying(query: str) -> bool:
     """Fallback buying-intent check (price, quote, buy, demo, sign up)."""
     return _BUYING_RE.search(_scan(query)) is not None
+
+
+def clarified_buying(history: list[ChatTurn] | None) -> bool:
+    """The last assistant turn was the buying "which service?" card.
+
+    A reply to it keeps the purchase intent of the turn that raised the card,
+    whatever the rewritten query ("ISO 27001 ...: can i have a quote") scores.
+    """
+    last = _last_clarification(history)
+    return last is not None and any(
+        q.question == BUYING_QUESTION for q in last.questions
+    )
 
 
 def names_product(query: str) -> bool:

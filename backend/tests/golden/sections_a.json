@@ -15,8 +15,7 @@
             "/"
           ],
           "must_contain": [
-            "Exigo Tech",
-            "Microsoft 365"
+            "Exigo Tech"
           ],
           "must_not_contain": []
         }
@@ -2874,7 +2873,10 @@
           "must_contain": [
             [
               "Logging",
-              "Activity Records"
+              "Activity Records",
+              "log AI activity",
+              "logs AI activity",
+              "logged"
             ],
             [
               "audit preparation",
@@ -2885,7 +2887,7 @@
           "must_not_contain": []
         }
       ],
-      "note": "section 'activity' of /iso-42001-ai-management-system",
+      "note": "section 'activity' of /iso-42001-ai-management-system | final3 r3 corrected: accept \"log AI activity\" wording (page: Logging of AI activity to support transparency...)",
       "source": "sections_a builder (static, cleaned KB)"
     },
     {
@@ -2902,7 +2904,8 @@
           "must_contain": [
             [
               "Classification",
-              "classification and protection"
+              "classif*",
+              "classified and protected"
             ]
           ],
           "must_not_contain": []

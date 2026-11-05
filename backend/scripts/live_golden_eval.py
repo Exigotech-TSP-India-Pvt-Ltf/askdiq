@@ -145,6 +145,11 @@ GAP_PHRASES = (
 EXTRA_INTERNAL = ("retrieved", "chunk", "[source", "provided context", "the context")
 _MARKER_RE = re.compile(r"\[\d{1,2}\]")
 _PAGE_FRAME_RE = re.compile(r"\bOur [^.:\n]{1,60} page in a nutshell:\s*")
+# app.harness.prompt_catalog.PARTIAL_LINE with its {parts} slot.
+_PARTIAL_LINE_RE = re.compile(
+    r"I don't have details on [^\n]{1,300}?, but I'm happy to help with "
+    r"anything else about our services\."
+)
 _MARKER_RUN_RE = re.compile(r"((?:\s*\[\d{1,2}\])+)")
 _DIGITS_RE = re.compile(r"\d{1,2}")
 _SENTENCE_RE = re.compile(r"[^.!?\n]+")
@@ -489,6 +494,9 @@ class ExpectedTexts:  # pylint: disable=too-many-instance-attributes  # one per 
         prose = _MARKER_RE.sub("", answer)
         # The page-link frame ("Our Terms page in a nutshell: ...") is fixed text.
         prose = _PAGE_FRAME_RE.sub("", prose)
+        # The partial line names the gaps ("on the weather and our CEO"): the
+        # named asks are not claims the answer makes.
+        prose = _PARTIAL_LINE_RE.sub("", prose)
         return without_fixed_lines(prose, self.fixed_lines)
 
     def for_flags(self, flags: list[str], template_id: str | None = None) -> set[str]:
@@ -680,7 +688,8 @@ class Checker:  # pylint: disable=too-many-instance-attributes,too-few-public-me
             errs += self._answered_labels(resp, answer, kind)
         elif kind == NOT_COVERED:
             errs += _decline_basics(outcome, "ungrounded", grounded, conf, has_refs)
-            if not self._is_no_answer(answer, buying=category == "buying"):
+            buying = spec.get("buying", "buying" in category)
+            if not self._is_no_answer(answer, buying=buying):
                 errs.append(f"answer is not the no-answer line: {answer[:80]}")
         elif kind in {OFF_TOPIC, BLOCKED}:
             errs += _decline_basics(outcome, "blocked", grounded, conf, has_refs)
@@ -723,7 +732,12 @@ class Checker:  # pylint: disable=too-many-instance-attributes,too-few-public-me
             return False
         if self.texts.sales and self.texts.sales.fullmatch(answer):
             return True
-        extra = sentences(answer.replace(norm(self.texts.no_answer), " "))
+        rest = answer.replace(norm(self.texts.no_answer), " ").strip()
+        # The no-answer line plus the sales line (buying, not covered): the
+        # email's "." must not split the sales line into two "sentences".
+        if self.texts.sales and self.texts.sales.fullmatch(rest):
+            return True
+        extra = sentences(rest)
         return bool(extra) and all(
             any(has_term(s, t) for t in CONTACT_TOKENS) for s in extra
         )

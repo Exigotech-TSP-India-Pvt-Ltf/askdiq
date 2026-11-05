@@ -1,6 +1,7 @@
 import pytest
 
 from app.guardrails.pre_checks import (
+    check_code_only,
     check_length,
     check_sensitive_request,
     check_spam,
@@ -188,3 +189,37 @@ def test_buy_now_alone_is_a_purchase_ask_not_spam():
 )
 def test_is_junk_input(query, junk):
     assert is_junk_input(query) is junk
+
+
+@pytest.mark.parametrize(
+    ("query", "code_only"),
+    [
+        ("alert(1)", True),  # "<script>alert(1)</script>" after normalising
+        ("<img src=x onerror=alert(1)>", True),
+        ("def hello():\nprint('hi')\nhello()", True),
+        ("x = foo(bar);", True),
+        ("what is Zero Trust?", False),  # "what is <b>Zero Trust</b>?"
+        ("what service(s) do you offer?", False),
+        ("service(s)?", False),
+        ("E8 alert(1)", False),
+        ('{"question": "how long is the booking session?"}', False),
+        ("mailto:info@deployiq.co", False),
+        ("!@#$%^&*()_+", False),  # symbols only: the junk check answers it
+        ("E8?", False),
+        ("what is MFA(multi-factor)?", False),
+    ],
+)
+def test_check_code_only(query, code_only):
+    assert check_code_only(query) == (
+        (False, "off_topic") if code_only else (True, None)
+    )
+
+
+def test_code_only_input_is_off_topic_in_pre_checks():
+    assert run_pre_checks("alert(1)", 2000, raw="<script>alert(1)</script>") == [
+        "off_topic"
+    ]
+    assert (
+        run_pre_checks("what is Zero Trust?", 2000, raw="what is <b>Zero Trust</b>?")
+        == []
+    )

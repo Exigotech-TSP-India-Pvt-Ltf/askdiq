@@ -47,7 +47,7 @@ from app.guardrails.intent import (
 )
 from app.guardrails.normalize import normalise_input
 from app.guardrails.pre_checks import run_pre_checks, sanitize_query
-from app.guardrails.task_type import task_type_policy
+from app.guardrails.task_type import strip_reply_language, task_type_policy
 from app.harness.ambiguity import assess
 from app.harness.answer_shape import detect_shape, refine_shape
 from app.harness.citations import (
@@ -63,6 +63,9 @@ from app.harness.claims import (
     SalesContact,
     find_sales_contact,
     ground_answer,
+    list_draft,
+    list_names,
+    missing_list_names,
     overview_draft,
     parse_draft,
 )
@@ -70,6 +73,7 @@ from app.harness.clarify import (
     CLARIFY_OUTCOME,
     boost_documents,
     catalogue_documents,
+    clarified_buying,
     clarify_allowed,
     decide_clarification,
     is_buying,
@@ -82,6 +86,7 @@ from app.harness.persona import persona_response
 from app.harness.prompt_catalog import (
     LANGUAGE_NOTE,
     OVERVIEW_NOTE,
+    POLICY_IDENTITY,
     POLICY_NONE,
     POLICY_OFF_TOPIC,
     POLICY_TEMPLATE_IDS,
@@ -98,16 +103,23 @@ from app.harness.prompts import _MAX_HISTORY_TURNS, NO_ANSWER_LINE, call_llm
 from app.harness.style import resolve_style, use_style
 from app.retrieval.reranker import entity_documents, entity_mentions, looks_english
 from app.retrieval.retriever import (
+    SERVICE_LIST_SECTION,
     covered_sources,
     decide_route,
     decompose_query,
     is_contact_ask,
+    is_service_list_ask,
     log_safe_text,
     needs_conversation_context,
+    page_summary_sources,
     resolve_page_urls,
     retrieve_parts,
     route_sources,
+    service_list_only,
+    summary_page_document,
     trust_clarified,
+    trust_page_summary,
+    with_section_siblings,
 )
 from app.retrieval.vector_store import VectorStore
 from app.schemas.query import ChatTurn, Clarification, QueryResponse, SourceChunk
@@ -427,6 +439,48 @@ def _classifier_reply(
     return canned_reply_for(reply_key, query)
 
 
+async def _complete_service_list(
+    grounded: GroundedAnswer,
+    query: str,
+    sources: list[SourceChunk],
+    *,
+    numbered: bool,
+    sales: SalesContact | None,
+    token_details: dict,
+) -> GroundedAnswer:
+    """ "What services do you have?" ships every service of the services
+    list: when the model's verified list left one out, the list section's
+    own entries (verbatim, verified like any claim) are the answer."""
+    if not is_service_list_ask(query):
+        return grounded
+    index = next(
+        (
+            i
+            for i, s in enumerate(sources, start=1)
+            if ((s.metadata or {}).get("section_path") or [None])[0]
+            == SERVICE_LIST_SECTION
+        ),
+        None,
+    )
+    if index is None:
+        return grounded
+    names = list_names(sources[index - 1])
+    if not names or (
+        grounded.answered and not missing_list_names(grounded.text, names)
+    ):
+        return grounded
+    listed = await asyncio.to_thread(
+        ground_answer,
+        list_draft(names, index, query),
+        sources,
+        query,
+        numbered=numbered,
+        sales_contact=sales,
+    )
+    token_details["service_list_backstop"] = listed.answered
+    return listed if listed.answered else grounded
+
+
 @with_page_link
 async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,too-many-return-statements,too-many-branches,too-many-statements
     query: str,
@@ -661,7 +715,20 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
         buying = is_buying(query) and not is_booking_info_question(query)
     # "Talk to sales about X" is a buying ask whatever the classifier says.
     buying = buying or _SALES_ASK_RE.search(query) is not None
-    asks = 1 if clarification_reply else len(decompose_query(effective_query))
+    # A pick on the buying "which service?" card keeps that turn's intent.
+    buying = buying or (clarification_reply and clarified_buying(history))
+    split_asks = [] if clarification_reply else decompose_query(effective_query)
+    asks = 1 if clarification_reply else len(split_asks)
+    # "What does X cover and how much does it cost?": the classifier scores
+    # the whole message as a question, but its price ask is a buying ask
+    # (facts, then the pricing and sales lines).
+    buying = buying or (
+        asks > 1
+        and any(
+            _PRICE_ASK_RE.search(a) is not None and not is_booking_info_question(a)
+            for a in split_asks
+        )
+    )
     # A message that may get a "which service?" card is retrieved wider, so
     # its options cover every service page the question matches.
     wide = clarify_allowed(
@@ -684,11 +751,23 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
         # answered (quote-backed generation still drops unsupported claims)
         # unless the reply is off-domain.
         route_decision = trust_clarified(route_decision)
+    elif len(retrieval.parts) == 1 and (
+        summary_page_document(vector_store, query, history)
+        in retrieval.parts[0].document_ids
+    ):
+        # "Summarise the About Us page": the named, retrieved page answers it.
+        route_decision = trust_page_summary(route_decision)
     # Covered asks' chunks only, in cross-encoder order; a reply to a
     # clarification puts the chosen options' documents first.
     sources: list[SourceChunk] = boost_documents(
         covered_sources(retrieval, route_decision), boost_document_ids
     )
+    if route_decision.route in (Route.ANSWER, Route.PARTIAL):
+        # A list ask that found some items of a section gets all of them.
+        sources = await with_section_siblings(vector_store, sources)
+        if len(retrieval.parts) == 1:
+            sources = service_list_only(query, sources)
+            sources = await page_summary_sources(vector_store, query, sources, history)
     stage_timings["retrieval"] = (time.perf_counter() - t0) * 1000
     logger.info(
         "retrieval_gate",
@@ -1010,6 +1089,11 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
         # line names the off-topic one.
         logger.info("policy_off_topic_part", request_id=request_id)
         policy = POLICY_NONE
+    if policy == POLICY_IDENTITY and is_contact_ask(query):
+        # "Can I call you?" asks for our contact details, not who the
+        # assistant is: answered from the contact page.
+        logger.info("policy_identity_contact_ask", request_id=request_id)
+        policy = POLICY_NONE
     if policy != POLICY_NONE:
         token_details["outcome"] = "blocked"
         token_details["policy"] = policy
@@ -1111,6 +1195,16 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
         if retried is not None:
             grounded_answer = retried
 
+    if len(retrieval.parts) == 1:
+        grounded_answer = await _complete_service_list(
+            grounded_answer,
+            query,
+            sources,
+            numbered=shape.value == "how_to",
+            sales=sales,
+            token_details=token_details,
+        )
+
     if topic and not grounded_answer.answered:
         # Deterministic last resort: the topic's page sentences, verbatim and
         # verified like any claim (gpt-5-mini cannot run at temperature 0).
@@ -1141,6 +1235,9 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
         subject = _subject_unanswered(query, grounded_answer)
         if subject:
             missing_terms = [*missing_terms, subject]
+        condition_only = _condition_only_subject(query, grounded_answer)
+        if condition_only:
+            missing_terms = [*missing_terms, condition_only]
         if missing_terms:
             # "How do you handle PCI DSS?" answered with framework facts that
             # never name PCI DSS: a stretched answer, so the no-answer line.
@@ -1368,7 +1465,10 @@ _PREMISE_RE = re.compile(
 )
 
 
-_TERM_RE = re.compile(r"[A-Za-z][A-Za-z0-9'&+.\-]*|[.!?]")
+# A word never ends in "." so "first. Could you ..." still starts a sentence.
+_TERM_RE = re.compile(r"[A-Za-z](?:[A-Za-z0-9'&+.\-]*[A-Za-z0-9&+])?|[.!?]")
+_CONTRACTION_RE = re.compile(r"['\u2019](?:m|re|ve|ll|d|s|t)$", re.IGNORECASE)
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 _BACKING_WORD_RE = re.compile(r"[a-z0-9]+")
 _TERM_PREFIX = 4
 _MAX_DEFINE_WORDS = 4
@@ -1385,20 +1485,34 @@ _NOT_TERMS = frozenset(
         "you", "we", "us", "do", "does", "is", "are",
     }
 )  # fmt: skip
+# "What is the Strengthen stage about?", "What's covered under ISO 27001?":
+# a subject with a preposition is not a definition ask.
+_PREPOSITIONS = frozenset(
+    {
+        "about", "above", "across", "after", "against", "among", "around",
+        "at", "before", "behind", "below", "between", "by", "during", "for",
+        "from", "in", "into", "of", "on", "over", "through", "to", "under",
+        "until", "via", "with", "within", "without",
+    }
+)  # fmt: skip
 
 
 def _ask_terms(query: str) -> list[str]:
     """The names a single ask turns on: mid-sentence capitalised words and
     acronyms ("PCI", "DSS", "SOC"), plus a definition ask's subject words
-    ("MFA fatigue"). Aliases with digits ("e8", "M365") are left out."""
+    ("MFA fatigue"). Aliases with digits ("e8", "M365") are left out. Only
+    the question sentences count when there are any ("My TFN is ... What
+    does Foundation include?")."""
     brand = set(_BACKING_WORD_RE.findall(get_settings().brand_name.lower()))
+    sentences = _SENTENCE_END_RE.split(query.strip())
+    query = " ".join(s for s in sentences if s.endswith("?")) or query
     terms: list[str] = []
     initial = True
     for piece in _TERM_RE.findall(query):
         if piece in ".!?":
             initial = True
             continue
-        bare = piece.strip(".'").removesuffix("'s").removesuffix("'S")
+        bare = _CONTRACTION_RE.sub("", piece.strip(".'"))
         for word in filter(None, bare.split("-")):
             low = word.lower()
             if (
@@ -1413,7 +1527,9 @@ def _ask_terms(query: str) -> list[str]:
     match = _DEFINE_RE.match(query)
     if match:
         words = _BACKING_WORD_RE.findall(match.group(1).lower())
-        if len(words) <= _MAX_DEFINE_WORDS and not set(words) & (_NOT_TERMS | brand):
+        if len(words) <= _MAX_DEFINE_WORDS and not set(words) & (
+            _NOT_TERMS | _PREPOSITIONS | brand
+        ):
             terms += [w for w in words if not any(ch.isdigit() for ch in w)]
     return list(dict.fromkeys(terms))
 
@@ -1423,8 +1539,11 @@ def _unanswered_terms(
 ) -> list[str]:
     """The ask's terms that no kept claim's chunk names (prefix match, so
     plurals and typos still count); [] for a premise question or a contact
-    ask ("an office in Perth?" is answered by the offices we do have)."""
-    if _PREMISE_RE.search(query) or is_contact_ask(query):
+    ask ("an office in Perth?" is answered by the offices we do have). A
+    question not in English is skipped: its nouns are capitalised ("Wie
+    lange dauert die kostenlose Sicherheitsbewertung?") and the English
+    pages never name them."""
+    if _PREMISE_RE.search(query) or is_contact_ask(query) or _language_note(query):
         return []
     text = " ".join(
         f"{_source_name(sources[c.source - 1])} {sources[c.source - 1].content}"
@@ -1434,14 +1553,34 @@ def _unanswered_terms(
     words = set(_BACKING_WORD_RE.findall(text))
     prefixes = {w[:_TERM_PREFIX] for w in words if len(w) >= _TERM_PREFIX}
     out: list[str] = []
-    for term in _ask_terms(query):
+    # "What is Zero Trust in German?": the reply language is not a term to find.
+    for term in _ask_terms(strip_reply_language(query)):
         parts = _BACKING_WORD_RE.findall(term)
+        if _initialism_named(term, text):
+            continue
         if not all(
             p in words if len(p) < _TERM_PREFIX else p[:_TERM_PREFIX] in prefixes
             for p in parts
         ):
             out.append(term)
     return out
+
+
+_MIN_INITIALS = 2
+
+
+def _initialism_named(term: str, text: str) -> bool:
+    """ "T&Cs" (or "Q&A") named by its words in ``text``: "Terms &
+    Conditions", "terms and conditions"."""
+    initials = [p.removesuffix("s") or p for p in _BACKING_WORD_RE.findall(term)]
+    if (
+        "&" not in term
+        or len(initials) < _MIN_INITIALS
+        or any(len(p) != 1 for p in initials)
+    ):
+        return False
+    pattern = r"\s{0,3}(?:&|and)\s{0,3}".join(rf"\b{p}[a-z]*" for p in initials)
+    return re.search(pattern, text) is not None
 
 
 # A yes/no ask about a named third party ("is Microsoft certified ...?").
@@ -1468,6 +1607,53 @@ def _subject_unanswered(query: str, answer: GroundedAnswer) -> str | None:
         return None
     said = set(_BACKING_WORD_RE.findall(" ".join(c.text for c in answer.kept).lower()))
     return None if said & set(words) else " ".join(words)
+
+
+# "How does ransomware encrypt files?": a how-it-works ask about a subject.
+_HOW_SUBJECT_RE = re.compile(
+    r"^\s{0,4}how\s{1,3}(?:does|do|can|could|would|will)\s{1,3}"
+    r"(?:(?:an?|the)\s{1,3})?([A-Za-z][\w-]{2,30})\b",
+    re.IGNORECASE,
+)
+# Clause openers that make what follows a condition, not the claim's subject.
+_CONDITION_RE = re.compile(
+    r"\b(?:if|when|whenever|unless|in\s{1,3}(?:the\s{1,3})?(?:event|case)\s{1,3}of)\b",
+    re.IGNORECASE,
+)
+_SELF_WORDS = frozenset({"you", "we", "i", "it", "they", "this", "that", "your", "our"})
+
+
+def _condition_only_subject(query: str, answer: GroundedAnswer) -> str | None:
+    """The subject of a how-it-works ask that the kept claims name only
+    inside a condition: "backups ensure you can recover if ransomware
+    encrypts files" is about backups and never says how ransomware encrypts
+    files. ``None`` when the ask is about us / the visitor, or any claim
+    names the subject outside a condition (or not at all)."""
+    match = _HOW_SUBJECT_RE.match(query)
+    if match is None:
+        return None
+    subject = match.group(1).lower()
+    brand = set(_BACKING_WORD_RE.findall(get_settings().brand_name.lower()))
+    if subject in _SELF_WORDS | _NOT_TERMS | brand:
+        return None
+    stem = subject[:_TERM_PREFIX]
+    named = False
+    for claim in answer.kept:
+        text = claim.text.lower()
+        at = next(
+            (
+                m.start()
+                for m in _BACKING_WORD_RE.finditer(text)
+                if m.group().startswith(stem)
+            ),
+            -1,
+        )
+        if at < 0:
+            continue
+        named = True
+        if not _CONDITION_RE.search(text[:at]):
+            return None
+    return subject if named else None
 
 
 def _premise_parts_covered(draft: Draft, query: str) -> Draft:

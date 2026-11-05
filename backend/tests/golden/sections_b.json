@@ -696,11 +696,13 @@
             ]
           ],
           "routes": [
-            "/platform"
+            "/platform",
+            "/secure-ai",
+            "/responsible-ai"
           ]
         }
       ],
-      "note": "Section: What Deploy IQ Platform Enables",
+      "note": "Section: What Deploy IQ Platform Enables. Same fact on secure-ai.md:107 ('Evidence is produced as work occurs') and responsible-ai.md:84 ('Evidence generation to support audit, assurance, and compliance').",
       "source": "data/platform.md section 'What Deploy IQ Platform Enables'"
     },
     {
@@ -846,7 +848,9 @@
             "personal information",
             [
               "cookies",
-              "cookie"
+              "cookie",
+              "chatbot",
+              "website"
             ]
           ],
           "routes": [
@@ -854,7 +858,7 @@
           ]
         }
       ],
-      "note": "Section: Intro",
+      "note": "Section: Intro. A scope-section answer (website, forms, chatbot, services data) is also correct for 'what does it cover'.",
       "source": "data/privacy.md section 'Intro'"
     },
     {

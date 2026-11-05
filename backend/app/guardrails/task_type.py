@@ -294,11 +294,46 @@ def _is_creative(text: str) -> bool:
     return all(_CREATIVE_RE.search(c) is not None for c in clauses)
 
 
+# "..., explain in German" / "answer in Spanish please": how to reply, not
+# something to look up. Stripped from the retrieval text (the model still
+# sees the whole message) and never a part of its own.
+_REPLY_LANGUAGE_RE = re.compile(
+    r"(?:^|[\s,;:.!?]{1,3})(?:(?:and|please|pls)\s{1,3})?"
+    r"(?:(?:can|could|would)\s{1,3}you\s{1,3}(?:please\s{1,3})?)?"
+    r"(?:(?:explain|answer|reply|respond|write|say|tell\s{1,3}me|describe)"
+    r"(?:\s{1,3}(?:it|this|that|me))?\s{1,3})?"
+    rf"in\s{{1,3}}{_LANGUAGE}(?:\s{{1,3}}(?:please|language))?\s{{0,3}}[.!?]{{0,3}}\s{{0,3}}$",
+    re.IGNORECASE,
+)
+
+
+def strip_reply_language(text: str) -> str:
+    """The message without a trailing reply-language instruction."""
+    stripped = _REPLY_LANGUAGE_RE.sub("", text).strip()
+    return stripped or text
+
+
+def is_reply_language(text: str) -> bool:
+    """The text is only a reply-language instruction ("explain in german")."""
+    return bool(text.strip()) and not _REPLY_LANGUAGE_RE.sub("", text).strip()
+
+
+# "deplloyiq" / "deploy iq" / "exigo": our name, typos included.
+_OUR_NAME_RE = re.compile(r"\bde+p+l+o+y+[\s_-]{0,3}i?q\b|\bexigo\b", re.IGNORECASE)
+_TRANSLATE_WORD_RE = re.compile(r"\btranslat", re.IGNORECASE)
+
+
 def _is_translation(text: str) -> bool:
-    return (
-        _TRANSLATION_RE.search(text) is not None
-        and _PLAIN_LANGUAGE_RE.search(text) is None
-    )
+    if _TRANSLATION_RE.search(text) is None or _PLAIN_LANGUAGE_RE.search(text):
+        return False
+    # "What is DeployIQ, explain in German": a question about us (or one of
+    # our services) with a reply language, answered from the KB like "what
+    # is DeployIQ? answer in Spanish". Only "translate ..." stays a task.
+    if _TRANSLATE_WORD_RE.search(text):
+        return True
+    from app.retrieval.reranker import entity_mentions  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    return not (_about_us(text) or _OUR_NAME_RE.search(text) or entity_mentions(text))
 
 
 def _is_recommendation(text: str) -> bool:

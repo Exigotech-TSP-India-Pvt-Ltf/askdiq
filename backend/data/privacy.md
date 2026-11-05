@@ -190,7 +190,7 @@ Full service terms are defined in engagement agreements, not in this Privacy Pol
 
 **Deploy IQ**
 
-Suite B5 & B6, Norwest NSW 2145
+Suite B5 & B6, Norwest NSW 2153
 
 Email: **[Link]** info@deployiq.co → mailto:info@deployiq.co
 

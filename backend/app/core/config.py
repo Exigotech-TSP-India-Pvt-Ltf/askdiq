@@ -192,7 +192,9 @@ class Settings(BaseSettings):
     # cost scales with candidate count; this was the single largest
     # contributor to /query latency (~9.7s p50 at multiplier=5/min=25).
     retrieval_candidate_multiplier: int = 1
-    retrieval_candidate_min: int = 8
+    retrieval_candidate_min: int = (
+        10  # owner 2026-11-05: 10 (25 fixed more wrong-page asks, +1.2 s p50)
+    )
     # Hybrid lexical / named-entity signal added to the cosine score before
     # rerank (string ops on the retrieved pool only; no extra embedding call).
     retrieval_hybrid_enabled: bool = True
@@ -212,6 +214,12 @@ class Settings(BaseSettings):
     # embedding, no extra embedding call) and merge its top chunks in.
     retrieval_entity_fetch_enabled: bool = True
     retrieval_entity_fetch_k: int = Field(default=8, ge=1, le=16)
+    # Postgres full-text channel (websearch_to_tsquery, ts_rank_cd), fused with
+    # the cosine order by Reciprocal Rank Fusion before the rerank-pool trim.
+    # Off: on 659 golden asks content-hit@5 84.98% vs 84.83% off (+2 fixed, 1 broken),
+    # +40 ms p50; AND-matching rarely fits a natural question (2026-11-05).
+    retrieval_fts_enabled: bool = False
+    retrieval_fts_k: int = Field(default=10, ge=1, le=50)
     # Map question words (stages, covers, pricing, ...) to the heading/body
     # vocabulary the documents use; applied to the lexical boost and the entity
     # fetch ranking only (never to the embedding).
@@ -266,6 +274,9 @@ class Settings(BaseSettings):
     retrieval_max_parts: int = Field(default=8, ge=1, le=10)
     retrieval_part_min_chunks: int = Field(default=2, ge=1, le=5)
     retrieval_multi_part_max_chunks: int = Field(default=12, ge=2, le=20)
+    # Section-sibling expansion cap: total chunks sent to the model after a list
+    # ask's sections are expanded (groups are never cut in the middle).
+    retrieval_max_context_chunks: int = Field(default=10, ge=3, le=30)
     # Metadata keys a /query `filters` object may use. Unknown keys and non-scalar
     # values are ignored (a stray key such as Swagger's "additionalProp1" used to
     # filter out every chunk and turn a valid question into an empty answer).

@@ -390,6 +390,88 @@ def test_new_standalone_question_is_answered_as_such() -> None:
     )
 
 
+def _buying_card_history() -> list[ChatTurn]:
+    decision = ClarifyDecision(
+        ask=True,
+        buying=True,
+        docs=(
+            ServiceDoc("e8", "Essential Eight Compliance", 1.0),
+            ServiceDoc("iso", "ISO 27001 Technical Controls in Microsoft 365", 0.2),
+        ),
+        reason="buying_without_service",
+    )
+    card = service_card("can i have a quote", decision, [])
+    assert card is not None
+    return [
+        ChatTurn(role="user", content="can i have a quote"),
+        ChatTurn(
+            role="assistant",
+            content="Which service?",
+            outcome=clarify.CLARIFY_OUTCOME,
+            clarification=card,
+        ),
+    ]
+
+
+def test_reply_to_buying_card_keeps_buying_intent() -> None:
+    # fin-clar-quote-long: the rewritten pick is not re-guessed as a question.
+    assert clarify.clarified_buying(_buying_card_history()) is True
+    assert clarify.clarified_buying(_card_history()) is False
+    assert clarify.clarified_buying(None) is False
+    answered = [
+        *_buying_card_history(),
+        ChatTurn(role="user", content="2"),
+        ChatTurn(role="assistant", content="ok", outcome="answered"),
+    ]
+    assert clarify.clarified_buying(answered) is False
+
+
+def test_reply_naming_a_service_off_the_card_is_not_boosted_to_the_card() -> None:
+    # fin-clar-buy-name: "Essential Eight" on a card without it retrieves
+    # its own page, not the card's pages ("Microsoft 365 Security Packages").
+    decision = ClarifyDecision(
+        ask=True,
+        buying=True,
+        docs=(
+            ServiceDoc("pkg", "Microsoft 365 Security Packages", 1.0),
+            ServiceDoc("zt", "Zero Trust Services", 0.5),
+        ),
+        reason="buying_without_service",
+    )
+    card = service_card("buy", decision, [])
+    assert card is not None
+    history = [
+        ChatTurn(role="user", content="buy"),
+        ChatTurn(
+            role="assistant",
+            content="Which service?",
+            outcome=clarify.CLARIFY_OUTCOME,
+            clarification=card,
+        ),
+    ]
+    resolved = resolve_clarification_reply("Essential Eight", history)
+    assert resolved is not None
+    assert resolved.query.startswith("Essential Eight")
+    assert not resolved.document_ids
+    # A free-text reply naming no service still refines the card's pages.
+    other = resolve_clarification_reply("for a small accounting firm", history)
+    assert other is not None
+    assert set(other.document_ids) == {"pkg", "zt"}
+
+
+def test_not_sure_reply_names_the_offered_options() -> None:
+    # fin-clar-assess-notsure: the choice stays between the card's services.
+    resolved = resolve_clarification_reply("not sure", _card_history())
+    assert resolved is not None
+    for label in (
+        "Essential Eight Compliance",
+        "Zero Trust Services",
+        "ISO 27001 Technical Controls in Microsoft 365",
+    ):
+        assert label in resolved.query
+    assert set(resolved.document_ids) == {"e8", "zt", "iso"}
+
+
 class _Link:  # pylint: disable=too-few-public-methods  # store stub
     def __init__(self, name: str) -> None:
         self.source_name, self.title = name, ""

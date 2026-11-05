@@ -34,7 +34,7 @@ __all__ = [
     "TRY_AGAIN_LINE",
 ]
 
-PROMPT_VERSION = "2026-11-05.p13"
+PROMPT_VERSION = "2026-11-05.p14"
 
 # ---------------------------------------------------------------------------
 # Fixed customer-facing lines (code adds them, the model never writes them)
@@ -452,7 +452,9 @@ def answer_system_prompt(word_cap: int, style_block: str = "") -> str:
         'under"). k: "s" sentence; "i" list item: q one item (at '
         'most 12 words), t "" or its translation, never "Includes ...", '
         '"X is a pillar" or the subject again; under a named stage, "Stage: '
-        'item" ("Pilot: ...").\n'
+        'item" ("Pilot: ..."); items that are each their own section '
+        '("01 — Assess") start t with that section\'s name ("Assess: '
+        'Evaluate ...").\n'
         "- Length: a fact 1-2 claims; what is or an overview 2-4 claims, no "
         "list; a list (includes, stages, steps, strategies, which X) a "
         'short lead sentence naming X, then up to 8 "i" items, every item '
@@ -664,7 +666,10 @@ def weak_match_note(asks: list[str]) -> str:
         "stored). If it is about something else (another company or "
         "product, or anything outside the Microsoft 365 environments we "
         "work in), or the sources only cover a neighbouring topic, it is no "
-        "answer: c false and no claims for it."
+        "answer: c false and no claims for it. A source on the same topic "
+        "that does not state the answer to that exact ask (other details of "
+        "the same thing, a similar-sounding word) is no answer either. Write "
+        "only claims that answer the ask, none for other facts beside it."
     )
 
 

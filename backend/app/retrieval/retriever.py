@@ -27,6 +27,7 @@ from app.core.logging_config import get_logger
 from app.governance.pii import redact_pii
 from app.guardrails.normalize import strip_leading_interjections
 from app.guardrails.pre_checks import is_gibberish_token
+from app.guardrails.task_type import strip_reply_language
 from app.harness.decision import PartVerdict, Route, RouteDecision
 from app.knowledge.links import citation_url
 from app.knowledge.settings_service import current_knowledge_settings
@@ -35,6 +36,7 @@ from app.retrieval.reranker import (
     entity_documents,
     entity_mentions,
     looks_english,
+    named_pages,
     rerank_async,
 )
 from app.retrieval.vector_store import VectorStore
@@ -757,15 +759,67 @@ def _service_search(part: QueryPart) -> QueryPart:
 
 
 _FOLLOW_UP_MAX_WORDS = 8
+# A continuation opener ("and Brisbane?", "also, ...", "for that"), or a
+# "which ...?" choosing among what was just discussed.
+_CONTINUATION_RE = re.compile(
+    r"^(?:and|also|plus|or|so|then)\b|^which\b|\bfor\s{1,3}(?:that|this|those|them|it)\b",
+    re.IGNORECASE,
+)
+_DEFINITE_NOUN_RE = re.compile(r"\bthe\s{1,3}([a-z][a-z-]{2,30})\b", re.IGNORECASE)
+_RECENT_TURNS = 6
+
+
+def _bare_word(word: str) -> str:
+    word = word.lower()
+    return word[:-1] if len(word) > _MIN_PLURAL_LEN and word.endswith("s") else word
+
+
+_MIN_PLURAL_LEN = 3
+
+
+def _names_earlier_thing(text: str, history: list[ChatTurn]) -> bool:
+    """ "how do I get the tool?" after "... the assessment tool": "the <noun>"
+    points at something the recent turns mentioned."""
+    nouns = {_bare_word(m.group(1)) for m in _DEFINITE_NOUN_RE.finditer(text)}
+    if not nouns:
+        return False
+    recent = " ".join(turn.content for turn in history[-_RECENT_TURNS:])
+    said = {_bare_word(w) for w in _WORD_RE.findall(_scan(recent))}
+    return bool(nouns & said)
+
+
+def is_follow_up(text: str, history: list[ChatTurn] | None) -> bool:
+    """Only a genuine follow-up borrows the conversation's subject: it refers
+    back ("is it self-service?", "what about email?", "and Brisbane?", "which
+    version do you use?", "how do I get the tool?") or is a fragment with no
+    subject of its own ("pricing?", "how long?", "tell me more"). Any other ask
+    ("do you sell my data?", "whats your address?") is searched as written."""
+    if not history:
+        return False
+    scan = _scan(text)
+    return bool(
+        _REFERENTIAL_RE.search(scan)
+        or _PRONOUN_RE.search(scan)
+        or _CONTINUATION_RE.search(scan)
+        or is_bare_reference(scan)
+        or needs_conversation_context(scan)
+        or _needs_subject(scan)
+        or _names_earlier_thing(scan, history)
+    )
 
 
 def _standalone(part: QueryPart, history: list[ChatTurn] | None) -> QueryPart:
     """Resolve a follow-up against the conversation (subject first, then fold).
 
-    A short ask that names nothing of its own ("which version do you use?",
-    "how do I get the tool?") is about the subject the conversation is on.
+    Only a genuine follow-up (``is_follow_up``) that names nothing of its own
+    is about the subject the conversation is on.
     """
-    if not history or _names_own_subject(part.search):
+    if (
+        not history
+        or _names_own_subject(part.search)
+        or _asks_about_us(part.search)
+        or not is_follow_up(part.text, history)
+    ):
         return part
     referential = needs_conversation_context(part.text)
     if not referential and len(part.text.split()) > _FOLLOW_UP_MAX_WORDS:
@@ -842,8 +896,8 @@ _GOVERNING_LAW = "governing law"
 # the common non-English office/contact words stand on their own.
 _CONTACT_EN_RE = re.compile(
     r"\b(?:e-?mail(?:\s{1,3}address)?|phone(?:\s{1,3}number)?|telephone|"
-    r"contact\s{1,3}(?:details|info|information|number|address)|addresse?s?|offices?|"
-    r"mail\s{1,3}(?:you|us|address)|(?:your|ur)\s{1,3}mail|"
+    r"contact\s{1,3}(?:details|info|information|number|address|you|u|us)|addresse?s?|offices?|"
+    r"mail\s{1,3}(?:you|us|address)|(?:your|ur)\s{1,3}mail|call\s{1,3}(?:you|u|us)|"
     r"reach\s{1,3}(?:you|your|us|out)|(?:get|be|keep)\s{1,3}in\s{1,3}touch)\b",
     re.IGNORECASE,
 )
@@ -864,6 +918,41 @@ _FREE_TRIAL_RE = re.compile(
     re.IGNORECASE,
 )
 _FREE_TRIAL_TERMS = "free Security Posture Assessment snapshot"
+# "What are the services you have?": the reranker preferred the E8 page's
+# "services include Assessment & Planning..." over the services list itself.
+_SERVICE_LIST_RE = re.compile(
+    r"\b(?:services|offerings|solutions)\b.{0,30}?\b(?:you|u|deploy\s{0,3}iq)\b"
+    r".{0,20}?\b(?:have|offer|provide|got|deliver)\b|"
+    r"\b(?:what|which)\s{1,3}(?:are|r)\s{1,3}(?:all\s{1,3})?(?:your|the)\s{1,3}"
+    r"(?:services|offerings|solutions)\b|"
+    r"\b(?:list|show\s{1,3}me|tell\s{1,3}me)\s{1,3}(?:all\s{1,3})?(?:of\s{1,3})?"
+    r"(?:your|the)\s{1,3}(?:services|offerings|solutions)\b",
+    re.IGNORECASE,
+)
+_SERVICE_LIST_TERMS = "Our Services"
+# The services page section that lists every service (data/services.md).
+SERVICE_LIST_SECTION = "Our Services"
+
+
+def is_service_list_ask(text: str) -> bool:
+    """'What services do you have?': the whole catalogue, no service named."""
+    return _SERVICE_LIST_RE.search(text) is not None and not entity_mentions(text)
+
+
+def service_list_only(text: str, sources: list[SourceChunk]) -> list[SourceChunk]:
+    """A catalogue ask is answered from the services list alone.
+
+    Other retrieved chunks (the E8 delivery phases, home-page roadmap cards,
+    the T&C "Services" definition) were blended into the list as services.
+    """
+    if not is_service_list_ask(text):
+        return sources
+    listed = [
+        s
+        for s in sources
+        if ((s.metadata or {}).get("section_path") or [None])[0] == SERVICE_LIST_SECTION
+    ]
+    return listed or sources
 
 
 # A bare contact fragment ("what's the phone number", "email?") is ours: no
@@ -908,6 +997,21 @@ def _contact_ask(text: str) -> bool:
 def is_contact_ask(text: str) -> bool:
     """Our own contact details: "what's your email?", "how do I reach you"."""
     return _contact_ask(text)
+
+
+def _asks_about_us(text: str) -> bool:
+    """A company-fact ask (our contact details, where we are, who owns us, or
+    one of our pages by name): its subject is us, never the previous topic.
+    "What about email?" refers back, so it is not one."""
+    scan = _scan(text)
+    if _REFERENTIAL_RE.search(scan):
+        return False
+    return bool(
+        _contact_ask(scan)
+        or _LOCATION_RE.search(scan)
+        or _OWNER_YOU_RE.search(scan)
+        or named_pages(scan)
+    )
 
 
 # A pasted link to one of our pages ("https://deployiq.co/packages what's on
@@ -1103,6 +1207,8 @@ def expand_retrieval_query(text: str) -> str:
         expanded = f"{expanded} {_CONTACT_TERMS}"
     if _FREE_TRIAL_RE.search(expanded) and _FREE_TRIAL_TERMS not in expanded:
         expanded = f"{expanded} {_FREE_TRIAL_TERMS}"
+    if is_service_list_ask(expanded) and _SERVICE_LIST_TERMS not in expanded:
+        expanded = f"{expanded} {_SERVICE_LIST_TERMS}"
     return expanded
 
 
@@ -1653,7 +1759,7 @@ async def retrieve_parts(  # pylint: disable=too-many-arguments,too-many-positio
     chunks for the ask, scored by the cross-encoder, ahead of the rest.
     """
     settings = get_settings()
-    query = resolve_page_urls(query)
+    query = strip_reply_language(resolve_page_urls(query))
     # Split from the user's own current message only, never from history.
     parts = (
         split_query(query)
@@ -1784,6 +1890,67 @@ async def _with_preferred(  # noqa: PLR0913  # pylint: disable=too-many-argument
     return (ranked + rest)[: max(top_k, len(found))]
 
 
+_MIN_SIBLINGS_FOUND = 2
+_MAX_SIBLINGS = 8
+
+
+def _parent(source: SourceChunk) -> tuple[str, tuple[str, ...]] | None:
+    path = source.metadata.get("section_path") or []
+    if len(path) < 2:  # noqa: PLR2004  # a section and its item
+        return None
+    return source.document_id, tuple(path[:-1])
+
+
+async def with_section_siblings(
+    vector_store: VectorStore, sources: list[SourceChunk]
+) -> list[SourceChunk]:
+    """A list ask that retrieved some items of one section (delivery steps
+    05, 04, 03) gets every item of that section, in page order, at the place
+    of the first one found: the answer can only list what it is given."""
+    fetch = getattr(vector_store, "document_chunks", None)
+    if fetch is None:
+        return sources
+    groups: dict[tuple[str, tuple[str, ...]], list[SourceChunk]] = {}
+    for source in sources:
+        key = _parent(source)
+        if key is not None:
+            groups.setdefault(key, []).append(source)
+    allowed_hosts = current_knowledge_settings().allowed_hosts
+    out = list(sources)
+    # Retrieval's own chunks are never dropped: a group is expanded only
+    # while the context stays within the cap (the best-ranked group first).
+    cap = get_settings().retrieval_max_context_chunks
+    expanded = False
+    for (document_id, parent), found in groups.items():
+        if len(found) < _MIN_SIBLINGS_FOUND:
+            continue
+        siblings = [
+            c
+            for c in await fetch(document_id)
+            if tuple((c.chunk_metadata or {}).get("section_path") or [])[:-1] == parent
+            and len((c.chunk_metadata or {}).get("section_path") or [])
+            == len(parent) + 1
+        ]
+        if len(siblings) > _MAX_SIBLINGS or len(siblings) <= len(found):
+            continue
+        if len(out) + len(siblings) - len(found) > cap:
+            continue
+        score = min(s.score for s in found)
+        by_id = {s.chunk_id: s for s in found}
+        ordered = [
+            by_id.get(str(c.id)) or _to_source(c, score, vector_store, allowed_hosts)
+            for c in siblings
+        ]
+        group_ids = {o.chunk_id for o in ordered}
+        first = min(out.index(s) for s in found)
+        at = sum(1 for s in out[:first] if s.chunk_id not in group_ids)
+        rest = [s for s in out if s.chunk_id not in group_ids]
+        rest[at:at] = ordered
+        out = rest
+        expanded = True
+    return out if expanded else sources
+
+
 def _round_robin(lists: list[list[SourceChunk]], cap: int) -> list[SourceChunk]:
     """Each part's best chunk first, then each part's second, ... (deduped)."""
     if len(lists) == 1:
@@ -1837,3 +2004,87 @@ async def retrieve(  # pylint: disable=too-many-arguments,too-many-positional-ar
     if sink is not None:
         sink[:] = result.parts
     return result.sources
+
+
+# "Summarize this page: https://deployiq.co/services", "explain the packages
+# page", "give me an overview of your privacy policy": the named page is the
+# whole context, in page order. Ranking alone let other pages' chunks (the
+# Packages page for the Services page) into the summary.
+_PAGE_SUMMARY_RE = re.compile(
+    r"\b(?:summari[sz](?:e|es|ing)|summary|sum\s{1,3}(?:it\s{1,3})?up|tl\s{0,2};?\s{0,2}dr|"
+    r"overview|recap|gist|explain|break\s{1,3}(?:it\s{1,3})?down|walk\s{1,3}me\s{1,3}through|"
+    r"key\s{1,3}(?:points|takeaways)|highlights|in\s{1,3}(?:short|brief)|"
+    r"tell\s{1,3}me\s{1,3}more|more\s{1,3}(?:detail|details|info)|elaborate|"
+    r"expand\s{1,3}on|in\s{1,3}(?:more\s{1,3})?detail|simpler|simplify|rephrase|"
+    r"what(?:'s|\s{1,3}is)\s{1,3}(?:on|in)\s{1,3}(?:this|that|the|your))\b",
+    re.IGNORECASE,
+)
+# A follow-up that points back at the page: "summarize it", "explain that page".
+_PAGE_BACK_REF_RE = re.compile(
+    r"\b(?:it|this|that|the\s{1,3}same)(?:\s{1,3}(?:page|one))?\b", re.IGNORECASE
+)
+
+
+def summary_page_keys(query: str, history: list[ChatTurn] | None = None) -> list[str]:
+    """The one page a summarize/explain ask is about (this message, or the
+    page the last user turn named when this one only points back at it)."""
+    text = resolve_page_urls(_scan(query))
+    if _PAGE_SUMMARY_RE.search(text) is None:
+        return []
+    keys = named_pages(text)
+    if not keys and history and _PAGE_BACK_REF_RE.search(text):
+        last = _recent(history, "user")
+        keys = named_pages(resolve_page_urls(_scan(last))) if last else []
+    return keys if len(keys) == 1 else []
+
+
+def summary_page_document(
+    vector_store: VectorStore, query: str, history: list[ChatTurn] | None = None
+) -> str | None:
+    """The id of the one retrieved page a summarize/explain ask names."""
+    keys = summary_page_keys(query, history)
+    names = getattr(vector_store, "_document_names", None)
+    if not keys or names is None:
+        return None
+    doc_ids = entity_documents(keys, names())
+    return doc_ids[0] if doc_ids else None
+
+
+def trust_page_summary(decision: RouteDecision) -> RouteDecision:
+    """ "Summarise the About Us page": the named page is the evidence, so a
+    summary ask the gate scored just low ("give me a summary of ..." matches
+    no single chunk well) is answered from that page, never declined."""
+    if decision.route is not Route.NOT_COVERED:
+        return decision
+    parts = tuple(
+        PartVerdict(v.text, True, v.score, v.document_ids) for v in decision.parts
+    )
+    return RouteDecision(
+        Route.ANSWER, parts=parts, reason="page_summary", buying=decision.buying
+    )
+
+
+async def page_summary_sources(
+    vector_store: VectorStore,
+    query: str,
+    sources: list[SourceChunk],
+    history: list[ChatTurn] | None = None,
+) -> list[SourceChunk]:
+    """A page summary is answered from that page's chunks only: the ones
+    retrieval chose, then the rest in page order, within the context cap."""
+    document_id = summary_page_document(vector_store, query, history)
+    fetch = getattr(vector_store, "document_chunks", None)
+    if document_id is None or fetch is None:
+        return sources
+    page = await fetch(document_id)
+    if not page:
+        return sources
+    cap = get_settings().retrieval_max_context_chunks
+    chosen = {s.chunk_id for s in sources if s.document_id == document_id}
+    order = {str(c.id): i for i, c in enumerate(page)}
+    picked = [str(c.id) for c in page if str(c.id) in chosen]
+    picked += [str(c.id) for c in page if str(c.id) not in chosen]
+    keep = sorted(picked[:cap], key=order.__getitem__)
+    allowed_hosts = current_knowledge_settings().allowed_hosts
+    by_id = {str(c.id): c for c in page}
+    return [_to_source(by_id[i], 0.0, vector_store, allowed_hosts) for i in keep]

@@ -7,10 +7,14 @@ Each page's front matter is read (``app.ingestion.site_pages``), its body
 cleaned (``app.ingestion.cleanup``) and paragraphs repeated across pages are
 kept only on the most specific page (``app.ingestion.quality``). Then every
 page goes through the single shared ingest_text() service (hashing, PII
-redaction, section-tree chunking, atomic locks). The page ``route`` is stored
-on the document, so citations link to SITE_BASE_URL + route. Documents not in
-DOCUMENTS are removed, and a chunk report is printed and written to
-reports/kb_ingest_report.json.
+redaction, section-tree chunking, atomic locks); a page whose cleaned text is
+unchanged is skipped. The page ``route`` is stored on the document, so
+citations link to SITE_BASE_URL + route.
+
+Pages are discovered: every ``data/*.md`` except README.md and _global.md.
+Only documents this script owns (``OWNED_METADATA``) whose file left data/
+are removed; documents uploaded through the admin screen are never touched.
+A chunk report is printed and written to reports/kb_ingest_report.json.
 """
 
 import asyncio
@@ -25,7 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # pylint: disable=wrong-import-position  # must follow the sys.path fix above
-from sqlalchemy import delete, select
+from sqlalchemy import ColumnElement, Select, and_, delete, func, select
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal, engine
@@ -42,29 +46,54 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 SOURCE_DIR = BASE_DIR / "data"
 REPORT_PATH = BASE_DIR / "reports" / "kb_ingest_report.json"
 
-# One file per sitemap page (README.md and the site-wide _global.md are not
-# knowledge: they hold conventions and navbar/footer copy).
-DOCUMENTS = [
-    "about-us.md",
-    "booking.md",
-    "cis-microsoft-365-foundations-benchmark-assessment.md",
-    "contact-us.md",
-    "essential-eight.md",
-    "get-started.md",
-    "home.md",
-    "iso-27001-microsoft-365-technical-controls.md",
-    "iso-42001-ai-management-system.md",
-    "microsoft-365-security-baseline-assessment.md",
-    "our-vision.md",
-    "packages.md",
-    "platform.md",
-    "privacy.md",
-    "responsible-ai.md",
-    "secure-ai.md",
-    "services.md",
-    "terms.md",
-    "zero-trust.md",
-]
+# Not knowledge: README.md holds conventions, _global.md the site-wide
+# navbar/footer copy. Compared case-insensitively.
+EXCLUDED_FILES = frozenset({"readme.md", "_global.md"})
+
+# Written on every document this script creates. Only documents carrying
+# both values may be deleted by it; admin uploads are left alone.
+CORPUS = "deploy_iq_website"
+INGESTION_SOURCE = "site_page_snapshot"
+OWNED_METADATA = {"corpus": CORPUS, "ingestion_source": INGESTION_SOURCE}
+
+
+def discover_pages(source_dir: Path = SOURCE_DIR) -> list[str]:
+    """Every page file in ``source_dir``, sorted; a new file needs no code."""
+    return sorted(
+        path.name
+        for path in source_dir.iterdir()
+        if path.is_file()
+        and path.suffix.lower() == ".md"
+        and path.name.lower() not in EXCLUDED_FILES
+    )
+
+
+# The page list, kept for scripts/inventory_kb_docs.py.
+DOCUMENTS = discover_pages()
+
+
+def is_owned(metadata: dict | None) -> bool:
+    """True when ``metadata`` marks a document ingested by this script."""
+    meta = metadata if isinstance(metadata, dict) else {}
+    return all(meta.get(key) == value for key, value in OWNED_METADATA.items())
+
+
+def owned_by_script() -> ColumnElement[bool]:
+    """SQL form of :func:`is_owned`."""
+    return and_(
+        *(
+            Document.doc_metadata[key].as_string() == value
+            for key, value in OWNED_METADATA.items()
+        )
+    )
+
+
+def stale_owned_query(pages: list[str]) -> Select:
+    """Documents this script owns whose page file is not in ``pages``."""
+    names = [name.lower() for name in pages]
+    return select(Document).where(
+        owned_by_script(), func.lower(Document.source_name).notin_(names)
+    )
 
 
 async def load_page(filename: str) -> SitePage:
@@ -101,11 +130,7 @@ async def ingest_one(db, filename: str, body: str | None = None) -> tuple[str, d
         source_type="markdown",
         content=body if body is not None else page.body,
         chunking_strategy="auto",
-        metadata={
-            "corpus": "deploy_iq_website",
-            "ingestion_source": "site_page_snapshot",
-            **page_meta,
-        },
+        metadata={**OWNED_METADATA, **page_meta},
         original_filename=filename,
         converted_from="md",
         actor=actor,
@@ -115,7 +140,7 @@ async def ingest_one(db, filename: str, body: str | None = None) -> tuple[str, d
         ),
         can_change_link=True,
     )
-    await _store_page_meta(db, filename, page_meta)
+    await _store_page_meta(db, filename, page_meta, actor)
 
     return filename, {
         "status": res["status"],
@@ -125,23 +150,48 @@ async def ingest_one(db, filename: str, body: str | None = None) -> tuple[str, d
     }
 
 
-async def _store_page_meta(db, filename: str, page_meta: dict) -> None:
-    """Keep route/title/description current on re-ingest (ingest_text only
-    applies ``metadata`` to a new document)."""
+def metadata_updates(meta: dict | None, page_meta: dict) -> dict:
+    """Ownership labels and page fields that differ from ``meta``."""
+    current = meta if isinstance(meta, dict) else {}
+    wanted = {**OWNED_METADATA, **page_meta}
+    return {key: value for key, value in wanted.items() if current.get(key) != value}
+
+
+async def _store_page_meta(db, filename: str, page_meta: dict, actor: str) -> None:
+    """Keep ownership labels and route/title/description current on every run,
+    unchanged pages included (ingest_text only applies ``metadata`` to a new
+    document). A label change is audited."""
     doc = await db.scalar(select(Document).where(Document.source_name == filename))
-    if doc is None or not page_meta:
+    if doc is None:
         return
     meta = doc.doc_metadata or {}
-    if any(meta.get(key) != value for key, value in page_meta.items()):
-        doc.doc_metadata = {**meta, **page_meta}
-        await db.commit()
+    updates = metadata_updates(meta, page_meta)
+    if not updates:
+        return
+    doc.doc_metadata = {**meta, **updates}
+    relabel = {key: updates[key] for key in OWNED_METADATA if key in updates}
+    if relabel:
+        await record_audit_event(
+            db,
+            request_id=f"cli-relabel-{doc.id}",
+            actor=actor,
+            action="document_relabel",
+            detail={
+                "document_id": str(doc.id),
+                "source_name": doc.source_name,
+                "before": {key: meta.get(key) for key in relabel},
+                "after": relabel,
+            },
+            commit=False,
+        )
+    await db.commit()
 
 
-async def remove_deleted_documents(db) -> list[str]:
-    """Drop documents whose source file is no longer in DOCUMENTS."""
-    stale = (
-        await db.scalars(select(Document).where(Document.source_name.notin_(DOCUMENTS)))
-    ).all()
+async def remove_deleted_documents(db, pages: list[str]) -> list[str]:
+    """Drop documents this script owns whose page file left data/."""
+    rows = (await db.scalars(stale_owned_query(pages))).all()
+    # Re-checked in Python so a deletion never rests on the SQL alone.
+    stale = [doc for doc in rows if is_owned(doc.doc_metadata)]
     names = [d.source_name for d in stale]
     actor = f"cli:{getpass.getuser()}"
 
@@ -162,28 +212,30 @@ async def remove_deleted_documents(db) -> list[str]:
     return names
 
 
-async def load_deduped_bodies() -> tuple[dict[str, str], list[dict]]:
+async def load_deduped_bodies(
+    names: list[str],
+) -> tuple[dict[str, str], list[dict]]:
     """Every page cleaned, with cross-page repeats kept on one page only."""
-    pages = {name: await load_page(name) for name in DOCUMENTS}
+    pages = {name: await load_page(name) for name in names}
     cleaned = {name: clean_markdown(page.body) for name, page in pages.items()}
     routes = {name: page.route for name, page in pages.items()}
     return dedupe_across_pages(cleaned, routes)
 
 
-async def write_report(db, removals: list[dict]) -> int:
+async def write_report(db, names: list[str], removals: list[dict]) -> int:
     """Print the chunk report; returns the number of warnings."""
     rows = (
         await db.execute(
             select(Document.source_name, Chunk.content)
             .join(Chunk, Chunk.document_id == Document.id)
-            .where(Document.source_name.in_(DOCUMENTS))
+            .where(Document.source_name.in_(names))
             .order_by(Document.source_name, Chunk.chunk_index)
         )
     ).all()
     by_doc: dict[str, list[str]] = {}
     for name, content in rows:
         by_doc.setdefault(name, []).append(content)
-    reports = [chunk_report(name, by_doc.get(name, [])) for name in DOCUMENTS]
+    reports = [chunk_report(name, by_doc.get(name, [])) for name in names]
     warnings = 0
     print("\nChunk report:")
     for report in reports:
@@ -207,12 +259,26 @@ async def write_report(db, removals: list[dict]) -> int:
     return warnings
 
 
+MIN_PAGES = 1
+
+
+def check_pages(pages: list[str], source_dir: Path = SOURCE_DIR) -> None:
+    """No page files found (e.g. missing from a container image): stop before
+    anything is removed, or every owned document would be deleted."""
+    if len(pages) < MIN_PAGES:
+        raise SystemExit(
+            f"No page files found in {source_dir}: nothing ingested or removed."
+        )
+
+
 async def main() -> None:
-    bodies, removals = await load_deduped_bodies()
+    pages = discover_pages()
+    check_pages(pages)
+    bodies, removals = await load_deduped_bodies(pages)
     async with AsyncSessionLocal() as db:
         totals = {"added": 0, "kept": 0, "removed": 0}
 
-        for filename in DOCUMENTS:
+        for filename in pages:
             name, stats = await ingest_one(db, filename, bodies[filename])
             for key in totals:
                 totals[key] += stats[key]
@@ -221,15 +287,16 @@ async def main() -> None:
                 f"(embedded {stats['added']}, kept {stats['kept']}, removed {stats['removed']})"
             )
 
-        removed_docs = await remove_deleted_documents(db)
-        if removed_docs:
-            print(f"\nRemoved documents no longer in source list: {removed_docs}")
+        removed_docs = await remove_deleted_documents(db, pages)
+        print(f"\nRemoved {len(removed_docs)} owned documents no longer in data/")
+        for name in removed_docs:
+            print(f"  - {name}")
 
         print(
-            f"\nTotal: embedded {totals['added']} new chunks, "
+            f"\nPages: {len(pages)}. Total: embedded {totals['added']} new chunks, "
             f"kept {totals['kept']}, removed {totals['removed']}"
         )
-        await write_report(db, removals)
+        await write_report(db, pages, removals)
 
     await engine.dispose()
 

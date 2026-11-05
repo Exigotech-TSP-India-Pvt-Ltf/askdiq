@@ -86,6 +86,19 @@ def test_premise_question_claims_count_as_the_correction():
         ("What are the steps in Deploy IQ's Zero Trust delivery?", ["zero", "trust"]),
         ("Do you offer 24/7 support?", []),
         ("How many employees does Exigo Tech have?", []),
+        # Live wrong declines: filler words read as names.
+        ("What is the Strengthen stage about?", ["strengthen"]),
+        ("What's covered under ISO 27001?", ["iso"]),
+        ("Explain the DeployIQ journey like I'm five", []),
+        ("Would you change things without asking us first. Could you say?", []),
+        (
+            "You idiots never answer properly. What are the Zero Trust pillars?",
+            ["zero", "trust", "pillars"],
+        ),
+        (
+            "My TFN is 123 456 782. What does the Foundation package include?",
+            ["foundation"],
+        ),
     ],
 )
 def test_single_ask_terms_the_answer_must_name(query, terms):
@@ -145,3 +158,34 @@ def test_weak_gate_match_tells_generation_to_require_an_explicit_answer():
     assert "What is Zero Trust?" not in note
     assert "no answer" in note
     assert _weak_match_block(RouteDecision(Route.ANSWER, parts=(strong,))) == ""
+
+
+def test_initialism_and_foreign_asks_are_not_off_question():
+    from app.harness.claims import Claim, GroundedAnswer  # noqa: PLC0415
+    from app.harness.orchestrator import _unanswered_terms  # noqa: PLC0415
+    from app.schemas.query import SourceChunk  # noqa: PLC0415
+
+    # data/terms.md and data/get-started.md, live wrong declines.
+    terms = SourceChunk(
+        document_id="d",
+        chunk_id="c",
+        title="Deploy IQ — Terms & Conditions",
+        content="These Terms are governed by the laws of New South Wales, Australia.",
+        score=0.5,
+        metadata={},
+    )
+    law = "These Terms are governed by the laws of New South Wales, Australia."
+    answer = GroundedAnswer("x", kept=[Claim(law, 1, law)])
+    query = "what jurisdiction applies to the T&Cs?"
+    assert not _unanswered_terms(query, answer, [terms])
+    assert _unanswered_terms("Do the Q&As apply?", answer, [terms]) == ["q&as"]
+    german = "Wie lange dauert die kostenlose Sicherheitsbewertung?"
+    assert not _unanswered_terms(german, answer, [terms])
+
+
+def test_weak_match_note_requires_an_answer_to_the_exact_ask():
+    from app.harness.prompt_catalog import weak_match_note  # noqa: PLC0415
+
+    note = weak_match_note(["Do I need to sign in to confirm a booking?"])
+    assert "exact ask" in note
+    assert "only claims that answer the ask" in note

@@ -122,3 +122,15 @@ def test_home_carousel_hero_and_scorecard_chunks() -> None:
     assert "Illustrative sample score card" in scorecard
     assert SAMPLE_SECTION_TEXT in scorecard
     assert all(len(c.split("\n\n", 1)[-1]) <= 1200 for c in chunks)
+
+
+def test_a_term_label_stays_with_its_definition() -> None:
+    """The Terms page's oversized Definitions list is packed by paragraph:
+    a cut never separates "“Agent”" from the sentence that defines it."""
+    page = parse_site_page((DATA_DIR / "terms.md").read_text(encoding="utf-8"))
+    chunks = _chunks(clean_markdown(page.body))
+    definition = "A governed, domain-specific AI capability"
+    holder = [c for c in chunks if definition in c]
+    assert len(holder) == 1
+    assert "“Agent”\n\n" + definition in holder[0]
+    assert not any(c.rstrip().endswith("“Agent”") for c in chunks)

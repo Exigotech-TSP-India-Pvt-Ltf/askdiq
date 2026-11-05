@@ -66,6 +66,8 @@ _RARE_WORD_FETCH_K = 3
 # measured on the r3 section misses, answer chunks cosine ranked 9-16 led
 # with 4.4-5.1 while the pool's best stayed at 3.1-3.8 (wrong page).
 _WIDEN_BELOW_LOGIT = 4.0
+# Reciprocal Rank Fusion constant (standard k=60).
+_RRF_K = 60
 
 
 def usable_filters(filters: dict | None) -> dict[str, str]:
@@ -226,6 +228,53 @@ class VectorStore:
             )
         return fetched
 
+    async def _fetch_fts_chunks(
+        self,
+        query_embedding: list[float],
+        query_text: str,
+        filters: dict | None,
+    ) -> list[tuple[Chunk, float]]:
+        """Postgres full-text matches, best ``ts_rank_cd`` first (at most
+        ``retrieval_fts_k``), each with its cosine score. websearch_to_tsquery
+        parses any user text safely (bound parameter); an empty or
+        stopword-only query matches nothing."""
+        # Owner rule: every term must match (websearch_to_tsquery ANDs them);
+        # a question no chunk matches in full adds nothing to the pool.
+        tsquery = func.websearch_to_tsquery("english", query_text)
+        tsvector = func.to_tsvector("english", Chunk.content)
+        rank = func.ts_rank_cd(tsvector, tsquery)
+        distance = Chunk.embedding.cosine_distance(query_embedding)
+        stmt = (
+            select(
+                Chunk,
+                distance.label("distance"),
+                Document.source_url,
+                Document.section_links,
+                Document.doc_metadata["title"].as_string(),
+                Document.source_name,
+                _ROUTE,
+            )
+            .join(Document, Document.id == Chunk.document_id)
+            .options(defer(Chunk.embedding))
+            .where(Chunk.document_id.not_in(quarantined_document_ids()))
+            .where(tsvector.op("@@")(tsquery))
+        )
+        for key, value in usable_filters(filters).items():
+            stmt = stmt.where(Chunk.chunk_metadata[key].as_string() == value)
+        rows = (
+            await self.session.execute(
+                stmt.order_by(rank.desc(), distance).limit(settings.retrieval_fts_k)
+            )
+        ).all()
+        await self.session.commit()
+        fetched: list[tuple[Chunk, float]] = []
+        for chunk, dist, source_url, section_links, title, source_name, route in rows:
+            self.document_links[chunk.document_id] = _document_link(
+                source_url, section_links, title, source_name, route
+            )
+            fetched.append((chunk, 1 - dist))
+        return fetched
+
     async def fetch_embeddings(self, chunk_ids: list) -> dict:
         """Embeddings for just these chunks (candidates are loaded without them)."""
         if not chunk_ids:
@@ -370,6 +419,15 @@ class VectorStore:
                 [*candidates, *lexical], key=lambda item: item[1], reverse=True
             )
 
+        # STEP 2d: full-text channel, fused with the cosine order by RRF; the
+        # fused order decides which candidates reach the rerank pool.
+        rrf_ordered = False
+        if query_text and settings.retrieval_fts_enabled:
+            fts = await self._fetch_fts_chunks(query_embedding, query_text, filters)
+            if fts:
+                candidates = rrf_fuse(candidates, fts)
+                rrf_ordered = True
+
         # ---------------------------------------------------------
         # STEP 5: Rerank the candidate pool before final selection
         # ---------------------------------------------------------
@@ -390,6 +448,7 @@ class VectorStore:
             # multilingual embedding order and the cosine gate.
             cross_encode=bool(query_text) and looks_english(query_text or ""),
             forced_ids=frozenset(chunk.id for chunk, _score in lexical),
+            rrf_ordered=rrf_ordered,
         )
         if job.cross_encode and settings.enable_reranker:
             selected, signal, logits = await run_in_rerank_slot(_rank_and_select, job)
@@ -523,6 +582,35 @@ class VectorStore:
             )
             found.append((chunk, 1 - dist))
         return found
+
+    async def document_chunks(self, document_id: str) -> list[Chunk]:
+        """Every chunk of one document in page order (a section's siblings)."""
+        doc_id = uuid.UUID(document_id)
+        title = Document.doc_metadata["title"].as_string()
+        stmt = (
+            select(
+                Chunk,
+                Document.source_url,
+                Document.section_links,
+                title,
+                Document.source_name,
+                _ROUTE,
+            )
+            .join(Document, Document.id == Chunk.document_id)
+            .options(defer(Chunk.embedding))
+            .where(Chunk.document_id == doc_id)
+            .where(Chunk.document_id.not_in(quarantined_document_ids()))
+            .order_by(Chunk.chunk_index)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        await self.session.commit()
+        chunks: list[Chunk] = []
+        for chunk, source_url, section_links, doc_title, source_name, route in rows:
+            self.document_links[chunk.document_id] = _document_link(
+                source_url, section_links, doc_title, source_name, route
+            )
+            chunks.append(chunk)
+        return chunks
 
     async def chunks_for_route(self, route: str, limit: int = 8) -> list[Chunk]:
         """The chunks of the (non-quarantined) document at site ``route``,
@@ -851,6 +939,43 @@ class _RankJob(NamedTuple):
     max_documents: int | None
     cross_encode: bool = True
     forced_ids: frozenset = frozenset()  # always reranked (rare-word recall)
+    rrf_ordered: bool = False  # candidates are in RRF (cosine + FTS) order
+
+
+def rrf_fuse(
+    cosine: list[tuple[Chunk, float]],
+    fts: list[tuple[Chunk, float]],
+    k: int = _RRF_K,
+) -> list[tuple[Chunk, float]]:
+    """Reciprocal Rank Fusion of the cosine-ordered candidates and the FTS
+    hits (1 / (k + rank) summed per list). Scores stay the raw cosine; ties
+    keep the cosine order."""
+    fused: dict[uuid.UUID, float] = defaultdict(float)
+    items: dict[uuid.UUID, tuple[Chunk, float]] = {}
+    for ranked in (cosine, fts):
+        for rank, item in enumerate(ranked, start=1):
+            fused[item[0].id] += 1.0 / (k + rank)
+            items.setdefault(item[0].id, item)
+    position = {chunk_id: pos for pos, chunk_id in enumerate(items)}
+    order = sorted(items, key=lambda cid: (-fused[cid], position[cid]))
+    return [items[chunk_id] for chunk_id in order]
+
+
+def _rrf_pre_trim(
+    candidates: list[tuple[Chunk, float]],
+    signal: HybridSignal,
+    limit: int,
+) -> list[tuple[Chunk, float]]:
+    """The first ``limit`` candidates in fused order, plus entity-document
+    chunks so trim_pool can still reserve their places."""
+    head = candidates[:limit]
+    entity_docs = set(signal.entity_doc_ids)
+    head += [
+        item
+        for item in candidates[limit:]
+        if str(item[0].document_id) in entity_docs or item[0].document_id in entity_docs
+    ]
+    return head
 
 
 def _widened_rerank(  # pylint: disable=too-many-locals  # one rerank step's full state
@@ -876,11 +1001,10 @@ def _widened_rerank(  # pylint: disable=too-many-locals  # one rerank step's ful
             per_scoped[doc_id] += 1
             forced_ids.add(chunk.id)
     forced = [item for item in candidates if item[0].id in forced_ids]
-    pool = trim_pool(
-        [item for item in candidates if item[0].id not in forced_ids],
-        signal,
-        job.candidate_k,
-    )
+    unforced = [item for item in candidates if item[0].id not in forced_ids]
+    if job.rrf_ordered:
+        unforced = _rrf_pre_trim(unforced, signal, job.candidate_k)
+    pool = trim_pool(unforced, signal, job.candidate_k)
     pool += forced
     query = job.query_text or ""
     ranked = rerank(

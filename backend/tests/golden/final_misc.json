@@ -1492,6 +1492,7 @@
             "partial",
             "clarify"
           ],
+          "buying": true,
           "routes": [
             "/contact-us",
             "/packages",
@@ -1516,8 +1517,8 @@
           ]
         }
       ],
-      "note": "no pricing page exists: no invented URL; careers may be answered from the /contact-us enquiry tabs, pricing may get a not-covered/sales line",
-      "source": "final test-set builder 2026-11-04"
+      "note": "There's no pricing page. The no-answer line plus the sales contact line (designed buying fallback) is OK. Never an invented /pricing URL.",
+      "source": "final3/r5 correction"
     },
     {
       "id": "fin-ob-01",
@@ -2057,11 +2058,17 @@
             "partial"
           ],
           "routes": [
-            "/secure-ai"
+            "/secure-ai",
+            "/about-us",
+            "/iso-27001-microsoft-365-technical-controls"
           ],
           "must_contain": [
             [
-              "not yet claimed"
+              "not yet claimed",
+              "not claimed",
+              "no formal certification",
+              "certification body",
+              "independent"
             ]
           ],
           "must_not_contain": [
@@ -2070,7 +2077,7 @@
           ]
         }
       ],
-      "note": "secure-ai: certifications not yet claimed",
+      "note": "secure-ai.md:115 'Formal certifications ... are not yet claimed'; about-us.md:116 also answers (certification sits with the accredited body) - widen routes/phrasing; current answers still fail (they don't address DeployIQ's own status)",
       "source": "final test-set builder 2026-11-04"
     },
     {
@@ -2291,7 +2298,11 @@
             "/"
           ],
           "must_contain": [
-            "mitigation"
+            [
+              "mitigation",
+              "eight",
+              "controls"
+            ]
           ],
           "must_not_contain": []
         }
@@ -2417,13 +2428,14 @@
             [
               "Zero-touch onboarding",
               "No manual setup",
-              "zero-touch"
+              "zero-touch",
+              "connect to identity, endpoints"
             ]
           ],
           "must_not_contain": []
         }
       ],
-      "note": "home: zero-touch onboarding",
+      "note": "home.md:450; allow the agents-connect paraphrase",
       "source": "final test-set builder 2026-11-04"
     },
     {

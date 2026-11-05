@@ -962,6 +962,9 @@ def check_math(query: str) -> tuple[bool, str | None]:
     return True, None
 
 
+_TLDR_RE = re.compile(r"\btl\s{0,2};?\s{0,2}dr\b", re.IGNORECASE)
+
+
 def check_spam(  # pylint: disable=too-many-return-statements  # ordered rule list
     query: str,
 ) -> tuple[bool, str | None]:
@@ -985,6 +988,16 @@ def check_spam(  # pylint: disable=too-many-return-statements  # ordered rule li
         or (urls and _URL_PROMO_RE.search(text))
     ):
         return False, "spam_detected"
+
+    # "tl;dr" is a summary request, not mash.
+    text = _TLDR_RE.sub("summary", text)
+
+    # One link is not a word: "explain https://deployiq.co/zero-trust" is
+    # judged by its words only (the link alone counted as gibberish).
+    if urls:
+        text = _URL_RE.sub(" ", text).strip()
+        if not text:
+            return True, None
 
     # Punctuation or symbols only (e.g. "???", "---", "!?!?")
     if re.match(r"^[\s\W_]+$", text):
@@ -1156,6 +1169,47 @@ def sanitize_query(query: str, flags: list[str] | None = None) -> tuple[str, lis
 
 _JUNK_FLAGS = frozenset({"spam_detected", "unclear_input", "off_topic"})
 
+# A whitespace token shaped like code: a call ("alert(1)", "print('hi')"; not
+# a plural marker such as "service(s)"), a statement / operator character or
+# leftover markup. A bare URL or e-mail address is not code.
+_CODE_TOKEN_RE = re.compile(
+    r"[^\W\d][\w.$]{0,60}\((?!e?s\))[^()]{0,80}\)|[{};=<>\\]|&&|\|\||::|->|=>|^\$[A-Za-z_]"
+)
+_LETTER_RE = re.compile(r"[^\W\d_]")
+_NATURAL_MIN_CHARS = 2
+# Keywords that open a code line, not a sentence ("def hello():").
+_CODE_KEYWORDS = frozenset(
+    {"def", "var", "let", "const", "function", "return", "lambda", "elif", "echo"}
+)
+
+
+def _is_code_token(token: str) -> bool:
+    return bool(_LETTER_RE.search(token) and _CODE_TOKEN_RE.search(token))
+
+
+def _is_natural_token(token: str) -> bool:
+    word = _clean_token(token)
+    return (
+        len(word) >= _NATURAL_MIN_CHARS
+        and _LETTER_RE.search(word) is not None
+        and word.lower() not in _CODE_KEYWORDS
+        and not _is_code_token(token)
+    )
+
+
+def check_code_only(query: str) -> tuple[bool, str | None]:
+    """Code with no natural-language word left is off-topic.
+
+    ``<script>alert(1)</script>`` normalises to ``alert(1)``: there is no
+    question to retrieve. "what is <b>Zero Trust</b>?" keeps its words.
+    """
+    tokens = query[:_MATCH_MAX_CHARS].split()
+    if not any(_is_code_token(t) for t in tokens):
+        return True, None
+    if any(_is_natural_token(t) for t in tokens):
+        return True, None
+    return False, "off_topic"
+
 
 def _security_check(check, query: str, raw: str | None) -> tuple[bool, str | None]:  # noqa: ANN001
     """Run a security check on the normalised text and, if given, the raw text.
@@ -1208,6 +1262,10 @@ def run_pre_checks(
             flags.append(flag)
     if "off_topic" not in flags:
         passed, flag = check_spam(capped)
+        if not passed and flag:
+            flags.append(flag)
+    if not set(flags) & _JUNK_FLAGS:
+        passed, flag = check_code_only(capped)
         if not passed and flag:
             flags.append(flag)
 

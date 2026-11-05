@@ -72,6 +72,7 @@ from app.guardrails.post_checks import (
     is_product_negative,
     unsupported_claims,
 )
+from app.guardrails.task_type import is_reply_language
 from app.harness.citations import (
     MARKER_RE,
     _ChunkIndex,
@@ -91,6 +92,7 @@ from app.harness.prompt_catalog import (
     partial_line,
     sales_contact_line,
 )
+from app.harness.render_shape import shape_reply
 from app.harness.tone import polish_claim
 from app.schemas.query import Citation, SourceChunk
 
@@ -260,7 +262,7 @@ _RAW_QUESTION_RE = re.compile(
 # Question framing before a part's subject ("do you have", "is there").
 _ASK_FRAME_RE = re.compile(
     r"^(?:(?:do|does|can|could|will|would|is|are)\s{1,3}"
-    r"(?:you|we|they|there|it|deploy\s{0,1}iq)\s{1,3}"
+    r"(?:you|we|they|there|it|deploy\s{0,1}iq)\s{1,3}(?:also\s{1,3})?"
     r"(?:(?:have|offer|provide|support|cover|include|do|got)\s{1,3})?)",
     re.IGNORECASE,
 )
@@ -816,7 +818,93 @@ def _negation_parity(text: str) -> int:
         bare = word.strip(".,;:!?()\"'")
         if bare in _NEGATORS or bare.endswith("n't"):
             count += 1
+    # "based on risk rather than location" negates "location" like "risk, not
+    # location" does.
+    count += len(_CONTRAST_RE.findall(" ".join(words)))
     return count % 2
+
+
+_CONTRAST_RE = re.compile(r"\b(?:rather\s+than|instead\s+of)\b")
+# A claim's segments: clauses, and coordinated predicates ("does not A and
+# does not B"); "or" stays inside one ("does not A or B").
+_SEGMENT_SPLIT_RE = re.compile(r"[,;.!?]|\b(?:and|but|while|whereas)\b", re.I)
+_LEAD_NEGATORS = frozenset({"not", "never", "cannot"})
+
+
+def _negative_list(chunk: _Chunk, quote: str) -> tuple[str, list[str]] | None:
+    """``(lead, items)`` when the quote is a negative list lead-in ("AI does
+    not:") and/or items of the bullet list right under it; the items the
+    quote spans (all of them for a lead-only quote). ``None`` otherwise."""
+    units = chunk.units
+    for first, last in chunk.quote_spans(quote):
+        lead = first
+        if _BULLET_RE.match(units[first]):
+            while lead > 0 and _BULLET_RE.match(units[lead - 1]):
+                lead -= 1
+            lead -= 1
+        if lead < 0 or not units[lead].rstrip().endswith(":"):
+            continue
+        if not _negation_parity(units[lead]):
+            continue
+        end = lead + 1
+        while end < len(units) and _BULLET_RE.match(units[end]):
+            end += 1
+        if end == lead + 1 or last >= end:
+            continue
+        items = units[max(first, lead + 1) : last + 1] or units[lead + 1 : end]
+        return units[lead], [_BULLET_RE.sub("", i) for i in items]
+    return None
+
+
+def _list_negation_ok(claim: Claim, chunk: _Chunk) -> bool:
+    """The lead-in's negation carried into its items: "AI does not:" over
+    "- make binding decisions" backs "AI does not make binding decisions".
+
+    Every claim segment restating an item must carry the lead's negator
+    (once for "does not A or B", or per item), and its other negators
+    ("without") must match the items' own; a segment restating no item
+    must carry no negation. "AI makes binding decisions" still fails.
+    """
+    found = _negative_list(chunk, claim.quote)
+    if found is None:
+        return False
+    lead, items = found
+    lead_words = set(_words(lead))
+    verdicts = [
+        _segment_negation(segment, items, lead_words)
+        for segment in _SEGMENT_SPLIT_RE.split(claim.text.replace(_RSQUO, "'"))
+        if _words(segment)
+    ]
+    return True in verdicts and False not in verdicts
+
+
+def _segment_negation(
+    segment: str, items: list[str], lead_words: set[str]
+) -> bool | None:
+    """One claim segment against a negative list: ``True`` when it restates
+    items with their carried negation, ``None`` when it touches no item and
+    negates nothing, ``False`` otherwise."""
+    seg_words = set(_words(segment))
+    hits = []
+    for item in items:
+        own = set(_words(item)) - lead_words
+        if own and len(own & seg_words) / len(own) >= _RESTATED_CLAUSE_SHARE:
+            hits.append(item)
+    bare = [w.strip(".,;:!?()\"'") for w in segment.lower().split()]
+    carried = sum(1 for b in bare if b in _LEAD_NEGATORS or b.endswith("n't"))
+    other = sum(
+        1
+        for b in bare
+        if b in _NEGATORS and b not in _LEAD_NEGATORS and not b.endswith("n't")
+    )
+    if not hits:
+        # "... but does deploy changes": an item's words, not restated.
+        touched = any(
+            (set(_words(i)) - lead_words - _ENGLISH_WORDS) & seg_words for i in items
+        )
+        return False if carried or other or touched else None
+    own_parity = sum(_negation_parity(i) for i in hits) % 2
+    return bool(carried) and other % 2 == own_parity
 
 
 def _restated_parity(claim: str, text: str) -> int:
@@ -879,11 +967,38 @@ def _quote_reason(claim: Claim, chunk: _Chunk) -> tuple[str | None, str]:
         # A one-word quote backs only a claim that IS that label ("Assess").
         asserted = set(_words(claim.text)) - _NOT_NAMES - _ENGLISH_WORDS
         if not asserted or not asserted <= set(_words(quote)):
-            return "quote_too_short", ""
+            anchor = _line_anchor(quote, chunk)
+            if anchor is None or not _anchored(asserted, anchor):
+                return "quote_too_short", ""
+            return None, anchor
     evidence = chunk.quote_sentences(quote)
     if evidence is None:
         return "quote_not_in_source", ""
     return None, evidence
+
+
+def _line_anchor(quote: str, chunk: _Chunk) -> str | None:
+    """A one-word quote that is a whole list item / heading line of the chunk
+    ("- Identity" under "## Zero Trust Pillars"), re-anchored to that line
+    with its list lead-in and section heading; ``None`` when no line of the
+    chunk is exactly the quote."""
+    target = _norm(quote)
+    if not target:
+        return None
+    meta = chunk.source.metadata or {}
+    heading = str(meta.get("section_heading") or "")
+    for index, unit in enumerate(chunk.units):
+        if _norm(_BULLET_RE.sub("", unit).lstrip("# ")) == target:
+            lead = chunk.block_lead(index, 1)
+            return f"{unit.strip()}\n{lead}\n{heading}"
+    return None
+
+
+def _anchored(asserted: set[str], anchor: str) -> bool:
+    """Every word the claim asserts is the item's or its lead / heading's
+    ("Identity is one of the Zero Trust pillars")."""
+    words = {_singular(w) for w in _words(anchor)}
+    return {_singular(w) for w in asserted if w != "one"} <= words
 
 
 def _figure_reason(claim: Claim, chunk: _Chunk) -> str | None:
@@ -1351,6 +1466,9 @@ def _english_reason(
     for name, initial in _names(claim.text):
         if _norm(name) in brand or chunk.has_word(name):
             continue
+        # "MDR" over the chunk's "Managed Detection & Response".
+        if _spelled_out(name, chunk.raw):
+            continue
         # "Email info@... to book" over "Mail info@...": a framing word
         # around the quote's own contact value, not a name.
         if _norm(name) in _CONTACT_FRAMING and _framed_contact(claim, chunk):
@@ -1373,7 +1491,7 @@ def _english_reason(
     if parity not in {
         _restated_parity(claim.text, claim.quote),
         _restated_parity(claim.text, evidence),
-    } and not _answered_no(claim, chunk):
+    } and not (_answered_no(claim, chunk) or _list_negation_ok(claim, chunk)):
         return "negation_mismatch"
     # "The free assessment takes only 5 minutes" over "Takes only 5 minutes":
     # "free" may come from the same page, about the same subject.
@@ -1405,6 +1523,8 @@ def _check(
 ) -> str | None:
     """Why ``claim`` is not backed by ``chunk`` (``None`` when it is)."""
     reason, evidence = _quote_reason(claim, chunk)
+    if reason is None:
+        reason = _item_name_reason(claim, chunk)
     # "The three themes are A, B and C" over "A · B · C": the count is the
     # quote's own list, every other figure is still checked.
     counted = _list_counts(claim, chunk) if reason is None else set()
@@ -1433,6 +1553,35 @@ def _check(
         if reason is None:
             reason = _other_subject_reason(claim, chunk, asked.labels, asked.query)
     return reason
+
+
+# "Assess: Evaluate ..." - an item's name before its copy.
+_ITEM_NAME_RE = re.compile(r"^\s{0,3}([^:.!?\n]{1,60}?):\s{1,3}\S")
+# Heading numbering ("01 — Assess", "Step 2 - Assess").
+_HEADING_NUMBER_RE = re.compile(r"^\W{0,3}(?:step\s{1,3})?\d{1,2}\W{0,4}", re.I)
+
+
+def _item_name_reason(claim: Claim, chunk: _Chunk) -> str | None:
+    """A "Name: copy" claim whose name is not in its quote must name that
+    chunk's own section: its last breadcrumb item ("Zero Trust › Our
+    Delivery Approach › 01 — Assess") or a heading / label line of its body,
+    never a parent heading or another chunk's item."""
+    match = _ITEM_NAME_RE.match(claim.text)
+    if match is None:
+        return None
+    name = _norm(match.group(1))
+    if not name or len(name.split()) > _HEADING_LINE_MAX_WORDS:
+        return None
+    if f" {name} " in f" {_norm(claim.quote)} ":
+        return None
+    leaf = _norm(_HEADING_NUMBER_RE.sub("", _crumb_text(chunk).strip()))
+    if leaf == name:
+        return None
+    lines = (
+        _norm(_HEADING_NUMBER_RE.sub("", _BULLET_RE.sub("", unit).lstrip("# ")))
+        for unit in chunk.units[1:]
+    )
+    return None if name in lines else "item_name_not_heading"
 
 
 def _find_source(
@@ -1474,12 +1623,42 @@ def _quoted_negative(claim: Claim, cited: str) -> bool:
     ):
         return False
     stems = {w[:_STEM_CHARS] for w in _words(f"{quote} {cited}")}
+    # "included only in Frontier" / "the other packages" over "included in
+    # Frontier; not included in Baseline, ...": the quote's own contrast.
+    skip = _EXCLUSIVE_WORDS if _contrasted(quote) else frozenset()
     content = [
         w
         for w in _words(claim.text)
-        if len(w) >= _MIN_SUBJECT_CHARS and w not in _ENGLISH_WORDS | _NOT_NAMES
+        if len(w) >= _MIN_SUBJECT_CHARS and w not in _ENGLISH_WORDS | _NOT_NAMES | skip
     ]
     return bool(content) and all(w[:_STEM_CHARS] in stems for w in content)
+
+
+_EXCLUSIVE_WORDS = frozenset({"only", "other", "others"})
+
+
+def _page_copy(claim: Claim, cited: str) -> bool:
+    """ "Access guides, get help, or contact our support team" quoting that
+    page line: the page's own copy, not a hand-off the model wrote. Every
+    claim word is the quote's and the quote is verbatim in the cited chunk;
+    the claim is then verified like any other."""
+    quote = _norm(claim.quote)
+    return (
+        bool(quote)
+        and quote in _norm(cited)
+        and set(_words(claim.text)) <= set(quote.split())
+    )
+
+
+def _contrasted(quote: str) -> bool:
+    """The quote states one verb both affirmed and negated ("included in
+    Frontier; not included in Baseline")."""
+    affirmed: set[str] = set()
+    negated: set[str] = set()
+    for clause in re.split(r"[;,.]", quote):
+        stems = {w[:_STEM_CHARS] for w in _words(clause) if len(w) >= _STEM_CHARS}
+        (negated if _QUOTE_NEGATOR_RE.search(clause) else affirmed).update(stems)
+    return bool(affirmed & negated)
 
 
 def _clean_text(claim: Claim) -> Claim:
@@ -1515,6 +1694,241 @@ def _pages(chunks: Sequence[_Chunk]) -> dict[str, str]:
     return {doc: "\n".join(texts) for doc, texts in pages.items()}
 
 
+# ---------------------------------------------------------------------------
+# Subject attribution: a claim about X quotes X's own section
+# ---------------------------------------------------------------------------
+
+_CRUMB_SEP = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"  # "Page › Section › Sub-section" (each chunk's first line)
+_KIND_MAX_WORDS = 2  # "Strengthen package", "Foundation maturity stage"
+# Degree words that strengthen wording, weakest tier first: a claim's word
+# needs one of the same or a stronger tier in the quote ("Comprehensive
+# protection" never backs "full protection").
+_DEGREE_TIERS = (
+    re.compile(r"\b(?:comprehensive|thorough|extensive)(?:ly)?\b", re.I),
+    re.compile(
+        r"\b(?:full|fully|(?<!to )complete|completely|total|totally|entire|entirely|whole"
+        r"|absolute|absolutely|perfect|perfectly)\b",
+        re.I,
+    ),
+)
+
+
+def _label_words(text: str) -> frozenset[str]:
+    """Content words of a heading ("Package cards" -> {"package", "card"})."""
+    skip = _ENGLISH_WORDS | _NOT_NAMES | _brand_words()
+    return frozenset(
+        _singular(w)
+        for w in _words(text)
+        if len(w) >= _MIN_SUBJECT_CHARS and w not in skip
+    )
+
+
+def _crumb_text(chunk: _Chunk, index: int = -1) -> str:
+    """One raw part of the chunk's breadcrumb (the leaf by default)."""
+    head = next((line for line in chunk.source.content.split("\n") if line.strip()), "")
+    return head.split(_CRUMB_SEP)[index]
+
+
+def _crumbs(chunk: _Chunk) -> tuple[str, ...]:
+    """The chunk's breadcrumb ("Page › Section › Sub-section"), normalised."""
+    head = next((line for line in chunk.source.content.split("\n") if line.strip()), "")
+    return tuple(_norm(part) for part in head.split(_CRUMB_SEP))
+
+
+def _section(chunk: _Chunk) -> tuple[tuple[str, ...], frozenset[str]] | None:
+    """(parent breadcrumb, leaf heading words) of a sub-section chunk."""
+    crumbs = _crumbs(chunk)
+    if len(crumbs) < 2:  # noqa: PLR2004 - a page-level chunk has no leaf
+        return None
+    leaf = _label_words(crumbs[-1])
+    if not leaf or len(crumbs[-1].split()) > _HEADING_LINE_MAX_WORDS:
+        return None
+    return crumbs[:-1], leaf
+
+
+def _singular_set(text: str) -> set[str]:
+    return {_singular(w) for w in _words(text)}
+
+
+def _sibling_labels(
+    chunk: _Chunk,
+    parent: tuple[str, ...],
+    leaf: frozenset[str],
+    chunks: Sequence[_Chunk],
+) -> list[frozenset[str]]:
+    """Other subjects under the same parent heading: retrieved sibling
+    sections ("Package cards › Frontier" beside "… › Strengthen") and the
+    labels the parent section's own chunk lists."""
+    labels: list[frozenset[str]] = []
+    for other in chunks:
+        if other is chunk:
+            continue
+        section = _section(other)
+        if section is not None and section[0] == parent:
+            labels.append(section[1])
+        if _crumbs(other) == parent:
+            labels.extend(_chunk_labels(other))
+    # "Compliance" beside "Compliance Score" is no other subject.
+    return [label for label in labels if not label & leaf]
+
+
+def _names_sibling_in_quote(claim: Claim, chunk: _Chunk, label: frozenset[str]) -> bool:
+    """ "Everything in Strengthen, plus:" on the Frontier card: a one-line
+    quote that itself names the sibling the claim names."""
+    spans = chunk.quote_spans(claim.quote)
+    return bool(spans) and all(
+        first == last and label <= _singular_set(chunk.units[first])
+        for first, last in spans
+    )
+
+
+def _sibling_reason(
+    claim: Claim, chunk: _Chunk, chunks: Sequence[_Chunk], query: str
+) -> str | None:
+    """ "24/7 MDR" (the Frontier card) answering "the Strengthen package": a
+    quote under a sibling heading backs no claim about another sibling."""
+    section = _section(chunk)
+    # Only a sub-section of a named group ("Package cards › Strengthen") is
+    # one of several peer subjects; a page's top-level sections are not.
+    if section is None or len(section[0]) < 2:  # noqa: PLR2004
+        return None
+    parent, leaf = section
+    claim_words = _singular_set(claim.text)
+    if leaf <= claim_words:
+        return None
+    siblings = _sibling_labels(chunk, parent, leaf, chunks)
+    if any(
+        s <= claim_words and not _names_sibling_in_quote(claim, chunk, s)
+        for s in siblings
+    ):
+        return "other_section_subject"
+    query_words = _singular_set(query)
+    own = _crumb_text(chunk)
+    # "MFA" asks about the "Multi-Factor Auth" section itself.
+    if leaf <= query_words or any(
+        _spelled_out(name, own)
+        for name in _CODE_NAME_RE.findall(f"{query} {claim.text}")
+    ):
+        return None
+    if any(s <= query_words for s in siblings):
+        return "other_section_subject"
+    return None
+
+
+def _kind_words(leaf: frozenset[str], text: str) -> set[str]:
+    """The content words right after the subject's name ("Strengthen
+    package" -> {"package"}): which kind of item ``text`` means."""
+    words = [_singular(w) for w in _words(text)]
+    skip = _ENGLISH_WORDS | _NOT_NAMES | _CONJUNCTIONS
+    kinds: set[str] = set()
+    for index, word in enumerate(words):
+        if word not in leaf:
+            continue
+        for after in words[index + 1 : index + 1 + _KIND_MAX_WORDS]:
+            if after in skip or after in leaf or len(after) < _MIN_SUBJECT_CHARS:
+                break
+            kinds.add(after)
+    return kinds
+
+
+def _other_kind_reason(
+    claim: Claim, chunk: _Chunk, chunks: Sequence[_Chunk], query: str
+) -> str | None:
+    """ "The Strengthen package ..." quoting home's "Strengthen" roadmap card:
+    a same-named item of another kind on another page. Dropped only when a
+    retrieved same-named section of another page is headed by that kind
+    ("Microsoft 365 Security Packages › … › Strengthen") and none of this
+    page's same-named sections uses the word."""
+    section = _section(chunk)
+    if section is None:
+        return None
+    leaf = section[1]
+    kinds = _kind_words(leaf, claim.text) | _kind_words(leaf, query)
+    if not kinds:
+        return None
+    named = [c for c in chunks if (s := _section(c)) is not None and s[1] == leaf]
+    doc = chunk.source.document_id
+    if any(kinds & c.singular_words for c in named if c.source.document_id == doc):
+        return None
+    for other in named:
+        if other.source.document_id == doc:
+            continue
+        headed = _singular_set(other.scope).union(*_chunk_labels(other))
+        if kinds & headed:
+            return "other_kind_subject"
+    return None
+
+
+def _stretched_reason(claim: Claim, chunk: _Chunk) -> str | None:
+    """ "full protection" over "Comprehensive protection": a degree word the
+    quote's sentences do not use (or a stronger one) strengthens the page."""
+    evidence = chunk.quote_sentences(claim.quote) or claim.quote
+    for tier, pattern in enumerate(_DEGREE_TIERS):
+        if pattern.search(claim.text) and not any(
+            p.search(evidence) for p in _DEGREE_TIERS[tier:]
+        ):
+            return "stretched_wording"
+    return None
+
+
+def _page_degree(claim: Claim, original: Claim, chunks: Sequence[_Chunk]) -> Claim:
+    """Keep the page's own degree word the polish swapped for a stronger one
+    ("comprehensive" -> "full"): the model's word when the quote uses it."""
+    if not 1 <= claim.source <= len(chunks):
+        return claim
+    evidence = chunks[claim.source - 1].quote_sentences(claim.quote) or claim.quote
+    weak, strong = _DEGREE_TIERS
+    page = weak.search(evidence)
+    said = weak.search(original.text)
+    swapped = strong.search(claim.text)
+    if not (page and said and swapped) or strong.search(evidence):
+        return claim
+    if said.group(0).lower() != page.group(0).lower():
+        return claim
+    word = said.group(0).lower()
+    if swapped.group(0)[:1].isupper():
+        word = word.capitalize()
+    text = f"{claim.text[: swapped.start()]}{word}{claim.text[swapped.end() :]}"
+    return Claim(text, claim.source, claim.quote, claim.part, claim.kind)
+
+
+def _attribution_reason(
+    claim: Claim, chunks: Sequence[_Chunk], query: str
+) -> str | None:
+    """A verified claim's quote is about the claim's own subject, in the
+    page's own strength of wording (``None`` when it is)."""
+    if not 1 <= claim.source <= len(chunks):
+        return None
+    chunk = chunks[claim.source - 1]
+    return (
+        _stretched_reason(claim, chunk)
+        or _sibling_reason(claim, chunk, chunks, query)
+        or _other_kind_reason(claim, chunk, chunks, query)
+    )
+
+
+_LABEL_SEP_RE = re.compile(r"^\s{0,3}[:\-\u2013\u2014]\s{0,3}")
+
+
+def _label_body_quote(claim: Claim, chunks: Sequence[_Chunk]) -> Claim:
+    """ "Zero Trust Services: Deploy IQ delivers Zero Trust as ..." quoting
+    only the card heading: the quote becomes the description, when the cited
+    chunk has it word for word (the heading alone backs none of it)."""
+    if not 1 <= claim.source <= len(chunks):
+        return claim
+    quote = claim.quote.strip().rstrip(_TERMINAL)
+    text = claim.text.strip()
+    if not quote or _norm(text[: len(quote)]) != _norm(quote):
+        return claim
+    rest = _LABEL_SEP_RE.sub("", text[len(quote) :], count=1).strip()
+    if rest == text[len(quote) :].strip() or not rest:
+        return claim  # no "Label: body" shape
+    body = rest.rstrip(_TERMINAL)
+    if _norm(body) and _norm(body) in chunks[claim.source - 1].norm:
+        return Claim(claim.text, claim.source, body, claim.part, claim.kind)
+    return claim
+
+
 def _verify(
     draft: Draft, chunks: list[_Chunk], english: bool, query: str = ""
 ) -> tuple[list[Claim], list[tuple[Claim, str]]]:
@@ -1523,8 +1937,8 @@ def _verify(
     seen: set[str] = set()
     labels = tuple(_asked_labels(query, chunks))
     asked = _Asked(query, labels, tuple(_audiences(labels, chunks)), _pages(chunks))
-    for original in draft.claims:
-        claim = _clean_text(original)
+    for original in _names_into_list(list(draft.claims)):
+        claim = _label_body_quote(_clean_text(original), chunks)
         cited = chunks[claim.source - 1].raw if 1 <= claim.source <= len(chunks) else ""
         reason = _precheck(claim, draft.parts, seen, cited)
         if reason is None and _echoes_question(claim.text, query):
@@ -1544,6 +1958,8 @@ def _verify(
             number = _find_source(claim, chunks, english, subjects, asked)
             if number:
                 claim, reason = _with_source(claim, number), None
+        claim = _page_degree(claim, original, chunks) if reason is None else claim
+        reason = reason or _attribution_reason(claim, chunks, query)
         reason = reason or _fragment_reason(claim, chunks, query)
         if reason is None:
             seen.add(_norm(claim.text))
@@ -1603,7 +2019,11 @@ def _precheck(  # pylint: disable=too-many-return-statements
         return "duplicate"
     if _DANGLING_END_RE.search(claim.text):
         return "truncated"
-    if _is_decline(claim.text) and not _quoted_negative(claim, cited):
+    if (
+        _is_decline(claim.text)
+        and not _quoted_negative(claim, cited)
+        and not _page_copy(claim, cited)
+    ):
         return "decline"
     if parts and not (0 <= claim.part < len(parts) and parts[claim.part].covered):
         return "uncovered_part"
@@ -1681,10 +2101,25 @@ def _question_phrase(label: str) -> str | None:
     return label
 
 
+def _unanswered(draft: Draft, kept: list[Claim], query: str) -> list[int]:
+    """Indexes of the parts no kept claim answers. A part restating the whole
+    question is answered by any kept claim: "What types of cookies ...?"
+    answered with every cookie type never ends "I don't have details on what
+    types of cookies ..."."""
+    answered = {c.part for c in kept}
+    whole = _norm(query)
+    return [
+        i
+        for i, p in enumerate(draft.parts)
+        if i not in answered
+        and not (answered and _norm(p.ask) == whole)
+        and not (answered and is_reply_language(p.ask))
+    ]
+
+
 def uncovered_parts(draft: Draft, kept: list[Claim], query: str) -> list[str] | None:
     """Names of the parts left without a verified claim (``None``: unnamed)."""
-    answered = {c.part for c in kept}
-    missing = [p for i, p in enumerate(draft.parts) if i not in answered]
+    missing = [draft.parts[i] for i in _unanswered(draft, kept, query)]
     labels = [_ask_label(p.ask, query) for p in missing]
     if any(label is None for label in labels):
         return None
@@ -1706,9 +2141,8 @@ def _named_gaps(
     model folded an uncovered ask into a covered part), the retrieval gate's
     uncovered sub-questions name it instead of "the rest of your question".
     """
-    answered = {c.part for c in kept}
     labels = [
-        _ask_label(p.ask, query) for i, p in enumerate(draft.parts) if i not in answered
+        _ask_label(draft.parts[i].ask, query) for i in _unanswered(draft, kept, query)
     ]
     named = [label for label in labels if label]
     gaps = [g for g in (_gap_label(t, query) for t in gap_parts) if g]
@@ -2434,6 +2868,62 @@ def _prose_as_list(kept: list[Claim]) -> list[Claim]:
     return out
 
 
+_NAME_JOINERS = frozenset({"for", "in", "of", "and", "the", "&", "to", "with"})
+_MAX_NAME_WORDS = 10
+
+
+def _is_bare_name(claim: Claim) -> bool:
+    """A verbless Title Case name as a sentence ("Zero Trust Services.")."""
+    text = claim.text.rstrip()
+    words = text.rstrip(_TERMINAL).split()
+    return (
+        claim.kind == "sentence"
+        and not text.endswith(":")
+        and 0 < len(words) <= _MAX_NAME_WORDS
+        and not _has_finite_verb(text)
+        and all(
+            w[:1].isupper() or not w[:1].isalpha() or w.lower() in _NAME_JOINERS
+            for w in words
+        )
+    )
+
+
+def _names_into_list(claims: list[Claim]) -> list[Claim]:
+    """Bare names written as sentences right before a part's first list item
+    are that list's first entries ("Zero Trust Services." then "- Essential
+    Eight..."): items, not label fragments to drop."""
+    out = list(claims)
+    index = 0
+    while index < len(out):
+        end = index
+        while (
+            end < len(out)
+            and out[end].part == out[index].part
+            and _is_bare_name(out[end])
+        ):
+            end += 1
+        listed_before = any(
+            c.kind == "item" and c.part == out[index].part for c in out[:index]
+        )
+        if (
+            end > index
+            and not listed_before  # "Call." amid the bullets stays a stray label
+            and end < len(out)
+            and out[end].kind == "item"
+            and out[end].part == out[index].part
+        ):
+            for k in range(index, end):
+                out[k] = Claim(
+                    out[k].text.rstrip(" ."),
+                    out[k].source,
+                    out[k].quote,
+                    out[k].part,
+                    "item",
+                )
+        index = max(end, index + 1)
+    return out
+
+
 def _fit_length(  # pylint: disable=too-many-locals
     kept: list[Claim],
     max_words: int,
@@ -2450,7 +2940,9 @@ def _fit_length(  # pylint: disable=too-many-locals
     budget trims within parts instead of crowding out a later one.
     """
     steps = _split_series(_split_steps(_merge_labels(_labels_as_items(kept), follows)))
-    claims = _group_parts(_prose_as_list(_bulletise_tail(_bulletise(steps))))
+    claims = _names_into_list(
+        _group_parts(_prose_as_list(_bulletise_tail(_bulletise(steps))))
+    )
     solid = {c.part for c in claims if not _is_fragment(c)}
     firsts: dict[int, int] = {}
     for claim in claims:
@@ -2584,6 +3076,51 @@ _OVERVIEW_MAX_CLAIMS = 5
 _BREADCRUMB_SEP = chr(0x203A)  # breadcrumb separator (app.chunking.section_tree)
 
 
+_MAX_LIST_NAME_WORDS = 10
+
+
+def list_names(source: SourceChunk) -> list[str]:
+    """The entry names of a card/list section, verbatim and in page order:
+    its bullet lines and its card headings (a short line with no end
+    punctuation followed by its description)."""
+    lines = [line.strip() for line in source.content.split("\n")]
+    names: list[str] = []
+    for index, line in enumerate(lines):
+        if not line or _BREADCRUMB_SEP in line or line.startswith("#"):
+            continue
+        bullet = _BULLET_RE.sub("", line).strip()
+        nxt = lines[index + 1] if index + 1 < len(lines) else ""
+        card = (
+            bullet == line
+            and nxt
+            and not _BULLET_RE.match(nxt)
+            and len(nxt.split()) > len(line.split())
+        )
+        if (bullet != line or card) and (
+            0 < len(bullet.split()) <= _MAX_LIST_NAME_WORDS
+            and bullet[-1:] not in _TERMINAL
+        ):
+            names.append(_EMPHASIS_RE.sub("", bullet).strip())
+    return names
+
+
+def missing_list_names(text: str, names: Sequence[str]) -> list[str]:
+    """The names a shipped reply leaves out."""
+    shipped = _norm(text)
+    return [name for name in names if _norm(name) not in shipped]
+
+
+def list_draft(names: Sequence[str], source: int, ask: str) -> Draft:
+    """Every entry of a list section as items, copied verbatim (verified as
+    any claim): the deterministic backstop for "what services do you have?"
+    when the model's list left entries out."""
+    return Draft(
+        action="answer",
+        parts=[Part(ask, True)],
+        claims=[Claim(name, source, name, 0, "item") for name in names],
+    )
+
+
 def overview_draft(
     sources: Sequence[SourceChunk], numbers: Sequence[int], ask: str
 ) -> Draft:
@@ -2691,6 +3228,7 @@ def ground_answer(  # pylint: disable=too-many-arguments,too-many-locals
     # The fixed lines count towards the reply's length cap.
     budget = get_settings().answer_max_words - sum(len(f.split()) for f in fixed)
     shown = _fit_length(shown_from, max(budget, 1), lambda a, b: _follows(chunks, a, b))
+    shown = shape_reply(shown, shown_from, sources)
     text, citations, selected = _render(
         [*shown, contact] if contact else shown, sources, numbered
     )

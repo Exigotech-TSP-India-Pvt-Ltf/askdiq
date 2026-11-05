@@ -231,6 +231,7 @@ _CERTIFICATION = r"\bcertifications?\b"
 _CERTIFICATION_SUPPORT = rf"{_CERT}|\bcertif(?:y|ies|ying)\b"
 _COMPLIANT = r"\bcompliant\b|\bcompliance[- ]ready\b"
 _COMPLIANT_SUPPORT = r"\bcompliant\b|\bcompliance\b"
+_ALWAYS_ON = r"\b24\s?/\s?7\b|\b24\s?x\s?7\b|\b(?:a?round)[- ]the[- ]clock\b"
 _ROI = r"\broi\b|\breturn\s+on\s+investment\b"
 _SLA = r"\bslas?\b|\bservice\s+level\s+agreements?\b"
 _DISCOUNT = r"\bdiscounts?\b|\bpromo(?:tions?|tional)?\b"
@@ -360,10 +361,10 @@ _CLAIM_RULES: tuple[tuple[str, _Support | None], ...] = (
     (_COMPLIANT, _regex_support(_COMPLIANT_SUPPORT)),
     (r"\brisk[- ]free\b", None),
     (r"\b100\s?percent\b", None),
-    (
-        r"\b24\s?/\s?7\b|\b24\s?x\s?7\b|\bround[- ]the[- ]clock\b|\b24[ -]?hours?\b",
-        None,
-    ),
+    # "24/7", "24x7" and "round-the-clock" are one assurance: either backs
+    # the others ("24/7 Managed Detection & Response: round-the-clock ...").
+    (_ALWAYS_ON, _regex_support(_ALWAYS_ON)),
+    (r"\b24[ -]?hours?\b", None),
     (_ROI, _regex_support(_ROI)),
     (_WITHIN, _within_support),
     (

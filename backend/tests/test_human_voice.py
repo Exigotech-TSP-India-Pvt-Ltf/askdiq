@@ -74,7 +74,8 @@ def test_buzzword_pair_is_simplified() -> None:
         ("Robust checks run daily.", "Strong checks run daily."),
         ("It is seamless.", "It is smooth."),
         ("We leverage your data.", "We use your data."),
-        ("A comprehensive view.", "A full view."),
+        # The page's own degree word is kept (never overstated as "full").
+        ("A comprehensive view.", "A comprehensive view."),
         ("Let's delve into the plan.", "Let's look at the plan."),
     ],
 )

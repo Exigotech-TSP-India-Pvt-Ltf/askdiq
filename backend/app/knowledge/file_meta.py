@@ -2,8 +2,10 @@
 
 - ``.md``: a leading ``---`` YAML block (front matter), parsed with
   ``yaml.safe_load`` only, capped at 4 KB. Scalar keys ``url`` /
-  ``source_url``, ``title`` and ``section_links`` are read; the block is
-  removed from the text **before** normalisation, PII redaction and chunking.
+  ``source_url``, ``route`` (a site path such as ``/privacy``, resolved to
+  SITE_BASE_URL + route like the website pages), ``title``, ``description``
+  and ``section_links`` are read; the block is removed from the text
+  **before** normalisation, PII redaction and chunking.
   A block that is not a mapping is left in place (it is content, e.g. a
   horizontal rule); malformed YAML is ignored with a warning.
 - ``.docx``: ``docProps/core.xml`` ``dc:identifier`` (and ``dc:title``),
@@ -28,6 +30,10 @@ from defusedxml import DefusedXmlException
 FRONT_MATTER_MAX_BYTES = 4096
 DOCX_PART_MAX_BYTES = 256 * 1024
 MAX_TITLE_CHARS = 300
+MAX_ROUTE_CHARS = 512
+MAX_DESCRIPTION_CHARS = 500
+ORIGIN_FRONT_MATTER = "front_matter"
+ORIGIN_DOCX = "docx"
 _DELIMITER = "---"
 _END_MARKERS = ("---", "...")
 _URL_KEYS = ("url", "source_url")
@@ -44,11 +50,18 @@ WARN_FRONT_MATTER_TOO_LARGE = (
 
 @dataclass(frozen=True, slots=True)
 class FileLinkMeta:
-    """Link metadata found in a file (all optional)."""
+    """Link metadata found in a file (all optional).
+
+    ``origin`` (``front_matter`` or ``docx``) says where it was read; it is
+    provenance only and not part of equality.
+    """
 
     url: str | None = None
     title: str | None = None
     section_links: bool | None = None
+    route: str | None = None
+    description: str | None = None
+    origin: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +86,9 @@ def _meta_from_mapping(data: dict[Any, Any]) -> FileLinkMeta:
         url=url,
         title=_scalar_str(data.get("title"), MAX_TITLE_CHARS),
         section_links=links if isinstance(links, bool) else None,
+        route=_scalar_str(data.get("route"), MAX_ROUTE_CHARS),
+        description=_scalar_str(data.get("description"), MAX_DESCRIPTION_CHARS),
+        origin=ORIGIN_FRONT_MATTER,
     )
 
 
@@ -168,4 +184,4 @@ def docx_link_meta(data: bytes) -> FileLinkMeta:
         )
     if identifier is None or not identifier.lower().startswith("http"):
         identifier = _custom_url(_parse(custom_xml)) or identifier
-    return FileLinkMeta(url=identifier, title=title)
+    return FileLinkMeta(url=identifier, title=title, origin=ORIGIN_DOCX)

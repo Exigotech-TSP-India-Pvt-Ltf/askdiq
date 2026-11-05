@@ -33,6 +33,9 @@ MIN_CARDS = 3
 # A card's own copy must be a sentence or so; one-phrase cards ("Autonomous:
 # Human-in-loop") read better together, as one list-like section.
 MIN_CARD_CHARS = 40
+# A paragraph this short with no sentence end is a label for the next one.
+MAX_LABEL_WORDS = 8
+SENTENCE_STOPS = (".", "!", "?")
 
 
 @dataclass
@@ -104,6 +107,35 @@ def _is_card_set(node: _Node) -> bool:
     )
 
 
+def _is_label(paragraph: str) -> bool:
+    """A one-line term or lead-in with no sentence of its own."""
+    return (
+        "\n" not in paragraph
+        and len(paragraph.split()) <= MAX_LABEL_WORDS
+        and not paragraph.endswith(SENTENCE_STOPS)
+    )
+
+
+def _glue_labels(paragraphs: list[str]) -> list[str]:
+    """Join each label paragraph to the paragraph after it."""
+    out: list[str] = []
+    pending = ""
+    for raw in paragraphs:
+        paragraph = raw.strip()
+        if not paragraph:
+            continue
+        if pending:
+            paragraph = f"{pending}\n\n{paragraph}"
+            pending = ""
+        if _is_label(paragraph):
+            pending = paragraph
+            continue
+        out.append(paragraph)
+    if pending:
+        out.append(pending)
+    return out
+
+
 def _holds_card_set(node: _Node) -> bool:
     """A card set somewhere below ``node``: it is split even when the whole
     of ``node`` would fit in one chunk."""
@@ -133,12 +165,11 @@ class SectionTreeChunker(ChunkingStrategy):
         return pieces
 
     def _units(self, text: str) -> list[str]:
-        """Paragraphs; an oversized one falls back to lines, then sentences."""
+        """Paragraphs; an oversized one falls back to lines, then sentences.
+        A label paragraph ("“Agent”", "This includes:") stays with the
+        paragraph it introduces, so a cut never separates the two."""
         units: list[str] = []
-        for raw_paragraph in text.split("\n\n"):
-            paragraph = raw_paragraph.strip()
-            if not paragraph:
-                continue
+        for paragraph in _glue_labels(text.split("\n\n")):
             if len(paragraph) <= self.max_chars:
                 units.append(paragraph)
                 continue
