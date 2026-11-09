@@ -612,6 +612,42 @@ class VectorStore:
             chunks.append(chunk)
         return chunks
 
+    async def chunks_by_ids(self, chunk_ids: list[str]) -> list[Chunk]:
+        """The (non-quarantined) chunks with these ids, in the order given;
+        unknown or malformed ids are skipped."""
+        wanted: list[uuid.UUID] = []
+        for raw in chunk_ids:
+            try:
+                wanted.append(uuid.UUID(raw))
+            except ValueError:
+                continue
+        if not wanted:
+            return []
+        title = Document.doc_metadata["title"].as_string()
+        stmt = (
+            select(
+                Chunk,
+                Document.source_url,
+                Document.section_links,
+                title,
+                Document.source_name,
+                _ROUTE,
+            )
+            .join(Document, Document.id == Chunk.document_id)
+            .options(defer(Chunk.embedding))
+            .where(Chunk.id.in_(wanted))
+            .where(Chunk.document_id.not_in(quarantined_document_ids()))
+        )
+        rows = (await self.session.execute(stmt)).all()
+        await self.session.commit()
+        by_id: dict[uuid.UUID, Chunk] = {}
+        for chunk, source_url, section_links, doc_title, source_name, route in rows:
+            self.document_links[chunk.document_id] = _document_link(
+                source_url, section_links, doc_title, source_name, route
+            )
+            by_id[chunk.id] = chunk
+        return [by_id[i] for i in wanted if i in by_id]
+
     async def chunks_for_route(self, route: str, limit: int = 8) -> list[Chunk]:
         """The chunks of the (non-quarantined) document at site ``route``,
         in reading order (a fixed page such as the contact page)."""

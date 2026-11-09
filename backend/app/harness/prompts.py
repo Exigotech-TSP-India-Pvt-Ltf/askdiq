@@ -289,7 +289,10 @@ async def _collect_stream(stream: openai.AsyncStream[Any], t_start: float) -> An
 
 
 async def _answer_attempt(
-    model: str, messages: list[dict[str, str]], response_format: dict[str, Any]
+    model: str,
+    messages: list[dict[str, str]],
+    response_format: dict[str, Any],
+    max_completion_tokens: int | None = None,
 ) -> Any:
     """One answer completion. Streamed (``llm_answer_stream``), the client's
     timeout bounds the wait for the first token and between chunks, so a long
@@ -305,7 +308,8 @@ async def _answer_attempt(
         messages=messages,  # type: ignore[arg-type]
         reasoning_effort=settings.llm_reasoning_effort,
         verbosity=settings.llm_verbosity,
-        max_completion_tokens=settings.llm_max_completion_tokens,
+        max_completion_tokens=max_completion_tokens
+        or settings.llm_max_completion_tokens,
         response_format=response_format,  # type: ignore[arg-type]
         **stream_kwargs,
     )
@@ -315,7 +319,10 @@ async def _answer_attempt(
 
 
 async def _create_with_transport_retry(
-    model: str, messages: list[dict[str, str]], response_format: dict[str, Any]
+    model: str,
+    messages: list[dict[str, str]],
+    response_format: dict[str, Any],
+    max_completion_tokens: int | None = None,
 ) -> Any:
     """The answer completion, retried ``llm_transport_retries`` times on
     transient failures only (timeout, connection, 429, 5xx).
@@ -323,13 +330,17 @@ async def _create_with_transport_retry(
     This is the ONLY retry layer for transport errors: the SDK client does not
     retry (``llm_sdk_max_retries``) and the orchestrator re-asks only on empty
     output. An open breaker fails fast with ``CircuitOpenError`` (no retry).
+    ``max_completion_tokens`` overrides the default ceiling for one call.
     """
     retries = settings.llm_transport_retries
+    extra: dict[str, Any] = {}
+    if max_completion_tokens is not None:
+        extra["max_completion_tokens"] = max_completion_tokens
     for attempt in range(retries + 1):
         try:
             async with get_llm_breaker().guard():
                 return await asyncio.wait_for(
-                    _answer_attempt(model, messages, response_format),
+                    _answer_attempt(model, messages, response_format, **extra),
                     timeout=settings.llm_answer_deadline_seconds,
                 )
         except _CALL_ERRORS as exc:  # CircuitOpenError is not one: no retry
@@ -383,7 +394,21 @@ async def call_llm(
     response = await _create_with_transport_retry(
         model, messages, response_format or catalog.answer_format()
     )
+    content, usage, _finish = _finish_call(
+        response, model, t_start, context_tokens, catalog.PROMPT_VERSION
+    )
+    return content, usage
 
+
+def _finish_call(
+    response: Any,
+    model: str,
+    t_start: float,
+    context_tokens: int,
+    prompt_version: str,
+) -> tuple[str, dict[str, int] | None, str | None]:
+    """``(reply text, usage, finish_reason)`` of a completion: records the
+    quota usage and logs the call (``llm_call_completed``)."""
     llm_latency_ms = (time.perf_counter() - t_start) * 1000
     usage_obj = getattr(response, "usage", None)
     content = response.choices[0].message.content if response.choices else None
@@ -445,8 +470,57 @@ async def call_llm(
         reasoning_tok=usage["reasoning_tokens"] if usage else 0,
         cached_tok=usage["cached_tokens"] if usage else 0,
         context_tok=context_tokens,
-        prompt_version=catalog.PROMPT_VERSION,
+        prompt_version=prompt_version,
         finish_reason=finish_reason,
     )
 
-    return content or "", usage
+    return content or "", usage, finish_reason
+
+
+class ContentFilterBlockedError(Exception):
+    """The Azure content filter (Foundry guardrails, Prompt Shields) blocked
+    the request or the reply; the visitor gets the fixed unsafe line."""
+
+
+def _is_content_filter_error(exc: BaseException) -> bool:
+    if getattr(exc, "code", None) == "content_filter":
+        return True
+    body = getattr(exc, "body", None)
+    inner = body.get("code") if isinstance(body, dict) else None
+    return inner == "content_filter" or "content_filter" in str(exc)
+
+
+async def complete_json(
+    messages: list[dict[str, str]],
+    response_format: dict[str, Any],
+    *,
+    context_tokens: int,
+    prompt_version: str,
+    max_completion_tokens: int,
+) -> tuple[str, dict[str, int] | None]:
+    """One structured-output call with ready-made messages (the single-call
+    pipeline): ``(raw reply, usage)`` as ``call_llm`` returns.
+
+    A content-filter block (HTTP 400 ``content_filter`` or ``finish_reason``
+    ``content_filter``) raises :class:`ContentFilterBlockedError` instead of
+    reading as a transport failure or an empty reply. Every call logs
+    completion tokens, reasoning tokens and ``finish_reason``.
+    """
+    model = current_model_settings().llm_deployment
+    t_start = time.perf_counter()
+    try:
+        response = await _create_with_transport_retry(
+            model, messages, response_format, max_completion_tokens
+        )
+    except openai.BadRequestError as exc:
+        if _is_content_filter_error(exc):
+            logger.warning("llm_content_filter_blocked", model=model, stage="request")
+            raise ContentFilterBlockedError from exc
+        raise
+    content, usage, finish_reason = _finish_call(
+        response, model, t_start, context_tokens, prompt_version
+    )
+    if finish_reason == "content_filter":
+        logger.warning("llm_content_filter_blocked", model=model, stage="reply")
+        raise ContentFilterBlockedError
+    return content, usage

@@ -110,6 +110,24 @@ class Settings(BaseSettings):
     llm_context_max_tokens: int = 2400
     llm_history_max_tokens: int = 400
 
+    # Single-call pipeline (app/harness/single_call.py): one LLM call checks
+    # the question, picks the relevant chunks, writes the answer and checks it;
+    # code ships it only if every gate and every quote check passes. Off = the
+    # original multi-step pipeline.
+    single_call_pipeline: bool = False
+    # Words across all claim texts (quotes do not count); code enforces it too.
+    single_call_max_words: int = Field(default=80, ge=1)
+    # Reasoning tokens are spent before visible text; a cut-off reply is not
+    # valid JSON and ships the fixed no-answer line (safe fail).
+    single_call_max_completion_tokens: int = Field(default=1000, ge=100)
+    # Q&A pairs of the session sent as context (never as a source of facts).
+    single_call_history_turns: int = Field(default=3, ge=0)
+    # Chunks cited by the last answers carried into a follow-up's facts.
+    single_call_carry_answers: int = Field(default=2, ge=0)
+    single_call_carry_chunks: int = Field(default=4, ge=0)
+    # Whole chunks only; the leading ones that fit this many tokens are sent.
+    single_call_context_max_tokens: int = Field(default=3500, ge=500)
+
     # Embeddings — must match the deployed Azure model and the pgvector
     # column width (see alembic f9462f0a85c6).
     embedding_model: str = "text-embedding-3-small"

@@ -1763,6 +1763,21 @@ def _to_source(
     )
 
 
+async def carried_sources(
+    vector_store: VectorStore, chunk_ids: list[str]
+) -> list[SourceChunk]:
+    """Chunks a previous answer cited, as sources (score 0: carried over, not
+    retrieved), so a follow-up can quote what the last answer rested on."""
+    fetch = getattr(vector_store, "chunks_by_ids", None)
+    if fetch is None or not chunk_ids:
+        return []
+    allowed_hosts = current_knowledge_settings().allowed_hosts
+    return [
+        _to_source(chunk, 0.0, vector_store, allowed_hosts)
+        for chunk in await fetch(chunk_ids)
+    ]
+
+
 async def route_sources(vector_store: VectorStore, route: str) -> list[SourceChunk]:
     """The chunks of the KB page at ``route`` as citable sources (score 0:
     fetched by route, not by relevance)."""

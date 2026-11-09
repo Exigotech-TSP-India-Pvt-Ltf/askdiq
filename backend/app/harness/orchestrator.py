@@ -17,6 +17,7 @@ import asyncio
 import re
 import time
 from dataclasses import replace
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -52,6 +53,7 @@ from app.guardrails.task_type import (
     strip_reply_language,
     task_type_policy,
 )
+from app.harness import single_call
 from app.harness.ambiguity import assess
 from app.harness.answer_shape import detect_shape, refine_shape
 from app.harness.citations import (
@@ -105,11 +107,17 @@ from app.harness.prompt_catalog import (
     reply_policy,
     weak_match_note,
 )
-from app.harness.prompts import _MAX_HISTORY_TURNS, NO_ANSWER_LINE, call_llm
+from app.harness.prompts import (
+    _MAX_HISTORY_TURNS,
+    NO_ANSWER_LINE,
+    ContentFilterBlockedError,
+    call_llm,
+)
 from app.harness.style import resolve_style, use_style
 from app.retrieval.reranker import entity_documents, entity_mentions, looks_english
 from app.retrieval.retriever import (
     SERVICE_LIST_SECTION,
+    carried_sources,
     covered_sources,
     decide_route,
     decompose_query,
@@ -700,6 +708,28 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
             start=start,
             follow_up_detected=follow_up_detected,
             history_turns_sent=history_turns_sent,
+        )
+
+    # ---------------------------------------------------------
+    # SINGLE-CALL PIPELINE (settings.single_call_pipeline)
+    # ---------------------------------------------------------
+    # One retrieval on the whole question, no numeric relevance gate, one LLM
+    # call that checks the question and the facts and writes the answer, then
+    # the quote check. Everything above (persona, small talk, regex guards,
+    # canned replies) already ran.
+    if settings.single_call_pipeline:
+        return await _run_single_call(
+            query,
+            effective_query,
+            top_k=top_k,
+            filters=filters,
+            vector_store=vector_store,
+            request_id=request_id,
+            stage_timings=stage_timings,
+            history=history,
+            buying=_buying_ask(query, intent_match),
+            start=start,
+            follow_up_detected=follow_up_detected,
         )
 
     # ---------------------------------------------------------
@@ -1373,6 +1403,343 @@ async def run_query(  # pylint: disable=too-many-arguments,too-many-positional-a
         reasoning_tokens=reasoning_tokens,
         outcome=outcome,
         token_details=token_details,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Single-call pipeline (settings.single_call_pipeline; app.harness.single_call)
+# ---------------------------------------------------------------------------
+def _buying_ask(query: str, intent_match: Any) -> bool:
+    """Buying intent for the sales / pricing lines: the intent classifier's
+    verdict, else the purchase wording alone (the classifier fails open)."""
+    buying = intent_match is not None and intent_match.result.intent is Intent.BUYING
+    if intent_match is not None and not intent_match.result.score and not buying:
+        buying = is_buying(query) and not is_booking_info_question(query)
+    # "Talk to sales about X" is a buying ask whatever the classifier says.
+    buying = buying or _SALES_ASK_RE.search(query) is not None
+    # "Was kostet Zero Trust?": the classifier knows English price words only.
+    return buying or is_foreign_price_ask(query)
+
+
+async def _run_single_call(  # pylint: disable=too-many-arguments,too-many-locals,too-many-return-statements,too-many-statements
+    query: str,
+    effective_query: str,
+    *,
+    top_k: int,
+    filters: dict | None,
+    vector_store: VectorStore,
+    request_id: str,
+    stage_timings: dict,
+    history: list[ChatTurn] | None,
+    buying: bool,
+    start: float,
+    follow_up_detected: bool,
+) -> QueryResponse:
+    """Retrieve once, make ONE LLM call, ship only what the checks pass.
+
+    The model checks the question and the facts and writes quote-backed claims
+    (app.harness.single_call); code then applies its verdict (``gate``) and the
+    quote, number and name checks of ``ground_answer``. Anything that fails
+    gets the one fixed no-answer line; the model never writes a refusal.
+    """
+    # Retrieval: the whole question as written, reranked chunks sent unfiltered
+    # (the reranker orders, it no longer decides coverage), plus the chunks the
+    # last answers cited so a follow-up can quote them.
+    t0 = time.perf_counter()
+    retrieval = await retrieve_parts(
+        vector_store,
+        effective_query,
+        top_k=top_k,
+        filters=filters,
+        history=history,
+        split=False,
+    )
+    sources = list(retrieval.sources)
+    retrieved = {s.chunk_id for s in sources}
+    carry = [c for c in single_call.carried_chunk_ids(history) if c not in retrieved]
+    sources += await carried_sources(vector_store, carry)
+    stage_timings["retrieval"] = (time.perf_counter() - t0) * 1000
+
+    if not sources:
+        logger.info(
+            "retrieval_empty",
+            reason="no_sources_returned",
+            query_len=len(query),
+            latency_ms=round((time.perf_counter() - start) * 1000, 2),
+        )
+        return _fallback_response(
+            request_id=request_id,
+            flags=["no_sources"],
+            latency_ms=(time.perf_counter() - start) * 1000,
+            follow_up_detected=follow_up_detected,
+        )
+    stage_timings["retrieval_relevance_score"] = max(s.score for s in sources)
+
+    # Live Indirect Prompt Injection Defense (OWASP Top 10 LLM01)
+    poisoned = set(injection_in_chunks([s.content for s in sources]))
+    if poisoned:
+        logger.warning(
+            "indirect_injection_detected",
+            poisoned_count=len(poisoned),
+            poisoned_documents=[sources[i].document_id for i in sorted(poisoned)],
+        )
+        sources = [s for i, s in enumerate(sources) if i not in poisoned]
+        if not sources:
+            return _fallback_response(
+                request_id=request_id,
+                flags=[_UNSAFE_FLAG],
+                latency_ms=(time.perf_counter() - start) * 1000,
+                follow_up_detected=follow_up_detected,
+            )
+
+    prompt = await single_call.build_prompt_async(effective_query, sources, history)
+    shown = prompt.sources
+    logger.info(
+        "retrieval_gate",
+        pipeline="single_call",
+        max_ce=retrieval.max_ce,
+        chunks_retrieved=len(sources),
+        chunks_sent=len(shown),
+        buying=buying,
+    )
+    token_details: dict[str, Any] = {
+        "pipeline": "single_call",
+        "prompt_version": single_call.PROMPT_VERSION,
+        "chunks_sent": len(shown),
+        "history_messages": prompt.history_messages,
+    }
+    context: dict[str, Any] = {
+        "follow_up_detected": follow_up_detected,
+        "history_turns_sent": prompt.history_messages,
+    }
+
+    # The one LLM call.
+    t_llm = time.perf_counter()
+    try:
+        raw_reply, usage = await single_call.complete(prompt)
+    except ContentFilterBlockedError:
+        # Foundry content filter / Prompt Shields: the fixed unsafe line.
+        token_details.update(outcome="blocked", gate="content_filter")
+        return _fallback_response(
+            request_id=request_id,
+            flags=[_UNSAFE_FLAG],
+            latency_ms=(time.perf_counter() - start) * 1000,
+            token_details=token_details,
+            **context,
+        )
+    except _LLM_ERRORS as exc:
+        logger.error(
+            "llm_call_failed request_id=%s attempt=1 error_type=%s error=%s",
+            request_id,
+            type(exc).__name__,
+            exc,
+        )
+        emit_audit_event(
+            "llm_call_failed",
+            {
+                "attempt": 1,
+                "max_attempts": 1,
+                "error_type": type(exc).__name__,
+                "status_code": getattr(exc, "status_code", None),
+                "will_retry": False,
+                "circuit_open": isinstance(exc, CircuitOpenError),
+            },
+            request_id=request_id,
+        )
+        token_details["outcome"] = "llm_failed"
+        return _fallback_response(
+            request_id=request_id,
+            flags=["llm_call_failed"],
+            latency_ms=(time.perf_counter() - start) * 1000,
+            outcome="llm_failed",
+            token_details=token_details,
+            **context,
+        )
+    stage_timings["llm"] = (time.perf_counter() - t_llm) * 1000
+
+    tokens: dict[str, int | None] = {
+        "prompt_tokens": usage["prompt_tokens"] if usage else None,
+        "completion_tokens": usage["completion_tokens"] if usage else None,
+        "total_tokens": usage["total_tokens"] if usage else None,
+        "reasoning_tokens": usage["reasoning_tokens"] if usage else None,
+    }
+    if usage:
+        token_details.update(
+            llm_attempts=1,
+            attempts=[{"attempt": 1, "usage": usage}],
+            cached_tokens=usage.get("cached_tokens", 0),
+        )
+
+    def declined(
+        gate: str, flags: list[str], sales_line: str | None = None
+    ) -> QueryResponse:
+        """The fixed no-answer line; the gate that fired is logged and stored."""
+        token_details.update(gate=gate, outcome="ungrounded")
+        logger.info(
+            "single_call_declined",
+            request_id=request_id,
+            gate=gate,
+            chunks_sent=len(shown),
+        )
+        return _fallback_response(
+            request_id=request_id,
+            flags=flags,
+            latency_ms=(time.perf_counter() - start) * 1000,
+            outcome="ungrounded",
+            token_details=token_details,
+            sales_line=sales_line,
+            **context,
+            **tokens,
+        )
+
+    result = single_call.parse_reply(raw_reply)
+    if result is None:
+        # Empty is a failed call; a reply that is not valid JSON (cut off at
+        # the token ceiling) is a safe fail: the fixed line, never raw text.
+        if not (raw_reply or "").strip():
+            token_details.update(gate="empty_reply", outcome="empty_llm_output")
+            return _fallback_response(
+                request_id=request_id,
+                flags=["empty_llm_output"],
+                latency_ms=(time.perf_counter() - start) * 1000,
+                outcome="empty_llm_output",
+                token_details=token_details,
+                **context,
+                **tokens,
+            )
+        return declined("invalid_reply", ["not_covered"])
+
+    token_details.update(result.details())
+    logger.info(
+        "single_call_completed",
+        request_id=request_id,
+        follow_up=result.follow_up,
+        chat_check=result.chat_check,
+        question_valid=result.question_valid,
+        answerable=result.answerable,
+        answer_matches_question=result.matches,
+        answer_grounded=result.grounded,
+        relevant_chunk_ids=result.relevant,
+        chunks_sent=len(shown),
+        completion_tokens=tokens["completion_tokens"],
+        reasoning_tokens=tokens["reasoning_tokens"],
+        prompt_version=single_call.PROMPT_VERSION,
+    )
+
+    # Buying intent: the KB contact page joins the sources AFTER the shown
+    # facts (numbering of the model's citations is untouched); its sales line
+    # is added by code and cited to that chunk.
+    grounding = list(shown)
+    sales: SalesContact | None = None
+    if buying:
+        contact, found = await _with_sales_contact(vector_store, [])
+        if found is not None:
+            grounding = [*shown, *contact]
+            sales = SalesContact(len(grounding), found.phone, found.email)
+
+    reason = single_call.gate(result)
+    if reason is not None:
+        # An invalid question never gets a sales pitch behind the refusal.
+        pitch = sales.line if sales and reason != "question_invalid" else None
+        return declined(reason, ["not_covered"], sales_line=pitch)
+
+    draft = single_call.to_draft(result, effective_query)
+    t_post = time.perf_counter()
+    try:
+        grounded_answer = await asyncio.to_thread(
+            ground_answer,
+            draft,
+            grounding,
+            effective_query,
+            # A partial answer that names no gap still gets the fixed line.
+            gate_uncovered=result.answerable == single_call.PARTIAL
+            and not result.unanswered,
+            sales_contact=sales,
+        )
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught  # a verifier bug is an error, never a silent no-answer
+        logger.exception("claim_verification_failed", request_id=request_id)
+        token_details.update(gate="verification_error", outcome="verification_error")
+        return _fallback_response(
+            request_id=request_id,
+            flags=["verification_failed"],
+            latency_ms=(time.perf_counter() - start) * 1000,
+            outcome="verification_error",
+            token_details=token_details,
+            **context,
+            **tokens,
+        )
+    stage_timings["guardrail_post"] = (time.perf_counter() - t_post) * 1000
+    token_details["grounding"] = grounded_answer.details()
+    total_ms = (time.perf_counter() - start) * 1000
+
+    if not grounded_answer.answered:
+        failed = [r for _c, r in grounded_answer.dropped if r not in _NOT_FAILURES]
+        return declined(
+            "no_verified_claim",
+            ["possible_hallucination"] if failed else ["not_covered"],
+            sales_line=sales.line if sales else None,
+        )
+
+    answer_text = grounded_answer.text
+    if buying:
+        answer_text = _with_pricing_line(
+            answer_text,
+            effective_query,
+            uncovered=bool(grounded_answer.uncovered),
+            sales_line=sales.line if sales else None,
+        )
+    partial = bool(grounded_answer.uncovered) or answer_text != grounded_answer.text
+    post_flags = ["partial_answer"] if partial else []
+    citations = grounded_answer.citations
+    cited_sources = with_backing_chunks(
+        grounded_answer.sources,
+        [
+            grounding[c.source - 1]
+            for c in grounded_answer.kept
+            if 0 < c.source <= len(grounding)
+        ],
+    )
+    if citations:
+        token_details[TOKEN_DETAILS_KEY] = citation_records(citations)
+    # The chunks this answer rests on (never the sales contact page): the next
+    # turn carries them back in, so a follow-up can quote them.
+    token_details["cited_chunk_ids"] = list(
+        dict.fromkeys(
+            shown[c.source - 1].chunk_id
+            for c in grounded_answer.kept
+            if 0 < c.source <= len(shown)
+        )
+    )
+    token_details["outcome"] = "answered"
+    confidence = grounded_answer.verified_ratio
+    logger.info(
+        "query_completed",
+        outcome="answered",
+        grounded=True,
+        confidence=confidence,
+        latency_ms=round(total_ms, 2),
+        sources=len(grounding),
+        cited_sources=len(cited_sources),
+        retrieved_documents=sorted({s.document_id for s in grounding}),
+        retrieval_scores=[round(s.score, 4) for s in grounding],
+        prompt_tok=tokens["prompt_tokens"] or 0,
+        comp_tok=tokens["completion_tokens"] or 0,
+        reasoning_tok=tokens["reasoning_tokens"] or 0,
+        prompt_version=single_call.PROMPT_VERSION,
+    )
+    return QueryResponse(
+        answer=answer_text,
+        sources=cited_sources,
+        citations=citations,
+        grounded=True,
+        confidence=confidence,
+        request_id=request_id,
+        latency_ms=total_ms,
+        guardrail_flags=post_flags,
+        outcome="answered",
+        token_details=token_details,
+        **context,
+        **tokens,
     )
 
 
