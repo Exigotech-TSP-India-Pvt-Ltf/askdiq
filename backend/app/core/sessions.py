@@ -233,9 +233,18 @@ async def load_recent_history(db: AsyncSession, session: ChatSession) -> list[Ch
             content=r.content,
             outcome=r.outcome,
             clarification=stored_clarification(r.token_details),
+            chunk_ids=stored_chunk_ids(r.token_details),
         )
         for r in records
     ]
+
+
+def stored_chunk_ids(token_details: dict | None) -> list[str]:
+    """The chunk ids an assistant answer cited (kept in its token details)."""
+    raw = (token_details or {}).get("cited_chunk_ids")
+    if not isinstance(raw, list):
+        return []
+    return [c for c in raw if isinstance(c, str)]
 
 
 def stored_clarification(token_details: dict | None) -> Clarification | None:

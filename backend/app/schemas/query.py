@@ -136,6 +136,9 @@ class ChatTurn(BaseModel):
     # that the previous assistant turn asked a clarifying question.
     outcome: str | None = Field(default=None, exclude=True)
     clarification: Clarification | None = Field(default=None, exclude=True)
+    # Server-side only: the chunks the assistant answer cited (single-call
+    # pipeline); a follow-up carries them back in as facts.
+    chunk_ids: list[str] = Field(default_factory=list, exclude=True)
 
 
 class QueryRequest(BaseModel):
