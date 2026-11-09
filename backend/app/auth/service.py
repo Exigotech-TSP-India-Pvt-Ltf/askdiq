@@ -199,10 +199,12 @@ class AuthService:
                     )
                 )
                 return user, True
-        elif user.email.lower() != identity.email:
+        elif (
             # Keep the email current unless another row already owns it.
-            if await self._users.get_by_email(identity.email) is None:
-                user.email = identity.email
+            user.email.lower() != identity.email
+            and await self._users.get_by_email(identity.email) is None
+        ):
+            user.email = identity.email
         user.full_name = identity.name[:256]
         user.tenant_id = identity.tid
         return user, False
